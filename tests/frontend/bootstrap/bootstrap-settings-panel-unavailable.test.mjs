@@ -264,6 +264,39 @@ test('a display-language change refused for a lock whose Meta the answer could n
   assert.ok(!h.toasts.includes('toast_language_changed'));
 });
 
+// The document taken while the patch was in flight is the baseline: a language it holds (another
+// device picked it) stays, so a later save does not write the language from before over it; without
+// one, the language in use comes back.
+for (const [fresh, expected] of [[{ displayLanguage: 'de', autoPauseEnabled: true }, 'de'], [{ autoPauseEnabled: true }, '']]) {
+  test(`a display-language change refused for a lock mid-refresh keeps ${JSON.stringify(expected)} when the fresh document ${'displayLanguage' in fresh ? 'has' : 'lacks'} the key`, async t => {
+    let h;
+    const bodies = [];
+    h = setupLanguage(t, {
+      settingsStatus: 'ok',
+      capabilities: ['settingsPatch'],
+      patch: body => {
+        bodies.push(body);
+        if (bodies.length > 1) return { success: true, Revision: 'r3', Applied: Object.keys(body.Set), Rejected: [], Settings: { ...fresh, AutoPauseEnabled: false } };
+        h.JE.internals.settingsSync.applyRefresh({ settings: { ...fresh }, settingsStatus: 'ok', settingsMeta: {} });
+        return { success: true, Revision: 'r2', Applied: [], Rejected: Object.keys(body.Set).map(Key => ({ Key, Reason: 'locked' })),
+          Settings: { DisplayLanguage: 'fr', AutoPauseEnabled: true }, Meta: { Locked: ['DisplayLanguage'] } };
+      }
+    });
+    h.JE.userConfig.settings = { displayLanguage: '', autoPauseEnabled: true };
+    await h.change('de');
+    for (let i = 0; i < 40 && h.select.value !== ''; i++) await new Promise(resolve => setTimeout(resolve, 25));
+    for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+    assert.equal(bodies.length, 1);
+    assert.equal(h.JE.currentSettings.displayLanguage, expected);
+    assert.equal(h.select.value, '', 'the selector goes back to the language in use');
+    assert.deepEqual(h.reloads, []);
+    h.JE.currentSettings.autoPauseEnabled = false;
+    await h.JE.saveUserSettings('settings.json', h.JE.currentSettings, { throwOnError: true });
+    assert.equal(bodies.length, 2);
+    assert.deepEqual(bodies[1].Set, { AutoPauseEnabled: false }, 'an unrelated save does not send the display language');
+  });
+}
+
 test('a display-language change whose POST fails switches this device but says it was not saved', async t => {
   const h = setupLanguage(t, { settingsStatus: 'ok', failPost: true });
   h.expectConsoleError('Failed to save settings.json');

@@ -179,9 +179,12 @@
                 }
                 // Refused for a lock whose Meta the answer did not bring (a fresh document was taken
                 // while it was in flight; the next focus check brings it): nothing changed, so keep
-                // the language in use and do not store or seed the refused pick.
+                // the language in use and do not store or seed the refused pick. A document with the
+                // key already put its language back (config.js), which may be this one picked on
+                // another device: keep it. Only a document without the key leaves the pick to undo.
                 if (lockRefused) {
-                    if (JE.currentSettings.displayLanguage === newLang) JE.currentSettings.displayLanguage = previousLang;
+                    const storedHasLanguage = Object.prototype.hasOwnProperty.call(JE.userConfig?.settings || {}, 'displayLanguage');
+                    if (!storedHasLanguage && JE.currentSettings.displayLanguage === newLang) JE.currentSettings.displayLanguage = previousLang;
                     displayLanguageSelect.value = appliedLanguage;
                     return;
                 }
