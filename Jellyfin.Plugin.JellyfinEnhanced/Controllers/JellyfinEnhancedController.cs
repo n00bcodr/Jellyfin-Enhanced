@@ -3904,7 +3904,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public ActionResult GetBootstrap()
         {
-            var config = JellyfinEnhanced.Instance?.Configuration;
+            // One read: the settings Meta's ConfigEpoch is the epoch of the PublicConfig sent with it
+            // (the client records it as the configuration it applied).
+            var configuration = JellyfinEnhanced.Instance?.CurrentConfiguration;
+            var config = configuration?.Configuration;
             if (config == null)
             {
                 return StatusCode(503);
@@ -3932,7 +3935,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var isAdmin = IsAdminUser();
-            var settingsSnapshot = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId)) as SettingsSnapshot;
+            var settingsSnapshot = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId, configuration)) as SettingsSnapshot;
 
             return new JsonResult(new
             {
@@ -4985,10 +4988,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// Null when the stored document is unavailable (a read error, or a malformed
         /// file that could not be moved aside or has no admin defaults to be re-seeded
         /// from): nothing is seeded or overwritten.
+        /// <paramref name="configuration"/> is the caller's configuration read, when it serves
+        /// that configuration alongside (null: read it here).
         /// </summary>
-        private SettingsSnapshot? LoadUserSettingsDocument(string authorizedUserId)
+        private SettingsSnapshot? LoadUserSettingsDocument(string authorizedUserId, JellyfinEnhanced.ConfigurationSnapshot? configuration = null)
         {
-            var config = JellyfinEnhanced.Instance?.Configuration;
+            configuration ??= JellyfinEnhanced.Instance?.CurrentConfiguration;
+            var config = configuration?.Configuration;
             // Read, quarantine and seed under the per-file lock, so a save that lands meanwhile
             // (another tab's POST, a reset-all) is never overwritten with defaults, and the
             // served document, its Revision and its Meta are exactly what was read or written.
@@ -4999,7 +5005,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 stored = ReadOrSeedUserSettings(authorizedUserId, config, out revision);
             }
 
-            return stored == null ? null : BuildSettingsSnapshot(stored, revision, config);
+            return stored == null ? null : BuildSettingsSnapshot(stored, revision, config, configuration?.Epoch);
         }
 
         /// <summary>
@@ -5060,8 +5066,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return userConfig;
         }
 
-        /// <summary>The served document and Meta for a stored settings.json, resolved against the current config.</summary>
-        private SettingsSnapshot BuildSettingsSnapshot(UserSettings stored, string revision, PluginConfiguration? config)
+        /// <summary>The served document and Meta for a stored settings.json, resolved against <paramref name="config"/>, whose epoch is <paramref name="configEpoch"/>.</summary>
+        private SettingsSnapshot BuildSettingsSnapshot(UserSettings stored, string revision, PluginConfiguration? config, string? configEpoch)
         {
             var resolved = UserSettingsResolver.Resolve(stored, config);
             // IsAdmin reflects the CALLER's admin status (not the target user's, in the
@@ -5072,7 +5078,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var settingsNode = System.Text.Json.JsonSerializer.SerializeToNode(resolved.Values) as System.Text.Json.Nodes.JsonObject
                 ?? new System.Text.Json.Nodes.JsonObject();
             settingsNode["IsAdmin"] = IsAdminUser();
-            var meta = UserSettingsResolver.DescribeMeta(resolved, stored, revision, JellyfinEnhanced.Instance?.ConfigEpoch ?? string.Empty, config);
+            var meta = UserSettingsResolver.DescribeMeta(resolved, stored, revision, configEpoch ?? string.Empty, config);
             return new SettingsSnapshot(settingsNode, meta);
         }
 
@@ -5205,7 +5211,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var config = JellyfinEnhanced.Instance?.Configuration;
+                var configuration = JellyfinEnhanced.Instance?.CurrentConfiguration;
+                var config = configuration?.Configuration;
                 UserSettingsWriteResult result;
                 SettingsSnapshot snapshot;
                 string revision;
@@ -5219,7 +5226,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                     if (ifRevision != null && !string.Equals(ifRevision, revision, StringComparison.Ordinal))
                     {
-                        var current = BuildSettingsSnapshot(stored, revision, config);
+                        var current = BuildSettingsSnapshot(stored, revision, config, configuration?.Epoch);
                         return StatusCode(409, new System.Text.Json.Nodes.JsonObject
                         {
                             ["success"] = false,
@@ -5237,7 +5244,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         revision = _userConfigurationManager.GetUserConfigurationRevision(authorizedUserId, "settings.json") ?? string.Empty;
                     }
 
-                    snapshot = BuildSettingsSnapshot(stored, revision, config);
+                    snapshot = BuildSettingsSnapshot(stored, revision, config, configuration?.Epoch);
                 }
 
                 if (result.Changes.Count > 0)

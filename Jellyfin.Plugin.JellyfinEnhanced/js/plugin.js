@@ -1155,10 +1155,14 @@
      * and announces the changed keys). The other per-user documents are left as they are.
      * @param {string} userId The user the check was made for.
      * @param {() => boolean} isCurrent False once the user changed meanwhile.
+     * When a save answer arrived while the bootstrap was in flight, the bootstrap may be older
+     * than it: its settings are dropped, its config epoch is not recorded, and the next focus
+     * checks again (and so fetches again).
      * @param {string|null} answeredConfigEpoch The ConfigEpoch the revision check answered.
      * @returns {Promise<boolean>} Whether the refresh was applied.
      */
     async function refreshFromServer(userId, isCurrent, answeredConfigEpoch) {
+        const since = JE.internals?.settingsSync?.refreshMark?.() || null;
         const bootstrap = await fetchBootstrap().catch((e) => {
             console.warn('🪼 Jellyfin Enhanced: Could not refresh settings after a change on the server.', e);
             return null;
@@ -1170,17 +1174,22 @@
         replacePublicConfig(bootstrap.PublicConfig);
         applyPrivateConfig(bootstrap.PrivateConfig);
         applyDeliveryPluginFlags(bootstrap.HasCustomTabs === true, bootstrap.HasPluginPages === true);
+        const fresh = buildUserConfigFromBootstrap(bootstrap.UserSettings);
+        const result = JE.internals?.settingsSync?.applyRefresh(fresh, { previousConfig, configKeys: changedConfigKeys(previousConfig, JE.pluginConfig), since });
+        if (result?.stale) {
+            lastRevisionCheckAt = 0;
+            return false;
+        }
         // The answer that triggered the refresh is no newer than this bootstrap, so at worst a
         // later check fetches once more.
         appliedConfigEpoch = bootstrap.UserSettings?.SettingsMeta?.ConfigEpoch || answeredConfigEpoch || null;
-        const fresh = buildUserConfigFromBootstrap(bootstrap.UserSettings);
-        JE.internals?.settingsSync?.applyRefresh(fresh, { previousConfig, configKeys: changedConfigKeys(previousConfig, JE.pluginConfig) });
         return true;
     }
 
     /**
      * The focus/visibility handler: asks GET user-settings/{userId}/revision whether the settings
-     * file or the admin configuration changed, and refreshes from the bootstrap when either did.
+     * file or the admin configuration changed, and refreshes from the bootstrap when either did
+     * or a save failed (the refresh puts the server's value back).
      * Does nothing while the page is hidden, before boot completed, while the user's settings are
      * loading after a switch, within a minute of the last check, while one is in flight, or on a
      * server that does not advertise the route. An answer that arrives after a user switch is dropped.
@@ -1212,7 +1221,8 @@
             if (!isCurrent() || !answer || typeof answer !== 'object') return;
             const meta = JE.settingsMeta;
             const knownSettings = meta ? meta.revision : lastSeenSettingsRevision;
-            if (answer.Settings === knownSettings && answer.Config === appliedConfigEpoch) return;
+            if (answer.Settings === knownSettings && answer.Config === appliedConfigEpoch
+                && !JE.internals?.settingsSync?.hasFailedEdits?.()) return;
             if (document.visibilityState === 'hidden') {
                 lastRevisionCheckAt = 0; // hidden again meanwhile: refresh on the next return instead
                 return;

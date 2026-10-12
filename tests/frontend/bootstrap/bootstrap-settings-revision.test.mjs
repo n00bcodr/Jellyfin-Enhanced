@@ -237,6 +237,85 @@ test('pending and unsaved edits survive a refresh; the other device\'s values la
   assert.equal(stored.QualityTagsEnabled, true);
 });
 
+test('a refresh fetched before a save answer that arrives first does not undo the save', async t => {
+  const patchGate = deferred(), bootstrapGate = deferred();
+  const patches = [];
+  let holdBootstrap = false, bootstrapHeld = false;
+  const stored = { AutoPipEnabled: false, QualityTagsEnabled: false, WatchProgressMode: 'percentage', IsAdmin: false };
+  const h = await setup(t, { respond: async (path, request) => {
+    if (path.endsWith('/patch')) {
+      patches.push(JSON.parse(request.data));
+      await patchGate.promise;
+      Object.assign(stored, JSON.parse(request.data).Set);
+      return { success: true, Rejected: [], Settings: { ...stored }, Meta: { Schema: 2, Revision: 'rev-3', ConfigEpoch: 'epoch-1', Locked: [], Unavailable: {} } };
+    }
+    if (path.endsWith('/bootstrap') && holdBootstrap) {
+      // The server read the file before the save wrote it.
+      const answer = payload('user-a', { settings: { ...stored }, revision: 'rev-2' });
+      bootstrapHeld = true;
+      await bootstrapGate.promise;
+      return answer;
+    }
+    return undefined;
+  } });
+  const seen = [];
+  h.plugin.settings.onChange('autoPipEnabled', value => seen.push(value));
+  h.plugin.currentSettings.autoPipEnabled = true;
+  const saved = h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings);
+  h.window.dispatchEvent(new h.window.Event('pagehide'));
+  await until(() => patches.length === 1);
+  h.server['user-a'].revision = { Settings: 'rev-2', Config: 'epoch-1' };
+  holdBootstrap = true;
+  h.tick(MINUTE); h.focus();
+  await until(() => bootstrapHeld);
+  // The save answer arrives first, then the older bootstrap.
+  patchGate.resolve(); await saved;
+  assert.equal(h.plugin.currentSettings.autoPipEnabled, true);
+  bootstrapGate.resolve(); await settle();
+  assert.equal(h.plugin.currentSettings.autoPipEnabled, true, 'the acknowledged save stays');
+  assert.equal(h.plugin.settingsMeta.revision, 'rev-3', "the save answer's revision stays the known one");
+  assert.deepEqual(h.events, [], 'nothing announced');
+  assert.deepEqual(seen, []);
+
+  // The next focus checks again at once (no minute's wait) and, the server matching, fetches nothing.
+  holdBootstrap = false;
+  h.server['user-a'].revision = { Settings: 'rev-3', Config: 'epoch-1' };
+  const count = h.later.length;
+  h.focus(); await settle();
+  assert.deepEqual(h.later.slice(count), ['/JellyfinEnhanced/user-settings/user-a/revision']);
+  assert.equal(h.plugin.currentSettings.autoPipEnabled, true);
+});
+
+test('a refresh after a failed save restores the server value; a later edit of the key stays', async t => {
+  const patches = [];
+  const h = await setup(t, { respond: async (path, request) => {
+    if (!path.endsWith('/patch')) return undefined;
+    patches.push(JSON.parse(request.data));
+    throw Object.assign(new Error('Internal Server Error'), { status: 500 });
+  } });
+  const seen = [];
+  h.plugin.settings.onChange('autoPipEnabled', value => seen.push(value));
+  h.plugin.currentSettings.autoPipEnabled = true;
+  h.plugin.currentSettings.watchProgressMode = 'time';
+  const saved = h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings, { throwOnError: true });
+  h.window.dispatchEvent(new h.window.Event('pagehide'));
+  await assert.rejects(saved);
+  assert.deepEqual(patches.map(p => p.Set), [{ AutoPipEnabled: true, WatchProgressMode: 'time' }]);
+  // Changed again on the page after the failure, not saved yet.
+  h.plugin.currentSettings.watchProgressMode = 'none';
+  // The file did not change, yet the focus check refreshes because a save failed.
+  h.tick(MINUTE); h.focus(); await settle();
+  assert.deepEqual(h.later.slice(1), ['/JellyfinEnhanced/user-settings/user-a/revision', '/JellyfinEnhanced/bootstrap']);
+  assert.equal(h.plugin.currentSettings.autoPipEnabled, false, 'the server value is back');
+  assert.equal(h.plugin.currentSettings.watchProgressMode, 'none', 'the later unsaved edit stays');
+  assert.deepEqual(h.events, [{ keys: ['autoPipEnabled'], rejected: [] }]);
+  assert.deepEqual(seen, [false]);
+
+  // Restored once: the next check with an unchanged revision fetches nothing more.
+  h.tick(MINUTE); h.focus(); await settle();
+  assert.equal(h.later.filter(path => path.endsWith('/bootstrap')).length, 1);
+});
+
 test('a check in flight during a user switch is dropped; the next user starts afresh', async t => {
   const revisionGate = deferred();
   let held = false;

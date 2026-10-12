@@ -135,10 +135,12 @@
     const NEVER_PATCHED = new Set(['isAdmin', 'lastOpenedTab']);
     // Set once the server answered 404/405 to /patch (rolled back under an open tab).
     let _patchUnsupported = false;
-    // Per user id: { baseline, baselineSource, generation, pending, seq, batch, timer, chain }.
+    // Per user id: { baseline, baselineSource, generation, acks, pending, failed, seq, batch, timer, chain }.
     // pending: camelCase key → { value, seq } for edits (and Follows) not yet confirmed; seq numbers every
     // queued edit, so a finished request settles only the edits it carried (A-B-A safe).
-    // generation counts the fresh server documents taken as the baseline from elsewhere.
+    // generation counts the fresh server documents taken as the baseline from elsewhere; acks counts
+    // the save answers taken into the baseline. failed: camelCase key → the value a failed request
+    // carried, which the page still shows until the next refresh restores the server's.
     const _sync = {};
 
     /**
@@ -188,7 +190,7 @@
         const userId = typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId ? ApiClient.getCurrentUserId() : null;
         if (!userId) return null;
         const state = _sync[userId] = _sync[userId]
-            || { userId, baseline: {}, baselineSource: null, generation: 0, pending: {}, seq: 0, batch: null, timer: null, chain: Promise.resolve() };
+            || { userId, baseline: {}, baselineSource: null, generation: 0, acks: 0, pending: {}, failed: {}, seq: 0, batch: null, timer: null, chain: Promise.resolve() };
         const source = JE.userConfig?.settings;
         if (source && source !== state.baselineSource) {
             state.baselineSource = source;
@@ -230,6 +232,7 @@
         for (const [key, value] of Object.entries(delta)) {
             const seq = ++state.seq;
             state.pending[key] = { value, seq };
+            delete state.failed[key];
             batch.set[key] = value;
             batch.seqs[key] = seq;
             // The later request wins: a value set after "use the server default" in the same window.
@@ -238,6 +241,7 @@
         for (const key of follow) {
             // ...and "use the server default" after a value set in the same window replaces it.
             delete batch.set[key];
+            delete state.failed[key];
             // Until the answer, a whole-document save compares the key with the value shown now
             // (it may be the dropped Set's), so an unrelated save does not turn it back into a Set
             // that cancels this Follow. The answer settles it and shows the default.
@@ -284,6 +288,10 @@
      */
     async function postBatch(state, batch) {
         const fail = (error) => {
+            // The page keeps showing these values: the next refresh puts the server's back.
+            for (const [key, value] of Object.entries(batch.set)) {
+                if (state.pending[key]?.seq === batch.seqs[key]) state.failed[key] = value;
+            }
             settlePending(state, batch);
             batch.waiters.forEach(w => w.reject(error));
         };
@@ -399,6 +407,8 @@
         if (settings && ApiClient.getCurrentUserId() === state.userId && JE.userConfig) {
             // Also counts a document installed without a loadSettings call yet.
             syncState();
+            // A refresh fetched before this answer may be older than it (applyRefresh drops it).
+            state.acks++;
             if (state.generation !== generation) {
                 const fresh = JE.userConfig.settings === state.baselineSource ? JE.userConfig.settings : null;
                 const followed = new Set(batch.follow || []);
@@ -452,35 +462,67 @@
     }
 
     /**
+     * Marks the point a refresh is fetched from, for applyRefresh's `since`.
+     * @returns {{userId: string, generation: number, acks: number}|null} Null without a signed-in user.
+     */
+    function refreshMark() {
+        const state = syncState();
+        return state ? { userId: state.userId, generation: state.generation, acks: state.acks } : null;
+    }
+
+    /**
+     * Whether a save of the signed-in user failed and the page still shows the value it carried
+     * (no later edit of the key), so a refresh is due even when the server's revision is unchanged.
+     * @returns {boolean}
+     */
+    function hasFailedEdits() {
+        const state = syncState();
+        if (!state) return false;
+        for (const [key, value] of Object.entries(state.failed)) {
+            if (!Object.prototype.hasOwnProperty.call(state.pending, key) && sameValue(JE.currentSettings?.[key], value)) return true;
+        }
+        return false;
+    }
+
+    /**
      * Takes a settings document fetched again from the server (the focus check in plugin.js,
      * design 6.3) as the new baseline. A key lands in JE.currentSettings only where this page
-     * still shows what the server last confirmed: an edit still pending, or one made on the page
-     * and not saved yet, stays on top. Locks, gates and the other per-key state come with the new
-     * Meta. Changed keys, a changed Meta and changed admin config fields are announced through
-     * announceSettingsChanged. A document the server reports unavailable is ignored (the page
-     * keeps what it has); one that loads after an unavailable one makes the settings writable again.
+     * still shows what the server last confirmed or the value of a save that failed: an edit still
+     * pending, or one made on the page and not saved yet, stays on top. Locks, gates and the other
+     * per-key state come with the new Meta. Changed keys, a changed Meta and changed admin config
+     * fields are announced through announceSettingsChanged. A document the server reports
+     * unavailable is ignored (the page keeps what it has); one that loads after an unavailable one
+     * makes the settings writable again. When a save answer or another fresh document was taken
+     * after `since`, the document may be older than it, so its settings and Meta are dropped
+     * (`stale`); the config fields are still announced.
      * @param {{settings: object, settingsStatus: string, settingsMeta?: object}} fresh userConfig
      *   built from the bootstrap.
-     * @param {{previousConfig?: object, configKeys?: string[]}} [options] previousConfig: the
-     *   plugin config before the same refresh replaced it (what the page's values were merged
-     *   with); configKeys: the config fields it changed.
-     * @returns {string[]} The camelCase settings keys whose value changed.
+     * @param {{previousConfig?: object, configKeys?: string[], since?: object|null}} [options]
+     *   previousConfig: the plugin config before the same refresh replaced it (what the page's
+     *   values were merged with); configKeys: the config fields it changed; since: refreshMark()
+     *   from before the document was fetched.
+     * @returns {{changed: string[], stale: boolean}} changed: the camelCase settings keys whose
+     *   value changed; stale: the settings were dropped (fetch them again).
      */
     function applyRefresh(fresh, options = {}) {
         const userConfig = JE.userConfig;
         const configKeys = Array.isArray(options.configKeys) ? options.configKeys : [];
-        if (!userConfig || !fresh || userConfig.settingsStatus === 'loading') return [];
+        if (!userConfig || !fresh || userConfig.settingsStatus === 'loading') return { changed: [], stale: false };
         const state = syncState();
-        if (!state) return [];
+        if (!state) return { changed: [], stale: false };
+        const since = options.since;
+        const stale = !!since && (since.userId !== state.userId || since.generation !== state.generation || since.acks !== state.acks);
         const changed = [];
         let metaChanged = false;
-        if (fresh.settingsStatus === 'ok' && fresh.settings && typeof fresh.settings === 'object') {
+        if (!stale && fresh.settingsStatus === 'ok' && fresh.settings && typeof fresh.settings === 'object') {
             // What the page showed until now: the last confirmed values merged with the config of
             // that time, pending edits on top. Nothing to compare with while the settings were unavailable.
             const wasLoaded = userConfig.settingsStatus === 'ok';
             const before = mergeSettings(wasLoaded ? state.baseline : {}, options.previousConfig || JE.pluginConfig || {});
             for (const [key, edit] of Object.entries(state.pending)) before[key] = edit.value;
             const metaBefore = metaGates(userConfig.settingsMeta);
+            const failed = state.failed;
+            state.failed = {};
             userConfig.settings = fresh.settings;
             userConfig.settingsStatus = 'ok';
             if (fresh.settingsMeta) userConfig.settingsMeta = fresh.settingsMeta;
@@ -489,7 +531,10 @@
             const after = JE.loadSettings();
             const current = JE.currentSettings || (JE.currentSettings = {});
             for (const key of new Set(Object.keys(before).concat(Object.keys(after)))) {
-                if (key === 'lastOpenedTab' || !sameValue(current[key], before[key]) || sameValue(current[key], after[key])) continue;
+                // A value a failed save left on the page is not an edit to keep.
+                const failedValue = Object.prototype.hasOwnProperty.call(failed, key)
+                    && !Object.prototype.hasOwnProperty.call(state.pending, key) && sameValue(current[key], failed[key]);
+                if (key === 'lastOpenedTab' || (!failedValue && !sameValue(current[key], before[key])) || sameValue(current[key], after[key])) continue;
                 current[key] = after[key];
                 changed.push(key);
             }
@@ -501,11 +546,11 @@
             if (configKeys.length) detail.config = configKeys.slice();
             announceSettingsChanged(detail);
         }
-        return changed;
+        return { changed, stale };
     }
 
     JE.internals = JE.internals || {};
-    JE.internals.settingsSync = { applyRefresh };
+    JE.internals.settingsSync = { applyRefresh, refreshMark, hasFailedEdits };
 
     /**
      * Makes settings follow the server default again ("Use server default"): a Follow operation in
