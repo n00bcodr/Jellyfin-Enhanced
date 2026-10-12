@@ -229,6 +229,28 @@
     }
 
     /**
+     * Names the labelled control from the label's own text, leaving the chip's name out.
+     * Keeps existing explicit names unless their reference would include the appended chip.
+     * @param {HTMLLabelElement} label The chip's label.
+     * @param {Element} text The element whose own text names the control and receives the chip.
+     */
+    function nameControlWithoutChip(label, text) {
+        const control = label.control || label.querySelector('input, select, textarea')
+            || document.getElementById(label.htmlFor);
+        if (!control) return;
+        const labelledBy = control.getAttribute('aria-labelledby');
+        if (labelledBy) {
+            const includesChip = labelledBy.trim().split(/\s+/).some(id => {
+                const source = document.getElementById(id);
+                return source && source.contains(text);
+            });
+            if (!includesChip) return;
+            control.removeAttribute('aria-labelledby');
+        }
+        if (!control.hasAttribute('aria-label')) control.setAttribute('aria-label', ownText(text));
+    }
+
+    /**
      * Writes (or rewrites) a chip inside each per-user default group's main control label.
      * @param {Element} page The admin page.
      */
@@ -268,6 +290,7 @@
             // selectors, whether its upgrade runs before or after this decoration.
             const labelText = label.querySelector(':scope > input[type="checkbox"]')
                 && (label.querySelector(':scope > span.checkboxLabel') || label.querySelector(':scope > span:not(.checkboxOutline)'));
+            nameControlWithoutChip(label, labelText || label);
             (labelText || label).appendChild(chip);
         });
     }

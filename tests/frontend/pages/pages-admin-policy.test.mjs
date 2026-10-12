@@ -165,6 +165,72 @@ test('checkbox checked-state selectors survive chips, re-rendering and either up
   }
 });
 
+test('control names exclude chips across decoration, revisits and lock changes without altering label text', async t => {
+  const h = setup(t);
+  const controls = ['autoPipEnabled', 'watchProgressDefaultMode', 'qualityTagsEnabled', 'showResolutionTag'].map(id => {
+    const control = h.document.getElementById(id);
+    const label = control.labels[0];
+    const text = label.querySelector('span.checkboxLabel') || label;
+    return { control, label, text, name: text.textContent.trim(), nodes: [...text.childNodes], spans: label.querySelectorAll('span').length };
+  });
+  await h.policy.decorate(h.page);
+  const names = [...h.page.querySelectorAll('tr[data-setting-key] th')].map(cell => cell.textContent);
+  const ids = [...h.page.querySelectorAll('[id]')].map(element => element.id);
+  /** Checks the explicit naming source and unchanged label structure for every placement. */
+  const check = () => {
+    for (const { control, label, text, name, nodes, spans } of controls) {
+      assert.equal(control.getAttribute('aria-label'), name);
+      assert.equal(control.hasAttribute('aria-labelledby'), false);
+      assert.doesNotMatch(control.getAttribute('aria-label'), /User default|Locked for users|Applies to/);
+      assert.equal(label.querySelectorAll('span').length, spans, 'no text wrappers are added');
+      assert.deepEqual([...text.childNodes].filter(node => !node.matches?.('a.je-user-default-chip')), nodes, 'original text nodes stay in place');
+      assert.equal(label.querySelectorAll('a.je-user-default-chip').length, 1);
+    }
+    assert.deepEqual([...h.page.querySelectorAll('tr[data-setting-key] th')].map(cell => cell.textContent), names, 'policy names remain identical');
+    assert.deepEqual([...h.page.querySelectorAll('[id]')].map(element => element.id), ids, 'decoration adds no duplicate ids');
+  };
+  check();
+  await h.policy.decorate(h.page);
+  check();
+  for (const key of ['AutoPipEnabled', 'WatchProgressMode', 'QualityTagsEnabled', 'QualityTagsPosition', 'ShowResolutionTag', 'ResolutionTagOrder']) h.tick(key);
+  check();
+  for (const { label } of controls) assert.equal(chipText(label.querySelector('a.je-user-default-chip')), 'Locked for users');
+  assert.match(h.page.querySelector('#jeUserSettingsPolicyImpact').textContent, /Locking Watch Progress Default to/);
+  assert.match(h.page.querySelector('#jeUserSettingsPolicyImpact').textContent, /Locking Quality Tags: Position to/);
+});
+
+test('existing explicit control names survive unless aria-labelledby would include the chip', async t => {
+  const h = setup(t);
+  const pip = h.document.getElementById('autoPipEnabled');
+  pip.setAttribute('aria-label', 'Existing checkbox name');
+  const select = h.document.getElementById('watchProgressDefaultMode');
+  const source = h.document.createElement('span');
+  source.id = 'existingSelectName';
+  source.textContent = 'Existing select name';
+  h.page.appendChild(source);
+  select.setAttribute('aria-labelledby', source.id);
+  const quality = h.document.getElementById('qualityTagsEnabled');
+  quality.labels[0].id = 'existingQualityLabel';
+  quality.setAttribute('aria-labelledby', quality.labels[0].id);
+  const category = h.document.getElementById('showResolutionTag');
+  const categoryText = category.labels[0].querySelector('span.checkboxLabel');
+  categoryText.id = 'existingCategoryText';
+  category.setAttribute('aria-labelledby', categoryText.id);
+  for (let render = 0; render < 2; render++) {
+    await h.policy.decorate(h.page);
+    h.tick('QualityTagsEnabled');
+    assert.equal(pip.getAttribute('aria-label'), 'Existing checkbox name');
+    assert.equal(select.getAttribute('aria-labelledby'), source.id);
+    assert.equal(select.hasAttribute('aria-label'), false);
+    assert.equal(source.textContent, 'Existing select name');
+    assert.equal(source.querySelector('a.je-user-default-chip'), null);
+    assert.equal(quality.hasAttribute('aria-labelledby'), false);
+    assert.equal(quality.getAttribute('aria-label'), 'Enable Quality Tags');
+    assert.equal(category.hasAttribute('aria-labelledby'), false);
+    assert.equal(category.getAttribute('aria-label'), 'Show resolution (4K, 1080p, ...)');
+  }
+});
+
 test('input defaults put the chip after the inputLabel text', async t => {
   // The current registry uses checkbox/select defaults; also cover the inputContainer contract.
   const registry = [{ ...registryDefault.find(e => e.Key === 'AutoPipEnabled'), ControlId: 'testInputDefault' }];
@@ -178,6 +244,11 @@ test('input defaults put the chip after the inputLabel text', async t => {
   assert.equal(label.firstChild.textContent, 'Input default');
   assert.equal(label.lastElementChild.matches('a.je-user-default-chip'), true);
   assert.equal(container.querySelectorAll('a.je-user-default-chip').length, 1);
+  assert.equal(container.querySelector('input').getAttribute('aria-label'), 'Input default');
+  await h.policy.decorate(h.page);
+  h.tick('AutoPipEnabled');
+  assert.equal(container.querySelector('input').getAttribute('aria-label'), 'Input default');
+  assert.equal(label.querySelectorAll('a.je-user-default-chip').length, 1);
 });
 
 test('chip tooltips and accessible labels explain each reach and live unlocked, partial and fully locked states', async t => {
@@ -235,7 +306,22 @@ test('a group of three defaults counts locks and saved locks initialise the chip
   assert.equal(label.querySelectorAll('a.je-user-default-chip').length, 1);
 });
 
-test('chip clicks cancel checkbox label activation and still reach the real delegated jump handler', async t => {
+test('chip clicks cancel their own default without a delegated jump handler', async t => {
+  const h = setup(t);
+  await h.policy.decorate(h.page);
+  for (const id of ['autoPipEnabled', 'qualityTagsEnabled', 'showResolutionTag']) {
+    const chip = h.document.getElementById(id).closest('label').querySelector('a.je-user-default-chip');
+    for (const target of [chip, chip.querySelector('i')]) {
+      for (const detail of [1, 0]) {
+        const click = new h.window.MouseEvent('click', { bubbles: true, cancelable: true, detail });
+        target.dispatchEvent(click);
+        assert.equal(click.defaultPrevented, true, 'the chip listener cancels link and nested icon clicks');
+      }
+    }
+  }
+});
+
+test('chip clicks still reach the real delegated jump handler and ordinary label clicks toggle', async t => {
   const h = setup(t);
   await h.policy.decorate(h.page);
   assert.ok(jumpHandlerSource, 'the page has its delegated jump handler');
@@ -249,15 +335,16 @@ test('chip clicks cancel checkbox label activation and still reach the real dele
     for (const checked of [false, true]) {
       checkbox.checked = checked;
       const before = jumps.length;
-      chip.querySelector('i').click(); // nested icon clicks also cancel the label's default action
+      chip.querySelector('i').click();
+      // jsdom skips checkbox label activation inside a link even without cancellation.
       assert.equal(checkbox.checked, checked);
       assert.equal(jumps.length, before + 1);
       assert.deepEqual(jumps.at(-1), { tab: 'admin', target: chip.dataset.jumpTarget });
       chip.focus();
       assert.equal(h.document.activeElement, chip);
-      // jsdom does not synthesise Enter activation; dispatch its native keyboard click (detail 0).
+      // jsdom does not synthesise Enter activation; dispatch a keyboard-style click (detail 0).
       const click = new h.window.MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 });
-      assert.equal(chip.dispatchEvent(click), false, 'the click default is prevented');
+      chip.dispatchEvent(click);
       assert.equal(checkbox.checked, checked);
       assert.equal(jumps.length, before + 2);
     }
