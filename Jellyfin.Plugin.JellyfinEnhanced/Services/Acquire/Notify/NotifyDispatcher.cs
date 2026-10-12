@@ -15,9 +15,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
     /// is sent, with backoff (30 s, 2 min, 10 min, 30 min, 2 h, 6 h), then marked failed for
     /// administrators to see. A user's quiet hours hold their deliveries until the hours end
     /// (checked again at send time, so a change of quiet hours applies to what is queued). At send
-    /// time the recipient is checked again too: a user who is gone or disabled, an administrators'
-    /// alert for someone who is no longer one or switched those alerts off, and a title the user can
-    /// no longer open end the delivery as "suppressed" (final, not a failure). A restore of the
+    /// time the recipient and the settings are checked again too (each delivery reads the
+    /// configuration afresh): a user who is gone or disabled, an administrators' alert for someone
+    /// who is no longer one or switched those alerts off, a kind of alert the user switched off, a
+    /// channel switched off (by the administrator or the user) and a title the user can no longer
+    /// open end the delivery as "suppressed" (final, not a failure, never retried). Notifications
+    /// switched off as a whole leave what is queued pending until they are back. A restore of the
     /// database while a delivery is on its way leaves the restored rows alone.
     /// </summary>
     public sealed class NotifyDispatcher : IHostedService, IDisposable
@@ -43,6 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly SemaphoreSlim _wake = new(0, int.MaxValue);
         private readonly SemaphoreSlim _run = new(1, 1);
         private CancellationTokenSource? _loop;
+        private Task? _loopTask;
 
         /// <summary>The dispatcher (DI).</summary>
         public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger)
@@ -84,12 +88,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         {
             _loop = new CancellationTokenSource();
             var token = _loop.Token;
-            _ = Task.Run(() => LoopAsync(token), CancellationToken.None);
+            _loopTask = Task.Run(() => LoopAsync(token), CancellationToken.None);
             return Task.CompletedTask;
         }
 
         /// <inheritdoc />
-        public Task StopAsync(CancellationToken cancellationToken)
+        /// <remarks>
+        /// Waits for the send in progress to end (no new one starts), or until Jellyfin stops waiting:
+        /// a delivery interrupted mid-send is tried again after the restart (at least once).
+        /// </remarks>
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
             try
             {
@@ -98,7 +106,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             catch (ObjectDisposedException)
             {
             }
-            return Task.CompletedTask;
+            if (_loopTask is not { } loop) return;
+            try
+            {
+                await loop.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Jellyfin stopped waiting.
+            }
         }
 
         /// <inheritdoc />
@@ -141,8 +157,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>Sends every delivery that is due; returns how many were attempted (tests step it).</summary>
         internal async Task<int> RunOnceAsync(CancellationToken cancellationToken)
         {
-            var config = _config();
-            if (!NotifyFlags.Enabled(config) || !_store.Available) return 0;
+            if (!NotifyFlags.Enabled(_config()) || !_store.Available) return 0;
             await _run.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -153,6 +168,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     if (due.Count == 0) break;
                     foreach (var delivery in due)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        // The settings as they are now, for each delivery: switched off as a whole, the
+                        // rest stay pending (sent when notifications are back on).
+                        var config = _config();
+                        if (!NotifyFlags.Enabled(config)) return attempted;
                         await DeliverAsync(config!, delivery, cancellationToken).ConfigureAwait(false);
                         attempted++;
                     }
@@ -181,25 +201,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 _store.Suppress(delivery.Id, reason, delivery.Generation);
                 return;
             }
+            // A channel switched off since the alert was queued (by the administrator or the user):
+            // nothing to retry, so not a failure either.
+            if (ChannelOff(config, delivery.Channel, prefs) is { } off)
+            {
+                _store.Suppress(delivery.Id, off, delivery.Generation);
+                return;
+            }
             var payload = Payload(delivery.Payload);
             var message = NotifyTexts.Render(delivery.Kind, payload, prefs.HideTitles);
             var link = ExternalLink(config, delivery.ItemId, delivery.Kind);
-            SendResult result;
-            switch (delivery.Channel)
-            {
-                case NotifyChannel.Ntfy:
-                    if (!NotifyEndpoints.NtfyReady(config)) result = new SendResult(false, "Phone alerts (ntfy) are switched off or have no server.");
-                    else if (!prefs.Ntfy || !NotifyEndpoints.IsTopic(prefs.NtfyTopic)) result = new SendResult(false, "The user turned phone alerts off or has no topic.");
-                    else result = await _ntfy.SendAsync(config.ArrNtfyServerUrl, config.GetSecret(nameof(PluginConfiguration.ArrNtfyToken)), prefs.NtfyTopic!, message, link, Tags(delivery.Kind), Priority(delivery.Kind), cancellationToken).ConfigureAwait(false);
-                    break;
-                case NotifyChannel.Email:
-                    if (!prefs.Email || string.IsNullOrEmpty(prefs.EmailAddress)) result = new SendResult(false, "The user turned e-mail off or has no verified address.");
-                    else result = await _email.SendAsync(config, prefs.EmailAddress!, message, link, SettingsLink(config), cancellationToken).ConfigureAwait(false);
-                    break;
-                default:
-                    result = new SendResult(false, "Unknown channel.");
-                    break;
-            }
+            var result = delivery.Channel == NotifyChannel.Ntfy
+                ? await _ntfy.SendAsync(config.ArrNtfyServerUrl, config.GetSecret(nameof(PluginConfiguration.ArrNtfyToken)), prefs.NtfyTopic!, message, link, Tags(delivery.Kind), Priority(delivery.Kind), cancellationToken).ConfigureAwait(false)
+                : await _email.SendAsync(config, prefs.EmailAddress!, message, link, SettingsLink(config), cancellationToken).ConfigureAwait(false);
             if (result.Ok)
             {
                 Interlocked.Increment(ref _sent);
@@ -214,13 +228,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         /// <summary>
-        /// Why the delivery must not go out any more, or null: the recipient is gone or disabled; an
+        /// Why the delivery must not go out any more, or null: the recipient switched this kind of
+        /// alert off (Ready, new episodes, declined); the recipient is gone or disabled; an
         /// administrators' alert (paths, instance names, household requests) for someone who is no
         /// longer an administrator or switched those alerts off; a Ready or new-episodes alert for a
         /// title the recipient can no longer open (library access or parental limits changed).
         /// </summary>
         private string? Suppression(DueDelivery delivery, NotifyPrefs prefs)
         {
+            var kindOff = delivery.Kind switch
+            {
+                NotifyKind.Ready => !prefs.Ready,
+                NotifyKind.Episodes => !prefs.Episodes,
+                NotifyKind.Declined => !prefs.Declined,
+                _ => false,
+            };
+            if (kindOff) return "The recipient switched these alerts off.";
             if (_users == null) return null;
             if (!_users.IsActive(delivery.UserId)) return "The recipient no longer exists or is disabled.";
             if (NotifyKind.IsAdminKind(delivery.Kind))
@@ -237,6 +260,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var key = TitleKey.Parse(delivery.TitleKey);
             return key != null && _view.Copies(key, viewer, _aliases?.Of(key)).Any(c => c.Visible) ? null : "The recipient can no longer open this title.";
         }
+
+        /// <summary>Why a channel can't carry the delivery now (switched off or not set up, by the administrator or the user), or null.</summary>
+        private static string? ChannelOff(PluginConfiguration config, string channel, NotifyPrefs prefs) => channel switch
+        {
+            NotifyChannel.Ntfy when !NotifyEndpoints.NtfyReady(config) => "Phone alerts (ntfy) are switched off or have no server.",
+            NotifyChannel.Ntfy when !prefs.Ntfy || !NotifyEndpoints.IsTopic(prefs.NtfyTopic) => "The user turned phone alerts off or has no topic.",
+            NotifyChannel.Ntfy => null,
+            NotifyChannel.Email when !NotifyEndpoints.EmailReady(config) => "E-mail alerts are switched off or have no mail server.",
+            NotifyChannel.Email when !prefs.Email || string.IsNullOrEmpty(prefs.EmailAddress) => "The user turned e-mail off or has no verified address.",
+            NotifyChannel.Email => null,
+            _ => "Unknown channel.",
+        };
 
         /// <summary>
         /// The deep link for pushes and e-mails: the item's details page, else the Requests page (the

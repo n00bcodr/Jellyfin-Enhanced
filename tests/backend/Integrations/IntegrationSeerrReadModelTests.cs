@@ -54,6 +54,33 @@ public class IntegrationSeerrReadModelTests
 
     private static TitleKey Key(string key) => TitleKey.Parse(key)!;
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AChangedSecondaryProviderIdInvalidatesTheRevisionEvenWhenThePrimaryKeyIsUnchanged(bool movie)
+    {
+        using var rig = new Rig();
+        var request = FakeSeerr.Request(1, movie ? "movie" : "tv", 83867, 2, rig.Emma, T0, tvdb: movie ? null : 393189);
+        request["media"]!["imdbId"] = "tt83867";
+        rig.Seerr.Requests.Add(request);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        var revision = rig.Model.Revision;
+        var cursor = rig.Feed.Cursor;
+        var primary = rig.Model.All.Single().Key;
+        var oldAlias = movie ? "movie:imdb:tt83867" : "tv:tmdb:83867";
+        var newAlias = movie ? "movie:imdb:tt83868" : "tv:tmdb:83868";
+        // A periodic full read can discover an id correction with unchanged status/timestamps.
+        if (movie) request["media"]!["imdbId"] = "tt83868";
+        else request["media"]!["tmdbId"] = 83868;
+        rig.Now = rig.Now.AddMinutes(31);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Equal(primary, rig.Model.All.Single().Key);
+        Assert.Empty(rig.Model.ForTitle(Key(oldAlias)));
+        Assert.Single(rig.Model.ForTitle(Key(newAlias)));
+        Assert.True(rig.Model.Revision > revision);
+        Assert.Contains(rig.Feed.Read(rig.Feed.Epoch, cursor).Changes, c => c.Key == primary!.ToString());
+    }
+
     [Fact]
     public async Task RequestsBecomeFactsForTheirTitleAsTheViewerSeesThem()
     {
@@ -351,6 +378,310 @@ public class IntegrationSeerrReadModelTests
         // Twice more by hand, for good measure.
         rig.Model.Dispose();
         rig.Model.Dispose();
+    }
+
+    // ------------------------------------------------------------------ complete reads only (C77)
+
+    private static void Many(Rig rig, int from, int to)
+    {
+        for (var i = from; i <= to; i++) rig.Seerr.Requests.Add(FakeSeerr.Request(i, "movie", 1000 + i, 2, i % 2 == 0 ? rig.Emma : rig.Sam, T0.AddMinutes(i)));
+    }
+
+    // Makes the cheap probe see a change, so the next refresh reads the whole list.
+    private static void Touch(Rig rig, int id)
+    {
+        rig.Seerr.Requests.Single(r => (int)r["id"]! == id)["updatedAt"] = rig.Now.UtcDateTime.ToString("o");
+        rig.Now = rig.Now.AddMinutes(1);
+    }
+
+    [Fact]
+    public async Task ARequestAddedWhileThePagesAreReadMakesTheReadIncompleteAndChangesNothingUntilAFullReadIsComplete()
+    {
+        using var rig = new Rig();
+        Many(rig, 1, 150);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        var revision = rig.Model.Revision;
+        var cursor = rig.Feed.Cursor;
+        // Request 151 is made and the oldest one (1) removed after the first page was read: Seerr's
+        // count stays the same, but the second page starts with a request already read (51).
+        rig.Seerr.BeforePage = skip =>
+        {
+            if (skip != 100 || rig.Seerr.Requests.Any(r => (int)r["id"]! == 151)) return;
+            rig.Seerr.Requests.Add(FakeSeerr.Request(151, "movie", 1151, 1, rig.Emma, T0.AddDays(1)));
+            rig.Seerr.Requests.RemoveAll(r => (int)r["id"]! == 1);
+        };
+        Touch(rig, 3);
+        Assert.False(await rig.Model.RefreshAsync(default));
+        Assert.Equal(150, rig.Model.All.Count);
+        Assert.Equal(revision, rig.Model.Revision);
+        Assert.Equal(cursor, rig.Feed.Cursor);
+        Assert.Contains("twice", rig.Model.State.IncompleteReason);
+        Assert.Null(rig.Model.State.LastError);
+        Assert.True(rig.Model.Loaded);
+        // Read again a minute later (not the full interval), completely this time.
+        Assert.False(rig.Model.Due());
+        rig.Now = rig.Now.AddSeconds(61);
+        Assert.True(rig.Model.Due());
+        rig.Seerr.BeforePage = null;
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Equal(150, rig.Model.All.Count);
+        Assert.Contains(rig.Model.All, r => r.Id == 151);
+        Assert.DoesNotContain(rig.Model.All, r => r.Id == 1);
+        Assert.Null(rig.Model.State.IncompleteReason);
+    }
+
+    [Fact]
+    public async Task ARequestRemovedWhileThePagesAreReadIsNotTakenForOthersGoneAndAPageThatFailsKeepsTheList()
+    {
+        using var rig = new Rig();
+        Many(rig, 1, 150);
+        await rig.Model.RefreshAsync(default);
+        var cursor = rig.Feed.Cursor;
+        // Request 120 (on the first page) is removed before the second page: Seerr's count changes and
+        // request 50 would slide out of view.
+        rig.Seerr.BeforePage = skip =>
+        {
+            if (skip == 100) rig.Seerr.Requests.RemoveAll(r => (int)r["id"]! == 120);
+        };
+        Touch(rig, 3);
+        Assert.False(await rig.Model.RefreshAsync(default));
+        Assert.Contains(rig.Model.All, r => r.Id == 50);
+        Assert.Contains(rig.Model.All, r => r.Id == 120);
+        Assert.Equal(cursor, rig.Feed.Cursor);
+        Assert.False(rig.Model.RequestedLately(Key("movie:tmdb:1050")) && !rig.Model.Requested(Key("movie:tmdb:1050")));
+        // The second page fails outright: the list stays, and the failure shows at once.
+        rig.Seerr.BeforePage = skip =>
+        {
+            if (skip == 100) rig.Seerr.FailWith = 500;
+        };
+        Touch(rig, 4);
+        Assert.False(await rig.Model.RefreshAsync(default));
+        Assert.NotNull(rig.Model.State.LastError);
+        Assert.Equal(150, rig.Model.All.Count);
+        rig.Seerr.FailWith = 0;
+        rig.Seerr.BeforePage = null;
+        Touch(rig, 5);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Equal(149, rig.Model.All.Count);
+        Assert.Contains(rig.Model.All, r => r.Id == 50);
+        Assert.DoesNotContain(rig.Model.All, r => r.Id == 120);
+        Assert.Null(rig.Model.State.LastError);
+    }
+
+    [Fact]
+    public async Task OnlyIncompleteReadsSeveralTimesInARowShowAsAProblem()
+    {
+        using var rig = new Rig();
+        Many(rig, 1, 150);
+        await rig.Model.RefreshAsync(default);
+        var next = 151;
+        rig.Seerr.BeforePage = skip =>
+        {
+            if (skip == 100) rig.Seerr.Requests.Add(FakeSeerr.Request(next++, "movie", 5000 + next, 1, rig.Emma, T0.AddDays(1)));
+        };
+        for (var i = 0; i < 2; i++)
+        {
+            Touch(rig, 3 + i);
+            Assert.False(await rig.Model.RefreshAsync(default));
+            Assert.Null(rig.Model.State.LastError);
+        }
+        Touch(rig, 9);
+        Assert.False(await rig.Model.RefreshAsync(default));
+        Assert.Contains("kept changing", rig.Model.State.LastError);
+        rig.Seerr.BeforePage = null;
+        Touch(rig, 10);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Null(rig.Model.State.LastError);
+        Assert.Equal(153, rig.Model.All.Count);
+    }
+
+    [Fact]
+    public async Task MoreRequestsThanAreReadKeepTheOlderOnesAndSaySo()
+    {
+        using var rig = new Rig();
+        Many(rig, 1, SeerrRequestReadModel.MaxRequests - 1);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.False(rig.Model.State.Truncated);
+        // Six more: Seerr holds more than are read; the newest are read and the oldest are kept as
+        // they were (their absence from the window says nothing).
+        Many(rig, SeerrRequestReadModel.MaxRequests, SeerrRequestReadModel.MaxRequests + 5);
+        rig.Now = rig.Now.AddMinutes(1);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Equal(SeerrRequestReadModel.MaxRequests + 5, rig.Model.All.Count);
+        Assert.Contains(rig.Model.All, r => r.Id == 1);
+        Assert.True(rig.Model.State.Truncated);
+        Assert.Equal(SeerrRequestReadModel.MaxRequests + 5, rig.Model.State.ReportedTotal);
+        Assert.Equal(SeerrRequestReadModel.MaxRequests, rig.Model.State.ReadLimit);
+        Assert.False(rig.Model.RequestedLately(Key("movie:tmdb:1001")) && !rig.Model.Requested(Key("movie:tmdb:1001")));
+    }
+
+    [Fact]
+    public async Task OlderRequestsNoLongerKeptBelowTheReadWindowAreUnknownNotGone()
+    {
+        using var rig = new Rig();
+        rig.Model.HeldBelowWindow = 10;
+        const int max = SeerrRequestReadModel.MaxRequests;
+        Many(rig, 1, max);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Null(rig.Model.Current.Floor);
+        // Five more: the window is 6..max+5 and 1..5 are kept below it (the list held was complete).
+        Many(rig, max + 1, max + 5);
+        rig.Now = rig.Now.AddMinutes(1);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Equal(max + 5, rig.Model.All.Count);
+        Assert.Null(rig.Model.Current.Floor);
+        // Twenty more: 1..25 are below the window, only the newest 10 of them (16..25) are kept. The
+        // ones dropped still exist in Seerr: unknown from now on (below the floor), never taken for gone.
+        Many(rig, max + 6, max + 25);
+        rig.Now = rig.Now.AddMinutes(1);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Equal(16, rig.Model.Current.Floor);
+        Assert.Equal(max + 10, rig.Model.All.Count);
+        Assert.DoesNotContain(rig.Model.All, r => r.Id == 15);
+        Assert.Contains(rig.Model.All, r => r.Id == 16);
+        for (var id = 1; id <= 15; id++) Assert.False(rig.Model.RequestedLately(Key("movie:tmdb:" + (1000 + id))), "request " + id + " taken for gone");
+        // A later read keeps the floor (nothing below it is known).
+        Many(rig, max + 26, max + 26);
+        rig.Now = rig.Now.AddMinutes(1);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Equal(17, rig.Model.Current.Floor);
+        Assert.False(rig.Model.RequestedLately(Key("movie:tmdb:1016")));
+        // Seerr shrinks below the cap: the list is complete again and covers everything.
+        rig.Seerr.Requests.RemoveAll(r => (int)r["id"]! > 100);
+        rig.Now = rig.Now.AddMinutes(1);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Null(rig.Model.Current.Floor);
+        Assert.Equal(100, rig.Model.All.Count);
+    }
+
+    [Fact]
+    public async Task AListServedInSmallerPagesThanAskedStillLoadsWhole()
+    {
+        // A proxy or fork caps pages at 50 rows: the read advances by the rows each page holds and
+        // is not cut off by a page count that assumes full pages.
+        using var rig = new Rig();
+        rig.Seerr.PageCap = 50;
+        Many(rig, 1, 2500);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Null(rig.Model.State.IncompleteReason);
+        Assert.Null(rig.Model.State.LastError);
+        Assert.Equal(2500, rig.Model.All.Count);
+        Assert.False(rig.Model.State.Truncated);
+        Assert.Equal(50, rig.Seerr.CallCount("sort=added"));
+
+        // More than are read, in pages of 50: the newest MaxRequests load and the list says so.
+        Many(rig, 2501, SeerrRequestReadModel.MaxRequests + 5);
+        rig.Now = rig.Now.AddMinutes(1);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Null(rig.Model.State.IncompleteReason);
+        Assert.True(rig.Model.State.Truncated);
+    }
+
+    [Fact]
+    public async Task AFirstReadOfMoreRequestsThanAreReadKnowsOnlyTheWindow()
+    {
+        // After a restart nothing older is held: what lies below the window is unknown.
+        using var rig = new Rig();
+        Many(rig, 1, SeerrRequestReadModel.MaxRequests + 5);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Equal(SeerrRequestReadModel.MaxRequests, rig.Model.All.Count);
+        Assert.Equal(6, rig.Model.Current.Floor);
+        Assert.True(rig.Model.State.Truncated);
+    }
+
+    [Fact]
+    public async Task ACompleteEmptyListIsAListWithNothingInIt()
+    {
+        using var rig = new Rig();
+        rig.Seerr.Requests.Add(FakeSeerr.Request(1, "movie", 5, 1, rig.Emma, T0));
+        await rig.Model.RefreshAsync(default);
+        rig.Seerr.Requests.Clear();
+        rig.Now = rig.Now.AddMinutes(1);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Empty(rig.Model.All);
+        Assert.Null(rig.Model.State.IncompleteReason);
+        Assert.True(rig.Model.RequestedLately(Key("movie:tmdb:5")));
+    }
+
+    // ------------------------------------------------------------------ the Seerr's identity (C33)
+
+    [Fact]
+    public void TheSameSeerrIsTheSameSourceWhateverTheOrderOrSpellingOfItsAddressesAndNeverCarriesTheKey()
+    {
+        using var rig = new Rig();
+        PluginConfiguration With(string urls, string key) => new()
+        {
+            ArrIntegrationEnabled = true, ArrPhase1Enabled = true, JellyseerrEnabled = true, JellyseerrUrls = urls, JellyseerrApiKey = key,
+        };
+        var a = rig.Model.SourceOf(With("http://seerr.lan:5055\nhttp://10.0.0.5:5055", FakeSeerr.Key))!;
+        Assert.Equal(16, a.Length);
+        Assert.Equal(a, rig.Model.SourceOf(With("HTTP://10.0.0.5:5055/, http://Seerr.LAN:5055/", FakeSeerr.Key)));
+        Assert.Equal(a, rig.Model.SourceOf(With("http://seerr.lan:5055\nhttp://10.0.0.5:5055\nhttp://seerr.lan:5055", FakeSeerr.Key)));
+        Assert.NotEqual(a, rig.Model.SourceOf(With("http://seerr.lan:5055", FakeSeerr.Key)));
+        Assert.NotEqual(a, rig.Model.SourceOf(With("http://seerr.lan:5055\nhttp://10.0.0.5:5055", "ANOTHER-KEY-0123456789")));
+        Assert.DoesNotContain(FakeSeerr.Key[..8], a, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(rig.Model.SourceOf(With("http://seerr.lan:5055", string.Empty)));
+    }
+
+    [Fact]
+    public async Task PointingAtAnotherSeerrForgetsTheListAtOnceAndReadsTheNewOne()
+    {
+        using var rig = new Rig();
+        rig.Seerr.Requests.Add(FakeSeerr.Request(7, "movie", 5, 1, rig.Emma, T0));
+        await rig.Model.RefreshAsync(default);
+        var a = rig.Model.Source;
+        Assert.NotNull(a);
+        // Another server: before anything is read from it, A's request 7 is no fact about B's titles.
+        rig.Config.JellyseerrUrls = "http://seerr-b.lan:5055";
+        rig.Seerr.FailWith = 503;
+        Assert.True(rig.Model.Due());
+        Assert.Empty(rig.Model.All);
+        Assert.Null(rig.Model.Source);
+        Assert.False(rig.Model.Loaded);
+        Assert.False(await rig.Model.RefreshAsync(default));
+        Assert.Null(rig.Model.Source);
+        rig.Seerr.FailWith = 0;
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.NotEqual(a, rig.Model.Source);
+        Assert.Equal(rig.Model.SourceOf(rig.Config), rig.Model.Source);
+        // A new key on the same address is read again once, with the same facts.
+        var b = rig.Model.Source;
+        var full = rig.Seerr.CallCount("sort=added");
+        rig.Config.JellyseerrApiKey = "ROTATED-KEY-0123456789abcdef";
+        Assert.True(rig.Model.Due());
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Equal(full + 1, rig.Seerr.CallCount("sort=added"));
+        Assert.NotEqual(b, rig.Model.Source);
+        Assert.True(rig.Model.For(Key("movie:tmdb:5"), rig.Viewer(rig.Emma))!.Pending);
+        Assert.False(rig.Model.Due());
+    }
+
+    // ------------------------------------------------------------------ stopping (C46)
+
+    [Fact]
+    public async Task StoppingWaitsForTheReadInProgress()
+    {
+        using var rig = new Rig();
+        rig.Seerr.Requests.Add(FakeSeerr.Request(1, "movie", 5, 1, rig.Emma, T0));
+        var entered = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        rig.Seerr.Hold = async () =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+        };
+        await rig.Model.StartAsync(default);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        using var patience = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var stop = rig.Model.StopAsync(patience.Token);
+        await Task.Delay(300);
+        Assert.False(stop.IsCompleted);
+        release.SetResult();
+        await stop.WaitAsync(TimeSpan.FromSeconds(10));
+        rig.Seerr.Hold = null;
+        var calls = rig.Seerr.Calls.Count;
+        await Task.Delay(1500);
+        Assert.Equal(calls, rig.Seerr.Calls.Count);
     }
 
     private static bool Forwards(ServiceDescriptor descriptor, IServiceProvider probe)

@@ -103,7 +103,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             MediaStatus?.ToString(CultureInfo.InvariantCulture) ?? "-",
             UpdatedAt?.Ticks.ToString(CultureInfo.InvariantCulture) ?? "-",
             RequestedBy?.ToString("N") ?? "-",
-            Key?.ToString() ?? "-",
+            string.Join(",", TitleAliases.FromRequest(this)),
             Is4k ? "4k" : "std",
             string.Join(",", Seasons),
             RequestedByName ?? string.Empty,
@@ -153,6 +153,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Calls made to Seerr since start (all in the background).</summary>
         public long Calls { get; init; }
+
+        /// <summary>
+        /// Seerr holds more requests than are read (<see cref="SeerrRequestReadModel.MaxRequests"/>):
+        /// the newest are read, older ones keep what was last known of them.
+        /// </summary>
+        public bool Truncated { get; init; }
+
+        /// <summary>How many requests Seerr said it holds at the last complete read.</summary>
+        public int? ReportedTotal { get; init; }
+
+        /// <summary>Most requests read (<see cref="SeerrRequestReadModel.MaxRequests"/>).</summary>
+        public int ReadLimit { get; init; } = SeerrRequestReadModel.MaxRequests;
+
+        /// <summary>
+        /// Why the latest full read was not used (Seerr's list changed while it was read, a page came
+        /// back short), or null; the list held is the last complete one.
+        /// </summary>
+        public string? IncompleteReason { get; init; }
     }
 
     /// <summary>
@@ -166,7 +184,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     /// Requests page open), and about a second after Jellyfin Enhanced itself sends Seerr a request
     /// change. A refresh first reads the 20 most recently changed requests and the total; the full
     /// list (paged, capped) is read only when those differ from the last full read or that read is
-    /// over 30 minutes old.
+    /// over 30 minutes old. A full read is used only when it is complete: Seerr's count stays the
+    /// same on every page, the ids come newest first with no repeats, and as many arrive as Seerr
+    /// says it holds (up to the cap). A read that isn't (requests added or removed while the pages
+    /// were read) changes nothing (no request is taken as gone because of it) and is tried again; only
+    /// several in a row show as a problem. The list carries the identity of the Seerr it came from
+    /// (<see cref="Source"/>): pointing Jellyfin Enhanced at another Seerr forgets the old list at
+    /// once, so another server's request ids are never taken for the old one's.
     /// </summary>
     public sealed class SeerrRequestReadModel : IArrRequestFacts, IHostedService, IDisposable
     {
@@ -190,6 +214,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private const int MaxGone = 10_000;
         private static readonly TimeSpan FailureRetry = TimeSpan.FromSeconds(60);
         private static readonly TimeSpan MetaFreshFor = TimeSpan.FromHours(24);
+        private const int IncompleteBeforeError = 3;
+        // Every page that doesn't end the read adds at least one new (lower) id, so a read can't
+        // take more pages than requests read plus the empty last one, whatever rows a page holds.
+        private const int MaxPages = MaxRequests + 1;
+
+        /// <summary>
+        /// Most older requests (below the newest <see cref="MaxRequests"/> read) kept from earlier
+        /// reads while Seerr holds more than is read. Those beyond it are no longer known: not gone.
+        /// </summary>
+        internal const int MaxHeldBelowWindow = 3 * MaxRequests;
 
         private readonly IHttpClientFactory _http;
         private readonly ArrChangeFeed? _feed;
@@ -214,7 +248,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private DateTimeOffset? _requestedAt;
         private DateTimeOffset? _watchedAt;
         private bool _wasActive;
+        private int _incompleteRuns;
+        private string? _incompleteReason;
+        private bool _truncated;
+        private int? _reportedTotal;
+        // The Seerr the held list came from (null before a read), and the last identity worked out.
+        private string? _source;
+        private volatile SourceCache? _sourceCache;
         private CancellationTokenSource? _loop;
+        private Task? _loopTask;
 
         /// <summary>The read model for a Jellyfin installation (DI).</summary>
         public SeerrRequestReadModel(IHttpClientFactory httpClientFactory, ArrChangeFeed feed, Logger logger)
@@ -235,6 +277,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <inheritdoc />
         public long Revision => Interlocked.Read(ref _revision);
 
+        /// <summary>Most older requests kept below the newest read (<see cref="MaxHeldBelowWindow"/>; tests lower it).</summary>
+        internal int HeldBelowWindow { get; set; } = MaxHeldBelowWindow;
+
         /// <summary>Phase 1 is on and Seerr is configured (URL and key).</summary>
         public bool Active => IsActive(_config());
 
@@ -252,6 +297,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         LastError = _lastError,
                         Requests = _snapshot.All.Count,
                         Calls = Interlocked.Read(ref _calls),
+                        Truncated = _truncated,
+                        ReportedTotal = _reportedTotal,
+                        IncompleteReason = _incompleteReason,
                     };
                 }
             }
@@ -273,6 +321,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Every request held, newest first.</summary>
         public IReadOnlyList<SeerrRequestRecord> All => _snapshot.All;
+
+        /// <summary>
+        /// The identity of the Seerr the held requests came from (a short keyed hash of its addresses
+        /// and API key; never the key), or null before the first read. Request ids mean something
+        /// only together with it.
+        /// </summary>
+        public string? Source => _snapshot.Source;
+
+        /// <summary>
+        /// The held requests together with the identity of the Seerr they came from and the lowest
+        /// request id they cover (one snapshot). <c>Floor</c> is null when every request Seerr holds is
+        /// known; otherwise (Seerr holds more than is read) a request with a lower id that isn't held
+        /// is not known, which says nothing about whether it still exists.
+        /// </summary>
+        public (string? Source, IReadOnlyList<SeerrRequestRecord> All, int? Floor) Current
+        {
+            get
+            {
+                var snapshot = _snapshot;
+                return (snapshot.Source, snapshot.All, snapshot.Floor);
+            }
+        }
+
+        /// <summary>
+        /// The identity of the Seerr a configuration points at: a keyed hash (HMAC-SHA-256 with the
+        /// API key) of its addresses, normalised, sorted and without repeats, so listing them in
+        /// another order or failing over between them is the same Seerr, while another address or
+        /// another key is another one. Null while Seerr isn't configured.
+        /// </summary>
+        internal string? SourceOf(PluginConfiguration? config)
+        {
+            if (!IsActive(config)) return null;
+            var urls = Urls(config!).Select(NormaliseUrl).Distinct(StringComparer.Ordinal).OrderBy(u => u, StringComparer.Ordinal).ToList();
+            var key = config!.GetJellyseerrApiKey();
+            var input = string.Join("\n", urls) + "\n" + key;
+            var cached = _sourceCache;
+            if (cached != null && cached.Input == input) return cached.Id;
+            using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(key));
+            var id = Convert.ToHexString(hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(string.Join("\n", urls))), 0, 8).ToLowerInvariant();
+            _sourceCache = new SourceCache(input, id);
+            return id;
+        }
+
+        // The last identity worked out and what it was worked out from (one reference, read and replaced whole).
+        private sealed record SourceCache(string Input, string Id);
+
+        private static List<string> Urls(PluginConfiguration config)
+            => config.JellyseerrUrls.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(u => u.Trim().TrimEnd('/'))
+                .Where(u => u.Length > 0)
+                .ToList();
+
+        // One address as an identity: scheme and host in lower case, no default port, no trailing slash.
+        private static string NormaliseUrl(string url)
+            => Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.GetLeftPart(UriPartial.Path).TrimEnd('/') : url;
 
         /// <summary>The requests one Jellyfin user made (any state), newest first.</summary>
         public IReadOnlyList<SeerrRequestRecord> ForUser(Guid userId)
@@ -350,8 +453,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var now = _now();
             var until = now + GoneFor;
-            foreach (var (key, list) in before.ByKey)
+            foreach (var (key, all) in before.ByKey)
             {
+                // A request below what the new list covers is no longer known, not gone.
+                var list = after.Floor is int floor ? all.Where(r => r.Id >= floor).ToList() : all;
+                if (list.Count == 0) continue;
                 after.ByKey.TryGetValue(key, out var still);
                 if (still == null || still.Count == 0) _goneTitles[key] = until;
                 foreach (var user in list.Where(r => r.RequestedBy.HasValue).Select(r => r.RequestedBy!.Value).Distinct())
@@ -400,15 +506,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             _loop = new CancellationTokenSource();
             var token = _loop.Token;
-            _ = Task.Run(() => LoopAsync(token), CancellationToken.None);
+            _loopTask = Task.Run(() => LoopAsync(token), CancellationToken.None);
             return Task.CompletedTask;
         }
 
         /// <inheritdoc />
-        public Task StopAsync(CancellationToken cancellationToken)
+        /// <remarks>Waits for a read in progress to end (it is cancelled), or until Jellyfin stops waiting.</remarks>
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
-            _loop?.Cancel();
-            return Task.CompletedTask;
+            try
+            {
+                _loop?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            if (_loopTask is not { } loop) return;
+            try
+            {
+                await loop.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Jellyfin stopped waiting.
+            }
         }
 
         /// <inheritdoc />
@@ -463,6 +584,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (_wasActive) Clear();
                 return false;
             }
+            // Pointed at another Seerr: the list held (and its request ids) belong to the old one.
+            var source = SourceOf(config);
+            string? held;
+            lock (_lock) held = _source;
+            if (held != null && held != source)
+            {
+                _logger?.Info("[Requests] The Seerr settings point at another server: its requests are read afresh.");
+                Clear();
+                return true;
+            }
             lock (_lock)
             {
                 if (!_wasActive || _lastAttempt == null) return true;
@@ -503,6 +634,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 _lastRead = null;
                 _lastError = null;
                 _requestedAt = null;
+                _source = null;
+                _incompleteRuns = 0;
+                _incompleteReason = null;
+                _truncated = false;
+                _reportedTotal = null;
             }
             if (old.All.Count > 0)
             {
@@ -515,7 +651,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// Reads Seerr now: the most recently changed requests, then (when they or the total differ,
         /// or the last full read is old) every request, then details of titles not seen before.
-        /// Announces what changed. Returns false when Seerr could not be read (the last good list stays).
+        /// Announces what changed. Returns false when Seerr could not be read, or its list changed
+        /// while it was read (the last good list stays).
         /// </summary>
         public async Task<bool> RefreshAsync(CancellationToken cancellationToken)
         {
@@ -524,6 +661,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                var source = SourceOf(config)!;
+                string? held;
+                lock (_lock) held = _source;
+                // Another Seerr than the one the held list came from: forget it first.
+                if (held != null && held != source) Clear();
                 var now = _now();
                 bool loadedBefore, failedBefore;
                 lock (_lock)
@@ -534,25 +676,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     loadedBefore = _lastRead != null;
                     failedBefore = _lastError != null;
                 }
-                var urls = config!.JellyseerrUrls.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(u => u.Trim().TrimEnd('/'))
-                    .Where(u => u.Length > 0)
-                    .ToList();
-                var key = config.GetJellyseerrApiKey();
+                var key = config!.GetJellyseerrApiKey();
                 string? lastError = null;
-                foreach (var url in urls)
+                foreach (var url in Urls(config))
                 {
-                    var (ok, error) = await ReadFromAsync(url, key, cancellationToken).ConfigureAwait(false);
-                    if (ok)
+                    var (outcome, error) = await ReadFromAsync(url, key, source, cancellationToken).ConfigureAwait(false);
+                    if (outcome == ReadOutcome.Ok)
                     {
                         lock (_lock)
                         {
                             _lastRead = _now();
                             _lastError = null;
                             _lastAttemptFailed = false;
+                            _incompleteRuns = 0;
+                            _incompleteReason = null;
                         }
                         AnnounceState(loadedBefore, failedBefore, loaded: true, failed: false);
                         return true;
+                    }
+                    if (outcome == ReadOutcome.Abandoned)
+                    {
+                        // The Seerr settings changed during the read: read again at once (from the new one).
+                        lock (_lock) _requestedAt = _now() - RequestedDelay;
+                        return false;
+                    }
+                    if (outcome == ReadOutcome.Incomplete)
+                    {
+                        // Seerr answered, but its list moved under the pages: nothing is taken from this
+                        // read and it is tried again soon; only several in a row are a problem to show.
+                        bool failed;
+                        lock (_lock)
+                        {
+                            _incompleteRuns++;
+                            _incompleteReason = error;
+                            _lastAttemptFailed = true;
+                            failed = _incompleteRuns >= IncompleteBeforeError;
+                            if (failed) _lastError = "Seerr's request list kept changing while it was read: " + error;
+                        }
+                        if (failed)
+                        {
+                            AnnounceState(loadedBefore, failedBefore, loaded: loadedBefore, failed: true);
+                            _logger?.Warning($"[Requests] Seerr's request list could not be read completely ({error}).");
+                        }
+                        return false;
                     }
                     lastError = error;
                 }
@@ -571,58 +737,193 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
         }
 
-        private async Task<(bool Ok, string? Error)> ReadFromAsync(string url, string apiKey, CancellationToken ct)
+        private enum ReadOutcome
+        {
+            Ok,
+            Failed,
+            Incomplete,
+            Abandoned,
+        }
+
+        private async Task<(ReadOutcome Outcome, string? Error)> ReadFromAsync(string url, string apiKey, string source, CancellationToken ct)
         {
             var probe = await GetJsonAsync($"{url}/api/v1/request?take={ProbeSize}&skip=0&sort=modified&filter=all", apiKey, ct).ConfigureAwait(false);
-            if (probe.Error != null) return (false, probe.Error);
+            if (probe.Error != null) return (ReadOutcome.Failed, probe.Error);
             var probeSignature = ProbeSignature(probe.Json!.Value);
-            List<SeerrRequestRecord>? records = null;
+            FullRead? read = null;
             bool full;
             lock (_lock)
             {
-                full = probeSignature != _probeSignature || _lastFullRead == null || _now() - _lastFullRead.Value >= FullReadAtLeast;
+                full = probeSignature != _probeSignature || _lastFullRead == null || _now() - _lastFullRead.Value >= FullReadAtLeast || _source != source;
             }
             if (full)
             {
-                records = new List<SeerrRequestRecord>();
-                for (var skip = 0; skip < MaxRequests; skip += PageSize)
-                {
-                    var page = await GetJsonAsync($"{url}/api/v1/request?take={PageSize}&skip={skip}&sort=added&filter=all", apiKey, ct).ConfigureAwait(false);
-                    if (page.Error != null) return (false, page.Error);
-                    var results = page.Json!.Value.TryGetProperty("results", out var r) && r.ValueKind == JsonValueKind.Array ? r : default;
-                    var count = 0;
-                    if (results.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var item in results.EnumerateArray())
-                        {
-                            count++;
-                            if (Parse(item) is { } record) records.Add(record);
-                        }
-                    }
-                    if (count < PageSize || records.Count >= MaxRequests) break;
-                }
+                read = await ReadAllAsync(url, apiKey, ct).ConfigureAwait(false);
+                if (read.Error != null) return (ReadOutcome.Failed, read.Error);
+                if (read.Incomplete != null) return (ReadOutcome.Incomplete, read.Incomplete);
             }
 
+            var held = _snapshot;
             var metaChanged = new List<(bool, int)>();
-            var current = records ?? _snapshot.All.ToList();
+            List<SeerrRequestRecord> current;
+            int? floor = null;
+            if (read == null)
+            {
+                current = held.All.ToList();
+                floor = held.Floor;
+            }
+            else
+            {
+                current = read.Records;
+                if (read.Truncated && read.LowestId is int lowest)
+                {
+                    // Seerr holds more than is read: the older requests keep what was last known of
+                    // them (their absence from the window says nothing about them). What isn't held
+                    // below the window (none known yet, or more than are kept) is unknown, not gone.
+                    floor = lowest;
+                    if (held.Source == source)
+                    {
+                        // The held list covered everything from its own floor up (all of it when null;
+                        // request ids only grow, so nothing new appears below a complete list).
+                        var below = held.All.Where(r => r.Id < lowest).OrderByDescending(r => r.Id).ToList();
+                        floor = held.Floor is int f ? Math.Min(f, lowest) : null;
+                        var keep = Math.Max(1, HeldBelowWindow);
+                        if (below.Count > keep)
+                        {
+                            below.RemoveRange(keep, below.Count - keep);
+                            floor = below[^1].Id;
+                        }
+                        current.AddRange(below);
+                    }
+                }
+            }
             await ReadMetaAsync(url, apiKey, current, metaChanged, ct).ConfigureAwait(false);
-            if (records == null && metaChanged.Count == 0) return (true, null);
+            if (SourceOf(_config()) != source) return (ReadOutcome.Abandoned, null);
+            if (read == null && metaChanged.Count == 0) return (ReadOutcome.Ok, null);
 
-            var next = Snapshot.Build(current.Select(WithMetaIds));
+            var next = Snapshot.Build(current.Select(WithMetaIds), source, floor);
             Snapshot old;
             lock (_lock)
             {
                 old = _snapshot;
-                RememberGone(old, next);
+                // A list from another Seerr replaces the old one silently (Clear announced the old one going).
+                var sameSource = old.Source == null || old.Source == source;
+                if (sameSource) RememberGone(old, next);
                 _snapshot = next;
-                if (full)
+                _source = source;
+                // Loaded from the moment the list is there: the change-feed announcement below wakes
+                // readers that check it.
+                _lastRead = _now();
+                if (read != null)
                 {
                     _probeSignature = probeSignature;
                     _lastFullRead = _now();
+                    _truncated = read.Truncated;
+                    _reportedTotal = read.Total;
                 }
             }
-            if (Announce(old, next, metaChanged) || old.All.Count != next.All.Count) Interlocked.Increment(ref _revision);
-            return (true, null);
+            // Another Seerr's list is another list even when both are empty (or the same size): the
+            // notification scan must see it to note the new server.
+            if (Announce(old, next, metaChanged) || old.All.Count != next.All.Count || old.Source != next.Source) Interlocked.Increment(ref _revision);
+            return (ReadOutcome.Ok, null);
+        }
+
+        /// <summary>A full read of Seerr's request list: the requests, or why it failed or isn't complete.</summary>
+        private sealed class FullRead
+        {
+            public List<SeerrRequestRecord> Records { get; } = new();
+
+            /// <summary>Seerr's count (pageInfo.results), the same on every page.</summary>
+            public int Total { get; set; }
+
+            /// <summary>Seerr holds more than <see cref="MaxRequests"/>: only the newest were read.</summary>
+            public bool Truncated { get; set; }
+
+            /// <summary>The oldest (lowest) request id read.</summary>
+            public int? LowestId { get; set; }
+
+            /// <summary>Seerr could not be read (connection, status, body).</summary>
+            public string? Error { get; set; }
+
+            /// <summary>Seerr answered, but the pages don't make one complete list.</summary>
+            public string? Incomplete { get; set; }
+        }
+
+        /// <summary>
+        /// Reads every request page by page (newest first, by id), advancing by the rows each page
+        /// actually holds. Complete only when Seerr's count is the same on every page, the ids keep
+        /// falling with no repeats, and as many distinct requests arrive as Seerr says it holds (or
+        /// <see cref="MaxRequests"/> of them). A request added while the pages are read pushes a row
+        /// already read onto the next page (a repeat); one removed changes the count.
+        /// </summary>
+        private async Task<FullRead> ReadAllAsync(string url, string apiKey, CancellationToken ct)
+        {
+            var read = new FullRead();
+            var ids = new HashSet<int>();
+            int? total = null;
+            int? previous = null;
+            var skip = 0;
+            for (var pageNumber = 0; pageNumber < MaxPages; pageNumber++)
+            {
+                var page = await GetJsonAsync($"{url}/api/v1/request?take={PageSize}&skip={skip}&sort=added&filter=all", apiKey, ct).ConfigureAwait(false);
+                if (page.Error != null)
+                {
+                    read.Error = page.Error;
+                    return read;
+                }
+                var json = page.Json!.Value;
+                var reported = json.TryGetProperty("pageInfo", out var info) && info.ValueKind == JsonValueKind.Object ? Int(info, "results") : null;
+                if (reported is not >= 0)
+                {
+                    read.Incomplete = "Seerr did not say how many requests it holds.";
+                    return read;
+                }
+                if (total != null && reported != total)
+                {
+                    read.Incomplete = "The number of requests changed while they were read.";
+                    return read;
+                }
+                total = reported;
+                var wanted = Math.Min(total.Value, MaxRequests);
+                var rows = json.TryGetProperty("results", out var r) && r.ValueKind == JsonValueKind.Array ? r : default;
+                var count = 0;
+                if (rows.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in rows.EnumerateArray())
+                    {
+                        if (ids.Count >= wanted) break;
+                        count++;
+                        if (Int(item, "id") is not int id)
+                        {
+                            read.Incomplete = "A request came without an id.";
+                            return read;
+                        }
+                        if (previous is int last && id >= last)
+                        {
+                            read.Incomplete = ids.Contains(id) ? "A request was listed twice (one was added while the pages were read)." : "The requests did not come newest first.";
+                            return read;
+                        }
+                        previous = id;
+                        ids.Add(id);
+                        if (Parse(item) is { } record) read.Records.Add(record);
+                    }
+                }
+                skip += count;
+                if (ids.Count >= wanted)
+                {
+                    read.Total = total.Value;
+                    read.Truncated = total.Value > MaxRequests;
+                    read.LowestId = previous;
+                    return read;
+                }
+                if (count == 0)
+                {
+                    read.Incomplete = "The list ended before every request was read (some were removed while the pages were read).";
+                    return read;
+                }
+            }
+            read.Incomplete = "The list did not end within the page limit.";
+            return read;
         }
 
         // A series request whose media lacks a TVDB id gets the one Seerr's details name.
@@ -848,9 +1149,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private sealed class Snapshot
         {
-            public static readonly Snapshot Empty = Build(Array.Empty<SeerrRequestRecord>());
+            public static readonly Snapshot Empty = Build(Array.Empty<SeerrRequestRecord>(), null, null);
 
             public IReadOnlyList<SeerrRequestRecord> All { get; private init; } = Array.Empty<SeerrRequestRecord>();
+
+            /// <summary>The Seerr the requests came from (<see cref="SeerrRequestReadModel.SourceOf"/>), or null when empty.</summary>
+            public string? Source { get; private init; }
+
+            /// <summary>
+            /// The lowest request id covered, or null when every request Seerr holds is: a request
+            /// below it that isn't held is not known (Seerr holds more than is read).
+            /// </summary>
+            public int? Floor { get; private init; }
 
             public Dictionary<int, SeerrRequestRecord> ById { get; } = new();
 
@@ -858,15 +1168,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             public Dictionary<Guid, List<SeerrRequestRecord>> ByUser { get; } = new();
 
-            public static Snapshot Build(IEnumerable<SeerrRequestRecord> records)
+            public static Snapshot Build(IEnumerable<SeerrRequestRecord> records, string? source, int? floor)
             {
                 var all = records.GroupBy(r => r.Id).Select(g => g.First())
                     .OrderByDescending(r => r.CreatedAt ?? DateTime.MinValue).ThenByDescending(r => r.Id).ToList();
-                var snapshot = new Snapshot { All = all };
+                var snapshot = new Snapshot { All = all, Source = source, Floor = floor };
                 foreach (var r in all)
                 {
                     snapshot.ById[r.Id] = r;
-                    foreach (var key in KeysOf(r))
+                    foreach (var key in TitleAliases.FromRequest(r))
                     {
                         if (!snapshot.ByKey.TryGetValue(key, out var list)) snapshot.ByKey[key] = list = new List<SeerrRequestRecord>();
                         list.Add(r);
@@ -878,25 +1188,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     }
                 }
                 return snapshot;
-            }
-
-            // Every key the title may be asked about by: TMDB/IMDb for a movie, TVDB/TMDB/IMDb for a series.
-            private static IEnumerable<string> KeysOf(SeerrRequestRecord r)
-            {
-                var keys = new HashSet<string>(StringComparer.Ordinal);
-                string? Num(int? n) => n > 0 ? n.Value.ToString(CultureInfo.InvariantCulture) : null;
-                if (r.IsMovie)
-                {
-                    if (TitleKey.ForMovie(Num(r.TmdbId), null) is { } tmdb) keys.Add(tmdb.ToString());
-                    if (TitleKey.ForMovie(null, r.ImdbId) is { } imdb) keys.Add(imdb.ToString());
-                }
-                else
-                {
-                    if (TitleKey.ForSeries(Num(r.TvdbId), null, null) is { } tvdb) keys.Add(tvdb.ToString());
-                    if (TitleKey.ForSeries(null, Num(r.TmdbId), null) is { } tmdb) keys.Add(tmdb.ToString());
-                    if (TitleKey.ForSeries(null, null, r.ImdbId) is { } imdb) keys.Add(imdb.ToString());
-                }
-                return keys;
             }
         }
     }

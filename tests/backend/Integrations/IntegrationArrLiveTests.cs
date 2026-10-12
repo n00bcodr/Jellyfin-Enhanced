@@ -847,6 +847,81 @@ public class IntegrationArrLiveTests
     }
 
     [Fact]
+    public async Task AnItemAddedDuringABigScanStillHasItsLateIdsCountedWhenTheTrackerIsFull()
+    {
+        using var rig = new Rig();
+        await rig.LoadAsync(rig.RadarrConn, ArrSnapshotKind.Library);
+        var library = new Mock<ILibraryManager>();
+        var now = new DateTimeOffset(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
+        // The timer never flushes on its own: which caller drains the queue is the test's to decide.
+        var tracker = new ArrChangeTracker(rig.Store, rig.Feed, rig.Router, library.Object, null, () => rig.Arr.Plugin.Plugin.Configuration, () => now, Timeout.InfiniteTimeSpan);
+        await tracker.StartAsync(default);
+        try
+        {
+            void Add(BaseItem item) => library.Raise(l => l.ItemAdded += null, library.Object, new ItemChangeEventArgs { Item = item });
+            for (var i = 0; i < 4990; i++) Add(new Movie { Id = Guid.NewGuid() });
+            now = now.AddSeconds(1);
+            // Alpha arrives without its ids (read a moment later), then the scan goes on.
+            var alpha = new Movie { Id = Guid.NewGuid() };
+            Add(alpha);
+            now = now.AddSeconds(1);
+            for (var i = 0; i < 1000; i++) Add(new Movie { Id = Guid.NewGuid() });
+            Assert.True(tracker.RecentlyAdded.Count <= 5000);
+            tracker.FlushItems();
+            alpha.SetProviderId(MetadataProvider.Tmdb, "101");
+            var before = rig.Feed.Revision("movie:tmdb:101");
+            library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = alpha });
+            Assert.Equal(1, tracker.FlushItems());
+            Assert.True(rig.Feed.Revision("movie:tmdb:101") > before);
+            // Past the window its updates are no longer its arrival.
+            now = now.AddMinutes(11);
+            library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = alpha });
+            Assert.Equal(0, tracker.FlushItems());
+        }
+        finally
+        {
+            await tracker.StopAsync(default);
+            tracker.Dispose();
+        }
+    }
+
+    [Fact]
+    public void RecentArrivalsDropStaleEntriesFirstThenTheOldestTenthAndKeepTheirWindow()
+    {
+        var now = new DateTimeOffset(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
+        var arrivals = new RecentArrivals(TimeSpan.FromMinutes(10), 100, () => now);
+        var stale = Enumerable.Range(0, 30).Select(_ => Guid.NewGuid()).ToList();
+        foreach (var id in stale) arrivals.Add(id);
+        now = now.AddMinutes(11);
+        var old = Enumerable.Range(0, 70).Select(_ => Guid.NewGuid()).ToList();
+        foreach (var id in old) arrivals.Add(id);
+        Assert.Equal(100, arrivals.Count);
+        // Full: the 30 past their window go, nothing fresh.
+        var fresh = Guid.NewGuid();
+        now = now.AddSeconds(1);
+        arrivals.Add(fresh);
+        Assert.Equal(71, arrivals.Count);
+        Assert.All(old, id => Assert.True(arrivals.IsRecent(id)));
+        Assert.All(stale, id => Assert.False(arrivals.IsRecent(id)));
+        // Full of fresh entries: the oldest tenth goes, never the newest.
+        for (var i = 0; i < 29; i++) arrivals.Add(Guid.NewGuid());
+        now = now.AddSeconds(1);
+        var newest = Guid.NewGuid();
+        arrivals.Add(newest);
+        Assert.Equal(91, arrivals.Count);
+        Assert.True(arrivals.IsRecent(newest));
+        Assert.True(arrivals.IsRecent(fresh));
+        Assert.Equal(10, old.Count(id => !arrivals.IsRecent(id)));
+        // Past the window: an entry is no longer recent, and pruning removes what is left of them.
+        now = now.AddMinutes(10).AddSeconds(-1.5);
+        Assert.Equal(60, arrivals.Prune());
+        Assert.Equal(31, arrivals.Count);
+        Assert.All(old, id => Assert.False(arrivals.IsRecent(id)));
+        Assert.True(arrivals.IsRecent(newest));
+        Assert.True(arrivals.IsRecent(fresh));
+    }
+
+    [Fact]
     public async Task NewImportsInHistoryReReadTheirTitles()
     {
         using var rig = new Rig();

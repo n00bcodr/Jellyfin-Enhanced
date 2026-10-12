@@ -211,7 +211,16 @@ Under **Show where things have got to (status on pages)**:
 | **Read Seerr's requests every (minutes)** | 5 | How often Seerr's request list is read in the background (1-60); every 30 seconds while someone has the Requests page open, and about a second after a request is made, approved, declined or removed through Jellyfin Enhanced |
 
 Requests come from Seerr (Seerr tab), matched to Jellyfin users through Seerr's own user import; with Seerr off
-the Requests page says requests aren't set up, and statuses still work from Sonarr/Radarr alone. Seerr is read with
+the Requests page says requests aren't set up, and statuses still work from Sonarr/Radarr alone. A full read of
+Seerr's list is used only when it is complete (requests made or removed while its pages are read make it try again a
+minute later; only several such reads in a row show as a problem on the System tab), so a request is never taken for
+removed because the list moved. With more than 3000 requests the newest 3000 are read and older ones read since
+Jellyfin started keep what was last known of them (up to 9000 more); the System tab says so. Requests that aren't
+read are never taken for removed, but ones older than the newest 3000 when Jellyfin started aren't known (no
+"ready" alert comes from them); one that dropped out of what is read is not announced as new or declined if Seerr
+later shrinks and lists it again. A Seerr (or a proxy in front of it) that serves fewer requests per page than asked is still read to the end.
+Another Seerr address or API key counts as another Seerr: its request
+list is read afresh. Seerr is read with
 its API key in the background only: opening a page never calls Seerr, Sonarr or Radarr. **Search now** asks that
 Sonarr/Radarr to search for the movie, series, season or episode the page is about; each one is recorded in the
 arr action audit log (who, when, the outcome and how the search ended).

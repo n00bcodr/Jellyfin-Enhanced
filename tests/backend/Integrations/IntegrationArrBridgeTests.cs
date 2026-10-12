@@ -777,4 +777,80 @@ public class IntegrationArrBridgeTests
         Assert.Equal(("Dune", "/media/movies/Dune (2021)", "not_visible"), (dune.Title, dune.JellyfinPath, dune.Problem));
         Assert.Equal(1, titles.Counts[radarr.Id]);
     }
+
+    [Fact]
+    public async Task AQuickFollowUpThatEndedDoesNotFreeTheGuardOfTheNewerOneStillRunning()
+    {
+        // The first follow-up of a folder ends at once; the next one waits. The first caller looks at
+        // its work only after it ended and the next one started: it must not free the next one's
+        // guard, or a third would run beside it.
+        using var rig = new Rig();
+        var sonarr = rig.Instance("SonarrZ");
+        var gate = new TaskCompletionSource();
+        var waits = 0;
+        using var bridge = new JellyfinBridge(rig.Store, rig.Library, null, () => rig.Arr.Plugin.Plugin.Configuration, () => rig.Arr.Now, (_, ct) => Interlocked.Increment(ref waits) == 1 ? Task.CompletedTask : gate.Task.WaitAsync(ct));
+        const string folder = "/media/tv/Spaced (1999)";
+        var interleaved = false;
+        bridge.AfterStart = first =>
+        {
+            if (interleaved) return;
+            interleaved = true;
+            Assert.True(first.Wait(TimeSpan.FromSeconds(10)));
+            bridge.FollowUpNewFolder(sonarr, "/data/tv/Spaced (1999)/S01E01.mkv", folder);
+        };
+        bridge.FollowUpNewFolder(sonarr, "/data/tv/Spaced (1999)/S01E01.mkv", folder);
+        bridge.AfterStart = null;
+        await Until(() => Volatile.Read(ref waits) == 2);
+        Assert.Equal(1, bridge.WorkInFlight);
+        // The second is still running: a third is refused.
+        bridge.FollowUpNewFolder(sonarr, "/data/tv/Spaced (1999)/S01E02.mkv", folder);
+        await Task.Delay(200);
+        Assert.Equal(2, Volatile.Read(ref waits));
+        Assert.Equal(1, bridge.WorkInFlight);
+        gate.SetResult();
+        await Until(() => bridge.WorkInFlight == 0);
+        // Ended: the next one runs.
+        bridge.FollowUpNewFolder(sonarr, "/data/tv/Spaced (1999)/S01E03.mkv", folder);
+        await Until(() => Volatile.Read(ref waits) == 3);
+        Assert.Equal(3, Volatile.Read(ref waits));
+        // Stopped: refused, and its guard is freed (nothing runs to free it).
+        await bridge.StopAsync(default);
+        bridge.FollowUpNewFolder(sonarr, "/data/tv/Spaced (1999)/S01E04.mkv", folder);
+        Assert.Equal(0, bridge.FollowUpsHeld);
+    }
+
+    [Fact]
+    public async Task StoppingCancelsAndWaitsForTheRefreshInFlightAndQueuesNothingAfterwards()
+    {
+        using var rig = new Rig();
+        var sonarr = rig.Instance("SonarrZ");
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E4.mkv", indexed: false);
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E5.mkv", indexed: false);
+        var entered = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        rig.Library.DuringRefresh = async _ =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+        };
+        rig.Bridge.Enqueue(sonarr, "/data/tv/Firefly (2002)/Season 01/E4.mkv", 0);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(rig.Bridge.WorkInFlight > 0);
+        using var patience = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var stop = rig.Bridge.StopAsync(patience.Token);
+        await Task.Delay(300);
+        Assert.False(stop.IsCompleted);
+        release.SetResult();
+        await stop.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(rig.Bridge.Stopped);
+        // Nothing new after the stop: an import seen now is not queued.
+        rig.Library.DuringRefresh = null;
+        var refreshes = rig.Library.Refreshes.Count;
+        rig.Bridge.Enqueue(sonarr, "/data/tv/Firefly (2002)/Season 01/E5.mkv", 0);
+        await Task.Delay(300);
+        Assert.Equal(refreshes, rig.Library.Refreshes.Count);
+        Assert.Equal(0, rig.Bridge.WorkInFlight);
+        rig.Bridge.Dispose();
+        rig.Bridge.Dispose();
+    }
 }

@@ -300,8 +300,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly CancellationTokenSource _stop = new();
         private readonly List<Pending> _pending = new();
         private readonly LinkedList<BridgeRefresh> _recent = new();
+        // Background work in flight (debounced batches, history loads, refreshes, follow-ups): a stop waits for it.
+        private readonly HashSet<Task> _work = new();
         private bool _scheduled;
         private bool _subscribed;
+        private bool _stopped;
         private long _refreshes;
         private long _found;
         private (DateTimeOffset At, IReadOnlyList<BridgeMissing> Value)? _missing;
@@ -355,10 +358,96 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <inheritdoc />
-        public Task StopAsync(CancellationToken cancellationToken)
+        /// <remarks>
+        /// Stops following the arrs, cancels the work in flight (waiting batches, folder refreshes and
+        /// their follow-ups) and waits for it to end, or until Jellyfin stops waiting. Nothing new
+        /// starts afterwards.
+        /// </remarks>
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
             Unsubscribe();
-            return Task.CompletedTask;
+            Task[] work;
+            lock (_lock)
+            {
+                _stopped = true;
+                _pending.Clear();
+                work = _work.ToArray();
+            }
+            try
+            {
+                _stop.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // already disposed
+            }
+            try
+            {
+                await Task.WhenAll(work).WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Jellyfin stopped waiting, or the work ended cancelled or failed (each logs its own).
+            }
+        }
+
+        /// <summary>True once stopped: nothing new is queued or started (tests).</summary>
+        internal bool Stopped
+        {
+            get
+            {
+                lock (_lock) return _stopped;
+            }
+        }
+
+        /// <summary>Background work in flight (tests).</summary>
+        internal int WorkInFlight
+        {
+            get
+            {
+                lock (_lock) return _work.Count;
+            }
+        }
+
+        /// <summary>Folders with a follow-up guarded as running (tests).</summary>
+        internal int FollowUpsHeld
+        {
+            get
+            {
+                lock (_lock) return _followUps.Count;
+            }
+        }
+
+        /// <summary>Runs right after background work starts, before the caller goes on (tests interleave other calls there).</summary>
+        internal Action<Task>? AfterStart { get; set; }
+
+        // Starts background work that a stop waits for; after the stop, nothing starts (a completed task).
+        private Task Track(Func<Task> work) => TryTrack(work, out var task) ? task : Task.CompletedTask;
+
+        // Starts background work that a stop waits for; false (nothing started) once stopped. Only a
+        // refusal tells the caller the work won't run: a task already completed may simply have been quick.
+        private bool TryTrack(Func<Task> work, out Task task)
+        {
+            lock (_lock)
+            {
+                if (_stopped)
+                {
+                    task = Task.CompletedTask;
+                    return false;
+                }
+                using (ExecutionContext.SuppressFlow()) task = Task.Run(work);
+                _work.Add(task);
+            }
+            _ = task.ContinueWith(
+                t =>
+                {
+                    lock (_lock) _work.Remove(t);
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            AfterStart?.Invoke(task);
+            return true;
         }
 
         /// <summary>Starts following the store (tests call it directly).</summary>
@@ -386,6 +475,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public void Dispose()
         {
             Unsubscribe();
+            lock (_lock) _stopped = true;
             try
             {
                 _stop.Cancel();
@@ -435,28 +525,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 if (!_historyLoads.Add(instance.Id)) return;
             }
-            using (ExecutionContext.SuppressFlow())
+            var started = TryTrack(async () =>
             {
-                _ = Task.Run(async () =>
+                try
                 {
-                    try
-                    {
-                        await _store.GetHistoryAsync(instance, _stop.Token).ConfigureAwait(false);
-                    }
-                    catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
-                    {
-                        // shutting down
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.Warning($"Jellyfin bridge: reading {instance.Name}'s history failed ({ex.GetType().Name}).");
-                    }
-                    finally
-                    {
-                        lock (_lock) _historyLoads.Remove(instance.Id);
-                    }
-                });
-            }
+                    await _store.GetHistoryAsync(instance, _stop.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+                {
+                    // shutting down
+                }
+                catch (Exception ex)
+                {
+                    _logger?.Warning($"Jellyfin bridge: reading {instance.Name}'s history failed ({ex.GetType().Name}).");
+                }
+                finally
+                {
+                    lock (_lock) _historyLoads.Remove(instance.Id);
+                }
+            }, out _);
+            // Refused (stopped): the work that would have cleared the guard never runs. Work that ran
+            // clears it itself (a newer load may own it by now).
+            if (!started) lock (_lock) _historyLoads.Remove(instance.Id);
         }
 
         /// <summary>Queues a targeted refresh of one imported file (arr path) of an instance.</summary>
@@ -465,16 +555,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             bool schedule;
             lock (_lock)
             {
-                if (_pending.Count >= 500) return;
+                // Stopped: nothing new is queued.
+                if (_stopped || _pending.Count >= 500) return;
                 _pending.Add(new Pending(instance, arrPath, waits, replay));
                 schedule = !_scheduled;
                 _scheduled = true;
             }
             if (!schedule) return;
-            using (ExecutionContext.SuppressFlow())
-            {
-                _ = Task.Run(() => DrainLaterAsync(Debounce));
-            }
+            _ = Track(() => DrainLaterAsync(Debounce));
         }
 
         private async Task DrainLaterAsync(TimeSpan wait)
@@ -522,14 +610,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     }
                     lock (_lock) _pending.Add(p with { Waits = p.Waits + 1 });
                 }
+                bool schedule;
                 lock (_lock)
                 {
-                    if (!_scheduled)
-                    {
-                        _scheduled = true;
-                        using (ExecutionContext.SuppressFlow()) _ = Task.Run(() => DrainLaterAsync(ScanWait));
-                    }
+                    schedule = !_scheduled;
+                    _scheduled = true;
                 }
+                if (schedule) _ = Track(() => DrainLaterAsync(ScanWait));
                 return;
             }
 
@@ -645,38 +732,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// 12.2). Only that folder's item, never the library; nothing when it still isn't there. One
         /// follow-up per folder at a time, however many of its files were imported.
         /// </summary>
-        private void FollowUpNewFolder(ArrConnection instance, string arrPath, string folder)
+        internal void FollowUpNewFolder(ArrConnection instance, string arrPath, string folder)
         {
             lock (_lock)
             {
                 if (!_followUps.Add(folder)) return;
             }
-            using (ExecutionContext.SuppressFlow())
+            var started = TryTrack(async () =>
             {
-                _ = Task.Run(async () =>
+                try
                 {
-                    try
-                    {
-                        await _delay(NewFolderFollowUp, _stop.Token).ConfigureAwait(false);
-                        if (!RefreshEnabled || _library.FindByPath(folder) is not { IsFolder: true } item) return;
-                        var queued = _library.QueueItemRefresh(item.Id);
-                        Record(instance, arrPath, folder, folder, item.Kind, queued ? "new_folder_refresh" : "failed", true, 0, null);
-                        _logger?.Info($"Jellyfin bridge: asked Jellyfin to refresh the new folder {folder}.");
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // shutting down
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.Warning($"Jellyfin bridge: refreshing the new folder {folder} failed ({ex.GetType().Name}).");
-                    }
-                    finally
-                    {
-                        lock (_lock) _followUps.Remove(folder);
-                    }
-                });
-            }
+                    await _delay(NewFolderFollowUp, _stop.Token).ConfigureAwait(false);
+                    if (!RefreshEnabled || _library.FindByPath(folder) is not { IsFolder: true } item) return;
+                    var queued = _library.QueueItemRefresh(item.Id);
+                    Record(instance, arrPath, folder, folder, item.Kind, queued ? "new_folder_refresh" : "failed", true, 0, null);
+                    _logger?.Info($"Jellyfin bridge: asked Jellyfin to refresh the new folder {folder}.");
+                }
+                catch (OperationCanceledException)
+                {
+                    // shutting down
+                }
+                catch (Exception ex)
+                {
+                    _logger?.Warning($"Jellyfin bridge: refreshing the new folder {folder} failed ({ex.GetType().Name}).");
+                }
+                finally
+                {
+                    lock (_lock) _followUps.Remove(folder);
+                }
+            }, out _);
+            if (!started) lock (_lock) _followUps.Remove(folder);
         }
 
         /// <summary>
@@ -753,10 +838,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private void FollowThrough(Task refresh, Guid folderId, ArrConnection instance, string arrPath, string file, int levels, string outcome, bool manual)
         {
             if (levels <= 0) return;
-            using (ExecutionContext.SuppressFlow())
+            _ = Track(async () =>
             {
-                _ = refresh.ContinueWith(_ => FollowThroughAsync(folderId, instance, arrPath, file, levels, outcome, manual), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
-            }
+                try
+                {
+                    await refresh.ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // However it ended: the file is looked for again.
+                }
+                await FollowThroughAsync(folderId, instance, arrPath, file, levels, outcome, manual).ConfigureAwait(false);
+            });
         }
 
         private async Task FollowThroughAsync(Guid folderId, ArrConnection instance, string arrPath, string file, int levels, string outcome, bool manual)
@@ -824,10 +917,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
                 _running.TryGetValue(folderId, out var previous);
                 var queued = new QueuedRefresh(paths) { Manual = manual };
-                using (ExecutionContext.SuppressFlow())
-                {
-                    queued.Task = Task.Run(() => RefreshAfterAsync(previous, folderId, queued));
-                }
+                queued.Task = Track(() => RefreshAfterAsync(previous, folderId, queued));
 
                 var refresh = queued.Task;
                 _running[folderId] = refresh;

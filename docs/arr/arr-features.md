@@ -73,8 +73,9 @@ be checked right now. A failed read that isn't that old yet drops the time left 
 keeps what it showed with "Couldn't refresh · showing what we had at 14:05 · Retry" and tries again on its own.
 
 Copies are matched to Sonarr/Radarr by every id the title is known by (a series Jellyfin knows only by its TMDB
-id, a movie only by its IMDb id), and to the right instance by its linked libraries, its path mappings (the
-longest that applies) or its folder names; two instances whose folders end the same way (both rooted at
+id, a movie only by its IMDb id). Status and notifications share the same ids, following links between the
+arr libraries and the last complete Seerr request list. Copies are matched to the right instance by its linked
+libraries, its path mappings (the longest that applies) or its folder names; two instances whose folders end the same way (both rooted at
 /movies on different hosts) are never guessed between, so a 4K copy is never mistaken for the standard one.
 
 **Manage (administrators).** A **Manage** button on details pages, in Seerr's more-info window and on the Requests
@@ -187,9 +188,12 @@ Settings: [*arr Settings](arr-settings.md#notifications-phase-2).
   Jellyfin Enhanced only about the copy Seerr matched it to, never the standard copy); a request of yours **declined**. Following
   something that is already there tells you nothing; each thing is told once (once per Jellyfin item, whichever id it
   is known by), even across restarts, and told again if you ask for it again after it was removed; a title you can
-  no longer open by the time a batch goes out is left out. Phone alerts and e-mails held back by quiet hours or
-  retries are checked again as they go out (nothing about a title you can no longer open; the bell then shows such
-  an entry without its title), and a disabled account is told nothing.
+  no longer open by the time a batch goes out is left out (a series followed under two ids, even for different
+  seasons, is still one batch).
+  Phone alerts and e-mails held back by quiet hours or retries are checked again as they go out (nothing about a
+  title you can no longer open, nothing of a kind you switched off meanwhile, nothing on a channel switched off
+  meanwhile; the bell then shows such an entry without its title), and a disabled account is told nothing. When a
+  Jellyfin user is deleted, their follows, settings and inbox go with them.
 - **Where:** the **bell** in the header (unread count; the inbox with posters, "5 min ago", **Play** for what is
   ready, Mark all read, older items on demand); a **pop-up** on open pages within a couple of seconds (never while a
   video plays: you get one "N more notifications arrived" when it ends); and, if the administrator sets them up,
@@ -219,6 +223,9 @@ looked at again, without waiting for a library scan or for Jellyfin to finish re
 (`acquire.db`) in Jellyfin Enhanced's data folder, included in JE backups. Failed phone or e-mail deliveries are
 retried (30 s, 2 min, 10 min, 30 min, 2 h, 6 h) and then shown to administrators under **Notification status**; an
 e-mail server that doesn't answer is given up on after 30 seconds for that try, so other alerts aren't held up.
+Switching notifications off holds what is queued until they are back on; switching phone alerts or e-mail off (or a
+person switching theirs off) drops what was queued for that channel. Pointing Jellyfin Enhanced at another Seerr
+server starts its request list afresh: the requests already on it are not announced as new, approved or declined.
 
 ## ARR Links
 

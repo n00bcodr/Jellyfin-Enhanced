@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -23,12 +24,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
+        // Users deleted lately (their stored id) and until when (Environment.TickCount64): work already
+        // composed for one of them before the deletion (a round that checked them just before) must
+        // not bring their rows back, so every write removes theirs again in the same transaction.
+        private static readonly long DeletedForMs = (long)TimeSpan.FromMinutes(10).TotalMilliseconds;
+
         private readonly AcquireDatabase _db;
+        private readonly ConcurrentDictionary<string, long> _deleted = new(StringComparer.Ordinal);
 
         /// <summary>The store over the installation's database (DI).</summary>
         public NotifyStore(AcquireDatabase db)
         {
             _db = db;
+        }
+
+        // Every write of this store: the work, then (in the same transaction) the rows of users deleted lately.
+        private T Write<T>(Func<SqliteConnection, SqliteTransaction, T> write) => _db.Write((c, t) =>
+        {
+            var result = write(c, t);
+            RemoveDeleted(c, t);
+            return result;
+        });
+
+        private (bool Done, T Result) WriteIf<T>(long? generation, Func<SqliteConnection, SqliteTransaction, T> write, T otherwise) => _db.WriteIf(generation, (c, t) =>
+        {
+            var result = write(c, t);
+            RemoveDeleted(c, t);
+            return result;
+        }, otherwise);
+
+        private int RemoveDeleted(SqliteConnection c, SqliteTransaction t)
+        {
+            if (_deleted.IsEmpty) return 0;
+            var now = Environment.TickCount64;
+            var removed = 0;
+            foreach (var (user, until) in _deleted)
+            {
+                if (now > until)
+                {
+                    _deleted.TryRemove(user, out _);
+                    continue;
+                }
+                foreach (var table in UserTables) removed += Exec(c, t, $"DELETE FROM {table} WHERE user_id=$u", ("$u", user));
+            }
+            return removed;
         }
 
         /// <summary>The database.</summary>
@@ -49,7 +88,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         public string? Meta(string key) => _db.Read(c => Scalar(c, "SELECT value FROM meta WHERE key=$k", ("$k", key)) as string);
 
         /// <summary>Stores (or with null removes) a value.</summary>
-        public void SetMeta(string key, string? value) => _db.Write((c, t) =>
+        public void SetMeta(string key, string? value) => Write((c, t) =>
         {
             if (value == null) return Exec(c, t, "DELETE FROM meta WHERE key=$k", ("$k", key));
             return Exec(c, t, "INSERT INTO meta(key,value) VALUES($k,$v) ON CONFLICT(key) DO UPDATE SET value=excluded.value", ("$k", key), ("$v", value));
@@ -78,7 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         });
 
         /// <summary>Stores a user's preferences.</summary>
-        public void SavePrefs(Guid userId, NotifyPrefs prefs, DateTimeOffset now) => _db.Write((c, t) => Exec(
+        public void SavePrefs(Guid userId, NotifyPrefs prefs, DateTimeOffset now) => Write((c, t) => Exec(
             c, t,
             "INSERT INTO notify_prefs(user_id,json,updated_at) VALUES($u,$j,$n) ON CONFLICT(user_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
             ("$u", Id(userId)), ("$j", JsonSerializer.Serialize(prefs, Json)), ("$n", Ms(now))));
@@ -142,7 +181,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// Follows (<paramref name="muted"/> false) or mutes a title, or with <paramref name="remove"/>
         /// forgets the row. False when the user already has <see cref="MaxFollowsPerUser"/> rows.
         /// </summary>
-        public bool SetFollow(Guid userId, string key, string kind, bool muted, bool remove, DateTimeOffset now) => _db.Write((c, t) =>
+        public bool SetFollow(Guid userId, string key, string kind, bool muted, bool remove, DateTimeOffset now) => Write((c, t) =>
         {
             if (remove)
             {
@@ -184,7 +223,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         public void SetWatch(Guid userId, string key, string scope, string? stage, string? known, DateTimeOffset now) => InTransaction(tx => tx.SetWatch(userId, key, scope, stage, known, now));
 
         /// <summary>Forgets what a user was known to have of a title (every scope): the next interest starts afresh.</summary>
-        public void DeleteWatch(Guid userId, string key) => _db.Write((c, t) => Exec(c, t, "DELETE FROM watch WHERE user_id=$u AND key=$k", ("$u", Id(userId)), ("$k", key)));
+        public void DeleteWatch(Guid userId, string key) => Write((c, t) => Exec(c, t, "DELETE FROM watch WHERE user_id=$u AND key=$k", ("$u", Id(userId)), ("$k", key)));
 
         // ------------------------------------------------------------------ marks (idempotency)
 
@@ -206,7 +245,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         /// <summary>Records (or moves) a mark to now.</summary>
-        public void SetMark(Guid userId, string mark, DateTimeOffset now) => _db.Write((c, t) => Exec(
+        public void SetMark(Guid userId, string mark, DateTimeOffset now) => Write((c, t) => Exec(
             c, t, "INSERT INTO marks(user_id,mark,at) VALUES($u,$m,$n) ON CONFLICT(user_id,mark) DO UPDATE SET at=excluded.at", ("$u", Id(userId)), ("$m", mark), ("$n", Ms(now))));
 
         // ------------------------------------------------------------------ inbox + deliveries
@@ -222,10 +261,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// Runs <paramref name="work"/> in one write transaction: everything it changes commits
         /// together, or nothing does when it throws.
         /// </summary>
-        public T InTransaction<T>(Func<NotifyTransaction, T> work) => _db.Write((c, t) => work(new NotifyTransaction(c, t)));
+        public T InTransaction<T>(Func<NotifyTransaction, T> work) => Write((c, t) => work(new NotifyTransaction(c, t)));
 
         /// <summary>Runs <paramref name="work"/> in one write transaction.</summary>
-        public void InTransaction(Action<NotifyTransaction> work) => _db.Write((c, t) =>
+        public void InTransaction(Action<NotifyTransaction> work) => Write((c, t) =>
         {
             work(new NotifyTransaction(c, t));
             return 0;
@@ -237,7 +276,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// is dropped (Done false, <paramref name="otherwise"/>) instead of landing in the restored data.
         /// </summary>
         public (bool Done, T Result) InTransaction<T>(long? generation, Func<NotifyTransaction, T> work, T otherwise)
-            => _db.WriteIf(generation, (c, t) => work(new NotifyTransaction(c, t)), otherwise);
+            => WriteIf(generation, (c, t) => work(new NotifyTransaction(c, t)), otherwise);
 
         // The kinds only administrators receive, as a SQL list.
         private static readonly string AdminKinds = string.Join(",", NotifyKind.AdminKinds.Select(k => "'" + k + "'"));
@@ -263,7 +302,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         public int Unread(Guid userId, bool adminKinds = true) => Convert.ToInt32(_db.Read(c => Scalar(c, "SELECT COUNT(*) FROM notifications WHERE user_id=$u AND read_at IS NULL" + (adminKinds ? string.Empty : " AND kind NOT IN (" + AdminKinds + ")"), ("$u", Id(userId)))), CultureInfo.InvariantCulture);
 
         /// <summary>Marks some (or all) of a user's notifications read; returns how many changed.</summary>
-        public int MarkRead(Guid userId, IReadOnlyCollection<long>? ids, DateTimeOffset now) => _db.Write((c, t) =>
+        public int MarkRead(Guid userId, IReadOnlyCollection<long>? ids, DateTimeOffset now) => Write((c, t) =>
         {
             if (ids == null) return Exec(c, t, "UPDATE notifications SET read_at=$n WHERE user_id=$u AND read_at IS NULL", ("$u", Id(userId)), ("$n", Ms(now)));
             var changed = 0;
@@ -303,7 +342,7 @@ WHERE d.status='pending' AND d.next_at <= $n ORDER BY d.next_at LIMIT $l", ("$n"
         /// (both null). With <paramref name="generation"/>, nothing changes (false) when a restore
         /// replaced the database since the delivery was read: its id is another row now.
         /// </summary>
-        public bool Finish(long deliveryId, bool sent, string? error, DateTimeOffset? retryAt, DateTimeOffset now, long? generation = null) => _db.WriteIf(generation, (c, t) => Exec(
+        public bool Finish(long deliveryId, bool sent, string? error, DateTimeOffset? retryAt, DateTimeOffset now, long? generation = null) => WriteIf(generation, (c, t) => Exec(
             c, t,
             "UPDATE deliveries SET status=$s, attempts=attempts+1, last_error=$e, next_at=COALESCE($r,next_at), sent_at=$sent WHERE id=$id",
             ("$s", sent ? "sent" : retryAt.HasValue ? "pending" : "failed"),
@@ -318,11 +357,11 @@ WHERE d.status='pending' AND d.next_at <= $n ORDER BY d.next_at LIMIT $l", ("$n"
         /// open the title): final, never retried and not counted as a failure. Not after a restore,
         /// like <see cref="Finish"/>.
         /// </summary>
-        public bool Suppress(long deliveryId, string reason, long? generation = null) => _db.WriteIf(generation, (c, t) => Exec(
+        public bool Suppress(long deliveryId, string reason, long? generation = null) => WriteIf(generation, (c, t) => Exec(
             c, t, "UPDATE deliveries SET status='suppressed', last_error=$e WHERE id=$id AND status='pending'", ("$e", Trim(reason, 300)), ("$id", deliveryId)), 0).Done;
 
         /// <summary>Moves a pending delivery to another time (quiet hours) without counting an attempt (not after a restore, like <see cref="Finish"/>).</summary>
-        public bool Postpone(long deliveryId, DateTimeOffset at, long? generation = null) => _db.WriteIf(generation, (c, t) => Exec(c, t, "UPDATE deliveries SET next_at=$a WHERE id=$id AND status='pending'", ("$a", Ms(at)), ("$id", deliveryId)), 0).Done;
+        public bool Postpone(long deliveryId, DateTimeOffset at, long? generation = null) => WriteIf(generation, (c, t) => Exec(c, t, "UPDATE deliveries SET next_at=$a WHERE id=$id AND status='pending'", ("$a", Ms(at)), ("$id", deliveryId)), 0).Done;
 
         /// <summary>Delivery counts for administrators: pending, sent and failed in the last day, and the latest problems.</summary>
         public (int Pending, int Sent24h, int Failed24h, IReadOnlyList<(Guid User, string Channel, string Kind, int Attempts, string? Error, bool Final, DateTimeOffset At)> Problems) DeliveryStats(DateTimeOffset now) => _db.Read(c =>
@@ -385,15 +424,59 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
             return (IReadOnlyDictionary<int, int>)result;
         });
 
-        /// <summary>Records states seen and forgets requests that are gone.</summary>
-        public void SetSeerrSeen(IReadOnlyCollection<(int Id, int Status, Guid? User)> seen, IReadOnlyCollection<int> gone, DateTimeOffset now) => _db.Write((c, t) =>
+        /// <summary>
+        /// Records states seen (nobody's user id: it isn't needed to compare states) and forgets
+        /// requests that are gone. With <paramref name="floor"/> (Seerr holds more than is read and
+        /// nothing below it is held any more), what was seen of the requests below it is forgotten
+        /// too, since they can't be compared again while that lasts, and the floor is noted
+        /// (<see cref="SeerrForgottenBelowKey"/>): one of them seen again later is old, not new.
+        /// </summary>
+        public void SetSeerrSeen(IReadOnlyCollection<(int Id, int Status)> seen, IReadOnlyCollection<int> gone, DateTimeOffset now, int? floor = null) => Write((c, t) =>
         {
-            foreach (var (id, status, user) in seen)
+            foreach (var (id, status) in seen)
             {
-                Exec(c, t, "INSERT INTO seerr_seen(request_id,status,user_id,seen_at) VALUES($i,$s,$u,$n) ON CONFLICT(request_id) DO UPDATE SET status=excluded.status, user_id=excluded.user_id",
-                    ("$i", id), ("$s", status), ("$u", user.HasValue ? Id(user.Value) : null), ("$n", Ms(now)));
+                Exec(c, t, "INSERT INTO seerr_seen(request_id,status,user_id,seen_at) VALUES($i,$s,NULL,$n) ON CONFLICT(request_id) DO UPDATE SET status=excluded.status, user_id=NULL",
+                    ("$i", id), ("$s", status), ("$n", Ms(now)));
             }
             foreach (var id in gone) Exec(c, t, "DELETE FROM seerr_seen WHERE request_id=$i", ("$i", id));
+            if (floor is int f)
+            {
+                Exec(c, t, "DELETE FROM seerr_seen WHERE request_id < $f", ("$f", f));
+                var tx = new NotifyTransaction(c, t);
+                var before = int.TryParse(tx.Meta(SeerrForgottenBelowKey), NumberStyles.None, CultureInfo.InvariantCulture, out var b) ? b : 0;
+                if (f > before) tx.SetMeta(SeerrForgottenBelowKey, f.ToString(CultureInfo.InvariantCulture));
+            }
+            return 0;
+        });
+
+        /// <summary>The meta key holding the identity of the Seerr the seen states belong to.</summary>
+        internal const string SeerrSourceKey = "seerr_source";
+
+        /// <summary>
+        /// The meta key holding the highest request id below which what was seen was forgotten (they
+        /// fell below the requests read): a request below it that isn't known is old, never news.
+        /// </summary>
+        internal const string SeerrForgottenBelowKey = "seerr_forgotten_below";
+
+        /// <summary>
+        /// Starts the Seerr bookkeeping afresh in one transaction: forgets every state seen, records
+        /// <paramref name="seen"/> (what is there now, announced to nobody), moves the baseline (only
+        /// requests made after it count as new) to <paramref name="now"/> and notes the Seerr
+        /// (<paramref name="source"/>) they belong to. Used at the first look and when Seerr was
+        /// replaced by another server, whose request ids mean other requests.
+        /// </summary>
+        public void ResetSeerrSeen(IReadOnlyCollection<(int Id, int Status)> seen, DateTimeOffset now, string source) => Write((c, t) =>
+        {
+            Exec(c, t, "DELETE FROM seerr_seen");
+            foreach (var (id, status) in seen)
+            {
+                Exec(c, t, "INSERT OR REPLACE INTO seerr_seen(request_id,status,user_id,seen_at) VALUES($i,$s,NULL,$n)",
+                    ("$i", id), ("$s", status), ("$n", Ms(now)));
+            }
+            var tx = new NotifyTransaction(c, t);
+            tx.SetMeta("seerr_baseline", now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture));
+            tx.SetMeta(SeerrSourceKey, source);
+            tx.SetMeta(SeerrForgottenBelowKey, null);
             return 0;
         });
 
@@ -409,7 +492,7 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         });
 
         /// <summary>Stores a new code for a user.</summary>
-        public void SetEmailCode(Guid userId, string address, string codeHash, DateTimeOffset expires, DateTimeOffset now, int sentToday, string day) => _db.Write((c, t) => Exec(
+        public void SetEmailCode(Guid userId, string address, string codeHash, DateTimeOffset expires, DateTimeOffset now, int sentToday, string day) => Write((c, t) => Exec(
             c, t,
             "INSERT INTO email_codes(user_id,address,code_hash,expires_at,attempts,sent_at,sent_today,day) VALUES($u,$a,$h,$x,0,$n,$st,$d) ON CONFLICT(user_id) DO UPDATE SET address=excluded.address, code_hash=excluded.code_hash, expires_at=excluded.expires_at, attempts=0, sent_at=excluded.sent_at, sent_today=excluded.sent_today, day=excluded.day",
             ("$u", Id(userId)), ("$a", address), ("$h", codeHash), ("$x", Ms(expires)), ("$n", Ms(now)), ("$st", sentToday), ("$d", day)));
@@ -463,7 +546,7 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         });
 
         /// <summary>Ends a user's pending check (the code is used up): keeps the daily send count.</summary>
-        public void ClearEmailCode(Guid userId) => _db.Write((c, t) => Exec(c, t, "UPDATE email_codes SET code_hash='', expires_at=0 WHERE user_id=$u", ("$u", Id(userId))));
+        public void ClearEmailCode(Guid userId) => Write((c, t) => Exec(c, t, "UPDATE email_codes SET code_hash='', expires_at=0 WHERE user_id=$u", ("$u", Id(userId))));
 
         // ------------------------------------------------------------------ housekeeping
 
@@ -471,12 +554,14 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// Retention: notifications older than 90 days (their deliveries with them), marks older
         /// than 400 days, and everything of users that no longer exist.
         /// </summary>
-        public int Purge(DateTimeOffset now, Func<Guid, bool> userExists) => _db.Write((c, t) =>
+        public int Purge(DateTimeOffset now, Func<Guid, bool> userExists) => Write((c, t) =>
         {
             var removed = Exec(c, t, "DELETE FROM notifications WHERE created_at < $c", ("$c", Ms(now.AddDays(-90))));
             removed += Exec(c, t, "DELETE FROM marks WHERE at < $c", ("$c", Ms(now.AddDays(-400))));
+            // User ids earlier versions noted on the Seerr requests seen (never read, no longer written).
+            Exec(c, t, "UPDATE seerr_seen SET user_id=NULL WHERE user_id IS NOT NULL");
             var users = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var table in new[] { "follows", "notify_prefs", "watch", "notifications", "batches", "marks", "email_codes" })
+            foreach (var table in UserTables)
             {
                 using var cmd = Command(c, t, $"SELECT DISTINCT user_id FROM {table}");
                 using var r = cmd.ExecuteReader();
@@ -485,13 +570,46 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
             foreach (var user in users)
             {
                 if (Guid.TryParse(user, out var id) && userExists(id)) continue;
-                foreach (var table in new[] { "follows", "notify_prefs", "watch", "notifications", "batches", "marks", "email_codes" })
+                foreach (var table in UserTables)
                 {
                     removed += Exec(c, t, $"DELETE FROM {table} WHERE user_id=$u", ("$u", user));
                 }
             }
             return removed;
         });
+
+        /// <summary>
+        /// Removes everything kept for one user (follows, settings, watch states, inbox and its
+        /// deliveries, batches, marks, e-mail checks, their id on Seerr requests seen): a Jellyfin user
+        /// was deleted. Returns the rows removed.
+        /// For a while after, any write (a notification round that checked the user just before the
+        /// deletion) removes what it wrote for them in the same transaction.
+        /// </summary>
+        public int PurgeUser(Guid userId)
+        {
+            NoteDeleted(userId);
+            var id = Id(userId);
+            return _db.Write((c, t) =>
+            {
+                var removed = 0;
+                foreach (var table in UserTables)
+                {
+                    removed += Exec(c, t, $"DELETE FROM {table} WHERE user_id=$u", ("$u", id));
+                }
+                // Their id on the Seerr requests seen (written by earlier versions, never read; no
+                // longer written): the states stay, they tell what's new.
+                return removed + Exec(c, t, "UPDATE seerr_seen SET user_id=NULL WHERE user_id=$u", ("$u", id));
+            });
+        }
+
+        /// <summary>
+        /// Notes that a Jellyfin user was deleted, without touching the database: for a while, every
+        /// write removes what it wrote for them in the same transaction (a write already on its way
+        /// that creates the database must not keep their rows).
+        /// </summary>
+        public void NoteDeleted(Guid userId) => _deleted[Id(userId)] = Environment.TickCount64 + DeletedForMs;
+
+        private static readonly string[] UserTables = { "follows", "notify_prefs", "watch", "notifications", "batches", "marks", "email_codes" };
 
         // ------------------------------------------------------------------ SQL helpers
 
@@ -581,10 +699,20 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
             return (r.GetString(0), At(r.GetInt64(1)), At(r.GetInt64(2)));
         }
 
-        /// <summary>Stores a batch.</summary>
+        /// <summary>A user's open episode batches: their keys and what they hold.</summary>
+        public IReadOnlyList<(string Key, string Episodes)> Batches(Guid userId)
+        {
+            var result = new List<(string, string)>();
+            using var cmd = NotifyStore.Command(Connection, Transaction, "SELECT key, episodes FROM batches WHERE user_id=$u ORDER BY first_at, key", ("$u", Id(userId)));
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) result.Add((r.GetString(0), r.GetString(1)));
+            return result;
+        }
+
+        /// <summary>Stores a batch and its window.</summary>
         public void SetBatch(Guid userId, string key, string episodes, DateTimeOffset firstAt, DateTimeOffset dueAt) => NotifyStore.Exec(
             Connection, Transaction,
-            "INSERT INTO batches(user_id,key,episodes,first_at,due_at) VALUES($u,$k,$e,$f,$d) ON CONFLICT(user_id,key) DO UPDATE SET episodes=excluded.episodes, due_at=excluded.due_at",
+            "INSERT INTO batches(user_id,key,episodes,first_at,due_at) VALUES($u,$k,$e,$f,$d) ON CONFLICT(user_id,key) DO UPDATE SET episodes=excluded.episodes, first_at=excluded.first_at, due_at=excluded.due_at",
             ("$u", Id(userId)), ("$k", key), ("$e", episodes), ("$f", Ms(firstAt)), ("$d", Ms(dueAt)));
 
         /// <summary>Forgets a batch.</summary>
@@ -611,8 +739,9 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// <summary>
         /// Forgets what a user was told about a title so a new interest in it starts afresh: the watch
         /// state under each of <paramref name="titleKeys"/> (every scope), their Ready and episode
-        /// marks, and the Ready marks of the Jellyfin items <paramref name="itemIds"/> and of the items
-        /// the movie watch state recorded it ready as.
+        /// marks, the Ready marks of the Jellyfin items <paramref name="itemIds"/> and of the items
+        /// the movie watch state recorded it ready as, and the episode marks of those series items and
+        /// of the series items the title's episodes were told under.
         /// </summary>
         public void ForgetTitle(Guid userId, IEnumerable<string> titleKeys, IEnumerable<Guid> itemIds)
         {
@@ -633,6 +762,17 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
             }
             foreach (var key in keys)
             {
+                var prefix = EpisodeSeriesMark(key, null);
+                using var cmd = NotifyStore.Command(Connection, Transaction, "SELECT mark FROM marks WHERE user_id=$u AND substr(mark,1,length($p))=$p", ("$u", user), ("$p", prefix));
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                {
+                    if (Guid.TryParse(r.GetString(0).AsSpan(prefix.Length), out var id)) items.Add(id);
+                }
+            }
+            foreach (var key in keys)
+            {
+                NotifyStore.Exec(Connection, Transaction, "DELETE FROM marks WHERE user_id=$u AND substr(mark,1,length($p))=$p", ("$u", user), ("$p", EpisodeSeriesMark(key, null)));
                 NotifyStore.Exec(Connection, Transaction, "DELETE FROM watch WHERE user_id=$u AND key=$k", ("$u", user), ("$k", key));
                 foreach (var prefix in new[] { "ready|" + key + "|", "ep|" + key + ":", "ep4k|" + key + ":" })
                 {
@@ -642,8 +782,27 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
             foreach (var item in items)
             {
                 NotifyStore.Exec(Connection, Transaction, "DELETE FROM marks WHERE user_id=$u AND substr(mark,1,length($p))=$p", ("$u", user), ("$p", "ready-item|" + item.ToString("N", CultureInfo.InvariantCulture) + "|"));
+                foreach (var four in new[] { false, true })
+                {
+                    NotifyStore.Exec(Connection, Transaction, "DELETE FROM marks WHERE user_id=$u AND substr(mark,1,length($p))=$p", ("$u", user), ("$p", EpisodeItemMark(item, four, null)));
+                }
             }
         }
+
+        /// <summary>
+        /// The mark of one episode told under a Jellyfin series item, whichever id the series was
+        /// followed or asked for by (with a null number: the prefix of every episode of that item).
+        /// </summary>
+        public static string EpisodeItemMark(Guid seriesItem, bool fourK, (int Season, int Episode)? number)
+            => (fourK ? "ep4k-item|" : "ep-item|") + seriesItem.ToString("N", CultureInfo.InvariantCulture) + ":"
+               + (number is { } n ? "s" + n.Season.ToString(CultureInfo.InvariantCulture) + ":e" + n.Episode.ToString(CultureInfo.InvariantCulture) : string.Empty);
+
+        /// <summary>
+        /// The mark noting that a title's episodes were told under a Jellyfin series item (so forgetting
+        /// the title also forgets them when the item is gone); with a null item, the prefix.
+        /// </summary>
+        public static string EpisodeSeriesMark(string titleKey, Guid? seriesItem)
+            => "ep-series|" + titleKey + "|" + (seriesItem?.ToString("N", CultureInfo.InvariantCulture) ?? string.Empty);
 
         /// <summary>Adds a notification and its deliveries; null when the user already has one for <paramref name="eventKey"/>.</summary>
         public long? Add(Guid userId, string eventKey, string kind, string? titleKey, string? itemId, IReadOnlyDictionary<string, string> payload, IReadOnlyList<(string Channel, DateTimeOffset At)> deliveries, DateTimeOffset now)

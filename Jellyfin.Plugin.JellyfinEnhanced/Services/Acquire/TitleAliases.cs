@@ -29,30 +29,59 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// The title's other keys (never <paramref name="key"/> itself; same kind only): from the arr
-        /// libraries in memory, then Seerr's requests for it. Season and episode parts are ignored.
+        /// libraries in memory and Seerr's requests, following links through either source until
+        /// every id is known. Season and episode parts are ignored.
         /// </summary>
         public IReadOnlyList<TitleKey> Of(TitleKey key)
         {
             var title = key.Title;
             var result = new List<TitleKey>();
             var seen = new HashSet<string>(StringComparer.Ordinal) { title.ToString() };
+            var pending = new Queue<TitleKey>();
+            pending.Enqueue(title);
             void Add(string? raw)
             {
-                if (raw != null && seen.Add(raw) && TitleKey.Parse(raw) is { } parsed && parsed.IsMovie == title.IsMovie) result.Add(parsed);
+                if (raw == null || !seen.Add(raw) || TitleKey.Parse(raw) is not { } parsed || parsed.IsMovie != title.IsMovie) return;
+                result.Add(parsed);
+                pending.Enqueue(parsed);
             }
-            foreach (var raw in FromArrs(title)) Add(raw);
-            if (_requests != null)
+            while (pending.TryDequeue(out var current))
             {
-                foreach (var r in _requests.ForTitle(title))
+                foreach (var raw in FromArrs(current)) Add(raw);
+                if (_requests == null) continue;
+                foreach (var r in _requests.ForTitle(current))
                 {
                     if (r.IsMovie != title.IsMovie) continue;
-                    if (title.IsMovie && r.TmdbId is > 0) Add(ArrTitleKey.Movie(r.TmdbId.Value));
-                    if (!title.IsMovie && r.TvdbId is > 0) Add(ArrTitleKey.Series(r.TvdbId.Value));
-                    if (!title.IsMovie && r.TmdbId is > 0) Add("tv:tmdb:" + r.TmdbId.Value.ToString(CultureInfo.InvariantCulture));
-                    if (!string.IsNullOrEmpty(r.ImdbId)) Add((title.IsMovie ? "movie:imdb:" : "tv:imdb:") + r.ImdbId);
+                    foreach (var raw in FromRequest(r)) Add(raw);
                 }
             }
             return result;
+        }
+
+        /// <summary>
+        /// Every usable title key carried by one Seerr request, in canonical-provider order.
+        /// Shared by alias resolution, the request index and its change signature.
+        /// </summary>
+        internal static IReadOnlyList<string> FromRequest(SeerrRequestRecord request)
+        {
+            var keys = new List<string>();
+            void Add(TitleKey? key)
+            {
+                if (key != null) keys.Add(key.ToString());
+            }
+            string? Num(int? n) => n is > 0 ? n.Value.ToString(CultureInfo.InvariantCulture) : null;
+            if (request.IsMovie)
+            {
+                Add(TitleKey.ForMovie(Num(request.TmdbId), null));
+                Add(TitleKey.ForMovie(null, request.ImdbId));
+            }
+            else
+            {
+                Add(TitleKey.ForSeries(Num(request.TvdbId), null, null));
+                Add(TitleKey.ForSeries(null, Num(request.TmdbId), null));
+                Add(TitleKey.ForSeries(null, null, request.ImdbId));
+            }
+            return keys;
         }
 
         /// <summary>The key a title is looked at under: TMDB for a movie, TVDB for a series, when an alias names it; else the key.</summary>

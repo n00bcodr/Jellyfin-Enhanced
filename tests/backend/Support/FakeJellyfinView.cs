@@ -59,7 +59,14 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     /// </summary>
     public bool ResolveAnyItem { get; init; }
 
-    public StatusViewer? Viewer(Guid userId) => Users.TryGetValue(userId, out var v) ? v : null;
+    /// <summary>Runs on every viewer lookup (tests use it to make something happen right after a user was checked).</summary>
+    public Action<Guid>? OnViewer { get; set; }
+
+    public StatusViewer? Viewer(Guid userId)
+    {
+        OnViewer?.Invoke(userId);
+        return Users.TryGetValue(userId, out var v) ? v : null;
+    }
 
     public JfItemRef? Resolve(Guid itemId, StatusViewer viewer)
     {
@@ -122,10 +129,14 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     /// <summary>Runs on every episode lookup (tests use it to make something happen mid-way).</summary>
     public Action? OnEpisodes { get; set; }
 
+    /// <summary>Episode lookups of this series item throw (a library query failing for one title).</summary>
+    public Guid? FailEpisodesOf { get; set; }
+
     public IReadOnlyList<JfEpisode> Episodes(Guid seriesItemId, int? season, StatusViewer viewer, bool includeVirtual)
     {
         EpisodeCalls++;
         OnEpisodes?.Invoke();
+        if (FailEpisodesOf == seriesItemId) throw new InvalidOperationException("library query failed");
         if (!EpisodesBySeries.TryGetValue(seriesItemId, out var list)) return new List<JfEpisode>();
         bool Sees((JfEpisode Episode, HashSet<Guid>? VisibleTo) e) => e.VisibleTo == null || e.VisibleTo.Contains(viewer.UserId);
         var inSeason = list.Where(e => season == null || e.Episode.Season == season).ToList();

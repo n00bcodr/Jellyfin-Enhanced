@@ -5,7 +5,8 @@ namespace JE.Tests;
 
 /// <summary>
 /// A synthetic Seerr behind <see cref="IntegrationTransport"/> for the request read model: the
-/// request list (paged, <c>sort=modified</c> newest change first, <c>pageInfo.results</c>), movie and
+/// request list (paged, <c>sort=modified</c> newest change first, otherwise by id newest first as
+/// Seerr's default <c>sort=added</c> does, <c>pageInfo.results</c>), movie and
 /// series details, call counting by path and a switchable failure.
 /// </summary>
 internal sealed class FakeSeerr : IDisposable
@@ -19,11 +20,25 @@ internal sealed class FakeSeerr : IDisposable
     public List<string> Calls { get; } = new();
     /// <summary>Non-zero: every call answers with this status.</summary>
     public int FailWith { get; set; }
+
+    /// <summary>Runs before each page of the full request list (<c>sort=added</c>) with its skip: tests change the list between pages.</summary>
+    public Action<int>? BeforePage { get; set; }
+
+    /// <summary>Non-zero: the most rows a page of the request list holds, whatever <c>take</c> asked (a proxy or fork capping pages).</summary>
+    public int PageCap { get; set; }
+
+    /// <summary>Awaited before every answer (tests hold a call in flight).</summary>
+    public Func<Task>? Hold { get; set; }
+
     public IntegrationTransport Transport { get; }
 
     public FakeSeerr()
     {
-        Transport = new IntegrationTransport((request, _) => Task.FromResult(Answer(request)));
+        Transport = new IntegrationTransport(async (request, _) =>
+        {
+            if (Hold is { } hold) await hold();
+            return Answer(request);
+        });
     }
 
     public int CallCount(string pathPart) { lock (Calls) return Calls.Count(c => c.Contains(pathPart, StringComparison.Ordinal)); }
@@ -54,12 +69,15 @@ internal sealed class FakeSeerr : IDisposable
         {
             var take = int.Parse(query["take"] ?? "10", CultureInfo.InvariantCulture);
             var skip = int.Parse(query["skip"] ?? "0", CultureInfo.InvariantCulture);
+            if (PageCap > 0) take = Math.Min(take, PageCap);
+            if (query["sort"] != "modified") BeforePage?.Invoke(skip);
+            if (FailWith != 0) return IntegrationTransport.Response("{\"message\":\"boom\"}", FailWith);
             List<JsonObject> all;
             lock (Requests)
             {
                 all = query["sort"] == "modified"
                     ? Requests.OrderByDescending(r => (string)r["updatedAt"]!).ToList()
-                    : Requests.OrderByDescending(r => (string)r["createdAt"]!).ToList();
+                    : Requests.OrderByDescending(r => (int)r["id"]!).ToList();
             }
             var page = all.Skip(skip).Take(take).Select(r => r.DeepClone()).ToArray();
             return IntegrationTransport.Response(new JsonObject

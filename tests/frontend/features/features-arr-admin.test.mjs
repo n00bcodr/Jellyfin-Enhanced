@@ -335,6 +335,63 @@ test('the System tab shows live state, health, tasks, Seerr, the bridge and the 
   assert.equal(h.JE.internals.arrHub.admin.state.tab, null);
 });
 
+test('the System tab says when Seerr holds more requests than are read, and when the latest read wasn\'t used', async t => {
+  for (const [seerr, expected, absent] of [
+    [{ lastReadAt: iso(-1), lastError: null, truncated: true, reportedTotal: 3412, readLimit: 3000, incompleteReason: null }, /Seerr holds 3412 requests: the newest 3000 are read/, /latest read wasn't used/],
+    [{ lastReadAt: iso(-1), lastError: null, truncated: false, incompleteReason: 'The number of requests changed while they were read.' }, /The latest read wasn't used \(The number of requests changed while they were read\.\)/, /newest 3000/],
+    [{ lastReadAt: iso(-1), lastError: null, truncated: false, incompleteReason: null }, null, /latest read wasn't used|are read; older/],
+    // Truncated and the latest read rejected: both lines.
+    [{ lastReadAt: iso(-1), lastError: null, truncated: true, reportedTotal: 3412, readLimit: 3000, incompleteReason: 'A request was listed twice.' }, /Seerr holds 3412 requests: the newest 3000 are read[\s\S]*The latest read wasn't used \(A request was listed twice\.\)/, /Seerr couldn't be read:/]
+  ]) {
+    const h = setup(t, { hash: '#/requests?tab=system', responses: path => (path === '/arr/admin/hub/system' ? Object.assign(system(), { seerr }) : null) });
+    h.JE.initializeArrStatus();
+    await until(() => h.document.querySelector('.je-ops-bridge'));
+    const text = h.document.getElementById('je-requests-hub-page').textContent;
+    if (expected) assert.match(text, expected);
+    assert.doesNotMatch(text, absent);
+    h.window.close?.();
+  }
+});
+
+test('a failed System refresh keeps both Seerr read notices safely and clears them after recovery', async t => {
+  let fail = false;
+  let recovered = false;
+  const reason = '<img src=x onerror="window.badAliasRead=true">';
+  const h = setup(t, {
+    hash: '#/requests?tab=system',
+    responses: path => {
+      if (path !== '/arr/admin/hub/system') return null;
+      if (fail) return Object.assign(new Error('HTTP 502'), { status: 502 });
+      const data = system();
+      data.seerr = {
+        lastReadAt: iso(-1), lastError: null, truncated: !recovered,
+        reportedTotal: recovered ? 20 : 3412, readLimit: 3000,
+        incompleteReason: recovered ? null : reason
+      };
+      return data;
+    }
+  });
+  h.allowConsoleError?.(/could not load/);
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-bridge'));
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.match(page.textContent, /Seerr holds 3412 requests: the newest 3000 are read/);
+  assert.ok(page.textContent.includes(reason));
+  assert.equal(page.querySelector('img[src="x"]'), null);
+  fail = true;
+  await h.JE.internals.arrHub.admin.refresh();
+  const note = page.querySelector('.je-arr-stale-note');
+  assert.equal(note.getAttribute('role'), 'status');
+  assert.match(page.textContent, /Seerr holds 3412 requests: the newest 3000 are read/);
+  assert.ok(page.textContent.includes(reason));
+  fail = false;
+  recovered = true;
+  note.querySelector('.je-arr-stale-retry').click();
+  await until(() => !page.querySelector('.je-arr-stale-note'));
+  assert.doesNotMatch(page.textContent, /Seerr holds 3412|latest read wasn't used/);
+  assert.equal(h.window.badAliasRead, undefined);
+});
+
 test('a tab that can\'t be read says so and the poll reads it again', async t => {
   let n = 0;
   const h = setup(t, { responses: path => (path === '/arr/admin/hub/overview' ? (++n === 1 ? Object.assign(new Error('boom'), { status: 500 }) : overview()) : null) });

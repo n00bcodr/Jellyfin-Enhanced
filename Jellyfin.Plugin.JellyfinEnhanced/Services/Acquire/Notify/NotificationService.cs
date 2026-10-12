@@ -58,6 +58,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private static readonly TimeSpan RemindEvery = TimeSpan.FromHours(24);
         private static readonly TimeSpan RecentlyAddedWindow = TimeSpan.FromMinutes(10);
         private const int MaxPerRound = 300;
+        private const int MaxRecentlyAdded = 5000;
+
+        /// <summary>A batch whose sending fails this many times in a row is dropped (it must not block the others for ever).</summary>
+        internal const int MaxBatchTries = 5;
         private static readonly JsonSerializerOptions Json = new();
 
         private readonly NotifyStore _store;
@@ -76,7 +80,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
         private readonly ConcurrentDictionary<string, byte> _dirty = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<Guid, DateTimeOffset> _recentlyAdded = new();
+        private readonly RecentArrivals _recentlyAdded;
         private readonly SemaphoreSlim _round = new(1, 1);
         private volatile HashSet<string> _interest = new(StringComparer.Ordinal);
         // Guards _dirty together with _firstDirty/_lastDirty: titles are marked from other threads
@@ -93,6 +97,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private bool _wasEnabled;
         private volatile bool _pauseNoted;
         private CancellationTokenSource? _loop;
+        private Task? _loopTask;
         private long _created;
         private int _bridgeSubscribed;
 
@@ -125,6 +130,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             _logger = logger;
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
             _now = now ?? (() => DateTimeOffset.UtcNow);
+            _recentlyAdded = new RecentArrivals(RecentlyAddedWindow, MaxRecentlyAdded, _now);
         }
 
         /// <summary>Notifications on and the database usable.</summary>
@@ -152,12 +158,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             SubscribeBridge();
             _loop = new CancellationTokenSource();
             var token = _loop.Token;
-            _ = Task.Run(() => LoopAsync(token), CancellationToken.None);
+            _loopTask = Task.Run(() => LoopAsync(token), CancellationToken.None);
             return Task.CompletedTask;
         }
 
         /// <inheritdoc />
-        public Task StopAsync(CancellationToken cancellationToken)
+        /// <remarks>
+        /// Waits for the round in progress to end (it is cancelled between titles, batches and checks;
+        /// a write already started commits whole), or until Jellyfin stops waiting: nothing is written
+        /// once it has returned.
+        /// </remarks>
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
             if (_library != null)
             {
@@ -172,7 +183,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             catch (ObjectDisposedException)
             {
             }
-            return Task.CompletedTask;
+            if (_loopTask is not { } loop) return;
+            try
+            {
+                await loop.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Jellyfin stopped waiting.
+            }
         }
 
         /// <inheritdoc />
@@ -306,13 +325,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 var now = _now();
                 if (_requests.Revision != Interlocked.Read(ref _seenRequests))
                 {
+                    // Only a list that was actually compared counts as seen: one announced before it
+                    // finished loading (or while Seerr can't be read) is compared once it has.
                     var revision = _requests.Revision;
-                    ScanRequests(now);
-                    Interlocked.Exchange(ref _seenRequests, revision);
+                    if (ScanRequests(now)) Interlocked.Exchange(ref _seenRequests, revision);
                 }
+                cancellationToken.ThrowIfCancellationRequested();
                 if (now >= _nextSweep)
                 {
                     _nextSweep = now + SweepEvery;
+                    _recentlyAdded.Prune();
                     RebuildInterest();
                     lock (_dirtyGate)
                     {
@@ -322,12 +344,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     }
                 }
                 if (TakeDue(now, force) is { } keys) await EvaluateAsync(keys, null, cancellationToken).ConfigureAwait(false);
-                FlushBatches(_now());
+                FlushBatches(_now(), cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 if (now >= _nextAdmin)
                 {
                     _nextAdmin = now + AdminEvery;
                     await AdminChecksAsync(cancellationToken).ConfigureAwait(false);
                 }
+                cancellationToken.ThrowIfCancellationRequested();
                 if (now >= _nextPurge)
                 {
                     _nextPurge = now + PurgeEvery;
@@ -373,6 +397,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         // The other keys of a title: the canonical feed key (TMDB movie / TVDB series) and the IMDb /
         // TMDB ids the arr libraries and Seerr's requests (titles no arr holds) know it by.
         private IEnumerable<string> Aliases(TitleKey key) => _aliases.Of(key).Select(k => k.ToString());
+
+        // The title's requests through the same aliases used for its follows and Jellyfin copies.
+        private IReadOnlyList<SeerrRequestRecord> RequestsFor(TitleKey key)
+            => new[] { key.Title }.Concat(_aliases.Of(key)).SelectMany(_requests.ForTitle).DistinctBy(r => r.Id).ToList();
 
         /// <summary>
         /// A user's interest in one title: the part of it they asked for (Seerr) and/or follow, or
@@ -423,7 +451,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 if (parsed.Season is int season) (i.Seasons ??= new HashSet<int>()).Add(season);
                 else i.AllSeasons = true;
             }
-            var records = keys.Select(TitleKey.Parse).Where(k => k != null).SelectMany(k => _requests.ForTitle(k!)).GroupBy(r => r.Id).Select(g => g.First()).ToList();
+            var records = RequestsFor(title);
             foreach (var group in records.Where(r => r.RequestedBy.HasValue).GroupBy(r => r.RequestedBy!.Value))
             {
                 if (onlyUser.HasValue && group.Key != onlyUser) continue;
@@ -465,6 +493,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var raw in titleKeys)
             {
+                // Stopping: what isn't looked at now is looked at by the first sweep after the restart.
+                cancellationToken.ThrowIfCancellationRequested();
                 // One look per title, under its canonical key (TMDB movie, TVDB series) when an arr knows
                 // it: the same title announced under another id is the same interest, the same watch state.
                 if (TitleKey.Parse(raw)?.Title is not { } parsed || Canonical(parsed) is not { } title || !seen.Add(title.ToString())) continue;
@@ -472,6 +502,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 {
                     try
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         if (ActiveViewer(interest.User) is not { } viewer) continue;
                         if (title.IsMovie) await EvaluateMovieAsync(viewer, interest, cancellationToken).ConfigureAwait(false);
                         else EvaluateSeries(viewer, interest);
@@ -581,16 +612,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var scope = interest.Only4k ? "eps4k" : "eps";
             var markPrefix = interest.Only4k ? "ep4k|" : "ep|";
             var present = new Dictionary<(int Season, int Episode), (Guid Id, DateTime? Added)>();
+            // The Jellyfin series items each episode is in.
+            var inSeries = new Dictionary<(int Season, int Episode), List<Guid>>();
             Guid? seriesItem = null;
+            var seriesItems = new HashSet<string>(StringComparer.Ordinal);
             foreach (var copy in SeriesCopies(key, viewer, interest.Only4k))
             {
                 seriesItem ??= copy.ItemId;
+                if (copy.ItemId != Guid.Empty) seriesItems.Add(copy.ItemId.ToString("N", CultureInfo.InvariantCulture));
                 foreach (var e in _view.Episodes(copy.ItemId, null, viewer, includeVirtual: false))
                 {
                     if (e.Hidden || e.Virtual || e.ItemId == Guid.Empty) continue;
                     for (var n = e.Episode; n <= (e.EpisodeEnd ?? e.Episode) && n - e.Episode < 50; n++)
                     {
                         present.TryAdd((e.Season, n), (e.ItemId, e.DateCreated));
+                        if (!inSeries.TryGetValue((e.Season, n), out var items)) inSeries[(e.Season, n)] = items = new List<Guid>();
+                        if (copy.ItemId != Guid.Empty && !items.Contains(copy.ItemId)) items.Add(copy.ItemId);
                     }
                 }
             }
@@ -608,19 +645,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var minutes = Math.Clamp(_config()?.ArrNotifyBatchMinutes ?? 10, 1, 60);
             // The episodes' marks, the known set and the batch commit together: a failure leaves the
             // arrivals new for the next look; a restore since the watch was read drops them (looked at again).
+            // An episode is told once per series item too. Open batches of the same variant that
+            // turn out to be one series are merged here, even for different seasons.
+            // A joining id's copies are checked too when the batch is sent.
             var written = _store.InTransaction(generation, tx =>
             {
                 var wanted = new List<(int Season, int Episode, Guid Id)>();
+                var noted = new HashSet<Guid>();
                 foreach (var (number, (id, added)) in arrivals)
                 {
                     var inScope = interest.AllSeasons ? number.Season > 0 : interest.Seasons?.Contains(number.Season) == true;
                     if (!inScope) continue;
                     if (!tx.TryMark(viewer.UserId, markPrefix + key + ":s" + number.Season.ToString(CultureInfo.InvariantCulture) + ":e" + number.Episode.ToString(CultureInfo.InvariantCulture), now)) continue;
+                    var fresh = true;
+                    foreach (var series in inSeries[number])
+                    {
+                        if (noted.Add(series)) tx.TryMark(viewer.UserId, NotifyTransaction.EpisodeSeriesMark(key.ToString(), series), now);
+                        fresh &= tx.TryMark(viewer.UserId, NotifyTransaction.EpisodeItemMark(series, interest.Only4k, number), now);
+                    }
+                    if (!fresh) continue;
                     if (added is DateTime at && now.UtcDateTime - at > ArrivalFreshFor) continue;
                     wanted.Add((number.Season, number.Episode, id));
                 }
                 tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(known), now);
-                if (wanted.Count > 0 && prefs.Episodes) AddToBatch(tx, viewer.UserId, BatchKey(key, interest.Only4k), wanted, seriesItem, now, minutes);
+                if (wanted.Count > 0 && prefs.Episodes)
+                {
+                    var first = wanted[0];
+                    AddToBatch(tx, viewer.UserId, MergeOpenBatches(tx, viewer.UserId, BatchKey(key, interest.Only4k), interest.Only4k, seriesItems), key, interest.Only4k, seriesItems, wanted, inSeries.TryGetValue((first.Season, first.Episode), out var items) && items.Count > 0 ? items[0] : seriesItem, now, minutes);
+                }
                 return true;
             }, false);
             Written(key, written.Done);
@@ -641,9 +693,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>The Jellyfin item Seerr matched a user's 4K request for the title to (null: none, or not a 4K-only request).</summary>
         private Guid? SeerrFourKItem(TitleKey key, Guid user)
         {
-            var mine = new[] { key.ToString() }.Concat(Aliases(key)).Distinct(StringComparer.Ordinal)
-                .Select(TitleKey.Parse).Where(k => k != null).SelectMany(k => _requests.ForTitle(k!))
-                .GroupBy(r => r.Id).Select(g => g.First()).Where(r => r.RequestedBy == user).ToList();
+            var mine = RequestsFor(key).Where(r => r.RequestedBy == user).ToList();
             return mine.Count > 0 ? RequestsHubService.ScopeOf(mine, user).JellyfinItemId : null;
         }
 
@@ -690,13 +740,79 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         {
             public string? Series { get; set; }
 
+            /// <summary>Every visible Jellyfin series item its interests see, in N format.</summary>
+            public List<string> Items { get; set; } = new();
+
+            /// <summary>Other title keys whose episodes joined it, without the variant suffix.</summary>
+            public List<string> Keys { get; set; } = new();
+
             public List<BatchEntry> Episodes { get; set; } = new();
+
+            /// <summary>Failed attempts at sending it so far.</summary>
+            public int F { get; set; }
         }
 
-        private static void AddToBatch(NotifyTransaction tx, Guid user, string key, List<(int Season, int Episode, Guid Id)> episodes, Guid? seriesItem, DateTimeOffset now, int minutes)
+        // Merge open batches of the same variant that turn out to be one series. Keep the interest's
+        // own batch if open, else the earliest; check copies through every joining id when sent.
+        private static string MergeOpenBatches(NotifyTransaction tx, Guid user, string own, bool only4k, HashSet<string> seriesItems)
         {
-            var existing = tx.Batch(user, key);
+            if (seriesItems.Count == 0) return own;
+            var matches = new List<(string Key, BatchState State, DateTimeOffset FirstAt, DateTimeOffset DueAt)>();
+            foreach (var (key, json) in tx.Batches(user))
+            {
+                if (key.EndsWith("|4k", StringComparison.Ordinal) != only4k) continue;
+                var state = Deserialize<BatchState>(json) ?? new BatchState();
+                if (key != own && !(state.Items.Count > 0 ? state.Items.Any(seriesItems.Contains) : state.Series is { } series && seriesItems.Contains(series))) continue;
+                if (tx.Batch(user, key) is { } batch) matches.Add((key, state, batch.FirstAt, batch.DueAt));
+            }
+            if (matches.Count < 2) return matches.Count == 0 ? own : matches[0].Key;
+            var survivor = matches.OrderBy(b => b.Key != own).ThenBy(b => b.FirstAt).ThenBy(b => b.Key, StringComparer.Ordinal).First();
+            var title = only4k ? survivor.Key[..^3] : survivor.Key;
+            var merged = survivor.State;
+            merged.Episodes = merged.Episodes.DistinctBy(e => (e.S, e.E)).ToList();
+            merged.Items = merged.Items.Distinct(StringComparer.Ordinal).ToList();
+            merged.Keys = merged.Keys.Where(k => k != title).Distinct(StringComparer.Ordinal).ToList();
+            var first = survivor.FirstAt;
+            var due = survivor.DueAt;
+            foreach (var batch in matches)
+            {
+                if (batch.Key == survivor.Key) continue;
+                foreach (var episode in batch.State.Episodes)
+                {
+                    if (!merged.Episodes.Any(e => e.S == episode.S && e.E == episode.E)) merged.Episodes.Add(episode);
+                }
+                foreach (var item in batch.State.Items)
+                {
+                    if (!merged.Items.Contains(item, StringComparer.Ordinal)) merged.Items.Add(item);
+                }
+                foreach (var key in batch.State.Keys.Append(only4k ? batch.Key[..^3] : batch.Key))
+                {
+                    if (key != title && !merged.Keys.Contains(key, StringComparer.Ordinal)) merged.Keys.Add(key);
+                }
+                merged.Series ??= batch.State.Series;
+                merged.F = Math.Max(merged.F, batch.State.F);
+                if (batch.FirstAt < first) first = batch.FirstAt;
+                if (batch.DueAt < due) due = batch.DueAt;
+            }
+            tx.SetBatch(user, survivor.Key, JsonSerializer.Serialize(merged, Json), first, due);
+            // A stale flush of an absorbed row fails DeleteBatchIf and throws BatchChangedException.
+            foreach (var batch in matches)
+            {
+                if (batch.Key != survivor.Key) tx.DeleteBatch(user, batch.Key);
+            }
+            return survivor.Key;
+        }
+
+        // Keep every series item the interest sees and any joining id needed to check its copies at send time.
+        private static void AddToBatch(NotifyTransaction tx, Guid user, string batchKey, TitleKey key, bool only4k, HashSet<string> seriesItems, List<(int Season, int Episode, Guid Id)> episodes, Guid? seriesItem, DateTimeOffset now, int minutes)
+        {
+            var existing = tx.Batch(user, batchKey);
             var state = existing is { } b ? Deserialize<BatchState>(b.Episodes) ?? new BatchState() : new BatchState();
+            foreach (var item in seriesItems)
+            {
+                if (!state.Items.Contains(item, StringComparer.Ordinal)) state.Items.Add(item);
+            }
+            if (batchKey != BatchKey(key, only4k) && !state.Keys.Contains(key.ToString(), StringComparer.Ordinal)) state.Keys.Add(key.ToString());
             state.Series ??= seriesItem?.ToString("N", CultureInfo.InvariantCulture);
             foreach (var (s, e, id) in episodes)
             {
@@ -705,7 +821,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             var first = existing?.FirstAt ?? now;
             // The window runs from the first episode, so a slow trickle can't hold the message back for ever.
-            tx.SetBatch(user, key, JsonSerializer.Serialize(state, Json), first, existing?.DueAt ?? now + TimeSpan.FromMinutes(minutes));
+            tx.SetBatch(user, batchKey, JsonSerializer.Serialize(state, Json), first, existing?.DueAt ?? now + TimeSpan.FromMinutes(minutes));
         }
 
         /// <summary>
@@ -713,15 +829,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// again for the viewer first (access or parental limits may have changed during the window);
         /// the batch goes away in the same transaction that creates its notification (only the version
         /// that was read: episodes merged into it meanwhile roll the notification back, and the next
-        /// round sends the merged batch), and a batch that fails is tried again a minute later. Nothing
-        /// read before a restore of the database is written into the restored one.
+        /// round sends the merged batch), and a batch that fails is tried again a minute later, at
+        /// most <see cref="MaxBatchTries"/> times (then it is dropped, so it can't hold up the others
+        /// for ever). Nothing read before a restore of the database is written into the restored one.
         /// </summary>
-        internal int FlushBatches(DateTimeOffset now)
+        internal int FlushBatches(DateTimeOffset now, CancellationToken cancellationToken = default)
         {
             var sent = 0;
             var generation = _store.Generation;
             foreach (var (user, key, json) in _store.DueBatches(now))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
                     if (FlushBatch(user, key, json, now, generation)) sent++;
@@ -732,14 +850,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 }
                 catch (Exception ex)
                 {
-                    _logger?.Warning($"Notifications: could not send an episode batch ({ex.GetType().Name}: {ex.Message}); trying again in a minute.");
                     try
                     {
-                        _store.InTransaction(generation, tx =>
+                        var dropped = _store.InTransaction(generation, tx =>
                         {
-                            if (tx.Batch(user, key) is { } b) tx.SetBatch(user, key, b.Episodes, b.FirstAt, now + TimeSpan.FromMinutes(1));
-                            return true;
-                        }, false);
+                            if (tx.Batch(user, key) is not { } b) return false;
+                            var state = Deserialize<BatchState>(b.Episodes);
+                            if (state == null || state.F + 1 >= MaxBatchTries)
+                            {
+                                tx.DeleteBatch(user, key);
+                                return true;
+                            }
+                            state.F++;
+                            tx.SetBatch(user, key, JsonSerializer.Serialize(state, Json), b.FirstAt, now + TimeSpan.FromMinutes(1));
+                            return false;
+                        }, false).Result;
+                        if (dropped) _logger?.Warning($"Notifications: an episode batch could not be sent after {MaxBatchTries} tries and was dropped ({ex.GetType().Name}: {ex.Message}).");
+                        else _logger?.Warning($"Notifications: could not send an episode batch ({ex.GetType().Name}: {ex.Message}); trying again in a minute.");
                     }
                     catch (Exception)
                     {
@@ -777,6 +904,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // number linked to an episode item the viewer can open now: the one stored when it was
             // batched while it is still visible, else the copy that still is.
             var copies = SeriesCopies(title, viewer, only4k);
+            foreach (var joined in state.Keys)
+            {
+                if (TitleKey.Parse(joined) is { } k) copies.AddRange(SeriesCopies(k, viewer, only4k));
+            }
+            copies = copies.DistinctBy(c => c.ItemId).ToList();
             var open = new Dictionary<(int, int), HashSet<Guid>>();
             foreach (var copy in copies)
             {
@@ -827,7 +959,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 p["mode"] = "many";
             }
             var first = episodes[0];
-            var eventKey = (only4k ? "eps4k|" : "eps|") + title + "|s" + first.S.ToString(CultureInfo.InvariantCulture) + "e" + first.E.ToString(CultureInfo.InvariantCulture) + "|" + episodes.Count.ToString(CultureInfo.InvariantCulture) + "|" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join(".", episodes.Select(x => x.S.ToString(CultureInfo.InvariantCulture) + "x" + x.E.ToString(CultureInfo.InvariantCulture))))), 0, 6);
+            // One event per interest, like Ready: the same episodes told again after the series was
+            // asked for again (its state forgotten, a new watch baseline) are a new event.
+            var baseline = _store.Watch(user, title.ToString(), only4k ? "eps4k" : "eps")?.Baseline.ToUnixTimeMilliseconds() ?? 0;
+            var eventKey = (only4k ? "eps4k|" : "eps|") + title + "|s" + first.S.ToString(CultureInfo.InvariantCulture) + "e" + first.E.ToString(CultureInfo.InvariantCulture) + "|" + episodes.Count.ToString(CultureInfo.InvariantCulture) + "|" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join(".", episodes.Select(x => x.S.ToString(CultureInfo.InvariantCulture) + "x" + x.E.ToString(CultureInfo.InvariantCulture))))), 0, 6) + "|" + baseline.ToString(CultureInfo.InvariantCulture);
             if (Notify(user, NotifyKind.Episodes, eventKey, title.ToString(), itemId is { } i && Guid.TryParse(i, out var g) ? g : null, p, now, prefs, tx => tx.DeleteBatchIf(user, key, json) ? true : throw new BatchChangedException(), generation)) return true;
             if (_store.Generation != generation) throw new BatchChangedException();
             return false;
@@ -858,36 +993,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// only records (old requests are not announced); requests created while notifications were
         /// off count as new. Titles whose requests changed are looked at (a new request starts a
         /// first look), and a requester whose last request for a title went away starts afresh.
+        /// What was seen belongs to one Seerr server (<see cref="SeerrRequestReadModel.Source"/>):
+        /// when Jellyfin Enhanced is pointed at another one (whose request ids are other requests),
+        /// the next scan of its list records it afresh like a first scan, telling nobody anything.
         /// </summary>
-        internal void ScanRequests(DateTimeOffset now)
+        /// <returns>False when there was no list to compare (Seerr off, not read yet).</returns>
+        internal bool ScanRequests(DateTimeOffset now)
         {
-            if (!_requests.Active || !_requests.Loaded) return;
-            var all = _requests.All;
-            var seen = _store.SeerrSeen();
+            if (!_requests.Active || !_requests.Loaded) return false;
+            var (source, all, floor) = _requests.Current;
+            if (source == null) return false;
             var baselineText = _store.Meta("seerr_baseline");
-            var changed = new List<(int, int, Guid?)>();
+            var seenSource = _store.Meta(NotifyStore.SeerrSourceKey);
+            var changed = new List<(int, int)>();
             var titles = new HashSet<string>(StringComparer.Ordinal);
-            if (baselineText == null)
+            if (baselineText == null || (seenSource != null && seenSource != source))
             {
-                foreach (var r in all) changed.Add((r.Id, r.Status, r.RequestedBy));
-                _store.SetSeerrSeen(changed, Array.Empty<int>(), now);
-                _store.SetMeta("seerr_baseline", now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture));
+                if (baselineText != null) _logger?.Info("Notifications: Seerr was replaced by another server; its requests are recorded without telling anyone.");
+                foreach (var r in all) changed.Add((r.Id, r.Status));
+                _store.ResetSeerrSeen(changed, now, source);
                 RebuildInterest();
                 foreach (var r in all.Where(r => r.RequestedBy.HasValue && r.Key != null)) titles.Add(r.Key!.Title.ToString());
                 MarkDirty(titles);
-                return;
+                return true;
             }
+            // Seen before this server was noted (an upgrade): the states seen are this server's.
+            if (seenSource == null) _store.SetMeta(NotifyStore.SeerrSourceKey, source);
+            var seen = _store.SeerrSeen();
+            // Below this, what was seen was forgotten (it fell below the requests read): not known is old, not new.
+            var forgotten = int.TryParse(_store.Meta(NotifyStore.SeerrForgottenBelowKey), NumberStyles.None, CultureInfo.InvariantCulture, out var fb) ? fb : 0;
+            // Event keys carry the server too: a request id another server used before is another event.
+            var server = source.Length > 8 ? source[..8] : source;
             var baseline = DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(baselineText, CultureInfo.InvariantCulture)).UtcDateTime;
             var admins = (IReadOnlyList<Guid>?)null;
             foreach (var r in all)
             {
                 var known = seen.TryGetValue(r.Id, out var previous);
                 if (known && previous == r.Status) continue;
-                changed.Add((r.Id, r.Status, r.RequestedBy));
+                changed.Add((r.Id, r.Status));
                 if (r.Key != null) titles.Add(r.Key.Title.ToString());
-                var fresh = !known && r.CreatedAt is DateTime created && created >= baseline;
-                if (!known && r.Active && r.RequestedBy is Guid asker && r.Key != null
-                    && !all.Any(o => o.Id != r.Id && o.Active && o.RequestedBy == asker && o.Key != null && seen.ContainsKey(o.Id) && o.Key.Title.Equals(r.Key.Title)))
+                var old = !known && r.Id < forgotten;
+                var fresh = !known && !old && r.CreatedAt is DateTime created && created >= baseline;
+                if (!known && !old && r.Active && r.RequestedBy is Guid asker && r.Key != null
+                    && !all.Any(o => o.Id != r.Id && o.Active && o.RequestedBy == asker && o.Key != null && seen.ContainsKey(o.Id) && Canonical(o.Key.Title).Equals(Canonical(r.Key.Title))))
                 {
                     // A new request from someone with no other request for the title (asked again after
                     // it was removed): what they were told under the old one doesn't stop telling them
@@ -901,7 +1049,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     {
                         var p = TitleParams(r.Key.Title, null, r);
                         p["contact"] = Contact();
-                        Notify(requester, NotifyKind.Declined, "declined|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key.Title.ToString(), null, p, now, prefs);
+                        Notify(requester, NotifyKind.Declined, "declined|" + server + "|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key.Title.ToString(), null, p, now, prefs);
                     }
                 }
                 if (r.Status == SeerrRequestStatus.Pending && fresh)
@@ -914,29 +1062,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         p["user"] = r.RequestedByName ?? (r.RequestedBy is Guid u ? _users.Name(u) : null) ?? string.Empty;
                         if (!r.IsMovie && r.Seasons.Count > 0) p["seasons"] = string.Join(", ", r.Seasons.OrderBy(s => s));
                         if (r.Is4k) p["variant"] = "4k";
-                        Notify(admin, NotifyKind.Approval, "approval|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key?.Title.ToString(), null, p, now, null);
+                        Notify(admin, NotifyKind.Approval, "approval|" + server + "|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key?.Title.ToString(), null, p, now, null);
                     }
                 }
             }
             var ids = new HashSet<int>(all.Select(r => r.Id));
-            var gone = seen.Keys.Where(id => !ids.Contains(id)).ToList();
-            if (changed.Count > 0 || gone.Count > 0) _store.SetSeerrSeen(changed, gone, now);
+            // Below the list's floor (Seerr holds more than is read) a request not held is unknown,
+            // not gone: what was seen of it stays.
+            var gone = seen.Keys.Where(id => !ids.Contains(id) && !(floor is int f && id < f)).ToList();
+            // ... and it can't be compared again while that lasts: what was seen below the floor is
+            // forgotten (the table stays as large as the list held, not as Seerr's lifetime).
+            var forget = floor is int below && seen.Keys.Any(id => id < below) ? floor : null;
+            if (changed.Count > 0 || gone.Count > 0 || forget != null) _store.SetSeerrSeen(changed, gone, now, forget);
             if (gone.Count > 0 || changed.Count > 0)
             {
                 RebuildInterest();
                 ForgetEndedInterests();
             }
             MarkDirty(titles);
+            return true;
         }
 
         // A requester with no active request left for a title they don't follow starts afresh next time.
         private void ForgetEndedInterests()
         {
-            var active = new HashSet<(Guid, string)>(_requests.All.Where(r => r.Active && r.RequestedBy.HasValue && r.Key != null).Select(r => (r.RequestedBy!.Value, r.Key!.Title.ToString())));
-            var followed = new HashSet<(Guid, string)>(_store.AllFollows().Where(f => !f.Muted).Select(f => (f.UserId, TitleKey.Parse(f.Key)?.Title.ToString() ?? f.Key)));
+            var active = new HashSet<(Guid, string)>(_requests.All.Where(r => r.Active && r.RequestedBy.HasValue && r.Key != null).Select(r => (r.RequestedBy!.Value, Canonical(r.Key!.Title).ToString())));
+            var followed = new HashSet<(Guid, string)>(_store.AllFollows().Where(f => !f.Muted).Select(f => (f.UserId, TitleKey.Parse(f.Key) is { } key ? Canonical(key.Title).ToString() : f.Key)));
             foreach (var r in _requests.All.Where(r => !r.Active && r.RequestedBy.HasValue && r.Key != null))
             {
-                var pair = (r.RequestedBy!.Value, r.Key!.Title.ToString());
+                var pair = (r.RequestedBy!.Value, Canonical(r.Key!.Title).ToString());
                 if (active.Contains(pair) || followed.Contains(pair)) continue;
                 ForgetTitle(pair.Item1, r.Key!.Title);
             }
@@ -1025,7 +1179,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (on && !_status.MayFollow(viewer, key)) return "not_allowed";
             var now = _now();
             var kind = key.IsMovie ? "title" : key.Season.HasValue ? "season" : "episodes";
-            var asked = _requests.AskedBy(key.Title, viewer.UserId);
+            var asked = RequestsFor(key).Any(r => r.RequestedBy == viewer.UserId);
             bool ok;
             if (on) ok = _store.SetFollow(viewer.UserId, key.ToString(), kind, muted: false, remove: false, now);
             else if (asked && !key.Season.HasValue) ok = _store.SetFollow(viewer.UserId, key.ToString(), kind, muted: true, remove: false, now);
@@ -1464,25 +1618,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
         }
 
-        private void OnItemAdded(object? sender, ItemChangeEventArgs e)
-        {
-            if (e?.Item is not (Movie or Series or Season or Episode)) return;
-            if (_recentlyAdded.Count > 5000) _recentlyAdded.Clear();
-            _recentlyAdded[e.Item.Id] = _now();
-            OnItem(e.Item);
-        }
+        private void OnItemAdded(object? sender, ItemChangeEventArgs e) => ItemAdded(e?.Item);
 
-        // Only items added a moment ago: their first metadata read fills in provider ids and numbers.
-        private void OnItemUpdated(object? sender, ItemChangeEventArgs e)
+        private void OnItemUpdated(object? sender, ItemChangeEventArgs e) => ItemUpdated(e?.Item);
+
+        /// <summary>Jellyfin added an item (tests call it): remembered for its first metadata updates, and looked at.</summary>
+        internal void ItemAdded(BaseItem? item)
         {
-            if (e?.Item is not { } item || !_recentlyAdded.TryGetValue(item.Id, out var at)) return;
-            if (_now() - at > RecentlyAddedWindow)
-            {
-                _recentlyAdded.TryRemove(item.Id, out _);
-                return;
-            }
+            if (item is not (Movie or Series or Season or Episode)) return;
+            _recentlyAdded.Add(item.Id);
             OnItem(item);
         }
+
+        /// <summary>
+        /// Jellyfin updated an item (tests call it): only items added a moment ago count, their first
+        /// metadata read fills in provider ids and numbers.
+        /// </summary>
+        internal void ItemUpdated(BaseItem? item)
+        {
+            if (item == null || !_recentlyAdded.IsRecent(item.Id)) return;
+            OnItem(item);
+        }
+
+        /// <summary>The items added lately whose updates still count (tests).</summary>
+        internal RecentArrivals RecentlyAdded => _recentlyAdded;
 
         private void OnItem(BaseItem item)
         {

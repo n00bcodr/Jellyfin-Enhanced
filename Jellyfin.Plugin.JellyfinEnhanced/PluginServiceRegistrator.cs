@@ -215,6 +215,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserLockedOutEventArgs>, ReviewAuthorCacheInvalidator>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserUpdatedEventArgs>, TagCacheAccessInvalidator>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, TagCacheAccessInvalidator>();
+            // Requests & downloads: a deleted user's follows, alert settings and inbox go with them
+            // (also while notifications are off; never creates the database).
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Notify.NotifyUserPurge>();
 
             // Promotes pending pre-acquisition Spoiler Guard entries (PendingTmdb)
             // into real Series/Movies entries when matching library items land.

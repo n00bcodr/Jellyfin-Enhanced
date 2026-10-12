@@ -78,6 +78,8 @@ public class IntegrationNotificationsTests
         public FakeMail Mail { get; } = new();
         public List<(string Url, string? Auth, JsonObject Body)> Pushes { get; } = new();
         public int PushStatus { get; set; } = 200;
+        /// <summary>Runs inside every push before it is answered (tests change settings mid-round or hold a send).</summary>
+        public Func<Task>? OnPush { get; set; }
         public IntegrationTransport Ntfy { get; }
         public AcquireDatabase Db { get; private set; } = null!;
         public NotifyStore NotifyStore { get; private set; } = null!;
@@ -135,6 +137,7 @@ public class IntegrationNotificationsTests
             Users.Names[Admin.UserId] = "Jake";
             Ntfy = new IntegrationTransport(async (request, ct) =>
             {
+                if (OnPush is { } onPush) await onPush();
                 var body = JsonNode.Parse(await request.Content!.ReadAsStringAsync(ct))!.AsObject();
                 lock (Pushes) Pushes.Add((request.RequestUri!.ToString(), request.Headers.Authorization?.ToString(), body));
                 return IntegrationTransport.Response("{}", PushStatus);
@@ -151,7 +154,7 @@ public class IntegrationNotificationsTests
             Db?.Dispose();
             Db = new AcquireDatabase(DbPath);
             NotifyStore = new NotifyStore(Db);
-            Dispatcher = new NotifyDispatcher(NotifyStore, new NtfySender(Ntfy), new EmailSender(Mail), null, () => Config, () => Arr.Now, Users, View);
+            Dispatcher = new NotifyDispatcher(NotifyStore, new NtfySender(Ntfy), new EmailSender(Mail), null, () => Config, () => Arr.Now, Users, View, Status.Aliases);
             Service = new NotificationService(NotifyStore, Status, Requests, View, Feed, Store, Users, Dispatcher, null, null, () => Config, () => Arr.Now, Hub, Bridge);
         }
 

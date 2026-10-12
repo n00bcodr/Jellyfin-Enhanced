@@ -411,6 +411,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Notify/NotifyUserPurge.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Notify/NotifyUsers.cs",
       "category": "Services"
     },
@@ -584,6 +588,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrWebhookReceiver.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/RecentArrivals.cs",
       "category": "Services"
     },
     {
@@ -8747,7 +8755,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 443,
+    "files": 445,
     "routes": 217,
     "configuration_properties": 558,
     "storage_references": 80,

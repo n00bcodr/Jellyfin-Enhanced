@@ -647,6 +647,11 @@
         else {
             seerr.appendChild(el('div', 'je-ops-line', tr('arr_ops_seerr_line', { n: data.seerrRequests || 0, last: data.seerr.lastReadAt ? when(data.seerr.lastReadAt) : '—' })));
             if (data.seerr.lastError) seerr.appendChild(el('div', 'je-ops-msg', tr('arr_hub_admin_seerr_error', { error: data.seerr.lastError })));
+            // More requests than are read: the newest are read, older ones keep what was last known.
+            if (data.seerr.truncated) seerr.appendChild(el('div', 'je-ops-item-sub', tr('arr_ops_seerr_truncated', { total: data.seerr.reportedTotal || 0, n: data.seerr.readLimit || 0 })));
+            // The latest full read changed under the pages and wasn't used (not yet an error); shown
+            // whether or not the last complete read was truncated.
+            if (data.seerr.incompleteReason && !data.seerr.lastError) seerr.appendChild(el('div', 'je-ops-item-sub', tr('arr_ops_seerr_incomplete', { reason: data.seerr.incompleteReason })));
         }
         panel.appendChild(seerr);
         panel.appendChild(renderBridge(data.bridge || {}, data.settings || {}, ctx));

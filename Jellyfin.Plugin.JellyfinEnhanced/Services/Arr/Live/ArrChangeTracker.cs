@@ -41,7 +41,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private readonly Func<PluginConfiguration?> _config;
         private readonly ConcurrentQueue<ItemChange> _items = new();
         private readonly Timer _itemTimer;
-        private readonly ConcurrentDictionary<Guid, DateTimeOffset> _recentlyAdded = new();
+        private readonly RecentArrivals _recentlyAdded;
+        private readonly TimeSpan _itemFlushDelay;
         private int _itemFlushArmed;
         private bool _started;
 
@@ -51,9 +52,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         {
         }
 
-        /// <summary>Creates the tracker with explicit sources (tests).</summary>
-        internal ArrChangeTracker(ArrStateStore store, ArrChangeFeed feed, ArrLiveRouter router, ILibraryManager? libraryManager, Logger? logger, Func<PluginConfiguration?> config)
+        /// <summary>
+        /// Creates the tracker with explicit sources (tests). With <paramref name="itemFlushDelay"/>
+        /// <see cref="Timeout.InfiniteTimeSpan"/> queued library changes are recorded only by
+        /// <see cref="FlushItems"/> calls (the timer never does it on its own).
+        /// </summary>
+        internal ArrChangeTracker(ArrStateStore store, ArrChangeFeed feed, ArrLiveRouter router, ILibraryManager? libraryManager, Logger? logger, Func<PluginConfiguration?> config, Func<DateTimeOffset>? now = null, TimeSpan? itemFlushDelay = null)
         {
+            _recentlyAdded = new RecentArrivals(RecentlyAddedWindow, MaxRecentlyAdded, now);
+            _itemFlushDelay = itemFlushDelay ?? ItemFlushDelay;
             _store = store;
             _feed = feed;
             _router = router;
@@ -101,6 +108,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
 
         /// <inheritdoc />
         public void Dispose() => _itemTimer.Dispose();
+
+        /// <summary>The items added lately whose updates still count as their arrival (tests).</summary>
+        internal RecentArrivals RecentlyAdded => _recentlyAdded;
 
         /// <summary>Subscribes to the store and Jellyfin's library (idempotent).</summary>
         internal void Start()
@@ -225,11 +235,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         // Scanner thread: read the provider ids now (cheap), resolve and bump later.
         private void OnItemAdded(object? sender, ItemChangeEventArgs e)
         {
-            if (e?.Item is { } item && _started && item is Movie or Series or Season or Episode)
-            {
-                if (_recentlyAdded.Count >= MaxRecentlyAdded) PruneRecentlyAdded(force: true);
-                _recentlyAdded[item.Id] = DateTimeOffset.UtcNow;
-            }
+            if (e?.Item is { } item && _started && item is Movie or Series or Season or Episode) _recentlyAdded.Add(item.Id);
             Enqueue(e?.Item);
         }
 
@@ -237,22 +243,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         // (episode numbers, provider ids). Updates of older items are not arrivals.
         private void OnItemUpdated(object? sender, ItemChangeEventArgs e)
         {
-            if (e?.Item is not { } item || !_recentlyAdded.TryGetValue(item.Id, out var added)) return;
-            if (DateTimeOffset.UtcNow - added > RecentlyAddedWindow)
-            {
-                _recentlyAdded.TryRemove(item.Id, out _);
-                return;
-            }
+            if (e?.Item is not { } item || !_recentlyAdded.IsRecent(item.Id)) return;
             Enqueue(item);
-        }
-
-        private void PruneRecentlyAdded(bool force)
-        {
-            var now = DateTimeOffset.UtcNow;
-            foreach (var (id, at) in _recentlyAdded)
-            {
-                if (force || now - at > RecentlyAddedWindow) _recentlyAdded.TryRemove(id, out _);
-            }
         }
 
         private void OnItemRemoved(object? sender, ItemChangeEventArgs e) => Enqueue(e?.Item);
@@ -272,7 +264,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                 };
                 if (change == null) return;
                 _items.Enqueue(change);
-                if (Interlocked.CompareExchange(ref _itemFlushArmed, 1, 0) == 0) _itemTimer.Change(ItemFlushDelay, Timeout.InfiniteTimeSpan);
+                if (Interlocked.CompareExchange(ref _itemFlushArmed, 1, 0) == 0) _itemTimer.Change(_itemFlushDelay, Timeout.InfiniteTimeSpan);
             }
             catch (Exception)
             {
@@ -284,7 +276,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         internal int FlushItems()
         {
             Interlocked.Exchange(ref _itemFlushArmed, 0);
-            if (_recentlyAdded.Count > 500) PruneRecentlyAdded(force: false);
+            if (_recentlyAdded.Count > 500) _recentlyAdded.Prune();
             var leaves = new HashSet<string>(StringComparer.Ordinal);
             var libraries = _store.Registry.All().Where(c => c.Usable).Select(c => (c.Kind, Library: _store.PeekLibrary(c.Id))).Where(x => x.Library != null).ToList();
             while (_items.TryDequeue(out var item))

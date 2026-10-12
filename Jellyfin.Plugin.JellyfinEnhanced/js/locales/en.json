@@ -1171,6 +1171,8 @@
     "arr_ops_tasks_title": "Scheduled tasks",
     "arr_ops_seerr_title": "Seerr",
     "arr_ops_seerr_line": "{n} requests held; last read {last}",
+    "arr_ops_seerr_truncated": "Seerr holds {total} requests: the newest {n} are read; older ones keep what was last known of them.",
+    "arr_ops_seerr_incomplete": "The latest read wasn't used ({reason}); the last complete one is shown and it is read again shortly.",
     "arr_ops_bridge_title": "Jellyfin bridge",
     "arr_ops_bridge_on": "Imports show in Jellyfin right away: {n} folder refreshes so far (imports and Scan now), {found} found their file",
     "arr_ops_bridge_off": "Imports wait for Jellyfin's own library scan (\"Show imports in Jellyfin right away\" is off)",
