@@ -353,6 +353,16 @@ public class CoreSettingsApplyDefaultsTests : IDisposable
         Assert.DoesNotContain(key, server.Stored(seeded.Id).Meta?.Following ?? []);
         Assert.Contains(key, server.Stored(copied.Id).Meta!.Following);
         Assert.Contains(key, server.Stored(custom.Id).Meta!.Following);
+
+        // The way back: Overwrite makes a followed style Existing with the same index, so the saved
+        // colours show again. For a style that follows with other saved colours (as the seed writes
+        // it for new users who follow the defaults) that is a visible change; for the others it is not.
+        server.Patch(seeded.Id, "{\"Follow\":[\"SelectedStylePresetIndex\"]}");
+        Assert.Contains(key, server.Stored(seeded.Id).Meta!.Following);
+        var overwrite = server.Apply("Overwrite", [key], dryRun: true);
+        Assert.Equal(1, overwrite.Value<int>("VisibleChanges"));
+        Assert.Equal(3, overwrite.Value<int>("Updated"));
+        Assert.Equal(1, overwrite["PerKey"]![key]!.Value<int>("Visible"));
     }
 
     /// <summary>

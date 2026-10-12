@@ -57,7 +57,7 @@ Add `?meta=true` to get `{ "Settings": { … }, "Meta": { … } }`. `Meta` descr
 | `Locked` | Keys the administrator locked. The value served is the administrator's, and writes are rejected |
 | `Saved` | For each locked key, the user's own stored value, which comes back when the key is unlocked |
 | `Defaults` | The server default of every key that has one |
-| `Differs` | Keys that are not following or locked and whose value is not the server default |
+| `Differs` | Keys that are not following or locked and would show something else if they followed the server default: the value differs, or, for the subtitle style (`SelectedStylePresetIndex`), the saved colours are not that style's colours and custom colours are off |
 | `Reach` | Keys that reach further than the web client: `Both` also changes poster images in native apps (only while **Native Poster Tags** is on, `Web` otherwise), `Server` is applied by the server itself |
 | `Unavailable` | Key → the administrator switch that is off, so the setting currently does nothing |
 

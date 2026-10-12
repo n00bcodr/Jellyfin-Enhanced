@@ -225,7 +225,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 UserSettingsRegistry.TryGet(change.Key, out var descriptor);
                 change.Visible = !SameEffectiveValue(descriptor!, descriptor!.Property.GetValue(before.Values), descriptor.Property.GetValue(after.Values), defaults)
-                    || StyleColoursChange(change, before, document, defaults);
+                    || StyleColoursChange(change, before, after);
             }
 
             return plan;
@@ -309,15 +309,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public static JToken Token(object? value) => value == null ? JValue.CreateNull() : JToken.FromObject(value);
 
         /// <summary>
-        /// Whether making the subtitle style follow the default changes the colours the user sees
-        /// even where the style itself stays: the client then shows the preset's colours instead of
-        /// the saved ones (not while a lock already did).
+        /// Whether a change of the subtitle style changes the colours the user sees even where the
+        /// style itself stays: the client shows the preset's colours while the style is locked or
+        /// follows the default, else the saved ones (see <see cref="UserSettingsResolver.ShownStyleColours"/>),
+        /// so moving into Following or out of it (Overwrite) can switch them. The states come from the
+        /// change: Apply updates the before-resolution's Meta in place.
         /// </summary>
-        private static bool StyleColoursChange(UserSettingsKeyChange change, ResolvedUserSettings before, UserSettings document, UserSettings defaults)
+        private static bool StyleColoursChange(UserSettingsKeyChange change, ResolvedUserSettings before, ResolvedUserSettings after)
             => change.Key == nameof(UserSettings.SelectedStylePresetIndex)
-                && change.AfterState == StateFollowing
-                && !before.IsLocked(change.Key)
-                && !UserSettingsResolver.ShowsStyleColours(document, defaults.SelectedStylePresetIndex);
+                && UserSettingsResolver.ShownStyleColours(before.Values, before.IsLocked(change.Key) || change.BeforeState == StateFollowing)
+                    != UserSettingsResolver.ShownStyleColours(after.Values, after.IsLocked(change.Key) || change.AfterState == StateFollowing);
 
         /// <summary>
         /// Whether two effective values look the same to the user: equal, or one is a sentinel that

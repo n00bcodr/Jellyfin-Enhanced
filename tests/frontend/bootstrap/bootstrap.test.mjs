@@ -189,6 +189,71 @@ test('a followed display language replaces the stored one only while it is the s
   assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), 'es');
 });
 
+// A lock writes its language over the user's; once it is gone, the user's own language comes
+// back while the lock's language is still the stored one (JE_lockedLanguage_* records it).
+for (const [label, chosen, before, restored] of [
+  ['a chosen language', 'de', 'de', 'de'],
+  ['"Auto" with a language picked earlier', '', 'it', 'it'],
+  ['"Auto" without a stored language', '', null, null]
+]) test(`after an unlock ${label} comes back`, async t => {
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'fr' }, SettingsMeta: { Schema: 2, Locked: ['DisplayLanguage'], Chosen: ['DisplayLanguage'] }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: before === null ? {} : { 'user-a-language': before } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+  assert.equal(h.translationLoads, before === null ? 1 : 2);
+  const unlock = () => {
+    h.plugin.userConfig.settingsMeta = { chosen: ['displayLanguage'] };
+    h.plugin.currentSettings.displayLanguage = chosen;
+    h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: ['displayLanguage'], rejected: [], meta: true } }));
+  };
+  unlock();
+  assert.equal(h.window.localStorage.getItem('user-a-language'), restored);
+  assert.equal(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null);
+  // Nothing more happens on later loads.
+  unlock();
+  assert.equal(h.window.localStorage.getItem('user-a-language'), restored);
+});
+
+test('an unlock keeps a language picked in jellyfin-web after the lock, and a relock keeps the first record', async t => {
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'fr' }, SettingsMeta: { Schema: 2, Locked: ['DisplayLanguage'] }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: { 'user-a-language': 'de' } });
+  await until(() => h.plugin.initialized);
+  const announce = (meta, language) => {
+    h.plugin.userConfig.settingsMeta = meta;
+    h.plugin.currentSettings.displayLanguage = language;
+    h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: [], rejected: [], meta: true } }));
+  };
+  // Relocked to Spanish: the user's German is still what an unlock gives back.
+  announce({ locked: ['displayLanguage'] }, 'es');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'es');
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('JE_lockedLanguage_user-a')), { language: 'es', previous: 'de' });
+  // Settings that did not load say nothing about the lock: the record stays.
+  h.plugin.userConfig.settingsStatus = 'unavailable';
+  announce({}, '');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'es');
+  h.plugin.userConfig.settingsStatus = 'ok';
+  // A language picked in jellyfin-web after the lock stays.
+  h.window.localStorage.setItem('user-a-language', 'it');
+  announce({}, '');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'it');
+  assert.equal(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null);
+});
+
+test('a full localStorage does not stop the boot when the language record cannot be written', async t => {
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'de' }, SettingsMeta: { Schema: 2 }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: { 'user-a-language': 'de' } });
+  const setItem = h.window.Storage.prototype.setItem;
+  h.window.Storage.prototype.setItem = function (key, value) {
+    if (String(key).startsWith('JE_seededLanguage_')) throw new h.window.DOMException('full', 'QuotaExceededError');
+    return setItem.call(this, key, value);
+  };
+  t.after(() => { h.window.Storage.prototype.setItem = setItem; });
+  await until(() => h.plugin.initialized);
+  assert.ok(h.initialized.includes('hideSplash'));
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'de');
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), null);
+});
+
 test('translation cache clear removes stale locales but preserves newer entries and unrelated storage', async t => {
   const h = setup(t, { data: payload({ PublicConfig: { ClearTranslationCacheTimestamp: 2000 } }), storage: {
     JE_translation_en: 'old', JE_translation_ts_en: '1000', JE_translation_fr: 'new', JE_translation_ts_fr: '3000', unrelated: 'keep'

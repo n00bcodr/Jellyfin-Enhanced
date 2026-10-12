@@ -94,8 +94,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// key); Defaults (what each key with an admin default resolves to while it follows it); Reach
         /// (the effective reach of every key that is not web-only); Unavailable (keys whose admin gate
         /// is off, with the gate's name); Differs (the keys that can follow a default, are neither
-        /// locked nor Following, and whose value is not the default, see <see cref="EqualsDefault"/>:
-        /// following the default would visibly change them).
+        /// locked nor Following, and would look different if they followed it, see
+        /// <see cref="FollowingChangesNothing"/>).
         /// </summary>
         /// <param name="resolved">The resolved document.</param>
         /// <param name="stored">The stored document it was resolved from.</param>
@@ -223,6 +223,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             var (text, background) = SubtitleStyleColours[presetIndex];
             return CanonicalColour(stored.CustomSubtitleTextColor, "#FFFFFFFF") == CanonicalColour(text, text)
                 && CanonicalColour(stored.CustomSubtitleBgColor, "#00000000") == CanonicalColour(background, background);
+        }
+
+        /// <summary>
+        /// The subtitle colours (text, background) the client shows for a document
+        /// (JE.getSubtitleColors in js/enhanced/player/subtitles.js): the style preset's while
+        /// <paramref name="presetApplies"/> (the style is locked or follows the default) and the user
+        /// did not pick custom colours, else the saved ones; both as #RRGGBBAA in upper case.
+        /// </summary>
+        /// <param name="values">The effective values (the style index as resolved).</param>
+        /// <param name="presetApplies">Whether the style is locked or follows the default.</param>
+        /// <returns>The colours shown.</returns>
+        public static (string Text, string Background) ShownStyleColours(UserSettings values, bool presetApplies)
+        {
+            ArgumentNullException.ThrowIfNull(values);
+            var index = values.SelectedStylePresetIndex;
+            if (presetApplies && !values.UsingCustomColors && index >= 0 && index < SubtitleStyleColours.Length)
+            {
+                var (text, background) = SubtitleStyleColours[index];
+                return (CanonicalColour(text, text), CanonicalColour(background, background));
+            }
+
+            return (CanonicalColour(values.CustomSubtitleTextColor, "#FFFFFFFF"), CanonicalColour(values.CustomSubtitleBgColor, "#00000000"));
         }
 
         /// <summary>A stored colour as #RRGGBBAA in upper case ("transparent" is #00000000, #RRGGBB opaque); empty uses the client's fallback.</summary>
