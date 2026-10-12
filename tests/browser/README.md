@@ -13,6 +13,7 @@ The suite runs desktop Chromium, mobile Chromium (Pixel 7 viewport/touch emulati
 
 Covered behavior:
 
+- Production arr UI (`arr.spec.cjs`, `arr-fixture.html`, `arr-fixtures.cjs`): details status, personal hub tabs, Manage drawer, notification inbox and Overview/Activity/System/Audit; overflow at 1440/390/360 CSS px; every visible arr control at least 44×44 CSS px on phones; Escape and opener focus; exclusive tab selection after click/native keyboard activation; importing/ready/stalled wording and Play availability; stale-source/refresh notes and truncated lists; held-response loading; member-only tabs. The explicit layout matrix runs in Chromium and Firefox; interaction cases run on Pixel 7 at 390px. All plugin calls use strict local route stubs (unknown paths or methods fail teardown), with production shared API and arr modules loaded in manifest order and English strings read from the production locale. The fixture pins Jellyfin's root font sizes and border-box inheritance; it does not suppress horizontal overflow. Each layout check attaches its measured control boxes as JSON to the Playwright report.
 - Production Seerr modal: primary callback receives the selected fixture season, cancel/back/Escape, repeated open/close cleanup, keyboard focus wrapping, text injection protection, responsive layout.
 - Production advanced request forms: regular/4K default server matching, alphabetical server order, quality/root-folder defaults, free-space labels, dependent dropdown replacement and reset.
 - Production navigation: push/replace URL transitions, redundant events, unsubscribe.
@@ -31,3 +32,5 @@ npm run test:visual
 Commit the reviewed PNG changes with their reason. Do not update them merely to clear a failure. Existing baselines were initially created on Linux; use Linux for visual comparisons. Missing browsers, missing snapshots, and unavailable servers are failures, not skips.
 
 Remaining scope: full Enhanced panel wiring, poster-tag interactions, bookmarks, hidden-content/Spoiler Guard browser journeys, playback, real touch hardware, and complete native Jellyfin navigation are not established by this fixture suite. Consult the coverage matrix for their other test layers and gaps.
+
+The existing `browser` job in `.github/workflows/regression.yml` calls `python3 tests/run.py browser`, which runs `npm run test:browser`. Playwright's default `*.spec.cjs` discovery in this directory includes `arr.spec.cjs`; no additional job or testMatch is needed. The production inventory enumerates production files/routes, not browser test names.

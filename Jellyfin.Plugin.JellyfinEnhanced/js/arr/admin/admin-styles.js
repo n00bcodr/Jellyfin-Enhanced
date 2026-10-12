@@ -88,7 +88,7 @@
 @media (max-width: 600px) {
   .je-ops-item { flex-wrap: wrap; }
   .je-ops-fixes { max-width: 100%; flex-basis: 100%; justify-content: flex-start; }
-  .je-ops-btn { min-height: 2.75em; }
+  .je-ops-btn, .je-ops-link { min-height: 44px; min-width: 44px; }
   .je-ops-table thead { display: none; }
   .je-ops-table tr { display: block; padding: 0.5em 0; border-top: 1px solid rgba(255,255,255,0.07); }
   .je-ops-table td { display: block; border: 0; padding: 0.1em 0.3em; }

@@ -64,7 +64,8 @@
 @media (max-width: 600px) {
   .je-manage-overlay { align-items: flex-end; }
   .je-manage { width: 100vw; height: auto; max-height: 88vh; border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,0.5); }
-  .je-manage-btn { min-height: 2.75em; }
+  .je-manage-btn, .je-manage-close { min-height: 44px; min-width: 44px; }
+  .je-manage-tab { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
 }
 .layout-tv .je-manage { width: 100vw; font-size: 1.1em; padding: 2em 6vw; }
 @media (prefers-reduced-motion: reduce) { .je-manage { transition: none; } }

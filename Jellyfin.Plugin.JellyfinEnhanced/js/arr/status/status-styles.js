@@ -95,7 +95,8 @@ button.je-arr-pill:focus-visible, .layout-tv button.je-arr-pill:focus { outline:
   .je-arr-stop { flex-direction: row; align-items: center; gap: 0.5em; min-width: 0; padding: 0; }
   .je-arr-stop::before { display: none; }
   .je-arr-dot { margin-bottom: 0; flex: none; }
-  .je-arr-pill { min-height: 2.75em; }
+  .je-arr-pill { min-height: 44px; min-width: 44px; }
+  .je-arr-stale-retry { min-height: 44px; min-width: 44px; }
   .je-arr-chip { margin-left: 0; margin-top: 0.25em; }
 }
 .layout-tv .je-arr-pill { font-size: 1.15em; min-height: 2.6em; }

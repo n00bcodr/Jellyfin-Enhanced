@@ -49,13 +49,13 @@ body.je-hub-active #fallbackPage { display: none !important; }
   .je-hub { padding: 4.8em 0.8em 2em; }
   .je-hub-title { font-size: 1.4em; }
   .je-hub-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 0.3em; }
-  .je-hub-tab { white-space: nowrap; min-height: 2.75em; }
+  .je-hub-tab { white-space: nowrap; min-height: 44px; min-width: 44px; flex-shrink: 0; }
   .je-hub-row { gap: 0.7em; }
   .je-hub-poster { width: 3.6em; height: 5.4em; }
   .je-hub-actions { flex-basis: 100%; justify-content: flex-end; }
   .je-hub-row { flex-wrap: wrap; }
   .je-hub-body { flex-basis: calc(100% - 4.4em); }
-  .je-hub-btn { min-height: 2.75em; }
+  .je-hub-btn { min-height: 44px; min-width: 44px; }
 }
 .layout-tv .je-hub { padding-left: 5vw; padding-right: 5vw; }
 .layout-tv .je-hub-tab, .layout-tv .je-hub-btn { min-height: 3em; font-size: 1.05em; }

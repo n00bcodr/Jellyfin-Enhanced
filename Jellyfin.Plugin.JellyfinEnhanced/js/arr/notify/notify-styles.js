@@ -72,6 +72,8 @@
 @media (max-width: 600px) {
   .je-notify-panel { left: 0 !important; right: 0 !important; top: auto !important; bottom: 0; width: 100vw; max-height: 85vh; border-radius: 14px 14px 0 0; }
   .je-notify-toasts { left: 8px; right: 8px; bottom: 8px; max-width: none; }
+  .je-notify-markall, .je-notify-more, .je-notify-settings, .je-notify-play,
+  .je-notify-chip, .je-notify-remind { min-height: 44px; min-width: 44px; }
 }
 .layout-tv .je-notify-panel button:focus, .layout-tv .je-notify-chip:focus, .layout-tv .je-notify-remind:focus, .je-notify-panel button:focus-visible, .je-notify-chip:focus-visible, .je-notify-remind:focus-visible, .je-notify-toast button:focus-visible { outline: 3px solid #a29bfe; outline-offset: 2px; }
 `;
