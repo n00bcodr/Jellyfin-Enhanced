@@ -220,6 +220,68 @@ test('after "Make follow default" and its undo, the open list shows each user\'s
   assert.equal(h.paths().filter(p => p === '/overview/AutoPipEnabled').length, 3);
 });
 
+test('a list whose last changed user was made to follow can still be closed and opened again', async t => {
+  const bob = 'b'.repeat(32);
+  const overview = overviewFor();
+  const autoPip = overview.Settings.find(entry => entry.Key === 'AutoPipEnabled');
+  let bobFollows = false;
+  const setFollows = (follows) => {
+    bobFollows = follows;
+    autoPip.Changed = follows ? 0 : 1;
+  };
+  const h = setup(t, {
+    dismissed: true,
+    overview,
+    apply: body => { setFollows(true); return applyAnswer(body, { Skipped: [], Failed: [], PerUser: [{ Id: bob, Name: 'bob', Changed: ['AutoPipEnabled'], Visible: ['AutoPipEnabled'], Kept: [], Documents: [] }] }); },
+    undo: () => { setFollows(false); return { success: true, Restored: 1, Kept: 0, FailedUsers: 0, Pending: false, PerUser: [] }; },
+    perUser: () => ({
+      Key: 'AutoPipEnabled', Default: false, Locked: false, Users: [bobFollows
+        ? { UserId: bob, Name: 'bob', Live: true, Orphan: false, Value: false, State: 'Following', SameAsDefault: true }
+        : { UserId: bob, Name: 'bob', Live: true, Orphan: false, Value: true, State: 'Chosen', SameAsDefault: false }]
+    })
+  });
+  await h.policy.decorate(h.page);
+  await h.openDetails();
+  const row = h.document.querySelector('#jePolicyRow-AutoPipEnabled');
+  const changed = () => row.querySelector('td[data-count="Changed"]');
+  const isList = el => !!el && el.classList.contains('je-policy-users');
+  changed().querySelector('.je-policy-users-toggle').click();
+  await h.settle();
+  const list = row.nextElementSibling;
+  list.querySelector('.je-policy-follow-btn').click();
+  await h.settle();
+
+  // Changed is now 0, but the open list keeps its toggle.
+  let toggle = changed().querySelector('.je-policy-users-toggle');
+  assert.ok(toggle, 'the open list can still be closed');
+  assert.equal(toggle.textContent, '0 ›');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  assert.ok(isList(row.nextElementSibling));
+
+  // The undo brings the count back while the list stays open.
+  list.querySelector('.je-apply-undo').click();
+  await h.settle();
+  assert.equal(changed().querySelector('.je-policy-users-toggle').textContent, '1 ›');
+  list.querySelector('.je-policy-follow-btn').click();
+  await h.settle();
+
+  toggle = changed().querySelector('.je-policy-users-toggle');
+  toggle.click();
+  await h.settle();
+  assert.equal(isList(row.nextElementSibling), false, 'closed');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  toggle.click();
+  await h.settle();
+  assert.ok(isList(row.nextElementSibling), 'opened again');
+  assert.deepEqual([...row.nextElementSibling.querySelectorAll('.je-policy-users-table > tbody > tr')].map(tr => [...tr.children].map(cell => cell.textContent)), [['bob', 'Off', 'Follows your default', '']]);
+
+  // Once closed, a recount shows a plain 0 again.
+  toggle.click();
+  await h.openDetails();
+  assert.equal(changed().querySelector('.je-policy-users-toggle'), null);
+  assert.equal(changed().textContent, '0');
+});
+
 test('"Make follow default" reports a user the run skipped, failed or did not need to change, and keeps the button', async t => {
   const bob = 'b'.repeat(32);
   const answers = [

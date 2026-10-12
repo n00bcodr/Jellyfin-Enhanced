@@ -695,12 +695,13 @@
             row.querySelectorAll('td[data-count]').forEach((cell) => {
                 cell.textContent = '';
                 const value = counts ? Number(counts[cell.dataset.count]) || 0 : 0;
-                if (cell.dataset.count === 'Changed' && value > 0) {
+                const listOpen = cell.dataset.count === 'Changed' && !!row.nextElementSibling && row.nextElementSibling.classList.contains('je-policy-users');
+                // An open list keeps its toggle at 0 (after the last user was made to follow), so it can still be closed.
+                if (cell.dataset.count === 'Changed' && (value > 0 || listOpen)) {
                     const open = document.createElement('button');
                     open.type = 'button';
                     open.className = 'je-policy-users-toggle';
                     open.textContent = value + ' ›';
-                    const listOpen = row.nextElementSibling && row.nextElementSibling.classList.contains('je-policy-users');
                     open.setAttribute('aria-expanded', listOpen ? 'true' : 'false');
                     open.setAttribute('aria-label', plural(value, 'user') + ' changed ' + item.name + ': show users');
                     open.addEventListener('click', () => toggleUserList(page, item, open));
