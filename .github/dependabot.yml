@@ -9,6 +9,9 @@ updates:
       time: "09:00"
       timezone: "UTC"
     open-pull-requests-limit: 10
+    # Compiled against the host's copy; a version above the oldest supported host's would not load.
+    ignore:
+      - dependency-name: "Microsoft.Data.Sqlite*"
     reviewers:
       - "n00bcodr"
     labels:
@@ -62,3 +65,5 @@ updates:
     directory: /Jellyfin.Plugin.JellyfinEnhanced
     schedule:
       interval: daily
+    ignore:
+      - dependency-name: "Microsoft.Data.Sqlite*"

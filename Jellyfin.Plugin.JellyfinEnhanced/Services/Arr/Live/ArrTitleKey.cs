@@ -97,10 +97,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         /// </summary>
         public const string RequestsState = "req:state";
 
-        /// <summary>True for any key the change feed carries: a title key, a user's request-list key or <see cref="RequestsState"/>.</summary>
-        public static bool IsFeedKey(string? key) => IsValid(key) || TryParseUserRequests(key, out _) || string.Equals(key, RequestsState, StringComparison.Ordinal);
+        /// <summary>
+        /// The feed key that changes when a user's notification inbox changes (something new, read
+        /// elsewhere): <c>ntf:u:&lt;user id, 32 hex&gt;</c>. Only that user ever hears about it.
+        /// </summary>
+        public static string UserInbox(Guid userId) => UserInboxPrefix + userId.ToString("N", CultureInfo.InvariantCulture);
+
+        /// <summary>True for a <see cref="UserInbox"/> key, with the user it belongs to.</summary>
+        public static bool TryParseUserInbox(string? key, out Guid userId)
+        {
+            userId = Guid.Empty;
+            return key is { Length: 38 }
+                && key.StartsWith(UserInboxPrefix, StringComparison.Ordinal)
+                && key.AsSpan(UserInboxPrefix.Length).IndexOfAnyExcept("0123456789abcdef") < 0
+                && Guid.TryParseExact(key.AsSpan(UserInboxPrefix.Length), "N", out userId);
+        }
+
+        /// <summary>
+        /// True for any key the change feed carries: a title key, a user's request-list or inbox key,
+        /// or <see cref="RequestsState"/>.
+        /// </summary>
+        public static bool IsFeedKey(string? key) => IsValid(key) || TryParseUserRequests(key, out _) || TryParseUserInbox(key, out _) || string.Equals(key, RequestsState, StringComparison.Ordinal);
 
         private const string UserRequestsPrefix = "req:u:";
+        private const string UserInboxPrefix = "ntf:u:";
 
         /// <summary>The title-level key (movie or series) a key belongs to.</summary>
         public static string? TitleOf(string? key)

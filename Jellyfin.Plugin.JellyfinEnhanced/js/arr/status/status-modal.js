@@ -110,6 +110,8 @@
                 mount.appendChild(manage);
             }
         }
+        // Phase 2: Notify me / Following (and Remind) for the title, in or not in the library.
+        JE.internals?.arrNotify?.attachModal?.(mount, status || null, state.key, data);
         if (state.unsubscribe) state.unsubscribe();
         const keys = followKeys(state.key, status);
         state.unsubscribe = JE.arrStatus.subscribe(keys, () => update(state), { since: data?.since ?? null });

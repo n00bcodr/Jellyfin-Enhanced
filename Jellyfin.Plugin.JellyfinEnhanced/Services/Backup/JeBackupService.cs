@@ -283,7 +283,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
                 byte[] bytes;
                 try
                 {
-                    bytes = File.ReadAllBytes(full);
+                    // The Requests & downloads database is copied through SQLite (a consistent
+                    // snapshot of a live database), never as raw file bytes; its WAL and copies stay out.
+                    if (Acquire.AcquireDatabase.IsDatabaseFile(relative))
+                    {
+                        if (!relative.Equals(Acquire.AcquireDatabase.FileName, StringComparison.OrdinalIgnoreCase)) continue;
+                        bytes = DatabaseSnapshot(full) ?? File.ReadAllBytes(full);
+                    }
+                    else
+                    {
+                        bytes = File.ReadAllBytes(full);
+                    }
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -440,6 +450,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
                     continue;
                 }
                 var target = TargetPath(entry.Substring(DataPrefix.Length));
+                if (Acquire.AcquireDatabase.Shared is { } database && string.Equals(Path.GetFullPath(target), Path.GetFullPath(database.FilePath), StringComparison.Ordinal))
+                {
+                    // The live database: copied in through SQLite while its reads and writes wait.
+                    database.ReplaceWith(bytes);
+                    written++;
+                    continue;
+                }
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 var temp = target + ".tmp." + Guid.NewGuid().ToString("N");
                 try
@@ -765,6 +782,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
                     yield return (relative, file.FullName);
                 }
             }
+        }
+
+        // A consistent copy of the live Requests & downloads database (null: read the file as is).
+        private static byte[]? DatabaseSnapshot(string full)
+        {
+            var database = Acquire.AcquireDatabase.Shared;
+            if (database == null || !string.Equals(Path.GetFullPath(full), Path.GetFullPath(database.FilePath), StringComparison.Ordinal)) return null;
+            return database.Snapshot();
         }
 
         private static void AddEntry(ZipArchive zip, JeBackupManifest manifest, string name, byte[] bytes, ref long total)

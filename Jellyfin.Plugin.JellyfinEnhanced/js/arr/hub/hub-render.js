@@ -124,6 +124,8 @@
             manage.addEventListener('click', (e) => { e.stopPropagation(); actions.manage(entry); });
             buttons.appendChild(manage);
         }
+        // Phase 2: Following / Notify me (own requests are followed unless muted).
+        JE.internals?.arrNotify?.rowButton?.(entry, buttons);
         if (buttons.childNodes.length) row.appendChild(buttons);
         const open = () => actions.open(entry);
         row.addEventListener('click', open);

@@ -365,6 +365,7 @@
         internal.wireSettingsListeners(ctx);
         internal.wireHiddenContentListeners(ctx);
         JE.internals.spoilerGuard?.wireSettings?.(ctx);
+        JE.internals.arrNotify?.wireSettings?.(ctx);
         internal.wireMiscSettingsControls(ctx);
         internal.wireLanguageControls(ctx);
     };

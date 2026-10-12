@@ -86,6 +86,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Arr.Live.ArrLiveService>());
             serviceCollection.AddSingleton<Services.Arr.Live.ArrWebhookReceiver>();
             serviceCollection.AddSingleton<Services.Arr.Live.ArrWebhookProvisioner>();
+            // Requests & downloads, phase 2 (inert while off): the SQLite database (follows, inbox,
+            // deliveries), notifications driven by the change feed, and their delivery to ntfy and
+            // e-mail (admin-configured endpoints only; ntfy over the guarded, no-redirect transport).
+            serviceCollection.AddHttpClient(Services.Acquire.Notify.NotifyEndpoints.ClientName)
+                .ConfigureHttpClient(c => c.Timeout = System.Threading.Timeout.InfiniteTimeSpan)
+                .ConfigurePrimaryHttpMessageHandler(Services.Arr.ArrHttp.CreateHandler);
+            serviceCollection.AddSingleton<Services.Acquire.AcquireDatabase>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.NotifyStore>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.INotifyUsers, Services.Acquire.Notify.JellyfinNotifyUsers>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.NtfySender>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.IMailTransport, Services.Acquire.Notify.SmtpMailTransport>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.EmailSender>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.NotifyDispatcher>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Notify.NotifyDispatcher>());
+            serviceCollection.AddSingleton<Services.Acquire.Notify.NotificationService>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Notify.NotificationService>());
             // JE backup/export/restore (Jellyfin's own backups don't include plugin data).
             serviceCollection.AddSingleton<Services.Backup.JeBackupService>();
             serviceCollection.AddTransient<JeBackupTask>();

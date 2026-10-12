@@ -214,6 +214,31 @@ its API key in the background only: opening a page never calls Seerr, Sonarr or 
 Sonarr/Radarr to search for the movie, series, season or episode the page is about; each one is recorded in the
 arr action audit log (who, when, the outcome and how the search ended).
 
+### Notifications (phase 2)
+
+**Tell me, and admin essentials (phase 2)** sits under the status switch; **Notifications** under it (on once
+phase 2 is on). Both need **Requests & downloads (new)** and **Show where things have got to**.
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Notifications** | On | Notify me / Following buttons, the bell and inbox, pop-ups, phone and e-mail alerts, admin alerts and Remind |
+| **Your household's Jellyfin address** | (empty) | The address people open Jellyfin with on their phones (e.g. `https://jellyfin.example.com`). Phone alerts and e-mails link to the title there, and e-mails' unsubscribe link to the "Requests & alerts" settings. Empty: no links |
+| **Gather new episodes for (minutes)** | 10 | Episodes of one series arriving within this time after the first go out as one message (1-60) |
+| **Phone alerts (ntfy)** | Off | Your ntfy server (`https://ntfy.sh` or your own; it must be reachable from Jellyfin and from people's phones) and, for servers that need one to publish, an access token (stored like the API keys, only ever shown masked). People choose a topic in "Requests & alerts", or you give someone a random one under **Notification status**. **Send test** publishes one message to a topic with the saved settings |
+| **E-mail** | Off | SMTP server, port (587), STARTTLS (servers that only offer TLS on port 465 are not supported), user name and password (stored like the API keys), sender address and name. Alerts only go to addresses people confirmed with a code. **Send test** sends one e-mail with the saved settings |
+| **Tell me when an instance hasn't answered for (minutes)** | 10 | Administrators' outage alert (1-1440). The instance is checked with Jellyfin Enhanced's regular background reads, so the alert can come a few minutes after this time |
+| **…less free than (%)** | 10 | Low-disk alert per root folder, at most once a day (0 = off) |
+| **Daily digest: downloads needing attention for at least (hours)** | 6 | Queue entries the app marks as a problem (import blocked, failed, warning) for at least this long (1-168) |
+| **Send the digest at (hour, server time)** | 9 | 0-23 |
+
+**Notification status** lists deliveries in the last 24 hours (sent, failed, waiting for a retry or for someone's
+quiet hours), the latest problems with the reason (never a credential), the database, and everyone's phone and
+e-mail state, with a button to give someone a random phone topic.
+
+Nobody but the administrator chooses where alerts go: people pick a topic name on your ntfy server and confirm their
+own e-mail address, so no one can make Jellyfin contact an address of their choosing. ntfy is called without following
+redirects and never at a cloud-metadata or link-local address; the SMTP server is checked the same way.
+
 ### Live updates (phase 1)
 
 **Show where things have got to (status on pages)**, under the master switch, shows each title's status

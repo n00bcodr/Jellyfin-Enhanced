@@ -3833,6 +3833,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ArrRequestsHubEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrRequestsHubEnabled,
                 ArrManageDrawerEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrManageDrawerEnabled,
                 ArrSeerrModalStatus = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrSeerrModalStatus,
+                // Phase 2 notifications (bell, Notify me, Remind, "Requests & alerts" panel).
+                ArrNotificationsEnabled = Services.Acquire.Notify.NotifyFlags.Enabled(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,

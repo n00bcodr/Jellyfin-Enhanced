@@ -226,6 +226,13 @@
     "arr/hub/hub-styles.js",
     "arr/hub/hub-render.js",
     "arr/hub/hub-page.js",
+    "// notifications (Requests & downloads, phase 2) — notify-core.js first",
+    "// (JE.arrNotify); notify-styles.js last (JE.initializeArrNotify, started by JE.initializeArrStatus).",
+    "arr/notify/notify-core.js",
+    "arr/notify/notify-follow.js",
+    "arr/notify/notify-bell.js",
+    "arr/notify/notify-panel.js",
+    "arr/notify/notify-styles.js",
 
     "// extras",
     "extras/colored-activity-icons.js",

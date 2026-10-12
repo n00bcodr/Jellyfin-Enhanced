@@ -76,6 +76,14 @@ test('loading makes no request and builds strict title keys', async t => {
   assert.equal(h.timers.length, 0);
 });
 
+test('a user\'s own inbox and request-list keys are feed keys; malformed ones are not', async t => {
+  const h = setup(t);
+  const hex = '0123456789abcdef0123456789abcdef';
+  const off = h.JE.arr.onStatusChange([`ntf:u:${hex}`, `req:u:${hex}`, 'ntf:u:XYZ', `ntf:x:${hex}`, `ntf:u:${hex}0`], () => {});
+  assert.equal(h.JE.arr.live.state().keys, 2);
+  off();
+});
+
 test('a subscription bootstraps the cursor, long-polls with its keys and gets its changes', async t => {
   const h = setup(t);
   const got = [];

@@ -35,6 +35,10 @@ internal sealed class FakeArr : IDisposable
         public Func<string, CancellationToken, Task>? Before { get; set; }
         /// <summary>Connect → notifications (webhooks) the arr holds, with ids.</summary>
         public List<JsonObject> Notifications { get; } = new();
+        /// <summary>/diskspace rows (path, freeSpace, totalSpace).</summary>
+        public List<JsonObject> DiskSpace { get; } = new();
+        /// <summary>/rootfolder rows (path, freeSpace, accessible).</summary>
+        public List<JsonObject> RootFolders { get; } = new();
         /// <summary>Called when a notification is created or changed, or tested (the arr would send its Test event here); return an error message to fail the save.</summary>
         public Func<JsonObject, string?>? OnNotificationTest { get; set; }
         /// <summary>Request bodies of writes, by method and path.</summary>
@@ -217,9 +221,11 @@ internal sealed class FakeArr : IDisposable
                 }
                 case "/api/v3/calendar":
                     return IntegrationTransport.Response(new JsonArray(host.Calendar.Select(r => r.DeepClone()).ToArray()).ToJsonString());
-                case "/api/v3/health":
                 case "/api/v3/diskspace":
+                    return IntegrationTransport.Response(new JsonArray(host.DiskSpace.Select(r => r.DeepClone()).ToArray()).ToJsonString());
                 case "/api/v3/rootfolder":
+                    return IntegrationTransport.Response(new JsonArray(host.RootFolders.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                case "/api/v3/health":
                 case "/api/v3/qualityprofile":
                     return IntegrationTransport.Response("[]");
                 default:

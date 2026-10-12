@@ -76,6 +76,48 @@ Privacy: family members only ever hear about titles they can open in Jellyfin (l
 tags) or that they asked for themselves; nothing they receive names a server, path, download client, release or
 another person.
 
+### Notifications (phase 2)
+
+**Off by default** (*arr Settings tab → Requests & downloads (new) → Tell me, and admin essentials → Notifications).
+Settings: [*arr Settings](arr-settings.md#notifications-phase-2).
+
+- **Notify me.** A bell button in the action row of movie, series and season pages ("Notify me about new
+  episodes" on a series), a **Notify me** button in Seerr's more-info window (titles that aren't in the library yet
+  too) and a **Following** button on each Requests page row. Your own requests are followed automatically (turn it
+  off per title with the same button, or for all in your settings).
+- **What you hear about:** a title you asked for or follow is **ready to watch** (for you: a 4K request waits for
+  the 4K copy, and a title in a library you can't open never counts); **new episodes** of series you follow or
+  asked for, gathered per series for 10 minutes from the first one ("Severance: 3 new episodes ready"; a whole season
+  at once reads "Season 2 is ready" when Sonarr says that is all of it; only numbers, never an episode's name, so
+  nothing is spoiled; a 4K request hears about the 4K copy's episodes); a request of yours **declined**. Following
+  something that is already there tells you nothing; each thing is told once (once per Jellyfin item, whichever id it
+  is known by), even across restarts, and told again if you ask for it again after it was removed; a title you can
+  no longer open by the time a batch goes out is left out. Phone alerts and e-mails held back by quiet hours or
+  retries are checked again as they go out (nothing about a title you can no longer open; the bell then shows such
+  an entry without its title), and a disabled account is told nothing.
+- **Where:** the **bell** in the header (unread count; the inbox with posters, "5 min ago", **Play** for what is
+  ready, Mark all read, older items on demand); a **pop-up** on open pages within a couple of seconds (never while a
+  video plays: you get one "N more notifications arrived" when it ends); and, if the administrator sets them up,
+  **phone alerts** through [ntfy](https://ntfy.sh) and **e-mail**, both with a link straight to the title.
+- **Requests & alerts** (Jellyfin Enhanced panel, per person): what to hear about, pop-ups on or off, follow what I
+  request, phone alerts (make up a private topic, or type your own, then subscribe to it in the ntfy app), e-mail
+  (confirmed with a 6-digit code sent to the address), **quiet hours** (phone and e-mail wait until they end, in your
+  device's time zone; the bell still fills), "hide titles on the lock screen" (no title in any phone or e-mail
+  text, administrators' alerts included) and **Send me a test**. Every e-mail's
+  unsubscribe link opens this section.
+- **Administrators** also hear about a new request waiting for an OK, an instance that stops answering for a while
+  (and when it is back), a root folder low on disk space, a daily list of downloads that have needed attention for
+  hours, and **reminders**: family members get **Remind Dad** next to a status that is taking longer than usual
+  (at most once a day per title, whichever episode or season page it is sent from). These alerts stay with
+  administrators: someone who is no longer one, or who switched administrators' alerts off, doesn't get them on
+  the phone (and someone who is no longer one doesn't see them in the bell).
+
+Notifications are driven by the same live updates as the status (Sonarr/Radarr, Seerr's request list and Jellyfin's
+library), never by extra calls to the arrs. Follows, the inbox and delivery state are kept in a small database
+(`acquire.db`) in Jellyfin Enhanced's data folder, included in JE backups. Failed phone or e-mail deliveries are
+retried (30 s, 2 min, 10 min, 30 min, 2 h, 6 h) and then shown to administrators under **Notification status**; an
+e-mail server that doesn't answer is given up on after 30 seconds for that try, so other alerts aren't held up.
+
 ## ARR Links
 
 ### Setup

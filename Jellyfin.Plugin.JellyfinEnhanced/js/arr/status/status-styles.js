@@ -129,6 +129,8 @@ button.je-arr-pill:focus-visible, .layout-tv button.je-arr-pill:focus { outline:
         if (typeof JE.initializeArrStatusCards === 'function') JE.initializeArrStatusCards();
         if (typeof JE.initializeArrStatusModal === 'function') JE.initializeArrStatusModal();
         if (typeof JE.initializeArrHub === 'function') JE.initializeArrHub();
+        // Phase 2: notifications (bell, Notify me, Remind, "Requests & alerts").
+        if (typeof JE.initializeArrNotify === 'function') JE.initializeArrNotify();
     }
 
     JE.internals = JE.internals || {};

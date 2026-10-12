@@ -160,6 +160,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var cacheKey = CacheKey(viewer, "item", item.ItemId.ToString("N", CultureInfo.InvariantCulture), gather.Revision);
             if (Cache.Get(cacheKey) is { } hit) return hit;
 
+            return Cache.Put(cacheKey, Serialize(new[] { ComposeItem(viewer, item, gather) }));
+        }
+
+        /// <summary>The details-page status of one resolved item from gathered facts (no caching).</summary>
+        private TitleStatus ComposeItem(StatusViewer viewer, JfItemRef item, Gathered gather)
+        {
+            var title = item.Key!.Title;
             ApplyRequests(gather, viewer);
             var c = Context(viewer);
             var facts = gather.Facts[title];
@@ -181,8 +188,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     status = StatusComposer.Episode(facts, item, c, detail: true, seriesCopies);
                     break;
             }
-            return Cache.Put(cacheKey, Serialize(new[] { WithLiveKey(status, facts) }));
+            return WithLiveKey(status, facts);
         }
+
+        /// <summary>
+        /// The current status of one title for a viewer, uncached (notifications and "Remind"): of a
+        /// Jellyfin item the viewer can see when <paramref name="itemId"/> is given, else of the title
+        /// by key (movie or series). Null when the viewer may not see it. Never calls an arr.
+        /// </summary>
+        internal async Task<TitleStatus?> CurrentAsync(StatusViewer viewer, Guid? itemId, TitleKey? key, CancellationToken cancellationToken)
+        {
+            if (itemId is Guid id)
+            {
+                if (_view.Resolve(id, viewer) is not { Key: not null } item) return null;
+                var episodes = item.Kind is "series" or "season" or "episode" ? new[] { item.Key.Title } : Array.Empty<TitleKey>();
+                var gathered = await GatherAsync(new[] { item.Key.Title }, loadEpisodes: null, peekEpisodes: episodes, cancellationToken).ConfigureAwait(false);
+                return ComposeItem(viewer, item, gathered);
+            }
+            if (key == null) return null;
+            var composed = await ComposeForAsync(viewer, new[] { key.Title }, null, cancellationToken).ConfigureAwait(false);
+            return composed.Count > 0 ? composed[0].Status : null;
+        }
+
+        /// <summary>
+        /// Titles composed by key for one viewer without touching the body cache (the notification
+        /// service judges each follower's and requester's status with it), scoped like the Requests
+        /// page when <paramref name="scopes"/> name the part asked for. Titles the viewer may not ask
+        /// about by key are left out. Never calls an arr.
+        /// </summary>
+        internal async Task<IReadOnlyList<KeyedStatus>> ComposeForAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, IReadOnlyDictionary<TitleKey, RequestScope>? scopes, CancellationToken cancellationToken)
+        {
+            var titles = keys.Select(k => k.Title).Distinct().ToList();
+            var gather = await GatherAsync(titles, loadEpisodes: null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            var result = new List<KeyedStatus>();
+            foreach (var title in titles)
+            {
+                RequestScope? scope = scopes != null && scopes.TryGetValue(title, out var s) ? s : null;
+                if (Compose(viewer, gather, title, detail: false, scope) is not { } composed) continue;
+                result.Add(scope != null ? Scoped(viewer, gather, composed, scope) : composed);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Whether a viewer may follow a title ("Notify me"): exactly when they may read its status by
+        /// key — a Jellyfin copy they can open, or no content limits, or they asked for it themselves.
+        /// </summary>
+        internal bool MayFollow(StatusViewer viewer, TitleKey key) => MayAskByKey(viewer, key.Title, _view.Copies(key.Title, viewer));
 
         /// <summary>
         /// The status of one movie or series by its key, for a page about a title that may not be in

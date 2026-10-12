@@ -2585,6 +2585,136 @@
                                 </div>
                             </div>
                             <!-- /Requests & downloads, phase 1 -->
+
+                            <!-- Requests & downloads, phase 2 (switch shared with the admin essentials) -->
+                            <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
+                                <div class="fieldDescription je-field-desc-xl">The second stage: people get told when what they asked for (or follow) is ready, and administrators get alerts and day-to-day tools. Needs the status switch above. Each part below has its own switch.</div>
+                            </div>
+                            <!-- Phase 2: notifications -->
+                            <div id="arrNotifySettings" class="je-arr-notify-settings">
+                                <div class="checkboxContainer"><label><input id="arrNotificationsEnabled" is="emby-checkbox" type="checkbox"/><span>Notifications</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrNotificationsEnabled">
+                                    <div class="fieldDescription je-field-desc-xl">A <strong>Notify me</strong> button on movie, series and season pages, in Seerr's more-info window and on the Requests page (everyone's own requests are followed automatically), a bell with an inbox, toasts on open pages (never during playback) and, if you set them up below, phone alerts (ntfy) and e-mail. People hear when a request or a followed title is ready to watch, about new episodes (gathered per series; a whole season reads "Season 2 is ready"; episode names are never sent) and when a request is declined, and only about titles they can open. Administrators also hear about new requests waiting for an OK, an instance that stops answering, low disk space, a daily list of downloads stuck for hours, and household reminders ("Remind Dad" on titles taking longer than usual, at most once a day per title). Everyone chooses what they hear about, their phone topic, their e-mail address and quiet hours in the Jellyfin Enhanced panel ("Requests &amp; alerts"). Follows and notifications are kept in a small database in Jellyfin Enhanced's data folder (included in JE backups).</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrNotifyHouseholdUrl">Your household's Jellyfin address (for links in alerts)</label>
+                                    <input id="arrNotifyHouseholdUrl" is="emby-input" type="text" autocomplete="off" placeholder="e.g. https://jellyfin.example.com"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrNotifyHouseholdUrl">
+                                    <div class="fieldDescription">The address people open Jellyfin with on their phones. Phone alerts and e-mails link to the title's page there (and e-mails to the "Requests &amp; alerts" settings to unsubscribe). Empty: alerts carry no links.</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrNotifyBatchMinutes">Gather new episodes for (minutes)</label>
+                                    <input id="arrNotifyBatchMinutes" is="emby-input" type="number" min="1" max="60"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrNotifyBatchMinutes">
+                                    <div class="fieldDescription">Episodes of one series that arrive within this time after the first one go out as one message ("Severance: 3 new episodes ready"). 1-60, default 10.</div>
+                                </div>
+
+                                <details class="je-details-section">
+                                    <summary>Phone alerts (ntfy)</summary>
+                                    <div class="je-details-body">
+                                        <div class="checkboxContainer"><label><input id="arrNtfyEnabled" is="emby-checkbox" type="checkbox"/><span>Send phone alerts through ntfy</span></label></div>
+                                        <div class="je-setting-description" data-desc-for="arrNtfyEnabled">
+                                            <div class="fieldDescription je-field-desc-xl">Uses <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a> (the public server or your own). Each person picks a private topic in "Requests &amp; alerts" (or makes up a random one) and subscribes to it in the ntfy app; you can also assign topics below. Alerts only ever go to this server: nobody can make Jellyfin contact another address. Works with the Jellyfin app closed.</div>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNtfyServerUrl">ntfy server</label>
+                                            <input id="arrNtfyServerUrl" is="emby-input" type="text" autocomplete="off" placeholder="https://ntfy.sh"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNtfyToken">Access token (optional)</label>
+                                            <input id="arrNtfyToken" is="emby-input" type="password" autocomplete="new-password" class="je-api-input"/>
+                                            <div class="fieldDescription">Only for servers that need one to publish. Stored like the API keys and only ever shown masked.</div>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNtfyTestTopic">Send a test to topic</label>
+                                            <input id="arrNtfyTestTopic" is="emby-input" type="text" autocomplete="off" placeholder="your own topic (from Requests &amp; alerts)"/>
+                                            <button is="emby-button" type="button" id="arrNtfyTestBtn" class="raised emby-button">Send test</button>
+                                            <div class="fieldDescription">Uses the saved settings: save first.</div>
+                                            <div id="arrNtfyTestResult" class="je-arr-check-result" aria-live="polite"></div>
+                                        </div>
+                                    </div>
+                                </details>
+
+                                <details class="je-details-section">
+                                    <summary>E-mail</summary>
+                                    <div class="je-details-body">
+                                        <div class="checkboxContainer"><label><input id="arrEmailEnabled" is="emby-checkbox" type="checkbox"/><span>Send e-mail alerts</span></label></div>
+                                        <div class="je-setting-description" data-desc-for="arrEmailEnabled">
+                                            <div class="fieldDescription je-field-desc-xl">Through your SMTP server. Each person enters their address in "Requests &amp; alerts" and confirms it with a code sent there; alerts only go to confirmed addresses. Every e-mail has plain and HTML parts and an unsubscribe link.</div>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpHost">SMTP server</label>
+                                            <input id="arrSmtpHost" is="emby-input" type="text" autocomplete="off" placeholder="smtp.example.com"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpPort">Port</label>
+                                            <input id="arrSmtpPort" is="emby-input" type="number" min="1" max="65535"/>
+                                        </div>
+                                        <div class="checkboxContainer"><label><input id="arrSmtpStartTls" is="emby-checkbox" type="checkbox"/><span>Use STARTTLS (port 587)</span></label></div>
+                                        <div class="je-setting-description" data-desc-for="arrSmtpStartTls">
+                                            <div class="fieldDescription">Encrypts the connection (recommended). Servers that only offer TLS on port 465 are not supported; use their port 587.</div>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpUsername">User name (empty: no sign-in)</label>
+                                            <input id="arrSmtpUsername" is="emby-input" type="text" autocomplete="off"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpPassword">Password</label>
+                                            <input id="arrSmtpPassword" is="emby-input" type="password" autocomplete="new-password" class="je-api-input"/>
+                                            <div class="fieldDescription">Stored like the API keys and only ever shown masked.</div>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpFrom">Sender address</label>
+                                            <input id="arrSmtpFrom" is="emby-input" type="text" autocomplete="off" placeholder="jellyfin@example.com"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpFromName">Sender name</label>
+                                            <input id="arrSmtpFromName" is="emby-input" type="text" maxlength="60" placeholder="Jellyfin"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrEmailTestAddress">Send a test to</label>
+                                            <input id="arrEmailTestAddress" is="emby-input" type="text" autocomplete="off" placeholder="you@example.com"/>
+                                            <button is="emby-button" type="button" id="arrEmailTestBtn" class="raised emby-button">Send test</button>
+                                            <div class="fieldDescription">Uses the saved settings: save first.</div>
+                                            <div id="arrEmailTestResult" class="je-arr-check-result" aria-live="polite"></div>
+                                        </div>
+                                    </div>
+                                </details>
+
+                                <details class="je-details-section">
+                                    <summary>Administrator alerts</summary>
+                                    <div class="je-details-body">
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNotifyAdminDownMinutes">Tell me when an instance hasn't answered for (minutes)</label>
+                                            <input id="arrNotifyAdminDownMinutes" is="emby-input" type="number" min="1" max="1440"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNotifyLowDiskPercent">Tell me when a root folder's disk has less free than (%)</label>
+                                            <input id="arrNotifyLowDiskPercent" is="emby-input" type="number" min="0" max="50"/>
+                                            <div class="fieldDescription">0 turns the low-disk alert off. At most one alert per folder a day.</div>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNotifyAdminStuckHours">Daily digest: downloads needing attention for at least (hours)</label>
+                                            <input id="arrNotifyAdminStuckHours" is="emby-input" type="number" min="1" max="168"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNotifyDigestHour">Send the digest at (hour, server time)</label>
+                                            <input id="arrNotifyDigestHour" is="emby-input" type="number" min="0" max="23"/>
+                                        </div>
+                                        <div class="fieldDescription">New requests waiting for an OK and household reminders are sent straight away. Administrators choose in "Requests &amp; alerts" whether these also go to their phone and e-mail.</div>
+                                    </div>
+                                </details>
+
+                                <div class="inputContainer">
+                                    <button is="emby-button" type="button" id="arrNotifyStatusBtn" class="raised emby-button">Notification status</button>
+                                    <div class="fieldDescription">Deliveries (sent, waiting, failed and why), the database, and everyone's phone and e-mail state; assign a phone topic to someone from here.</div>
+                                    <div id="arrNotifyStatusResult" class="je-arr-check-result" aria-live="polite"></div>
+                                </div>
+                            </div>
+                            <!-- /Requests & downloads, phase 2: notifications -->
                         </div>
                     </fieldset>
 
@@ -5268,6 +5398,8 @@
             jeSecretInit(document.querySelector('#mdblistApiKey'), fresh.MdblistApiKey || '');
             jeSecretInit(document.querySelector('#shokoApiKey'), fresh.ShokoApiKey || '');
             jeSecretInit(document.querySelector('#backupPassphrase'), fresh.BackupPassphrase || '');
+            jeSecretInit(document.querySelector('#arrNtfyToken'), fresh.ArrNtfyToken || '');
+            jeSecretInit(document.querySelector('#arrSmtpPassword'), fresh.ArrSmtpPassword || '');
             jeSecretBindServers(document.querySelector('#shokoApiKey'), [fresh.ShokoUrl || '']);
             loadArrInstances(fresh);
             updateAllDependencies();
@@ -5878,6 +6010,137 @@
         document.querySelector('#arrIntegrationEnabled').addEventListener('change', jeApplyArrIntegrationVisibility);
         document.querySelector('#arrIntegrationCheckBtn').addEventListener('click', jeCheckArrConnections);
         document.querySelector('#arrLiveCheckBtn').addEventListener('click', function() { jeArrLiveStatus(); });
+        document.querySelector('#arrNotifyStatusBtn').addEventListener('click', function() { jeArrNotifyStatus(); });
+        document.querySelector('#arrNtfyTestBtn').addEventListener('click', function() { jeArrNotifyTest('ntfy'); });
+        document.querySelector('#arrEmailTestBtn').addEventListener('click', function() { jeArrNotifyTest('email'); });
+
+        /**
+         * Fills the phase-2 notification settings from the saved configuration.
+         * @param {Object} config - Plugin configuration
+         * @returns {void}
+         */
+        function jeLoadArrNotifySettings(config) {
+            var num = function(v, d) { return (v !== undefined && v !== null) ? v : d; };
+            document.querySelector('#arrPhase2Enabled').checked = config.ArrPhase2Enabled === true;
+            document.querySelector('#arrNotificationsEnabled').checked = config.ArrNotificationsEnabled !== false;
+            document.querySelector('#arrNotifyHouseholdUrl').value = config.ArrNotifyHouseholdUrl || '';
+            document.querySelector('#arrNotifyBatchMinutes').value = num(config.ArrNotifyBatchMinutes, 10);
+            document.querySelector('#arrNotifyAdminDownMinutes').value = num(config.ArrNotifyAdminDownMinutes, 10);
+            document.querySelector('#arrNotifyAdminStuckHours').value = num(config.ArrNotifyAdminStuckHours, 6);
+            document.querySelector('#arrNotifyLowDiskPercent').value = num(config.ArrNotifyLowDiskPercent, 10);
+            document.querySelector('#arrNotifyDigestHour').value = num(config.ArrNotifyDigestHour, 9);
+            document.querySelector('#arrNtfyEnabled').checked = config.ArrNtfyEnabled === true;
+            document.querySelector('#arrNtfyServerUrl').value = config.ArrNtfyServerUrl || '';
+            jeSecretInit(document.querySelector('#arrNtfyToken'), config.ArrNtfyToken || '');
+            document.querySelector('#arrEmailEnabled').checked = config.ArrEmailEnabled === true;
+            document.querySelector('#arrSmtpHost').value = config.ArrSmtpHost || '';
+            document.querySelector('#arrSmtpPort').value = num(config.ArrSmtpPort, 587);
+            document.querySelector('#arrSmtpStartTls').checked = config.ArrSmtpStartTls !== false;
+            document.querySelector('#arrSmtpUsername').value = config.ArrSmtpUsername || '';
+            jeSecretInit(document.querySelector('#arrSmtpPassword'), config.ArrSmtpPassword || '');
+            document.querySelector('#arrSmtpFrom').value = config.ArrSmtpFrom || '';
+            document.querySelector('#arrSmtpFromName').value = config.ArrSmtpFromName || 'Jellyfin';
+        }
+
+        /**
+         * Copies the phase-2 notification settings into the configuration being saved (numbers clamped).
+         * @param {Object} config - Plugin configuration
+         * @returns {void}
+         */
+        function jeSaveArrNotifySettings(config) {
+            var clamp = function(id, lo, hi, d) { var n = parseInt(document.querySelector(id).value, 10); return isNaN(n) ? d : Math.min(hi, Math.max(lo, n)); };
+            config.ArrPhase2Enabled = document.querySelector('#arrPhase2Enabled').checked;
+            config.ArrNotificationsEnabled = document.querySelector('#arrNotificationsEnabled').checked;
+            config.ArrNotifyHouseholdUrl = (document.querySelector('#arrNotifyHouseholdUrl').value || '').trim();
+            config.ArrNotifyBatchMinutes = clamp('#arrNotifyBatchMinutes', 1, 60, 10);
+            config.ArrNotifyAdminDownMinutes = clamp('#arrNotifyAdminDownMinutes', 1, 1440, 10);
+            config.ArrNotifyAdminStuckHours = clamp('#arrNotifyAdminStuckHours', 1, 168, 6);
+            config.ArrNotifyLowDiskPercent = clamp('#arrNotifyLowDiskPercent', 0, 50, 10);
+            config.ArrNotifyDigestHour = clamp('#arrNotifyDigestHour', 0, 23, 9);
+            config.ArrNtfyEnabled = document.querySelector('#arrNtfyEnabled').checked;
+            config.ArrNtfyServerUrl = (document.querySelector('#arrNtfyServerUrl').value || '').trim();
+            config.ArrNtfyToken = jeSecretRead(document.querySelector('#arrNtfyToken'));
+            config.ArrEmailEnabled = document.querySelector('#arrEmailEnabled').checked;
+            config.ArrSmtpHost = (document.querySelector('#arrSmtpHost').value || '').trim();
+            config.ArrSmtpPort = clamp('#arrSmtpPort', 1, 65535, 587);
+            config.ArrSmtpStartTls = document.querySelector('#arrSmtpStartTls').checked;
+            config.ArrSmtpUsername = (document.querySelector('#arrSmtpUsername').value || '').trim();
+            config.ArrSmtpPassword = jeSecretRead(document.querySelector('#arrSmtpPassword'));
+            config.ArrSmtpFrom = (document.querySelector('#arrSmtpFrom').value || '').trim();
+            config.ArrSmtpFromName = (document.querySelector('#arrSmtpFromName').value || '').trim().slice(0, 60);
+        }
+
+        /**
+         * "Send test": one message straight through ntfy or e-mail with the saved settings.
+         * @param {string} channel - 'ntfy' or 'email'
+         * @returns {Promise<void>}
+         */
+        async function jeArrNotifyTest(channel) {
+            var out = document.getElementById(channel === 'ntfy' ? 'arrNtfyTestResult' : 'arrEmailTestResult');
+            var body = channel === 'ntfy'
+                ? { channel: 'ntfy', topic: (document.querySelector('#arrNtfyTestTopic').value || '').trim() }
+                : { channel: 'email', address: (document.querySelector('#arrEmailTestAddress').value || '').trim() };
+            out.textContent = 'Sending...';
+            try {
+                var res = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/notify/test'), data: JSON.stringify(body), contentType: 'application/json', dataType: 'json' });
+                out.textContent = res && res.ok ? 'Sent.' : ('Not sent: ' + ((res && res.error) || 'unknown error'));
+            } catch (e) {
+                var code = '';
+                try { code = (await e.json()).code || ''; } catch (_) { /* no body */ }
+                var texts = { invalid_topic: 'Enter a topic (8-64 letters, digits, - or _).', invalid_server: 'Save a valid ntfy server address first.', invalid_address: 'Enter a valid e-mail address.', email_not_set_up: 'Save the SMTP server and sender address first.' };
+                out.textContent = texts[code] || 'Could not send the test.';
+            }
+        }
+
+        /**
+         * "Notification status": deliveries, problems, the database and every user's channels,
+         * with a button per user to give them a random phone topic.
+         * @returns {Promise<void>}
+         */
+        async function jeArrNotifyStatus() {
+            var out = document.getElementById('arrNotifyStatusResult');
+            if (!out) return;
+            out.textContent = 'Loading...';
+            var data;
+            try {
+                data = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/notify'), dataType: 'json' });
+            } catch (e) {
+                out.textContent = 'Could not load the notification status.';
+                return;
+            }
+            out.textContent = '';
+            var line = function(text, cls) { out.appendChild(createEl('div', { className: 'fieldDescription' + (cls ? ' ' + cls : ''), textContent: text })); };
+            if (!data.enabled) line('Notifications are off: turn on phase 2 and Notifications, then save.');
+            if (!data.database || !data.database.available) {
+                line('Database: not available. ' + ((data.database && data.database.reason) || ''), 'je-arr-check-bad');
+                return;
+            }
+            line('Database: schema ' + data.database.version + (data.database.sizeBytes ? ', ' + Math.round(data.database.sizeBytes / 1024) + ' KB' : '') + '.');
+            var ch = data.channels || {};
+            line('Phone alerts (ntfy): ' + (ch.ntfy && ch.ntfy.ready ? 'ready (' + ch.ntfy.server + (ch.ntfy.tokenSet ? ', token set' : '') + ')' : 'off'));
+            line('E-mail: ' + (ch.email && ch.email.ready ? 'ready (' + ch.email.host + ':' + ch.email.port + (ch.email.startTls ? ', STARTTLS' : '') + ')' : 'off'));
+            line('Links in alerts: ' + (ch.householdUrl || 'none (set your household address)'));
+            var d = data.deliveries || {};
+            line('Last 24 h: ' + (d.sent24h || 0) + ' sent, ' + (d.failed24h || 0) + ' failed; ' + (d.pending || 0) + ' waiting (retries and quiet hours).');
+            (d.problems || []).forEach(function(p) {
+                line((p.final ? 'Gave up: ' : 'Retrying: ') + (p.user || p.userId) + ' · ' + p.channel + ' · ' + p.kind + ' · ' + p.attempts + ' attempt(s) · ' + (p.error || ''), p.final ? 'je-arr-check-bad' : '');
+            });
+            var users = data.users || [];
+            if (users.length) out.appendChild(createEl('div', { className: 'je-arr-check-title', textContent: 'People who set up alerts' }));
+            users.forEach(function(u) {
+                var row = createEl('div', { className: 'je-arr-check-row' });
+                row.appendChild(createEl('div', { className: 'fieldDescription', textContent: (u.name || u.id) + ' · phone: ' + (u.ntfy ? 'on (' + (u.topic || '') + (u.topicByAdmin ? ', set by you' : '') + ')' : 'off') + ' · e-mail: ' + (u.email ? 'on' : (u.emailVerified ? 'off' : 'not set up')) + (u.quietHours ? ' · quiet ' + u.quietHours : '') }));
+                var give = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Give a new random phone topic' });
+                give.addEventListener('click', async function() {
+                    try {
+                        await ApiClient.ajax({ type: 'PUT', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/notify/users/' + encodeURIComponent(u.id)), data: JSON.stringify({ generate: true }), contentType: 'application/json', dataType: 'json' });
+                        jeArrNotifyStatus();
+                    } catch (e) { give.textContent = 'Could not set it'; }
+                });
+                row.appendChild(give);
+                out.appendChild(row);
+            });
+        }
 
         /**
          * Describes an instance's live connection for the admin ("Connected since 14:02 · v6.0.4").
@@ -7371,6 +7634,7 @@
                 document.querySelector('#arrManageDrawerEnabled').checked = config.ArrManageDrawerEnabled !== false;
                 document.querySelector('#arrSeerrModalStatus').checked = config.ArrSeerrModalStatus !== false;
                 document.querySelector('#arrSeerrRefreshMinutes').value = (config.ArrSeerrRefreshMinutes !== undefined && config.ArrSeerrRefreshMinutes !== null) ? config.ArrSeerrRefreshMinutes : 5;
+                jeLoadArrNotifySettings(config);
                 jeApplyArrIntegrationVisibility();
                 document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
@@ -8002,6 +8266,7 @@
             config.ArrSeerrModalStatus = document.querySelector('#arrSeerrModalStatus').checked;
             var __seerrMinutes = parseInt(document.querySelector('#arrSeerrRefreshMinutes').value, 10);
             config.ArrSeerrRefreshMinutes = isNaN(__seerrMinutes) ? 5 : Math.min(60, Math.max(1, __seerrMinutes));
+            jeSaveArrNotifySettings(config);
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
@@ -9429,7 +9694,9 @@
             { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
-            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl'] },
+            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled'] },
+            { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrNotificationsEnabled'] },
+            { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyLowDiskPercent', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },

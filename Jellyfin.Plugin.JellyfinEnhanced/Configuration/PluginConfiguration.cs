@@ -848,6 +848,71 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public int ArrSeerrRefreshMinutes { get; set; } = 5;
 
+        // ---- Requests & downloads, phase 2: "Tell me" (notifications) ----
+
+        /// <summary>
+        /// Phase 2 of "Requests &amp; downloads (new)". Needs <see cref="ArrIntegrationEnabled"/> and
+        /// <see cref="ArrPhase1Enabled"/>. Off by default.
+        /// </summary>
+        public bool ArrPhase2Enabled { get; set; }
+
+        /// <summary>
+        /// Notifications: "Notify me" on titles, a bell with the inbox, toasts, phone (ntfy) and e-mail
+        /// alerts, admin alerts and "Remind". Needs phase 2. On by default (when phase 2 is on).
+        /// </summary>
+        public bool ArrNotificationsEnabled { get; set; } = true;
+
+        /// <summary>The household's Jellyfin address for links in phone alerts and e-mails (e.g. https://jellyfin.example.com). Empty: no links.</summary>
+        public string ArrNotifyHouseholdUrl { get; set; } = string.Empty;
+
+        /// <summary>New episodes of one series are gathered into one message for this many minutes (1-60, default 10).</summary>
+        public int ArrNotifyBatchMinutes { get; set; } = 10;
+
+        /// <summary>Administrators are told when an instance has not answered for this many minutes (1-1440, default 10).</summary>
+        public int ArrNotifyAdminDownMinutes { get; set; } = 10;
+
+        /// <summary>The daily digest lists downloads that have needed attention for at least this many hours (1-168, default 6).</summary>
+        public int ArrNotifyAdminStuckHours { get; set; } = 6;
+
+        /// <summary>Administrators are told when a root folder's disk has less than this percentage free (0 = never, default 10).</summary>
+        public int ArrNotifyLowDiskPercent { get; set; } = 10;
+
+        /// <summary>Hour of the day (server time, 0-23) the stuck-downloads digest goes out. Default 9.</summary>
+        public int ArrNotifyDigestHour { get; set; } = 9;
+
+        /// <summary>Phone alerts through ntfy (the administrator's ntfy server; each user picks a topic).</summary>
+        public bool ArrNtfyEnabled { get; set; }
+
+        /// <summary>The ntfy server (e.g. https://ntfy.sh or a self-hosted one). Users can't change it.</summary>
+        public string ArrNtfyServerUrl { get; set; } = string.Empty;
+
+        /// <summary>Optional ntfy access token (for servers that require one to publish). Stored outside the configuration; only ever shown masked.</summary>
+        public string ArrNtfyToken { get; set; } = string.Empty;
+
+        /// <summary>E-mail alerts through the administrator's SMTP server (users verify their own address).</summary>
+        public bool ArrEmailEnabled { get; set; }
+
+        /// <summary>SMTP server host name or address.</summary>
+        public string ArrSmtpHost { get; set; } = string.Empty;
+
+        /// <summary>SMTP port (default 587).</summary>
+        public int ArrSmtpPort { get; set; } = 587;
+
+        /// <summary>Use STARTTLS (recommended; port 587). Implicit TLS on port 465 is not supported.</summary>
+        public bool ArrSmtpStartTls { get; set; } = true;
+
+        /// <summary>SMTP user name (empty: no authentication).</summary>
+        public string ArrSmtpUsername { get; set; } = string.Empty;
+
+        /// <summary>SMTP password. Stored outside the configuration; only ever shown masked.</summary>
+        public string ArrSmtpPassword { get; set; } = string.Empty;
+
+        /// <summary>The sender address of notification e-mails.</summary>
+        public string ArrSmtpFrom { get; set; } = string.Empty;
+
+        /// <summary>The sender name of notification e-mails (default "Jellyfin").</summary>
+        public string ArrSmtpFromName { get; set; } = "Jellyfin";
+
         /// <summary>
         /// Folder the scheduled "Back up Jellyfin Enhanced data" task writes to. Empty: the
         /// <c>backups</c> folder inside JE's data folder.

@@ -53,19 +53,62 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
         list.Add((season, visibleTo.Length == 0 ? null : visibleTo.ToHashSet()));
     }
 
+    /// <summary>
+    /// Also resolve the ids of copies, episodes and seasons (with their visibility), like Jellyfin's
+    /// own lookup; off by default so status tests only resolve what they added as items.
+    /// </summary>
+    public bool ResolveAnyItem { get; init; }
+
     public StatusViewer? Viewer(Guid userId) => Users.TryGetValue(userId, out var v) ? v : null;
 
     public JfItemRef? Resolve(Guid itemId, StatusViewer viewer)
-        => Items.TryGetValue(itemId, out var item) && (item.VisibleTo == null || item.VisibleTo.Contains(viewer.UserId)) ? item.Ref : null;
+    {
+        if (Items.TryGetValue(itemId, out var item)) return item.VisibleTo == null || item.VisibleTo.Contains(viewer.UserId) ? item.Ref : null;
+        if (!ResolveAnyItem) return null;
+        bool Sees(HashSet<Guid>? to) => to == null || to.Contains(viewer.UserId);
+        foreach (var list in CopiesByKey.Values)
+        {
+            foreach (var (copy, to) in list)
+            {
+                if (copy.ItemId == itemId && Sees(to)) return new JfItemRef { ItemId = itemId, Kind = "copy", Path = copy.Path };
+            }
+        }
+        foreach (var (series, list) in EpisodesBySeries)
+        {
+            foreach (var (episode, to) in list)
+            {
+                // An episode is seen when the viewer sees it and a copy of its series.
+                if (episode.ItemId == itemId && Sees(to) && SeesSeries(series, viewer)) return new JfItemRef { ItemId = itemId, Kind = "episode" };
+            }
+        }
+        foreach (var (series, list) in SeasonsBySeries)
+        {
+            foreach (var (season, to) in list)
+            {
+                if (season.ItemId == itemId && Sees(to) && SeesSeries(series, viewer)) return new JfItemRef { ItemId = itemId, Kind = "season" };
+            }
+        }
+        return null;
+    }
+
+    private bool SeesSeries(Guid seriesItemId, StatusViewer viewer)
+    {
+        var copies = CopiesByKey.Values.SelectMany(l => l).Where(c => c.Copy.ItemId == seriesItemId).ToList();
+        return copies.Count == 0 || copies.Any(c => c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId));
+    }
 
     public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer)
         => CopiesByKey.TryGetValue(titleKey.ToString(), out var list)
             ? list.Select(c => new JfCopy { ItemId = c.Copy.ItemId, LibraryId = c.Copy.LibraryId, LibraryName = c.Copy.LibraryName, Path = c.Copy.Path, DateCreated = c.Copy.DateCreated, Visible = c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId) }).ToList()
             : new List<JfCopy>();
 
+    /// <summary>Runs on every episode lookup (tests use it to make something happen mid-way).</summary>
+    public Action? OnEpisodes { get; set; }
+
     public IReadOnlyList<JfEpisode> Episodes(Guid seriesItemId, int? season, StatusViewer viewer, bool includeVirtual)
     {
         EpisodeCalls++;
+        OnEpisodes?.Invoke();
         if (!EpisodesBySeries.TryGetValue(seriesItemId, out var list)) return new List<JfEpisode>();
         bool Sees((JfEpisode Episode, HashSet<Guid>? VisibleTo) e) => e.VisibleTo == null || e.VisibleTo.Contains(viewer.UserId);
         var inSeason = list.Where(e => season == null || e.Episode.Season == season).ToList();

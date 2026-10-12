@@ -197,24 +197,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var scopes = new Dictionary<TitleKey, ArrStatusService.RequestScope>();
             foreach (var records in entries)
             {
-                var asked = records.Where(r => r.Active).DefaultIfEmpty(records[0]).ToList();
-                var seasons = new List<int>();
-                if (!records[0].IsMovie)
-                {
-                    var all = asked.SelectMany(r => r.Seasons).Distinct().OrderBy(n => n).ToList();
-                    // Specials count only when they are all that was asked for.
-                    seasons = all.Where(n => n > 0).ToList();
-                    if (seasons.Count == 0 && all.Contains(0)) seasons.Add(0);
-                }
-                var only4k = asked.All(r => r.Is4k);
-                // Seerr's word on the variant asked for (a 4K request holds the 4K state).
-                var available = asked.Where(r => r.Active && r.MediaStatus == 5).ToList();
-                scopes[records[0].Key!.Title] = new ArrStatusService.RequestScope(
-                    seasons,
-                    only4k,
-                    SeerrRequestReadModel.FactsOf(records, viewer.UserId),
-                    available.Count > 0,
-                    available.Select(r => r.UpdatedAt ?? r.CreatedAt).Where(d => d.HasValue).DefaultIfEmpty(null).Max());
+                scopes[records[0].Key!.Title] = ScopeOf(records, viewer.UserId);
             }
             var state = _requests.State;
             var adminTabs = viewer.IsAdmin
@@ -222,6 +205,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 : string.Empty;
             var what = string.Join("|", _requests.Active ? "on" : "off", _requests.Loaded ? "loaded" : "-", state.LastError == null ? "ok" : "err", adminTabs);
             return _status.ForTitlesAsync(viewer, keys, "hub", what, titles => Build(viewer, entries, titles, config, state), cancellationToken, scopes);
+        }
+
+        /// <summary>
+        /// The part of a title one user's requests for it asked for (non-empty <paramref name="records"/>,
+        /// all for the same title): the requested seasons, whether only the 4K copy was asked for, the
+        /// facts of those requests only, and Seerr's word on whether that variant is available.
+        /// </summary>
+        internal static ArrStatusService.RequestScope ScopeOf(IReadOnlyList<SeerrRequestRecord> records, Guid userId)
+        {
+            var asked = records.Where(r => r.Active).DefaultIfEmpty(records[0]).ToList();
+            var seasons = new List<int>();
+            if (!records[0].IsMovie)
+            {
+                var all = asked.SelectMany(r => r.Seasons).Distinct().OrderBy(n => n).ToList();
+                // Specials count only when they are all that was asked for.
+                seasons = all.Where(n => n > 0).ToList();
+                if (seasons.Count == 0 && all.Contains(0)) seasons.Add(0);
+            }
+            var only4k = asked.All(r => r.Is4k);
+            // Seerr's word on the variant asked for (a 4K request holds the 4K state).
+            var available = asked.Where(r => r.Active && r.MediaStatus == 5).ToList();
+            return new ArrStatusService.RequestScope(
+                seasons,
+                only4k,
+                SeerrRequestReadModel.FactsOf(records, userId),
+                available.Count > 0,
+                available.Select(r => r.UpdatedAt ?? r.CreatedAt).Where(d => d.HasValue).DefaultIfEmpty(null).Max());
         }
 
         private byte[] Build(StatusViewer viewer, List<List<SeerrRequestRecord>> entries, IReadOnlyList<ArrStatusService.KeyedStatus> titles, PluginConfiguration? config, SeerrReadModelState state)

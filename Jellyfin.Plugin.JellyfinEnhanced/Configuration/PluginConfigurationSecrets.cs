@@ -29,6 +29,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             nameof(RadarrApiKey),
             nameof(AnalyticsInstallSecret),
             nameof(BackupPassphrase),
+            nameof(ArrNtfyToken),
+            nameof(ArrSmtpPassword),
         };
 
         /// <summary>The real Seerr API key.</summary>
