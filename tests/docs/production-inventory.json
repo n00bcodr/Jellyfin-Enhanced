@@ -39,11 +39,43 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/RecentlyUnlockedSettings.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs",
       "category": "Configuration"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsBulk.cs",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsMeta.cs",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsRegistry.cs",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsResolver.cs",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsWriter.cs",
       "category": "Configuration"
     },
     {
@@ -64,6 +96,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/PublicConfigPayload.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RejectOversizedBodyAttribute.cs",
       "category": "Controllers"
     },
     {
@@ -619,6 +659,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/admin/user-settings-policy.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/arr-links.js",
       "category": "js"
     },
@@ -936,6 +980,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-language.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-provenance.js",
       "category": "js"
     },
     {
@@ -2194,6 +2242,16 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/revision",
+      "method": "GetUserSettingsRevision",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/user-settings/{userId}/shortcuts.json",
       "method": "GetUserSettingsShortcuts",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
@@ -2216,6 +2274,96 @@
       "verb": "POST",
       "path": "/JellyfinEnhanced/user-settings/{userId}/settings.json",
       "method": "SaveUserSettingsSettings",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")",
+        "RequestSizeLimit(64 * 1024)",
+        "RejectOversizedBody"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/settings.json/patch",
+      "method": "PatchUserSettingsSettings",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")",
+        "RequestSizeLimit(64 * 1024)",
+        "RejectOversizedBody"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/admin/user-settings/registry",
+      "method": "GetUserSettingsRegistry",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/admin/user-settings/overview",
+      "method": "GetUserSettingsOverview",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/admin/user-settings/overview/{key}",
+      "method": "GetUserSettingsOverviewForKey",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/user-settings/apply",
+      "method": "ApplyUserSettingsDefaults",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")",
+        "RequestSizeLimit(64 * 1024)",
+        "RejectOversizedBody"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/user-settings/undo/{undoId}",
+      "method": "UndoUserSettingsOperation",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/admin/user-settings/upgrade-card",
+      "method": "GetUserSettingsUpgradeCard",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/user-settings/upgrade-card/dismiss",
+      "method": "DismissUserSettingsUpgradeCard",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize",
@@ -3289,6 +3437,22 @@
       "type": "long",
       "initializer": null,
       "constructor_assignment": "0",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LockedUserSettings",
+      "type": "string[]",
+      "initializer": "System.Array.Empty<string>()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "NewUsersFollowDefaults",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -6404,6 +6568,14 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
+      "class": "UserSettings",
+      "name": "Meta",
+      "type": "UserSettingsMeta?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
       "class": "SpoilerBlurSeriesEntry",
       "name": "SeriesId",
       "type": "string",
@@ -6608,6 +6780,14 @@
       "name": "Prefs",
       "type": "SpoilerBlurUserPrefs",
       "initializer": "new SpoilerBlurUserPrefs()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSpoilerBlur",
+      "name": "PrefsOp",
+      "type": "string?",
+      "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
@@ -7068,6 +7248,14 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
+      "class": "UserHiddenContent",
+      "name": "SettingsOp",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
       "class": "UserReview",
       "name": "UserId",
       "type": "string",
@@ -7186,9 +7374,397 @@
       "initializer": "new Dictionary<string, ActivityEntry>()",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "Lockable",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "Inheritable",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "Reach",
+      "type": "SettingReach",
+      "initializer": "SettingReach.Web",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "Continuous",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "Incidental",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "NullInheritsAdmin",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "EmptyInheritsAdmin",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "DefaultIsSentinel",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "BlankAdminUsesInitializer",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "GateBy",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "Min",
+      "type": "int",
+      "initializer": "int.MinValue",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "Max",
+      "type": "int",
+      "initializer": "int.MaxValue",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "Choices",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "Pattern",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "MaxLength",
+      "type": "int",
+      "initializer": "64",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "AdminControlId",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingAttribute",
+      "name": "AdminRowKey",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingAttribute.cs"
+    },
+    {
+      "class": "UserSettingsKeyChange",
+      "name": "Key",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsBulk.cs"
+    },
+    {
+      "class": "UserSettingsKeyChange",
+      "name": "Before",
+      "type": "JToken?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsBulk.cs"
+    },
+    {
+      "class": "UserSettingsKeyChange",
+      "name": "BeforeState",
+      "type": "string",
+      "initializer": "UserSettingsBulk.StateExisting",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsBulk.cs"
+    },
+    {
+      "class": "UserSettingsKeyChange",
+      "name": "BeforeOp",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsBulk.cs"
+    },
+    {
+      "class": "UserSettingsKeyChange",
+      "name": "After",
+      "type": "JToken?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsBulk.cs"
+    },
+    {
+      "class": "UserSettingsKeyChange",
+      "name": "AfterState",
+      "type": "string",
+      "initializer": "UserSettingsBulk.StateExisting",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsBulk.cs"
+    },
+    {
+      "class": "UserSettingsKeyChange",
+      "name": "Visible",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsBulk.cs"
+    },
+    {
+      "class": "UserSettingsBulkPlan",
+      "name": "Changed",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsBulk.cs"
+    },
+    {
+      "class": "UserSettingsMeta",
+      "name": "Schema",
+      "type": "int",
+      "initializer": "CurrentSchema",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsMeta.cs"
+    },
+    {
+      "class": "UserSettingsMeta",
+      "name": "Following",
+      "type": "List<string>",
+      "initializer": "new()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsMeta.cs"
+    },
+    {
+      "class": "UserSettingsMeta",
+      "name": "Chosen",
+      "type": "List<string>",
+      "initializer": "new()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsMeta.cs"
+    },
+    {
+      "class": "UserSettingsMeta",
+      "name": "ChangedByAdmin",
+      "type": "List<string>",
+      "initializer": "new()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsMeta.cs"
+    },
+    {
+      "class": "UserSettingsMeta",
+      "name": "Ops",
+      "type": "Dictionary<string, string>",
+      "initializer": "new()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsMeta.cs"
+    },
+    {
+      "class": "UserSettingsMeta",
+      "name": "Updated",
+      "type": "DateTime?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsMeta.cs"
+    },
+    {
+      "class": "UserSettingsPopulation",
+      "name": "LiveListed",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsPopulation",
+      "name": "DirectoriesListed",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserDocumentChange",
+      "name": "File",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserDocumentChange",
+      "name": "Before",
+      "type": "JToken?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserDocumentChange",
+      "name": "BeforeOp",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserDocumentChange",
+      "name": "After",
+      "type": "JToken?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsOutcome",
+      "name": "Settings",
+      "type": "string",
+      "initializer": "None",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsOperationRecord",
+      "name": "Id",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsOperationRecord",
+      "name": "Created",
+      "type": "DateTime",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsOperationRecord",
+      "name": "Mode",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsOperationRecord",
+      "name": "Keys",
+      "type": "List<string>",
+      "initializer": "new()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsOperationRecord",
+      "name": "Undone",
+      "type": "DateTime?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsOperationRecord",
+      "name": "Users",
+      "type": "List<UserSettingsOperationUser>",
+      "initializer": "new()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsOperationUser",
+      "name": "UserId",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsOperationUser",
+      "name": "Settings",
+      "type": "List<UserSettingsKeyChange>",
+      "initializer": "new()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsOperationUser",
+      "name": "Documents",
+      "type": "List<UserDocumentChange>",
+      "initializer": "new()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "class": "UserSettingsWriteResult",
+      "name": "Changed",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsWriter.cs"
     }
   ],
   "storage_references": [
+    {
+      "literal": "*.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
     {
       "literal": "activity.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
@@ -7200,6 +7776,14 @@
     {
       "literal": "reviews.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
+    {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsOperations.cs"
     },
     {
       "literal": "Jellyfin.Plugin.JellyfinEnhanced.js.locales.{baseLang}.json",
@@ -7422,10 +8006,6 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-shortcut-editor.js"
     },
     {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel.js"
-    },
-    {
       "literal": "/JellyfinEnhanced/locales/en.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/translations.js"
     },
@@ -7620,10 +8200,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 352,
-    "routes": 173,
-    "configuration_properties": 521,
-    "storage_references": 65,
+    "files": 364,
+    "routes": 182,
+    "configuration_properties": 574,
+    "storage_references": 67,
     "scheduled_tasks": 13,
     "locales": 33
   }
