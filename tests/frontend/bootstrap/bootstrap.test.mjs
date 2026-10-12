@@ -214,6 +214,28 @@ for (const [label, chosen, before, restored] of [
   assert.equal(h.window.localStorage.getItem('user-a-language'), restored);
 });
 
+// An unlock puts back the stored language and the settings' record from before the lock, then
+// decides as if there had been no lock: a language picked in jellyfin-web comes back for a followed
+// or chosen setting, and a followed default replaces only a language the settings had put there.
+for (const [label, meta, before, seeded, unlockedTo, restored] of [
+  ['a followed default keeps a language picked in jellyfin-web', ['Following'], 'it', 'es', 'es', 'it'],
+  ['a chosen language keeps a language picked in jellyfin-web', ['Chosen'], 'it', 'de', 'de', 'it'],
+  ['a new followed default replaces the settings\' language', ['Following'], 'es', 'es', 'de', 'de']
+]) test(`after an unlock ${label}`, async t => {
+  const key = meta[0];
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'fr' }, SettingsMeta: { Schema: 2, Locked: ['DisplayLanguage'], [key]: ['DisplayLanguage'] }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: { 'user-a-language': before, 'JE_seededLanguage_user-a': seeded } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('JE_lockedLanguage_user-a')), { language: 'fr', previous: before, previousSeeded: seeded });
+  h.plugin.userConfig.settingsMeta = { [key.toLowerCase()]: ['displayLanguage'] };
+  h.plugin.currentSettings.displayLanguage = unlockedTo;
+  h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: ['displayLanguage'], rejected: [], meta: true } }));
+  assert.equal(h.window.localStorage.getItem('user-a-language'), restored);
+  assert.equal(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null);
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), restored === before ? seeded : restored);
+});
+
 test('an unlock keeps a language picked in jellyfin-web after the lock, and a relock keeps the first record', async t => {
   const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'fr' }, SettingsMeta: { Schema: 2, Locked: ['DisplayLanguage'] }, SettingsStatus: 'ok' } });
   const h = setup(t, { data, storage: { 'user-a-language': 'de' } });
@@ -226,7 +248,7 @@ test('an unlock keeps a language picked in jellyfin-web after the lock, and a re
   // Relocked to Spanish: the user's German is still what an unlock gives back.
   announce({ locked: ['displayLanguage'] }, 'es');
   assert.equal(h.window.localStorage.getItem('user-a-language'), 'es');
-  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('JE_lockedLanguage_user-a')), { language: 'es', previous: 'de' });
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('JE_lockedLanguage_user-a')), { language: 'es', previous: 'de', previousSeeded: null });
   // Settings that did not load say nothing about the lock: the record stays.
   h.plugin.userConfig.settingsStatus = 'unavailable';
   announce({}, '');

@@ -4256,6 +4256,33 @@
             }
 
             /**
+             * jeCaptureSavedState with the edited controls showing the values they were loaded
+             * with; their current values are put back afterwards (no events fire). loadConfig uses
+             * it for edits made before its delayed baseline, while late-populated controls (library
+             * lists) still enter the baseline as they are then.
+             * @param {Map<Element, (string|boolean)>} loaded Tracked control values when the form was populated.
+             * @param {Set<Element>} edited Controls the admin changed since.
+             */
+            function jeCaptureSavedStateAsLoaded(loaded, edited) {
+                const isToggle = el => el.type === 'checkbox' || el.type === 'radio';
+                const read = el => isToggle(el) ? el.checked : el.value;
+                const write = (el, value) => { if (isToggle(el)) el.checked = value; else el.value = value; };
+                const editedRadios = new Set(Array.from(edited).filter(el => el.type === 'radio').map(el => el.name));
+                const swapped = [];
+                loaded.forEach((value, el) => {
+                    const touched = edited.has(el) || (el.type === 'radio' && editedRadios.has(el.name));
+                    if (!touched || !el.isConnected || read(el) === value) return;
+                    swapped.push([el, read(el)]);
+                    write(el, value);
+                });
+                try {
+                    return jeCaptureSavedState();
+                } finally {
+                    swapped.forEach(([el, value]) => write(el, value));
+                }
+            }
+
+            /**
              * Call once the form reflects a known-saved state.
              * @param {object} [saved] The state that was saved (jeCaptureSavedState when the save
              *   was built); without it, the form as it is now. Edits made while a save is in
@@ -7361,10 +7388,22 @@
                 // The policy script re-reads the locks and badges on every visit (views are cached).
                 jeDecorateUserSettingsPolicy();
 
+                // The controls as loaded, and the ones the admin changes before the delayed baseline
+                // below: the baseline takes their loaded values, so such an edit stays unsaved.
+                const loadedValues = new Map(jeTrackedControls().map(c => [c.el, c.value]));
+                const editedWhileSettling = new Set();
+                const noteEdit = function (e) { if (e.isTrusted && e.target) editedWhileSettling.add(e.target); };
+                form.addEventListener('input', noteEdit);
+                form.addEventListener('change', noteEdit);
                 Dashboard.hideLoadingMsg();
                 // Delay so late-finishing sub-populations (maintenance users, branding previews) settle first,
                 // then offer any unsaved-changes draft left by the previous visit.
-                setTimeout(function () { jeMarkSaved(); jeOfferDraftRestore(); }, 500);
+                setTimeout(function () {
+                    form.removeEventListener('input', noteEdit);
+                    form.removeEventListener('change', noteEdit);
+                    jeMarkSaved(editedWhileSettling.size ? jeCaptureSavedStateAsLoaded(loadedValues, editedWhileSettling) : undefined);
+                    jeOfferDraftRestore();
+                }, 500);
             });
         }
 

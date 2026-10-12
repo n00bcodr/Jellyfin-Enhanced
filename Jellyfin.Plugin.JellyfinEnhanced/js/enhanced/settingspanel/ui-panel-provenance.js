@@ -281,7 +281,9 @@
             if (isLocked) {
                 let line = text('panel_provenance_locked');
                 const own = saved[key];
-                if (Object.prototype.hasOwnProperty.call(saved, key) && JSON.stringify(own) !== JSON.stringify(settings[key])) {
+                // A key that follows the server default keeps following it after an unlock, so its
+                // saved copy does not come back.
+                if (!following.has(key) && Object.prototype.hasOwnProperty.call(saved, key) && JSON.stringify(own) !== JSON.stringify(settings[key])) {
                     const value = describeValue(element, own);
                     if (value) line += ' ' + text(chosen.has(key) ? 'panel_provenance_locked_your_choice' : 'panel_provenance_locked_previous', { value });
                 }

@@ -665,7 +665,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>A settings section an Overwrite replaces in another per-user document, with its undo stamp.</summary>
         /// <param name="Name">The document name in outcomes.</param>
         /// <param name="File">The per-user file.</param>
-        /// <param name="CreateIfMissing">Whether a reset creates the file.</param>
+        /// <param name="CreateIfMissing">Whether a reset treats a missing file as a new document (written only when the target differs from a new document's section; the first use seeds it otherwise) instead of reporting none.</param>
         /// <param name="Read">Reads the section.</param>
         /// <param name="Write">Replaces the section.</param>
         /// <param name="GetStamp">Reads the operation stamp.</param>

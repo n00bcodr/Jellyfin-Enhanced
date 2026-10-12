@@ -99,6 +99,16 @@ test('a locked row says who set it, names the saved choice only when it differs,
   assert.equal(h.keyed('genreTagsEnabled')[0].hasAttribute('aria-disabled'), false);
 });
 
+test('a locked row that follows the server default promises no saved value back', t => {
+  // On unlock the key keeps following and gets the current default, not its saved (older) copy.
+  const h = buildPanel(t, {
+    meta: { locked: ['autoPipEnabled'], following: ['autoPipEnabled'], saved: { autoPipEnabled: true } },
+    settings: { autoPipEnabled: false }
+  });
+  h.decorate();
+  assert.equal(h.keyed('autoPipEnabled')[0].querySelector(':scope > .je-setting-provenance')?.textContent, '[panel_provenance_locked]');
+});
+
 test('English fallbacks, nested keys labelled within their row, one note for the tag order group', t => {
   const h = buildPanel(t, { t: key => key,
     meta: { locked: ['qualityTagsPosition', 'resolutionTagOrder', 'randomIncludeShows'], saved: {} } });

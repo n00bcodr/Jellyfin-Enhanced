@@ -1257,8 +1257,10 @@
      * is the last one the settings put there (recorded in `JE_seededLanguage_${userId}`
      * here and by the panel's language menu): a language picked in jellyfin-web
      * stays. "Auto" (empty) never replaces a stored language. What a lock replaced
-     * is recorded in `JE_lockedLanguage_${userId}`: once the lock is gone, the
-     * user's language comes back while the lock's language is still the stored one.
+     * (the stored language and the settings' record) is kept in
+     * `JE_lockedLanguage_${userId}`: once the lock is gone, while the lock's language
+     * is still the stored one, both are put back and the language is decided as if
+     * there had been no lock.
      * Storage errors (e.g. a full localStorage) are logged and never stop the boot.
      * @param {string} userId
      * @returns {boolean} True when the stored language was replaced (the
@@ -1283,45 +1285,59 @@
         const languageKey = `${userId}-language`;
         const seededKey = `JE_seededLanguage_${userId}`;
         const lockedKey = `JE_lockedLanguage_${userId}`;
-        const normalizeLangCode = (code) => {
-            if (!code) return '';
-            const parts = code.split('-');
-            if (parts.length === 1) return parts[0].toLowerCase();
-            if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
-            return code;
-        };
         const desiredLanguage = normalizeLangCode((JE.currentSettings?.displayLanguage || '').trim());
         const stored = localStorage.getItem(languageKey);
         const storedLanguage = stored === null ? null : normalizeLangCode(stored.trim());
         const locked = JE.settings?.isLocked?.('displayLanguage') === true;
         const record = readLockedLanguage(lockedKey);
+
+        if (record && !locked && JE.userConfig?.settingsStatus === 'ok') {
+            // The lock is gone: while its language is still the stored one, put back what the
+            // lock replaced (the language and whether it was the settings' one) and decide as if
+            // there had been no lock, so a language picked in jellyfin-web comes back too.
+            localStorage.removeItem(lockedKey);
+            if (storedLanguage === record.language) {
+                if (record.previous === null) localStorage.removeItem(languageKey);
+                else localStorage.setItem(languageKey, record.previous);
+                if (record.previousSeeded === null) localStorage.removeItem(seededKey);
+                else trySetItem(seededKey, record.previousSeeded);
+                applyDisplayLanguage(userId, desiredLanguage, false, null);
+                return localStorage.getItem(languageKey) !== stored;
+            }
+        }
+        return applyDisplayLanguage(userId, desiredLanguage, locked, record);
+    }
+
+    /**
+     * Stores the display language for the lock state, with the stored language as it is now
+     * (see seedDisplayLanguage).
+     * @param {string} userId
+     * @param {string} desiredLanguage The resolved display language, normalized ('' for "Auto").
+     * @param {boolean} locked Whether an administrator locks the language.
+     * @param {{language: string, previous: (string|null), previousSeeded: (string|null)}|null} record
+     *   The current lock record, if any.
+     * @returns {boolean} True when the stored language was replaced.
+     */
+    function applyDisplayLanguage(userId, desiredLanguage, locked, record) {
+        const languageKey = `${userId}-language`;
+        const seededKey = `JE_seededLanguage_${userId}`;
+        const lockedKey = `JE_lockedLanguage_${userId}`;
+        const stored = localStorage.getItem(languageKey);
+        const storedLanguage = stored === null ? null : normalizeLangCode(stored.trim());
         // Only the language key must be written; the records are best-effort.
         const write = () => {
             localStorage.setItem(languageKey, desiredLanguage);
             trySetItem(seededKey, desiredLanguage);
         };
 
-        if (record && !locked && JE.userConfig?.settingsStatus === 'ok') {
-            // The lock is gone: while its language is still the stored one, the user's own
-            // language comes back (the settings' one, else what the lock replaced).
-            localStorage.removeItem(lockedKey);
-            if (storedLanguage === record.language) {
-                if (desiredLanguage) {
-                    if (storedLanguage === desiredLanguage) return false;
-                    write();
-                } else if (record.previous === null) {
-                    localStorage.removeItem(languageKey);
-                } else {
-                    localStorage.setItem(languageKey, record.previous);
-                }
-                return true;
-            }
-        }
         if (!desiredLanguage) return false;
         if (locked && storedLanguage !== desiredLanguage) {
-            write();
             // What the first lock replaced, kept across a relock to another language.
-            trySetItem(lockedKey, JSON.stringify({ language: desiredLanguage, previous: record ? record.previous : stored }));
+            const lockRecord = record
+                ? { language: desiredLanguage, previous: record.previous, previousSeeded: record.previousSeeded }
+                : { language: desiredLanguage, previous: stored, previousSeeded: localStorage.getItem(seededKey) };
+            write();
+            trySetItem(lockedKey, JSON.stringify(lockRecord));
             return stored !== null;
         }
         if (stored === null) {
@@ -1342,16 +1358,34 @@
     }
 
     /**
+     * Normalizes a language code to jellyfin-web's form (`pt-BR`, `de`).
+     * @param {string} code
+     * @returns {string} The normalized code ('' for none).
+     */
+    function normalizeLangCode(code) {
+        if (!code) return '';
+        const parts = code.split('-');
+        if (parts.length === 1) return parts[0].toLowerCase();
+        if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
+        return code;
+    }
+
+    /**
      * Reads the record of what a display-language lock replaced.
      * @param {string} key The `JE_lockedLanguage_${userId}` key.
-     * @returns {{language: string, previous: (string|null)}|null} The lock's language and the
-     *   stored language it replaced (null: none), or null without a readable record.
+     * @returns {{language: string, previous: (string|null), previousSeeded: (string|null)}|null}
+     *   The lock's language, the stored language it replaced and the settings' language recorded
+     *   then (`JE_seededLanguage_*`; null: none), or null without a readable record.
      */
     function readLockedLanguage(key) {
         try {
             const record = JSON.parse(localStorage.getItem(key) || 'null');
             if (record && typeof record.language === 'string') {
-                return { language: record.language, previous: typeof record.previous === 'string' ? record.previous : null };
+                return {
+                    language: record.language,
+                    previous: typeof record.previous === 'string' ? record.previous : null,
+                    previousSeeded: typeof record.previousSeeded === 'string' ? record.previousSeeded : null
+                };
             }
         } catch (e) { /* unreadable: treated as none */ }
         return null;
