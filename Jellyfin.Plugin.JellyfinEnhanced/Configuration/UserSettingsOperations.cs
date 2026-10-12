@@ -559,34 +559,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>
         /// Restores a replaced section only while it still carries the operation's stamp and holds what
-        /// the operation wrote; the stamp it had before comes back with it.
+        /// the operation wrote; the stamp it had before comes back with it. Read like settings.json in
+        /// <see cref="UndoSettings"/>: a file that is gone is kept as it is, one that cannot be read now
+        /// fails as unavailable (so the undo can be retried), and a corrupt one is left in place.
         /// </summary>
         private void UndoDocument<TDocument, TSection>(UserSettingsUndoOutcome outcome, UserDocumentChange change, DocumentSection<TDocument, TSection> section, string operationId)
             where TDocument : class, new()
             where TSection : class
         {
-            if (!_manager.UserConfigurationExists(outcome.User.Id, change.File))
-            {
-                outcome.Kept.Add(section.Name);
-                return;
-            }
-
             try
             {
-                var restored = _manager.RmwUserConfiguration<TDocument>(outcome.User.Id, change.File, current =>
+                lock (_manager.GetUserFileLock(outcome.User.Id, change.File))
                 {
-                    if (change.After == null || change.Before == null
-                        || !string.Equals(section.GetStamp(current), operationId, StringComparison.Ordinal)
-                        || !JToken.DeepEquals(JToken.FromObject(section.Read(current)), change.After))
+                    var status = _manager.PeekUserConfiguration<TDocument>(outcome.User.Id, change.File, 0, out var current, out _);
+                    if (status == UserDocumentPeekStatus.Missing)
                     {
-                        return 0;
+                        outcome.Kept.Add(section.Name);
+                        return;
                     }
 
-                    section.Write(current, change.Before.ToObject<TSection>()!);
-                    section.SetStamp(current, change.BeforeOp);
-                    return 1;
-                });
-                (restored > 0 ? outcome.Restored : outcome.Kept).Add(section.Name);
+                    if (status != UserDocumentPeekStatus.Loaded)
+                    {
+                        outcome.Failed[change.File] = status == UserDocumentPeekStatus.Corrupt ? UserSettingsOutcome.Corrupt : UserSettingsOutcome.Unavailable;
+                        return;
+                    }
+
+                    if (change.After == null || change.Before == null
+                        || !string.Equals(section.GetStamp(current!), operationId, StringComparison.Ordinal)
+                        || !JToken.DeepEquals(JToken.FromObject(section.Read(current!)), change.After))
+                    {
+                        outcome.Kept.Add(section.Name);
+                        return;
+                    }
+
+                    section.Write(current!, change.Before.ToObject<TSection>()!);
+                    section.SetStamp(current!, change.BeforeOp);
+                    _manager.SaveUserConfiguration(outcome.User.Id, change.File, current!);
+                    outcome.Restored.Add(section.Name);
+                }
             }
             catch (Exception ex)
             {

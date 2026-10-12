@@ -296,7 +296,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// Read-only look at a per-user document for previews and admin overviews: never quarantines,
         /// moves, deletes or writes anything, and never logs the file as corrupt (the caller reports
         /// it). Files over <paramref name="maxBytes"/> are not read (<see cref="UserDocumentPeekStatus.Oversized"/>);
-        /// 0 means no limit. A path that exists but is not a file is <see cref="UserDocumentPeekStatus.Unavailable"/>.
+        /// 0 means no limit. A path that exists but is not a file, or that cannot be looked up, is
+        /// <see cref="UserDocumentPeekStatus.Unavailable"/>; only a file that is not there is Missing.
         /// </summary>
         /// <param name="userId">The user id (any spelling).</param>
         /// <param name="fileName">The per-user file name.</param>
@@ -315,7 +316,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var info = new FileInfo(configPath);
                 if (!info.Exists)
                 {
-                    return Directory.Exists(configPath) ? UserDocumentPeekStatus.Unavailable : UserDocumentPeekStatus.Missing;
+                    if (Directory.Exists(configPath))
+                    {
+                        return UserDocumentPeekStatus.Unavailable;
+                    }
+
+                    // FileInfo also says "no file" when the path cannot be looked up (a directory on the
+                    // way without search permission, an I/O error): only "not found" from opening it is
+                    // Missing (caught below); anything else is Unavailable.
+                    File.OpenHandle(configPath, FileMode.Open, FileAccess.Read).Dispose();
+                    info.Refresh();
                 }
 
                 if (maxBytes > 0 && info.Length > maxBytes)

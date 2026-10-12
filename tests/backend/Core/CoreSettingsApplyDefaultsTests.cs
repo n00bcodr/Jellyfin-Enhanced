@@ -837,6 +837,92 @@ public class CoreSettingsApplyDefaultsTests : IDisposable
         Assert.Equal(409, Status(server.Undo(undoId)));
     }
 
+    // ---- review round 2
+
+    [Fact]
+    public void ASectionUndoThatCouldNotReachItsFileCanBeRetried()
+    {
+        using var server = new Server();
+        var casey = Person("casey");
+        server.Live(casey);
+        var id = casey.Id.ToString("N");
+        UserHiddenContent Hidden() => server.Manager.GetUserConfigurationStrict<UserHiddenContent>(id, "hidden-content.json");
+        UserSpoilerBlur Spoiler() => server.Manager.GetUserConfigurationStrict<UserSpoilerBlur>(id, SpoilerFile);
+        string Overwrite()
+        {
+            server.Write(casey.Id, new UserSettings { AutoPipEnabled = !server.Config.AutoPipEnabled });
+            server.Manager.SaveUserConfiguration(id, "hidden-content.json", new UserHiddenContent { Settings = new HiddenContentSettings { FilterSearch = true } });
+            server.Manager.SaveUserConfiguration(id, SpoilerFile, new UserSpoilerBlur { Prefs = new SpoilerBlurUserPrefs { HideCast = false } });
+            var undoId = server.Apply("Overwrite", ["AutoPipEnabled"], dryRun: false).Value<string>("UndoId")!;
+            Assert.False(Hidden().Settings.FilterSearch);
+            Assert.Null(Spoiler().Prefs.HideCast);
+            return undoId;
+        }
+
+        static string[] Failed(JObject user) => ((JArray)user["Failed"]!).Select(f => f.Value<string>("Document") + ":" + f.Value<string>("Reason")).Order().ToArray();
+        void AllRestoredOnRetry(string undoId, string[] restored)
+        {
+            var retry = server.Undo(undoId);
+            Assert.Equal(0, retry.Value<int>("FailedUsers"));
+            Assert.False(retry.Value<bool>("Pending"));
+            var user = (JObject)Assert.Single((JArray)retry["PerUser"]!);
+            Assert.Equal(restored, Strings(user["Restored"]).Order().ToArray());
+            Assert.Empty(Strings(user["Kept"]));
+            Assert.Equal(server.Config.AutoPipEnabled, !server.Stored(casey.Id).AutoPipEnabled);
+            Assert.True(Hidden().Settings.FilterSearch);
+            Assert.False(Spoiler().Prefs.HideCast);
+            Assert.Equal(409, Status(server.Undo(undoId)));
+        }
+
+        // hidden-content.json cannot be read now (a directory stands in its place): it fails as
+        // unavailable and stays to be undone instead of being reported as changed since.
+        var first = Overwrite();
+        var hcPath = Path.Combine(server.Dir(casey.Id), "hidden-content.json");
+        var hcBytes = System.IO.File.ReadAllBytes(hcPath);
+        System.IO.File.Delete(hcPath);
+        Directory.CreateDirectory(hcPath);
+        var undo = server.Undo(first);
+        Assert.Equal(1, undo.Value<int>("FailedUsers"));
+        Assert.True(undo.Value<bool>("Pending"));
+        var outcome = (JObject)Assert.Single((JArray)undo["PerUser"]!);
+        Assert.Equal(["AutoPipEnabled", "SpoilerGuard"], Strings(outcome["Restored"]).Order().ToArray());
+        Assert.Empty(Strings(outcome["Kept"]));
+        Assert.Equal(["hidden-content.json:unavailable"], Failed(outcome));
+        Directory.Delete(hcPath);
+        System.IO.File.WriteAllBytes(hcPath, hcBytes);
+        AllRestoredOnRetry(first, ["HiddenContent"]);
+
+        // The user directory cannot be searched: no file can be looked up, so none is "missing".
+        // Root (or Windows) is not stopped by this: nothing more to check.
+        var second = Overwrite();
+        var dir = server.Dir(casey.Id);
+        if (OperatingSystem.IsWindows()) return;
+        System.IO.File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        try
+        {
+            if (System.IO.File.Exists(hcPath) || CanOpen(hcPath)) return;
+            undo = server.Undo(second);
+            Assert.Equal(1, undo.Value<int>("FailedUsers"));
+            Assert.True(undo.Value<bool>("Pending"));
+            outcome = (JObject)Assert.Single((JArray)undo["PerUser"]!);
+            Assert.Empty(Strings(outcome["Restored"]));
+            Assert.Empty(Strings(outcome["Kept"]));
+            Assert.Equal(["hidden-content.json:unavailable", "settings.json:unavailable", "spoilerblur.json:unavailable"], Failed(outcome));
+        }
+        finally
+        {
+            System.IO.File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        AllRestoredOnRetry(second, ["AutoPipEnabled", "HiddenContent", "SpoilerGuard"]);
+    }
+
+    private static bool CanOpen(string path)
+    {
+        try { System.IO.File.OpenHandle(path).Dispose(); return true; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
     [Fact]
     public void OverwriteChangesNothingOutsideTheSelectedKeys()
     {
