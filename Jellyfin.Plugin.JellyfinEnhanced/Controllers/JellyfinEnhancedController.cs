@@ -5694,13 +5694,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private const string UpgradeCardMarker = "upgrade-card-dismissed";
 
         private static readonly object UpgradeCardCacheLock = new();
-        private static (string Key, int Users, int Keys)? _upgradeCardCache;
+        private static UpgradeCardCount? _upgradeCardCache;
+        private static UserConfigurationManager? _upgradeCardWatched;
+        private static long _upgradeCardSaves;
+
+        /// <summary>
+        /// Gets or sets how long a cached upgrade-card count is trusted without looking at the files
+        /// (settings.json saves and admin saves end it at once); afterwards one pass stats every file
+        /// and reads only the ones that changed, so a change made outside the plugin shows up too.
+        /// </summary>
+        internal static TimeSpan UpgradeCardRecheckAfter { get; set; } = TimeSpan.FromMinutes(10);
+
+        /// <summary>
+        /// The last upgrade-card count: the configuration epoch and settings.json save counter it was
+        /// taken at, when, and each user's settings.json stamp with its adoptable key count.
+        /// </summary>
+        private sealed record UpgradeCardCount(
+            string Epoch,
+            long Saves,
+            long CountedAt,
+            IReadOnlyDictionary<string, (string Stamp, int Keys)> PerUser,
+            int Users,
+            int Keys);
+
+        /// <summary>Counts a settings.json save, so the next upgrade-card request recounts.</summary>
+        private static void OnUserSettingsSavedForUpgradeCard(string userIdN, string fileName)
+        {
+            if (string.Equals(fileName, "settings.json", StringComparison.OrdinalIgnoreCase))
+            {
+                Interlocked.Increment(ref _upgradeCardSaves);
+            }
+        }
 
         /// <summary>
         /// The one-time "users still have copies of your defaults" card: whether the admin dismissed it
         /// for good and, while not, how many users "Follow where nothing changes" would adopt keys for.
-        /// The admin page asks on every visit, so the count is kept until the configuration or a
-        /// settings.json changes (seen from file sizes and times, without reading the files).
+        /// The admin page asks on every visit, so the count is cached: it is answered without touching
+        /// any user file until a settings.json is saved, the configuration is saved (new epoch) or
+        /// <see cref="UpgradeCardRecheckAfter"/> passes; a recount then reads only the files whose size
+        /// or time changed (all of them after a configuration save, as the defaults may differ).
         /// </summary>
         /// <returns><c>{ "Dismissed": bool, "Adoptable": { "Users", "Keys" } }</c> (no Adoptable once dismissed).</returns>
         [HttpGet("admin/user-settings/upgrade-card")]
@@ -5725,27 +5757,69 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503);
             }
 
-            var population = SettingsOperations().ListUsers();
-            var fingerprint = new System.Text.StringBuilder(snapshot.Epoch);
-            foreach (var user in population.Users)
-            {
-                fingerprint.Append('|').Append(user.Id).Append(':')
-                    .Append(user.HasDirectory ? _userConfigurationManager.GetUserFileStamp(user.Id, "settings.json") ?? "-" : "-");
-            }
-
-            var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(fingerprint.ToString())));
+            UpgradeCardCount? cached;
             lock (UpgradeCardCacheLock)
             {
-                if (_upgradeCardCache is { } cached && cached.Key == key)
+                // One subscription for the manager in use (a singleton; tests build new ones).
+                if (!ReferenceEquals(_upgradeCardWatched, _userConfigurationManager))
                 {
-                    return Ok(new { Dismissed = false, Adoptable = new { cached.Users, cached.Keys } });
+                    if (_upgradeCardWatched != null) _upgradeCardWatched.UserConfigurationSaved -= OnUserSettingsSavedForUpgradeCard;
+                    _userConfigurationManager.UserConfigurationSaved += OnUserSettingsSavedForUpgradeCard;
+                    _upgradeCardWatched = _userConfigurationManager;
+                    _upgradeCardCache = null;
+                }
+
+                cached = _upgradeCardCache;
+            }
+
+            // Read before the files are looked at: a save during the recount leaves it out of date.
+            var saves = Interlocked.Read(ref _upgradeCardSaves);
+            var now = Environment.TickCount64;
+            if (cached != null && cached.Epoch == snapshot.Epoch && cached.Saves == saves
+                && now - cached.CountedAt < UpgradeCardRecheckAfter.TotalMilliseconds)
+            {
+                return Ok(new { Dismissed = false, Adoptable = new { cached.Users, cached.Keys } });
+            }
+
+            // Per-user counts still hold for files with the same stamp under the same configuration.
+            var reusable = cached != null && cached.Epoch == snapshot.Epoch ? cached.PerUser : null;
+            UserSettings? defaults = null;
+            var perUser = new Dictionary<string, (string Stamp, int Keys)>(StringComparer.Ordinal);
+            int users = 0, keys = 0;
+            foreach (var user in SettingsOperations().ListUsers().Users)
+            {
+                if (!user.HasDirectory)
+                {
+                    continue;
+                }
+
+                var stamp = _userConfigurationManager.GetUserFileStamp(user.Id, "settings.json") ?? "-";
+                int count;
+                if (reusable != null && reusable.TryGetValue(user.Id, out var known) && known.Stamp == stamp)
+                {
+                    count = known.Keys;
+                }
+                else
+                {
+                    defaults ??= UserSettingsRegistry.BuildDefaults(snapshot.Configuration);
+                    var status = _userConfigurationManager.PeekUserConfiguration<UserSettings>(user.Id, "settings.json", UserSettingsOperations.SettingsSizeLimit, out var document, out _);
+                    count = status == UserDocumentPeekStatus.Loaded ? AdoptableKeys(document!, UserSettingsResolver.Normalize(document!.Meta), defaults) : 0;
+                }
+
+                perUser[user.Id] = (stamp, count);
+                if (count > 0)
+                {
+                    users++;
+                    keys += count;
                 }
             }
 
-            var (users, keys) = CountAdoptable(LoadedWithMeta(ReadSettingsForOverview(population)), UserSettingsRegistry.BuildDefaults(snapshot.Configuration));
             lock (UpgradeCardCacheLock)
             {
-                _upgradeCardCache = (key, users, keys);
+                if (ReferenceEquals(_upgradeCardWatched, _userConfigurationManager))
+                {
+                    _upgradeCardCache = new UpgradeCardCount(snapshot.Epoch, saves, now, perUser, users, keys);
+                }
             }
 
             return Ok(new { Dismissed = false, Adoptable = new { Users = users, Keys = keys } });
@@ -5807,7 +5881,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             int users = 0, keys = 0;
             foreach (var (document, meta) in documents)
             {
-                var adoptable = UserSettingsRegistry.All.Count(descriptor => UserSettingsBulk.IsAdoptable(descriptor, document, meta, defaults));
+                var adoptable = AdoptableKeys(document, meta, defaults);
                 if (adoptable > 0)
                 {
                     users++;
@@ -5817,6 +5891,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             return (users, keys);
         }
+
+        /// <summary>How many keys of one document "Follow where nothing changes" would adopt.</summary>
+        private static int AdoptableKeys(UserSettings document, UserSettingsMeta meta, UserSettings defaults)
+            => UserSettingsRegistry.All.Count(descriptor => UserSettingsBulk.IsAdoptable(descriptor, document, meta, defaults));
 
         private static string OverviewStatus(UserDocumentPeekStatus status) => status switch
         {

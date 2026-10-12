@@ -1016,6 +1016,60 @@ public class CoreSettingsApplyDefaultsTests : IDisposable
     }
 
     [Fact]
+    public void TheUpgradeCardTouchesNoUserFileUntilASettingsSaveAConfigSaveOrTheRecheckTime()
+    {
+        var recheck = JellyfinEnhancedController.UpgradeCardRecheckAfter;
+        try
+        {
+            using var server = new Server();
+            var casey = Person("casey");
+            var erin = Person("erin");
+            server.Live(casey, erin);
+            var defaults = UserSettingsRegistry.BuildDefaults(server.Config);
+            server.Write(casey.Id, defaults);
+            server.Write(erin.Id, defaults);
+            JObject Adoptable() => (JObject)Body(server.Controller().GetUserSettingsUpgradeCard())["Adoptable"]!;
+            var keysPerUser = UserSettingsRegistry.All.Count(UserSettingsRegistry.CanFollow);
+            Assert.Equal(2, Adoptable().Value<int>("Users"));
+            Assert.Equal(2 * keysPerUser, Adoptable().Value<int>("Keys"));
+
+            // Changed outside the plugin (no save event; new size and time): within the recheck time
+            // nothing is looked at, so the count stands.
+            var caseyPath = server.SettingsPath(casey.Id);
+            var caseyBytes = System.IO.File.ReadAllBytes(caseyPath);
+            System.IO.File.WriteAllText(caseyPath, "not json");
+            Assert.Equal(2, Adoptable().Value<int>("Users"));
+
+            // Past the recheck time the files are stat'ed and only the changed one is read.
+            JellyfinEnhancedController.UpgradeCardRecheckAfter = TimeSpan.Zero;
+            Assert.Equal(1, Adoptable().Value<int>("Users"));
+            JellyfinEnhancedController.UpgradeCardRecheckAfter = recheck;
+            System.IO.File.WriteAllBytes(caseyPath, caseyBytes);
+
+            // A settings.json save ends the cache at once, and only the saved file is read: erin's
+            // file, garbage now but with its old size and time, keeps her earlier count.
+            var erinPath = server.SettingsPath(erin.Id);
+            var erinWritten = System.IO.File.GetLastWriteTimeUtc(erinPath);
+            var erinBytes = System.IO.File.ReadAllBytes(erinPath);
+            System.IO.File.WriteAllBytes(erinPath, Enumerable.Repeat((byte)'x', erinBytes.Length).ToArray());
+            System.IO.File.SetLastWriteTimeUtc(erinPath, erinWritten);
+            server.Patch(casey.Id, "{\"Set\":{\"AutoPipEnabled\":" + (!server.Config.AutoPipEnabled).ToString().ToLowerInvariant() + "}}");
+            var afterSave = Adoptable();
+            Assert.Equal(2, afterSave.Value<int>("Users"));
+            Assert.Equal((2 * keysPerUser) - 1, afterSave.Value<int>("Keys")); // casey's Auto PiP is his own now
+
+            // A configuration save (new epoch) reads every file again: erin's garbage is seen now.
+            server.Save(c => c.ToastDuration += 1);
+            Assert.Equal(1, Adoptable().Value<int>("Users"));
+            System.IO.File.WriteAllBytes(erinPath, erinBytes);
+        }
+        finally
+        {
+            JellyfinEnhancedController.UpgradeCardRecheckAfter = recheck;
+        }
+    }
+
+    [Fact]
     public void ThePerUserListShowsWhatAFollowingUserGetsNotTheCopyInTheFile()
     {
         using var server = new Server();
