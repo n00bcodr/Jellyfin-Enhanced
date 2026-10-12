@@ -416,12 +416,15 @@ test('the dialog previews the saved settings, applies with the preview\'s epoch,
   await h.settle();
   const run = h.requests.filter(r => r.path.endsWith('/apply'))[1].body;
   assert.deepEqual(run, { ...preview, DryRun: false, ConfigEpoch: 'epoch-1' });
-  assert.match(summary.textContent, /^2 users now follow your defaults for 40 settings in all · 0 visible changes/);
+  assert.equal(summary.textContent, '', 'the result moves to the list of runs');
+  const done = h.dialog().querySelector('.je-apply-runs .je-apply-run');
+  assert.match(done.textContent, /^2 users now follow your defaults for 40 settings in all · 0 visible changes/);
+  assert.equal(done.querySelector('img'), null);
   assert.equal(h.button('Apply').disabled, true, 'a run needs a new preview');
-  summary.querySelector('.je-apply-undo').click();
+  done.querySelector('.je-apply-undo').click();
   await h.settle();
   assert.ok(h.requests.some(r => r.path.endsWith('/undo/20261012000000000-abcdef12')));
-  assert.match(summary.textContent, /Undone: 40 restored/);
+  assert.match(done.textContent, /Undone: 40 restored/);
 
   // Escape closes the dialog.
   h.dialog().closest('.je-apply-backdrop').dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -451,9 +454,9 @@ test('while a real run is in flight the dialog cannot be closed, so its result a
 
   gate.resolve();
   await h.settle();
-  const summary = h.dialog().querySelector('.je-apply-summary');
-  assert.match(summary.textContent, /^2 users now follow your defaults/);
-  assert.ok(summary.querySelector('.je-apply-undo'));
+  const done = h.dialog().querySelector('.je-apply-run');
+  assert.match(done.textContent, /^2 users now follow your defaults/);
+  assert.ok(done.querySelector('.je-apply-undo'));
   assert.equal(h.button('Close').disabled, false);
   h.button('Close').click();
   assert.equal(h.dialog(), null);
@@ -519,7 +522,7 @@ test('the result line counts users first and calls the setting count a total onl
   answers.push({ Updated: 1, KeysChanged: 3, VisibleChanges: 0, KeptChoices: 0 });
   h.button('Apply').click();
   await h.settle();
-  assert.equal(summary(), '1 user now follows your defaults for 3 settings · 0 visible changes');
+  assert.equal(h.dialog().querySelector('.je-apply-run strong').textContent, '1 user now follows your defaults for 3 settings · 0 visible changes');
   assert.equal(await preview({ Updated: 2, KeysChanged: 107, VisibleChanges: 0, KeptChoices: 2 }),
     '2 users will follow your defaults for 107 settings in all · 0 visible changes · 2 users keep their own values for some settings');
   assert.equal(await preview({ Updated: 0, KeysChanged: 0, VisibleChanges: 0, KeptChoices: 1 }), 'Nothing to change: 1 user keeps their own value for some settings.');
@@ -623,24 +626,81 @@ test('a run whose undo record could not be saved says so, and an undo that left 
   assert.doesNotMatch(summary.textContent, /cannot be undone/);
   h.button('Apply').click();
   await h.settle();
-  assert.match(summary.textContent, /These changes cannot be undone: the undo record could not be saved/);
-  assert.equal(summary.querySelector('.je-apply-undo'), null);
+  const runLines = () => [...h.dialog().querySelectorAll('.je-apply-run')];
+  assert.match(runLines()[0].textContent, /These changes cannot be undone: the undo record could not be saved/);
+  assert.equal(runLines()[0].querySelector('.je-apply-undo'), null);
 
   h.button('Preview').click();
   await h.settle();
   h.button('Apply').click();
   await h.settle();
-  assert.doesNotMatch(summary.textContent, /cannot be undone/);
-  const button = summary.querySelector('.je-apply-undo');
+  const second = runLines()[1];
+  assert.doesNotMatch(second.textContent, /cannot be undone/);
+  const button = second.querySelector('.je-apply-undo');
   button.click();
   await h.settle();
-  assert.match(summary.textContent, /1 user could not be restored \(see the server log\)\. Press Undo again to retry them\./);
+  assert.match(second.textContent, /1 user could not be restored \(see the server log\)\. Press Undo again to retry them\./);
   assert.equal(button.isConnected, true);
   assert.equal(button.disabled, false);
   button.click();
   await h.settle();
   assert.equal(undos, 2);
   assert.equal(button.isConnected, false);
+});
+
+test('a finished run keeps its Undo through a later preview, a selection change and closing and reopening the dialog', async t => {
+  let runs = 0;
+  const h = setup(t, {
+    dismissed: true,
+    apply: body => applyAnswer(body, body.DryRun ? {} : { UndoId: '2026101200000000' + (++runs) + '-abcdef12' })
+  });
+  await h.policy.decorate(h.page);
+  h.policy.openApplyDialog({ mode: 'FollowAll' });
+  await h.settle();
+  const runLines = () => [...h.dialog().querySelectorAll('.je-apply-runs .je-apply-run')];
+  assert.equal(h.dialog().querySelector('.je-apply-runs').hidden, true, 'no runs yet');
+  h.button('Preview').click();
+  await h.settle();
+  h.button('Apply').click();
+  await h.settle();
+  assert.equal(runLines().length, 1);
+  assert.equal(h.dialog().querySelector('.je-apply-runs').hidden, false);
+
+  // A later preview and a selection change replace only the summary.
+  h.button('Preview').click();
+  await h.settle();
+  assert.match(h.dialog().querySelector('.je-apply-summary').textContent, /will be updated|will follow/);
+  h.dialog().querySelector('.je-apply-group summary input').click();
+  assert.match(h.dialog().querySelector('.je-apply-summary').textContent, /The selection changed: preview again/);
+  assert.equal(runLines().length, 1);
+  assert.ok(runLines()[0].querySelector('.je-apply-undo'));
+
+  // A second run adds its own line; closing and reopening keeps both Undo buttons.
+  h.button('Preview').click();
+  await h.settle();
+  h.button('Apply').click();
+  await h.settle();
+  assert.equal(runLines().length, 2);
+  h.button('Close').click();
+  assert.equal(h.dialog(), null);
+  h.policy.openApplyDialog();
+  await h.settle();
+  assert.equal(runLines().length, 2);
+  assert.equal(h.dialog().querySelector('.je-apply-summary').textContent, '', 'the new dialog starts without a preview');
+  runLines()[0].querySelector('.je-apply-undo').click();
+  await h.settle();
+  assert.ok(h.requests.some(r => r.path.endsWith('/undo/20261012000000001-abcdef12')), 'the first run is undone');
+  assert.match(runLines()[0].textContent, /Undone: 40 restored/);
+  assert.ok(runLines()[1].querySelector('.je-apply-undo'), 'the second run keeps its Undo');
+
+  // Another page (the admin page rendered again from scratch) starts without runs.
+  const fresh = h.page.cloneNode(true);
+  h.page.replaceWith(fresh);
+  fresh.querySelectorAll('.je-apply-backdrop').forEach(element => element.remove());
+  await h.policy.decorate(fresh);
+  h.policy.openApplyDialog();
+  await h.settle();
+  assert.equal(runLines().length, 0);
 });
 
 test('the Quick Actions button opens the dialog; without the policy script it says so', async t => {

@@ -41,7 +41,8 @@
         registry: [],        // every registry entry with an admin default (the dialog's settings)
         overview: null,      // promise of the last overview answer, dropped after every change
         dialog: null,        // the open "Apply defaults to users" dialog's state
-        followNotes: new Map() // key -> the per-user list's follow lines (with their Undo), kept while the page stays
+        followNotes: new Map(), // key -> the per-user list's follow lines (with their Undo), kept while the page stays
+        applyRuns: null      // the dialog's finished runs (result + Undo), kept while the page stays
     };
 
     const api = {
@@ -351,7 +352,10 @@
         const body = page.querySelector('#jeUserSettingsPolicyTable tbody');
         if (!body) throw new Error('policy table missing');
         const previous = state.page === page ? state.byKey : new Map();
-        if (state.page !== page) state.followNotes = new Map();
+        if (state.page !== page) {
+            state.followNotes = new Map();
+            state.applyRuns = null;
+        }
         state.page = page;
         state.registry = registry.filter(entry => entry && typeof entry.Key === 'string');
         state.entries = state.registry.filter(entry => entry.Lockable === true);
@@ -1232,7 +1236,8 @@
         closeButton.textContent = 'Close';
         buttons.append(previewButton, applyButton, closeButton);
 
-        dialog.append(title, intro, dirty, settingsSet, usersSet, modeSet, summary, buttons);
+        const runs = applyRunsList();
+        dialog.append(title, intro, dirty, settingsSet, usersSet, modeSet, summary, runs, buttons);
         page.appendChild(backdrop);
 
         const dialogState = { backdrop, opener, preview: null, busy: false, applying: false, timer: 0, signature: '' };
@@ -1354,8 +1359,15 @@
                 summary.textContent = (answer.body && answer.body.message) || 'Applying did not work. Check the server log.';
                 return updateButtons();
             }
-            renderResult(summary, answer.body, false);
-            if (answer.body.UndoId) summary.appendChild(undoButton(answer.body.UndoId, summary));
+            // The run goes in the page-level list, not the summary: a later preview, a selection
+            // change or closing the dialog must not take its Undo away.
+            summary.textContent = '';
+            const run = document.createElement('div');
+            run.className = 'je-apply-run';
+            renderResult(run, answer.body, false);
+            if (answer.body.UndoId) run.appendChild(undoButton(answer.body.UndoId, run));
+            runs.hidden = false;
+            runs.appendChild(run);
             updateButtons();
             overviewChanged();
         }
@@ -1385,9 +1397,29 @@
     }
 
     /**
+     * The dialog's list of finished runs, each with its result and Undo. Kept at page level
+     * (state.applyRuns) so it survives later previews and closing and reopening the dialog.
+     * @returns {HTMLElement}
+     */
+    function applyRunsList() {
+        if (state.applyRuns) return state.applyRuns;
+        const runs = document.createElement('div');
+        runs.className = 'je-apply-runs';
+        runs.setAttribute('role', 'log');
+        runs.setAttribute('aria-live', 'polite');
+        runs.hidden = true;
+        const label = document.createElement('div');
+        label.className = 'fieldDescription';
+        label.textContent = 'Applied while this page is open (each run can be undone):';
+        runs.appendChild(label);
+        state.applyRuns = runs;
+        return runs;
+    }
+
+    /**
      * Writes a preview's or run's outcome: the headline counts, users skipped or failed by name,
      * and a per-user breakdown (all text via textContent).
-     * @param {Element} target The summary element.
+     * @param {Element} target The summary element, or a finished run's line.
      * @param {object} result The apply route's answer.
      * @param {boolean} isPreview Whether it was a dry run.
      */

@@ -2451,7 +2451,10 @@ div#bazarrMappingsValidationResult {
 .je-apply-mode-note { margin: 0 0 4px 26px; }
 .je-apply-summary { margin: 14px 0 0; min-height: 1.4em; }
 .je-apply-summary:empty { display: none; }
-.je-apply-summary .je-apply-undo { margin: 8px 0 0; }
+.je-apply-run .je-apply-undo { margin: 8px 0 0; }
+.je-apply-runs { margin: 14px 0 0; }
+.je-apply-runs[hidden] { display: none; }
+.je-apply-run { margin: 6px 0 0; padding: 8px 0 0; border-top: 1px solid var(--je-border); }
 .je-apply-per-user { margin-top: 6px; font-size: 0.9em; }
 .je-apply-per-user summary { cursor: pointer; }
 .je-apply-undo-result { margin-top: 6px; }

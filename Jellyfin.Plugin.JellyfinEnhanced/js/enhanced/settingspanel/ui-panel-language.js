@@ -158,8 +158,21 @@
                         JE.toast(JE.settings.unavailableText('panel_settings_unavailable'));
                         return;
                     }
-                    console.error('🪼 Jellyfin Enhanced: Failed to save settings.json:', err);
+                    // A refusal because of a lock that arrived meanwhile is handled below (config.js warns).
+                    if (JE.settings?.isLocked?.('displayLanguage') !== true) {
+                        console.error('🪼 Jellyfin Enhanced: Failed to save settings.json:', err);
+                    }
                     saveFailed = true;
+                }
+
+                // Locked while the change was saved: the server refused it and the lock already
+                // put its language on this device (plugin.js). Keep that and the record of what the
+                // lock replaced; storing the refused pick would bring it back after the unlock.
+                if (JE.settings?.isLocked?.('displayLanguage') === true) {
+                    const lockedLanguage = normalizeLangCode(JE.currentSettings.displayLanguage || '');
+                    const shown = Array.from(displayLanguageSelect.options).find(option => option.value.toLowerCase() === lockedLanguage.toLowerCase());
+                    displayLanguageSelect.value = shown ? shown.value : appliedLanguage;
+                    return;
                 }
 
                 // The menu is usable only while the language is unlocked, so a lock is over: drop

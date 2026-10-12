@@ -149,7 +149,7 @@ The answer is `{ "success": true, "file": "settings.json", "Rejected": [ … ] }
 
 ## Admin routes
 
-Locks are part of the plugin configuration: `LockedUserSettings` is an array of setting keys, saved like every other plugin setting (**Save** on the plugin page, or Jellyfin's own `POST /Plugins/{pluginId}/Configuration`). A locked key is served as the administrator's value everywhere (including native poster images) and refused on every write. Each user's own value is kept for when it is unlocked. `NewUsersFollowDefaults` (boolean) makes new users follow the defaults.
+Locks are part of the plugin configuration: `LockedUserSettings` is an array of setting keys, saved like every other plugin setting (**Save** on the plugin page, or Jellyfin's own `POST /Plugins/{pluginId}/Configuration`). A locked key is served as the administrator's value everywhere (including native poster images) and refused on every write. Each user's own value is kept for when it is unlocked; a user who follows the default keeps following it (see `Saved` above). `NewUsersFollowDefaults` (boolean) makes new users follow the defaults.
 
 ### Registry
 

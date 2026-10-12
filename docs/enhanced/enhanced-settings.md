@@ -62,7 +62,7 @@ Your administrator sets the server default for most settings. Under a setting, t
 
 ### Locked settings
 
-An administrator can lock a setting so that every user gets the server default. A locked setting is shown greyed out with the value in effect and the note **Set by your administrator.** If your own value was different, the note adds **Your choice (On) comes back if this is unlocked.** Settings that also change poster images in native TV and phone apps say so on a second line. Locks apply to administrators' own panels too.
+An administrator can lock a setting so that every user gets the server default. A locked setting is shown greyed out with the value in effect and the note **Set by your administrator.** If your own value was different and the setting doesn't follow the server default for you, the note adds **Your choice (On) comes back if this is unlocked.** A setting that follows the server default keeps following it after the unlock. Settings that also change poster images in native TV and phone apps say so on a second line. Locks apply to administrators' own panels too.
 
 The lock also reaches outside the panel: the watch-progress chip on item pages shows the locked mode and can't be switched, and opening the reviews section is not remembered. A locked display language other than **System Default** becomes the language of this browser from the next page load; once the lock is removed, the language you had before comes back the same way (unless you picked another one in the meantime). One that follows the server default does the same unless you picked the language in Jellyfin's own display settings: that choice stays. A lock or server default of **System Default** leaves a language you picked in this browser as it is. A locked subtitle style (or one that follows the server default) uses that style's colours, unless you picked your own text and background colours.
 
@@ -108,7 +108,7 @@ Many settings on the plugin page are **user defaults**: the value each user star
 ![User settings policy with the upgrade card and the lock table](../images/user-settings-policy.png)
 
 - **New users follow my defaults**: off by default, which keeps the old behaviour: a new user starts with a copy of your current defaults and keeps it when you change a default later. When on, a new user's settings follow your defaults and change when you change them, until the user picks something else. Existing users are not affected.
-- **Lock settings for every user** opens the table: each setting with its server default, where it applies, a **Lock** box and three counts. Ticking or unticking a lock shows who it affects before you save; locks take effect when you click **Save**, like every other setting. A locked setting gives every user your default, on the web and, for the tag settings, in native poster images. Each user's own value is kept and comes back when you unlock it. Locks apply to administrators too.
+- **Lock settings for every user** opens the table: each setting with its server default, where it applies, a **Lock** box and three counts. Ticking or unticking a lock shows who it affects before you save; locks take effect when you click **Save**, like every other setting. A locked setting gives every user your default, on the web and, for the tag settings, in native poster images. Each user's saved value is kept and comes back when you unlock it; users who follow your default keep following it. Locks apply to administrators too.
 - The counts are read when you open the table: **Follow** (users who follow your default and get your changes), **Kept** (users with a copy of your default that won't change with it) and **Changed** (users with something else). Users whose settings file can't be read (corrupt or too large) are reported and not counted.
 - Click a **Changed** count to list those users with their value and state (their own choice, kept from before, set by an administrator, and users who haven't used Jellyfin Enhanced yet). **Make follow default** makes that one user follow your default; it can be undone.
 
@@ -128,7 +128,7 @@ Many settings on the plugin page are **user defaults**: the value each user star
     - **Follow my defaults for everyone selected**: every selected setting follows your default, so values change for users who picked something else.
     - **Overwrite with my current values**: the old reset. Copies your current values into the selected settings and stops them following your defaults. It still also resets the selected users' hidden-content settings and Spoiler Guard preferences, as before. Hidden items, spoiler lists and bookmarks are never touched.
 3. **Preview** shows what would change, for how many users, and how many changes are visible. Nothing is written yet.
-4. **Apply**, then **Undo** if needed. Undo restores only what still holds the value the run wrote; anything a user changed since is kept. The last 20 runs can be undone.
+4. **Apply**, then **Undo** if needed. Undo restores only what still holds the value the run wrote; anything a user changed since is kept. The last 20 runs can be undone. Each run's result and its **Undo** stay in the dialog while the plugin page is open, also after another preview or after closing and reopening the dialog.
 
 If the plugin settings are saved between the preview and **Apply**, you are asked to preview again.
 
