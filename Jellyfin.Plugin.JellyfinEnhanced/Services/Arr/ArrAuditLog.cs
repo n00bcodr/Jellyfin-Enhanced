@@ -95,6 +95,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>Path of the current file.</summary>
         public string FilePath => _path;
 
+        /// <summary>
+        /// Raised after an action's result line (not its "started" line) was written, outside the
+        /// file lock. Handlers must be quick and must not throw (exceptions are swallowed).
+        /// </summary>
+        public event Action<ArrAuditEntry>? Appended;
+
         /// <summary>Appends one entry (rotating first when the file is full). Never throws; false when it could not be written.</summary>
         public bool Append(ArrAuditEntry entry)
         {
@@ -110,10 +116,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
                     var options = new FileStreamOptions { Mode = FileMode.Append, Access = FileAccess.Write, Share = FileShare.Read };
                     if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-                    using var stream = new FileStream(_path, options);
-                    stream.Write(bytes, 0, bytes.Length);
-                    stream.Flush(true);
-                    return true;
+                    using (var stream = new FileStream(_path, options))
+                    {
+                        stream.Write(bytes, 0, bytes.Length);
+                        stream.Flush(true);
+                    }
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -121,6 +128,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     return false;
                 }
             }
+            if (entry.Outcome != StartedOutcome && Appended is { } handlers)
+            {
+                foreach (var handler in handlers.GetInvocationList().Cast<Action<ArrAuditEntry>>())
+                {
+                    try
+                    {
+                        handler(entry);
+                    }
+                    catch (Exception)
+                    {
+                        // An observer (the activity log mirror) never breaks the audit.
+                    }
+                }
+            }
+            return true;
         }
 
         /// <summary>

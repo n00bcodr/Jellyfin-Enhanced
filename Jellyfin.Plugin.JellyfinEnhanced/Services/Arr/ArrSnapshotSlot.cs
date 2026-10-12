@@ -26,6 +26,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private DateTimeOffset _errorAt;
         private int _failures;
         private DateTimeOffset _lastRead = DateTimeOffset.MinValue;
+        private DateTimeOffset _lastBackgroundRead = DateTimeOffset.MinValue;
         private DateTimeOffset? _requestedFor;
         private Task? _inflight;
         private bool _retired;
@@ -82,6 +83,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             get { lock (_lock) return _lastRead; }
         }
 
+        /// <summary>
+        /// The latest read of any kind: a page's (<see cref="Touch"/>) or a background reader's
+        /// (<see cref="TouchBackground"/>). Keeps the reconciler refreshing the snapshot.
+        /// </summary>
+        public DateTimeOffset LastInterest
+        {
+            get { lock (_lock) return _lastRead > _lastBackgroundRead ? _lastRead : _lastBackgroundRead; }
+        }
+
         public Task? Inflight
         {
             get { lock (_lock) return _inflight; }
@@ -114,6 +124,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             lock (_lock)
             {
                 if (now > _lastRead) _lastRead = now;
+            }
+        }
+
+        /// <summary>
+        /// Marks the snapshot as read now by a background reader (the administrators' alert check):
+        /// the reconciler keeps refreshing it at its idle pace, but it doesn't count as a page
+        /// watching it (<see cref="LastRead"/> is left alone).
+        /// </summary>
+        public void TouchBackground(DateTimeOffset now)
+        {
+            lock (_lock)
+            {
+                if (now > _lastBackgroundRead) _lastBackgroundRead = now;
             }
         }
 
@@ -325,6 +348,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         DateTimeOffset LoadedAt { get; }
 
         DateTimeOffset LastRead { get; }
+
+        DateTimeOffset LastInterest { get; }
 
         Task? Inflight { get; }
 

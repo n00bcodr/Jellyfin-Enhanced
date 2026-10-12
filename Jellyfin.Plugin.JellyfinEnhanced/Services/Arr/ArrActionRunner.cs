@@ -142,6 +142,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             _now = now ?? (() => DateTimeOffset.UtcNow);
         }
 
+        /// <summary>The audit log the runner writes (refusals before the runner are written there too).</summary>
+        public ArrAuditLog Audit => _audit;
+
         /// <summary>The token issuer used for <see cref="ArrActionTier.Destructive"/> actions.</summary>
         public ArrConfirmationTokens Tokens => _tokens;
 
@@ -160,22 +163,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 _recent.TryRemove(stale, out _);
             }
 
-            var key = string.Join("\n", request.UserId.ToString("N"), request.Action, request.InstanceId.ToLowerInvariant(), request.IdempotencyKey);
+            var key = Key(request.UserId, request.Action, request.InstanceId, request.IdempotencyKey);
             var created = new TaskCompletionSource<ArrActionOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
             var entry = _recent.GetOrAdd(key, _ => (created.Task, now));
             if (!ReferenceEquals(entry.Task, created.Task))
             {
-                var previous = await entry.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-                return new ArrActionOutcome
-                {
-                    Status = previous.Status,
-                    Message = previous.Message,
-                    Error = previous.Error,
-                    ReadBack = previous.ReadBack,
-                    AuditId = previous.AuditId,
-                    Audited = previous.Audited,
-                    Replayed = true,
-                };
+                return Replay(await entry.Task.WaitAsync(cancellationToken).ConfigureAwait(false));
             }
 
             ArrActionOutcome outcome;
@@ -194,6 +187,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             if (outcome.Status == ArrActionStatus.Rejected) _recent.TryRemove(key, out _);
             return outcome;
         }
+
+        /// <summary>
+        /// The outcome of an earlier (or still running) action with the same user, action, instance and
+        /// idempotency key within the idempotency window, as a replay; null when there is none. Callers
+        /// that check changing state before running an action (is the download still in the queue?)
+        /// ask this first, so a retry of a click that already succeeded gets that outcome back instead
+        /// of a refusal.
+        /// </summary>
+        public async Task<ArrActionOutcome?> ReplayAsync(Guid userId, string action, string instanceId, string idempotencyKey, CancellationToken cancellationToken = default)
+        {
+            if (!_recent.TryGetValue(Key(userId, action, instanceId, idempotencyKey), out var entry) || _now() - entry.At > IdempotencyWindow) return null;
+            return Replay(await entry.Task.WaitAsync(cancellationToken).ConfigureAwait(false));
+        }
+
+        private static string Key(Guid userId, string action, string instanceId, string idempotencyKey)
+            => string.Join("\n", userId.ToString("N"), action, instanceId.ToLowerInvariant(), idempotencyKey);
+
+        private static ArrActionOutcome Replay(ArrActionOutcome previous) => new()
+        {
+            Status = previous.Status,
+            Message = previous.Message,
+            Error = previous.Error,
+            ReadBack = previous.ReadBack,
+            AuditId = previous.AuditId,
+            Audited = previous.Audited,
+            Replayed = true,
+        };
 
         private async Task<ArrActionOutcome> RunOnceAsync(ArrActionRequest request)
         {

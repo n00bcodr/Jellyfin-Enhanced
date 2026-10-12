@@ -69,6 +69,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     return new NotifyMessage($"{P("count")} downloads need attention", hideTitles ? $"Stuck for over {P("hours")} hours. Open Jellyfin to see which." : $"Stuck for over {P("hours")} hours: {P("items")}");
                 case NotifyKind.Remind:
                     return new NotifyMessage($"{Who(P("user"))} is waiting for {Fallback(title, "a title")}", "It is taking longer than usual and they asked you to have a look.");
+                case NotifyKind.Attention:
+                    return P("code") switch
+                    {
+                        AttentionCode.ImportBlocked => new NotifyMessage(
+                            named ? $"{title}{Scope(P("scope"))} needs a manual import" : "A download needs a manual import",
+                            (P("instance").Length > 0 ? $"{P("instance")} can't import it on its own." : "Sonarr/Radarr can't import it on its own.") + (!hideTitles && P("message").Length > 0 ? $" It says: {P("message")}" : string.Empty)),
+                        AttentionCode.ApprovedNotInArr => new NotifyMessage(
+                            named ? $"{title} was OK'd in Seerr, but no {(P("variant") == "4k" ? "4K " : string.Empty)}Sonarr/Radarr has it" : "A request OK'd in Seerr reached no Sonarr/Radarr",
+                            (P("user").Length > 0 && !hideTitles ? $"Asked for by {P("user")}. " : string.Empty) + "Check Seerr's Sonarr/Radarr settings."),
+                        _ => new NotifyMessage("Something needs attention", "Open the Requests page to see what."),
+                    };
                 case NotifyKind.Test:
                     return new NotifyMessage("Test from Jellyfin Enhanced", "Alerts work. This is how you'll hear when something is ready.");
                 default:
@@ -98,6 +109,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             html.Append("</p></body></html>");
             return (text.ToString(), html.ToString());
         }
+
+        private static string Scope(string scope) => scope.Length > 0 ? " " + scope : string.Empty;
 
         private static string Who(string name) => name.Length > 0 ? name : "Someone in your household";
 

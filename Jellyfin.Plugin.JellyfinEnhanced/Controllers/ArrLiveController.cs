@@ -360,13 +360,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         // No webhook event for a day while the arr imported something since the last one.
         private bool WebhookSilent(string instanceId, ArrWebhookStats stats, DateTimeOffset now)
-        {
-            var since = stats.LastEventAt ?? StartedAt;
-            if (now - since < TimeSpan.FromHours(24)) return false;
-            var history = _store.PeekHistory(instanceId);
-            return history != null && history.Records.Any(r => r.Date is DateTime d && d > since.UtcDateTime
-                && (r.EventType ?? string.Empty).EndsWith("Imported", StringComparison.OrdinalIgnoreCase));
-        }
+            => ArrWebhookReceiver.Silent(stats, _store.PeekHistory(instanceId), StartedAt, now);
 
         private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
 

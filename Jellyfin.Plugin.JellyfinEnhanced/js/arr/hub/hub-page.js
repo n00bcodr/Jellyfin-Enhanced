@@ -2,9 +2,11 @@
  * @file Requests & downloads, phase 1: the Requests page at #/requests (sidebar link "Requests").
  * Tabs: My requests, Coming soon, Ready (everyone: their own requests only) and, for administrators,
  * Downloads and Calendar (the existing pages rendered inside the tab; their own pages stay where they
- * were). The page reads GET /JellyfinEnhanced/acquire/hub once per visit and follows the change feed
+ * were). With phase 2 administrators also get Overview, Activity, System and Audit (admin-tabs.js;
+ * Downloads then folds into Activity). The page reads GET /JellyfinEnhanced/acquire/hub once per visit and follows the change feed
  * (the titles it shows plus the user's own request-list key) to re-read in place; it never polls on
- * its own. Exposes JE.arrHub { show, hide, refresh } and JE.initializeArrHub.
+ * its own (the admin tabs follow the administrators' feed key, with a slow fallback poll of their
+ * own). Exposes JE.arrHub { show, hide, refresh } and JE.initializeArrHub.
  */
 (function (JE) {
     'use strict';
@@ -104,9 +106,21 @@
      */
     function tabs() {
         const list = [...OWN_TABS];
-        if (state.data?.admin?.downloads && JE.downloadsPage?.renderForCustomTab) list.push('downloads');
+        const admin = H.admin?.tabs ? H.admin.tabs(state.data) : [];
+        list.push(...admin);
+        // With phase 2 the Activity tab holds the queue and history: the Downloads page folds into it.
+        if (!admin.length && state.data?.admin?.downloads && JE.downloadsPage?.renderForCustomTab) list.push('downloads');
         if (state.data?.admin?.calendar && JE.calendarPage?.renderForCustomTab) list.push('calendar');
         return list;
+    }
+
+    /**
+     * True for the administrator's phase-2 tabs (Overview, Activity, System, Audit).
+     * @param {string} tab Tab id.
+     * @returns {boolean} Admin tab.
+     */
+    function isAdminTab(tab) {
+        return Array.isArray(H.admin?.TABS) && H.admin.TABS.includes(tab);
     }
 
     /**
@@ -166,6 +180,7 @@
         state.generation++;
         document.body.classList.remove('je-hub-active');
         leaveEmbedded();
+        H.admin?.leave?.();
         follow(null);
         const page = document.getElementById(PAGE_ID);
         if (page) {
@@ -348,6 +363,11 @@
         panel.setAttribute('role', 'tabpanel');
         root.appendChild(panel);
 
+        if (isAdminTab(state.tab) && available.includes(state.tab)) {
+            H.admin.render(panel, state.tab);
+            return;
+        }
+        H.admin?.leave?.();
         if ((state.tab === 'downloads' || state.tab === 'calendar') && available.includes(state.tab)) {
             const node = document.createElement('div');
             node.className = 'je-hub-tabpanel-embed';
@@ -398,7 +418,8 @@
         const counts = {
             mine: (state.data?.mine || []).filter(e => e.group !== 'declined').length,
             soon: (state.data?.soon || []).length,
-            ready: (state.data?.ready || []).length
+            ready: (state.data?.ready || []).length,
+            overview: (H.admin?.state?.data?.overview?.needsAttention || []).length
         };
         for (const id of available) {
             const button = document.createElement('button');
@@ -542,8 +563,24 @@
         }
     });
 
+    /**
+     * Redraws just the tab strip (an admin tab's answer changed the Overview count), keeping focus
+     * on the same tab when it was there.
+     * @returns {void}
+     */
+    function refreshTabs() {
+        const root = document.getElementById(PAGE_ID)?.querySelector('.je-hub');
+        if (!root || !state.visible) return;
+        const strip = root.querySelector('.je-hub-tabs');
+        const focus = strip && strip.contains(document.activeElement) ? focusedId(root) : null;
+        renderTabs(root, tabs());
+        if (focus) restoreFocus(root, focus);
+    }
+
     H.state = state;
     H.load = load;
+    H.renderTabs = refreshTabs;
+    H.selectTab = selectTab;
     JE.arrHub = Object.freeze({ show, hide, refresh: load, isRoute });
     JE.initializeArrHub = initialize;
 })(window.JellyfinEnhanced);

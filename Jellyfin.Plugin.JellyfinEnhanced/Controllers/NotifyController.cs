@@ -201,7 +201,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CreatedAt = r.At,
                         Read = r.Read,
                         Params = hidden ? WithoutTitle(NotifyDispatcher.Payload(r.Payload)) : NotifyDispatcher.Payload(r.Payload),
-                        Link = NotifyDispatcher.InAppLink(hidden ? null : r.ItemId),
+                        Link = NotifyDispatcher.InAppLink(hidden ? null : r.ItemId, r.Kind),
                     };
                 }).ToList(),
             });

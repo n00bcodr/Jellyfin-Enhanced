@@ -240,7 +240,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             => _db.WriteIf(generation, (c, t) => work(new NotifyTransaction(c, t)), otherwise);
 
         // The kinds only administrators receive, as a SQL list.
-        private static readonly string AdminKinds = string.Join(",", new[] { NotifyKind.Approval, NotifyKind.InstanceDown, NotifyKind.InstanceUp, NotifyKind.LowDisk, NotifyKind.StuckDigest, NotifyKind.Remind }.Select(k => "'" + k + "'"));
+        private static readonly string AdminKinds = string.Join(",", NotifyKind.AdminKinds.Select(k => "'" + k + "'"));
 
         /// <summary>
         /// A user's inbox, newest first (<paramref name="beforeId"/> pages back); without
@@ -547,6 +547,17 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// <summary>Records a mark once; false when the user already had it.</summary>
         public bool TryMark(Guid userId, string mark, DateTimeOffset now)
             => NotifyStore.Exec(Connection, Transaction, "INSERT OR IGNORE INTO marks(user_id,mark,at) VALUES($u,$m,$n)", ("$u", Id(userId)), ("$m", mark), ("$n", Ms(now))) > 0;
+
+        /// <summary>
+        /// Records a mark the first time (true) or moves an existing one to <paramref name="now"/>
+        /// (false): a mark kept fresh this way outlives the marks' retention while it is in use.
+        /// </summary>
+        public bool KeepMark(Guid userId, string mark, DateTimeOffset now)
+        {
+            if (TryMark(userId, mark, now)) return true;
+            NotifyStore.Exec(Connection, Transaction, "UPDATE marks SET at=$n WHERE user_id=$u AND mark=$m", ("$u", Id(userId)), ("$m", mark), ("$n", Ms(now)));
+            return false;
+        }
 
         /// <summary>Records the mark at <paramref name="now"/> unless the user has one younger than <paramref name="every"/>; false then.</summary>
         public bool ClaimMark(Guid userId, string mark, DateTimeOffset now, TimeSpan every)

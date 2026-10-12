@@ -354,6 +354,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var facts = new TitleFacts(whose.Key) { Request = scope.Request, LiveKey = whose.LiveKey };
             facts.Copies.AddRange(whose.Copies);
             facts.Unreadable.AddRange(whose.Unreadable);
+            facts.Stale.AddRange(whose.Stale);
+            facts.Checked.AddRange(whose.Checked);
             if (whole.Key.IsMovie && scope.Only4k)
             {
                 var (status, arrived, shown) = StatusComposer.Requested4k(facts, whole.Status, copies, c);
@@ -361,8 +363,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             if (!whole.Key.IsMovie && scope.Seasons.Count > 0)
             {
-                // A 4K request is followed through the 4K Sonarr copies only.
-                if (scope.Only4k) facts.Copies.RemoveAll(x => x.Instance.Role != "4k");
+                // A 4K request is followed (and "no 4K Sonarr has it" judged) through the 4K Sonarrs only.
+                if (scope.Only4k) facts = StatusComposer.FourKOnly(facts);
                 var shown = whole.Visible;
                 var mine = copies;
                 if (scope.Only4k)
@@ -373,7 +375,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     shown = mine.FirstOrDefault(x => x.Visible);
                 }
                 var episodes = shown != null ? _view.Episodes(shown.ItemId, null, viewer, includeVirtual: false) : null;
-                var (status, arrived) = StatusComposer.RequestedSeasons(facts, whole.Status, scope.Seasons, episodes, mine, c);
+                var (status, arrived) = StatusComposer.RequestedSeasons(facts, whole.Status, scope.Seasons, episodes, mine, c, scope.Only4k);
                 return whole with { Status = WithLiveKey(status, facts), Visible = shown ?? whole.Visible, Scoped = true, ArrivedAt = arrived };
             }
             return whole;
@@ -447,7 +449,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         private ComposeContext Context(StatusViewer viewer)
-            => new(viewer, _now().UtcDateTime, _config()?.ArrStatusLookingHours ?? 24);
+        {
+            var config = _config();
+            return new(viewer, _now().UtcDateTime, config?.ArrStatusLookingHours ?? 24) { HandoffGrace = HandoffGrace(config) };
+        }
+
+        /// <summary>
+        /// The grace period after which an OK'd Seerr request no Sonarr/Radarr holds is reported to
+        /// administrators (phase 2 only; null when off).
+        /// </summary>
+        internal static TimeSpan? HandoffGrace(PluginConfiguration? config)
+            => config is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase2Enabled: true }
+                ? TimeSpan.FromMinutes(Math.Clamp(config.ArrSeerrHandoffGraceMinutes, 1, 1440))
+                : null;
 
         private byte[] Serialize(IReadOnlyList<TitleStatus> statuses)
         {
@@ -478,10 +492,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 factsRevision,
                 _view.Revision.ToString(CultureInfo.InvariantCulture),
                 _requests.Revision.ToString(CultureInfo.InvariantCulture),
-                (config?.ArrHouseholdContactName ?? string.Empty) + "#" + (config?.ArrStatusLookingHours ?? 24).ToString(CultureInfo.InvariantCulture),
+                (config?.ArrHouseholdContactName ?? string.Empty) + "#" + (config?.ArrStatusLookingHours ?? 24).ToString(CultureInfo.InvariantCulture)
+                    + "#" + (HandoffGrace(config)?.TotalMinutes.ToString(CultureInfo.InvariantCulture) ?? "-") + "#" + HandoffEpoch(viewer, config),
                 bucket.ToString(CultureInfo.InvariantCulture));
             // Hashed so the key's size does not grow with the request; the user id stays readable as the prefix.
             return viewer.UserId.ToString("N", CultureInfo.InvariantCulture) + ":" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
+        }
+
+        /// <summary>
+        /// How many OK'd requests have passed this viewer's handoff grace (administrators: the
+        /// setting; everyone else: the "still looking" hours). Part of the cache key, so a status
+        /// turns into "OK'd in Seerr, but no Sonarr/Radarr has it" as soon as the grace passes,
+        /// not at the next ten-minute bucket. Empty with phase 2 off.
+        /// </summary>
+        private string HandoffEpoch(StatusViewer viewer, PluginConfiguration? config)
+        {
+            if (HandoffGrace(config) is not TimeSpan grace || _requests is not SeerrRequestReadModel model) return string.Empty;
+            var wait = viewer.IsAdmin ? grace : TimeSpan.FromHours(Math.Clamp(config?.ArrStatusLookingHours ?? 24, 1, 720));
+            var before = _now().UtcDateTime - wait;
+            var count = 0;
+            foreach (var r in model.All)
+            {
+                if (r.Status is SeerrRequestStatus.Approved or SeerrRequestStatus.Failed && (r.UpdatedAt ?? r.CreatedAt) is DateTime at && at <= before) count++;
+            }
+            return count.ToString(CultureInfo.InvariantCulture);
         }
 
         private sealed class Gathered
@@ -532,9 +566,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         var facts = result.Facts[title];
                         if (library.Value == null)
                         {
-                            facts.Unreadable.Add(instance.Name + " (" + (library.Error?.Kind.ToString() ?? "loading") + ")");
+                            facts.Unreadable.Add(new UnreadableArr(instance, instance.Name + " (" + (library.Error?.Kind.ToString() ?? "loading") + ")"));
                             continue;
                         }
+                        facts.Checked.Add(instance);
+                        if (library.Error != null) facts.Stale.Add(instance);
                         if (kind == ArrKind.Radarr)
                         {
                             var movie = title.Provider == "tmdb" && title.NumericId is int tmdb ? library.Value.MovieByTmdb(tmdb) : library.Value.MovieByImdb(title.Id);

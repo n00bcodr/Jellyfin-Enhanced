@@ -105,6 +105,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The read model's state (last read, error in admin wording, calls).</summary>
         public SeerrReadModelState? Seerr { get; init; }
+
+        /// <summary>The Overview, Activity, System and Audit tabs (phase 2); the Downloads tab then folds into Activity.</summary>
+        public bool Hub { get; init; }
     }
 
     /// <summary>The Requests page body.</summary>
@@ -201,7 +204,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             var state = _requests.State;
             var adminTabs = viewer.IsAdmin
-                ? (config?.DownloadsPageEnabled == true ? "d" : "-") + (config?.CalendarPageEnabled == true ? "c" : "-") + (state.LastError ?? string.Empty) + state.LastReadAt?.UtcTicks.ToString(CultureInfo.InvariantCulture)
+                ? (config?.DownloadsPageEnabled == true ? "d" : "-") + (config?.CalendarPageEnabled == true ? "c" : "-") + (JellyfinBridge.Phase2(config) ? "h" : "-") + (state.LastError ?? string.Empty) + state.LastReadAt?.UtcTicks.ToString(CultureInfo.InvariantCulture)
                 : string.Empty;
             var what = string.Join("|", _requests.Active ? "on" : "off", _requests.Loaded ? "loaded" : "-", state.LastError == null ? "ok" : "err", adminTabs);
             return _status.ForTitlesAsync(viewer, keys, "hub", what, titles => Build(viewer, entries, titles, config, state), cancellationToken, scopes);
@@ -268,7 +271,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Soon = soon.OrderBy(e => e.NextDate).ToList(),
                 Ready = ready.OrderByDescending(e => e.ReadyAt ?? DateTime.MinValue).ToList(),
                 Admin = viewer.IsAdmin
-                    ? new HubAdmin { Downloads = config?.DownloadsPageEnabled == true, Calendar = config?.CalendarPageEnabled == true, Seerr = state }
+                    ? new HubAdmin { Downloads = config?.DownloadsPageEnabled == true, Calendar = config?.CalendarPageEnabled == true, Seerr = state, Hub = JellyfinBridge.Phase2(config) }
                     : null,
             };
             return JsonSerializer.SerializeToUtf8Bytes(response, Json);

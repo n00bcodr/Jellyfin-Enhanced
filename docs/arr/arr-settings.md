@@ -214,10 +214,29 @@ its API key in the background only: opening a page never calls Seerr, Sonarr or 
 Sonarr/Radarr to search for the movie, series, season or episode the page is about; each one is recorded in the
 arr action audit log (who, when, the outcome and how the search ended).
 
-### Notifications (phase 2)
+### Tell me, and admin essentials (phase 2)
 
-**Tell me, and admin essentials (phase 2)** sits under the status switch; **Notifications** under it (on once
-phase 2 is on). Both need **Requests & downloads (new)** and **Show where things have got to**.
+**Tell me, and admin essentials (phase 2)** sits under the status switch and needs **Requests & downloads (new)** and
+"Show where things have got to". Off by default. It switches on the admin tools below and, with **Notifications**,
+the alerts.
+
+#### Admin tools
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Show imports in Jellyfin right away** | On | After an import, refresh only the Jellyfin folder the file landed in (never a TV library's root; a new series folder is left to Jellyfin's library monitor when the library has real-time monitoring on, otherwise to its next library scan or Scan now). Needs path mappings when the apps and Jellyfin see the files under different paths |
+| **"In Sonarr/Radarr, not in Jellyfin" after (minutes)** | 10 | When an import Jellyfin still doesn't list goes under Needs attention (1-1440) |
+| **Low disk warning below (% free)** | 10 | A root folder whose disk has less free space goes under Needs attention and, with notifications on, administrators are alerted (at most once a day per folder) (1-50) |
+| **Tell me when Seerr's OK reaches no Sonarr/Radarr after (minutes)** | 15 | When administrators are told that a request Seerr OK'd isn't in any Sonarr/Radarr (1-1440). The family sees "Taking longer than usual" only after the "still looking" hours |
+| **Copy actions into Jellyfin's activity log** | On | Every audited action (Search now, queue actions, Scan now, webhook set-up) also appears in Dashboard → Activity |
+
+The admin tabs read everything from memory (the apps are read in the background); only the actions call
+Sonarr/Radarr, each one once per click, recorded in the audit log with what the app answered. Removing a
+download *with* its data is never automatic and needs a one-time confirmation that expires after two minutes.
+
+#### Notifications
+
+**Notifications** sits under the phase 2 switch (on once phase 2 is on).
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -227,9 +246,13 @@ phase 2 is on). Both need **Requests & downloads (new)** and **Show where things
 | **Phone alerts (ntfy)** | Off | Your ntfy server (`https://ntfy.sh` or your own; it must be reachable from Jellyfin and from people's phones) and, for servers that need one to publish, an access token (stored like the API keys, only ever shown masked). People choose a topic in "Requests & alerts", or you give someone a random one under **Notification status**. **Send test** publishes one message to a topic with the saved settings |
 | **E-mail** | Off | SMTP server, port (587), STARTTLS (servers that only offer TLS on port 465 are not supported), user name and password (stored like the API keys), sender address and name. Alerts only go to addresses people confirmed with a code. **Send test** sends one e-mail with the saved settings |
 | **Tell me when an instance hasn't answered for (minutes)** | 10 | Administrators' outage alert (1-1440). The instance is checked with Jellyfin Enhanced's regular background reads, so the alert can come a few minutes after this time |
-| **…less free than (%)** | 10 | Low-disk alert per root folder, at most once a day (0 = off) |
 | **Daily digest: downloads needing attention for at least (hours)** | 6 | Queue entries the app marks as a problem (import blocked, failed, warning) for at least this long (1-168) |
 | **Send the digest at (hour, server time)** | 9 | 0-23 |
+
+Administrators are also told straight away, once per item, when Needs attention lists a download that needs a manual
+import (the app says import blocked) or a request Seerr OK'd that no Sonarr/Radarr has after the grace above. The
+low-disk alert uses **Low disk warning below** from the admin tools (at most once a day per root folder), so the alert
+and the Overview's disk bars always agree.
 
 **Notification status** lists deliveries in the last 24 hours (sent, failed, waiting for a retry or for someone's
 quiet hours), the latest problems with the reason (never a credential), the database, and everyone's phone and

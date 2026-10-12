@@ -39,9 +39,10 @@
     const DISABLED_RETRY_MS = 5 * 60 * 1000;
     const REQUEST_TIMEOUT_MS = (WAIT_SECONDS + 15) * 1000;
     // Title keys, plus a user's own request-list and inbox keys (req:u:<user id>, ntf:u:<user id>; only
-    // that user hears about them) and the shared request-list state key (req:state: Seerr first read,
-    // failure, recovery).
-    const KEY_SHAPE = /^(movie:tmdb:[1-9][0-9]{0,8}|tv:tvdb:[1-9][0-9]{0,8}(:s(0|[1-9][0-9]{0,3})(:e(0|[1-9][0-9]{0,4}))?)?|(req|ntf):u:[0-9a-f]{32}|req:state)$/;
+    // that user hears about them), the shared request-list state key (req:state: Seerr first read,
+    // failure, recovery) and the administrators' key (admin:ops: the hub's admin tabs may have changed;
+    // the server sends it to admins only).
+    const KEY_SHAPE = /^(movie:tmdb:[1-9][0-9]{0,8}|tv:tvdb:[1-9][0-9]{0,8}(:s(0|[1-9][0-9]{0,3})(:e(0|[1-9][0-9]{0,4}))?)?|(req|ntf):u:[0-9a-f]{32}|req:state|admin:ops)$/;
 
     /**
      * @typedef {Object} Subscription

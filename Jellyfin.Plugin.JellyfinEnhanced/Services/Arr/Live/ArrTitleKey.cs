@@ -114,10 +114,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         }
 
         /// <summary>
-        /// True for any key the change feed carries: a title key, a user's request-list or inbox key,
-        /// or <see cref="RequestsState"/>.
+        /// The administrators' feed key: changes whenever something the hub's admin tabs show may have
+        /// changed (an instance's queue, history, health, disks or library was read again, or an
+        /// action was audited). It carries nothing but the change and reaches administrators only.
         /// </summary>
-        public static bool IsFeedKey(string? key) => IsValid(key) || TryParseUserRequests(key, out _) || TryParseUserInbox(key, out _) || string.Equals(key, RequestsState, StringComparison.Ordinal);
+        public const string AdminOps = "admin:ops";
+
+        /// <summary>
+        /// True for any key the change feed carries: a title key, a user's request-list or inbox key,
+        /// <see cref="RequestsState"/> or <see cref="AdminOps"/>.
+        /// </summary>
+        public static bool IsFeedKey(string? key)
+            => IsValid(key) || TryParseUserRequests(key, out _) || TryParseUserInbox(key, out _)
+                || string.Equals(key, RequestsState, StringComparison.Ordinal) || string.Equals(key, AdminOps, StringComparison.Ordinal);
 
         private const string UserRequestsPrefix = "req:u:";
         private const string UserInboxPrefix = "ntf:u:";

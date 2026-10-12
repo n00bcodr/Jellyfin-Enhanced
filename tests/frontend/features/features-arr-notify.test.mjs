@@ -483,3 +483,59 @@ test('"Hide titles" is offered for e-mail too, with phone alerts not set up or s
   const neither = await render({ ntfy: { available: false }, email: { available: false } });
   assert.equal(neither.box, undefined);
 });
+
+test('administrators\' Needs attention alerts read like the Overview row and open the tab the server linked', async t => {
+  const h = setup(t);
+  h.state.inbox = {
+    unread: 3, more: false, items: [
+      item(9, 'attention', { code: 'import_blocked', title: 'Severance', scope: 'S02E05', instance: 'Sonarr' }, { link: '#/requests?tab=overview' }),
+      item(8, 'attention', { code: 'approved_not_in_arr', title: 'Dune', variant: '4k', user: 'Emma' }, { link: '#/requests?tab=overview' }),
+      item(7, 'low_disk', { instance: 'Radarr', path: '/data/movies', percent: '4', free: '40 GB' }, { link: 'javascript:alert(1)' })
+    ]
+  };
+  h.JE.initializeArrNotify();
+  await until(() => h.document.getElementById('je-notify-bell'));
+  await h.JE.arrNotify.loadPrefs();
+  await h.JE.arrNotify.refresh();
+  h.document.getElementById('je-notify-bell').click();
+  const rows = [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')];
+  assert.deepEqual(rows.map(r => r.querySelector('.je-notify-text').textContent), [
+    'Severance S02E05 needs a manual import in Sonarr',
+    "Dune (4K) was OK'd in Seerr, but no 4K Sonarr/Radarr has it",
+    'Low disk space on Radarr: /data/movies has 4% free (40 GB)'
+  ]);
+  rows[0].querySelector('.je-notify-body').click();
+  assert.equal(h.window.location.hash, '#/requests?tab=overview');
+  // A link that isn't one of the Requests page's own tabs is never followed.
+  h.document.getElementById('je-notify-bell').click();
+  [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')][2].querySelector('.je-notify-body').click();
+  assert.equal(h.window.location.hash, '#/requests');
+});
+
+test('a notification created while the inbox is being read still becomes a toast', async t => {
+  let release = null;
+  const h = setup(t, {
+    routes: {
+      '/acquire/notify/inbox': async (path, options, state) => {
+        const answer = JSON.parse(JSON.stringify(state.inbox));
+        if (state.slow) await new Promise(resolve => { release = resolve; });
+        return answer;
+      }
+    }
+  });
+  h.JE.initializeArrNotify();
+  await until(() => h.subscriptions.length === 1);
+  await h.JE.arrNotify.refresh();
+  // One notification arrives; the read it causes is still under way when a second one arrives.
+  h.state.slow = true;
+  h.state.inbox = { unread: 1, more: false, items: [item(7, 'ready', { title: 'Casablanca' })] };
+  h.subscriptions[0].cb(['ntf:u:' + USER]);
+  await until(() => release);
+  h.state.inbox = { unread: 2, more: false, items: [item(8, 'ready', { title: 'Citizen Kane' }), item(7, 'ready', { title: 'Casablanca' })] };
+  h.subscriptions[0].cb(['ntf:u:' + USER]);
+  h.state.slow = false;
+  release();
+  await until(() => h.document.querySelectorAll('.je-notify-toast').length === 2);
+  assert.deepEqual([...h.document.querySelectorAll('.je-notify-toast-text')].map(x => x.textContent).sort(), ['Casablanca is ready', 'Citizen Kane is ready']);
+  assert.equal(h.JE.arrNotify.unread, 2);
+});

@@ -4,7 +4,9 @@
  * the title has got to (the admin status with every copy's reason and fix), Search now and Open in
  * Sonarr/Radarr per instance, the versions across instances, a timeline per instance and Seerr's
  * requests. Reads GET /JellyfinEnhanced/arr/admin/manage; Search now posts to
- * /arr/admin/manage/search (audited on the server). Follows the change feed while open. A drawer on
+ * /arr/admin/manage/search (audited on the server). With phase 2 the title's downloads get their
+ * non-destructive queue actions (Retry import, Search again, Remove… keeping the data) through
+ * POST /arr/admin/queue/action, with the hub's consequences dialog for Remove. Follows the change feed while open. A drawer on
  * the right on desktop, a bottom sheet on phones, a full panel on TV. Exposes JE.arrManage.
  */
 (function (JE) {
@@ -38,7 +40,7 @@
         inJellyfin: 'video_library'
     };
 
-    let current = null; // { target, root, opener, unsubscribe, reloadTimer, generation, data, result, searching }
+    let current = null; // { target, root, opener, unsubscribe, reloadTimer, generation, data, result, searching, queueBusy }
     let generation = 0;
     let refocusing = false;
 
@@ -170,7 +172,7 @@
         root.addEventListener('keydown', onKey);
         document.body.appendChild(overlay);
         document.addEventListener('focusin', keepFocus, true);
-        current = { target, overlay, root, opener, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {} };
+        current = { target, overlay, root, opener, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {} };
         JE.internals.arrManage.injectStyles?.();
         renderShell(root, null);
         root.focus();
@@ -215,7 +217,8 @@
      * @returns {void}
      */
     function keepFocus(e) {
-        if (!current || refocusing || current.overlay.contains(e.target)) return;
+        // The hub's dialogs (Remove…) open above the drawer and keep focus themselves.
+        if (!current || refocusing || current.overlay.contains(e.target) || e.target?.closest?.('.je-ops-dialog-overlay')) return;
         refocusing = true;
         try {
             current.root.focus();
@@ -280,6 +283,8 @@
         if (state.unsubscribe) state.unsubscribe();
         if (state.reloadTimer) clearTimeout(state.reloadTimer);
         document.removeEventListener('focusin', keepFocus, true);
+        // The Remove dialog it opened (in the hub's dialog layer) goes with it.
+        JE.internals.arrHub?.admin?.closeDialog?.('drawer');
         state.overlay.remove();
         if (state.opener && typeof state.opener.focus === 'function' && document.contains(state.opener)) state.opener.focus();
     }
@@ -377,11 +382,97 @@
             if (href) buttons.appendChild(linkButton(href, tr('arr_manage_open_in', { instance: instance.name }), `open-${instance.id}`));
         }
         if (buttons.childNodes.length) card.appendChild(buttons);
+        for (const instance of holders) {
+            for (const download of instance.downloads || []) {
+                const row = downloadRow(instance, download, data);
+                if (row) card.appendChild(row);
+            }
+        }
         // The last Search now outcome survives the re-render the search itself triggers (feed change).
         const result = el('div', `je-manage-result${current?.result?.failed ? ' je-manage-result-failed' : ''}`, current?.result?.message || '');
         result.setAttribute('aria-live', 'polite');
         card.appendChild(result);
         return card;
+    }
+
+    /**
+     * One download of the title (phase 2) with its non-destructive queue actions: Retry import,
+     * Search again and Remove… (keeping the data; the hub's consequences dialog with blocklist and
+     * search-again choices and the season-pack warning). Removing the data stays in the hub.
+     * @param {Object} instance Instance.
+     * @param {Object} download Download (queue group).
+     * @param {Object} data Overview.
+     * @returns {HTMLElement|null} Row (null when it offers nothing).
+     */
+    function downloadRow(instance, download, data) {
+        const actions = (download.actions || []).filter(a => a === 'retry_import' || a === 'search' || a === 'remove');
+        if (!actions.length) return null;
+        const row = el('div', `je-manage-download${download.problem ? ' je-manage-attention-text' : ''}`);
+        const pct = typeof download.percent === 'number' ? `${download.percent}%` : '';
+        const what = [download.scope, [download.state || download.status, pct].filter(Boolean).join(' '), download.client].filter(Boolean).join(' · ');
+        row.appendChild(el('div', 'je-manage-event-label', `${tr('arr_manage_downloads')} · ${instance.name}${what ? ` · ${what}` : ''}`));
+        if (download.release) row.appendChild(el('div', 'je-manage-path', download.release));
+        for (const message of (download.messages || []).slice(0, 2)) row.appendChild(el('div', 'je-manage-event-detail', message));
+        const buttons = el('div', 'je-manage-actions');
+        // Keyed by instance and download id: two instances can report the same download id.
+        const key = `${instance.id}|${download.downloadId}`;
+        const busy = !!current?.queueBusy?.[key];
+        const add = (action, label) => {
+            const b = el('button', 'je-manage-btn', label);
+            b.type = 'button';
+            b.dataset.jeFocus = `dl-${action}-${key}`;
+            if (busy) b.setAttribute('aria-disabled', 'true');
+            b.addEventListener('click', () => queueAction(instance, download, action, b, data));
+            buttons.appendChild(b);
+        };
+        if (actions.includes('retry_import')) add('retry_import', tr('arr_ops_fix_retry_import'));
+        if (actions.includes('search')) add('search', tr('arr_ops_action_search'));
+        if (actions.includes('remove') && JE.internals.arrHub?.admin?.removeDialog) add('remove', tr('arr_ops_action_remove'));
+        row.appendChild(buttons);
+        return row;
+    }
+
+    /**
+     * Runs a queue action from the drawer (Remove asks first, in the hub's dialog). One at a time
+     * per download; the outcome shows under the explanation; the feed brings the change.
+     * @param {Object} instance Instance.
+     * @param {Object} download Download.
+     * @param {string} action retry_import, search or remove.
+     * @param {HTMLElement} opener The button clicked.
+     * @param {Object} data Overview.
+     * @returns {void}
+     */
+    function queueAction(instance, download, action, opener, data) {
+        const state = current;
+        const key = `${instance.id}|${download.downloadId}`;
+        if (!state || state.queueBusy[key]) return;
+        const send = async (body) => {
+            if (current !== state || state.queueBusy[key]) return;
+            state.queueBusy[key] = true;
+            renderShell(state.root, state.data || data);
+            const idempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            let message;
+            let failed = false;
+            try {
+                const outcome = await JE.core.api.plugin('/arr/admin/queue/action', { method: 'POST', body: { ...body, idempotencyKey }, skipRetry: true });
+                failed = outcome?.status === 'Failed' || outcome?.status === 'Rejected';
+                message = failed ? tr('arr_ops_action_failed', { message: outcome?.message || '' }) : [outcome?.message, outcome?.readBack].filter(Boolean).join(' ');
+            } catch (err) {
+                failed = true;
+                message = tr('arr_ops_action_failed', { message: err?.message || String(err) });
+            }
+            delete state.queueBusy[key];
+            if (current !== state) return;
+            state.result = { message: message || '', failed };
+            renderShell(state.root, state.data || data);
+            setTimeout(() => { if (current === state) load(state.generation); }, 1500);
+        };
+        if (action !== 'remove') {
+            send({ instanceId: instance.id, downloadId: download.downloadId, action });
+            return;
+        }
+        const target = { instanceId: instance.id, downloadId: download.downloadId, title: [download.title, download.scope].filter(Boolean).join(' '), scope: download.scope, episodes: download.episodes || 0, instance: instance.name };
+        JE.internals.arrHub.admin.removeDialog(target, key, opener, !!download.problem, send);
     }
 
     /**

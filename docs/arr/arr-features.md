@@ -70,7 +70,70 @@ page opens a panel (on the right on a computer, from the bottom on a phone) with
   that app's add page;
 - a *timeline* per instance: added, grabbed, imported, failed, searches run from Jellyfin Enhanced, the download in
   progress and when Jellyfin got it;
-- *Requests in Seerr*: who asked, when, and the answer.
+- *Requests in Seerr*: who asked, when, and the answer;
+- with **admin tools (phase 2)** on, the title's downloads with **Retry import**, **Search again** and
+  **Remove…** (keeps the download's data; the same "blocklist / search again" questions and season-pack warning
+  as the Activity tab). Removing the data as well stays on the Activity tab.
+
+**Admin tools (phase 2).** With **Tell me, and admin essentials (phase 2)** on, administrators get four more tabs on
+the Requests page (everyone else never receives them):
+
+- **Overview**: a card per Sonarr/Radarr (live or not, downloads in the queue, health, a disk bar per root
+  folder); **Needs attention**, built only from what the apps and Jellyfin report themselves, each row with a fix:
+
+    | Row | Fix offered |
+    |---|---|
+    | Import blocked (the app says it needs a manual import) | **Open in Sonarr/Radarr** (its queue), **Remove & search again** |
+    | Waiting to import, with the app's warning ("Sample") | **Retry import** (the app's own "check finished downloads" command), Open in…, Remove & search again |
+    | Download warning ("no peers") / stalled (the download client reports no time left with data still missing) | **Remove & search again** (keeps the partial download; "delete it too?" asks separately) |
+    | Download failed and nothing new since | **Search now** |
+    | Low disk / root folder missing / the app's health checks | **Open System**, Open in… |
+    | In Sonarr/Radarr, not in Jellyfin (an import Jellyfin still doesn't list after 10 minutes) | **Scan now**, or the path doctor when Jellyfin can't see the file |
+    | OK'd in Seerr, but no Sonarr/Radarr has it | **Open Seerr's settings** (usually Seerr's own Sonarr/Radarr settings) |
+    | An app that can't be read, a live connection down for 10 minutes, a webhook silent for a day | **Open System** |
+
+  plus the next 24 hours (episodes airing, movies coming out) and two weeks of grabs and imports.
+- **Activity**: every download (a season pack is one download), with the app's own words, progress and
+  **Remove…** (keeps the download client's data; optionally blocklist the release and search for another
+  copy), **Search again**, **Retry import** (where the app retries imports itself) and **Remove and delete
+  data…**, which shows what it covers ("This download covers S02E01–E08; removing it affects all 8 episodes")
+  and needs the word DELETE typed and a one-time confirmation from the server. Below, the recent history.
+  Sonarr and Radarr have no way to change a download's priority, so neither does this tab.
+- **System**: per app its version, health checks, disks, scheduled tasks, live connection and webhook; Seerr's
+  request list; and the **Jellyfin bridge**: recent imports Jellyfin doesn't list yet (with why: not scanned
+  yet, Jellyfin can't see the file there, outside every library), titles with files Jellyfin doesn't list at
+  all, and the **path doctor**, which shows each app's root folders as Jellyfin sees them, compares a few titles
+  both sides have and suggests the path mapping that would fix a mismatch ("/data/media → /media").
+- **Audit**: every action taken from Jellyfin Enhanced (who, what, where, the outcome and what the app
+  answered), including refusals, and attempts by someone who isn't an administrator to use these actions
+  ("denied", at most once a minute per person and action). Each one is also copied into Jellyfin's own
+  activity log (Dashboard → Activity) unless that setting is off.
+
+The tabs update when something changes (an app was read again, an action was recorded), with a fallback
+re-read every minute.
+
+With phase 2 the Downloads tab folds into Activity (the old Downloads page itself stays).
+
+**Imports show up in Jellyfin right away.** When Sonarr/Radarr import a file, Jellyfin Enhanced refreshes only
+the folder it landed in (the season; the series and then the new season folder for a new season; or the movie
+library's folder for a new movie), looking only at the new files, so the episode or movie appears within seconds
+and open pages switch to "Ready" without a library scan. A whole TV library is never refreshed this way: a
+brand-new series folder is handed to Jellyfin's own library monitor when that library has real-time monitoring
+on, and otherwise waits for Jellyfin's next library scan (it is listed under "In Sonarr/Radarr, not in
+Jellyfin" with **Scan now** meanwhile). It uses each app's path mappings (see the path doctor) and
+waits while Jellyfin's own library scan runs. A folder is never refreshed twice at once: imports that arrive while
+it runs are gathered into the next refresh of that folder, and a file whose refresh is still waiting its turn
+is carried the rest of the way once that refresh has run (unless the setting was switched off meanwhile).
+Imports of the last 30 minutes are looked at again when Jellyfin starts, so one made while it was restarting
+still shows up. On Windows, folders that differ only in upper/lower case are the same folder.
+
+**OK'd in Seerr, but nothing happens.** When Seerr has OK'd a request and, after 15 minutes, no Sonarr/Radarr
+has the title, administrators see "OK'd in Seerr 20 min ago, but no Sonarr/Radarr has it" on the title and
+under Needs attention. The family keeps seeing "OK'd! Getting started" until the "still looking" hours, then
+"Taking longer than usual". A 4K request is judged on the 4K Radarr or Sonarr alone ("4K request OK'd in Seerr …
+but no 4K Radarr has it", even when the standard Radarr has the movie; likewise for series and the 4K Sonarr).
+Nothing is flagged for a kind of title no Sonarr/Radarr is set up for in Jellyfin Enhanced, nor for a 4K request
+with no 4K instance set up (Seerr may send it to an app Jellyfin Enhanced doesn't know).
 
 Privacy: family members only ever hear about titles they can open in Jellyfin (library access, parental rating and
 tags) or that they asked for themselves; nothing they receive names a server, path, download client, release or
@@ -105,15 +168,22 @@ Settings: [*arr Settings](arr-settings.md#notifications-phase-2).
   device's time zone; the bell still fills), "hide titles on the lock screen" (no title in any phone or e-mail
   text, administrators' alerts included) and **Send me a test**. Every e-mail's
   unsubscribe link opens this section.
-- **Administrators** also hear about a new request waiting for an OK, an instance that stops answering for a while
-  (and when it is back), a root folder low on disk space, a daily list of downloads that have needed attention for
-  hours, and **reminders**: family members get **Remind Dad** next to a status that is taking longer than usual
+- **Administrators** also hear about a new request waiting for an OK, and straight away about what the admin tools'
+  **Needs attention** list shows that needs someone: a download Sonarr/Radarr can't import without a manual import,
+  a request Seerr OK'd that no Sonarr/Radarr has after the grace, an instance that stops answering for a while (and
+  when it is back) and a root folder low on disk space (at the same threshold as the Overview, once a day per
+  folder); each once, linked to the Overview or System tab (rows already listed when the alerts are switched on,
+  or switched back on, stay on the Overview only, so turning them on doesn't send one alert per old row; a row
+  that started while Jellyfin was restarting is still told). A daily list gathers the downloads Needs attention has
+  shown for hours. And **reminders**: family members get **Remind Dad** next to a status that is taking longer than usual
   (at most once a day per title, whichever episode or season page it is sent from). These alerts stay with
   administrators: someone who is no longer one, or who switched administrators' alerts off, doesn't get them on
   the phone (and someone who is no longer one doesn't see them in the bell).
 
 Notifications are driven by the same live updates as the status (Sonarr/Radarr, Seerr's request list and Jellyfin's
-library), never by extra calls to the arrs. Follows, the inbox and delivery state are kept in a small database
+library), never by extra calls to the arrs. With **Show imports in Jellyfin right away** (the admin tools' targeted
+refresh) "ready to watch" goes out within seconds of the import: the moment the refresh finds the file, the title is
+looked at again, without waiting for a library scan or for Jellyfin to finish reading its metadata. Follows, the inbox and delivery state are kept in a small database
 (`acquire.db`) in Jellyfin Enhanced's data folder, included in JE backups. Failed phone or e-mail deliveries are
 retried (30 s, 2 min, 10 min, 30 min, 2 h, 6 h) and then shown to administrators under **Notification status**; an
 e-mail server that doesn't answer is given up on after 30 seconds for that try, so other alerts aren't held up.

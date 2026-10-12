@@ -181,7 +181,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             var payload = Payload(delivery.Payload);
             var message = NotifyTexts.Render(delivery.Kind, payload, prefs.HideTitles);
-            var link = ExternalLink(config, delivery.ItemId);
+            var link = ExternalLink(config, delivery.ItemId, delivery.Kind);
             SendResult result;
             switch (delivery.Channel)
             {
@@ -236,17 +236,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return key != null && _view.Copies(key, viewer).Any(c => c.Visible) ? null : "The recipient can no longer open this title.";
         }
 
-        /// <summary>The deep link for pushes and e-mails: the item's details page, else the Requests page; null without a household address.</summary>
-        internal static string? ExternalLink(PluginConfiguration? config, string? itemId)
+        /// <summary>
+        /// The deep link for pushes and e-mails: the item's details page, else the Requests page (the
+        /// administrators' tab an admin alert is about); null without a household address.
+        /// </summary>
+        internal static string? ExternalLink(PluginConfiguration? config, string? itemId, string? kind = null)
         {
             var root = NotifyEndpoints.HouseholdUrl(config);
             if (root == null) return null;
-            return root + "/web/" + InAppLink(itemId);
+            return root + "/web/" + InAppLink(itemId, kind);
         }
 
-        /// <summary>The in-app link (a hash route): the item's details page, else the Requests page.</summary>
-        public static string InAppLink(string? itemId)
-            => !string.IsNullOrEmpty(itemId) && Guid.TryParse(itemId, out var id) ? "#/details?id=" + id.ToString("N") : "#/requests";
+        /// <summary>
+        /// The in-app link (a hash route): the item's details page, else the Requests page — for
+        /// administrators' alerts about the arrs the tab that shows them (Overview with Needs
+        /// attention, or System for an instance or its disks).
+        /// </summary>
+        public static string InAppLink(string? itemId, string? kind = null)
+        {
+            if (!string.IsNullOrEmpty(itemId) && Guid.TryParse(itemId, out var id)) return "#/details?id=" + id.ToString("N");
+            return kind switch
+            {
+                NotifyKind.Attention or NotifyKind.StuckDigest => "#/requests?tab=overview",
+                NotifyKind.InstanceDown or NotifyKind.InstanceUp or NotifyKind.LowDisk => "#/requests?tab=system",
+                _ => "#/requests",
+            };
+        }
 
         /// <summary>The link to the user's "Requests &amp; alerts" settings (e-mail unsubscribe), or null.</summary>
         internal static string? SettingsLink(PluginConfiguration? config)
@@ -272,7 +287,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             NotifyKind.Ready or NotifyKind.Episodes => new[] { "tv" },
             NotifyKind.Declined => new[] { "no_entry_sign" },
             NotifyKind.Approval => new[] { "raising_hand" },
-            NotifyKind.InstanceDown or NotifyKind.LowDisk or NotifyKind.StuckDigest => new[] { "warning" },
+            NotifyKind.InstanceDown or NotifyKind.LowDisk or NotifyKind.StuckDigest or NotifyKind.Attention => new[] { "warning" },
             NotifyKind.Remind => new[] { "bell" },
             _ => new[] { "jellyfish" },
         };

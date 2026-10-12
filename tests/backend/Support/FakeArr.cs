@@ -35,18 +35,22 @@ internal sealed class FakeArr : IDisposable
         public Func<string, CancellationToken, Task>? Before { get; set; }
         /// <summary>Connect → notifications (webhooks) the arr holds, with ids.</summary>
         public List<JsonObject> Notifications { get; } = new();
-        /// <summary>/diskspace rows (path, freeSpace, totalSpace).</summary>
-        public List<JsonObject> DiskSpace { get; } = new();
-        /// <summary>/rootfolder rows (path, freeSpace, accessible).</summary>
-        public List<JsonObject> RootFolders { get; } = new();
         /// <summary>Called when a notification is created or changed, or tested (the arr would send its Test event here); return an error message to fail the save.</summary>
         public Func<JsonObject, string?>? OnNotificationTest { get; set; }
         /// <summary>Request bodies of writes, by method and path.</summary>
         public List<(string Method, string Path, string Body)> Writes { get; } = new();
+        /// <summary>Non-zero: <c>POST /command</c> answers with this HTTP status (other calls as usual).</summary>
+        public int CommandFailWith { get; set; }
         /// <summary>What <c>GET /command/{id}</c> answers for commands posted to <c>/command</c>.</summary>
         public string CommandStatus { get; set; } = "completed";
         /// <summary>The message of those commands.</summary>
         public string? CommandMessage { get; set; } = "Completed";
+        /// <summary><c>/health</c> rows.</summary>
+        public List<JsonObject> Health { get; } = new();
+        /// <summary><c>/diskspace</c> rows (path, freeSpace, totalSpace).</summary>
+        public List<JsonObject> DiskSpace { get; } = new();
+        /// <summary><c>/rootfolder</c> rows (path, freeSpace, accessible).</summary>
+        public List<JsonObject> RootFolders { get; } = new();
     }
 
     public ApiPluginFixture Plugin { get; } = new();
@@ -185,6 +189,7 @@ internal sealed class FakeArr : IDisposable
             {
                 var body = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
                 host.Writes.Add(("POST", path, body));
+                if (host.CommandFailWith != 0) return IntegrationTransport.Response("{\"message\":\"command refused\"}", host.CommandFailWith);
                 var command = JsonNode.Parse(body)!.AsObject();
                 command["id"] = 900 + host.Writes.Count;
                 command["status"] = "queued";
@@ -193,6 +198,20 @@ internal sealed class FakeArr : IDisposable
             if (path.StartsWith("/api/v3/command/", StringComparison.Ordinal) && int.TryParse(path["/api/v3/command/".Length..], out var commandId))
                 return IntegrationTransport.Response(new JsonObject { ["id"] = commandId, ["status"] = host.CommandStatus, ["message"] = host.CommandMessage }.ToJsonString());
             if (request.Method == HttpMethod.Get && TitleById(host, path) is { } title) return title;
+            // Queue removal (DELETE /queue/{id} and /queue/bulk {ids}): recorded with the query, rows dropped.
+            if (request.Method == HttpMethod.Delete && path.StartsWith("/api/v3/queue", StringComparison.Ordinal))
+            {
+                var body = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+                host.Writes.Add(("DELETE", path + uri.Query, body));
+                var ids = path == "/api/v3/queue/bulk"
+                    ? JsonNode.Parse(body)!["ids"]!.AsArray().Select(n => (int)n!).ToList()
+                    : new List<int> { int.Parse(path["/api/v3/queue/".Length..], CultureInfo.InvariantCulture) };
+                if (!host.Queue.Any(q => ids.Contains((int)q["id"]!))) return IntegrationTransport.Response("{\"message\":\"NotFound\"}", 404);
+                host.Queue.RemoveAll(q => ids.Contains((int)q["id"]!));
+                return IntegrationTransport.Response("{}");
+            }
+            if (path == "/api/v3/queue/details")
+                return IntegrationTransport.Response(new JsonArray(host.Queue.Select(q => q.DeepClone()).ToArray()).ToJsonString());
             switch (path)
             {
                 case "/api/v3/system/status":
@@ -210,7 +229,8 @@ internal sealed class FakeArr : IDisposable
                 case "/api/v3/history/since":
                 {
                     var since = DateTime.Parse(query["date"]!, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
-                    var rows = host.History.Where(h => DateTime.Parse((string)h["date"]!, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal) >= since);
+                    // Like the arrs: strictly after "date".
+                    var rows = host.History.Where(h => DateTime.Parse((string)h["date"]!, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal) > since);
                     return IntegrationTransport.Response(new JsonArray(rows.Select(r => r.DeepClone()).ToArray()).ToJsonString());
                 }
                 case "/api/v3/episode":
@@ -221,11 +241,12 @@ internal sealed class FakeArr : IDisposable
                 }
                 case "/api/v3/calendar":
                     return IntegrationTransport.Response(new JsonArray(host.Calendar.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                case "/api/v3/health":
+                    return IntegrationTransport.Response(new JsonArray(host.Health.Select(r => r.DeepClone()).ToArray()).ToJsonString());
                 case "/api/v3/diskspace":
                     return IntegrationTransport.Response(new JsonArray(host.DiskSpace.Select(r => r.DeepClone()).ToArray()).ToJsonString());
                 case "/api/v3/rootfolder":
                     return IntegrationTransport.Response(new JsonArray(host.RootFolders.Select(r => r.DeepClone()).ToArray()).ToJsonString());
-                case "/api/v3/health":
                 case "/api/v3/qualityprofile":
                     return IntegrationTransport.Response("[]");
                 default:

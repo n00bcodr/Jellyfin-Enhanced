@@ -67,6 +67,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
       "category": "Controllers"
     },
@@ -335,11 +339,23 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrAdminHubService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrAdminOpsFeed.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrJellyfinView.cs",
       "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrManageService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrQueueActionService.cs",
       "category": "Services"
     },
     {
@@ -351,7 +367,23 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/BridgePaths.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/JellyfinBridge.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/JellyfinFacts.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/JellyfinLibraryAccess.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/NeedsAttention.cs",
       "category": "Services"
     },
     {
@@ -420,6 +452,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrActionRunner.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrActivityMirror.cs",
       "category": "Services"
     },
     {
@@ -853,6 +889,18 @@
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WikidataAwardsService.cs",
       "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/admin/admin-render.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/admin/admin-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/admin/admin-tabs.js",
+      "category": "js"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/arr-links.js",
@@ -1769,6 +1817,69 @@
       "path": "/JellyfinEnhanced/admin/secrets/rollback",
       "method": "RollbackSecrets",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/hub/overview",
+      "method": "GetOverview",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/hub/activity",
+      "method": "GetActivity",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/hub/system",
+      "method": "GetSystem",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/queue/confirm",
+      "method": "Confirm",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/queue/action",
+      "method": "QueueActionRun",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/hub/search",
+      "method": "Search",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/bridge/scan",
+      "method": "Scan",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
       "following_attributes": [
         "Authorize"
       ]
@@ -5168,6 +5279,46 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrTargetedRefreshEnabled",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrLibraryPendingMinutes",
+      "type": "int",
+      "initializer": "10",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrLowDiskPercent",
+      "type": "int",
+      "initializer": "10",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrSeerrHandoffGraceMinutes",
+      "type": "int",
+      "initializer": "15",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrActivityLogMirror",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrNotificationsEnabled",
       "type": "bool",
       "initializer": "true",
@@ -5203,14 +5354,6 @@
       "name": "ArrNotifyAdminStuckHours",
       "type": "int",
       "initializer": "6",
-      "constructor_assignment": null,
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
-    },
-    {
-      "class": "PluginConfiguration",
-      "name": "ArrNotifyLowDiskPercent",
-      "type": "int",
-      "initializer": "10",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
@@ -8592,9 +8735,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 428,
-    "routes": 210,
-    "configuration_properties": 554,
+    "files": 440,
+    "routes": 217,
+    "configuration_properties": 558,
     "storage_references": 80,
     "scheduled_tasks": 14,
     "locales": 33

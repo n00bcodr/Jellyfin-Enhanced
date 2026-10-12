@@ -30,6 +30,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public ArrLibrarySnapshot? PeekLibrary(string instanceId)
             => _states.TryGetValue(instanceId, out var state) ? state.Library.Peek().Value : null;
 
+        /// <summary>
+        /// The library index in memory for an instance and the error of its latest read when that
+        /// failed after the index was loaded (no read is started).
+        /// </summary>
+        public (ArrLibrarySnapshot? Value, ArrError? Error) PeekLibraryState(string instanceId)
+        {
+            if (!_states.TryGetValue(instanceId, out var state)) return (null, null);
+            var peek = state.Library.Peek();
+            return (peek.Value, peek.Error);
+        }
+
         /// <summary>The queue in memory for an instance (no read is started).</summary>
         public ArrQueueSnapshot? PeekQueue(string instanceId)
             => _states.TryGetValue(instanceId, out var state) ? state.Queue.Peek().Value : null;
@@ -37,6 +48,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>The recent history in memory for an instance (no read is started).</summary>
         public ArrHistorySnapshot? PeekHistory(string instanceId)
             => _states.TryGetValue(instanceId, out var state) ? state.History.Peek().Value : null;
+
+        /// <summary>The system facts (health, disk, root folders, tasks) in memory for an instance (no read is started).</summary>
+        public ArrSystemSnapshot? PeekSystem(string instanceId)
+            => _states.TryGetValue(instanceId, out var state) ? state.System.Peek().Value : null;
 
         /// <summary>
         /// Adds, replaces (by arr id) or removes titles in the in-memory library index, when one is
@@ -143,7 +158,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             if (connection == null || StateFor(connection, out _) is not { } state) return false;
             var slot = state.Slot(kind);
             var now = _now();
-            if (!slot.HasValue && now - slot.LastRead > PolicyFor(kind, state, now).Interest) return false;
+            if (!slot.HasValue && now - slot.LastInterest > PolicyFor(kind, state, now).Interest) return false;
             if (!force && slot.InBackoff(now)) return false;
             if (slot.Inflight is { } running)
             {

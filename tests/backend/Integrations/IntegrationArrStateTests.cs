@@ -176,6 +176,21 @@ public class IntegrationArrStateTests
     }
 
     [Fact]
+    public async Task ARecordWrittenInTheSameSecondAsTheNewestOneReadIsNotLost()
+    {
+        using var arr = Rig(out var radarr, out _);
+        var t0 = arr.Now.UtcDateTime.AddMinutes(-5);
+        radarr.History.Add(FakeArr.HistoryRow(1, "downloadFolderImported", t0, "d1", 10, "Movie A"));
+        var store = arr.Store();
+        var movies = arr.Instance("Movies");
+        await store.GetHistoryAsync(movies, default);
+        // A season's episodes are imported in the same second; this one was written after the read.
+        radarr.History.Add(FakeArr.HistoryRow(2, "downloadFolderImported", t0, "d2", 11, "Movie B"));
+        await store.RefreshForEventAsync(movies.Id, ArrSnapshotKind.History, force: true);
+        Assert.Equal(new[] { 1, 2 }, store.PeekHistory(movies.Id)!.Records.Select(r => r.Id).OrderBy(i => i));
+    }
+
+    [Fact]
     public async Task HistoryCatchesUpWithHistorySinceAndKeepsAnErrorOnceTheInstanceFails()
     {
         using var arr = Rig(out var radarr, out _);
@@ -195,7 +210,8 @@ public class IntegrationArrStateTests
         var second = await store.GetHistoryAsync(movies, default);
         Assert.Equal(new[] { 3, 2, 1 }, second.Value!.Records.Select(r => r.Id));    // merged, no duplicate of 2
         Assert.Equal(1, arr.CallCount("radarr.lan", "/api/v3/history/since"));
-        Assert.Contains(arr.Calls, c => c.Contains("/history/since?date=2026-10-12T11%3A55"));
+        // From a second before the newest record held (the arrs answer only records strictly after "date").
+        Assert.Contains(arr.Calls, c => c.Contains("/history/since?date=2026-10-12T11%3A54%3A59"));
         var items = ArrLegacyViews.HistoryItems(movies, second.Value);
         Assert.Equal(new[] { "failed", "imported" }, items.Select(i => i.EventType));    // grabbed is not shown
 

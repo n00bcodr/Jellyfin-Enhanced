@@ -2586,11 +2586,46 @@
                             </div>
                             <!-- /Requests & downloads, phase 1 -->
 
-                            <!-- Requests & downloads, phase 2 (switch shared with the admin essentials) -->
+                            <!-- Requests & downloads, phase 2: one switch for "Tell me" (notifications) and the admin essentials -->
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
-                                <div class="fieldDescription je-field-desc-xl">The second stage: people get told when what they asked for (or follow) is ready, and administrators get alerts and day-to-day tools. Needs the status switch above. Each part below has its own switch.</div>
+                                <div class="fieldDescription je-field-desc-xl">The second stage: people get told when what they asked for (or follow) is ready, and administrators get alerts and day-to-day tools. Administrators get <strong>Overview</strong>, <strong>Activity</strong>, <strong>System</strong> and <strong>Audit</strong> tabs on the Requests page: every Sonarr/Radarr with its live state, queue, health and disk space; a <strong>Needs attention</strong> list built from what the apps themselves report (import blocked, download warnings and failures, low disk, health checks, imports Jellyfin hasn't picked up, requests Seerr OK'd that no Sonarr/Radarr has) with a fix next to each; the queue with remove (keeping the download's data, optionally blocklisting it and searching again), search again and retry import; removing a download <em>with</em> its data needs a typed confirmation. Every action is recorded in the audit log and in Jellyfin's activity log. Needs "Show where things have got to". Notifications have their own switch below.</div>
                             </div>
+                            <!-- Phase 2: admin essentials (hub Overview / Activity / System / Audit, queue actions, Needs attention,
+                                 Jellyfin bridge, activity log mirror) -->
+                            <div id="arrAdminToolsSettings" class="je-arr-admin-settings">
+                                <div class="checkboxContainer"><label><input id="arrTargetedRefreshEnabled" is="emby-checkbox" type="checkbox"/><span>Show imports in Jellyfin right away</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrTargetedRefreshEnabled">
+                                    <div class="fieldDescription">After Sonarr/Radarr import a file, Jellyfin Enhanced refreshes only the folder it landed in, so the movie or episode appears within seconds instead of waiting for a library scan. A brand-new series folder is left to Jellyfin's own library monitor (a whole TV library is never refreshed this way). Uses the path mappings of each Sonarr/Radarr above; the System tab's path doctor shows whether they fit.</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrLibraryPendingMinutes">"In Sonarr/Radarr, not in Jellyfin" after (minutes)</label>
+                                    <input id="arrLibraryPendingMinutes" is="emby-input" type="number" min="1" max="1440"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrLibraryPendingMinutes">
+                                    <div class="fieldDescription">How long after an import a file Jellyfin still doesn't have is listed under Needs attention, with a Scan now button. 1-1440, default 10.</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrLowDiskPercent">Low disk warning below (% free)</label>
+                                    <input id="arrLowDiskPercent" is="emby-input" type="number" min="1" max="50"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrLowDiskPercent">
+                                    <div class="fieldDescription">A Sonarr/Radarr root folder whose disk has less free space than this is listed under Needs attention and, with notifications on, administrators are alerted (at most once a day per folder). 1-50, default 10.</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrSeerrHandoffGraceMinutes">Tell me when Seerr's OK reaches no Sonarr/Radarr after (minutes)</label>
+                                    <input id="arrSeerrHandoffGraceMinutes" is="emby-input" type="number" min="1" max="1440"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrSeerrHandoffGraceMinutes">
+                                    <div class="fieldDescription">When Seerr has OK'd a request but no Sonarr/Radarr has the title after this long, administrators see "OK'd in Seerr … ago, but no Sonarr/Radarr has it" (usually Seerr's own Sonarr/Radarr settings). The family keeps seeing "OK'd! Getting started" until the "Still looking" hours above, then "Taking longer than usual". 1-1440, default 15.</div>
+                                </div>
+                                <div class="checkboxContainer"><label><input id="arrActivityLogMirror" is="emby-checkbox" type="checkbox"/><span>Copy actions into Jellyfin's activity log</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrActivityLogMirror">
+                                    <div class="fieldDescription">Every Sonarr/Radarr action taken through Jellyfin Enhanced (Search now, queue actions, Scan now, webhook set-up) also appears in Dashboard → Activity, with who did it and how it ended.</div>
+                                </div>
+                            </div>
+                            <!-- /Phase 2: admin essentials -->
+
                             <!-- Phase 2: notifications -->
                             <div id="arrNotifySettings" class="je-arr-notify-settings">
                                 <div class="checkboxContainer"><label><input id="arrNotificationsEnabled" is="emby-checkbox" type="checkbox"/><span>Notifications</span></label></div>
@@ -2692,11 +2727,6 @@
                                             <input id="arrNotifyAdminDownMinutes" is="emby-input" type="number" min="1" max="1440"/>
                                         </div>
                                         <div class="inputContainer">
-                                            <label class="inputLabel" for="arrNotifyLowDiskPercent">Tell me when a root folder's disk has less free than (%)</label>
-                                            <input id="arrNotifyLowDiskPercent" is="emby-input" type="number" min="0" max="50"/>
-                                            <div class="fieldDescription">0 turns the low-disk alert off. At most one alert per folder a day.</div>
-                                        </div>
-                                        <div class="inputContainer">
                                             <label class="inputLabel" for="arrNotifyAdminStuckHours">Daily digest: downloads needing attention for at least (hours)</label>
                                             <input id="arrNotifyAdminStuckHours" is="emby-input" type="number" min="1" max="168"/>
                                         </div>
@@ -2704,7 +2734,7 @@
                                             <label class="inputLabel" for="arrNotifyDigestHour">Send the digest at (hour, server time)</label>
                                             <input id="arrNotifyDigestHour" is="emby-input" type="number" min="0" max="23"/>
                                         </div>
-                                        <div class="fieldDescription">New requests waiting for an OK and household reminders are sent straight away. Administrators choose in "Requests &amp; alerts" whether these also go to their phone and e-mail.</div>
+                                        <div class="fieldDescription">New requests waiting for an OK, household reminders and what Needs attention lists as a manual import or a request Seerr OK'd that no Sonarr/Radarr has are sent straight away (once per item). Low disk uses the "Low disk warning below" threshold above (at most one alert per folder a day). Administrators choose in "Requests &amp; alerts" whether these also go to their phone and e-mail.</div>
                                     </div>
                                 </details>
 
@@ -6027,7 +6057,6 @@
             document.querySelector('#arrNotifyBatchMinutes').value = num(config.ArrNotifyBatchMinutes, 10);
             document.querySelector('#arrNotifyAdminDownMinutes').value = num(config.ArrNotifyAdminDownMinutes, 10);
             document.querySelector('#arrNotifyAdminStuckHours').value = num(config.ArrNotifyAdminStuckHours, 6);
-            document.querySelector('#arrNotifyLowDiskPercent').value = num(config.ArrNotifyLowDiskPercent, 10);
             document.querySelector('#arrNotifyDigestHour').value = num(config.ArrNotifyDigestHour, 9);
             document.querySelector('#arrNtfyEnabled').checked = config.ArrNtfyEnabled === true;
             document.querySelector('#arrNtfyServerUrl').value = config.ArrNtfyServerUrl || '';
@@ -6055,7 +6084,6 @@
             config.ArrNotifyBatchMinutes = clamp('#arrNotifyBatchMinutes', 1, 60, 10);
             config.ArrNotifyAdminDownMinutes = clamp('#arrNotifyAdminDownMinutes', 1, 1440, 10);
             config.ArrNotifyAdminStuckHours = clamp('#arrNotifyAdminStuckHours', 1, 168, 6);
-            config.ArrNotifyLowDiskPercent = clamp('#arrNotifyLowDiskPercent', 0, 50, 10);
             config.ArrNotifyDigestHour = clamp('#arrNotifyDigestHour', 0, 23, 9);
             config.ArrNtfyEnabled = document.querySelector('#arrNtfyEnabled').checked;
             config.ArrNtfyServerUrl = (document.querySelector('#arrNtfyServerUrl').value || '').trim();
@@ -7635,6 +7663,11 @@
                 document.querySelector('#arrSeerrModalStatus').checked = config.ArrSeerrModalStatus !== false;
                 document.querySelector('#arrSeerrRefreshMinutes').value = (config.ArrSeerrRefreshMinutes !== undefined && config.ArrSeerrRefreshMinutes !== null) ? config.ArrSeerrRefreshMinutes : 5;
                 jeLoadArrNotifySettings(config);
+                document.querySelector('#arrTargetedRefreshEnabled').checked = config.ArrTargetedRefreshEnabled !== false;
+                document.querySelector('#arrLibraryPendingMinutes').value = (config.ArrLibraryPendingMinutes !== undefined && config.ArrLibraryPendingMinutes !== null) ? config.ArrLibraryPendingMinutes : 10;
+                document.querySelector('#arrLowDiskPercent').value = (config.ArrLowDiskPercent !== undefined && config.ArrLowDiskPercent !== null) ? config.ArrLowDiskPercent : 10;
+                document.querySelector('#arrSeerrHandoffGraceMinutes').value = (config.ArrSeerrHandoffGraceMinutes !== undefined && config.ArrSeerrHandoffGraceMinutes !== null) ? config.ArrSeerrHandoffGraceMinutes : 15;
+                document.querySelector('#arrActivityLogMirror').checked = config.ArrActivityLogMirror !== false;
                 jeApplyArrIntegrationVisibility();
                 document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
@@ -8267,6 +8300,14 @@
             var __seerrMinutes = parseInt(document.querySelector('#arrSeerrRefreshMinutes').value, 10);
             config.ArrSeerrRefreshMinutes = isNaN(__seerrMinutes) ? 5 : Math.min(60, Math.max(1, __seerrMinutes));
             jeSaveArrNotifySettings(config);
+            config.ArrTargetedRefreshEnabled = document.querySelector('#arrTargetedRefreshEnabled').checked;
+            var __pendingMinutes = parseInt(document.querySelector('#arrLibraryPendingMinutes').value, 10);
+            config.ArrLibraryPendingMinutes = isNaN(__pendingMinutes) ? 10 : Math.min(1440, Math.max(1, __pendingMinutes));
+            var __lowDisk = parseInt(document.querySelector('#arrLowDiskPercent').value, 10);
+            config.ArrLowDiskPercent = isNaN(__lowDisk) ? 10 : Math.min(50, Math.max(1, __lowDisk));
+            var __handoffMinutes = parseInt(document.querySelector('#arrSeerrHandoffGraceMinutes').value, 10);
+            config.ArrSeerrHandoffGraceMinutes = isNaN(__handoffMinutes) ? 15 : Math.min(1440, Math.max(1, __handoffMinutes));
+            config.ArrActivityLogMirror = document.querySelector('#arrActivityLogMirror').checked;
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
@@ -9695,8 +9736,8 @@
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
             { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled'] },
-            { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrNotificationsEnabled'] },
-            { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyLowDiskPercent', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
+            { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
+            { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },

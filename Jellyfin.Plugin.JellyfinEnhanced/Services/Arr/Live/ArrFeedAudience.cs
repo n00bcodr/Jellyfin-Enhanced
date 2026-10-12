@@ -41,7 +41,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
     /// "Asked for" includes requests deleted in the last few minutes, so the deletion itself is
     /// announced to the people who could follow the title before it.
     /// A user's request-list and inbox keys (<see cref="ArrTitleKey.UserRequests"/>,
-    /// <see cref="ArrTitleKey.UserInbox"/>) reach that user only, administrators included; the shared <see cref="ArrTitleKey.RequestsState"/> key reaches everyone.
+    /// <see cref="ArrTitleKey.UserInbox"/>) reach that user only, administrators included; the shared
+    /// <see cref="ArrTitleKey.RequestsState"/> key reaches everyone; <see cref="ArrTitleKey.AdminOps"/>
+    /// reaches administrators only.
     /// Season and episode keys are checked against that season or episode when Jellyfin has it
     /// (Jellyfin can hide one episode of a visible series), otherwise as their series. A title in
     /// Jellyfin that the user can't open is never announced. A Jellyfin copy known only by another
@@ -98,6 +100,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                 else if (change.Key == ArrTitleKey.RequestsState)
                 {
                     own.Add(change.Key);
+                }
+                else if (change.Key == ArrTitleKey.AdminOps)
+                {
+                    if (isAdmin) own.Add(change.Key);
                 }
                 else
                 {

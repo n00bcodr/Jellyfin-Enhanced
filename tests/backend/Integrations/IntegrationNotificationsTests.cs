@@ -83,6 +83,11 @@ public class IntegrationNotificationsTests
         public NotifyStore NotifyStore { get; private set; } = null!;
         public NotifyDispatcher Dispatcher { get; private set; } = null!;
         public NotificationService Service { get; private set; } = null!;
+        // The admin tools (phase 2): the Jellyfin bridge over an in-memory library and the hub whose
+        // Needs attention list the administrators' alerts read.
+        public FakeLibraryAccess Library { get; } = new();
+        public JellyfinBridge Bridge { get; }
+        public ArrAdminHubService Hub { get; }
         public StatusViewer Admin { get; }
         public StatusViewer Emma { get; }
         public StatusViewer Sam { get; }
@@ -119,6 +124,8 @@ public class IntegrationNotificationsTests
             Store = Arr.Store();
             Requests = new SeerrRequestReadModel(Seerr.Transport, Feed, null, () => Config, () => Arr.Now);
             Status = new ArrStatusService(Store, View, Requests, () => Config, () => Arr.Now, Feed);
+            Bridge = new JellyfinBridge(Store, Library, null, () => Config, () => Arr.Now, null) { Debounce = TimeSpan.FromMilliseconds(20) };
+            Hub = new ArrAdminHubService(Store, Bridge, Requests, null, null, () => Config, () => Arr.Now);
             Admin = View.AddUser(admin: true, policy: "same");
             Emma = View.AddUser(admin: false, policy: "same");
             Sam = View.AddUser(admin: false, policy: "same");
@@ -145,7 +152,7 @@ public class IntegrationNotificationsTests
             Db = new AcquireDatabase(DbPath);
             NotifyStore = new NotifyStore(Db);
             Dispatcher = new NotifyDispatcher(NotifyStore, new NtfySender(Ntfy), new EmailSender(Mail), null, () => Config, () => Arr.Now, Users, View);
-            Service = new NotificationService(NotifyStore, Status, Requests, View, Feed, Store, Users, Dispatcher, null, null, () => Config, () => Arr.Now);
+            Service = new NotificationService(NotifyStore, Status, Requests, View, Feed, Store, Users, Dispatcher, null, null, () => Config, () => Arr.Now, Hub, Bridge);
         }
 
         public void Prefs(StatusViewer user, Action<NotifyPrefs> change)
@@ -194,6 +201,7 @@ public class IntegrationNotificationsTests
         public void Dispose()
         {
             Service.Dispose();
+            Bridge.Dispose();
             Dispatcher.Dispose();
             Db.Dispose();
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
@@ -688,11 +696,11 @@ public class IntegrationNotificationsTests
         var p = Params(disk.Payload);
         Assert.Equal(("RadarrZ", "/data/movies", "5", "5.0 GB"), (p["instance"], p["path"], p["percent"], p["free"]));
         Assert.Empty(rig.Inbox(rig.Emma));
-        // Next day, still low: told again; set to 0: never.
+        // Next day, still low: told again; under the admin tools' lowest threshold (1 %): never.
         rig.Arr.Now = rig.Arr.Now.AddDays(1);
         await Checks(rig, healthy: true);
         Assert.Equal(2, rig.Inbox(rig.Admin).Count(n => n.Kind == "low_disk"));
-        rig.Config.ArrNotifyLowDiskPercent = 0;
+        rig.Config.ArrLowDiskPercent = 1;
         rig.Arr.Now = rig.Arr.Now.AddDays(1);
         await Checks(rig, healthy: true);
         Assert.Equal(2, rig.Inbox(rig.Admin).Count(n => n.Kind == "low_disk"));

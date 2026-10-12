@@ -69,6 +69,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly INotifyUsers _users;
         private readonly NotifyDispatcher _dispatcher;
         private readonly ILibraryManager? _library;
+        private readonly ArrAdminHubService? _hub;
+        private readonly JellyfinBridge? _bridge;
         private readonly Logger? _logger;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
@@ -76,6 +78,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly ConcurrentDictionary<Guid, DateTimeOffset> _recentlyAdded = new();
         private readonly SemaphoreSlim _round = new(1, 1);
         private volatile HashSet<string> _interest = new(StringComparer.Ordinal);
+        // Guards _dirty together with _firstDirty/_lastDirty: titles are marked from other threads
+        // (the bridge's refresh, Jellyfin's library events) while a round drains them.
+        private readonly object _dirtyGate = new();
         private DateTimeOffset? _firstDirty;
         private DateTimeOffset? _lastDirty;
         private string? _epoch;
@@ -85,17 +90,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private DateTimeOffset _nextAdmin;
         private DateTimeOffset _nextPurge;
         private bool _wasEnabled;
+        private volatile bool _pauseNoted;
         private CancellationTokenSource? _loop;
         private long _created;
+        private int _bridgeSubscribed;
 
         /// <summary>The service (DI).</summary>
-        public NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager library, Logger logger)
-            : this(store, status, requests, view, feed, arr, users, dispatcher, library, logger, null, null)
+        public NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager library, Logger logger, ArrAdminHubService hub, JellyfinBridge bridge)
+            : this(store, status, requests, view, feed, arr, users, dispatcher, library, logger, null, null, hub, bridge)
         {
         }
 
-        /// <summary>A service with explicit configuration and clock (tests; no Jellyfin library events).</summary>
-        internal NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager? library, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now)
+        /// <summary>
+        /// A service with explicit configuration and clock (tests; no Jellyfin library events). Without
+        /// <paramref name="hub"/> the administrators' checks that read the admin tools' Needs attention
+        /// list (outages, low disk, manual imports, OK'd-but-not-in-an-arr, the stuck digest) are skipped;
+        /// with <paramref name="bridge"/> a targeted refresh that finds an imported file looks at its title at once.
+        /// </summary>
+        internal NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager? library, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrAdminHubService? hub = null, JellyfinBridge? bridge = null)
         {
             _store = store;
             _status = status;
@@ -106,6 +118,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             _users = users;
             _dispatcher = dispatcher;
             _library = library;
+            _hub = hub;
+            _bridge = bridge;
             _logger = logger;
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
             _now = now ?? (() => DateTimeOffset.UtcNow);
@@ -133,6 +147,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 _library.ItemAdded += OnItemAdded;
                 _library.ItemUpdated += OnItemUpdated;
             }
+            SubscribeBridge();
             _loop = new CancellationTokenSource();
             var token = _loop.Token;
             _ = Task.Run(() => LoopAsync(token), CancellationToken.None);
@@ -147,6 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 _library.ItemAdded -= OnItemAdded;
                 _library.ItemUpdated -= OnItemUpdated;
             }
+            UnsubscribeBridge();
             try
             {
                 _loop?.Cancel();
@@ -166,6 +182,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 _library.ItemAdded -= OnItemAdded;
                 _library.ItemUpdated -= OnItemUpdated;
             }
+            UnsubscribeBridge();
             var loop = Interlocked.Exchange(ref _loop, null);
             if (loop == null) return;
             try
@@ -186,6 +203,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 {
                     if (!Enabled)
                     {
+                        NoteAlertsPaused();
                         _wasEnabled = false;
                         _cursor = null;
                         await Task.Delay(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
@@ -205,7 +223,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         _epoch = _feed.Epoch;
                         _cursor = _feed.Cursor;
                     }
-                    var wait = _firstDirty.HasValue ? QuietDebounce : TimeSpan.FromSeconds(2);
+                    bool pending;
+                    lock (_dirtyGate) pending = _firstDirty.HasValue;
+                    var wait = pending ? QuietDebounce : TimeSpan.FromSeconds(2);
                     await _feed.WaitAsync(_cursor.Value, wait, token).ConfigureAwait(false);
                     ReadFeed();
                     await TickAsync(token).ConfigureAwait(false);
@@ -254,22 +274,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         internal void Observe(IEnumerable<string> keys)
         {
             var interest = _interest;
-            var any = false;
+            var titles = new List<string>();
             foreach (var key in keys)
             {
                 if (ArrTitleKey.TitleOf(key) is not { } title) continue;
                 // A change of a title nobody follows or asked for needs no look (the Seerr scan
                 // brings new requests into the interest set first).
                 if (!interest.Contains(title)) continue;
-                _dirty[title] = 0;
-                any = true;
+                titles.Add(title);
             }
-            if (any)
-            {
-                var now = _now();
-                _firstDirty ??= now;
-                _lastDirty = now;
-            }
+            if (titles.Count > 0) MarkDirty(titles);
         }
 
         /// <summary>
@@ -278,7 +292,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// </summary>
         internal async Task TickAsync(CancellationToken cancellationToken, bool force = false)
         {
-            if (!Enabled) return;
+            if (!Enabled)
+            {
+                NoteAlertsPaused();
+                return;
+            }
+            _pauseNoted = false;
             await _round.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -293,21 +312,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 {
                     _nextSweep = now + SweepEvery;
                     RebuildInterest();
-                    foreach (var key in _interest) _dirty[key] = 0;
-                    _firstDirty ??= now;
-                    _lastDirty = now - QuietDebounce;
-                }
-                if (_firstDirty.HasValue && (force || now - _lastDirty >= QuietDebounce || now - _firstDirty >= MaxDebounce))
-                {
-                    var keys = _dirty.Keys.Take(MaxPerRound).ToList();
-                    foreach (var k in keys) _dirty.TryRemove(k, out _);
-                    if (_dirty.IsEmpty)
+                    lock (_dirtyGate)
                     {
-                        _firstDirty = null;
-                        _lastDirty = null;
+                        foreach (var key in _interest) _dirty[key] = 0;
+                        _firstDirty ??= now;
+                        _lastDirty = now - QuietDebounce;
                     }
-                    await EvaluateAsync(keys, null, cancellationToken).ConfigureAwait(false);
                 }
+                if (TakeDue(now, force) is { } keys) await EvaluateAsync(keys, null, cancellationToken).ConfigureAwait(false);
                 FlushBatches(_now());
                 if (now >= _nextAdmin)
                 {
@@ -983,15 +995,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private void MarkDirty(IEnumerable<string> titles)
         {
             var now = _now();
-            var any = false;
-            foreach (var t in titles)
+            lock (_dirtyGate)
             {
-                _dirty[t] = 0;
-                any = true;
+                var any = false;
+                foreach (var t in titles)
+                {
+                    _dirty[t] = 0;
+                    any = true;
+                }
+                if (!any) return;
+                _firstDirty ??= now;
+                _lastDirty = now;
             }
-            if (!any) return;
-            _firstDirty ??= now;
-            _lastDirty = now;
+        }
+
+        /// <summary>
+        /// The changed titles due for a look (after a short quiet spell, or at most a few seconds;
+        /// at once with <paramref name="force"/>), taken off the dirty set; null when none are due.
+        /// Taking them and clearing the timers is one step with marking (<see cref="MarkDirty"/>),
+        /// so a title marked meanwhile is never left without its timer.
+        /// </summary>
+        private List<string>? TakeDue(DateTimeOffset now, bool force)
+        {
+            lock (_dirtyGate)
+            {
+                if (!_firstDirty.HasValue || !(force || now - _lastDirty >= QuietDebounce || now - _firstDirty >= MaxDebounce)) return null;
+                var keys = _dirty.Keys.Take(MaxPerRound).ToList();
+                foreach (var k in keys) _dirty.TryRemove(k, out _);
+                if (_dirty.IsEmpty)
+                {
+                    AfterTake?.Invoke();
+                    _firstDirty = null;
+                    _lastDirty = null;
+                }
+                return keys;
+            }
+        }
+
+        /// <summary>Test seam: runs when the taken titles emptied the dirty set, before its timers are cleared.</summary>
+        internal Action? AfterTake { get; set; }
+
+        /// <summary>True when changed titles wait for a look and their timer runs (tests).</summary>
+        internal bool HasDirty(string title)
+        {
+            lock (_dirtyGate) return _dirty.ContainsKey(title) && _firstDirty.HasValue;
         }
 
         // ================================================================== follows (routes)
@@ -1082,22 +1129,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         // ================================================================== admin events
 
-        /// <summary>Instance outages, low disk and the daily stuck digest (tests call it).</summary>
+        /// <summary>Needs attention codes that alert administrators at once (once per row): the spec's "manual import needed" and the Seerr handoff.</summary>
+        internal static readonly IReadOnlySet<string> AlertCodes = new HashSet<string>(StringComparer.Ordinal) { AttentionCode.ImportBlocked, AttentionCode.ApprovedNotInArr };
+
+        /// <summary>Needs attention codes about a download in the queue (or one that failed): what the stuck digest lists.</summary>
+        internal static readonly IReadOnlySet<string> DownloadCodes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            AttentionCode.ImportBlocked, AttentionCode.ImportWaiting, AttentionCode.DownloadFailed,
+            AttentionCode.DownloadWarning, AttentionCode.DownloadStalled, AttentionCode.ClientUnavailable,
+        };
+
+        /// <summary>
+        /// Instance outages, low disk, manual imports needed, requests OK'd in Seerr that no
+        /// Sonarr/Radarr has, and the daily stuck digest (tests call it). Everything comes from the
+        /// admin tools' Needs attention list (the Overview's rows, same thresholds), so an alert and
+        /// the list never disagree; without the admin tools nothing is checked. A manual import or an
+        /// OK'd request is told once per occurrence, and only when it started after the first check
+        /// (rows already listed when the alerts were switched on stay on the Overview only).
+        /// </summary>
         internal async Task AdminChecksAsync(CancellationToken cancellationToken)
         {
+            if (_hub == null) return;
             var config = _config();
             var now = _now();
             var downAfter = TimeSpan.FromMinutes(Math.Clamp(config?.ArrNotifyAdminDownMinutes ?? 10, 1, 1440));
-            var lowPercent = Math.Clamp(config?.ArrNotifyLowDiskPercent ?? 10, 0, 50);
             IReadOnlyList<Guid>? admins = null;
             IReadOnlyList<Guid> Admins() => admins ??= _users.Admins();
+            var attention = await _hub.NeedsAttentionAsync(cancellationToken, background: true).ConfigureAwait(false);
             var instances = _arr.Instances(ArrKind.Radarr).Concat(_arr.Instances(ArrKind.Sonarr)).ToList();
             foreach (var instance in instances)
             {
-                var read = await _arr.GetSystemAsync(instance, cancellationToken).ConfigureAwait(false);
                 var downKey = "down:" + instance.Id;
                 var since = _store.Meta(downKey);
-                if (read.Error != null)
+                if (attention.Any(a => a.Code == AttentionCode.InstanceDown && a.InstanceId == instance.Id))
                 {
                     if (since == null)
                     {
@@ -1110,7 +1174,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         {
                             // The "told" marker and every administrator's alert commit together: a stop
                             // (or a failure) before the alerts exist leaves the outage to tell next round.
-                            var p = new Dictionary<string, string> { ["instance"] = instance.Name, ["minutes"] = ((int)(now - start).TotalMinutes).ToString(CultureInfo.InvariantCulture), ["error"] = read.Error.Kind.ToString() };
+                            var p = new Dictionary<string, string> { ["instance"] = instance.Name, ["minutes"] = ((int)(now - start).TotalMinutes).ToString(CultureInfo.InvariantCulture) };
                             var drafts = Admins().Select(admin => Draft(admin, NotifyKind.InstanceDown, "down|" + instance.Id + "|" + since, null, null, p, now, null)).ToList();
                             NotifyAll(drafts, tx =>
                             {
@@ -1136,36 +1200,100 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         return true;
                     });
                 }
-                if (read.Value is { } system && lowPercent > 0)
-                {
-                    foreach (var (path, free, total) in RootFolderSpace(system))
-                    {
-                        var percent = total > 0 ? (int)Math.Floor(free * 100.0 / total) : 100;
-                        if (percent >= lowPercent) continue;
-                        var day = now.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-                        var p = new Dictionary<string, string> { ["instance"] = instance.Name, ["path"] = path, ["percent"] = percent.ToString(CultureInfo.InvariantCulture), ["free"] = NotifyTexts.Size(free) };
-                        foreach (var admin in Admins()) Notify(admin, NotifyKind.LowDisk, "disk|" + instance.Id + "|" + path + "|" + day, null, null, p, now, null);
-                    }
-                }
             }
-            await StuckDigestAsync(config, instances, Admins, now, cancellationToken).ConfigureAwait(false);
-        }
 
-        // Root folders with the free and total space of the disk each sits on.
-        private static IEnumerable<(string Path, long Free, long Total)> RootFolderSpace(ArrSystemSnapshot system)
-        {
-            foreach (var root in system.RootFolders)
+            var day = now.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            // Only what started after the first check (kept in the database): switching the alerts on,
+            // or upgrading, never sends one alert for every old row the list already holds.
+            var baseline = AttentionBaseline(now);
+            foreach (var item in attention)
             {
-                if (string.IsNullOrEmpty(root.Path) || root.FreeSpace is not long free) continue;
-                var disk = system.DiskSpace
-                    .Where(d => !string.IsNullOrEmpty(d.Path) && d.TotalSpace is > 0 && root.Path.StartsWith(d.Path!, StringComparison.Ordinal))
-                    .OrderByDescending(d => d.Path!.Length)
-                    .FirstOrDefault();
-                if (disk?.TotalSpace is long total && total > 0) yield return (root.Path, free, total);
+                if (item.Code == AttentionCode.LowDisk)
+                {
+                    // Once a day per root folder, at the admin tools' threshold.
+                    if (item.InstanceId == null || item.Title == null || item.Params == null) continue;
+                    if (!item.Params.TryGetValue("used", out var usedText) || !int.TryParse(usedText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var used)) continue;
+                    var free = item.Params.TryGetValue("free", out var freeText) && long.TryParse(freeText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bytes) ? bytes : 0;
+                    var p = new Dictionary<string, string> { ["instance"] = item.Instance ?? string.Empty, ["path"] = item.Title, ["percent"] = (100 - used).ToString(CultureInfo.InvariantCulture), ["free"] = NotifyTexts.Size(free) };
+                    foreach (var admin in Admins()) Notify(admin, NotifyKind.LowDisk, "disk|" + item.InstanceId + "|" + item.Title + "|" + day, null, null, p, now, null);
+                    continue;
+                }
+                if (!AlertCodes.Contains(item.Code) || (item.Since is DateTime started && started < baseline)) continue;
+                // Once per row and occurrence (a new download, a new OK in Seerr is a new one). The
+                // "told" mark commits with the alert and is kept fresh while the row is listed, so the
+                // inbox's 90-day housekeeping never makes a row that is still there alert again.
+                var eventKey = "attention|" + item.Id + "|" + (item.Since?.Ticks ?? 0).ToString(CultureInfo.InvariantCulture);
+                var payload = AttentionPayload(item);
+                foreach (var admin in Admins()) Notify(admin, NotifyKind.Attention, eventKey, item.Key, null, payload, now, null, tx => tx.KeepMark(admin, "told|" + eventKey, now));
+            }
+            StuckDigest(config, attention, Admins, now);
+        }
+
+        // When the administrators' Needs attention alerts began (UTC): set at the first check and kept
+        // across restarts (a row that started while Jellyfin was down is still told), moved to now
+        // when the alerts come back after being switched off (rows that started meanwhile stay on
+        // the Overview only, as at the first check).
+        private DateTime AttentionBaseline(DateTimeOffset now)
+        {
+            var paused = _store.Meta(AttentionPausedKey) != null;
+            if (!paused && _store.Meta(AttentionSinceKey) is { } text && long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ms))
+            {
+                return DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime;
+            }
+            _store.InTransaction(tx =>
+            {
+                tx.SetMeta(AttentionSinceKey, now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture));
+                tx.SetMeta(AttentionPausedKey, null);
+                return true;
+            });
+            return now.UtcDateTime;
+        }
+
+        private const string AttentionSinceKey = "attention-since";
+        private const string AttentionPausedKey = "attention-paused";
+
+        /// <summary>
+        /// Notes (once per switch-off, in the database so a restart while off counts too) that the
+        /// alerts were switched off after they had begun: the next check starts their baseline afresh.
+        /// A plain restart with the alerts on notes nothing.
+        /// </summary>
+        internal void NoteAlertsPaused()
+        {
+            if (_pauseNoted || NotifyFlags.Enabled(_config()) || !_store.Available) return;
+            try
+            {
+                if (_store.Meta(AttentionSinceKey) != null && _store.Meta(AttentionPausedKey) == null)
+                {
+                    _store.SetMeta(AttentionPausedKey, _now().ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture));
+                }
+                _pauseNoted = true;
+            }
+            catch (Exception ex)
+            {
+                _logger?.Warning($"Notifications: could not note that the alerts were switched off ({ex.GetType().Name}).");
             }
         }
 
-        private async Task StuckDigestAsync(PluginConfiguration? config, IReadOnlyList<ArrConnection> instances, Func<IReadOnlyList<Guid>> admins, DateTimeOffset now, CancellationToken cancellationToken)
+        // An attention row's parameters for the inbox, pushes and e-mails (what the Overview row says).
+        private static Dictionary<string, string> AttentionPayload(AttentionItem item)
+        {
+            var p = new Dictionary<string, string>(StringComparer.Ordinal) { ["code"] = item.Code, ["title"] = item.Title ?? string.Empty };
+            if (item.Year is int year) p["year"] = year.ToString(CultureInfo.InvariantCulture);
+            if (!string.IsNullOrEmpty(item.Scope)) p["scope"] = item.Scope!;
+            if (!string.IsNullOrEmpty(item.Instance)) p["instance"] = item.Instance!;
+            if (item.Code == AttentionCode.ApprovedNotInArr)
+            {
+                if (!string.IsNullOrEmpty(item.Message)) p["user"] = item.Message!;
+                if (item.Params != null && item.Params.TryGetValue("variant", out var variant)) p["variant"] = variant;
+            }
+            else if (!string.IsNullOrEmpty(item.Message))
+            {
+                p["message"] = item.Message!.Length > 200 ? item.Message[..200] + "…" : item.Message!;
+            }
+            return p;
+        }
+
+        private void StuckDigest(PluginConfiguration? config, IReadOnlyList<AttentionItem> attention, Func<IReadOnlyList<Guid>> admins, DateTimeOffset now)
         {
             var hour = Math.Clamp(config?.ArrNotifyDigestHour ?? 9, 0, 23);
             var local = TimeZoneInfo.ConvertTime(now, TimeZoneInfo.Local);
@@ -1173,22 +1301,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var day = local.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             if (_store.Meta("digest-day") == day) return;
             var stuckFor = TimeSpan.FromHours(Math.Clamp(config?.ArrNotifyAdminStuckHours ?? 6, 1, 168));
-            var context = new ComposeContext(new StatusViewer { IsAdmin = true }, now.UtcDateTime, config?.ArrStatusLookingHours ?? 24);
-            var items = new List<string>();
-            foreach (var instance in instances)
-            {
-                var queue = await _arr.GetQueueAsync(instance, cancellationToken).ConfigureAwait(false);
-                if (queue.Value == null) continue;
-                foreach (var row in queue.Value.Records)
-                {
-                    var state = StatusComposer.FromQueue(row, context);
-                    if (!state.Attention || state.Since is not DateTime since || now.UtcDateTime - since < stuckFor) continue;
-                    var name = row.Title ?? "?";
-                    if (row.SeasonNumber is int s && row.EpisodeNumber is int e) name += $" S{s:00}E{e:00}";
-                    items.Add($"{name} ({instance.Name}, {state.Reason})");
-                }
-            }
-            // The day is marked done only once the queues were read, in the same transaction as the
+            // The downloads Needs attention has listed for hours (the arr's own words: import
+            // blocked, failed, warnings, stalled, client unreachable).
+            var items = attention
+                .Where(a => DownloadCodes.Contains(a.Code) && a.Since is DateTime since && now.UtcDateTime - since >= stuckFor)
+                .Select(a => $"{a.Title ?? "?"}{(string.IsNullOrEmpty(a.Scope) ? string.Empty : " " + a.Scope)} ({a.Instance}, {a.Code})")
+                .ToList();
+            // The day is marked done only once the list was read, in the same transaction as the
             // digests (a failure or a stop before they exist leaves the day's digest to the next round).
             var drafts = new List<NotificationDraft>();
             if (items.Count > 0)
@@ -1340,6 +1459,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         // ================================================================== Jellyfin library events
+
+        /// <summary>Follows the Jellyfin bridge's indexed imports (start; tests call it without the loop).</summary>
+        internal void SubscribeBridge()
+        {
+            if (_bridge == null || Interlocked.Exchange(ref _bridgeSubscribed, 1) == 1) return;
+            _bridge.Indexed += OnIndexed;
+        }
+
+        private void UnsubscribeBridge()
+        {
+            if (_bridge == null || Interlocked.Exchange(ref _bridgeSubscribed, 0) == 0) return;
+            _bridge.Indexed -= OnIndexed;
+        }
+
+        /// <summary>
+        /// The Jellyfin bridge's targeted refresh found an imported file: the title (when someone
+        /// follows or asked for it) is looked at in the next round, without waiting for Jellyfin's
+        /// own item events (a new movie carries its provider ids only after its metadata is read).
+        /// </summary>
+        internal void OnIndexed(string key)
+        {
+            try
+            {
+                if (!NotifyFlags.Enabled(_config())) return;
+                Observe(new[] { key });
+            }
+            catch (Exception)
+            {
+                // Never disturb a refresh.
+            }
+        }
 
         private void OnItemAdded(object? sender, ItemChangeEventArgs e)
         {

@@ -34,6 +34,7 @@
         unsubscribe: null,
         listeners: new Set(),
         loading: null,
+        refreshAgain: false,
         identity: 0,
         hooked: false
     };
@@ -117,10 +118,15 @@
 
     /**
      * Reads the newest page of the inbox; new unread items (after the first read) become toasts.
+     * Asked again while a read is under way, it reads once more after it (a notification created
+     * after that read began would otherwise wait for the next change to show).
      * @returns {Promise<void>}
      */
     function refresh() {
-        if (state.loading) return state.loading;
+        if (state.loading) {
+            state.refreshAgain = true;
+            return state.loading;
+        }
         const identity = state.identity;
         const loading = (async () => {
             let data = null;
@@ -142,7 +148,14 @@
             state.newestSeen = Math.max(state.newestSeen, ...data.items.map(i => i.id), 0);
             emit('inbox');
             if (fresh.length) toast(fresh);
-        })().finally(() => { if (state.loading === loading) state.loading = null; });
+        })().finally(() => {
+            if (state.loading !== loading) return;
+            state.loading = null;
+            if (state.refreshAgain && identity === state.identity) {
+                state.refreshAgain = false;
+                refresh();
+            }
+        });
         state.loading = loading;
         return loading;
     }
@@ -344,6 +357,7 @@
         low_disk: 'arr_notify_low_disk',
         stuck_digest: 'arr_notify_stuck_digest',
         remind: 'arr_notify_remind',
+        attention: 'arr_notify_attention',
         test: 'arr_notify_test',
         summary: 'arr_notify_summary'
     };
@@ -358,6 +372,10 @@
         if (item.kind === 'episodes') return p.mode === 'single' ? 'arr_notify_episode' : p.mode === 'season' ? 'arr_notify_season' : 'arr_notify_episodes';
         if (item.kind === 'ready' && p.variant === '4k') return 'arr_notify_ready_4k';
         if (item.kind === 'declined' && p.reason) return 'arr_notify_declined_reason';
+        if (item.kind === 'attention') {
+            if (p.code === 'import_blocked') return 'arr_notify_attention_import_blocked';
+            if (p.code === 'approved_not_in_arr') return p.variant === '4k' ? 'arr_notify_attention_approved_not_in_4k' : 'arr_notify_attention_approved_not_in_arr';
+        }
         return KIND_KEYS[item.kind] || 'arr_notify_generic';
     }
 
@@ -371,6 +389,8 @@
         if (!p.title) p.title = tr('arr_notify_untitled');
         if (!p.contact) p.contact = state.contact || tr('arr_contact_default');
         if (!p.user) p.user = tr('arr_notify_someone');
+        // Episodes a download covers ("S02E05") follow the title after a space.
+        p.scope = p.scope ? ` ${p.scope}` : '';
         const template = tr(textKey(item));
         const frag = document.createDocumentFragment();
         const parts = template.split(/(\{[a-zA-Z]+\})/);
@@ -437,7 +457,8 @@
     }
 
     /**
-     * Opens what a notification is about (its Jellyfin page, else the Requests page) and marks it read.
+     * Opens what a notification is about (its Jellyfin page, else the Requests page or, for an
+     * administrators' alert, the tab of it the server linked) and marks it read.
      * @param {Object} item Inbox item.
      * @returns {void}
      */
@@ -452,7 +473,8 @@
             else window.location.hash = `#/details?id=${encodeURIComponent(item.itemId)}`;
             return;
         }
-        window.location.hash = '#/requests';
+        // Administrators' alerts link to the Requests page's tab that shows them (Overview, System).
+        window.location.hash = typeof item.link === 'string' && /^#\/requests(\?tab=[a-z]+)?$/.test(item.link) ? item.link : '#/requests';
     }
 
     // ------------------------------------------------------------------ toasts
@@ -619,6 +641,7 @@
         state.started = false;
         state.loaded = false;
         state.loading = null;
+        state.refreshAgain = false;
         state.items = [];
         state.more = false;
         state.unread = 0;

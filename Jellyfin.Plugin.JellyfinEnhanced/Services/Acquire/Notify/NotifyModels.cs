@@ -44,12 +44,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>Admin: someone in the household asked you to look at a stuck title.</summary>
         public const string Remind = "remind";
 
+        /// <summary>
+        /// Admin: a Needs attention row that wants someone now (the admin tools' list): a download the
+        /// arr can't import without a manual import, or a request Seerr OK'd that no Sonarr/Radarr has.
+        /// The payload's <c>code</c> says which.
+        /// </summary>
+        public const string Attention = "attention";
+
         /// <summary>A test message the user (or an admin) sent.</summary>
         public const string Test = "test";
 
         /// <summary>Kinds only administrators receive.</summary>
         public static bool IsAdminKind(string kind)
-            => kind is Approval or InstanceDown or InstanceUp or LowDisk or StuckDigest or Remind;
+            => kind is Approval or InstanceDown or InstanceUp or LowDisk or StuckDigest or Remind or Attention;
+
+        /// <summary>All the kinds only administrators receive.</summary>
+        public static readonly IReadOnlyList<string> AdminKinds = new[] { Approval, InstanceDown, InstanceUp, LowDisk, StuckDigest, Remind, Attention };
     }
 
     /// <summary>Outbound channels (the in-app inbox needs no delivery).</summary>

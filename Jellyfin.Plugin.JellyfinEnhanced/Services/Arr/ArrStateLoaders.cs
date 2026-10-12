@@ -138,7 +138,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 return ArrResult<ArrHistorySnapshot>.Success(BuildHistory(pages.Value!.Records.Select(ToHistoryEntry), null, now));
             }
 
-            var since = previous!.Watermark!.Value.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
+            // The arrs answer only records strictly after "date", and their dates have whole seconds:
+            // a record written in the same second as the newest one already read (a season's
+            // episodes imported together) would never be read. Ask from a second earlier; records
+            // already held are merged by id.
+            var since = previous!.Watermark!.Value.ToUniversalTime().AddSeconds(-1).ToString("o", CultureInfo.InvariantCulture);
             var sinceQuery = Query(include.Prepend(("date", since)).ToArray());
             var fresh = await client.GetAsync<List<ArrWireHistoryRecord>>("history/since", sinceQuery, ArrCallClass.List, ct).ConfigureAwait(false);
             if (!fresh.Ok) return ArrResult<ArrHistorySnapshot>.Failure(fresh.Error!);
@@ -206,8 +210,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     DateTime.SpecifyKind(today.AddDays(CalendarDaysAhead + 1).AddTicks(-1), DateTimeKind.Utc));
         }
 
-        /// <summary>Status, health, disk space, root folders and quality profiles.</summary>
-        internal static async Task<ArrResult<ArrSystemSnapshot>> LoadSystemAsync(ArrClient client, CancellationToken ct)
+        /// <summary>
+        /// Status, health, disk space, root folders and quality profiles; also the scheduled tasks
+        /// when <paramref name="includeTasks"/> (only the phase-2 System tab shows them).
+        /// </summary>
+        internal static async Task<ArrResult<ArrSystemSnapshot>> LoadSystemAsync(ArrClient client, bool includeTasks, CancellationToken ct)
         {
             var status = await client.GetSystemStatusAsync(true, ct).ConfigureAwait(false);
             if (!status.Ok) return ArrResult<ArrSystemSnapshot>.Failure(status.Error!);
@@ -220,6 +227,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             if (!roots.Ok) return ArrResult<ArrSystemSnapshot>.Failure(roots.Error!);
             var profiles = await client.GetAsync<List<ArrWireProfile>>("qualityprofile", null, ArrCallClass.Read, ct).ConfigureAwait(false);
             if (!profiles.Ok) return ArrResult<ArrSystemSnapshot>.Failure(profiles.Error!);
+            // The task list is extra (System tab); an instance that can't list it still has a system snapshot.
+            ArrResult<List<ArrWireTask>>? tasks = includeTasks ? await client.GetAsync<List<ArrWireTask>>("system/task", null, ArrCallClass.Status, ct).ConfigureAwait(false) : null;
 
             return ArrResult<ArrSystemSnapshot>.Success(new ArrSystemSnapshot
             {
@@ -229,6 +238,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 DiskSpace = disk.Value!.Select(d => new ArrDiskEntry { Path = d.Path, FreeSpace = d.FreeSpace, TotalSpace = d.TotalSpace }).ToList(),
                 RootFolders = roots.Value!.Select(d => new ArrDiskEntry { Path = d.Path, FreeSpace = d.FreeSpace, Accessible = d.Accessible }).ToList(),
                 QualityProfiles = profiles.Value!.Select(p => new ArrProfileEntry { Id = p.Id, Name = p.Name ?? string.Empty }).ToList(),
+                Tasks = tasks is { Ok: true } read
+                    ? read.Value!.Where(t => !string.IsNullOrWhiteSpace(t.Name)).Take(50).Select(t => new ArrTaskEntry
+                    {
+                        Name = Clip(t.Name)!,
+                        TaskName = Clip(t.TaskName),
+                        Interval = t.Interval ?? 0,
+                        LastExecution = ArrDates.Parse(t.LastExecution),
+                        NextExecution = ArrDates.Parse(t.NextExecution),
+                        LastDuration = Clip(t.LastDuration),
+                    }).ToList()
+                    : new List<ArrTaskEntry>(),
             });
         }
 
@@ -398,7 +418,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             SeasonNumber = r.Episode?.SeasonNumber,
             EpisodeNumber = r.Episode?.EpisodeNumber,
             EpisodeTitle = r.Episode?.Title,
+            SourceTitle = Clip(r.SourceTitle),
+            Quality = Intern(r.Quality?.Quality?.Name),
+            ImportedPath = DataString(r.Data, "importedPath"),
+            Message = Clip(DataString(r.Data, "message")),
         };
+
+        /// <summary>A string value of a history record's <c>data</c> map (capped), or null.</summary>
+        private static string? DataString(Dictionary<string, JsonElement>? data, string name)
+        {
+            if (data == null || !data.TryGetValue(name, out var value) || value.ValueKind != JsonValueKind.String) return null;
+            var text = value.GetString();
+            return string.IsNullOrWhiteSpace(text) || text.Length > 1024 ? null : text;
+        }
 
         internal static ArrCalendarEntry? ToEpisodeEntry(ArrWireEpisode e)
         {

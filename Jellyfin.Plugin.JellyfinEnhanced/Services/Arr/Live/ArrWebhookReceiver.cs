@@ -123,6 +123,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         /// <summary>Forgets an instance's secret (its webhooks are refused from then on). True if one existed.</summary>
         public bool RemoveSecret(string instanceId) => _secrets()?.Remove(SecretName(instanceId)) == true;
 
+        /// <summary>When this receiver started (the reference for "silent" before any event arrived).</summary>
+        public DateTimeOffset StartedAt { get; } = DateTimeOffset.UtcNow;
+
+        /// <summary>
+        /// True when an instance's webhook is set up (a secret exists) but has sent nothing for a day
+        /// while the arr's history shows imports since then: the arr isn't delivering to Jellyfin.
+        /// </summary>
+        public bool IsSilent(string instanceId, ArrHistorySnapshot? history, DateTimeOffset now)
+            => HasSecret(instanceId) && Silent(Stats(instanceId), history, StartedAt, now);
+
+        /// <summary>The "silent" rule of <see cref="IsSilent"/>, on given facts.</summary>
+        internal static bool Silent(ArrWebhookStats stats, ArrHistorySnapshot? history, DateTimeOffset startedAt, DateTimeOffset now)
+        {
+            var since = stats.LastEventAt ?? startedAt;
+            if (now - since < TimeSpan.FromHours(24)) return false;
+            return history != null && history.Records.Any(r => r.Date is DateTime d && d > since.UtcDateTime
+                && (r.EventType ?? string.Empty).EndsWith("Imported", StringComparison.OrdinalIgnoreCase));
+        }
+
         /// <summary>Traffic counters of an instance.</summary>
         public ArrWebhookStats Stats(string instanceId)
         {

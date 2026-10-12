@@ -100,6 +100,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public const string ServiceDown = "service_down";
         /// <summary>Some episodes are here, some are not.</summary>
         public const string Partial = "partial";
+        /// <summary>
+        /// Seerr OK'd the request a while ago, yet no Sonarr/Radarr instance holds the title (Seerr's
+        /// own Sonarr/Radarr settings are the usual cause). Administrators see it after a short grace
+        /// period; family members only after the "still looking" hours, as "Taking longer than usual".
+        /// </summary>
+        public const string ApprovedNotInArr = "approved_not_in_arr";
     }
 
     /// <summary>Admin fix hints (what would resolve the reason). Phase 1 shows them as text only.</summary>
@@ -328,6 +334,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Instances that could not be read (name and error kind).</summary>
         public IReadOnlyList<string>? Unreadable { get; init; }
+
+        /// <summary>
+        /// When Seerr OK'd a request that no Sonarr/Radarr holds yet, once the grace period has passed
+        /// (<see cref="StatusReasonCode.ApprovedNotInArr"/>); null otherwise.
+        /// </summary>
+        public DateTime? ApprovedNotInArrSince { get; init; }
+
+        /// <summary>True when <see cref="ApprovedNotInArrSince"/> is about a 4K request no 4K Radarr/Sonarr holds (null otherwise).</summary>
+        public bool? ApprovedNotIn4k { get; init; }
     }
 
     /// <summary>

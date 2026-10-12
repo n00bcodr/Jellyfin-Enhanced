@@ -73,6 +73,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // The Requests page (everyone's own requests) and the administrator's Manage drawer.
             serviceCollection.AddSingleton<Services.Acquire.RequestsHubService>();
             serviceCollection.AddSingleton<Services.Acquire.ArrManageService>();
+            // Phase 2 (admin essentials): the hub's admin tabs, queue actions, the Jellyfin bridge
+            // (targeted refresh after imports, not-in-Jellyfin list, path doctor) and the activity log mirror.
+            serviceCollection.AddSingleton<Services.Acquire.IJellyfinLibraryAccess, Services.Acquire.JellyfinLibraryAccess>();
+            serviceCollection.AddSingleton<Services.Acquire.JellyfinBridge>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.JellyfinBridge>());
+            serviceCollection.AddSingleton<Services.Acquire.ArrAdminHubService>();
+            serviceCollection.AddSingleton<Services.Acquire.ArrQueueActionService>();
+            serviceCollection.AddSingleton<Services.Arr.ArrActivityMirror>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Arr.ArrActivityMirror>());
+            serviceCollection.AddSingleton<Services.Acquire.ArrAdminOpsFeed>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.ArrAdminOpsFeed>());
             // Live updates (phase 1, inert while off): the change feed browsers long-poll, what feeds
             // it (snapshot diffs, Jellyfin library adds/removes), one SignalR connection per arr,
             // the webhook receiver + one-click set-up, and the re-reads live hints trigger.

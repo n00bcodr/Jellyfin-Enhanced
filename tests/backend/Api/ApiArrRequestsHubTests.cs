@@ -438,6 +438,103 @@ public class ApiArrRequestsHubTests
         }
     }
 
+    [Fact]
+    public async Task AnOkdFourKRequestNoFourKRadarrHoldsIsFlaggedOnTheCardAndListedInNeedsAttention()
+    {
+        // Sintel: in the standard Radarr (and Jellyfin); the admin's 4K request was OK'd two days
+        // ago and the 4K Radarr never got it. Phase 2 on.
+        using var rig = await Ready(r =>
+        {
+            r.Arr.Plugin.Plugin.Configuration.ArrPhase2Enabled = true;
+            r.Seerr.Requests.Add(FakeSeerr.Request(21, "movie", 45745, 2, r.Admin.UserId, Asked.AddHours(6), Asked.AddHours(7), is4k: true, userName: "AdminAsks"));
+        });
+        var card = Find(Root(await Hub(rig, rig.Admin)), "mine", "movie:tmdb:45745");
+        Assert.NotNull(card);
+        var status = card!.Value.GetProperty("status");
+        Assert.Equal(StatusReasonCode.ApprovedNotInArr, status.GetProperty("reason").GetProperty("code").GetString());
+        Assert.True(status.GetProperty("admin").GetProperty("approvedNotIn4k").GetBoolean());
+        Assert.True(status.GetProperty("admin").TryGetProperty("approvedNotInArrSince", out _));
+
+        // The Overview lists it too, as a 4K row (the standard Radarr holding the title doesn't count).
+        var hub = new ArrAdminHubService(rig.Store, null!, rig.Requests, null, null, () => rig.Arr.Plugin.Plugin.Configuration, () => rig.Arr.Now);
+        var handoff = Assert.Single(hub.Handoffs(rig.Arr.Now.UtcDateTime, TimeSpan.FromMinutes(15)), h => h.Key == "movie:tmdb:45745");
+        Assert.True(handoff.FourK);
+        var row = Assert.Single(NeedsAttention.Derive(rig.Arr.Now.UtcDateTime, 10, 10, Array.Empty<AttentionInstance>(), Array.Empty<BridgeMissing>(), new[] { handoff }));
+        Assert.Equal("4k", row.Params!["variant"]);
+    }
+
+    [Fact]
+    public async Task AnOkdSeriesRequestIsNotFlaggedWhenNoSonarrIsSetUpInJellyfinEnhanced()
+    {
+        // Seerr sends TV to a Sonarr of its own; Jellyfin Enhanced has only Radarr instances.
+        using var rig = await Ready(r =>
+        {
+            r.Arr.Plugin.Plugin.Configuration.ArrPhase2Enabled = true;
+            r.Arr.Configure(
+                ("RadarrMainZ", ArrKind.Radarr, "http://radarr.lan:7878", "RADARR-KEY-0123456789"),
+                ("Radarr4kZ", ArrKind.Radarr, "http://radarr4k.lan:7878", "RADARR4K-KEY-0123456789"));
+            r.Seerr.Requests.Add(FakeSeerr.Request(31, "tv", 1399, 2, r.Admin.UserId, Asked, Asked.AddHours(1), tvdb: 121361, seasons: [1]));
+        });
+        var card = Find(Root(await Hub(rig, rig.Admin)), "mine", "tv:tvdb:121361");
+        Assert.NotNull(card);
+        Assert.Equal(StatusReasonCode.Approved, card!.Value.GetProperty("status").GetProperty("reason").GetProperty("code").GetString());
+        var hub = new ArrAdminHubService(rig.Store, null!, rig.Requests, null, null, () => rig.Arr.Plugin.Plugin.Configuration, () => rig.Arr.Now);
+        Assert.DoesNotContain(hub.Handoffs(rig.Arr.Now.UtcDateTime, TimeSpan.FromMinutes(15)), h => h.Key == "tv:tvdb:121361");
+    }
+
+    [Fact]
+    public async Task AnOkdFourKSeriesRequestIsJudgedOnTheFourKSonarrOnTheCardAndInNeedsAttention()
+    {
+        // Spaced: in the standard Sonarr, not in the 4K one; the admin's 4K request for Season 1 was
+        // OK'd two days ago. Phase 2 on.
+        using var rig = await Ready(r =>
+        {
+            Roles(r, radarr4k: true, sonarr4k: true);
+            r.Arr.Plugin.Plugin.Configuration.ArrPhase2Enabled = true;
+            r.Sonarr.Series.Add(FakeArr.SeriesRow(2, 72658, "Spaced"));
+            r.Seerr.Requests.Add(FakeSeerr.Request(41, "tv", 4000, 2, r.Admin.UserId, Asked, Asked.AddHours(1), tvdb: 72658, is4k: true, seasons: [1], userName: "AdminAsks"));
+        });
+        var card = Find(Root(await Hub(rig, rig.Admin)), "mine", "tv:tvdb:72658");
+        Assert.NotNull(card);
+        var status = card!.Value.GetProperty("status");
+        Assert.Equal(StatusReasonCode.ApprovedNotInArr, status.GetProperty("reason").GetProperty("code").GetString());
+        Assert.True(status.GetProperty("admin").GetProperty("approvedNotIn4k").GetBoolean());
+
+        // The Overview lists the same 4K row (the standard Sonarr holding the series doesn't count).
+        var hub = new ArrAdminHubService(rig.Store, null!, rig.Requests, null, null, () => rig.Arr.Plugin.Plugin.Configuration, () => rig.Arr.Now);
+        var handoff = Assert.Single(hub.Handoffs(rig.Arr.Now.UtcDateTime, TimeSpan.FromMinutes(15)), h => h.Key == "tv:tvdb:72658");
+        Assert.True(handoff.FourK);
+
+        // The standard Sonarr's latest read fails: that says nothing about the 4K copy, so the card
+        // and the Overview still agree.
+        rig.Sonarr.FailWith = 503;
+        Assert.False((await rig.Store.RefreshLibraryNowAsync(rig.Arr.Instance("SonarrZ"), default)).Ok);
+        var again = Find(Root(await Hub(rig, rig.Admin)), "mine", "tv:tvdb:72658")!.Value.GetProperty("status");
+        Assert.Equal(StatusReasonCode.ApprovedNotInArr, again.GetProperty("reason").GetProperty("code").GetString());
+        Assert.True(again.GetProperty("admin").GetProperty("approvedNotIn4k").GetBoolean());
+        Assert.Contains(hub.Handoffs(rig.Arr.Now.UtcDateTime, TimeSpan.FromMinutes(15)), h => h.Key == "tv:tvdb:72658" && h.FourK);
+    }
+
+    [Fact]
+    public async Task AnOkdFourKRequestWithNoFourKRadarrSetUpCarriesNoHandoffLineAndNoNeedsAttentionRow()
+    {
+        // Only standard Radarrs in Jellyfin Enhanced, neither has The Matrix; the admin's 4K request
+        // was OK'd two days ago. The standard Radarr says nothing about the 4K copy.
+        using var rig = await Ready(r =>
+        {
+            Roles(r, radarr4k: false, sonarr4k: false);
+            r.Arr.Plugin.Plugin.Configuration.ArrPhase2Enabled = true;
+            r.Seerr.Requests.Add(FakeSeerr.Request(42, "movie", 603, 2, r.Admin.UserId, Asked, Asked.AddHours(1), is4k: true, userName: "AdminAsks"));
+        });
+        var card = Find(Root(await Hub(rig, rig.Admin)), "mine", "movie:tmdb:603");
+        Assert.NotNull(card);
+        var status = card!.Value.GetProperty("status");
+        Assert.Equal(StatusReasonCode.Approved, status.GetProperty("reason").GetProperty("code").GetString());
+        Assert.False(status.TryGetProperty("admin", out var admin) && admin.ValueKind == JsonValueKind.Object && admin.TryGetProperty("approvedNotInArrSince", out var since) && since.ValueKind != JsonValueKind.Null);
+        var hub = new ArrAdminHubService(rig.Store, null!, rig.Requests, null, null, () => rig.Arr.Plugin.Plugin.Configuration, () => rig.Arr.Now);
+        Assert.DoesNotContain(hub.Handoffs(rig.Arr.Now.UtcDateTime, TimeSpan.FromMinutes(15)), h => h.Key == "movie:tmdb:603");
+    }
+
     /// <summary>Sintel's (standard) Jellyfin copy arrived <paramref name="days"/> days from now.</summary>
     private static void SintelSince(Rig r, int days)
     {

@@ -848,13 +848,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public int ArrSeerrRefreshMinutes { get; set; } = 5;
 
-        // ---- Requests & downloads, phase 2: "Tell me" (notifications) ----
+        // ---- Requests & downloads, phase 2: "Tell me" (notifications) and admin essentials (hub
+        // Overview / Activity / System / Audit, queue actions, Needs attention, Jellyfin bridge,
+        // activity log mirror) ----
 
         /// <summary>
         /// Phase 2 of "Requests &amp; downloads (new)". Needs <see cref="ArrIntegrationEnabled"/> and
-        /// <see cref="ArrPhase1Enabled"/>. Off by default.
+        /// <see cref="ArrPhase1Enabled"/>. Off by default. It brings notifications (when
+        /// <see cref="ArrNotificationsEnabled"/> is on) and gives administrators the Overview, Activity,
+        /// System and Audit tabs on the Requests page.
         /// </summary>
         public bool ArrPhase2Enabled { get; set; }
+
+        /// <summary>
+        /// After Sonarr/Radarr import a file, refresh only the nearest existing Jellyfin folder
+        /// (never a TV library's root) so the item appears within seconds instead of waiting for a
+        /// library scan. Needs phase 2. On by default (when phase 2 is on).
+        /// </summary>
+        public bool ArrTargetedRefreshEnabled { get; set; } = true;
+
+        /// <summary>Minutes after an import before a file Jellyfin still doesn't have is listed under Needs attention ("In Sonarr, not in Jellyfin"). 1-1440, default 10.</summary>
+        public int ArrLibraryPendingMinutes { get; set; } = 10;
+
+        /// <summary>A Sonarr/Radarr root folder whose disk has less than this share free (percent) is listed under Needs attention. 1-50, default 10.</summary>
+        public int ArrLowDiskPercent { get; set; } = 10;
+
+        /// <summary>
+        /// Minutes after Seerr OK'd a request before administrators are told no Sonarr/Radarr has it
+        /// (Seerr's own Sonarr/Radarr settings are the usual cause). 1-1440, default 15. Family
+        /// members see "Taking longer than usual" only after <see cref="ArrStatusLookingHours"/>.
+        /// </summary>
+        public int ArrSeerrHandoffGraceMinutes { get; set; } = 15;
+
+        /// <summary>Copy every audited arr action (who, what, outcome) into Jellyfin's own activity log. Needs phase 2. On by default.</summary>
+        public bool ArrActivityLogMirror { get; set; } = true;
 
         /// <summary>
         /// Notifications: "Notify me" on titles, a bell with the inbox, toasts, phone (ntfy) and e-mail
@@ -873,9 +900,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>The daily digest lists downloads that have needed attention for at least this many hours (1-168, default 6).</summary>
         public int ArrNotifyAdminStuckHours { get; set; } = 6;
-
-        /// <summary>Administrators are told when a root folder's disk has less than this percentage free (0 = never, default 10).</summary>
-        public int ArrNotifyLowDiskPercent { get; set; } = 10;
 
         /// <summary>Hour of the day (server time, 0-23) the stuck-downloads digest goes out. Default 9.</summary>
         public int ArrNotifyDigestHour { get; set; } = 9;

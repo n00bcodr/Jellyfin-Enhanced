@@ -235,6 +235,7 @@
             case 'importing':
             case 'library_pending': return tr('arr_status_almost_ready');
             case 'import_blocked':
+            case 'approved_not_in_arr':
             case 'service_down': return tr('arr_status_taking_longer');
             case 'upgrading': return tr('arr_status_upgrading');
             case 'unmonitored': return tr('arr_status_unmonitored');
@@ -350,7 +351,25 @@
         for (const name of admin.unreadable || []) {
             lines.push({ text: tr('arr_admin_unreadable', { instance: name }), detail: '', fix: tr('arr_fix_health', { instance: name }), attention: true });
         }
+        if (admin.approvedNotInArrSince) {
+            // Phase 2: Seerr OK'd it a while ago, yet no Sonarr/Radarr has the title.
+            const key = !admin.approvedNotIn4k ? 'arr_admin_approved_not_in_arr' : status.kind === 'movie' ? 'arr_admin_approved_not_in_4k' : 'arr_admin_approved_not_in_4k_series';
+            lines.push({ text: tr(key, { age: ageText(admin.approvedNotInArrSince) }), detail: '', fix: tr('arr_fix_check_seerr'), attention: true });
+        }
         return lines;
+    }
+
+    /**
+     * How long ago a moment was, in short words ("20 min", "3 h", "2 d").
+     * @param {string} iso ISO date.
+     * @returns {string} Text ('' for a future or invalid date).
+     */
+    function ageText(iso) {
+        const ms = Date.now() - new Date(iso).getTime();
+        if (!(ms >= 0)) return '';
+        if (ms < 3600000) return tr('arr_duration_minutes', { n: Math.max(1, Math.round(ms / 60000)) });
+        if (ms < 86400000) return tr('arr_duration_hours', { n: Math.round(ms / 3600000) });
+        return tr('arr_duration_days', { n: Math.round(ms / 86400000) });
     }
 
     /**
@@ -704,6 +723,7 @@
         adminReasonText,
         formatDate,
         formatEta,
+        ageText,
         buildPill,
         buildSummary,
         buildJourney,

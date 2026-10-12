@@ -42,6 +42,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public Func<int?, int?, DateTime?>? LeftQueue { get; init; }
     }
 
+    /// <summary>An instance of a title's kind whose library isn't in memory, and the admin label for it ("name (error kind)").</summary>
+    /// <param name="Instance">The instance.</param>
+    /// <param name="Label">What the admin block shows.</param>
+    internal sealed record UnreadableArr(ArrConnection Instance, string Label);
+
     /// <summary>Everything the arrs and the request system know about one title.</summary>
     internal sealed class TitleFacts
     {
@@ -56,8 +61,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>One entry per instance holding the title.</summary>
         public List<ArrCopyFacts> Copies { get; } = new();
 
-        /// <summary>Instances of the title's kind that could not be read ("name (kind)").</summary>
-        public List<string> Unreadable { get; } = new();
+        /// <summary>Instances of the title's kind that could not be read (with "name (kind)" labels).</summary>
+        public List<UnreadableArr> Unreadable { get; } = new();
+
+        /// <summary>
+        /// Instances whose library is held from an earlier read but whose latest read failed: what
+        /// they hold may have changed since, so "no Sonarr/Radarr has it" can't be said.
+        /// </summary>
+        public List<ArrConnection> Stale { get; } = new();
+
+        /// <summary>
+        /// Instances of the title's kind whose library could be read (holding the title or not). None:
+        /// no Sonarr/Radarr of its kind is set up (or none could be read), so "none has it" can't be said.
+        /// </summary>
+        public List<ArrConnection> Checked { get; } = new();
 
         /// <summary>Request facts (Seerr read model), if any.</summary>
         public RequestFacts? Request { get; set; }
@@ -115,6 +132,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Hours before "Looking" becomes "Still looking".</summary>
         public int LookingHours { get; }
+
+        /// <summary>
+        /// How long after Seerr OK'd a request an administrator is told that no Sonarr/Radarr holds
+        /// the title (<see cref="StatusReasonCode.ApprovedNotInArr"/>); null: never (phase 2 off).
+        /// Family members are told only after <see cref="LookingHours"/>.
+        /// </summary>
+        public TimeSpan? HandoffGrace { get; init; }
     }
 
     /// <summary>
@@ -210,12 +234,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     headline = NothingKnown(facts);
                 }
             }
-            headline = ApplyRequest(headline, facts.Request);
+            headline = ApplyRequest(headline, facts.Request, c, facts);
 
             var recent = headline.Stage == StatusStage.Ready && headlineCopy != null && RecentImport(headlineCopy, c) != null;
             var familyQuiet = headline.Stage == StatusStage.Ready && headline.Reason == StatusReasonCode.Ready && !recent
                 || headline.Stage == StatusStage.None;
-            var admin = c.Viewer.IsAdmin ? AdminFor(facts, variants.Select(v => (v.Copy, v.State, v.Jf)).ToList(), null) : null;
+            var admin = c.Viewer.IsAdmin ? WithHandoff(AdminFor(facts, variants.Select(v => (v.Copy, v.State, v.Jf)).ToList(), null), headline) : null;
             var adminQuiet = familyQuiet && (admin == null || admin.Variants.All(v => v.Stage == StatusStage.Ready && !v.Attention && v.Reason.Code == StatusReasonCode.Ready));
 
             return new TitleStatus
@@ -277,13 +301,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var copy = PrimarySeriesCopy(facts);
             if (copy == null)
             {
-                var none = ApplyRequest(NothingKnown(facts), facts.Request);
+                var none = ApplyRequest(NothingKnown(facts), facts.Request, c, facts);
+                var hasEpisodes = jfEpisodes?.Any(e => !e.Virtual) == true;
                 return new TitleStatus
                 {
                     Key = facts.Key.ToString(), ItemId = Id(item.ItemId), Kind = "series",
-                    Stage = jfEpisodes?.Any(e => !e.Virtual) == true ? StatusStage.Ready : none.Stage,
-                    Reason = Reason(none), Quiet = true,
-                    Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null) : null,
+                    Stage = hasEpisodes ? StatusStage.Ready : none.Stage,
+                    Reason = Reason(none), Quiet = !none.Attention || hasEpisodes, Attention = none.Attention && !hasEpisodes,
+                    Admin = c.Viewer.IsAdmin ? WithHandoff(AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null), none) : null,
                 };
             }
 
@@ -532,7 +557,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 // An admin is told why.
                 state = new CopyState(StatusStage.NotHere, StatusReasonCode.NotVisibleToUser);
             }
-            state = ApplyRequest(state, facts.Request);
+            state = ApplyRequest(state, facts.Request, c, facts);
             AdminStatus? admin = null;
             if (c.Viewer.IsAdmin)
             {
@@ -543,7 +568,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     variants.Add((copy, state, MatchCopies(copy, copies, SeriesCopyCount(facts)).FirstOrDefault() ?? copies.FirstOrDefault()));
                     AddOtherSeriesCopies(facts, copy, copies, null, null, c, variants, problems);
                 }
-                admin = AdminFor(facts, variants, problems);
+                admin = WithHandoff(AdminFor(facts, variants, problems), state);
             }
             return new TitleStatus
             {
@@ -588,7 +613,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// member whose copies are all in libraries they can't open learns nothing from the Sonarr
         /// copies that are (or may be) those (as <see cref="SeriesByKey"/>).
         /// </summary>
-        public static (TitleStatus Status, DateTime? ArrivedAt) RequestedSeasons(TitleFacts facts, TitleStatus series, IReadOnlyList<int> seasons, IReadOnlyList<JfEpisode>? jfEpisodes, IReadOnlyList<JfCopy> copies, ComposeContext c)
+        public static (TitleStatus Status, DateTime? ArrivedAt) RequestedSeasons(TitleFacts facts, TitleStatus series, IReadOnlyList<int> seasons, IReadOnlyList<JfEpisode>? jfEpisodes, IReadOnlyList<JfCopy> copies, ComposeContext c, bool only4k = false)
         {
             var (visibleEpisodes, hidden) = SplitHidden(jfEpisodes, null);
             var wanted = new HashSet<int>(seasons);
@@ -601,7 +626,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 state = wanted.All(n => real.Any(e => e.Season == n))
                     ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: arrived)
-                    : ApplyRequest(NothingKnown(facts), facts.Request);
+                    : ApplyRequest(NothingKnown(facts), facts.Request, c, facts);
             }
             else
             {
@@ -634,7 +659,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Quiet = state.Stage is StatusStage.Ready or StatusStage.None && !state.Attention,
                 NextDate = state.Date,
                 Summary = summary,
-                Admin = series.Admin,
+                Admin = WithHandoff(series.Admin, state, only4k),
             };
             return (status, state.Stage == StatusStage.Ready ? arrived : null);
         }
@@ -648,9 +673,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public static (TitleStatus Status, DateTime? ArrivedAt, JfCopy? Shown) Requested4k(TitleFacts facts, TitleStatus movie, IReadOnlyList<JfCopy> copies, ComposeContext c)
         {
             var count = facts.Copies.Count(x => x.Movie != null);
-            var fourK = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey };
-            fourK.Copies.AddRange(facts.Copies.Where(x => x.Movie != null && x.Instance.Role == "4k"));
-            fourK.Unreadable.AddRange(facts.Unreadable);
+            // "No 4K Radarr has it" is judged on the 4K instances alone: a standard Radarr that can't
+            // be read says nothing about the 4K copy (as the Overview's Needs attention list).
+            var fourK = FourKOnly(facts);
+            fourK.Copies.RemoveAll(x => x.Movie == null);
             var jf = fourK.Copies.SelectMany(x => MatchCopies(x, copies, count)).Distinct().ToList();
             var scoped = Movie(fourK, null, jf, c, detail: false);
             var status = new TitleStatus
@@ -663,7 +689,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Quiet = scoped.Quiet,
                 Progress = scoped.Progress,
                 NextDate = scoped.NextDate,
-                Admin = movie.Admin,
+                // The whole title's admin block, with the "OK'd in Seerr, but no 4K Radarr has it" line
+                // only when that is why this 4K request is flagged (never the whole title's own line).
+                Admin = WithHandoff(movie.Admin, scoped.Reason.Code == StatusReasonCode.ApprovedNotInArr ? scoped.Admin?.ApprovedNotInArrSince : null, fourK: true),
             };
             var arrived = scoped.Stage == StatusStage.Ready ? jf.Where(x => x.Visible).Select(x => x.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max() : null;
             // The 4K copy the viewer can open (Play opens it, not the standard one).
@@ -690,7 +718,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Reason = Reason(state),
                 Attention = state.Attention,
                 Quiet = state.Stage is StatusStage.Ready or StatusStage.None && !state.Attention,
-                Admin = whole.Admin,
+                // The request alone can't be overdue here (nothing can say no arr has it): the whole
+                // title's "no Sonarr/Radarr has it" line is about the other quality, so it goes.
+                Admin = WithHandoff(whole.Admin, state),
             };
             return (status, available ? availableAt : null);
         }
@@ -1056,7 +1086,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 list.Add(Variant(copy, state, null, "S" + season.ToString("00", CultureInfo.InvariantCulture) + "E" + episode.ToString("00", CultureInfo.InvariantCulture)));
             }
-            return new AdminStatus { Variants = list, Unreadable = facts.Unreadable.Count > 0 ? facts.Unreadable.ToList() : null };
+            return new AdminStatus { Variants = list, Unreadable = facts.Unreadable.Count > 0 ? facts.Unreadable.Select(u => u.Label).ToList() : null };
         }
 
         /// <summary>The series copies other than the primary one (a 4K or anime Sonarr holding the same series).</summary>
@@ -1269,16 +1299,73 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 ? new CopyState(StatusStage.None, StatusReasonCode.ServiceDown)
                 : new CopyState(StatusStage.NotHere, StatusReasonCode.NotInArr);
 
-        private static CopyState ApplyRequest(CopyState state, RequestFacts? request)
+        private static CopyState ApplyRequest(CopyState state, RequestFacts? request, ComposeContext? c = null, TitleFacts? facts = null)
         {
             if (request == null) return state;
             if (state.Stage is StatusStage.NotHere or StatusStage.None)
             {
                 if (request.Declined) return new CopyState(StatusStage.NotHere, StatusReasonCode.Declined);
                 if (request.Pending) return new CopyState(StatusStage.Asked, StatusReasonCode.AwaitingApproval, Since: request.AskedAt);
-                if (request.ApprovedAt != null) return new CopyState(StatusStage.Approved, StatusReasonCode.Approved, Since: request.ApprovedAt);
+                if (request.ApprovedAt is DateTime approved)
+                {
+                    return HandoffOverdue(state, approved, c, facts)
+                        ? new CopyState(StatusStage.Approved, StatusReasonCode.ApprovedNotInArr, Attention: true, Since: approved)
+                        : new CopyState(StatusStage.Approved, StatusReasonCode.Approved, Since: approved);
+                }
             }
             return state;
+        }
+
+        /// <summary>
+        /// True when an OK'd request has waited too long for any Sonarr/Radarr to hold the title: only
+        /// when at least one instance of its kind is set up, every one could be read and none has it
+        /// (<paramref name="state"/> is "not in any arr", <see cref="TitleFacts.Checked"/> isn't empty
+        /// and no instance's latest read failed: <see cref="TitleFacts.Stale"/>), and the grace period
+        /// for this viewer has passed (administrators: the configured grace; everyone else: the
+        /// "still looking" hours). Phase 2 only.
+        /// </summary>
+        internal static bool HandoffOverdue(CopyState state, DateTime approvedAt, ComposeContext? c, TitleFacts? facts)
+        {
+            if (c?.HandoffGrace is not TimeSpan grace || state.Reason != StatusReasonCode.NotInArr) return false;
+            if (facts == null || facts.Checked.Count == 0 || facts.Stale.Count > 0) return false;
+            var wait = c.Viewer.IsAdmin ? grace : TimeSpan.FromHours(c.LookingHours);
+            return c.Now - approvedAt >= wait;
+        }
+
+        /// <summary>
+        /// The admin block with the "OK'd in Seerr, but no Sonarr/Radarr has it" line when that is the
+        /// headline reason, and without one it inherited otherwise (a scoped status keeps the whole
+        /// title's block, whose line may be about another part). <paramref name="fourK"/>: about a
+        /// 4K request, judged on the 4K instances.
+        /// </summary>
+        private static AdminStatus? WithHandoff(AdminStatus? admin, CopyState headline, bool fourK = false)
+            => WithHandoff(admin, headline.Reason == StatusReasonCode.ApprovedNotInArr ? headline.Since : null, fourK);
+
+        private static AdminStatus? WithHandoff(AdminStatus? admin, DateTime? handoffSince, bool fourK)
+        {
+            if (admin == null || (handoffSince == null && admin.ApprovedNotInArrSince == null && admin.ApprovedNotIn4k == null)) return admin;
+            return new AdminStatus
+            {
+                Variants = admin.Variants,
+                Unreadable = admin.Unreadable,
+                ApprovedNotInArrSince = handoffSince,
+                ApprovedNotIn4k = handoffSince != null && fourK ? true : null,
+            };
+        }
+
+        /// <summary>
+        /// The facts as the 4K instances alone know them: their copies, and which of them were read,
+        /// couldn't be read or failed their latest read. A 4K request is judged on these, as the
+        /// Overview's Needs attention list judges it.
+        /// </summary>
+        internal static TitleFacts FourKOnly(TitleFacts facts)
+        {
+            var fourK = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey };
+            fourK.Copies.AddRange(facts.Copies.Where(x => x.Instance.Role == "4k"));
+            fourK.Unreadable.AddRange(facts.Unreadable.Where(u => u.Instance.Role == "4k"));
+            fourK.Stale.AddRange(facts.Stale.Where(i => i.Role == "4k"));
+            fourK.Checked.AddRange(facts.Checked.Where(i => i.Role == "4k"));
+            return fourK;
         }
 
         private static CopyState Looking(DateTime? since, ComposeContext c)

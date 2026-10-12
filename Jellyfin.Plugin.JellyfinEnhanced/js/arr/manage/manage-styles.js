@@ -29,6 +29,7 @@
 .je-manage-card .je-arr-status { margin: 0; }
 .je-manage-section-title { margin: 0 0 0.5em; font-size: 0.8em; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.7; font-weight: 700; }
 .je-manage-actions { display: flex; flex-wrap: wrap; gap: 0.5em; margin-top: 0.8em; }
+.je-manage-download { margin-top: 0.9em; padding-top: 0.7em; border-top: 1px solid rgba(255,255,255,0.1); }
 .je-manage-btn { font: inherit; font-size: 0.9em; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35em; min-height: 2.6em; padding: 0.3em 0.9em;
   border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.06); color: inherit; cursor: pointer; text-decoration: none; }
 .je-manage-btn:hover { background: rgba(255,255,255,0.12); }

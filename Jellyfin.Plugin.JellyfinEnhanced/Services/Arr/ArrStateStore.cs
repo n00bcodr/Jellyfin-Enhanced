@@ -96,19 +96,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>The library index (movies or series with provider ids, tags).</summary>
         public Task<ArrSnapshotRead<ArrLibrarySnapshot>> GetLibraryAsync(ArrConnection instance, CancellationToken cancellationToken)
-            => ReadAsync(instance, s => s.Library, cancellationToken);
+            => ReadAsync(instance, s => s.Library, false, cancellationToken);
 
         /// <summary>The whole download queue.</summary>
         public Task<ArrSnapshotRead<ArrQueueSnapshot>> GetQueueAsync(ArrConnection instance, CancellationToken cancellationToken)
-            => ReadAsync(instance, s => s.Queue, cancellationToken);
+            => ReadAsync(instance, s => s.Queue, false, cancellationToken);
 
         /// <summary>Recent history (newest first).</summary>
         public Task<ArrSnapshotRead<ArrHistorySnapshot>> GetHistoryAsync(ArrConnection instance, CancellationToken cancellationToken)
-            => ReadAsync(instance, s => s.History, cancellationToken);
+            => ReadAsync(instance, s => s.History, false, cancellationToken);
 
         /// <summary>System status, health, disk space, root folders and quality profiles.</summary>
         public Task<ArrSnapshotRead<ArrSystemSnapshot>> GetSystemAsync(ArrConnection instance, CancellationToken cancellationToken)
-            => ReadAsync(instance, s => s.System, cancellationToken);
+            => ReadAsync(instance, s => s.System, false, cancellationToken);
+
+        /// <summary>
+        /// The library, queue, history and system snapshots for a background reader that runs on its
+        /// own clock (the administrators' alert check, every minute), not for a page: what is in
+        /// memory is served as it is (up to each snapshot's longest serve time; a cold or too old one
+        /// is loaded and waited for, like a page's first read). The queue, history and system stay
+        /// in the reconciler's interest at their idle pace (queue and history every 5 minutes, every
+        /// poll interval while downloads are active), but the read never counts as someone watching,
+        /// so it doesn't hold them at the Downloads page's pace; the library is not kept warm by it
+        /// at all (pages, live events and the warm start do that).
+        /// </summary>
+        public async Task<ArrBackgroundRead> ReadInBackgroundAsync(ArrConnection instance, CancellationToken cancellationToken)
+        {
+            var library = await ReadAsync(instance, s => s.Library, true, cancellationToken).ConfigureAwait(false);
+            var queue = await ReadAsync(instance, s => s.Queue, true, cancellationToken).ConfigureAwait(false);
+            var history = await ReadAsync(instance, s => s.History, true, cancellationToken).ConfigureAwait(false);
+            var system = await ReadAsync(instance, s => s.System, true, cancellationToken).ConfigureAwait(false);
+            return new ArrBackgroundRead(library, queue, history, system);
+        }
 
         /// <summary>
         /// The episodes of one Sonarr series. Read on demand (the first read of a series waits for the
@@ -243,7 +262,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     {
                         if (slot.InBackoff(now)) continue;
                         var policy = PolicyFor(slot.Kind, state, now);
-                        if (now - slot.LastRead > policy.Interest) continue;
+                        if (now - slot.LastInterest > policy.Interest) continue;
                         if (slot.HasValue && now - slot.LoadedAt < policy.Interval) continue;
                     }
                     started.Add(slot.StartRefresh(_backgroundCalls, _now, _shutdown.Token));
@@ -333,22 +352,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             stats.Add(calls, waited);
         }
 
-        private Task<ArrSnapshotRead<T>> ReadAsync<T>(ArrConnection instance, Func<InstanceState, ArrSnapshotSlot<T>> pick, CancellationToken cancellationToken)
+        private Task<ArrSnapshotRead<T>> ReadAsync<T>(ArrConnection instance, Func<InstanceState, ArrSnapshotSlot<T>> pick, bool background, CancellationToken cancellationToken)
             where T : class
         {
             var state = StateFor(instance, out var notUsable);
             if (state == null) return Task.FromResult(new ArrSnapshotRead<T> { Error = notUsable });
-            return ReadSlotAsync(state, pick(state), cancellationToken);
+            return ReadSlotAsync(state, pick(state), cancellationToken, background);
         }
 
-        private async Task<ArrSnapshotRead<T>> ReadSlotAsync<T>(InstanceState state, ArrSnapshotSlot<T> slot, CancellationToken cancellationToken)
+        private async Task<ArrSnapshotRead<T>> ReadSlotAsync<T>(InstanceState state, ArrSnapshotSlot<T> slot, CancellationToken cancellationToken, bool background = false)
             where T : class
         {
             var now = _now();
-            slot.Touch(now);
+            if (!background) slot.Touch(now);
+            else if (slot.Kind != ArrSnapshotKind.Library) slot.TouchBackground(now);
             var policy = PolicyFor(slot.Kind, state, now);
             var peek = slot.Peek();
-            if (peek.Value != null && now - peek.LoadedAt <= policy.Fresh)
+            // A background reader takes what is held (the reconciler keeps it at the idle pace); a
+            // page wants it within the snapshot's freshness target.
+            if (peek.Value != null && now - peek.LoadedAt <= (background ? policy.MaxServe : policy.Fresh))
             {
                 return new ArrSnapshotRead<T> { Value = peek.Value, LoadedAt = peek.LoadedAt, Error = peek.Error };
             }
@@ -643,7 +665,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     var (start, end) = ArrStateLoaders.CalendarWindow(store._now());
                     return ArrStateLoaders.LoadCalendarAsync(client, start, end, ct);
                 });
-                System = new ArrSnapshotSlot<ArrSystemSnapshot>(ArrSnapshotKind.System, (_, ct) => ArrStateLoaders.LoadSystemAsync(client, ct));
+                System = new ArrSnapshotSlot<ArrSystemSnapshot>(ArrSnapshotKind.System, (_, ct) => ArrStateLoaders.LoadSystemAsync(client, store._config() is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase2Enabled: true }, ct));
                 Slots = new IArrSnapshotSlot[] { Library, Queue, History, Calendar, System };
                 Ranges = new CalendarRangeCache(client, store._backgroundCalls, store._now, store._shutdown.Token);
             }

@@ -248,7 +248,7 @@ public class IntegrationArrStatusTests
     public void AnUnreadableInstanceIsServiceDownNotNotHere()
     {
         var facts = MovieFacts();
-        facts.Unreadable.Add("Radarr (lab) (Unreachable)");
+        facts.Unreadable.Add(new UnreadableArr(Radarr, "Radarr (lab) (Unreachable)"));
         Assert.Equal((StatusStage.None, StatusReasonCode.ServiceDown, false), Of(StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), Ctx(), false)));
         var admin = StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), Ctx(Admin), false);
         Assert.Equal("Radarr (lab) (Unreachable)", Assert.Single(admin.Admin!.Unreadable!));

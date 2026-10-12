@@ -503,6 +503,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>Episode title.</summary>
         public string? EpisodeTitle { get; init; }
+
+        /// <summary>Release name the event was about (admin only).</summary>
+        public string? SourceTitle { get; init; }
+
+        /// <summary>Quality name.</summary>
+        public string? Quality { get; init; }
+
+        /// <summary>For imports: where the arr put the file, in the arr's view of the disk (admin only).</summary>
+        public string? ImportedPath { get; init; }
+
+        /// <summary>For failures: the arr's message (admin only).</summary>
+        public string? Message { get; init; }
     }
 
     /// <summary>Recent history of one instance, newest first, with the catch-up watermark.</summary>
@@ -657,6 +669,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>Quality profiles.</summary>
         public IReadOnlyList<ArrProfileEntry> QualityProfiles { get; init; } = Array.Empty<ArrProfileEntry>();
+
+        /// <summary>Scheduled tasks (empty when the instance could not list them).</summary>
+        public IReadOnlyList<ArrTaskEntry> Tasks { get; init; } = Array.Empty<ArrTaskEntry>();
+    }
+
+    /// <summary>One scheduled task of an instance (<c>/system/task</c>).</summary>
+    public sealed class ArrTaskEntry
+    {
+        /// <summary>Display name ("RSS Sync").</summary>
+        public string Name { get; init; } = string.Empty;
+
+        /// <summary>Command name ("RssSync").</summary>
+        public string? TaskName { get; init; }
+
+        /// <summary>Interval in minutes.</summary>
+        public int Interval { get; init; }
+
+        /// <summary>When it last ran (UTC).</summary>
+        public DateTime? LastExecution { get; init; }
+
+        /// <summary>When it runs next (UTC).</summary>
+        public DateTime? NextExecution { get; init; }
+
+        /// <summary>How long the last run took ("00:00:01.2345").</summary>
+        public string? LastDuration { get; init; }
     }
 
     /// <summary>The result of reading a snapshot from the store.</summary>
@@ -676,6 +713,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>True when the value is older than its freshness target (a refresh is on its way).</summary>
         public bool Stale { get; init; }
     }
+
+    /// <summary>An instance's snapshots as a background reader got them (<see cref="ArrStateStore.ReadInBackgroundAsync"/>).</summary>
+    /// <param name="Library">The library index.</param>
+    /// <param name="Queue">The download queue.</param>
+    /// <param name="History">Recent history.</param>
+    /// <param name="System">Health, disks, root folders and tasks.</param>
+    public sealed record ArrBackgroundRead(
+        ArrSnapshotRead<ArrLibrarySnapshot> Library,
+        ArrSnapshotRead<ArrQueueSnapshot> Queue,
+        ArrSnapshotRead<ArrHistorySnapshot> History,
+        ArrSnapshotRead<ArrSystemSnapshot> System);
 
     /// <summary>Lenient date parsing shared by the snapshot loaders (invariant culture, UTC).</summary>
     internal static class ArrDates
@@ -922,6 +970,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
     {
         public int Id { get; set; }
 
+        public string? SourceTitle { get; set; }
+
+        public ArrWireQualityModel? Quality { get; set; }
+
+        public Dictionary<string, JsonElement>? Data { get; set; }
+
         public string? EventType { get; set; }
 
         public DateTime? Date { get; set; }
@@ -959,6 +1013,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public long? TotalSpace { get; set; }
 
         public bool? Accessible { get; set; }
+    }
+
+    internal sealed class ArrWireTask
+    {
+        public string? Name { get; set; }
+
+        public string? TaskName { get; set; }
+
+        public int? Interval { get; set; }
+
+        public string? LastExecution { get; set; }
+
+        public string? NextExecution { get; set; }
+
+        public string? LastDuration { get; set; }
     }
 
     internal sealed class ArrWireProfile

@@ -138,6 +138,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Its timeline (oldest first): added, history events, Jellyfin Enhanced actions.</summary>
         public IReadOnlyList<ManageEvent> Timeline { get; init; } = Array.Empty<ManageEvent>();
+
+        /// <summary>
+        /// Its downloads in scope as whole downloads (a season pack is one) with the queue actions
+        /// they allow (phase 2 only; empty otherwise): the drawer offers the non-destructive ones.
+        /// </summary>
+        public IReadOnlyList<QueueGroup> Downloads { get; init; } = Array.Empty<QueueGroup>();
     }
 
     /// <summary>One Jellyfin copy of the title.</summary>
@@ -333,8 +339,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 tvdb ??= series?.TvdbId;
                 bool InScope(int? season, int? episode)
                     => (key.Season is not int s || season == s) && (key.Episode is not int e || episode == e);
-                var rows = (queue.Value?.Records ?? Array.Empty<ArrQueueEntry>())
+                var scoped = (queue.Value?.Records ?? Array.Empty<ArrQueueEntry>())
                     .Where(r => (key.IsMovie ? r.MovieId : r.SeriesId) == arrId && InScope(r.SeasonNumber, r.EpisodeNumber))
+                    .ToList();
+                // Phase 2: the whole downloads those rows belong to, with their actions (a pack's other
+                // episodes count: removing it removes them too).
+                var scopedIds = new HashSet<int>(scoped.Select(r => r.Id));
+                var downloads = JellyfinBridge.Phase2(_config()) && scoped.Count > 0
+                    ? NeedsAttention.Group(instance, queue.Value, library.Value).Where(g => g.ArrId == arrId && g.Ids.Any(scopedIds.Contains)).Take(20).ToList()
+                    : new List<QueueGroup>();
+                var rows = scoped
                     .Take(50)
                     .Select(r => new ManageQueueRow
                     {
@@ -384,6 +398,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     LastSearch = movie?.LastSearchTime,
                     Searching = searching,
                     Queue = rows,
+                    Downloads = downloads,
                     Timeline = events.Where(e => e.At != null).OrderBy(e => e.At).TakeLast(MaxEvents).ToList(),
                 });
             }
@@ -402,7 +417,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     Live = original.Live, Readable = original.Readable, InArr = original.InArr, ArrId = original.ArrId, TitleSlug = original.TitleSlug,
                     Monitored = original.Monitored, HasFile = original.HasFile, SizeOnDisk = original.SizeOnDisk, Path = original.Path,
                     QualityProfile = original.QualityProfile, MinimumAvailability = original.MinimumAvailability, LastSearch = original.LastSearch,
-                    Searching = original.Searching, Queue = original.Queue, Timeline = original.Timeline,
+                    Searching = original.Searching, Queue = original.Queue, Downloads = original.Downloads, Timeline = original.Timeline,
                     Library = match.LibraryName,
                     ItemId = match.ItemId.ToString("N", CultureInfo.InvariantCulture),
                     InJellyfinAt = match.DateCreated,
@@ -460,6 +475,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static string[] Targets(bool movie, int arrId)
             => movie ? new[] { "movie:" + arrId.ToString(CultureInfo.InvariantCulture) } : new[] { "series:" + arrId.ToString(CultureInfo.InvariantCulture), "episode-of:" + arrId.ToString(CultureInfo.InvariantCulture) };
 
+        /// <summary>A Search now refused before any arr call, written to the audit log (and so to Jellyfin's activity log) like the runner's refusals.</summary>
+        private ArrActionOutcome Refuse(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string reason, string message)
+        {
+            var id = Guid.NewGuid().ToString("N");
+            var audited = _audit.Append(new ArrAuditEntry
+            {
+                Id = id,
+                Time = DateTimeOffset.UtcNow,
+                UserId = viewer.UserId.ToString("N"),
+                UserName = userName,
+                Action = key.IsMovie ? "movie.search" : key.Episode != null ? "episode.search" : key.Season != null ? "season.search" : "series.search",
+                Tier = (int)ArrActionTier.Safe,
+                InstanceId = instanceId,
+                Target = "key:" + key,
+                Outcome = ArrActionStatus.Rejected.ToString().ToLowerInvariant(),
+                Error = reason,
+                Message = message,
+                Details = new Dictionary<string, string> { ["key"] = key.ToString() },
+            });
+            return new ArrActionOutcome { Status = ArrActionStatus.Rejected, Message = message, AuditId = audited ? id : string.Empty, Audited = audited };
+        }
+
         /// <summary>
         /// Search now on one instance for the title in scope (movie, series, season or episode),
         /// through the audited action runner (one idempotency key per click). The read-back follows
@@ -469,12 +506,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var instance = _store.Registry.Get(instanceId);
             if (instance == null || !instance.Usable || instance.Kind != (key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr))
-                return new ArrActionOutcome { Status = ArrActionStatus.Rejected, Message = "That instance can't search for this title." };
+                return Refuse(viewer, userName, instanceId, key, "wrong_instance", "That instance can't search for this title.");
             var library = await _store.GetLibraryAsync(instance, cancellationToken).ConfigureAwait(false);
             var title = key.Title;
             var arrId = key.IsMovie ? FindMovie(library.Value, title)?.Id : FindSeries(library.Value, title)?.Id;
             if (arrId == null)
-                return new ArrActionOutcome { Status = ArrActionStatus.Rejected, Message = $"{instance.Name} doesn't have this title." };
+                return Refuse(viewer, userName, instance.Id, key, "not_in_arr", $"{instance.Name} doesn't have this title.");
 
             object command;
             string action;
@@ -490,7 +527,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var episodes = await _store.GetEpisodesAsync(instance, arrId.Value, cancellationToken).ConfigureAwait(false);
                 var match = episodes.Value?.Episodes.FirstOrDefault(e => e.SeasonNumber == season && e.EpisodeNumber == episode);
                 if (match == null)
-                    return new ArrActionOutcome { Status = ArrActionStatus.Rejected, Message = $"{instance.Name} doesn't list S{season:00}E{episode:00} of this series." };
+                    return Refuse(viewer, userName, instance.Id, key, "no_such_episode", $"{instance.Name} doesn't list S{season:00}E{episode:00} of this series.");
                 command = new { name = "EpisodeSearch", episodeIds = new[] { match.Id } };
                 action = "episode.search";
                 target = "episode-of:" + arrId.Value.ToString(CultureInfo.InvariantCulture) + ":" + match.Id.ToString(CultureInfo.InvariantCulture);
