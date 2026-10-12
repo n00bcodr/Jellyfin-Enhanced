@@ -92,14 +92,11 @@ Most features can be enabled/disabled individually:
 
 ## User defaults and the User settings policy
 
-Many settings on the plugin page are **user defaults**: the value each user starts with, which they can change in their own Jellyfin Enhanced panel. A line under each such control says so:
+Many settings on the plugin page are **user defaults**: the value each user starts with, which they can change in their own Jellyfin Enhanced panel. A chip beside the control's label reads **User default**, **Locked for users**, or **N of M locked** when only some settings in a row are locked. Click it to jump to its row in **User settings policy**.
 
-![User default badges under the Playback controls](../images/user-default-badges.png)
+![User default chips beside the Playback control labels](../images/user-default-badges.png)
 
-- **Web only**: applies in the Jellyfin Enhanced web interface, which also runs in Jellyfin for Android and webOS.
-- **Web + native posters**: also changes the poster images native TV and phone apps get, while [Native Poster Tags](#native-poster-tags-experimental) is on. With it off the line reads **Web only (native poster tags are off)**.
-- **Locked** (or **1 of 2 locked** for a row that holds several settings) when you locked it.
-- **›** jumps to the setting's row in **User settings policy**.
+Hover the chip to see where it applies: **Web only** (the Jellyfin Enhanced web interface, including Jellyfin for Android and webOS), **Web + native posters** (web overlays and poster images in native TV and phone apps), or **Web only (native poster tags are off)** when [Native Poster Tags](#native-poster-tags-experimental) is off.
 
 ### User settings policy
 
