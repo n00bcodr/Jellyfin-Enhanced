@@ -68,6 +68,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Longest a long-poll is held.</summary>
         public const int MaxWaitSeconds = 25;
 
+        /// <summary>Largest change-feed request body (500 title keys fit with room to spare).</summary>
+        public const int MaxChangesBodyBytes = 256 * 1024;
+
         private static readonly ArrSnapshotKind[] WatchedKinds = { ArrSnapshotKind.Queue, ArrSnapshotKind.History, ArrSnapshotKind.Library };
 
         private readonly ArrChangeFeed _feed;
@@ -117,7 +120,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// Receives a Sonarr/Radarr webhook for one instance. The secret header must match; the body
-        /// (≤ 1 MiB) only says what to re-read. Answers 204 with no body, or 401/413/429/400.
+        /// (≤ 1 MiB) only says what to re-read. Answers 204 with no body, or 401/429/400, or a
+        /// structured 413 (<c>payload_too_large</c>) for a larger body.
         /// </summary>
         [HttpPost("arr/hook/{instanceId}")]
         [AllowAnonymous]
@@ -125,7 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public async Task<IActionResult> ReceiveWebhook([FromRoute] string instanceId, CancellationToken cancellationToken)
         {
             if (!ArrLiveFlags.Enabled(Config())) return NotFound();
-            if (Request.ContentLength is long declared && declared > ArrWebhookReceiver.MaxBodyBytes) return StatusCode(StatusCodes.Status413PayloadTooLarge);
+            if (Request.ContentLength is long declared && declared > ArrWebhookReceiver.MaxBodyBytes) return BodyLimitAttribute.TooLarge(ArrWebhookReceiver.MaxBodyBytes);
             byte[] body;
             try
             {
@@ -133,7 +137,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (InvalidDataException)
             {
-                return StatusCode(StatusCodes.Status413PayloadTooLarge);
+                return BodyLimitAttribute.TooLarge(ArrWebhookReceiver.MaxBodyBytes);
+            }
+            catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
+            {
+                // Kestrel's [RequestSizeLimit] tripped on a chunked body: answered here, because
+                // Jellyfin's exception middleware would turn the exception into a 500.
+                return BodyLimitAttribute.TooLarge(ArrWebhookReceiver.MaxBodyBytes);
             }
             var secret = Request.Headers[ArrWebhookReceiver.SecretHeader].FirstOrDefault();
             var source = HttpContext.Connection.RemoteIpAddress?.ToString();
@@ -159,13 +169,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpPost("acquire/changes")]
         [Authorize]
-        [RequestSizeLimit(256 * 1024)]
+        [BodyLimit(MaxChangesBodyBytes)]
         public async Task<IActionResult> GetChanges([FromBody] ArrChangesRequest? request, CancellationToken cancellationToken)
         {
             if (!ArrLiveFlags.Enabled(Config()))
                 return StatusCode(403, new { error = true, code = "feature_disabled", message = "Requests & downloads (phase 1) is turned off in the Jellyfin Enhanced settings." });
-            var userId = UserHelper.GetCurrentUserId(User);
-            if (userId is not Guid uid) return Unauthorized();
+            // A person only: an API key or an unknown user has no titles to hear about.
+            if (ArrCaller.Human(User, _userManager) is not { } person)
+                return StatusCode(403, new { error = true, code = "user_required", message = "Sign in as a Jellyfin user." });
+            var uid = person.Id;
             Response.Headers.CacheControl = "no-store";
             request ??= new ArrChangesRequest();
             // Never answer for part of the list (changes to the dropped keys would be skipped for
@@ -200,7 +212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 // Someone is watching: keep the snapshots behind status current (polling fallback).
                 _store.KeepWarm(WatchedKinds);
-                var isAdmin = IsAdmin();
+                var isAdmin = person.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator);
                 var deadline = DateTimeOffset.UtcNow + wait;
                 var after = request.Cursor.Value;
                 while (true)
@@ -232,6 +244,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Live-updates status per instance (admin): SignalR connection, webhook traffic, feed.</summary>
         [HttpGet("arr/admin/live")]
         [Authorize]
+        [PrivateResponse]
         public IActionResult GetLiveStatus()
         {
             if (!IsAdmin()) return Forbid();
@@ -277,6 +290,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>What the arr's Connect list holds for JE's webhook of this instance (reads the arr; never the secret).</summary>
         [HttpGet("arr/admin/instances/{id}/webhook")]
         [Authorize]
+        [PrivateResponse]
         public async Task<IActionResult> GetWebhook([FromRoute] string id, CancellationToken cancellationToken)
         {
             if (!IsAdmin()) return Forbid();
@@ -292,6 +306,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpPost("arr/admin/instances/{id}/webhook")]
         [Authorize]
+        [PrivateResponse]
+        [BodyLimit]
         public async Task<IActionResult> ProvisionWebhook([FromRoute] string id, [FromBody] ArrWebhookRequest? request, CancellationToken cancellationToken)
         {
             if (!IsAdmin()) return Forbid();
@@ -308,6 +324,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Removes JE's webhook(s) from the arr and forgets the secret. Needs <c>consent: true</c>. Audited.</summary>
         [HttpDelete("arr/admin/instances/{id}/webhook")]
         [Authorize]
+        [PrivateResponse]
+        [BodyLimit]
         public async Task<IActionResult> RemoveWebhook([FromRoute] string id, [FromBody] ArrWebhookRequest? request, CancellationToken cancellationToken)
         {
             if (!IsAdmin()) return Forbid();
@@ -325,6 +343,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpPost("arr/admin/instances/{id}/webhook/manual")]
         [Authorize]
+        [PrivateResponse]
+        [BodyLimit]
         public IActionResult ManualWebhook([FromRoute] string id, [FromBody] ArrWebhookRequest? request)
         {
             if (!IsAdmin()) return Forbid();
@@ -354,7 +374,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 Target = "notification:webhook",
                 Outcome = "succeeded",
             });
-            Response.Headers.CacheControl = "no-store";
             return Ok(setup);
         }
 
@@ -406,34 +425,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return buffer.ToArray();
         }
 
-        private Guid CurrentUserId() => UserHelper.GetCurrentUserId(User) ?? Guid.Empty;
+        private Guid CurrentUserId() => ArrCaller.PersonId(User) ?? Guid.Empty;
 
-        private string? UserName()
-        {
-            try
-            {
-                var id = UserHelper.GetCurrentUserId(User);
-                return id.HasValue ? _userManager.GetUserById(id.Value)?.Username : null;
-            }
-            catch
-            {
-                return null;
-            }
-        }
+        private string? UserName() => ArrCaller.Human(User, _userManager)?.Username;
 
-        private bool IsAdmin()
-        {
-            if (User.IsInRole("Administrator")) return true;
-            try
-            {
-                var id = UserHelper.GetCurrentUserId(User);
-                var user = id.HasValue ? _userManager.GetUserById(id.Value) : null;
-                return user != null && user.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator);
-            }
-            catch
-            {
-                return false;
-            }
-        }
+        // A person with Jellyfin's administrator permission (never an API key or an unknown user).
+        private bool IsAdmin() => ArrCaller.IsAdmin(User, _userManager);
     }
 }

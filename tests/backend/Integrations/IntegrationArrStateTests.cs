@@ -283,9 +283,9 @@ public class IntegrationArrStateTests
 
         var inWindow = await store.GetCalendarAsync(tv, start, start.AddDays(30), default);
         var events = ArrLegacyViews.CalendarItems(tv, inWindow.Value!, start, start.AddDays(30)).ToList();
-        Assert.Equal("1", Assert.Single(events).Id);       // filtered to the range server-side
+        Assert.Equal("sonarr|" + tv.Id + "|1", Assert.Single(events).Id);       // filtered to the range server-side; ids are per instance
         Assert.Equal("S01E01 - Ep 1", events[0].Subtitle);
-        Assert.Equal("/data/tv", events[0].RootFolderPath);
+        Assert.Equal((tv.Id, "/data/tv/Show"), (events[0].InstanceId, events[0].ArrPath));
         var windowCalls = arr.CallCount("sonarr.lan", "/api/v3/calendar");
         // From the day before the first of last month (today − 35 d would be 2026-09-07).
         Assert.Contains(arr.Calls, c => c.Contains("/calendar?") && c.Contains("start=2026-08-31"));
@@ -410,7 +410,7 @@ public class IntegrationArrStateTests
 
         var items = ArrLegacyViews.CalendarItems(radarr, snapshot, new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(2026, 12, 31, 0, 0, 0, DateTimeKind.Utc)).ToList();
 
-        Assert.Equal(new[] { "7-CinemaRelease", "7-DigitalRelease" }, items.Select(i => i.Id));
+        Assert.Equal(new[] { "radarr|r|7-CinemaRelease", "radarr|r|7-DigitalRelease" }, items.Select(i => i.Id));
         Assert.All(items, i => Assert.Equal(("/p", "https://f", "2026"), (i.PosterUrl, i.BackdropUrl, i.Subtitle)));
         Assert.Null(ArrStateLoaders.ToMovieCalendarEntry(new ArrWireMovie { Id = 1 }));
     }
@@ -464,6 +464,337 @@ public class IntegrationArrStateTests
         config.RadarrInstances = "[]";
         store.Tick();
         Assert.DoesNotContain(store.Describe().Instances, i => i.Kind == ArrKind.Radarr);
+    }
+
+    [Theory]
+    [InlineData("write")]
+    [InlineData("loop")]
+    public async Task AnExpiredHostDeadlineReturnsWhileAWriteOrLoopIsBlockedAndDisposeDoesNotWaitAgain(string blocked)
+    {
+        using var arr = Rig(out var radarr, out _);
+        radarr.Movies.Add(FakeArr.Movie(1, 45745, "Sintel"));
+        var store = arr.Store(Path.Combine(arr.Plugin.Core.Root, "arr-state"));
+        store.DisposeWait = TimeSpan.FromMilliseconds(50);
+        using var reconciler = new ArrStateReconciler(store, arr.Plugin.Core.Logger) { TickPeriod = TimeSpan.FromMilliseconds(5), DisposeWait = TimeSpan.FromMilliseconds(50) };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        void Hold()
+        {
+            entered.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("shutdown gate not released");
+        }
+        if (blocked == "write") store.LibraryCacheWritingHook = Hold;
+        else reconciler.BeforeTickHook = Hold;
+        await reconciler.StartAsync(default);
+        Task? refresh = blocked == "write" ? store.RefreshLibraryNowAsync(arr.Instance("Movies"), default) : null;
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await reconciler.StopAsync(new CancellationToken(canceled: true)).WaitAsync(TimeSpan.FromSeconds(1));
+            // Also cover an ordinary token which fires after waiting started.
+            using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(25));
+            await reconciler.StopAsync(deadline.Token).WaitAsync(TimeSpan.FromSeconds(1));
+            var disposal = Task.Run(() => { reconciler.Dispose(); store.Dispose(); reconciler.Dispose(); store.Dispose(); });
+            await disposal.WaitAsync(TimeSpan.FromSeconds(1));
+            Assert.Contains("host stop deadline elapsed", File.ReadAllText(arr.Plugin.Core.Logger.CurrentLogFilePath));
+        }
+        finally
+        {
+            release.Set();
+            await reconciler.StopAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
+            if (refresh != null) await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+            await store.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SynchronousDisposalHasAFiniteBudgetForABlockedWriter(bool throughReconciler)
+    {
+        using var arr = Rig(out var radarr, out _);
+        radarr.Movies.Add(FakeArr.Movie(1, 45745, "Sintel"));
+        var store = arr.Store(Path.Combine(arr.Plugin.Core.Root, "arr-state"));
+        store.DisposeWait = TimeSpan.FromMilliseconds(25);
+        using var reconciler = new ArrStateReconciler(store, arr.Plugin.Core.Logger) { DisposeWait = TimeSpan.FromMilliseconds(25) };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        store.LibraryCacheWritingHook = () =>
+        {
+            entered.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("writer not released");
+        };
+        var refresh = store.RefreshLibraryNowAsync(arr.Instance("Movies"), default);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.Run(() =>
+            {
+                if (throughReconciler) reconciler.Dispose();
+                else store.Dispose();
+            }).WaitAsync(TimeSpan.FromSeconds(1));
+            Assert.False(store.StopAsync().IsCompleted);
+            await Task.Run(() => { reconciler.Dispose(); store.Dispose(); }).WaitAsync(TimeSpan.FromSeconds(1));
+        }
+        finally
+        {
+            release.Set();
+            await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+            await reconciler.StopAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Theory]
+    [InlineData("never-started")]
+    [InlineData("started")]
+    [InlineData("stopped")]
+    public async Task RepeatedAndConcurrentShutdownIsSafeWithOrWithoutStartingTheReconciler(string lifecycle)
+    {
+        using var arr = Rig(out _, out _);
+        var store = arr.Store();
+        using var reconciler = new ArrStateReconciler(store, arr.Plugin.Core.Logger);
+        if (lifecycle != "never-started") await reconciler.StartAsync(default);
+        if (lifecycle == "stopped") await reconciler.StopAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(Task.Run(reconciler.Dispose), Task.Run(reconciler.Dispose), reconciler.StopAsync(default)).WaitAsync(TimeSpan.FromSeconds(5));
+        await reconciler.StopAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(Task.Run(store.Dispose), Task.Run(store.Dispose)).WaitAsync(TimeSpan.FromSeconds(5));
+        await reconciler.StartAsync(default); // stopped instances never start new work
+        await reconciler.StopAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Null((await store.GetLibraryAsync(arr.Instance("Movies"), default)).Value);
+        Assert.Equal(0, await store.RefreshTitlesAsync(arr.Instance("Movies").Id, new[] { 1 }, default));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FaultedOrCancelledOwnedHelpersAreObservedAndNeverFailShutdown(bool cancelled)
+    {
+        using var arr = Rig(out _, out _);
+        var store = arr.Store();
+        var gate = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var work = store.StartBackground(() => { entered.TrySetResult(); return gate.Task; }, 0);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var stopping = store.StopAsync();
+        if (cancelled) gate.SetCanceled();
+        else gate.SetException(new InvalidOperationException("unexpected background failure"));
+        await stopping.WaitAsync(TimeSpan.FromSeconds(5));
+        if (cancelled) await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await work);
+        else await Assert.ThrowsAsync<InvalidOperationException>(async () => await work);
+        Assert.Contains(cancelled ? "background work was cancelled" : "background work failed", File.ReadAllText(arr.Plugin.Core.Logger.CurrentLogFilePath));
+        store.Dispose();
+        store.Dispose();
+        await store.StopAsync(default);
+    }
+
+    [Fact]
+    public async Task AFaultedReconcilerLoopIsObservedWithoutFailingStopOrDispose()
+    {
+        using var arr = Rig(out _, out _);
+        var store = arr.Store();
+        using var reconciler = new ArrStateReconciler(store, arr.Plugin.Core.Logger) { TickPeriod = TimeSpan.Zero };
+        await reconciler.StartAsync(default); // invalid timer period faults the scheduled loop
+        await reconciler.StopAsync(default).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains("loop failed during shutdown", File.ReadAllText(arr.Plugin.Core.Logger.CurrentLogFilePath));
+        reconciler.Dispose();
+        store.Dispose();
+    }
+
+    [Fact]
+    public async Task ACancelledTokenRemainsSafeForARefreshAfterItsSourceWasDisposed()
+    {
+        var source = new CancellationTokenSource();
+        var token = source.Token;
+        source.Cancel();
+        source.Dispose();
+        var calls = 0;
+        var slot = new ArrSnapshotSlot<ArrQueueSnapshot>(ArrSnapshotKind.Queue, (_, _) =>
+        {
+            calls++;
+            return Task.FromResult(ArrResult<ArrQueueSnapshot>.Success(new ArrQueueSnapshot()));
+        });
+        await slot.StartRefresh(new ArrCallCounter(), () => DateTimeOffset.UtcNow, token);
+        Assert.Equal(0, calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ShutdownWaitsForACacheWriterEvenAfterItsInstanceStateWasReplaced(bool replaceState)
+    {
+        using var arr = Rig(out var radarr, out _);
+        radarr.Movies.Add(FakeArr.Movie(1, 45745, "Sintel"));
+        var dir = Path.Combine(arr.Plugin.Core.Root, "arr-state");
+        var store = arr.Store(dir);
+        var instance = arr.Instance("Movies");
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        store.LibraryCacheWritingHook = () =>
+        {
+            entered.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("cache writer not released");
+        };
+        var refresh = store.RefreshLibraryNowAsync(instance, default);
+        Task? stopping = null;
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            // Inflight was cleared before the file writer ran. Looking at active slots cannot drain it.
+            Assert.False(store.Describe().Instances.Single(i => i.Name == "Movies").Snapshots.Single(s => s.Kind == ArrSnapshotKind.Library).Refreshing);
+            if (replaceState)
+            {
+                arr.Add("replacement.lan", "Radarr");
+                var rows = System.Text.Json.Nodes.JsonNode.Parse(arr.Plugin.Plugin.Configuration.RadarrInstances)!;
+                rows[0]!["Url"] = "http://replacement.lan:7878";
+                arr.Plugin.Plugin.Configuration.RadarrInstances = rows.ToJsonString();
+                Assert.NotNull((await store.GetQueueAsync(arr.Instance("Movies"), default)).Value);
+                Assert.True(arr.CallCount("replacement.lan") > 0);
+            }
+            stopping = store.StopAsync();
+            Assert.Same(stopping, store.StopAsync());
+            Assert.False(stopping.IsCompleted);
+        }
+        finally
+        {
+            release.Set();
+            await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+            if (stopping != null) await stopping.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        Assert.True(File.Exists(Path.Combine(dir, instance.Id + ".library.json")));
+        Directory.Delete(dir, true); // resources can be removed as soon as shutdown returns
+        store.Dispose();
+        Assert.False(Directory.Exists(dir));
+    }
+
+    [Fact]
+    public async Task ShutdownWaitsForQueueObserversAndTheirHealthLogAfterInflightWasCleared()
+    {
+        using var arr = Rig(out var radarr, out _);
+        var store = arr.Store(); // No cache directory: the writer here is the health log.
+        var instance = arr.Instance("Movies");
+        radarr.FailWith = 503;
+        Assert.NotNull((await store.GetQueueAsync(instance, default)).Error);
+        radarr.FailWith = 0;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        store.QueueRefreshedHook = (_, _) =>
+        {
+            entered.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("queue observer not released");
+        };
+        var refresh = store.RefreshForEventAsync(instance.Id, ArrSnapshotKind.Queue, force: true);
+        Task? stopping = null;
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(store.Describe().Instances.Single(i => i.Name == "Movies").Snapshots.Single(s => s.Kind == ArrSnapshotKind.Queue).Refreshing);
+            stopping = store.StopAsync();
+            Assert.False(stopping.IsCompleted);
+        }
+        finally
+        {
+            release.Set();
+            await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+            if (stopping != null) await stopping.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        Assert.Contains("queue can be read again", File.ReadAllText(arr.Plugin.Core.Logger.CurrentLogFilePath));
+        store.Dispose();
+    }
+
+    [Theory]
+    [InlineData("library")]
+    [InlineData("library-faulty-callback")]
+    [InlineData("calendar")]
+    [InlineData("titles")]
+    public async Task ShutdownCancelsAndDrainsBackgroundReadsAndRefusesNewWork(string kind)
+    {
+        using var arr = Rig(out var radarr, out _);
+        radarr.Movies.Add(FakeArr.Movie(1, 45745, "Sintel"));
+        var store = arr.Store();
+        var instance = arr.Instance("Movies");
+        if (kind == "titles") await store.GetLibraryAsync(instance, default);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        radarr.Before = async (path, ct) =>
+        {
+            if (path is not ("/api/v3/movie" or "/api/v3/movie/1" or "/api/v3/calendar")) return;
+            using var registration = ct.Register(() =>
+            {
+                cancelled.TrySetResult();
+                if (kind == "library-faulty-callback") throw new InvalidOperationException("faulty cancellation callback");
+            });
+            entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, ct);
+        };
+        Task read = kind switch
+        {
+            "library" or "library-faulty-callback" => store.GetLibraryAsync(instance, default),
+            "calendar" => store.GetCalendarAsync(instance, new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(2025, 1, 30, 0, 0, 0, DateTimeKind.Utc), default),
+            _ => store.RefreshTitlesAsync(instance.Id, new[] { 1 }, default),
+        };
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await store.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await read.WaitAsync(TimeSpan.FromSeconds(5));
+        if (kind == "titles") Assert.Equal(0, await (Task<int>)read);
+        var calls = arr.CallCount();
+        Assert.Null((await store.GetLibraryAsync(instance, default)).Value);
+        Assert.Equal(0, await store.RefreshTitlesAsync(instance.Id, new[] { 1 }, default));
+        Assert.Empty(store.Tick());
+        Assert.Equal(calls, arr.CallCount());
+        store.Dispose();
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task TitleRereadsKeepCompletedProgressOnShutdownAndPreserveExplicitCallerCancellation(bool series, bool callerCancels)
+    {
+        using var arr = Rig(out var radarr, out var sonarr);
+        arr.Plugin.Plugin.Configuration.ArrIntegrationEnabled = true;
+        arr.Plugin.Plugin.Configuration.ArrPhase1Enabled = true;
+        var host = series ? sonarr : radarr;
+        var rows = series ? host.Series : host.Movies;
+        foreach (var id in new[] { 1, 2, 3 })
+            rows.Add(series ? FakeArr.SeriesRow(id, 100 + id, "Before " + id) : FakeArr.Movie(id, 100 + id, "Before " + id));
+        var store = arr.Store();
+        var instance = arr.Instance(series ? "TV" : "Movies");
+        await store.GetLibraryAsync(instance, default);
+        rows[0]["title"] = "After 1";
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var prefix = series ? "/api/v3/series/" : "/api/v3/movie/";
+        host.Before = async (path, ct) =>
+        {
+            if (path != prefix + "2") return;
+            entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, ct);
+        };
+        using var caller = new CancellationTokenSource();
+        var read = store.RefreshTitlesAsync(instance.Id, new[] { 1, 2, 3 }, caller.Token);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            if (callerCancels)
+            {
+                caller.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await read.WaitAsync(TimeSpan.FromSeconds(5)));
+            }
+            else
+            {
+                await store.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal(1, await read.WaitAsync(TimeSpan.FromSeconds(5)));
+            }
+            var library = store.PeekLibrary(instance.Id)!;
+            Assert.Equal("After 1", series ? library.SeriesById(1)!.Title : library.MovieById(1)!.Title);
+            Assert.Equal("Before 2", series ? library.SeriesById(2)!.Title : library.MovieById(2)!.Title);
+            Assert.Equal(0, arr.CallCount(series ? "sonarr.lan" : "radarr.lan", prefix + "3"));
+        }
+        finally
+        {
+            await store.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
     }
 
     [Fact]

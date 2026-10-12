@@ -92,6 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // Cache for Seerr user lookups (JellyfinUserId -> full Seerr user payload, null = negative cache)
         private static readonly Dictionary<string, (JellyseerrUser? User, DateTime CachedAt)> _userCache = new();
         private static readonly object _userCacheLock = new();
+        private static long _userCacheGeneration;
 
         // Cache for Seerr proxy responses (discovery/search endpoints)
         private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
@@ -187,6 +188,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private readonly Services.Arr.ArrClientFactory? _arrClientFactory;
         private readonly Services.Arr.ArrStateStore? _arrState;
+        private readonly Services.Arr.Live.IArrFeedAudience? _feedAudience;
+        private readonly Services.Acquire.ArrInstanceLibraries? _instanceLibraries;
+        private readonly Services.Acquire.TitleAliases? _titleAliases;
 
         public JellyfinEnhancedController(
             IHttpClientFactory httpClientFactory,
@@ -219,10 +223,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             MediaBrowser.Model.Tasks.ITaskManager taskManager,
             IPluginManager pluginManager,
             Services.Arr.ArrClientFactory arrClientFactory,
-            Services.Arr.ArrStateStore arrState)
+            Services.Arr.ArrStateStore arrState,
+            Services.Arr.Live.IArrFeedAudience feedAudience,
+            Services.Acquire.ArrInstanceLibraries instanceLibraries,
+            Services.Acquire.TitleAliases titleAliases)
         {
+            _instanceLibraries = instanceLibraries;
+            _titleAliases = titleAliases ?? (arrState != null ? new Services.Acquire.TitleAliases(arrState, null) : null);
             _arrClientFactory = arrClientFactory;
             _arrState = arrState;
+            _feedAudience = feedAudience;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
             _userManager = userManager;
@@ -336,6 +346,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return null;
             }
 
+            var generation = Interlocked.Read(ref _userCacheGeneration);
             bool cacheEnabled = !config.JellyseerrDisableCache && !bypassCache;
             if (cacheEnabled)
             {
@@ -390,7 +401,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             {
                                 lock (_userCacheLock)
                                 {
-                                    _userCache[jellyfinUserId] = (user, DateTime.UtcNow);
+                                    if (generation == Interlocked.Read(ref _userCacheGeneration))
+                                        _userCache[jellyfinUserId] = (user, DateTime.UtcNow);
                                 }
                             }
                             return user;
@@ -423,7 +435,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         lock (_userCacheLock)
                         {
-                            _userCache[jellyfinUserId] = (importedUser, DateTime.UtcNow);
+                            if (generation == Interlocked.Read(ref _userCacheGeneration))
+                                _userCache[jellyfinUserId] = (importedUser, DateTime.UtcNow);
                         }
                     }
 
@@ -438,7 +451,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 lock (_userCacheLock)
                 {
-                    _userCache[jellyfinUserId] = (null, DateTime.UtcNow);
+                    if (generation == Interlocked.Read(ref _userCacheGeneration))
+                        _userCache[jellyfinUserId] = (null, DateTime.UtcNow);
                 }
             }
 
@@ -555,10 +569,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return blockedIds.Contains(normalizedId);
         }
 
+        /// <summary>Clears Seerr user lookups and fences cache writes from reads already running.</summary>
         internal static void ClearUserCaches()
         {
             lock (_userCacheLock)
             {
+                Interlocked.Increment(ref _userCacheGeneration);
                 _userCache.Clear();
             }
 
@@ -568,9 +584,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        /// <summary>Clears Seerr answers and user lookups when its settings are saved.</summary>
         public static void ClearAllSeerrCachesOnConfigChange()
         {
             ClearUserCaches();
+            SeerrAskedProofCache.Shared.Clear();
             lock (_responseCacheLock)
             {
                 _responseCache.Clear();
@@ -590,12 +608,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// The Seerr user id for a Jellyfin user when it is in the user-id cache
-        /// (unexpired, cache not disabled), without contacting Seerr; null otherwise.
+        /// (unexpired, cache not disabled, user not import-blocked), without contacting Seerr; null otherwise.
         /// </summary>
         private static string? TryGetCachedJellyseerrUserId(string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config != null && config.JellyseerrDisableCache)
+            if (config != null && (config.JellyseerrDisableCache || IsJellyseerrImportBlocked(jellyfinUserId, config)))
             {
                 return null;
             }
@@ -617,6 +635,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var config = JellyfinEnhanced.Instance?.Configuration;
             bool cacheEnabled = config == null || !config.JellyseerrDisableCache;
 
+            var generation = Interlocked.Read(ref _userCacheGeneration);
             // Check cache first (unless disabled)
             var cachedId = TryGetCachedJellyseerrUserId(jellyfinUserId);
             if (cachedId != null)
@@ -631,7 +650,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 lock (_userIdCacheLock)
                 {
-                    _userIdCache[jellyfinUserId] = (jellyseerrUserId, DateTime.UtcNow);
+                    if (generation == Interlocked.Read(ref _userCacheGeneration))
+                        _userIdCache[jellyfinUserId] = (jellyseerrUserId, DateTime.UtcNow);
                 }
             }
 
@@ -10077,10 +10097,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Non-admin users can only see downloads/history for items they requested via Seerr,
-        /// unless the admin has disabled per-user filtering. Returns Blocked=true when the
-        /// caller should be shown an empty result (no Seerr link, no linked account, or no
-        /// requests to filter by) rather than the unfiltered arr queue/history.
+        /// With "Only show downloads users asked for" on, non-admin users see downloads/history only
+        /// for items they requested via Seerr (on top of the library-access rule every non-admin
+        /// row passes, see <see cref="ArrAudienceFilter"/>). Returns Blocked=true when the caller
+        /// should be shown an empty result (no Seerr link, no linked account, or no requests to
+        /// filter by) rather than the unfiltered arr queue/history.
         /// </summary>
         private async Task<(bool Blocked, HashSet<(int TmdbId, string MediaType)>? Allowed)> GetAllowedRequestsForCurrentUserAsync(PluginConfiguration config)
         {
@@ -10113,6 +10134,150 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var mediaType = source(item) == nameof(ArrType.Sonarr) ? "tv" : "movie";
                 return tmdbId(item) is int id && allowedRequests.Contains((id, mediaType));
             }).ToList();
+        }
+
+        /// <summary>
+        /// The caller, when their own Seerr requests could show them more of the queue or history
+        /// than the audience alone does: the request filter is off (its list is the proof when it is
+        /// on), the request read model isn't running (the integration or phase 1 off; the audience
+        /// asks it otherwise), Seerr is set up, and the caller is a member who could lose titles
+        /// Jellyfin doesn't have yet (content limits, or not every library). Null otherwise. Nothing
+        /// is read here: the requests are read only when some row actually waits on them
+        /// (<see cref="GetAskedProofAsync"/>).
+        /// </summary>
+        private Jellyfin.Database.Implementations.Entities.User? AskedProofCandidate(PluginConfiguration config, HashSet<(int TmdbId, string MediaType)>? allowedRequests)
+        {
+            if (allowedRequests != null || IsAdminUser() || Services.Acquire.SeerrRequestReadModel.IsActive(config)) return null;
+            if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
+                return null;
+            return ArrCaller.Human(User, _userManager) is { } user && Services.Arr.Live.ArrFeedAudience.NeedsAskedProof(user) ? user : null;
+        }
+
+        /// <summary>
+        /// The titles <paramref name="user"/> asked for in Seerr, read the legacy way, through
+        /// <see cref="SeerrAskedProofCache"/>: shared by the queue and history routes, reused for
+        /// about a poll interval, and never waited on for more than a moment (no answer in time =
+        /// null, and the rows that needed it stay hidden this time).
+        /// </summary>
+        private Task<IReadOnlySet<(int TmdbId, string MediaType)>?> GetAskedProofAsync(PluginConfiguration config, Jellyfin.Database.Implementations.Entities.User user)
+        {
+            var jellyfinUserId = user.Id.ToString();
+            return SeerrAskedProofCache.Shared.GetAsync(jellyfinUserId + "|" + config.JellyseerrUrls.Trim(), async () =>
+            {
+                var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId).ConfigureAwait(false);
+                if (string.IsNullOrEmpty(jellyseerrUserId)) return null;
+                var userRequests = await GetJellyseerrRequestsForUser(jellyseerrUserId).ConfigureAwait(false);
+                return userRequests == null ? null : new HashSet<(int, string)>(userRequests.Select(r => (r.TmdbId, r.MediaType)));
+            });
+        }
+
+        /// <summary>
+        /// The queue or history records of one instance a non-administrator may see: each record's
+        /// title (the movie, or the episode / season / series a Sonarr row is about) must pass the
+        /// change feed's audience rule for that instance, the same rule live updates use (Jellyfin's
+        /// own check for titles it has, so hidden libraries, parental limits and hidden episodes of
+        /// a visible series stay hidden; titles not in Jellyfin yet by the instance's linked
+        /// libraries, or for the user who asked for them: the request read model, or
+        /// <paramref name="askedProof"/>). A record without a TMDB (movie) or TVDB (series) id is
+        /// never shown; neither is anything to a caller who isn't a Jellyfin user. Served from
+        /// memory and Jellyfin's library (no arr call); answers are cached per user. Keys left out
+        /// only for want of that proof go into <paramref name="absent"/> when given.
+        /// </summary>
+        private IReadOnlyList<T> ArrAudienceFilter<T>(Services.Arr.ArrConnection instance, IReadOnlyList<T> records, Func<T, (int? Tmdb, int? Tvdb, int? Season, int? Episode)> ids, IReadOnlySet<(int TmdbId, string MediaType)>? askedProof, ICollection<string>? absent = null)
+        {
+            var mask = ArrAudienceMask(instance, records, ids, askedProof, absent);
+            var kept = new List<T>(records.Count);
+            for (var i = 0; i < records.Count; i++)
+            {
+                if (mask[i]) kept.Add(records[i]);
+            }
+            return kept;
+        }
+
+        // Per record: may the caller see it (see ArrAudienceFilter). Each title key is asked once.
+        private bool[] ArrAudienceMask<T>(Services.Arr.ArrConnection instance, IReadOnlyList<T> records, Func<T, (int? Tmdb, int? Tvdb, int? Season, int? Episode)> ids, IReadOnlySet<(int TmdbId, string MediaType)>? askedProof, ICollection<string>? absent = null)
+        {
+            var mask = new bool[records.Count];
+            if (records.Count == 0) return mask;
+            if (_feedAudience == null || ArrCaller.PersonId(User) is not Guid userId) return mask;
+            var radarr = instance.Kind == Services.Arr.ArrKind.Radarr;
+            var keys = new string?[records.Count];
+            var asked = new HashSet<string>(StringComparer.Ordinal);
+            HashSet<string>? askedFor = null;
+            for (var i = 0; i < records.Count; i++)
+            {
+                var (tmdb, tvdb, season, episode) = ids(records[i]);
+                keys[i] = radarr
+                    ? (tmdb is > 0 ? Services.Arr.Live.ArrTitleKey.Movie(tmdb.Value) : null)
+                    : tvdb is not > 0 ? null
+                    : season is not int s ? Services.Arr.Live.ArrTitleKey.Series(tvdb.Value)
+                    : episode is int e ? Services.Arr.Live.ArrTitleKey.Episode(tvdb.Value, s, e)
+                    : Services.Arr.Live.ArrTitleKey.Season(tvdb.Value, s);
+                if (keys[i] is not { } key) continue;
+                asked.Add(key);
+                // Seerr knows a request by its TMDB id (a series' too); the audience by the title key.
+                if (askedProof != null && tmdb is int t && askedProof.Contains((t, radarr ? "movie" : "tv")))
+                    (askedFor ??= new HashSet<string>(StringComparer.Ordinal)).Add(radarr ? key : Services.Arr.Live.ArrTitleKey.Series(tvdb!.Value));
+            }
+            if (asked.Count == 0) return mask;
+            var visible = new HashSet<string>(
+                _feedAudience.Visible(userId, false, asked.Select(k => new Services.Arr.Live.ArrFeedChange(k, 0, instance.Id)).ToList(), askedFor, absent),
+                StringComparer.Ordinal);
+            for (var i = 0; i < records.Count; i++) mask[i] = keys[i] is { } key && visible.Contains(key);
+            return mask;
+        }
+
+        // How many history records are put to the audience at a time while the newest visible
+        // ones are looked for.
+        private const int HistoryAudienceBatch = 100;
+
+        /// <summary>
+        /// The history records of one instance a non-administrator may see, as far as the history
+        /// window can use them: only the records the page shows (imported, failed), newest first, put
+        /// to the audience in batches until <see cref="HistoryWindowSize"/> visible items (a Sonarr
+        /// season pack is one) are found, plus the older records of those items (a pack's count).
+        /// Older items can't make the window, so their records are never decided. Returned in the
+        /// ring's order. Keys left out only for want of proof of asking go into <paramref name="absent"/> when given.
+        /// </summary>
+        private IReadOnlyList<Services.Arr.ArrHistoryEntry> ArrHistoryForAudience(Services.Arr.ArrConnection instance, IReadOnlyList<Services.Arr.ArrHistoryEntry> records, IReadOnlySet<(int TmdbId, string MediaType)>? askedProof, ICollection<string>? absent = null)
+        {
+            static (int? Tmdb, int? Tvdb, int? Season, int? Episode) Ids(Services.Arr.ArrHistoryEntry r) => (r.TmdbId, r.TvdbId, r.SeasonNumber, r.EpisodeNumber);
+            var sonarr = instance.Kind == Services.Arr.ArrKind.Sonarr;
+            // The item a record belongs to, as ArrLegacyViews.HistoryItems groups them.
+            string Item(int i) => sonarr && !string.IsNullOrEmpty(records[i].DownloadId) ? "d:" + records[i].DownloadId : "r:" + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var shown = Enumerable.Range(0, records.Count)
+                .Where(i => Services.Arr.ArrLegacyViews.MapHistoryEventType(records[i].EventType) != null)
+                .OrderByDescending(i => records[i].Date ?? DateTime.MinValue)
+                .ThenBy(i => i)
+                .ToList();
+            var kept = new List<int>();
+            var items = new HashSet<string>(StringComparer.Ordinal);
+            DateTime? edge = null;      // the date of the last item the window can still take
+            var pos = 0;
+            while (pos < shown.Count && !(edge is { } e && (records[shown[pos]].Date ?? DateTime.MinValue) < e))
+            {
+                var batch = shown.GetRange(pos, Math.Min(HistoryAudienceBatch, shown.Count - pos));
+                pos += batch.Count;
+                var mask = ArrAudienceMask(instance, batch.Select(i => records[i]).ToList(), Ids, askedProof, absent);
+                for (var b = 0; b < batch.Count; b++)
+                {
+                    if (!mask[b]) continue;
+                    kept.Add(batch[b]);
+                    if (items.Add(Item(batch[b])) && items.Count == HistoryWindowSize) edge = records[batch[b]].Date ?? DateTime.MinValue;
+                }
+            }
+            // The older records of packs already found still count towards them.
+            var rest = shown.Skip(pos).Where(i => items.Contains(Item(i))).ToList();
+            if (rest.Count > 0)
+            {
+                var mask = ArrAudienceMask(instance, rest.Select(i => records[i]).ToList(), Ids, askedProof, absent);
+                for (var b = 0; b < rest.Count; b++)
+                {
+                    if (mask[b]) kept.Add(rest[b]);
+                }
+            }
+            kept.Sort();
+            return kept.Select(i => records[i]).ToList();
         }
 
         /// <summary>
@@ -10162,18 +10327,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var isAdmin = IsAdminUser();
             var errors = ArrConfigErrors(config, instances.Count(i => i.Kind == Services.Arr.ArrKind.Sonarr), instances.Count(i => i.Kind == Services.Arr.ArrKind.Radarr));
-            var rawItems = new List<Services.Arr.ArrLegacyQueueItem>();
             for (int i = 0; i < instances.Count; i++)
             {
-                if (reads[i].Value is { } queue)
-                {
-                    rawItems.AddRange(Services.Arr.ArrLegacyViews.QueueItems(instances[i], queue));
-                    if (queue.Truncated)
-                        _logger.Warning($"Download queue of {instances[i].Name} has {queue.TotalRecords} rows; only the first {queue.Records.Count} are shown.");
-                }
+                if (reads[i].Value is { Truncated: true } queue)
+                    _logger.Warning($"Download queue of {instances[i].Name} has {queue.TotalRecords} rows; only the first {queue.Records.Count} are shown.");
                 if (reads[i].Error is { } error)
                     errors.Add(Services.Arr.ArrLegacyViews.InstanceError(instances[i], error, isAdmin));
             }
+            List<Services.Arr.ArrLegacyQueueItem> QueueRows(IReadOnlySet<(int TmdbId, string MediaType)>? proof, ICollection<string>? absent)
+            {
+                var rows = new List<Services.Arr.ArrLegacyQueueItem>();
+                for (int i = 0; i < instances.Count; i++)
+                {
+                    if (reads[i].Value is not { } queue) continue;
+                    var records = isAdmin ? queue.Records : ArrAudienceFilter(instances[i], queue.Records, r => (r.TmdbId, r.TvdbId, r.SeasonNumber, r.EpisodeNumber), proof, absent);
+                    rows.AddRange(Services.Arr.ArrLegacyViews.QueueItems(instances[i], new Services.Arr.ArrQueueSnapshot { Records = records, TotalRecords = queue.TotalRecords, Truncated = queue.Truncated }));
+                }
+                return rows;
+            }
+            // The caller's Seerr requests are read only when a row waits on them (cached, bounded wait).
+            var proofCandidate = isAdmin ? null : AskedProofCandidate(config, allowedRequests);
+            var waiting = proofCandidate != null ? new HashSet<string>(StringComparer.Ordinal) : null;
+            var rawItems = QueueRows(allowedRequests, waiting);
+            if (waiting is { Count: > 0 } && await GetAskedProofAsync(config, proofCandidate!) is { } askedProof)
+                rawItems = QueueRows(askedProof, null);
 
             var items = FilterByAllowedRequests(rawItems, allowedRequests, x => x.Source, x => x.TmdbId);
             return Ok(new { items, errors });
@@ -10229,14 +10406,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var isAdmin = IsAdminUser();
             var errors = ArrConfigErrors(config, instances.Count(i => i.Kind == Services.Arr.ArrKind.Sonarr), instances.Count(i => i.Kind == Services.Arr.ArrKind.Radarr));
-            var merged = new List<Services.Arr.ArrLegacyHistoryItem>();
             for (int i = 0; i < instances.Count; i++)
             {
-                if (reads[i].Value is { } history)
-                    merged.AddRange(Services.Arr.ArrLegacyViews.HistoryItems(instances[i], history));
                 if (reads[i].Error is { } error)
                     errors.Add(Services.Arr.ArrLegacyViews.InstanceError(instances[i], error, isAdmin));
             }
+            List<Services.Arr.ArrLegacyHistoryItem> HistoryRows(IReadOnlySet<(int TmdbId, string MediaType)>? proof, ICollection<string>? absent)
+            {
+                var rows = new List<Services.Arr.ArrLegacyHistoryItem>();
+                for (int i = 0; i < instances.Count; i++)
+                {
+                    if (reads[i].Value is not { } history) continue;
+                    // Per record, before a season pack's episodes are grouped: an episode the
+                    // caller can't see leaves the pack's count too. Only as much of the ring as
+                    // the window can show is decided.
+                    var records = isAdmin ? history.Records : ArrHistoryForAudience(instances[i], history.Records, proof, absent);
+                    rows.AddRange(Services.Arr.ArrLegacyViews.HistoryItems(instances[i], new Services.Arr.ArrHistorySnapshot { Records = records, Watermark = history.Watermark, FullReadAt = history.FullReadAt }));
+                }
+                return rows;
+            }
+            // The caller's Seerr requests are read only when a row waits on them (cached, bounded wait).
+            var proofCandidate = isAdmin ? null : AskedProofCandidate(config, allowedRequests);
+            var waiting = proofCandidate != null ? new HashSet<string>(StringComparer.Ordinal) : null;
+            var merged = HistoryRows(allowedRequests, waiting);
+            if (waiting is { Count: > 0 } && await GetAskedProofAsync(config, proofCandidate!) is { } askedProof)
+                merged = HistoryRows(askedProof, null);
 
             var filtered = HistoryWindow(merged, allowedRequests);
             var totalPages = filtered.Count == 0 ? 0 : (int)Math.Ceiling(filtered.Count / (double)take);
@@ -10847,6 +11041,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var ct = HttpContext.RequestAborted;
             var arrInstances = _arrState.Instances(Services.Arr.ArrKind.Sonarr).Concat(_arrState.Instances(Services.Arr.ArrKind.Radarr)).ToList();
             var calendarTasks = arrInstances.Select(i => _arrState.GetCalendarAsync(i, startDate, endDate, ct)).ToList();
+            var isAdmin = IsAdminUser();
 
             // Shoko is single-instance (flat ShokoUrl/ShokoApiKey fields, no JSON instance list),
             // so it fans out alongside sonarrTasks/radarrTasks as at most one extra task rather
@@ -10876,7 +11071,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var calendarReads = await Task.WhenAll(calendarTasks).ConfigureAwait(false);
             var shokoCalResult = shokoTask != null ? await shokoTask : (Items: new List<ArrItem>(), Error: null);
 
-            var isAdmin = IsAdminUser();
             var errors = ArrConfigErrors(config, arrInstances.Count(i => i.Kind == Services.Arr.ArrKind.Sonarr), arrInstances.Count(i => i.Kind == Services.Arr.ArrKind.Radarr));
             for (int i = 0; i < arrInstances.Count; i++)
             {
@@ -10897,66 +11091,119 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // read, and then the subsequent access filter would hide the event entirely — even
             // though instance-A had the same episode in an accessible root folder.
             var providerKeys = events
-                .SelectMany(ProviderHelper.GetAllProviders)
+                .SelectMany(evt => ProviderHelper.GetAllProviders(evt, _titleAliases))
                 .Distinct()
                 .ToList();
 
-            var itemMap = await _dbContextFactory.GetItemIdsByProvidersBatchAsync(providerKeys, _libraryManager);
+            // Every Jellyfin copy per key (a title can be in two libraries); one pick for everyone
+            // first, then, for a caller the access filter applies to, the copy that caller may open.
+            var itemCandidates = await _dbContextFactory.GetItemIdCandidatesByProvidersBatchAsync(providerKeys, _libraryManager);
+            var itemMap = itemCandidates.ToDictionary(kv => kv.Key, kv => kv.Value[0]);
 
             foreach (var evt in events)
             {
-                evt.ItemId = ProviderHelper.GetBestItemId(ProviderHelper.GetProviders(evt), itemMap);
+                evt.ItemId = ProviderHelper.GetBestItemId(ProviderHelper.GetProviders(evt, _titleAliases), itemMap);
                 evt.ItemEpisodeId = ProviderHelper.GetBestItemId(ProviderHelper.GetEpisodeProviders(evt), itemMap);
             }
 
-            // Build access info now so the dedup step can consult it.
-            HashSet<Guid>? accessibleIds = null;
-            Dictionary<string, bool>? rootFolderAccessMap = null;
-            if (config.CalendarFilterByLibraryAccess)
+            // Who may see each event (Calendar "filter by library access" on; administrators see
+            // everything). An event Jellyfin has (itemId, and itemEpisodeId for an episode it has)
+            // is Jellyfin's own check for the caller: library access and parental limits, down to
+            // the single episode. An event not in Jellyfin yet is decided by the
+            // library its instance lands it in (ArrInstanceLibraries: the instance's linked
+            // libraries, else its folder through the path mappings): shown when the caller may open
+            // that library, hidden when they may not or when it can't be told (no library holds the
+            // folder, or two instances share an unmapped root). No signed-in user, no events.
+            // Users with parental limits keep seeing titles not in Jellyfin yet in libraries they
+            // can open: there is no rating to check before Jellyfin has the title.
+            // The arr's own path (no linked libraries, no mapping for the title) needs every
+            // instance's root folders, from the system snapshots in memory: the answer never waits
+            // for them. When one was needed and isn't there (or is over an hour old), one background
+            // read is started for the next request, which counts as nobody watching (it doesn't keep
+            // the arrs' system facts refreshed on users' behalf).
+            var rootsConsulted = false;
+            var filterByAccess = config.CalendarFilterByLibraryAccess && !isAdmin;
+            Jellyfin.Database.Implementations.Entities.User? calendarUser = filterByAccess ? ArrCaller.Human(User, _userManager) : null;
+            if (filterByAccess && calendarUser == null)
+                return Ok(new { events = new List<ArrItem>(), errors });
+
+            var instancesById = arrInstances.ToDictionary(i => i.Id, StringComparer.OrdinalIgnoreCase);
+            // For a title Jellyfin has: is there a copy (series or movie, and for an episode Jellyfin
+            // has, that episode in the same copy) the caller may open? Every copy counts, not one
+            // picked for everyone: the same show can be in "TV" and in a library the caller can't
+            // open, and Jellyfin can hide one episode (its own rating or tags) of a series the caller
+            // may open. Episodes are found by their ids or their season and episode number.
+            // A visible event then points at the caller's own copy (links, watched state).
+            Dictionary<ArrItem, bool>? jellyfinVerdicts = null;
+            if (calendarUser != null)
             {
-                var calendarUserId = UserHelper.GetCurrentUserId(User);
-                if (calendarUserId.HasValue)
+                var seenItems = new Dictionary<Guid, BaseItem?>();
+                BaseItem? Seen(Guid id)
                 {
-                    var calendarUserForFilter = _userManager.GetUserById(calendarUserId.Value);
-                    if (calendarUserForFilter != null)
+                    if (!seenItems.TryGetValue(id, out var item))
+                        seenItems[id] = item = _libraryManager.GetItemById<BaseItem>(id, calendarUser);
+                    return item;
+                }
+                Guid? SeriesOf(Guid id) => (_libraryManager.GetItemById<BaseItem>(id) as MediaBrowser.Controller.Entities.TV.Episode)?.SeriesId;
+
+                // A season's episodes in one series copy, whoever may see them (one query per copy and
+                // season); null when they can't be read.
+                var seasonsInCopies = new Dictionary<(Guid Series, int Season), List<MediaBrowser.Controller.Entities.TV.Episode>?>();
+                Guid? EpisodeInCopy(Guid seriesId, int season, int number)
+                {
+                    var key = (seriesId, season);
+                    if (!seasonsInCopies.TryGetValue(key, out var episodes))
                     {
-                        var uniqueItemIds = events
-                            .Select(e => e.ItemId)
-                            .Where(id => id.HasValue)
-                            .Select(id => id!.Value)
-                            .Distinct()
-                            .ToList();
-
-                        accessibleIds = new HashSet<Guid>();
-                        foreach (var id in uniqueItemIds)
+                        try
                         {
-                            if (_libraryManager.GetItemById<BaseItem>(id, calendarUserForFilter) != null)
-                                accessibleIds.Add(id);
+                            episodes = _libraryManager.GetItemList(new InternalItemsQuery
+                            {
+                                AncestorIds = new[] { seriesId },
+                                Recursive = true,
+                                IncludeItemTypes = new[] { BaseItemKind.Episode },
+                                ParentIndexNumber = season,
+                            }).OfType<MediaBrowser.Controller.Entities.TV.Episode>().ToList();
                         }
-
-                        rootFolderAccessMap = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-                        foreach (var evt in events.Where(e => e.ItemId.HasValue && !string.IsNullOrEmpty(e.RootFolderPath)))
+                        catch (Exception)
                         {
-                            var isAccessible = accessibleIds.Contains(evt.ItemId!.Value);
-                            if (isAccessible || !rootFolderAccessMap.ContainsKey(evt.RootFolderPath!))
-                                rootFolderAccessMap[evt.RootFolderPath!] = isAccessible;
+                            episodes = null;
                         }
+                        seasonsInCopies[key] = episodes;
+                    }
+                    // Can't tell whether the episode is hidden: this copy doesn't make it visible.
+                    if (episodes == null) return Guid.Empty;
+                    // A multi-episode file covers every episode in its range.
+                    return episodes.FirstOrDefault(e => e.IndexNumber is int first
+                        && new Services.Acquire.EpisodeRange(first, e.IndexNumberEnd).Contains(number))?.Id;
+                }
+
+                jellyfinVerdicts = new Dictionary<ArrItem, bool>(ReferenceEqualityComparer.Instance);
+                foreach (var evt in events)
+                {
+                    var copy = ProviderHelper.PickCallerCopy(evt, itemCandidates, Seen, SeriesOf,
+                        title => EpisodeInCopy(title, evt.SeasonNumber!.Value, evt.EpisodeNumber!.Value), _titleAliases);
+                    if (!copy.InJellyfin) continue;
+                    jellyfinVerdicts[evt] = copy.Visible;
+                    if (copy.Visible)
+                    {
+                        evt.ItemId = copy.ItemId;
+                        evt.ItemEpisodeId = copy.EpisodeId;
                     }
                 }
             }
 
-            // Returns true when the filter is off, or when we have positive evidence the user can
-            // access this event. "No information" defaults to true (same as the final filter).
+            // True when the filter is off (or the caller is an administrator), or the caller may see the event.
             bool IsAccessible(ArrItem evt)
             {
-                if (accessibleIds == null) return true;
-                if (evt.ItemId.HasValue)
-                    return accessibleIds.Contains(evt.ItemId.Value);
-                if (!string.IsNullOrEmpty(evt.RootFolderPath)
-                    && rootFolderAccessMap != null
-                    && rootFolderAccessMap.TryGetValue(evt.RootFolderPath, out var a))
-                    return a;
-                return true;
+                if (calendarUser == null || jellyfinVerdicts == null) return true;
+                if (jellyfinVerdicts.TryGetValue(evt, out var visible)) return visible;
+                // Shoko (no instance) keeps its own rule: only titles already in the user's Shoko
+                // collection, matched to Jellyfin when Jellyfin has them.
+                if (evt.Source == nameof(ArrType.Shoko)) return true;
+                if (_instanceLibraries == null || evt.InstanceId == null || !instancesById.TryGetValue(evt.InstanceId, out var instance)) return false;
+                var target = _instanceLibraries.Resolve(instance, evt.ArrPath);
+                rootsConsulted |= target.Via == "same_path" || target.Problem is Services.Acquire.ArrLibraryProblem.RootsUnknown or Services.Acquire.ArrLibraryProblem.SharedRoot or Services.Acquire.ArrLibraryProblem.NotInLibrary;
+                return target.Libraries is { Count: > 0 } libraries && Services.Acquire.ArrInstanceLibraries.CanOpen(calendarUser, libraries);
             }
 
             // Deduplicate events across instances. Tie-break priority:
@@ -11053,20 +11300,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             events = deduped.Values.ToList();
 
-            // Final safety-net access filter (defense in depth — dedup above already respects this,
-            // but if the filter is on and a lone candidate is inaccessible, it must still be hidden).
-            if (config.CalendarFilterByLibraryAccess && accessibleIds != null)
+            // A lone candidate the caller may not see is hidden too (dedup only prefers visible ones).
+            if (calendarUser != null)
+                events = events.Where(IsAccessible).ToList();
+            if (rootsConsulted)
             {
-                events = events.Where(e =>
-                {
-                    if (e.ItemId.HasValue)
-                        return accessibleIds.Contains(e.ItemId.Value);
-                    if (!string.IsNullOrEmpty(e.RootFolderPath)
-                        && rootFolderAccessMap != null
-                        && rootFolderAccessMap.TryGetValue(e.RootFolderPath, out var hasAccess))
-                        return hasAccess;
-                    return true;
-                }).ToList();
+                foreach (var instance in arrInstances) _ = _arrState.WarmSystem(instance);
             }
 
             return Ok(new { events, errors });
@@ -11103,7 +11342,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         items.Add(new ArrItem
                         {
-                            Id = shokoEpisodeId?.ToString() ?? $"shoko-{shokoSeriesId}-{episodeType}-{episodeNumber}",
+                            Id = Services.Arr.ArrLegacyViews.RowId(ArrType.Shoko, null, shokoEpisodeId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? $"shoko-{shokoSeriesId}-{episodeType}-{episodeNumber}"),
                             Source = nameof(ArrType.Shoko),
                             InstanceName = "Shoko",
                             Type = "Series",
@@ -11118,7 +11357,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             EpisodeNumber = episodeNumber,
                             ShokoSeriesId = shokoSeriesId,
                             ShokoEpisodeId = shokoEpisodeId,
-                            RootFolderPath = null
                         });
                     }
                     return items;
@@ -11130,20 +11368,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ct: ct);
         }
 
+        /// <summary>
+        /// Most distinct item ids one calendar user-data request may name (a big library's month
+        /// of events names a few hundred). More is refused before any lookup.
+        /// </summary>
+        internal const int MaxCalendarUserDataIds = 2000;
+
         [HttpPost("arr/calendar/user-data")]
         [Authorize]
+        // A year of events with their ids (the page sends a few hundred bytes per event).
+        [BodyLimit(1024 * 1024)]
         public IActionResult GetCalendarUserDataForEvents([FromBody] CalendarUserDataRequest request)
         {
             if (JellyfinEnhanced.Instance?.Configuration is { CalendarPageEnabled: false })
                 return ArrFeatureDisabled("The Calendar page");
 
-            var userId = UserHelper.GetCurrentUserId(User);
-            if (userId == null)
-                return Unauthorized("User not found");
-
-            var user = _userManager.GetUserById(userId.Value);
+            // The caller's own favourites and watched state: a person only (an API key has none).
+            var user = ArrCaller.Human(User, _userManager);
             if (user == null)
-                return Unauthorized("User not found");
+                return StatusCode(403, new { error = true, code = "user_required", message = "Sign in as a Jellyfin user." });
 
             var results = new List<object>();
 
@@ -11158,22 +11401,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     .Select(id => id!.Value)
                     .Distinct()
                     .ToList();
+                // Bounded work per request, refused whole (never silently cut short).
+                if (ids.Count > MaxCalendarUserDataIds)
+                    return BadRequest(new { error = true, code = "too_many_ids", message = $"At most {MaxCalendarUserDataIds} item ids per request.", limit = MaxCalendarUserDataIds });
 
+                // Which ids Jellyfin has at all: one query (no user, so nothing is decided by it).
+                // Only those go through Jellyfin's own per-user check (library access and parental
+                // limits), one by one: a query by ItemIds with a user skips the library restriction,
+                // and on Jellyfin 12 setting User in the initialiser skips the parental filter too.
+                // An unknown id costs nothing more (a per-id lookup of one is a database read each).
+                // Ids the caller can't open get no flags (their user data is never read).
+                var known = ids.Count == 0
+                    ? new HashSet<Guid>()
+                    : _libraryManager.GetItemList(new InternalItemsQuery { ItemIds = ids.ToArray() }).Select(i => i.Id).ToHashSet();
                 var itemsById = new Dictionary<Guid, BaseItem>();
-                if (ids.Count > 0)
+                foreach (var id in ids)
                 {
-                    var items = _libraryManager.GetItemList(new InternalItemsQuery
-                    {
-                        User = user,
-                        ItemIds = ids.ToArray(),
-                        Recursive = true
-                    });
-
-                    foreach (var item in items)
-                    {
-                        if (!itemsById.ContainsKey(item.Id))
-                            itemsById[item.Id] = item;
-                    }
+                    if (known.Contains(id) && _libraryManager.GetItemById<BaseItem>(id, user) is { } item)
+                        itemsById[id] = item;
                 }
 
                 // Process each event using pre-fetched items

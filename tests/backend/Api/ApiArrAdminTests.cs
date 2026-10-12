@@ -58,14 +58,14 @@ public class ApiArrAdminTests
                 return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { appName = app, instanceName = app, version = app == "Sonarr" ? "4.0.20.3014" : "6.0.4.10291" })));
             });
             Factory = new ArrClientFactory(Transport, registry);
-            Controller = new ArrAdminController(Factory, new ArrAuditLog(Path.Combine(Plugin.Core.Root, ArrAuditLog.FileName), 1024 * 1024, 2), Mock.Of<IUserManager>(), Plugin.Core.Logger)
+            Controller = new ArrAdminController(Factory, new ArrAuditLog(Path.Combine(Plugin.Core.Root, ArrAuditLog.FileName), 1024 * 1024, 2), Callers.Users.Object, Plugin.Core.Logger)
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
             };
             SetUser(admin: true);
         }
-        public void SetUser(bool admin) => Controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([
-            new Claim("Jellyfin-UserId", Guid.NewGuid().ToString()), new Claim(ClaimTypes.Role, admin ? "Administrator" : "User")], "test"));
+        public TestCallers Callers { get; } = new();
+        public void SetUser(bool admin) => Controller.HttpContext.User = Callers.Person(admin);
         public void Dispose() { Transport.Dispose(); Plugin.Dispose(); }
     }
 

@@ -7,13 +7,15 @@ namespace JE.Tests;
 /// A synthetic Seerr behind <see cref="IntegrationTransport"/> for the request read model: the
 /// request list (paged, <c>sort=modified</c> newest change first, otherwise by id newest first as
 /// Seerr's default <c>sort=added</c> does, <c>pageInfo.results</c>), movie and
-/// series details, call counting by path and a switchable failure.
+/// series details, user list, call counting by path, optional request holds and a switchable failure.
 /// </summary>
 internal sealed class FakeSeerr : IDisposable
 {
     public const string Url = "http://seerr.lan:5055";
     public const string Key = "SEERR-KEY-0123456789abcdef";
 
+    /// <summary>The Seerr users returned by the paged user list.</summary>
+    public List<JsonObject> Users { get; } = new();
     public List<JsonObject> Requests { get; } = new();
     public Dictionary<int, JsonObject> Movies { get; } = new();
     public Dictionary<int, JsonObject> Shows { get; } = new();
@@ -32,11 +34,18 @@ internal sealed class FakeSeerr : IDisposable
 
     public IntegrationTransport Transport { get; }
 
+    /// <summary>Non-null: awaited before every call is answered (a slow or hanging Seerr).</summary>
+    public Func<Task>? Before { get => Hold; set => Hold = value; }
+
+    /// <summary>Non-null: awaited for each request URI before it is answered.</summary>
+    public Func<Uri, Task>? BeforeRequest { get; set; }
+
     public FakeSeerr()
     {
         Transport = new IntegrationTransport(async (request, _) =>
         {
             if (Hold is { } hold) await hold();
+            if (BeforeRequest is { } beforeRequest) await beforeRequest(request.RequestUri!);
             return Answer(request);
         });
     }
@@ -65,6 +74,19 @@ internal sealed class FakeSeerr : IDisposable
         if (FailWith != 0) return IntegrationTransport.Response("{\"message\":\"boom\"}", FailWith);
         var path = uri.AbsolutePath;
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        if (path == "/api/v1/user")
+        {
+            var take = int.Parse(query["take"] ?? "10", CultureInfo.InvariantCulture);
+            var skip = int.Parse(query["skip"] ?? "0", CultureInfo.InvariantCulture);
+            lock (Users)
+            {
+                return IntegrationTransport.Response(new JsonObject
+                {
+                    ["pageInfo"] = new JsonObject { ["pages"] = (Users.Count + take - 1) / take, ["pageSize"] = take, ["results"] = Users.Count, ["page"] = skip / take + 1 },
+                    ["results"] = new JsonArray(Users.Skip(skip).Take(take).Select(u => u.DeepClone()).ToArray()),
+                }.ToJsonString());
+            }
+        }
         if (path == "/api/v1/request")
         {
             var take = int.Parse(query["take"] ?? "10", CultureInfo.InvariantCulture);

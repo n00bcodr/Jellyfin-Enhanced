@@ -314,7 +314,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
         }
 
-        private static bool IsActive(PluginConfiguration? c)
+        /// <summary>True when the configuration has the read model reading Seerr (the integration, phase 1 and Seerr on).</summary>
+        public static bool IsActive(PluginConfiguration? c)
             => c is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, JellyseerrEnabled: true }
                && !string.IsNullOrWhiteSpace(c.JellyseerrUrls)
                && !string.IsNullOrWhiteSpace(c.GetJellyseerrApiKey());
@@ -591,7 +592,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (held != null && held != source)
             {
                 _logger?.Info("[Requests] The Seerr settings point at another server: its requests are read afresh.");
-                Clear();
+                Clear(sourceChanged: true);
                 return true;
             }
             lock (_lock)
@@ -616,8 +617,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         // Phase 1 or Seerr switched off: forget everything (the facts stop at once).
-        private void Clear()
+        private void Clear(bool sourceChanged = false)
         {
+            if (sourceChanged) Controllers.JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
             Snapshot old;
             bool loadedBefore, failedBefore;
             lock (_lock)
@@ -639,6 +641,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 _incompleteReason = null;
                 _truncated = false;
                 _reportedTotal = null;
+                if (sourceChanged) _meta.Clear();
             }
             if (old.All.Count > 0)
             {
@@ -665,7 +668,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 string? held;
                 lock (_lock) held = _source;
                 // Another Seerr than the one the held list came from: forget it first.
-                if (held != null && held != source) Clear();
+                if (held != null && held != source) Clear(sourceChanged: true);
                 var now = _now();
                 bool loadedBefore, failedBefore;
                 lock (_lock)

@@ -76,6 +76,8 @@
   // State management
   const state = {
     events: [],
+    // The last read of the events failed (not a per-instance error: those come with the events).
+    eventsError: false,
     isLoading: false,
     pageVisible: false,
     previousPage: null,
@@ -110,6 +112,7 @@
   // so the calendar re-derives everything for the new user on its next render.
   JE.session?.onUserChange('calendar-page', () => {
     state.events = [];
+    state.eventsError = false;
     state.userDataMap.clear();
     state.requestedItems.clear();
     state.requestedLoaded = false;
@@ -199,14 +202,21 @@
       });
       const data = await JE.core.api.plugin(`/arr/calendar?${query.toString()}`);
       if (JE.session && !JE.session.isCurrent(epoch)) return null;
+      // Row ids are opaque ("sonarr|<instance>|<id>", "radarr|…", "shoko|…"): unique across
+      // instances, they key the favourite/watched map and the click lookups as they are.
       state.events = (data.events || []).filter((evt) => evt && evt.releaseDate).map(asLocalDay);
+      state.eventsError = false;
       // Surface per-instance errors from the backend envelope so a misconfigured or
       // unreachable arr instance doesn't silently leave the calendar looking fine.
       surfaceCalendarErrors(data.errors);
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch calendar events:`, error);
-      if (!JE.session || JE.session.isCurrent(epoch)) state.events = [];
+      if (!JE.session || JE.session.isCurrent(epoch)) {
+        state.events = [];
+        // Say so (with a retry) instead of "No upcoming releases".
+        state.eventsError = true;
+      }
       return null;
     }
   }

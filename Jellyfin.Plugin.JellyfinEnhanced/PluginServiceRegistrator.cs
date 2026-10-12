@@ -77,6 +77,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Phase 2 (admin essentials): the hub's admin tabs, queue actions, the Jellyfin bridge
             // (targeted refresh after imports, not-in-Jellyfin list, path doctor) and the activity log mirror.
             serviceCollection.AddSingleton<Services.Acquire.IJellyfinLibraryAccess, Services.Acquire.JellyfinLibraryAccess>();
+            serviceCollection.AddSingleton<Services.Acquire.ArrInstanceLibraries>();
             serviceCollection.AddSingleton<Services.Acquire.JellyfinBridge>();
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.JellyfinBridge>());
             serviceCollection.AddSingleton<Services.Acquire.ArrAdminHubService>();

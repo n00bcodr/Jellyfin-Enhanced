@@ -9,6 +9,7 @@ using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
@@ -17,7 +18,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
     public interface IArrFeedAudience
     {
         /// <summary>The keys among <paramref name="changes"/> the user may see.</summary>
-        IReadOnlyCollection<string> Visible(Guid userId, bool isAdmin, IReadOnlyList<ArrFeedChange> changes);
+        /// <param name="userId">The user.</param>
+        /// <param name="isAdmin">True for an administrator (sees every title).</param>
+        /// <param name="changes">The keys (and the instances they changed in) to decide.</param>
+        /// <param name="askedFor">
+        /// Movie and series keys (<see cref="ArrTitleKey.Movie"/>, <see cref="ArrTitleKey.Series"/>)
+        /// the caller has proof the user asked for, besides the request read model (the legacy
+        /// Requests page reads the user's Seerr requests itself). A title Jellyfin doesn't have that
+        /// is otherwise hidden from the user is shown when its movie or series key is in it; a title
+        /// Jellyfin has stays Jellyfin's decision.
+        /// </param>
+        /// <param name="absent">
+        /// When given, receives the keys left out only for want of proof the user asked for them
+        /// (not in Jellyfin, and nothing else lets the user see them): the ones a caller's own read
+        /// of the user's requests could still show. A caller with no such keys needs no such read.
+        /// </param>
+        IReadOnlyCollection<string> Visible(Guid userId, bool isAdmin, IReadOnlyList<ArrFeedChange> changes, IReadOnlySet<string>? askedFor = null, ICollection<string>? absent = null);
     }
 
     /// <summary>
@@ -39,7 +55,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
     /// content limits (the same people who can read its status by key).</description></item>
     /// </list>
     /// "Asked for" includes requests deleted in the last few minutes, so the deletion itself is
-    /// announced to the people who could follow the title before it.
+    /// announced to the people who could follow the title before it, and the titles a caller passes
+    /// as asked for (the legacy Requests page's own read of the user's requests).
     /// A user's request-list and inbox keys (<see cref="ArrTitleKey.UserRequests"/>,
     /// <see cref="ArrTitleKey.UserInbox"/>) reach that user only, administrators included; the shared
     /// <see cref="ArrTitleKey.RequestsState"/> key reaches everyone; <see cref="ArrTitleKey.AdminOps"/>
@@ -51,7 +68,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
     /// title. A key that changed in several instances is announced when any of them (or
     /// Jellyfin's copy) may be seen. Answers are cached per user, key and instance for a minute,
     /// and only while nothing they depend on changed: the user's policy (role, library access,
-    /// parental settings), Jellyfin's library, and the instances' linked libraries.
+    /// parental settings), Jellyfin's library, and the instances' linked libraries. Episodes are
+    /// looked up a season at a time (the series' copies once per series), so a long list of
+    /// episodes costs a few library queries per season rather than several per episode.
     /// </summary>
     public sealed class ArrFeedAudience : IArrFeedAudience
     {
@@ -65,8 +84,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private readonly IArrJellyfinView _view;
         private readonly IArrRequestFacts? _requests;
         private readonly Func<DateTimeOffset> _now;
-        private readonly ConcurrentDictionary<(Guid User, string Key, string? Instance), (bool Visible, DateTimeOffset At, string Stamp)> _cache = new();
-        private (IReadOnlyList<ArrConnection>? Instances, string Stamp) _registryStamp;
+        private readonly ConcurrentDictionary<(Guid User, string Key, string? Instance), (Verdict Verdict, DateTimeOffset At, string Stamp)> _cache = new();
+        private readonly ConcurrentDictionary<(Guid User, int Tvdb), (SeriesCopies Copies, DateTimeOffset At, string Stamp)> _series = new();
+        private readonly ConcurrentDictionary<(Guid User, int Tvdb, int Season), (SeasonEpisodes Episodes, DateTimeOffset At, string Stamp)> _seasons = new();
+        private volatile AliasInputs? _registryStamp;
+
+        // The snapshots and their token are published together for concurrent route reads.
+        private sealed record AliasInputs(IReadOnlyList<ArrConnection> Instances, ArrLibrarySnapshot?[] Libraries, string Stamp);
 
         /// <summary>Creates the filter (DI).</summary>
         public ArrFeedAudience(ILibraryManager libraryManager, IUserManager userManager, ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests)
@@ -80,14 +104,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             _libraryManager = libraryManager;
             _userManager = userManager;
             _store = store;
-            _aliases = new Acquire.TitleAliases(store, null);
+            _aliases = new Acquire.TitleAliases(store, requests as SeerrRequestReadModel);
             _view = view ?? new ArrJellyfinView(libraryManager, userManager);
             _requests = requests;
             _now = now ?? (() => DateTimeOffset.UtcNow);
         }
 
+        // A title key's answer before the caller's own proof of asking: Absent = not in Jellyfin and
+        // nothing else lets the user see it, so it is shown only to someone known to have asked.
+        private enum Verdict : byte
+        {
+            Hidden,
+            Visible,
+            Absent,
+        }
+
+        // The Jellyfin copies of a series: every one, and the ones the user may open.
+        private sealed record SeriesCopies(Guid[] All, Guid[] Mine);
+
+        // A season's episode numbers under the series' copies: every one, and the ones the user may open.
+        private sealed record SeasonEpisodes(EpisodeNumberSet All, EpisodeNumberSet Mine);
+
+        // Keep combined files as ranges: privacy checks cover every episode without expanding them.
+        private sealed class EpisodeNumberSet
+        {
+            private readonly List<EpisodeRange> _ranges = new();
+
+            /// <summary>True when no episode numbers or ranges are present.</summary>
+            public bool IsEmpty => _ranges.Count == 0;
+
+            /// <summary>Adds a single episode or a combined file's full range.</summary>
+            public void Add(int first, int? last)
+            {
+                _ranges.Add(new EpisodeRange(first, last));
+            }
+
+            /// <summary>True when a single number or a range covers the episode.</summary>
+            public bool Contains(int number)
+                => _ranges.Any(r => r.Contains(number));
+        }
+
         /// <inheritdoc />
-        public IReadOnlyCollection<string> Visible(Guid userId, bool isAdmin, IReadOnlyList<ArrFeedChange> changes)
+        public IReadOnlyCollection<string> Visible(Guid userId, bool isAdmin, IReadOnlyList<ArrFeedChange> changes, IReadOnlySet<string>? askedFor = null, ICollection<string>? absent = null)
         {
             if (changes.Count == 0) return Array.Empty<string>();
             // Request-list keys reach their owner only; everything else is a title key.
@@ -115,9 +173,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             if (isAdmin) return own.Concat(titles.Select(c => c.Key)).ToList();
             if (titles.Count == 0) return own;
             changes = titles;
-            var user = _userManager.GetUserById(userId);
-            if (user == null) return own;
+            var user = Helpers.ArrCaller.Find(userId, _userManager);
+            if (user == null || user.HasPermission(PermissionKind.IsDisabled)) return own;
             if (_cache.Count > MaxCacheEntries) _cache.Clear();
+            if (_series.Count > MaxCacheEntries) _series.Clear();
+            if (_seasons.Count > MaxCacheEntries) _seasons.Clear();
 
             var now = _now();
             // What every answer depends on besides the key: a change to any of it decides afresh.
@@ -128,74 +188,95 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             var visible = own;
             foreach (var change in changes)
             {
-                if (!ArrTitleKey.TryParse(change.Key, out _, out _, out _, out _)) continue;
-                if (change.AllSources.Any(source => Cached(user, change.Key, source, now, stamp))) visible.Add(change.Key);
+                if (!ArrTitleKey.TryParse(change.Key, out var type, out var id, out _, out _)) continue;
+                var asked = askedFor != null && askedFor.Contains(type == "movie" ? ArrTitleKey.Movie(id) : ArrTitleKey.Series(id));
+                var shown = false;
+                var wantsProof = false;
+                foreach (var source in change.AllSources)
+                {
+                    var v = Cached(user, change.Key, source, now, stamp);
+                    if (v == Verdict.Visible || (asked && v == Verdict.Absent))
+                    {
+                        shown = true;
+                        break;
+                    }
+                    wantsProof |= v == Verdict.Absent;
+                }
+                if (shown) visible.Add(change.Key);
+                else if (wantsProof) absent?.Add(change.Key);
             }
             return visible;
         }
 
-        // The instances and the libraries they are linked to (the list is rebuilt only when the configuration changes).
+        // Registry and library snapshots: changing either invalidates cached alias decisions.
         private string RegistryStamp()
         {
             var all = _store.Registry.All();
+            var libraries = all.Select(i => _store.PeekLibrary(i.Id)).ToArray();
             var known = _registryStamp;
-            if (ReferenceEquals(known.Instances, all)) return known.Stamp;
-            var stamp = string.Join(";", all.Select(c => c.Id + ":" + c.Kind + ":" + (c.Usable ? "u" : "-") + ":" + string.Join(",", c.LinkedLibraryIds.OrderBy(l => l, StringComparer.OrdinalIgnoreCase))));
-            _registryStamp = (all, stamp);
+            if (known != null && ReferenceEquals(known.Instances, all) && known.Libraries.Length == libraries.Length
+                && known.Libraries.Zip(libraries).All(p => ReferenceEquals(p.First, p.Second))) return known.Stamp;
+            var stamp = Guid.NewGuid().ToString("N");
+            _registryStamp = new AliasInputs(all, libraries, stamp);
             return stamp;
         }
 
-        private bool Cached(User user, string key, string? instanceId, DateTimeOffset now, string stamp)
+        private static bool Fresh(DateTimeOffset at, string entryStamp, DateTimeOffset now, string stamp)
+            => now - at < CacheTtl && string.Equals(entryStamp, stamp, StringComparison.Ordinal);
+
+        private Verdict Cached(User user, string key, string? instanceId, DateTimeOffset now, string stamp)
         {
             var cacheKey = (user.Id, key, instanceId);
-            if (_cache.TryGetValue(cacheKey, out var hit) && now - hit.At < CacheTtl && string.Equals(hit.Stamp, stamp, StringComparison.Ordinal)) return hit.Visible;
-            var ok = Decide(user, key, instanceId, now, stamp);
-            _cache[cacheKey] = (ok, now, stamp);
-            return ok;
+            if (_cache.TryGetValue(cacheKey, out var hit) && Fresh(hit.At, hit.Stamp, now, stamp)) return hit.Verdict;
+            var verdict = Decide(user, key, instanceId, now, stamp);
+            _cache[cacheKey] = (verdict, now, stamp);
+            return verdict;
         }
 
-        private bool Decide(User user, string key, string? instanceId, DateTimeOffset now, string stamp)
+        private Verdict Decide(User user, string key, string? instanceId, DateTimeOffset now, string stamp)
         {
-            if (!ArrTitleKey.TryParse(key, out var type, out var id, out var season, out var episode)) return false;
+            if (!ArrTitleKey.TryParse(key, out var type, out var id, out var season, out var episode)) return Verdict.Hidden;
             if (season != null)
             {
-                // The series first (cached): a hidden series hides all of it.
-                if (!Cached(user, ArrTitleKey.Series(id), instanceId, now, stamp)) return false;
+                // The series first (cached): a hidden series hides all of it; one not in Jellyfin
+                // (its parts aren't either) keeps its answer.
+                var series = Cached(user, ArrTitleKey.Series(id), instanceId, now, stamp);
+                if (series == Verdict.Hidden) return Verdict.Hidden;
                 try
                 {
-                    return DecidePart(user, id, season.Value, episode);
+                    return DecidePart(user, id, season.Value, episode, now, stamp) ? series : Verdict.Hidden;
                 }
                 catch (Exception)
                 {
-                    return false;
+                    return Verdict.Hidden;
                 }
             }
 
             var kind = type == "movie" ? BaseItemKind.Movie : BaseItemKind.Series;
-            var provider = Providers(type == "movie", id);
+            var title = TitleKey.Parse(type == "movie" ? ArrTitleKey.Movie(id) : ArrTitleKey.Series(id))!;
             try
             {
-                if (Find(new InternalItemsQuery(user), kind, provider).Count > 0) return true;
-                if (Find(new InternalItemsQuery(), kind, provider).Count > 0) return false;
+                if (Find(new InternalItemsQuery(user), kind, title).Count > 0) return Verdict.Visible;
+                if (Find(new InternalItemsQuery(), kind, title).Count > 0) return Verdict.Hidden;
             }
             catch (Exception)
             {
-                return false;
+                return Verdict.Hidden;
             }
             // Not in Jellyfin: someone who asked for it hears about it whatever their limits.
-            var title = TitleKey.Parse(type == "movie" ? ArrTitleKey.Movie(id) : ArrTitleKey.Series(id));
             // "Asked" includes a request deleted in the last few minutes: its own announcement is
             // decided after the list no longer has it.
-            if (_requests != null && title != null && _requests.AskedLatelyBy(title, user.Id)) return true;
-            if (!Unrestricted(user)) return false;
+            var keys = new[] { title }.Concat(_aliases.Of(title)).ToList();
+            if (_requests != null && keys.Any(k => _requests.AskedLatelyBy(k, user.Id))) return Verdict.Visible;
+            if (!Unrestricted(user)) return Verdict.Absent;
             var instances = (instanceId != null
                 ? new[] { instanceId }
                 : Holders(type == "movie" ? ArrKind.Radarr : ArrKind.Sonarr, id)).ToList();
             // A title only Seerr knows (no arr holds it yet): its request changes (approved, declined)
             // reach every member without content limits, who can already read its status by key
             // ("Asked by someone in your household").
-            if (instanceId == null && instances.Count == 0) return _requests != null && title != null && _requests.RequestedLately(title);
-            return instances.Any(i => CanOpenLinkedLibrary(user, i));
+            if (instanceId == null && instances.Count == 0) return _requests != null && keys.Any(_requests.RequestedLately) ? Verdict.Visible : Verdict.Absent;
+            return instances.Any(i => CanOpenLinkedLibrary(user, i)) ? Verdict.Visible : Verdict.Absent;
         }
 
         // A season or episode of a series the user may hear about: the item itself when Jellyfin
@@ -203,62 +284,83 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         // lookup runs only under the series copies the user can open: with ancestors set, Jellyfin
         // doesn't limit a user's query to their libraries, so another library's copy of the series
         // would otherwise answer for them.
-        private bool DecidePart(User user, int tvdbId, int season, int? episode)
+        private bool DecidePart(User user, int tvdbId, int season, int? episode, DateTimeOffset now, string stamp)
         {
-            var provider = Providers(movie: false, tvdbId);
-            var all = Find(new InternalItemsQuery(), BaseItemKind.Series, provider, limit: 10).Select(i => i.Id).ToArray();
-            if (all.Length == 0) return true;   // not in Jellyfin: the series' answer stands
-            var mine = Find(new InternalItemsQuery(user), BaseItemKind.Series, provider, limit: 10).Select(i => i.Id).ToArray();
-            if (mine.Length > 0 && FindPart(new InternalItemsQuery(user), mine, season, episode)) return true;
-            return !FindPart(new InternalItemsQuery(), all, season, episode);
+            var copies = Copies(user, tvdbId, now, stamp);
+            if (copies.All.Length == 0) return true;   // not in Jellyfin: the series' answer stands
+            if (episode is int e)
+            {
+                var episodes = Episodes(user, tvdbId, season, copies, now, stamp);
+                return episodes.Mine.Contains(e) || !episodes.All.Contains(e);
+            }
+            if (copies.Mine.Length > 0 && FindSeason(new InternalItemsQuery(user), copies.Mine, season)) return true;
+            return !FindSeason(new InternalItemsQuery(), copies.All, season);
         }
 
-        private bool FindPart(InternalItemsQuery query, Guid[] seriesIds, int season, int? episode)
+        // The series' Jellyfin copies (once per user and series while the answers hold).
+        private SeriesCopies Copies(User user, int tvdbId, DateTimeOffset now, string stamp)
+        {
+            var key = (user.Id, tvdbId);
+            if (_series.TryGetValue(key, out var hit) && Fresh(hit.At, hit.Stamp, now, stamp)) return hit.Copies;
+            var title = TitleKey.Parse(ArrTitleKey.Series(tvdbId))!;
+            var all = Find(new InternalItemsQuery(), BaseItemKind.Series, title, limit: 10).Select(i => i.Id).ToArray();
+            var mine = all.Length == 0 ? Array.Empty<Guid>() : Find(new InternalItemsQuery(user), BaseItemKind.Series, title, limit: 10).Select(i => i.Id).ToArray();
+            var copies = new SeriesCopies(all, mine);
+            _series[key] = (copies, now, stamp);
+            return copies;
+        }
+
+        // A season's episode numbers in Jellyfin, every one and the user's (two queries per season).
+        private SeasonEpisodes Episodes(User user, int tvdbId, int season, SeriesCopies copies, DateTimeOffset now, string stamp)
+        {
+            var key = (user.Id, tvdbId, season);
+            if (_seasons.TryGetValue(key, out var hit) && Fresh(hit.At, hit.Stamp, now, stamp)) return hit.Episodes;
+            var all = EpisodeNumbers(new InternalItemsQuery(), copies.All, season);
+            var mine = copies.Mine.Length == 0 || all.IsEmpty ? new EpisodeNumberSet() : EpisodeNumbers(new InternalItemsQuery(user), copies.Mine, season);
+            var episodes = new SeasonEpisodes(all, mine);
+            _seasons[key] = (episodes, now, stamp);
+            return episodes;
+        }
+
+        private EpisodeNumberSet EpisodeNumbers(InternalItemsQuery query, Guid[] seriesIds, int season)
+        {
+            query.AncestorIds = seriesIds;
+            query.Recursive = true;
+            query.IncludeItemTypes = new[] { BaseItemKind.Episode };
+            query.ParentIndexNumber = season;
+            var numbers = new EpisodeNumberSet();
+            foreach (var item in _libraryManager.GetItemList(query))
+            {
+                if (item.IndexNumber is not int first) continue;
+                numbers.Add(first, (item as Episode)?.IndexNumberEnd);
+            }
+            return numbers;
+        }
+
+        private bool FindSeason(InternalItemsQuery query, Guid[] seriesIds, int season)
         {
             query.AncestorIds = seriesIds;
             query.Recursive = true;
             query.Limit = 1;
-            if (episode is int e)
-            {
-                query.IncludeItemTypes = new[] { BaseItemKind.Episode };
-                query.ParentIndexNumber = season;
-                query.IndexNumber = e;
-            }
-            else
-            {
-                query.IncludeItemTypes = new[] { BaseItemKind.Season };
-                query.IndexNumber = season;
-            }
+            query.IncludeItemTypes = new[] { BaseItemKind.Season };
+            query.IndexNumber = season;
             return _libraryManager.GetItemList(query).Count > 0;
         }
 
-        private IReadOnlyList<BaseItem> Find(InternalItemsQuery query, BaseItemKind kind, Dictionary<string, string> providers, int limit = 1)
+        // The same alias set and provider query packing as IArrJellyfinView.Copies. These raw
+        // queries keep H3's batched, unrestricted and user-scoped season checks separate.
+        private IReadOnlyList<BaseItem> Find(InternalItemsQuery query, BaseItemKind kind, TitleKey title, int limit = 1)
         {
             query.IncludeItemTypes = new[] { kind };
-            query.HasAnyProviderId = new Dictionary<string, string>(providers, StringComparer.OrdinalIgnoreCase);
             query.Recursive = true;
             query.Limit = limit;
-            return _libraryManager.GetItemList(query);
-        }
-
-        // The title's ids as Jellyfin may know them: the key's own (TMDB for a movie, TVDB for a
-        // series) plus the IMDb (and, for a series, TMDB) ids the arr libraries hold for it, so a
-        // Jellyfin copy matched only by one of those still decides. The same resolver as the status
-        // (Acquire.TitleAliases), so the feed and the status never disagree about a copy.
-        private Dictionary<string, string> Providers(bool movie, int id)
-        {
-            var providers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            var found = new Dictionary<Guid, BaseItem>();
+            foreach (var providers in TitleAliases.ProviderQueries(title, _aliases.Of(title)))
             {
-                [movie ? "Tmdb" : "Tvdb"] = id.ToString(CultureInfo.InvariantCulture),
-            };
-            var key = TitleKey.Parse(movie ? ArrTitleKey.Movie(id) : ArrTitleKey.Series(id));
-            if (key == null) return providers;
-            foreach (var alias in _aliases.FromArrs(key).Select(TitleKey.Parse))
-            {
-                if (alias == null || alias.IsMovie != movie) continue;
-                providers.TryAdd(alias.Provider switch { "tmdb" => "Tmdb", "tvdb" => "Tvdb", _ => "Imdb" }, alias.Id);
+                query.HasAnyProviderId = providers;
+                foreach (var item in _libraryManager.GetItemList(query)) found.TryAdd(item.Id, item);
             }
-            return providers;
+            return found.Values.ToList();
         }
 
         // The instances whose library index holds the title (a change without an instance).
@@ -273,6 +375,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         // No content limit of any kind (as Jellyfin's own "has content restrictions", minus folder
         // access, which the linked libraries decide). Titles not in Jellyfin have no rating or tags
         // to check, so a user with any such limit hears only about titles Jellyfin can check.
+        /// <summary>
+        /// True when titles Jellyfin doesn't have yet may be hidden from <paramref name="user"/> for
+        /// want of proof they asked for them: a content limit of any kind, or not every library.
+        /// A user with neither sees every such title anyway.
+        /// </summary>
+        public static bool NeedsAskedProof(User user)
+            => !Unrestricted(user) || !user.HasPermission(PermissionKind.EnableAllFolders);
+
         private static bool Unrestricted(User user)
             => user.MaxParentalRatingScore == null
                && NoneSet(user.GetPreference(PreferenceKind.BlockedTags))

@@ -72,6 +72,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     /// </summary>
     [ApiController]
     [Route("JellyfinEnhanced")]
+    [PrivateResponse]
     public class ArrAdminHubController : ControllerBase
     {
         private static readonly JsonSerializerOptions CamelCase = new()
@@ -85,9 +86,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             QueueAction.Remove, QueueAction.RemoveWithData, QueueAction.RetryImport, QueueAction.Search,
         };
-
-        /// <summary>Admin answers hold arr URLs, paths, release names and who asked for what: never stored by a shared cache.</summary>
-        private const string PrivateNoStore = "private, no-store";
 
         private readonly ArrAdminHubService _hub;
         private readonly ArrQueueActionService _queue;
@@ -123,7 +121,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Admin() is null) return Forbid();
             if (!_hub.Enabled) return StatusCode(403, new { code = "feature_disabled" });
             using var scope = _hub.Store.BeginRequest("arr/admin/hub/overview");
-            Response.Headers["Cache-Control"] = PrivateNoStore;
             return Json(await _hub.OverviewAsync(cancellationToken).ConfigureAwait(false));
         }
 
@@ -135,7 +132,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Admin() is null) return Forbid();
             if (!_hub.Enabled) return StatusCode(403, new { code = "feature_disabled" });
             using var scope = _hub.Store.BeginRequest("arr/admin/hub/activity");
-            Response.Headers["Cache-Control"] = PrivateNoStore;
             return Json(await _hub.ActivityAsync(cancellationToken).ConfigureAwait(false));
         }
 
@@ -147,7 +143,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Admin() is null) return Forbid();
             if (!_hub.Enabled) return StatusCode(403, new { code = "feature_disabled" });
             using var scope = _hub.Store.BeginRequest("arr/admin/hub/system");
-            Response.Headers["Cache-Control"] = PrivateNoStore;
             return Json(await _hub.SystemAsync(cancellationToken).ConfigureAwait(false));
         }
 
@@ -157,6 +152,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpPost("arr/admin/queue/confirm")]
         [Authorize]
+        [BodyLimit]
         public async Task<IActionResult> Confirm([FromBody] QueueConfirmRequest? request, CancellationToken cancellationToken)
         {
             if (Admin() is not { } viewer) return Denied("arr/admin/queue/confirm");
@@ -164,13 +160,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (request == null || !ValidId(request.InstanceId) || !ValidDownload(request.DownloadId)) return BadRequest(new { code = "invalid_request" });
             var confirmation = await _queue.ConfirmAsync(viewer, request.InstanceId!, request.DownloadId!, cancellationToken).ConfigureAwait(false);
             if (confirmation == null) return NotFound(new { code = "not_in_queue" });
-            Response.Headers["Cache-Control"] = PrivateNoStore;
             return Json(confirmation);
         }
 
         /// <summary>Runs a queue action (audited; one idempotency key per click; remove with data needs its token).</summary>
         [HttpPost("arr/admin/queue/action")]
         [Authorize]
+        [BodyLimit]
         public async Task<IActionResult> QueueActionRun([FromBody] QueueActionRequest? request, CancellationToken cancellationToken)
         {
             if (Admin() is not { } viewer) return Denied("arr/admin/queue/action");
@@ -180,7 +176,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Length > 64)
                 return BadRequest(new { code = "idempotency_key_required" });
             if (request.ConfirmationToken is { Length: > 128 }) return BadRequest(new { code = "invalid_request" });
-            Response.Headers["Cache-Control"] = PrivateNoStore;
             var outcome = await _queue.RunAsync(viewer, UserName(viewer), new QueueActionInput
             {
                 InstanceId = request.InstanceId!,
@@ -201,6 +196,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpPost("arr/admin/hub/search")]
         [Authorize]
+        [BodyLimit]
         public async Task<IActionResult> Search([FromBody] ManageSearchRequest? request, CancellationToken cancellationToken)
         {
             if (Admin() is not { } viewer) return Denied("arr/admin/hub/search");
@@ -208,7 +204,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (request == null || !ValidId(request.InstanceId) || TitleKey.Parse(request.Key) is not { } key) return BadRequest(new { code = "invalid_request" });
             if (string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Length > 64)
                 return BadRequest(new { code = "idempotency_key_required" });
-            Response.Headers["Cache-Control"] = PrivateNoStore;
             return Outcome(await _manage.SearchAsync(viewer, UserName(viewer), request.InstanceId!, key, request.IdempotencyKey, cancellationToken).ConfigureAwait(false));
         }
 
@@ -219,6 +214,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpPost("arr/admin/bridge/scan")]
         [Authorize]
+        [BodyLimit]
         public async Task<IActionResult> Scan([FromBody] BridgeScanRequest? request, CancellationToken cancellationToken)
         {
             if (Admin() is not { } viewer) return Denied("arr/admin/bridge/scan");
@@ -260,7 +256,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     },
                 }),
             }, cancellationToken).ConfigureAwait(false);
-            Response.Headers["Cache-Control"] = PrivateNoStore;
             return Outcome(outcome, result);
         }
 
@@ -320,7 +315,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private IActionResult Denied(string route)
         {
-            if (UserHelper.GetCurrentUserId(User) is Guid id)
+            if (ArrCaller.PersonId(User) is Guid id)
             {
                 var now = DateTimeOffset.UtcNow;
                 var key = id.ToString("N") + " " + route;
@@ -356,11 +351,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> DeniedSeen = new(StringComparer.Ordinal);
         private static readonly TimeSpan DeniedEvery = TimeSpan.FromMinutes(1);
 
-        /// <summary>The caller when they are a Jellyfin administrator, else null.</summary>
-        private StatusViewer? Admin()
-        {
-            var id = UserHelper.GetCurrentUserId(User);
-            return id.HasValue && _status.View.Viewer(id.Value) is { IsAdmin: true } viewer ? viewer : null;
-        }
+        /// <summary>The caller when they are a Jellyfin administrator (a person, never an API key or an unknown user), else null.</summary>
+        private StatusViewer? Admin() => ArrCaller.Admin(User, _status.View);
     }
 }

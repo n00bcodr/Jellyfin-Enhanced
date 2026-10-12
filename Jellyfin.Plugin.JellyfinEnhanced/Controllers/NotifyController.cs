@@ -138,6 +138,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     public class NotifyController : ControllerBase
     {
         private const int MaxPage = 50;
+        /// <summary>Largest mark-read body (500 ids).</summary>
+        public const int MaxReadBodyBytes = 64 * 1024;
         private static readonly TimeSpan EmailCodeLifetime = TimeSpan.FromMinutes(30);
         private static readonly TimeSpan EmailResendAfter = TimeSpan.FromSeconds(60);
         private const int EmailSendsPerDay = 5;
@@ -214,6 +216,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Marks some (or all) of the caller's notifications read.</summary>
         [HttpPost("acquire/notify/read")]
         [Authorize]
+        [BodyLimit(MaxReadBodyBytes)]
         public IActionResult MarkRead([FromBody] NotifyReadRequest? request)
         {
             if (Gate() is { } denied) return denied;
@@ -239,6 +242,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Changes the caller's notification settings (only the fields sent).</summary>
         [HttpPut("acquire/notify/prefs")]
         [Authorize]
+        [BodyLimit]
         public IActionResult PutPrefs([FromBody] NotifyPrefsRequest? request)
         {
             if (Gate() is { } denied) return denied;
@@ -271,6 +275,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Sets (or makes up, or clears) the caller's ntfy topic on the administrator's server.</summary>
         [HttpPost("acquire/notify/ntfy/topic")]
         [Authorize]
+        [BodyLimit]
         public IActionResult SetTopic([FromBody] NotifyTopicRequest? request)
         {
             if (Gate() is { } denied) return denied;
@@ -300,6 +305,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Starts verifying an e-mail address: sends a 6-digit code to it (rate-limited).</summary>
         [HttpPost("acquire/notify/email")]
         [Authorize]
+        [BodyLimit]
         public async Task<IActionResult> StartEmail([FromBody] NotifyEmailRequest? request, CancellationToken cancellationToken)
         {
             if (Gate() is { } denied) return denied;
@@ -327,6 +333,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Finishes verifying the e-mail address with the code; e-mail alerts are then on.</summary>
         [HttpPost("acquire/notify/email/verify")]
         [Authorize]
+        [BodyLimit]
         public IActionResult VerifyEmail([FromBody] NotifyEmailRequest? request)
         {
             if (Gate() is { } denied) return denied;
@@ -397,6 +404,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>"Notify me" (or stop): follow or unfollow a movie, series ("new episodes") or season.</summary>
         [HttpPut("acquire/follows")]
         [Authorize]
+        [BodyLimit]
         public async Task<IActionResult> PutFollow([FromBody] FollowRequest? request, CancellationToken cancellationToken)
         {
             if (Gate() is { } denied) return denied;
@@ -416,6 +424,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>"Remind {contact}" about a title that is taking longer than usual (at most once per 24 hours per title).</summary>
         [HttpPost("acquire/remind")]
         [Authorize]
+        [BodyLimit]
         public async Task<IActionResult> Remind([FromBody] RemindRequest? request, CancellationToken cancellationToken)
         {
             if (Gate() is { } denied) return denied;
@@ -444,12 +453,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Notification health for administrators: channels (masked), database, deliveries and every user's channel state.</summary>
         [HttpGet("arr/admin/notify")]
         [Authorize]
+        [PrivateResponse]
         public IActionResult GetAdmin()
         {
             if (!IsAdmin()) return Forbid();
             var config = Config();
             var db = Store.Database;
-            Response.Headers["Cache-Control"] = "no-store";
             if (!db.Available)
             {
                 return Ok(new { enabled = NotifyFlags.Enabled(config), database = new { available = false, reason = db.UnavailableReason } });
@@ -494,6 +503,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Assigns (or clears) a user's ntfy topic (administrators only); the user's phone alerts go on with it.</summary>
         [HttpPut("arr/admin/notify/users/{userId}")]
         [Authorize]
+        [PrivateResponse]
+        [BodyLimit]
         public IActionResult AssignTopic([FromRoute] string userId, [FromBody] NotifyTopicRequest? request)
         {
             if (!IsAdmin()) return Forbid();
@@ -518,6 +529,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpPost("arr/admin/notify/test")]
         [Authorize]
+        [PrivateResponse]
+        [BodyLimit]
         public async Task<IActionResult> AdminTest([FromBody] NotifyAdminTestRequest? request, CancellationToken cancellationToken)
         {
             if (!IsAdmin()) return Forbid();
@@ -592,18 +605,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             };
         }
 
+        // Every per-user route: the switch, then a person (an API key, the empty GUID or a user
+        // Jellyfin doesn't know gets 403 user_required and nothing is stored for them).
         private IActionResult? Gate()
         {
             if (!NotifyFlags.Enabled(Config())) return StatusCode(403, new { code = "feature_disabled" });
-            if (UserId() is null) return StatusCode(403, new { code = "user_required" });
+            if (ArrCaller.Human(User, _service.Status.View) is null) return StatusCode(403, new { code = "user_required" });
             if (!Store.Available) return StatusCode(503, new { code = "database_unavailable" });
             return null;
         }
 
-        private Guid? UserId() => UserHelper.GetCurrentUserId(User);
+        // The caller's own id (never an API key's empty GUID).
+        private Guid? UserId() => ArrCaller.PersonId(User);
 
-        private bool IsAdmin()
-            => UserId() is Guid id && _service.Status.View.Viewer(id) is { IsAdmin: true };
+        private bool IsAdmin() => ArrCaller.Admin(User, _service.Status.View) != null;
 
         private void FeedBump(Guid user) => _service.BumpInbox(user);
 

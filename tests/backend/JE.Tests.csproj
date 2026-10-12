@@ -33,4 +33,8 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <Using Include="Xunit" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The route table shared with tests/host/run.py. -->
+    <None Include="Api/ArrRoutes.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

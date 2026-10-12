@@ -24,6 +24,9 @@ IMAGES = {
     "jf12": "jellyfin/jellyfin:12",
 }
 PLUGIN_ID = "f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b"
+# Who may call each arr, acquire, notify and JE backup route (shared with the backend
+# ApiArrRouteMatrixTests, which fails when a route is missing from it).
+ARR_ROUTES = ROOT / "tests/backend/Api/ArrRoutes.json"
 # Every container and network carries this label (value: the run's unique name).
 LABEL = "je-regression.run"
 
@@ -75,21 +78,24 @@ class Host:
         self.url = url
         self.passed = []
 
-    def request(self, path, method="GET", body=None, token=None, expected=200):
-        headers = {"Authorization": 'MediaBrowser Client="JE regression", Device="isolated host", DeviceId="je-tests", Version="1.0"'}
+    def request(self, path, method="GET", body=None, token=None, expected=200, headers=None):
+        """One call. expected: a status, or a predicate on the status."""
+        all_headers = {"Authorization": 'MediaBrowser Client="JE regression", Device="isolated host", DeviceId="je-tests", Version="1.0"'}
         if token:
-            headers["Authorization"] += f', Token="{token}"'
-        data = None if body is None else json.dumps(body).encode()
+            all_headers["Authorization"] += f', Token="{token}"'
+        all_headers.update(headers or {})
+        data = None if body is None else (body if isinstance(body, bytes) else json.dumps(body).encode())
         if data is not None:
-            headers["Content-Type"] = "application/json"
-        req = urllib.request.Request(self.url + path, data=data, headers=headers, method=method)
+            all_headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(self.url + path, data=data, headers=all_headers, method=method)
         try:
             response = urllib.request.urlopen(req, timeout=30)
         except urllib.error.HTTPError as error:
             response = error
         with response:
             raw = response.read().decode()
-            assert response.status == expected, f"{method} {path}: expected {expected}, got {response.status}: {raw[:400]}"
+            ok = expected(response.status) if callable(expected) else response.status == expected
+            assert ok, f"{method} {path}: expected {getattr(expected, 'label', expected)}, got {response.status}: {raw[:400]}"
             if response.headers.get_content_type() == "application/json" and raw:
                 return json.loads(raw)
             return raw
@@ -108,6 +114,54 @@ class Host:
         action()
         self.passed.append(label)
         print(f"  PASS {label}", flush=True)
+
+
+def arr_route_matrix(host, plugin_config_route, admin_token, member_token):
+    """The arr/acquire/notify/backup route table against the real host: anonymous 401 everywhere,
+    a regular user 403 on administrators' routes, a temporary API key 403 on per-user and
+    administrators' routes (never a 500 on the older routes), the webhook only with its secret,
+    and an oversized body a structured 413 (Jellyfin turns Kestrel's own 413 into a 500)."""
+    prefix = "/JellyfinEnhanced/"
+    configuration = host.request(plugin_config_route, token=admin_token)
+    for flag in ("ArrIntegrationEnabled", "ArrPhase1Enabled", "ArrPhase2Enabled", "ArrNotificationsEnabled",
+                 "DownloadsPageEnabled", "CalendarPageEnabled"):
+        configuration[flag] = True
+    host.request(plugin_config_route, "POST", configuration, admin_token, expected=204)
+    app = "je-regression-matrix-" + uuid.uuid4().hex[:8]
+    host.request("/Auth/Keys?app=" + app, "POST", token=admin_token, expected=204)
+    api_key = next(k["AccessToken"] for k in host.request("/Auth/Keys", token=admin_token)["Items"] if k.get("AppName") == app)
+    def not_500(status):
+        return status != 500
+    not_500.label = "anything but 500"
+    try:
+        routes = json.loads(ARR_ROUTES.read_text())["routes"]
+        assert len(routes) >= 50, f"route table looks truncated: {len(routes)} routes"
+        for row in routes:
+            method, access = row["method"], row["access"]
+            path = prefix + row.get("sample", row["route"])
+            body = {} if method in ("POST", "PUT", "DELETE") else None
+            headers = row.get("headers")
+            label = f"{method} {row['route']}"
+            host.check("anonymous 401 " + label,
+                       lambda path=path, method=method, body=body, headers=headers: host.request(path, method, body, expected=401, headers=headers))
+            if access in ("admin", "legacy-admin"):
+                host.check("member 403 " + label,
+                           lambda path=path, method=method, body=body, headers=headers: host.request(path, method, body, member_token, expected=403, headers=headers))
+            if access in ("admin", "user"):
+                host.check("API key 403 " + label,
+                           lambda path=path, method=method, body=body, headers=headers: host.request(path, method, body, api_key, expected=403, headers=headers))
+            elif access == "legacy-user":
+                host.check("API key no 500 " + label,
+                           lambda path=path, method=method, body=body, headers=headers: host.request(path, method, body, api_key, expected=not_500, headers=headers))
+            elif access == "anonymous-secret":
+                host.check("API key without the secret 401 " + label,
+                           lambda path=path, method=method, body=body: host.request(path, method, body, api_key, expected=401))
+        def too_large():
+            reply = host.request(prefix + "acquire/notify/read", "POST", b'{"ids":[' + b"1," * 40000 + b'1]}', member_token, expected=413)
+            assert reply.get("code") == "payload_too_large" and reply.get("limitBytes") == 64 * 1024, reply
+        host.check("oversized body is a structured 413", too_large)
+    finally:
+        host.request("/Auth/Keys/" + api_key, "DELETE", token=admin_token, expected=204)
 
 
 def pull(image):
@@ -258,6 +312,7 @@ def run(target, artifacts, browser=False):
                 other = host.request(restricted_route, token=restricted["AccessToken"])
                 assert other == restricted_before, "Saving one user changed another user's preferences"
             host.check("read back own preferences", persisted)
+            arr_route_matrix(host, plugin_config_route, admin_token, regular["AccessToken"])
             command("docker", "restart", name)
             host.ready()
             host.check("plugin reload after restart", compatibility)

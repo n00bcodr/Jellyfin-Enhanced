@@ -616,19 +616,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var inSeries = new Dictionary<(int Season, int Episode), List<Guid>>();
             Guid? seriesItem = null;
             var seriesItems = new HashSet<string>(StringComparer.Ordinal);
+            var files = new List<(Guid Series, JfEpisode Episode)>();
             foreach (var copy in SeriesCopies(key, viewer, interest.Only4k))
             {
                 seriesItem ??= copy.ItemId;
                 if (copy.ItemId != Guid.Empty) seriesItems.Add(copy.ItemId.ToString("N", CultureInfo.InvariantCulture));
-                foreach (var e in _view.Episodes(copy.ItemId, null, viewer, includeVirtual: false))
+                files.AddRange(_view.Episodes(copy.ItemId, null, viewer, includeVirtual: false)
+                    .Where(e => !e.Hidden && !e.Virtual && e.ItemId != Guid.Empty).Select(e => (copy.ItemId, e)));
+            }
+            var numbers = EpisodeNumbers(key, interest.Only4k, files.Select(f => f.Episode));
+            foreach (var (series, e) in files)
+            {
+                var range = new EpisodeRange(e.Episode, e.EpisodeEnd);
+                foreach (var number in numbers.Where(n => n.Season == e.Season && range.Contains(n.Episode)))
                 {
-                    if (e.Hidden || e.Virtual || e.ItemId == Guid.Empty) continue;
-                    for (var n = e.Episode; n <= (e.EpisodeEnd ?? e.Episode) && n - e.Episode < 50; n++)
-                    {
-                        present.TryAdd((e.Season, n), (e.ItemId, e.DateCreated));
-                        if (!inSeries.TryGetValue((e.Season, n), out var items)) inSeries[(e.Season, n)] = items = new List<Guid>();
-                        if (copy.ItemId != Guid.Empty && !items.Contains(copy.ItemId)) items.Add(copy.ItemId);
-                    }
+                    present.TryAdd(number, (e.ItemId, e.DateCreated));
+                    if (!inSeries.TryGetValue(number, out var items)) inSeries[number] = items = new List<Guid>();
+                    if (series != Guid.Empty && !items.Contains(series)) items.Add(series);
                 }
             }
             var watch = _store.Watch(viewer.UserId, key.ToString(), scope);
@@ -676,6 +680,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 return true;
             }, false);
             Written(key, written.Done);
+        }
+
+        // Sonarr's actual list supplies far-tail numbers without expanding Jellyfin metadata.
+        // When no list is cached, synthesize at most 256 numbers per visible file: omitted numbers
+        // cannot expose hidden episodes, and delivery rechecks every pending number by membership.
+        private HashSet<(int Season, int Episode)> EpisodeNumbers(TitleKey key, bool only4k, IEnumerable<JfEpisode> files)
+        {
+            var numbers = files.SelectMany(e => new EpisodeRange(e.Episode, e.EpisodeEnd)
+                .Numbers(EpisodeRange.MaxSyntheticEpisodes).Select(n => (e.Season, n))).ToHashSet();
+            foreach (var instance in _arr.Instances(ArrKind.Sonarr))
+            {
+                if (only4k && instance.Role != "4k") continue;
+                var series = new[] { key.Title }.Concat(_aliases.Of(key)).Select(k => SonarrSeries(instance, k)).FirstOrDefault(s => s != null);
+                if (series == null || _arr.PeekEpisodes(instance, series.Id)?.Value is not { } snapshot) continue;
+                numbers.UnionWith(snapshot.Episodes.Select(e => (e.SeasonNumber, e.EpisodeNumber)));
+            }
+            return numbers;
         }
 
         // The viewer's copies of a series an interest counts: every copy they can open, or for a 4K
@@ -910,16 +931,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             copies = copies.DistinctBy(c => c.ItemId).ToList();
             var open = new Dictionary<(int, int), HashSet<Guid>>();
-            foreach (var copy in copies)
+            var files = copies.SelectMany(copy => _view.Episodes(copy.ItemId, null, viewer, includeVirtual: false))
+                .Where(e => !e.Hidden && !e.Virtual && e.ItemId != Guid.Empty).ToList();
+            var coverage = new EpisodeCoverage(files);
+            // A pending batch already supplies every number we need. Check full membership rather
+            // than expanding a combined file (even when its metadata claims billions of episodes).
+            foreach (var number in state.Episodes.Select(e => (Season: e.S, Episode: e.E)).Distinct())
             {
-                foreach (var e in _view.Episodes(copy.ItemId, null, viewer, includeVirtual: false))
+                foreach (var e in files)
                 {
-                    if (e.Hidden || e.Virtual || e.ItemId == Guid.Empty) continue;
-                    for (var n = e.Episode; n <= (e.EpisodeEnd ?? e.Episode) && n - e.Episode < 50; n++)
-                    {
-                        if (!open.TryGetValue((e.Season, n), out var ids)) open[(e.Season, n)] = ids = new HashSet<Guid>();
-                        ids.Add(e.ItemId);
-                    }
+                    if (e.Season != number.Season || !new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(number.Episode)) continue;
+                    if (!open.TryGetValue(number, out var ids)) open[number] = ids = new HashSet<Guid>();
+                    ids.Add(e.ItemId);
                 }
             }
             var episodes = state.Episodes.Where(x => open.ContainsKey((x.S, x.E))).OrderBy(x => x.S).ThenBy(x => x.E).ToList();
@@ -947,7 +970,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 p["episode"] = episodes[0].E.ToString(CultureInfo.InvariantCulture);
                 itemId = episodes[0].I ?? itemId;
             }
-            else if (seasons.Count == 1 && seriesItem is Guid series && WholeSeason(title, only4k, open.Keys, seasons[0], episodes.Count))
+            else if (seasons.Count == 1 && seriesItem is Guid series && WholeSeason(title, only4k, coverage, seasons[0], episodes.Count))
             {
                 // A whole season arriving together (a season pack) collapses to one line.
                 p["mode"] = "season";
@@ -972,14 +995,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         // copy of the variant asked for), every one of them is here for the viewer and every one is in
         // the batch. A season whose length isn't known never reads as complete (a two-episode premiere
         // is not "Season 3 is ready").
-        private bool WholeSeason(TitleKey title, bool only4k, IEnumerable<(int Season, int Episode)> open, int season, int count)
+        private bool WholeSeason(TitleKey title, bool only4k, EpisodeCoverage open, int season, int count)
         {
             if (count < 2) return false;
             var instances = _arr.Instances(ArrKind.Sonarr).Where(i => only4k ? i.Role == "4k" : i.Role != "4k").ToList();
             foreach (var instance in instances)
             {
                 if (SonarrSeries(instance, title)?.Seasons.FirstOrDefault(x => x.SeasonNumber == season) is not { TotalEpisodeCount: > 0 } stats) continue;
-                var have = open.Count(x => x.Season == season);
+                var have = open.CountInSeason(season);
                 return stats.TotalEpisodeCount == count && have == count;
             }
             return false;
@@ -1692,9 +1715,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     }
                     if (int.TryParse(range.AsSpan(0, dash), NumberStyles.Integer, CultureInfo.InvariantCulture, out var lo)
                         && int.TryParse(range.AsSpan(dash + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var hi)
-                        && hi >= lo && hi - lo < 5000)
+                        && hi >= lo && (long)hi - lo < 5000)
                     {
-                        for (var n = lo; n <= hi; n++) set.Add((season, n));
+                        foreach (var n in new EpisodeRange(lo, hi).Numbers(5000)) set.Add((season, n));
                     }
                 }
             }

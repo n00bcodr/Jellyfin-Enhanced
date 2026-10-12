@@ -72,10 +72,10 @@
    * Fetch download queue from backend
    */
   async function fetchDownloads() {
-    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const current = beginRead("downloads");
     try {
       const data = await JE.core.api.plugin("/arr/queue");
-      if (JE.session && !JE.session.isCurrent(epoch)) return null;
+      if (!current()) return null;
       state.downloads = data.items || [];
       // Surface per-instance queue errors so a 401 / timeout / SSRF-reject on one
       // instance doesn't silently produce a "looks empty" downloads page.
@@ -83,7 +83,7 @@
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch downloads:`, error);
-      if (!JE.session || JE.session.isCurrent(epoch)) state.downloads = [];
+      if (current()) state.downloads = [];
       return null;
     }
   }
@@ -170,6 +170,31 @@
   const captureEpoch = () => (JE.session ? JE.session.getEpoch() : 0);
   const epochCurrent = (e) => !JE.session || JE.session.isCurrent(e);
 
+  // Each list's reads are fenced: a read may publish its rows (or its failure) only while it is
+  // the newest read of that list, the user is the same and what the page asks the list for (page,
+  // filter, page size) hasn't changed since it started. Otherwise a 30-second poll still reading
+  // page 1 could overwrite the page 2 the user just opened, a filter's late answer could land on
+  // another filter, and a late failure could empty newer rows.
+  const readSeq = { downloads: 0, requests: 0, issues: 0, history: 0 };
+  const READ_INTENT = {
+    downloads: () => "",
+    requests: () => `${state.requestsPage}|${state.requestsFilter}|${state.requestsPageSize}`,
+    issues: () => `${state.issuesPage}|${state.issuesFilter}|${state.issuesPageSize}`,
+    history: () => `${state.historyPage}|${state.historyPageSize}`,
+  };
+
+  /**
+   * Starts a read of one list (after its page size is settled) and returns its fence.
+   * @param {"downloads"|"requests"|"issues"|"history"} list
+   * @returns {() => boolean} True while this read may still publish its outcome.
+   */
+  function beginRead(list) {
+    const seq = ++readSeq[list];
+    const epoch = captureEpoch();
+    const intent = READ_INTENT[list]();
+    return () => seq === readSeq[list] && epochCurrent(epoch) && READ_INTENT[list]() === intent;
+  }
+
   // The three paged lists share one grid layout, so each page holds whole rows.
   // History's endpoint caps a page at 50 cards.
   const PAGED_LISTS = {
@@ -214,13 +239,14 @@
    * Fetch requests from backend
    */
   async function fetchRequests() {
-    const epoch = captureEpoch();
+    let current = () => false;
     try {
       const pageSize = getPageSize("requests");
       if (pageSize !== state.requestsPageSize) {
         state.requestsPageSize = pageSize;
         state.requestsPage = 1;
       }
+      current = beginRead("requests");
       const skip = (state.requestsPage - 1) * pageSize;
       const filter = state.requestsFilter !== "all" ? state.requestsFilter : "";
 
@@ -231,7 +257,7 @@
       });
 
       const data = await JE.core.api.plugin(`/arr/requests?${query.toString()}`);
-      if (!epochCurrent(epoch)) return null;
+      if (!current()) return null;
 
       state.requests = data.requests || [];
       state.requestsTotalPages = data.totalPages || 1;
@@ -240,7 +266,7 @@
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch requests:`, error);
-      if (epochCurrent(epoch)) state.requests = [];
+      if (current()) state.requests = [];
       return null;
     }
   }
@@ -312,8 +338,8 @@
    * Fetch issues from Jellyseerr
    */
   async function fetchIssues() {
-    const epoch = captureEpoch();
     if (!JE.pluginConfig?.JellyseerrEnabled || !JE.pluginConfig?.DownloadsPageShowIssues) {
+      readSeq.issues++; // a read still running must not bring the section back
       state.issues = [];
       state.issuesTotalPages = 1;
       state.issuesError = false;
@@ -322,12 +348,14 @@
     // Stop trying if we already know the user lacks VIEW_ISSUES permission
     if (state.issuesPermissionDenied) return null;
 
+    let current = () => false;
     try {
       const pageSize = getPageSize("issues");
       if (pageSize !== state.issuesPageSize) {
         state.issuesPageSize = pageSize;
         state.issuesPage = 1;
       }
+      current = beginRead("issues");
       const skip = (state.issuesPage - 1) * pageSize;
       const filter = state.issuesFilter || "open";
       const url = ApiClient.getUrl("/JellyfinEnhanced/jellyseerr/issue", {
@@ -356,14 +384,15 @@
         );
       }
 
-      if (!epochCurrent(epoch)) return null;
+      if (!current()) return null;
       state.issues = issues;
       state.issuesTotalPages = data?.pageInfo?.pages || data?.totalPages || 1;
       state.issuesError = false;
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch issues:`, error);
-      if (!epochCurrent(epoch)) return null; // stale failure (incl. 403) belongs to the previous user
+      // A stale failure (incl. a 403 that belongs to the previous user, or an older page's) changes nothing.
+      if (!current()) return null;
       state.issues = [];
       state.issuesTotalPages = 1;
       state.issuesError = true;
@@ -383,18 +412,20 @@
    */
   async function fetchHistory() {
     if (!JE.pluginConfig?.DownloadsShowHistory) {
+      readSeq.history++;
       state.history = [];
       state.historyVisible = false;
       return null;
     }
 
-    const epoch = captureEpoch();
+    let current = () => false;
     try {
       const pageSize = getPageSize("history");
       if (pageSize !== state.historyPageSize) {
         state.historyPageSize = pageSize;
         state.historyPage = 1;
       }
+      current = beginRead("history");
       const skip = (state.historyPage - 1) * pageSize;
 
       const query = new URLSearchParams({
@@ -403,7 +434,7 @@
       });
 
       const data = await JE.core.api.plugin(`/arr/history?${query.toString()}`);
-      if (!epochCurrent(epoch)) return null;
+      if (!current()) return null;
 
       state.history = data.items || [];
       state.historyVisible = data.visible !== false;
@@ -413,7 +444,7 @@
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch history:`, error);
-      if (epochCurrent(epoch)) state.history = [];
+      if (current()) state.history = [];
       return null;
     }
   }
@@ -457,6 +488,7 @@
   P.state = state;
   P.clearAvatarObjectUrlCache = JE.helpers.clearAvatarObjectUrlCache;
   P.hydrateAvatarImages = JE.helpers.hydrateAvatarImages;
+  P.fetchDownloads = fetchDownloads;
   P.fetchRequests = fetchRequests;
   P.fetchIssues = fetchIssues;
   P.fetchHistory = fetchHistory;

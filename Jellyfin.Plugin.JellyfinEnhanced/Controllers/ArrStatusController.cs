@@ -84,11 +84,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Send(body);
         }
 
-        private StatusViewer? Viewer()
-        {
-            var id = UserHelper.GetCurrentUserId(User);
-            return id.HasValue ? _service.View.Viewer(id.Value) : null;
-        }
+        // A person only (never an API key or an unknown user).
+        private StatusViewer? Viewer() => ArrCaller.Human(User, _service.View);
 
         private IActionResult Send(StatusBody body)
         {

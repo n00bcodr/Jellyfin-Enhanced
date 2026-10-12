@@ -51,6 +51,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Downloads a backup zip of the current configuration, user settings and JE stores.</summary>
         [HttpPost("admin/backup/export")]
         [Authorize]
+        [BodyLimit]
         public IActionResult Export([FromBody] JeBackupExportRequest? body)
         {
             if (!IsAdmin()) return Forbid();
@@ -155,12 +156,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return false;
         }
 
-        private bool IsAdmin()
-        {
-            if (User.IsInRole("Administrator")) return true;
-            var id = UserHelper.GetCurrentUserId(User);
-            var user = id.HasValue ? _userManager.GetUserById(id.Value) : null;
-            return user != null && user.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator);
-        }
+        // A person with Jellyfin's administrator permission (never an API key or an unknown user).
+        private bool IsAdmin() => ArrCaller.IsAdmin(User, _userManager);
     }
 }

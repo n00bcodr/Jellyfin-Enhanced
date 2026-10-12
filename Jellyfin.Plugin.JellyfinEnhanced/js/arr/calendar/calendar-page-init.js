@@ -330,6 +330,7 @@
     showPage,
     hidePage,
     refresh: loadAllData,
+    retry: P.retry,
     setViewMode: P.setViewMode,
     shiftPeriod: P.shiftPeriod,
     goToday: P.goToday,

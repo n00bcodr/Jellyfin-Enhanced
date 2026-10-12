@@ -16,6 +16,7 @@ namespace JE.Tests;
 /// details (names, posters, TVDB ids and dates), failures keeping the last good list, the switch-off,
 /// and when a refresh is due.
 /// </summary>
+[Collection("Plugin singleton")]
 public class IntegrationSeerrReadModelTests
 {
     private static readonly DateTime T0 = new(2026, 10, 10, 12, 0, 0, DateTimeKind.Utc);

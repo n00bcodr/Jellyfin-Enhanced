@@ -43,6 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     /// </summary>
     [ApiController]
     [Route("JellyfinEnhanced")]
+    [PrivateResponse]
     public class ArrAdminController : ControllerBase
     {
         /// <summary>The phrase the rollback body must carry.</summary>
@@ -123,6 +124,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpPost("arr/admin/test")]
         [Authorize]
+        [BodyLimit]
         public async Task<IActionResult> TestValues([FromBody] ArrTestRequest request, CancellationToken cancellationToken)
         {
             if (!IsAdmin()) return Forbid();
@@ -178,6 +180,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpPost("admin/secrets/rollback")]
         [Authorize]
+        [BodyLimit]
         public IActionResult RollbackSecrets([FromBody] SecretsRollbackRequest request)
         {
             if (!IsAdmin()) return Forbid();
@@ -201,19 +204,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private static bool FeatureOn() => JellyfinEnhanced.Instance?.Configuration?.ArrIntegrationEnabled == true;
 
-        private bool IsAdmin()
-        {
-            if (User.IsInRole("Administrator")) return true;
-            try
-            {
-                var id = UserHelper.GetCurrentUserId(User);
-                var user = id.HasValue ? _userManager.GetUserById(id.Value) : null;
-                return user != null && user.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator);
-            }
-            catch
-            {
-                return false;
-            }
-        }
+        // A person with Jellyfin's administrator permission (never an API key or an unknown user).
+        private bool IsAdmin() => ArrCaller.IsAdmin(User, _userManager);
     }
 }

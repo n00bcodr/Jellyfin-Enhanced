@@ -63,6 +63,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// Shared by alias resolution, the request index and its change signature.
         /// </summary>
         internal static IReadOnlyList<string> FromRequest(SeerrRequestRecord request)
+            => FromIds(request.IsMovie, request.TmdbId, request.TvdbId, request.ImdbId);
+
+        /// <summary>Every usable key for these provider ids, in canonical-provider order.</summary>
+        internal static IReadOnlyList<string> FromIds(bool isMovie, int? tmdbId, int? tvdbId, string? imdbId)
         {
             var keys = new List<string>();
             void Add(TitleKey? key)
@@ -70,19 +74,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (key != null) keys.Add(key.ToString());
             }
             string? Num(int? n) => n is > 0 ? n.Value.ToString(CultureInfo.InvariantCulture) : null;
-            if (request.IsMovie)
+            if (isMovie)
             {
-                Add(TitleKey.ForMovie(Num(request.TmdbId), null));
-                Add(TitleKey.ForMovie(null, request.ImdbId));
+                Add(TitleKey.ForMovie(Num(tmdbId), null));
+                Add(TitleKey.ForMovie(null, imdbId));
             }
             else
             {
-                Add(TitleKey.ForSeries(Num(request.TvdbId), null, null));
-                Add(TitleKey.ForSeries(null, Num(request.TmdbId), null));
-                Add(TitleKey.ForSeries(null, null, request.ImdbId));
+                Add(TitleKey.ForSeries(Num(tvdbId), null, null));
+                Add(TitleKey.ForSeries(null, Num(tmdbId), null));
+                Add(TitleKey.ForSeries(null, null, imdbId));
             }
             return keys;
         }
+
+        /// <summary>The movie or series key carried by a calendar event, when it has a usable id.</summary>
+        internal static TitleKey? KeyOf(Model.Arr.ArrItem item)
+            => FromIds(item.Type == "Movie", item.TmdbId, item.TvdbId, item.ImdbId).Select(TitleKey.Parse).FirstOrDefault();
+
+        /// <summary>
+        /// Jellyfin's provider queries for a title and its aliases: one value of each provider per
+        /// query, at most four queries, shared by copy lookup and the feed's batched privacy checks.
+        /// </summary>
+        internal static IReadOnlyList<Dictionary<string, string>> ProviderQueries(TitleKey key, IEnumerable<TitleKey> aliases)
+        {
+            var queries = new List<Dictionary<string, string>>();
+            foreach (var id in new[] { key.Title }.Concat(aliases).Where(k => k.IsMovie == key.IsMovie)
+                .Select(k => (Provider: ProviderName(k), k.Id)).Distinct())
+            {
+                var into = queries.FirstOrDefault(q => !q.ContainsKey(id.Provider));
+                if (into == null) queries.Add(into = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+                into[id.Provider] = id.Id;
+            }
+            return queries.Take(4).ToList();
+        }
+
+        /// <summary>The provider name Jellyfin's library queries use for a title key.</summary>
+        internal static string ProviderName(TitleKey key)
+            => key.Provider switch { "tmdb" => "Tmdb", "tvdb" => "Tvdb", _ => "Imdb" };
 
         /// <summary>The key a title is looked at under: TMDB for a movie, TVDB for a series, when an alias names it; else the key.</summary>
         public TitleKey Canonical(TitleKey key)
@@ -106,8 +135,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 {
                     var movie = key.Provider == "tmdb" && key.NumericId is int t ? library.MovieByTmdb(t) : key.Provider == "imdb" ? library.MovieByImdb(key.Id) : null;
                     if (movie == null) continue;
-                    if (movie.TmdbId is > 0) result.Add(ArrTitleKey.Movie(movie.TmdbId.Value));
-                    if (!string.IsNullOrEmpty(movie.ImdbId)) result.Add("movie:imdb:" + movie.ImdbId);
+                    foreach (var raw in FromIds(true, movie.TmdbId, null, movie.ImdbId)) result.Add(raw);
                 }
                 else
                 {
@@ -119,9 +147,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         _ => null,
                     };
                     if (series == null) continue;
-                    if (series.TvdbId is > 0) result.Add(ArrTitleKey.Series(series.TvdbId.Value));
-                    if (series.TmdbId is > 0) result.Add("tv:tmdb:" + series.TmdbId.Value.ToString(CultureInfo.InvariantCulture));
-                    if (!string.IsNullOrEmpty(series.ImdbId)) result.Add("tv:imdb:" + series.ImdbId);
+                    foreach (var raw in FromIds(false, series.TmdbId, series.TvdbId, series.ImdbId)) result.Add(raw);
                 }
             }
             return result;

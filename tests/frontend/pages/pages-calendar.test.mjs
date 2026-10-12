@@ -221,3 +221,118 @@ test('a date-only release is on its own day west of UTC, with no clock time, and
   assert.deepEqual([local.getHours(), local.getMinutes()], [0, 0]);
   assert.equal(movie.releaseDateUtc, '2026-10-20T00:00:00.0000000Z');
 });
+
+// ---------------------------------------------------------------- a failed load says so (C53)
+function page(t, api) {
+  const h=setup(t,{t:key=>key,escapeHtml:value=>String(value??''),cdn:{selfhst:path=>`https://icons.test/${path}`},core:{api:{plugin:(...args)=>api(...args)}}});
+  h.window.ApiClient.getImageUrl=id=>`http://jellyfin.test/Items/${id}/Images/Primary`;
+  h.load('arr/calendar/calendar-page-render-events.js');
+  h.load('arr/calendar/calendar-page-render-views.js');
+  h.load('arr/calendar/calendar-page-actions.js');
+  const box=h.document.createElement('div');h.document.body.appendChild(box);
+  h.P.renderPage(box);
+  return {...h,box,alert:()=>box.querySelector('[role="alert"]')};
+}
+for (const view of ['month','week','agenda','day']) {
+  test(`calendar ${view} view shows the load error with a retry, never "No upcoming releases"`, async t=>{
+    let fail=true; const calls=[];
+    const h=page(t,async path=>{calls.push(path); if(fail) throw new Error('offline'); return {events:[],errors:[]};});
+    h.expectConsoleError('Calendar Page: Failed to fetch calendar events: Error: offline');
+    h.P.state.viewMode=view;
+    await h.P.loadAllData();
+    assert.ok(h.alert(),'role=alert box');
+    assert.match(h.alert().textContent,/calendar_load_error/);
+    assert.equal(h.alert().querySelector('button').textContent,'arr_hub_retry');
+    assert.match(h.alert().querySelector('button').getAttribute('onclick'),/calendarPage\.retry\(\)/);
+    assert.doesNotMatch(h.box.innerHTML,/calendar_no_releases/);
+    // Retry reads again; an empty answer is "No upcoming releases".
+    fail=false; await h.P.retry();
+    assert.equal(h.alert(),null); assert.match(h.box.innerHTML,/calendar_no_releases/);
+    assert.equal(calls.length,2);
+  });
+}
+test('retrying a failed calendar load keeps opaque row ids and restores date-only releases on their local day', async t => {
+  const previous = process.env.TZ;
+  process.env.TZ = 'America/Los_Angeles';
+  t.after(() => { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; });
+  let fail = true;
+  const h = page(t, async () => {
+    if (fail) throw new Error('offline');
+    return { events: [{ id: 'radarr|instance-a|42-DigitalRelease', title: 'Film', type: 'Movie',
+      releaseType: 'DigitalRelease', monitored: true, dateOnly: true,
+      releaseDate: '2026-10-20T00:00:00Z', releaseDateLocal: '2026-10-20' }], errors: [] };
+  });
+  h.P.state.currentDate = new h.window.Date(2026, 9, 20);
+  h.expectConsoleError('Calendar Page: Failed to fetch calendar events: Error: offline');
+  await h.P.loadAllData();
+  assert.ok(h.alert());
+  fail = false;
+  await h.P.retry();
+  assert.equal(h.alert(), null);
+  const event = h.P.state.events[0];
+  assert.equal(event.id, 'radarr|instance-a|42-DigitalRelease');
+  assert.equal(event.releaseDateUtc, '2026-10-20T00:00:00Z');
+  assert.equal(new h.window.Date(event.releaseDate).getHours(), 0);
+  assert.deepEqual(Object.keys(plain(h.P.groupEventsByDate(h.P.state.events))), ['2026-10-20']);
+});
+test('calendar retry ignores clicks while a load runs; per-instance errors and a failed next range', async t=>{
+  let answer=()=>Promise.resolve({events:[],errors:[{source:'Sonarr',instanceName:'TV',reason:'timeout'}]}); const calls=[];
+  const h=page(t,async path=>{calls.push(path); return answer();});
+  await h.P.loadAllData();
+  // An instance that couldn't be read is a toast, not the load error (the other instances' rows show).
+  assert.equal(h.alert(),null); assert.equal(h.notices.length,1); assert.match(h.box.innerHTML,/calendar_no_releases/);
+  const slow=deferred(); answer=()=>slow.promise;
+  const loading=h.P.retry(); assert.equal(h.P.state.isLoading,true);
+  assert.equal(h.P.retry(),undefined); assert.equal(calls.length,2);       // a second click starts nothing
+  slow.resolve({events:[{id:'sonarr|a|1',title:'Show',releaseDate:new Date().toISOString(),type:'Series',releaseType:'Episode',monitored:true}],errors:[]}); await loading;
+  assert.equal(h.P.state.events.length,1);
+  // The next range fails: its error replaces the rows (they belong to the other range).
+  h.expectConsoleError('Calendar Page: Failed to fetch calendar events: Error: offline');
+  answer=()=>Promise.reject(new Error('offline'));
+  h.P.shiftPeriod('next'); await new Promise(resolve=>setTimeout(resolve,0));
+  assert.ok(h.alert()); assert.equal(h.P.state.events.length,0);
+  // Another user starts without the previous user's error.
+  h.switchUser(); assert.equal(h.P.state.eventsError,false);
+});
+test('a late failure from before an account switch leaves the new account without the error', async t=>{
+  const late=deferred(); let calls=0;
+  const h=page(t,()=>++calls===1?late.promise:Promise.resolve({events:[],errors:[]}));
+  h.expectConsoleError('Calendar Page: Failed to fetch calendar events: Error: offline');
+  const run=h.P.fetchCalendarEvents(new Date(),new Date()); h.switchUser();
+  late.reject(new Error('offline')); await run;
+  assert.equal(h.P.state.eventsError,false);
+});
+
+// ---------------------------------------------------------------- row ids are opaque and per instance (C111)
+test('calendar rows with the same arr id on two instances keep their own flags and open their own title', async t=>{
+  const h=actions(t);
+  const a={id:'sonarr|inst-a|42',type:'Series',hasFile:true,itemId:'series-a',releaseType:'Episode',monitored:true};
+  const b={id:'sonarr|inst-b|42',type:'Series',hasFile:true,itemId:'series-b',releaseType:'Episode',monitored:true};
+  h.P.state.events=[a,b];
+  h.P.state.userDataMap.set(a.id,{isFavorite:true,isWatched:false});
+  h.P.state.userDataMap.set(b.id,{isFavorite:false,isWatched:true});
+  h.P.state.activeFilters.add('Watchlist');
+  assert.deepEqual(plain(h.P.filterEvents(h.P.state.events)).map(e=>e.itemId),['series-a']);
+  h.P.state.activeFilters.clear(); h.P.state.activeFilters.add('Watched');
+  assert.deepEqual(plain(h.P.filterEvents(h.P.state.events)).map(e=>e.itemId),['series-b']);
+  h.document.body.innerHTML=h.P.renderCardItems([a,b]);
+  h.document.body.addEventListener('click',h.P.handleEventClick);
+  h.document.querySelector(`.je-calendar-card[data-event-id="${b.id}"]`).click();
+  assert.equal(h.window.location.hash,'#/details?id=series-b');
+  h.document.querySelector(`.je-calendar-card[data-event-id="${a.id}"]`).click();
+  assert.equal(h.window.location.hash,'#/details?id=series-a');
+});
+
+test('the "Filter by Library Access" setting says how upcoming titles are placed and how to fix hidden ones', async () => {
+  const {readFileSync} = await import('node:fs');
+  const {resolve} = await import('node:path');
+  const {repositoryRoot} = await import('../helpers/discovery.mjs');
+  const page = readFileSync(resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html'), 'utf8');
+  const block = page.slice(page.indexOf('data-desc-for="calendarFilterByLibraryAccess"'));
+  const text = block.slice(0, block.indexOf('</div>')).replace(/\s+/g, ' ');
+  // Fail closed: titles whose library can't be told are hidden, and the fix is named.
+  assert.match(text, /linked to its Sonarr\/Radarr instance/);
+  assert.match(text, /path mappings/);
+  assert.match(text, /hidden from them: set a path mapping or link libraries on the instance/);
+  assert.doesNotMatch(text, /filtered based on their Sonarr\/Radarr root folder/);
+});

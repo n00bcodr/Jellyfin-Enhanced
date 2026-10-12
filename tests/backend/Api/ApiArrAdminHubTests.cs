@@ -420,10 +420,10 @@ public class ApiArrAdminHubTests
             ("confirm", () => c.Confirm(new QueueConfirmRequest { InstanceId = rig.Instance("RadarrMainZ").Id, DownloadId = "dl1" }, default)),
         })
         {
-            c.Response.Headers.Remove("Cache-Control");
-            Assert.Equal(200, (await Send(call)).Status);
-            Assert.True(c.Response.Headers.CacheControl.ToString() == "private, no-store", $"{name}: {c.Response.Headers.CacheControl}");
+            Assert.True((await Send(call)).Status == 200, name);
         }
+        // The header comes from the controller's result filter, on every answer (the real pipeline: ApiArrBodyLimitTests).
+        Assert.NotNull(typeof(ArrAdminHubController).GetCustomAttribute<Jellyfin.Plugin.JellyfinEnhanced.Helpers.PrivateResponseAttribute>());
     }
 
     [Fact]

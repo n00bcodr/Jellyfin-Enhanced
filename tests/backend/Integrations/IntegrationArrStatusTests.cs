@@ -1118,6 +1118,101 @@ public class IntegrationArrStatusTests
     }
 
     [Fact]
+    public void AHiddenLongCombinedFileHidesItsTailUnlessAnotherCopyIsVisible()
+    {
+        var (_, hidden) = StatusComposer.SplitHidden(new[]
+        {
+            new JfEpisode { Season = 1, Episode = 1, EpisodeEnd = 60, Hidden = true },
+            new JfEpisode { Season = 1, Episode = 55, EpisodeEnd = 56, ItemId = Guid.NewGuid() },
+        }, null);
+        Assert.Equal(58, hidden.Episodes.Count);
+        Assert.True(hidden.Hides(1, 54));
+        Assert.False(hidden.Hides(1, 55));
+        Assert.False(hidden.Hides(1, 56));
+        Assert.True(hidden.Hides(1, 60));
+        Assert.True(hidden.WithFile.Contains((1, 60)));
+        Assert.False(hidden.Hides(1, 61));
+        var copy = new ArrCopyFacts(Sonarr) { Series = new ArrSeriesEntry { Id = 1, TvdbId = 100, Title = "Show" } };
+        var states = StatusComposer.EpisodeStates(copy, 1,
+            new[] { new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, EpisodeEnd = 60 } }, Ctx());
+        Assert.Equal(60, states.Count);
+        Assert.Equal(StatusStage.Ready, Assert.Single(states, row => row.Episode == 55).State.Stage);
+        Assert.All(states, row => Assert.Equal(StatusStage.Ready, row.State.Stage));
+        // A reversed range is one episode, and the final int never wraps the iterator.
+        Assert.Equal(new[] { 5 }, new EpisodeRange(5, 4).Numbers(EpisodeRange.MaxSyntheticEpisodes));
+        Assert.Equal(new[] { int.MaxValue }, new EpisodeRange(int.MaxValue, int.MaxValue).Numbers(EpisodeRange.MaxSyntheticEpisodes));
+    }
+
+    [Theory]
+    [InlineData(int.MaxValue)]
+    [InlineData(100000)]
+    public void EnormousHiddenCombinedFilesHideRelevantTailNumbersWithoutExpansion(int end)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var jf = new[] { new JfEpisode { Season = 1, Episode = 1, EpisodeEnd = end, Hidden = true } };
+        var (visible, hidden) = StatusComposer.SplitHidden(jf, null);
+        Assert.True(hidden.Hides(1, 60));
+        Assert.True(hidden.Hides(1, 5000));
+        Assert.Equal((long)end, hidden.WithFile.CountInSeason(1));
+        var series = new ArrSeriesEntry { Id = 1, TvdbId = 279121, Title = "Show", Seasons = new[]
+        {
+            new ArrSeasonEntry { SeasonNumber = 1, EpisodeCount = 2, EpisodeFileCount = 2 },
+        } };
+        var facts = new TitleFacts(ShowKey);
+        var queue = new[] { Row(episodeId: 60, season: 1, episode: 60), Row(episodeId: 5000, season: 1, episode: 5000) };
+        facts.Copies.Add(new ArrCopyFacts(Sonarr)
+        {
+            Series = series, Queue = queue,
+            Episodes = new ArrEpisodesSnapshot(1, new[]
+            {
+                new ArrEpisodeEntry { Id = 60, SeasonNumber = 1, EpisodeNumber = 60, Monitored = true },
+                new ArrEpisodeEntry { Id = 5000, SeasonNumber = 1, EpisodeNumber = 5000, Monitored = true },
+            }),
+        });
+        Assert.Empty(StatusComposer.EpisodeStates(facts.Copies[0], 1, visible, Ctx(), hidden));
+        var item = new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Season = 1, Key = ShowKey.WithSeason(1) };
+        var status = StatusComposer.Season(facts, item, jf, Ctx(), detail: true);
+        Assert.Empty(status.Episodes!);
+        Assert.Equal(0, status.Summary!.Downloading);
+        // Also exercise the statistics-only path: no hidden file or queue count is exposed.
+        facts.Copies[0] = new ArrCopyFacts(Sonarr) { Series = series, Queue = queue };
+        status = StatusComposer.Season(facts, item, jf, Ctx(), detail: false);
+        Assert.Equal((0, 0, 0), (status.Summary!.Aired, status.Summary.Ready, status.Summary.AlmostReady));
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5));
+    }
+
+    [Theory]
+    [InlineData(int.MaxValue)]
+    [InlineData(100000)]
+    public void EnormousVisibleCombinedFilesBoundSyntheticRowsAndMatchActualTailNumbers(int end)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var jf = new[] { new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, EpisodeEnd = end } };
+        // A visible file covers the entire hidden range, including far beyond synthetic rows.
+        var (_, hidden) = StatusComposer.SplitHidden(jf.Concat(new[]
+        {
+            new JfEpisode { Season = 1, Episode = 1, EpisodeEnd = end, Hidden = true },
+        }).ToArray(), null);
+        Assert.False(hidden.Hides(1, 5000));
+        var copy = new ArrCopyFacts(Sonarr) { Series = new ArrSeriesEntry { Id = 1, TvdbId = 279121, Title = "Show" } };
+        Assert.Equal(EpisodeRange.MaxSyntheticEpisodes, StatusComposer.EpisodeStates(copy, 1, jf, Ctx()).Count);
+        var facts = new TitleFacts(ShowKey);
+        facts.Copies.Add(copy);
+        var card = StatusComposer.Season(facts,
+            new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Season = 1, Key = ShowKey.WithSeason(1) },
+            jf, Ctx(), detail: false);
+        Assert.Equal(end, card.Summary!.Ready); // statistics count intervals, never synthetic rows
+        copy = new ArrCopyFacts(Sonarr) { Series = copy.Series, Episodes = new ArrEpisodesSnapshot(1, new[]
+        {
+            new ArrEpisodeEntry { Id = 5000, SeasonNumber = 1, EpisodeNumber = 5000, Monitored = true },
+        }) };
+        var rows = StatusComposer.EpisodeStates(copy, 1, jf, Ctx());
+        Assert.Equal(StatusStage.Ready, Assert.Single(rows, r => r.Episode == 5000).State.Stage);
+        Assert.Equal(EpisodeRange.MaxSyntheticEpisodes + 1, rows.Count);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public void EpisodesAndSeasonsHiddenFromTheViewerAreFoundWithOrWithoutAFile()
     {
         Guid e1 = Guid.NewGuid(), e2 = Guid.NewGuid(), e3 = Guid.NewGuid(), e4 = Guid.NewGuid();

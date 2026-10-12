@@ -588,6 +588,19 @@
     }
 
     /**
+     * A path doctor root's problem cell: what is wrong with the folder, and whether users who
+     * aren't administrators lose its upcoming titles on the Calendar (no library can be told).
+     * @param {{problem?: string, hiddenFromMembers?: boolean}} r The root.
+     * @returns {string}
+     */
+    function rootProblem(r) {
+        const parts = [];
+        if (r.problem) parts.push(tr(`arr_ops_doctor_root_${r.problem}`));
+        if (r.hiddenFromMembers) parts.push(tr('arr_ops_doctor_root_hidden'));
+        return parts.length ? parts.join(' · ') : tr('arr_ops_doctor_fine');
+    }
+
+    /**
      * System tab: per instance, then Seerr, then the Jellyfin bridge and path doctor.
      * @param {HTMLElement} panel Target.
      * @param {Object} data System.
@@ -711,7 +724,7 @@
                 `${d.instance} · ${tr(`arr_ops_doctor_${d.verdict}`)}`));
             if ((d.roots || []).length) {
                 part.appendChild(table(['arr_ops_col_arr_path', 'arr_ops_col_jellyfin_path', 'arr_ops_col_library', 'arr_ops_col_problem'],
-                    d.roots.map(r => [r.arrPath, r.jellyfinPath + (r.mapped ? '' : ` (${tr('arr_ops_doctor_same_path')})`), r.library || '—', r.problem ? tr(`arr_ops_doctor_root_${r.problem}`) : tr('arr_ops_doctor_fine')]), [0, 1]));
+                    d.roots.map(r => [r.arrPath, r.jellyfinPath + (r.mapped ? '' : ` (${tr('arr_ops_doctor_same_path')})`), r.library || '—', rootProblem(r)]), [0, 1]));
             }
             if (!(d.mappings || []).length) part.appendChild(el('div', 'je-ops-item-sub', tr('arr_ops_doctor_no_mappings')));
             for (const s of d.samples || []) {

@@ -466,6 +466,23 @@ View upcoming releases from Sonarr and Radarr in a calendar interface.
 - Helps track upcoming releases you've requested
 - Toggle on/off as needed
 
+**Filter by Library Access:**
+
+- Users who aren't administrators see an episode or movie Jellyfin already has only if they can open it
+  (an episode Jellyfin hides from them, by its own rating or tags, stays hidden even when they can open its series).
+  A title in two libraries (say "TV" and "TV 4K") shows when they can open either copy
+- An upcoming title that isn't in Jellyfin yet shows only to users who can open the library it will land in:
+  the libraries its Sonarr/Radarr instance is linked to, or else the library whose folder holds the title's
+  folder (through the instance's path mappings; a mapping for a folder inside a root folder counts too)
+- When that can't be told (no Jellyfin library holds the folder; two instances have the same root folder
+  and neither maps it; or, with no mapping for the title, an instance's root folders can't be read yet)
+  the title is hidden from everyone but administrators; the path doctor on the
+  Requests page's System tab points out such roots while the Calendar and this setting are on. Set a path mapping or link the instance's libraries to fix it
+  (the setting's own description says so too, for installs without the System tab)
+- The calendar never waits for root folders: when a title needs them and they haven't been read yet (or were
+  read over an hour ago), it answers with what it knows and reads them in the background for the next load
+- If the calendar can't be loaded, it says so with a **Try again** button instead of showing "No upcoming releases"
+
 ### Usage
 
 **Access Calendar:**
@@ -530,3 +547,13 @@ Direct URL: `/web/index.html#!/jellyfinenhanced/downloads`
 
 !!! note
     This page shows only *arr download queue entries. Seerr media requests and issues are shown on a separate Requests page configured in the **Seerr Settings** tab.
+
+**Who sees which downloads:** administrators see the whole queue and history. Everyone else sees a
+download only for a title they could open in Jellyfin (their library access and parental limits apply,
+down to single episodes of a season pack). A title that isn't in Jellyfin yet shows when they can open a
+library its Sonarr/Radarr instance is linked to (an instance without linked libraries counts as open), or,
+for users with parental limits, only when they asked for it in Seerr (this also works with "Requests &
+downloads (new)" off: their Seerr requests are then read only when such a title is in the queue or
+history, at most about twice a minute, and a slow Seerr never holds up the page; saving the Seerr settings
+drops what was read). With **Filter Downloads by User Requests** on, they additionally see only what they
+requested in Seerr.

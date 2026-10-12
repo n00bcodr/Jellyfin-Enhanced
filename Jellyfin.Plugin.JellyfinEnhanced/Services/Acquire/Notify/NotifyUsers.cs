@@ -48,15 +48,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             => _users.GetAllUsers().Where(u => u.HasPermission(PermissionKind.IsAdministrator) && !u.HasPermission(PermissionKind.IsDisabled)).Select(u => u.Id).ToList();
 
         /// <inheritdoc />
-        public bool Exists(Guid userId) => _users.GetUserById(userId) != null;
+        public bool Exists(Guid userId) => Helpers.ArrCaller.Find(userId, _users) != null;
 
         /// <inheritdoc />
-        public bool IsActive(Guid userId) => _users.GetUserById(userId) is { } user && !user.HasPermission(PermissionKind.IsDisabled);
+        public bool IsActive(Guid userId) => Helpers.ArrCaller.Find(userId, _users) is { } user && !user.HasPermission(PermissionKind.IsDisabled);
 
         /// <inheritdoc />
-        public string? Name(Guid userId) => _users.GetUserById(userId)?.Username;
+        public string? Name(Guid userId) => Helpers.ArrCaller.Find(userId, _users)?.Username;
 
         /// <inheritdoc />
         public string? ItemName(Guid itemId) => _library.GetItemById(itemId)?.Name;
+
     }
 }

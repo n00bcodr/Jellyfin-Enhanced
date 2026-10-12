@@ -163,8 +163,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The library that contains it.</summary>
         public string? Library { get; init; }
 
-        /// <summary>null (fine), not_visible (Jellyfin can't see the folder) or not_in_library (no library contains it).</summary>
+        /// <summary>
+        /// null (fine), not_visible (Jellyfin can't see the folder), not_in_library (no library contains
+        /// it), or, only with the Calendar page and its "filter by library access" on, shared_root
+        /// (another instance has the same root and neither maps it) or roots_unknown (no mapping
+        /// applies and another instance's root folders can't be read yet).
+        /// </summary>
         public string? Problem { get; init; }
+
+        /// <summary>
+        /// True only with the Calendar page and its "filter by library access" on: users who aren't
+        /// administrators don't see this root's upcoming titles because no library can be told for
+        /// it, and the instance has no linked libraries.
+        /// </summary>
+        public bool HiddenFromMembers { get; init; }
     }
 
     /// <summary>A title both sides have, compared.</summary>
@@ -325,7 +337,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
             _now = now ?? (() => DateTimeOffset.UtcNow);
             _delay = delay ?? ((t, ct) => Task.Delay(t, ct));
+            _instanceLibraries = new ArrInstanceLibraries(store, library, now);
         }
+
+        // The same rule the Calendar uses for titles not in Jellyfin yet (which roots members can't see).
+        private readonly ArrInstanceLibraries _instanceLibraries;
 
         /// <summary>How long imports are gathered before their folders are refreshed (one refresh per folder for a burst).</summary>
         internal TimeSpan Debounce { get; set; } = TimeSpan.FromSeconds(1);
@@ -1262,6 +1278,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public IReadOnlyList<PathDoctorInstance> PathDoctor()
         {
+            var cfg = _config();
+            var calendarFiltered = cfg is { CalendarPageEnabled: true, CalendarFilterByLibraryAccess: true };
             var libraries = _library.Libraries();
             var result = new List<PathDoctorInstance>();
             foreach (var instance in _store.Registry.All().Where(c => c.Usable))
@@ -1279,10 +1297,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     var (jf, mapping) = BridgePaths.Map(root.Path, mappings);
                     var exists = _library.DirectoryExists(jf);
                     var lib = BridgePaths.LibraryOf(jf, libraries).Library;
+                    var target = calendarFiltered ? _instanceLibraries.Resolve(instance, root.Path) : null;
                     roots.Add(new PathDoctorRoot
                     {
                         ArrPath = root.Path, JellyfinPath = jf, Mapped = mapping != null, Exists = exists, Library = lib?.Name,
-                        Problem = !exists ? "not_visible" : lib == null ? "not_in_library" : null,
+                        Problem = !exists ? "not_visible" : target?.Problem is ArrLibraryProblem.SharedRoot or ArrLibraryProblem.RootsUnknown ? target.Problem : lib == null ? "not_in_library" : null,
+                        HiddenFromMembers = target != null && !target.Resolved,
                     });
                 }
                 var samples = new List<PathDoctorSample>();
@@ -1307,7 +1327,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var learned = wrong.Count > 0 ? BridgePaths.LearnMapping(wrong.Select(s => (s.ArrPath, s.Actual))) : null;
                 // Root folders Jellyfin sees inside a library are a match too (a new instance has no
                 // title on both sides yet); "unknown" only when there is nothing at all to compare.
-                var verdict = wrong.Count > 0 || roots.Any(r => r.Problem != null) ? "problem" : samples.Count > 0 || roots.Count > 0 ? "ok" : "unknown";
+                var verdict = wrong.Count > 0 || roots.Any(r => r.Problem != null || r.HiddenFromMembers) ? "problem" : samples.Count > 0 || roots.Count > 0 ? "ok" : "unknown";
                 result.Add(new PathDoctorInstance
                 {
                     InstanceId = instance.Id,

@@ -55,6 +55,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private readonly ConcurrentDictionary<string, ArrRouteStats> _routes = new(StringComparer.Ordinal);
         private readonly CancellationTokenSource _shutdown = new();
         private readonly ArrCallCounter _backgroundCalls = new();
+        private readonly CancellationToken _shutdownToken;
+        private readonly object _backgroundGate = new();
+        private readonly Dictionary<Task, Task> _backgroundTasks = new();
+        private Task? _stopped;
+        private int _stopWaitExpired;
 
         /// <summary>The store for a Jellyfin installation (DI).</summary>
         public ArrStateStore(ArrClientFactory factory, IApplicationPaths paths, Logger logger)
@@ -66,6 +71,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         internal ArrStateStore(ArrClientFactory factory, string? cacheDirectory, Logger? logger, Func<DateTimeOffset>? now, Func<PluginConfiguration?>? config)
         {
             _factory = factory;
+            _shutdownToken = _shutdown.Token;
             _cacheDirectory = cacheDirectory;
             _logger = logger;
             _now = now ?? (() => DateTimeOffset.UtcNow);
@@ -74,6 +80,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>How long a request waits for a calendar range outside the window (the read keeps running after that). Tests shorten it.</summary>
         internal TimeSpan RangeWait { get; set; } = TimeSpan.FromSeconds(15);
+
+        /// <summary>Maximum synchronous disposal wait; tests shorten it when holding a writer.</summary>
+        internal TimeSpan DisposeWait { get; set; } = TimeSpan.FromSeconds(5);
 
         /// <summary>The instance registry the store follows.</summary>
         public ArrInstanceRegistry Registry => _factory.Registry;
@@ -109,6 +118,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>System status, health, disk space, root folders and quality profiles.</summary>
         public Task<ArrSnapshotRead<ArrSystemSnapshot>> GetSystemAsync(ArrConnection instance, CancellationToken cancellationToken)
             => ReadAsync(instance, s => s.System, false, cancellationToken);
+
+        /// <summary>
+        /// Starts a read of an instance's system facts when none is in memory or the one held is
+        /// older than its longest serve time (an hour), and returns at once: the caller answers from
+        /// what is in memory now (<see cref="PeekSystem"/>). The read doesn't count as anyone watching
+        /// (the reconciler doesn't keep the snapshot fresh for it); nothing new starts while a read
+        /// is running or the instance is backing off after failures. Returns the running read, or
+        /// null when none is needed or the instance can't be used.
+        /// </summary>
+        public Task? WarmSystem(ArrConnection instance)
+        {
+            var state = StateFor(instance, out _);
+            if (state == null) return null;
+            var now = _now();
+            var peek = state.System.Peek();
+            if (peek.Value != null && now - peek.LoadedAt <= PolicyFor(ArrSnapshotKind.System, state, now).MaxServe) return null;
+            if (state.System.InBackoff(now)) return state.System.Inflight;
+            return state.System.StartRefresh(_backgroundCalls, _now, _shutdownToken);
+        }
 
         /// <summary>
         /// The library, queue, history and system snapshots for a background reader that runs on its
@@ -210,7 +238,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             var state = StateFor(instance, out var notUsable);
             if (state == null) return ArrResult<ArrLibrarySnapshot>.Failure(notUsable!);
             state.Library.Touch(_now());
-            await state.Library.StartRefresh(_backgroundCalls, _now, _shutdown.Token).WaitAsync(cancellationToken).ConfigureAwait(false);
+            await state.Library.StartRefresh(_backgroundCalls, _now, _shutdownToken).WaitAsync(cancellationToken).ConfigureAwait(false);
             var peek = state.Library.Peek();
             if (peek.Error != null || peek.Value == null)
                 return ArrResult<ArrLibrarySnapshot>.Failure(peek.Error ?? new ArrError(ArrErrorKind.Internal, "The library could not be read."));
@@ -289,7 +317,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                         if (now - slot.LastInterest > policy.Interest) continue;
                         if (slot.HasValue && now - slot.LoadedAt < policy.Interval) continue;
                     }
-                    started.Add(slot.StartRefresh(_backgroundCalls, _now, _shutdown.Token));
+                    started.Add(slot.StartRefresh(_backgroundCalls, _now, _shutdownToken));
                 }
             }
             return started;
@@ -356,18 +384,129 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             };
         }
 
-        /// <summary>Stops background refreshes.</summary>
-        public void Dispose()
+        /// <summary>
+        /// Cancels background reads and waits for their complete tasks, including cache writes and
+        /// health/change observers. Refuses new work and also drains replaced instance states.
+        /// </summary>
+        public Task StopAsync()
+        {
+            TaskCompletionSource completion;
+            Task[] pending;
+            lock (_backgroundGate)
+            {
+                if (_stopped != null) return _stopped;
+                completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _stopped = completion.Task;
+                pending = _backgroundTasks.Values.ToArray();
+            }
+            // Cancellation callbacks can block too: the shutdown caller only waits on this task.
+            using (ExecutionContext.SuppressFlow()) _ = Task.Run(() => DrainAsync(pending, completion));
+            return completion.Task;
+        }
+
+        /// <summary>Starts the same drain, waiting only until the host's stop deadline fires.</summary>
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
             try
             {
-                _shutdown.Cancel();
+                await StopAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (ObjectDisposedException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // already disposed
+                Interlocked.Exchange(ref _stopWaitExpired, 1);
+                LogShutdown("the host stop deadline elapsed; background draining continues.");
             }
-            _shutdown.Dispose();
+        }
+
+        /// <summary>Starts shutdown and waits at most five seconds, or returns after an expired host deadline.</summary>
+        public void Dispose()
+        {
+            var drain = StopAsync();
+            if (Volatile.Read(ref _stopWaitExpired) != 0) return;
+            try
+            {
+                drain.WaitAsync(DisposeWait).GetAwaiter().GetResult();
+            }
+            catch (TimeoutException)
+            {
+                Interlocked.Exchange(ref _stopWaitExpired, 1);
+                LogShutdown("the disposal wait elapsed; background draining continues.");
+            }
+        }
+
+        // The slot clears Inflight before its observers run, and a replaced state leaves _states.
+        // Own the scheduled task instead of trying to discover work from the current slots at stop.
+        private bool TrackBackground(Task task)
+        {
+            lock (_backgroundGate)
+            {
+                if (_stopped != null) return false;
+                // The observation/logging continuation is part of shutdown ownership too. Removing
+                // only the raw task would permit its diagnostic to write after the drain returned.
+                var observed = task.ContinueWith(done =>
+                {
+                    try
+                    {
+                        if (done.IsFaulted) LogShutdown($"background work failed ({done.Exception!.GetBaseException().GetType().Name}).");
+                        else if (done.IsCanceled) LogShutdown("background work was cancelled.");
+                    }
+                    finally
+                    {
+                        lock (_backgroundGate) _backgroundTasks.Remove(done);
+                    }
+                }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                _backgroundTasks.Add(task, observed);
+            }
+            return true;
+        }
+
+        // Schedule detached helpers with the same ownership as snapshot refreshes.
+        /// <summary>Schedules an owned helper; tests also exercise unexpected fault/cancellation outcomes.</summary>
+        internal Task<T> StartBackground<T>(Func<Task<T>> action, T stoppedResult)
+        {
+            Task<Task<T>> outer;
+            using (ExecutionContext.SuppressFlow()) outer = new Task<Task<T>>(action);
+            var task = outer.Unwrap();
+            if (!TrackBackground(task)) return Task.FromResult(stoppedResult);
+            outer.Start(TaskScheduler.Default);
+            return task;
+        }
+
+        private async Task DrainAsync(Task[] pending, TaskCompletionSource completion)
+        {
+            try
+            {
+                try
+                {
+                    await _shutdown.CancelAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // A faulty cancellation callback cannot skip draining the admitted writes.
+                    LogShutdown($"a shutdown cancellation callback failed ({ex.GetType().Name}).");
+                }
+                try
+                {
+                    await Task.WhenAll(pending).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    LogShutdown($"background draining failed ({ex.GetType().Name}).");
+                }
+            }
+            finally
+            {
+                // Only this one drain owns cancellation-source disposal; deadline/dispose callers
+                // leave it alive while tasks or cancellation callbacks still hold its token.
+                _shutdown.Dispose();
+                completion.TrySetResult();
+            }
+        }
+
+        private void LogShutdown(string message)
+        {
+            try { _logger?.Debug("Arr state: " + message); }
+            catch (Exception) { /* A diagnostic must never fail shutdown. */ }
         }
 
         internal void Record(string route, long calls, bool waited)
@@ -400,7 +539,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             }
 
             // Past its freshness target: refresh in the background (unless backing off after failures).
-            var refresh = slot.InBackoff(now) ? slot.Inflight : slot.StartRefresh(_backgroundCalls, _now, _shutdown.Token);
+            var refresh = slot.InBackoff(now) ? slot.Inflight : slot.StartRefresh(_backgroundCalls, _now, _shutdownToken);
             if (peek.Value != null && now - peek.LoadedAt <= policy.MaxServe)
             {
                 return new ArrSnapshotRead<T> { Value = peek.Value, LoadedAt = peek.LoadedAt, Error = peek.Error, Stale = true };
@@ -434,7 +573,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             where T : class
         {
             ArrRequestScope.MarkWaited();
-            await WaitAsync(slot.StartRefresh(_backgroundCalls, _now, _shutdown.Token), wait, cancellationToken).ConfigureAwait(false);
+            await WaitAsync(slot.StartRefresh(_backgroundCalls, _now, _shutdownToken), wait, cancellationToken).ConfigureAwait(false);
         }
 
         private static async Task WaitAsync(Task refresh, TimeSpan wait, CancellationToken cancellationToken)
@@ -451,6 +590,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         private InstanceState? StateFor(ArrConnection instance, out ArrError? notUsable)
         {
+            lock (_backgroundGate)
+            {
+                if (_stopped != null)
+                {
+                    notUsable = new ArrError(ArrErrorKind.Internal, "Jellyfin is shutting down.");
+                    return null;
+                }
+            }
             var client = _factory.For(instance.Id);
             if (!client.Ok)
             {
@@ -741,6 +888,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             }
         }
 
+        /// <summary>Test seam: called before an admitted library cache write creates its files.</summary>
+        internal Action? LibraryCacheWritingHook { get; set; }
+
         private void SaveLibraryCache(InstanceState state, ArrLibrarySnapshot value)
         {
             var file = CacheFile(state.Client.Connection);
@@ -751,6 +901,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             var temp = file + ".tmp." + Guid.NewGuid().ToString("N");
             try
             {
+                LibraryCacheWritingHook?.Invoke();
                 Directory.CreateDirectory(_cacheDirectory!);
                 var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
                 if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
@@ -808,17 +959,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             public InstanceState(ArrClient client, ArrStateStore store)
             {
                 Client = client;
-                Library = new ArrSnapshotSlot<ArrLibrarySnapshot>(ArrSnapshotKind.Library, (_, ct) => ArrStateLoaders.LoadLibraryAsync(client, ct));
-                Queue = new ArrSnapshotSlot<ArrQueueSnapshot>(ArrSnapshotKind.Queue, (_, ct) => ArrStateLoaders.LoadQueueAsync(client, ct));
-                History = new ArrSnapshotSlot<ArrHistorySnapshot>(ArrSnapshotKind.History, (prev, ct) => ArrStateLoaders.LoadHistoryAsync(client, prev, store._now(), ct));
+                _trackBackground = store.TrackBackground;
+                Library = new ArrSnapshotSlot<ArrLibrarySnapshot>(ArrSnapshotKind.Library, (_, ct) => ArrStateLoaders.LoadLibraryAsync(client, ct), store.TrackBackground);
+                Queue = new ArrSnapshotSlot<ArrQueueSnapshot>(ArrSnapshotKind.Queue, (_, ct) => ArrStateLoaders.LoadQueueAsync(client, ct), store.TrackBackground);
+                History = new ArrSnapshotSlot<ArrHistorySnapshot>(ArrSnapshotKind.History, (prev, ct) => ArrStateLoaders.LoadHistoryAsync(client, prev, store._now(), ct), store.TrackBackground);
                 Calendar = new ArrSnapshotSlot<ArrCalendarSnapshot>(ArrSnapshotKind.Calendar, (_, ct) =>
                 {
                     var (start, end) = ArrStateLoaders.CalendarWindow(store._now());
                     return ArrStateLoaders.LoadCalendarAsync(client, start, end, ct);
-                });
-                System = new ArrSnapshotSlot<ArrSystemSnapshot>(ArrSnapshotKind.System, (_, ct) => ArrStateLoaders.LoadSystemAsync(client, store._config() is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase2Enabled: true }, ct));
+                }, store.TrackBackground);
+                System = new ArrSnapshotSlot<ArrSystemSnapshot>(ArrSnapshotKind.System, (_, ct) => ArrStateLoaders.LoadSystemAsync(client, store._config() is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase2Enabled: true }, ct), store.TrackBackground);
                 Slots = new IArrSnapshotSlot[] { Library, Queue, History, Calendar, System };
-                Ranges = new CalendarRangeCache(client, store._backgroundCalls, store._now, store._shutdown.Token);
+                Ranges = new CalendarRangeCache(client, store._backgroundCalls, store._now, store._shutdownToken, store.TrackBackground);
             }
 
             public ArrClient Client { get; }
@@ -857,6 +1009,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             /// <summary>The queue or history was expired at the reconciler's last pass.</summary>
             public bool PipelineExpired { get; set; }
 
+            private readonly Func<Task, bool> _trackBackground;
             private readonly object _episodesLock = new();
             private readonly Dictionary<int, ArrSnapshotSlot<ArrEpisodesSnapshot>> _episodes = new();
 
@@ -890,7 +1043,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                         if (!evicted) return null;
                     }
                     var client = Client;
-                    slot = new ArrSnapshotSlot<ArrEpisodesSnapshot>(ArrSnapshotKind.Episodes, (_, ct) => ArrStateLoaders.LoadEpisodesAsync(client, seriesId, ct));
+                    slot = new ArrSnapshotSlot<ArrEpisodesSnapshot>(ArrSnapshotKind.Episodes, (_, ct) => ArrStateLoaders.LoadEpisodesAsync(client, seriesId, ct), _trackBackground);
                     slot.Replaced += (before, after) => EpisodesReplaced?.Invoke(before, after);
                     slot.Touch(now);
                     _episodes[seriesId] = slot;
@@ -944,15 +1097,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             private readonly ArrCallCounter _background;
             private readonly Func<DateTimeOffset> _now;
             private readonly CancellationToken _shutdown;
+            private readonly Func<Task, bool> _trackBackground;
             private readonly object _lock = new();
             private readonly Dictionary<(DateTime, DateTime), Entry> _entries = new();
 
-            public CalendarRangeCache(ArrClient client, ArrCallCounter background, Func<DateTimeOffset> now, CancellationToken shutdown)
+            public CalendarRangeCache(ArrClient client, ArrCallCounter background, Func<DateTimeOffset> now, CancellationToken shutdown, Func<Task, bool> trackBackground)
             {
                 _client = client;
                 _background = background;
                 _now = now;
                 _shutdown = shutdown;
+                _trackBackground = trackBackground;
             }
 
             public int Count
@@ -1037,24 +1192,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             {
                 var cancel = CancellationTokenSource.CreateLinkedTokenSource(_shutdown);
                 var entry = new Entry(cancel, now);
+                Task<Task<ArrResult<ArrCalendarSnapshot>>> outer;
                 using (ExecutionContext.SuppressFlow())
                 {
-                    // Not part of any request's flow: background calls, never the request's counter.
-                    entry.Task = Task.Run(() => LoadAsync(from, to, cancel.Token));
-                }
-                entry.Task.ContinueWith(
-                    _ =>
+                    // Include cleanup in the owned task, not a detached continuation after it.
+                    outer = new Task<Task<ArrResult<ArrCalendarSnapshot>>>(async () =>
                     {
-                        lock (_lock)
+                        try
                         {
-                            entry.FinishedAt = _now();
-                            entry.Disposed = true;
-                            cancel.Dispose();
+                            return await LoadAsync(from, to, cancel.Token).ConfigureAwait(false);
                         }
-                    },
-                    CancellationToken.None,
-                    TaskContinuationOptions.None,
-                    TaskScheduler.Default);
+                        finally
+                        {
+                            lock (_lock)
+                            {
+                                entry.FinishedAt = _now();
+                                entry.Disposed = true;
+                                cancel.Dispose();
+                            }
+                        }
+                    });
+                }
+                entry.Task = outer.Unwrap();
+                if (_trackBackground(entry.Task)) outer.Start(TaskScheduler.Default);
+                else
+                {
+                    cancel.Dispose();
+                    entry.Disposed = true;
+                    entry.FinishedAt = now;
+                    entry.Task = Task.FromResult(ArrResult<ArrCalendarSnapshot>.Failure(ArrErrorKind.Timeout, "The calendar read was stopped."));
+                }
                 return entry;
             }
 

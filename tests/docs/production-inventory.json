@@ -135,11 +135,19 @@
       "category": "Extensions"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/ArrCaller.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/ArrUrlGuard.cs",
       "category": "Helpers"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/AudioLanguageTagHelper.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/BodyLimitAttribute.cs",
       "category": "Helpers"
     },
     {
@@ -183,11 +191,19 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/PrivateResponseAttribute.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/ProviderHelper.cs",
       "category": "Helpers"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/ReviewVisibility.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/SeerrAskedProofCache.cs",
       "category": "Helpers"
     },
     {
@@ -347,6 +363,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrInstanceLibraries.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrJellyfinView.cs",
       "category": "Services"
     },
@@ -368,6 +388,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/BridgePaths.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/EpisodeRange.cs",
       "category": "Services"
     },
     {
@@ -1820,7 +1844,8 @@
       "method": "TestValues",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -1838,7 +1863,8 @@
       "method": "RollbackSecrets",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -1874,7 +1900,8 @@
       "method": "Confirm",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -1883,7 +1910,8 @@
       "method": "QueueActionRun",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -1892,7 +1920,8 @@
       "method": "Search",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -1901,7 +1930,8 @@
       "method": "Scan",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminHubController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -1921,7 +1951,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
       "following_attributes": [
         "Authorize",
-        "RequestSizeLimit(256 * 1024)"
+        "BodyLimit(MaxChangesBodyBytes)"
       ]
     },
     {
@@ -1930,7 +1960,8 @@
       "method": "GetLiveStatus",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "PrivateResponse"
       ]
     },
     {
@@ -1939,7 +1970,8 @@
       "method": "GetWebhook",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "PrivateResponse"
       ]
     },
     {
@@ -1948,7 +1980,9 @@
       "method": "ProvisionWebhook",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "PrivateResponse",
+        "BodyLimit"
       ]
     },
     {
@@ -1957,7 +1991,9 @@
       "method": "RemoveWebhook",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "PrivateResponse",
+        "BodyLimit"
       ]
     },
     {
@@ -1966,7 +2002,9 @@
       "method": "ManualWebhook",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "PrivateResponse",
+        "BodyLimit"
       ]
     },
     {
@@ -2038,7 +2076,8 @@
       "method": "Export",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JeBackupController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -3568,7 +3607,8 @@
       "method": "GetCalendarUserDataForEvents",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit(1024 * 1024)"
       ]
     },
     {
@@ -3644,7 +3684,8 @@
       "method": "MarkRead",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit(MaxReadBodyBytes)"
       ]
     },
     {
@@ -3662,7 +3703,8 @@
       "method": "PutPrefs",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -3671,7 +3713,8 @@
       "method": "SetTopic",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -3680,7 +3723,8 @@
       "method": "StartEmail",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -3689,7 +3733,8 @@
       "method": "VerifyEmail",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -3725,7 +3770,8 @@
       "method": "PutFollow",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -3734,7 +3780,8 @@
       "method": "Remind",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -3743,7 +3790,8 @@
       "method": "GetAdmin",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "PrivateResponse"
       ]
     },
     {
@@ -3752,7 +3800,9 @@
       "method": "AssignTopic",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "PrivateResponse",
+        "BodyLimit"
       ]
     },
     {
@@ -3761,7 +3811,9 @@
       "method": "AdminTest",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "PrivateResponse",
+        "BodyLimit"
       ]
     },
     {
@@ -3779,7 +3831,8 @@
       "method": "GetManage",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsHubController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "PrivateResponse"
       ]
     },
     {
@@ -3788,7 +3841,9 @@
       "method": "Search",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsHubController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "PrivateResponse",
+        "BodyLimit"
       ]
     }
   ],
@@ -8755,7 +8810,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 445,
+    "files": 451,
     "routes": 217,
     "configuration_properties": 558,
     "storage_references": 80,

@@ -118,7 +118,7 @@ const system = () => ({
     recent: [{ at: iso(-2), jellyfinPath: '/media/tv/Firefly/Season 01/E4.mkv', folder: '/media/tv/Firefly/Season 01', outcome: 'refresh', found: true, ms: 140 }, { at: iso(-3), jellyfinPath: '/media/tv/New/S01/E1.mkv', folder: '/media/tv', outcome: 'library_root', found: false, ms: 0 }],
     notInJellyfin: [{ instanceId: 's1', instance: 'Sonarr', title: 'Firefly', season: 1, episode: 5, arrPath: '/data/tv/Firefly/Season 01/E5.mkv', jellyfinPath: '/media/tv/Firefly/Season 01/E5.mkv', importedAt: iso(-15), problem: 'not_scanned', library: 'Shows' }],
     missingTitles: { titles: [{ instanceId: 'r1', instance: 'Radarr', title: 'Dune', year: 2021, jellyfinPath: '/data/movies/Dune', problem: 'outside_library' }], counts: { r1: 1 } },
-    pathDoctor: [{ instanceId: 'r1', instance: 'Radarr', verdict: 'problem', mappings: [], roots: [{ arrPath: '/data/movies', jellyfinPath: '/data/movies', mapped: false, exists: false, problem: 'not_visible' }], samples: [{ title: 'Sintel', arrPath: '/data/movies/Sintel', expected: '/data/movies/Sintel', actual: '/rigmedia/movies/Sintel', match: false }], suggestion: { arrPath: '/data', jellyfinPath: '/rigmedia' } }]
+    pathDoctor: [{ instanceId: 'r1', instance: 'Radarr', verdict: 'problem', mappings: [], roots: [{ arrPath: '/data/movies', jellyfinPath: '/data/movies', mapped: false, exists: false, problem: 'not_visible', hiddenFromMembers: true }, { arrPath: '/movies', jellyfinPath: '/movies', mapped: false, exists: true, library: 'Movies', problem: 'shared_root', hiddenFromMembers: true }, { arrPath: '/data/kids', jellyfinPath: '/media/kids', mapped: true, exists: true, library: 'Kids', hiddenFromMembers: false }], samples: [{ title: 'Sintel', arrPath: '/data/movies/Sintel', expected: '/data/movies/Sintel', actual: '/rigmedia/movies/Sintel', match: false }], suggestion: { arrPath: '/data', jellyfinPath: '/rigmedia' } }]
   },
   settings: { libraryPendingMinutes: 10, lowDiskPercent: 10, seerrHandoffGraceMinutes: 15 }
 });
@@ -316,6 +316,12 @@ test('the System tab shows live state, health, tasks, Seerr, the bridge and the 
   assert.match(css, /\.je-ops-table \.je-ops-wrap \{ overflow-wrap: anywhere; \}/);
   assert.match(text, /new folder in a TV library: left to Jellyfin's library monitor/);
   assert.match(text, /Suggested path mapping .*: \/data → \/rigmedia/);
+  // Roots whose upcoming titles members don't see on the Calendar say so, next to what is wrong with them.
+  const rootRows = [...page.querySelectorAll('.je-ops-table tbody tr')].filter(r => /\/data\/movies|\/movies|\/data\/kids/.test(r.children[0]?.textContent || ''));
+  const problem = path => rootRows.find(r => r.children[0].textContent === path).children[3].textContent;
+  assert.equal(problem('/data/movies'), "Jellyfin can't see this folder · Users who aren't administrators don't see its upcoming titles on the Calendar (set a path mapping or link libraries)");
+  assert.match(problem('/movies'), /^Another instance has the same folder and neither maps it · Users who aren't administrators/);
+  assert.equal(problem('/data/kids'), 'OK');
   assert.match(text, /Sintel: expected at \/data\/movies\/Sintel, Jellyfin has it at \/rigmedia\/movies\/Sintel/);
   assert.match(text, /1 titles have files in Sonarr\/Radarr but aren't in Jellyfin at all/);
   page.querySelector('.je-ops-bridge .je-ops-item .je-ops-btn').click();

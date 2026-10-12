@@ -176,7 +176,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     {
                         DateOnly = e.AirDateIsDay,
                         ReleaseDateLocal = e.AirDateIsDay ? air.ToUniversalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null,
-                        Id = e.Id.ToString(CultureInfo.InvariantCulture),
+                        Id = RowId(ArrType.Sonarr, instance.Id, e.Id.ToString(CultureInfo.InvariantCulture)),
                         Source = nameof(ArrType.Sonarr),
                         InstanceName = instance.Name,
                         Type = "Series",
@@ -198,7 +198,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                         BackdropUrl = e.BackdropUrl,
                         EpisodeTvdbId = e.EpisodeTvdbId,
                         EpisodeImdbId = e.EpisodeImdbId,
-                        RootFolderPath = GetRootFolderFromPath(e.Path),
+                        ArrPath = e.Path,
+                        InstanceId = instance.Id,
                     };
                     continue;
                 }
@@ -212,7 +213,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     {
                         DateOnly = true,
                         ReleaseDateLocal = releaseUtc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                        Id = e.Id.ToString(CultureInfo.InvariantCulture) + "-" + type,
+                        Id = RowId(ArrType.Radarr, instance.Id, e.Id.ToString(CultureInfo.InvariantCulture) + "-" + type),
                         Source = nameof(ArrType.Radarr),
                         InstanceName = instance.Name,
                         Type = "Movie",
@@ -226,11 +227,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                         BackdropUrl = e.BackdropUrl,
                         TmdbId = e.TmdbId,
                         ImdbId = e.ImdbId,
-                        RootFolderPath = GetRootFolderFromPath(e.Path),
+                        ArrPath = e.Path,
+                        InstanceId = instance.Id,
                     };
                 }
             }
         }
+
+        /// <summary>
+        /// A calendar row id that is unique across instances and sources: the arrs number their
+        /// episodes and movies per instance (two Sonarrs both have an episode 42) and Shoko numbers
+        /// its own, so the raw id alone would merge their favourite/watched flags and open the wrong
+        /// title. Clients treat it as opaque.
+        /// </summary>
+        public static string RowId(ArrType source, string? instanceId, string rawId) => source switch
+        {
+            ArrType.Shoko => "shoko|" + rawId,
+            ArrType.Sonarr => "sonarr|" + instanceId + "|" + rawId,
+            _ => "radarr|" + instanceId + "|" + rawId,
+        };
 
         /// <summary>
         /// The per-instance error entry of the existing routes: a short reason for everyone (no

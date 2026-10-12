@@ -106,7 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     /// </summary>
     internal sealed class HiddenParts
     {
-        public HiddenParts(IReadOnlySet<(int Season, int Episode)> episodes, IReadOnlySet<(int Season, int Episode)> withFile, IReadOnlySet<int> seasons)
+        public HiddenParts(EpisodeCoverage episodes, EpisodeCoverage withFile, IReadOnlySet<int> seasons)
         {
             Episodes = episodes;
             WithFile = withFile;
@@ -114,13 +114,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>Nothing hidden.</summary>
-        public static HiddenParts None { get; } = new(new HashSet<(int, int)>(), new HashSet<(int, int)>(), new HashSet<int>());
+        public static HiddenParts None { get; } = new(new EpisodeCoverage(Array.Empty<JfEpisode>()), new EpisodeCoverage(Array.Empty<JfEpisode>()), new HashSet<int>());
 
         /// <summary>Hidden episode numbers (the viewer sees no episode with that number).</summary>
-        public IReadOnlySet<(int Season, int Episode)> Episodes { get; }
+        public EpisodeCoverage Episodes { get; }
 
         /// <summary>The hidden episodes Jellyfin has a file for.</summary>
-        public IReadOnlySet<(int Season, int Episode)> WithFile { get; }
+        public EpisodeCoverage WithFile { get; }
 
         /// <summary>Seasons Jellyfin hides as a whole.</summary>
         public IReadOnlySet<int> Seasons { get; }
@@ -819,31 +819,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal static List<(int Episode, CopyState State, ArrEpisodeEntry? Arr, JfEpisode? Row)> EpisodeStates(ArrCopyFacts copy, int season, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, HiddenParts? hidden = null)
         {
             var result = new List<(int, CopyState, ArrEpisodeEntry?, JfEpisode?)>();
-            var real = new Dictionary<int, JfEpisode>();
-            var rows = new Dictionary<int, JfEpisode>();
-            foreach (var e in jfEpisodes ?? Array.Empty<JfEpisode>())
-            {
-                if (e.Season != season) continue;
-                var end = e.EpisodeEnd is int last && last >= e.Episode && last - e.Episode < 50 ? last : e.Episode;
-                for (var n = e.Episode; n <= end; n++)
-                {
-                    if (!e.Virtual) real.TryAdd(n, e);
-                    rows.TryAdd(n, e);
-                }
-            }
-            var numbers = new SortedSet<int>(real.Keys.Concat(rows.Keys));
+            var files = (jfEpisodes ?? Array.Empty<JfEpisode>()).Where(e => e.Season == season && !e.Hidden).ToList();
+            // Only synthesize bounded rows from file metadata. Known Sonarr numbers, including the
+            // far tail of a combined file, are matched against the full range below.
+            var numbers = new SortedSet<int>(files.SelectMany(Covered));
             if (copy.Episodes != null)
-            {
-                foreach (var e in copy.Episodes.Episodes)
-                {
-                    if (e.SeasonNumber == season && hidden?.Episodes.Contains((season, e.EpisodeNumber)) != true) numbers.Add(e.EpisodeNumber);
-                }
-            }
+                numbers.UnionWith(copy.Episodes.Episodes.Where(e => e.SeasonNumber == season).Select(e => e.EpisodeNumber));
             foreach (var n in numbers)
             {
+                if (hidden?.Hides(season, n) == true) continue;
+                var have = files.FirstOrDefault(e => !e.Virtual && new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(n));
+                var row = files.FirstOrDefault(e => new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(n));
                 var arr = copy.Episodes?.Find(season, n);
                 CopyState state;
-                if (real.TryGetValue(n, out var have))
+                if (have != null)
                 {
                     var queued = RowsFor(copy, season, n, arr);
                     state = queued.Count > 0
@@ -858,7 +847,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 {
                     state = EpisodeFromArr(copy, season, n, arr, c);
                 }
-                rows.TryGetValue(n, out var row);
                 result.Add((n, state, arr, row));
             }
             return result;
@@ -1027,16 +1015,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var stats = copy.Series?.Seasons.FirstOrDefault(s => s.SeasonNumber == season);
             // Sonarr counts episodes with a file, not files: a two-part file covers two episodes.
-            var ready = jfEpisodes?.Where(e => e.Season == season && !e.Virtual).SelectMany(Covered).Distinct().Count() ?? 0;
+            var coverage = new EpisodeCoverage((jfEpisodes ?? Array.Empty<JfEpisode>()).Where(e => !e.Hidden && !e.Virtual));
+            var ready = (int)Math.Min(int.MaxValue, coverage.CountInSeason(season));
             // Episodes Jellyfin hides from this viewer are neither theirs nor pending.
-            var hiddenHere = hidden?.Episodes.Count(h => h.Season == season) ?? 0;
-            var hiddenFiles = hidden?.WithFile.Count(h => h.Season == season) ?? 0;
+            var hiddenHere = hidden?.Episodes.CountInSeason(season) ?? 0;
+            var hiddenFiles = hidden?.WithFile.CountInSeason(season) ?? 0;
             var rows = copy.Queue.Where(r => r.SeasonNumber == season && hidden?.Hides(season, r.EpisodeNumber) != true).ToList();
             var downloading = rows.Where(r => FromQueue(r, c, copy).Stage == StatusStage.Downloading).Select(r => r.EpisodeId ?? r.Id).Distinct().Count();
             var almost = rows.Where(r => FromQueue(r, c, copy).Stage == StatusStage.AlmostReady).Select(r => r.EpisodeId ?? r.Id).Distinct().Count();
             var attention = rows.Where(r => FromQueue(r, c, copy).Attention).Select(r => r.EpisodeId ?? r.Id).Distinct().Count();
-            var aired = Math.Max(Math.Max(0, (stats?.EpisodeCount ?? 0) - hiddenHere), ready);
-            var files = Math.Max(0, (stats?.EpisodeFileCount ?? 0) - hiddenFiles);
+            var aired = (int)Math.Max(Math.Max(0, (stats?.EpisodeCount ?? 0) - hiddenHere), ready);
+            var files = (int)Math.Max(0, (stats?.EpisodeFileCount ?? 0) - hiddenFiles);
             var pending = Math.Max(0, files - ready);
             var missing = Math.Max(0, aired - ready - pending - downloading - almost);
             var next = stats?.NextAiring is DateTime n && n > c.Now ? n : (DateTime?)null;
@@ -1239,27 +1228,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             hiddenSeasons.ExceptWith(seasons?.Where(s => !s.Hidden).Select(s => s.Season) ?? Array.Empty<int>());
             if ((jf == null || !jf.Any(e => e.Hidden)) && hiddenSeasons.Count == 0) return (jf, HiddenParts.None);
             var visible = jf?.Where(e => !e.Hidden).ToList();
-            var shown = new HashSet<(int, int)>((visible ?? new List<JfEpisode>()).SelectMany(e => Covered(e).Select(n => (e.Season, n))));
-            var hidden = new HashSet<(int Season, int Episode)>();
-            var withFile = new HashSet<(int Season, int Episode)>();
-            foreach (var e in jf?.Where(e => e.Hidden) ?? Enumerable.Empty<JfEpisode>())
-            {
-                foreach (var n in Covered(e))
-                {
-                    if (shown.Contains((e.Season, n))) continue;
-                    hidden.Add((e.Season, n));
-                    if (!e.Virtual) withFile.Add((e.Season, n));
-                }
-            }
+            var unseen = jf?.Where(e => e.Hidden) ?? Enumerable.Empty<JfEpisode>();
+            var hidden = new EpisodeCoverage(unseen, visible);
+            var withFile = new EpisodeCoverage(unseen.Where(e => !e.Virtual), visible);
             return (visible, new HiddenParts(hidden, withFile, hiddenSeasons));
         }
 
-        /// <summary>The episode numbers a Jellyfin episode covers (a multi-episode file covers its range, at most 50).</summary>
+        /// <summary>
+        /// Bounded synthetic rows when Jellyfin alone supplies the numbers. Never used for privacy
+        /// or matching: those check full-range membership, including numbers beyond this limit.
+        /// </summary>
         private static IEnumerable<int> Covered(JfEpisode e)
-        {
-            var end = e.EpisodeEnd is int last && last >= e.Episode && last - e.Episode < 50 ? last : e.Episode;
-            for (var n = e.Episode; n <= end; n++) yield return n;
-        }
+            => new EpisodeRange(e.Episode, e.EpisodeEnd).Numbers(EpisodeRange.MaxSyntheticEpisodes);
 
         private static AdminVariant Variant(ArrCopyFacts copy, CopyState state, JfCopy? jf, string? scope)
         {

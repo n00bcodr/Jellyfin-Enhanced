@@ -20,7 +20,7 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class IntegrationCalendarTests
 {
-    private sealed class CalendarDatabase : IDbContextFactory<JellyfinDbContext>
+    internal sealed class CalendarDatabase : IDbContextFactory<JellyfinDbContext>
     {
         private readonly DbContextOptions<JellyfinDbContext> options = new DbContextOptionsBuilder<JellyfinDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
         public JellyfinDbContext CreateDbContext()

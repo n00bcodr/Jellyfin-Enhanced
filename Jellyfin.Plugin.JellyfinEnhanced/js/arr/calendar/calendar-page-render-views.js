@@ -276,7 +276,16 @@
   }
 
   // Render calendar based on current view mode
+  /**
+   * The view for the current mode, or the load error with a retry when the events couldn't be read
+   * (never "No upcoming releases" for a failed read).
+   * @returns {string} HTML.
+   */
   function renderCalendar() {
+    if (state.eventsError) {
+      const t = window.JellyfinEnhanced.t;
+      return `<div class="je-calendar-error" role="alert"><span>${t("calendar_load_error")}</span><button type="button" class="je-calendar-nav-btn je-calendar-retry" onclick="window.JellyfinEnhanced.calendarPage.retry(); event.stopPropagation();">${t("arr_hub_retry")}</button></div>`;
+    }
     if (state.viewMode === "week") return renderWeekView();
     if (state.viewMode === "agenda") return renderAgendaView();
     if (state.viewMode === "day") return renderDayView();

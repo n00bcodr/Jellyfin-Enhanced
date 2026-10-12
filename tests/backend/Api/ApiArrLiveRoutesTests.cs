@@ -36,7 +36,7 @@ public class ApiArrLiveRoutesTests
     private sealed class Audience : IArrFeedAudience
     {
         public HashSet<string> Hidden { get; } = new();
-        public IReadOnlyCollection<string> Visible(Guid userId, bool isAdmin, IReadOnlyList<ArrFeedChange> changes)
+        public IReadOnlyCollection<string> Visible(Guid userId, bool isAdmin, IReadOnlyList<ArrFeedChange> changes, IReadOnlySet<string>? askedFor = null, ICollection<string>? absent = null)
             => changes.Select(c => c.Key).Where(k => isAdmin || !Hidden.Contains(k)).ToList();
     }
 
@@ -85,15 +85,15 @@ public class ApiArrLiveRoutesTests
             => (n["fields"] as JsonArray)?.OfType<JsonObject>().FirstOrDefault(f => (string?)f["name"] == "headers")?["value"]?.AsArray().OfType<JsonObject>()
                 .FirstOrDefault(h => (string?)h["key"] == ArrWebhookReceiver.SecretHeader)?["value"]?.GetValue<string>();
 
+        public TestCallers Callers { get; } = new();
+
         public ArrLiveController Controller(bool admin = true, Guid? user = null)
         {
-            var users = new Mock<IUserManager>();
-            var controller = new ArrLiveController(Feed, Limits, Audience, Receiver, Provisioner, Live, Router, Store, Audit, users.Object, Arr.Plugin.Core.Logger, Requests)
+            var controller = new ArrLiveController(Feed, Limits, Audience, Receiver, Provisioner, Live, Router, Store, Audit, Callers.Users.Object, Arr.Plugin.Core.Logger, Requests)
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
             };
-            controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([
-                new Claim("Jellyfin-UserId", (user ?? UserId).ToString()), new Claim(ClaimTypes.Role, admin ? "Administrator" : "User")], "test"));
+            controller.HttpContext.User = Callers.Person(admin, user ?? UserId);
             return controller;
         }
 
@@ -113,6 +113,15 @@ public class ApiArrLiveRoutesTests
             Requests.Dispose();
             Arr.Dispose();
         }
+    }
+
+    private sealed class KestrelLimitStream : MemoryStream
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => throw new Microsoft.AspNetCore.Http.BadHttpRequestException("Request body too large.", 413);
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => throw new Microsoft.AspNetCore.Http.BadHttpRequestException("Request body too large.", 413);
     }
 
     private static int Status(IActionResult r) => r switch
@@ -156,7 +165,14 @@ public class ApiArrLiveRoutesTests
         Assert.Equal(400, Status(await rig.Hook(secret, "not json")));
         Assert.Equal(400, Status(await rig.Hook(secret, "[1,2]")));
         Assert.Equal(400, Status(await rig.Hook(secret, "{\"no\":\"type\"}")));
-        Assert.Equal(413, Status(await rig.Hook(secret, "{\"eventType\":\"Test\",\"pad\":\"" + new string('x', ArrWebhookReceiver.MaxBodyBytes) + "\"}")));
+        var tooLarge = await rig.Hook(secret, "{\"eventType\":\"Test\",\"pad\":\"" + new string('x', ArrWebhookReceiver.MaxBodyBytes) + "\"}");
+        Assert.Equal((413, "payload_too_large"), (Status(tooLarge), Body(tooLarge).GetProperty("code").GetString()));
+        // Kestrel's own limit tripping on a chunked body is the same structured answer, never an exception (a 500 behind Jellyfin).
+        var c = rig.Controller();
+        c.HttpContext.Request.Body = new KestrelLimitStream();
+        c.HttpContext.Request.Headers[ArrWebhookReceiver.SecretHeader] = secret;
+        var kestrel = await c.ReceiveWebhook(rig.Instance.Id, default);
+        Assert.Equal((413, "payload_too_large"), (Status(kestrel), Body(kestrel).GetProperty("code").GetString()));
 
         rig.Arr.Plugin.Plugin.Configuration.ArrPhase1Enabled = false;
         Assert.IsType<NotFoundResult>(await rig.Hook(secret, "{\"eventType\":\"Test\"}"));
@@ -390,9 +406,16 @@ public class ApiArrLiveRoutesTests
             if (q.HasAnyProviderId is { Count: > 0 } ids) key = ids.Values.FirstOrDefault(v => (q.User != null ? visibleTo : exists).Contains(v)) ?? ids.Values.First();
             else
             {
-                // A season or episode of a series (by its Jellyfin id).
+                // A season or the episodes of one season of a series (by its Jellyfin id).
                 var series = seriesIds[Assert.Single(q.AncestorIds)];
-                key = q.IncludeItemTypes.Single() == BaseItemKind.Episode ? $"{series}:s{q.ParentIndexNumber}:e{q.IndexNumber}" : $"{series}:s{q.IndexNumber}";
+                if (q.IncludeItemTypes.Single() == BaseItemKind.Episode)
+                {
+                    Assert.Null(q.IndexNumber);
+                    var prefix = $"{series}:s{q.ParentIndexNumber}:e";
+                    return (q.User != null ? visibleTo : exists).Where(k => k.StartsWith(prefix, StringComparison.Ordinal))
+                        .Select(k => (BaseItem)new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), IndexNumber = int.Parse(k[prefix.Length..], System.Globalization.CultureInfo.InvariantCulture) }).ToList();
+                }
+                key = $"{series}:s{q.IndexNumber}";
             }
             var hit = q.User != null ? visibleTo.Contains(key) : exists.Contains(key);
             if (!hit) return new List<BaseItem>();
@@ -531,7 +554,15 @@ public class ApiArrLiveRoutesTests
                 var copies = q.User != null ? new[] { open } : new[] { open, closed };
                 return copies.Select(id => (BaseItem)new MediaBrowser.Controller.Entities.TV.Series { Id = id }).ToList();
             }
-            var key = q.IncludeItemTypes.Single() == BaseItemKind.Episode ? $"s{q.ParentIndexNumber}:e{q.IndexNumber}" : $"s{q.IndexNumber}";
+            if (q.IncludeItemTypes.Single() == BaseItemKind.Episode)
+            {
+                // One season's episodes under the copies asked about (the user's: not those hidden from them).
+                Assert.Null(q.IndexNumber);
+                var prefix = $"s{q.ParentIndexNumber}:e";
+                return q.AncestorIds.SelectMany(a => parts[a].Where(p => p.Key.StartsWith(prefix, StringComparison.Ordinal) && (q.User == null || !p.Value)))
+                    .Select(p => (BaseItem)new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), IndexNumber = int.Parse(p.Key[prefix.Length..], System.Globalization.CultureInfo.InvariantCulture) }).ToList();
+            }
+            var key = $"s{q.IndexNumber}";
             var hit = q.AncestorIds.Any(a => parts[a].TryGetValue(key, out var hidden) && (q.User == null || !hidden));
             return hit ? new List<BaseItem> { new Movie { Id = Guid.NewGuid() } } : new List<BaseItem>();
         });

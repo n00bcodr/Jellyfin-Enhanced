@@ -121,3 +121,80 @@ test('an outage reported by history before the queue answers is toasted once, wh
   await h.P.loadAllData();
   assert.equal(h.notices.length,1);
 });
+
+// ---------------------------------------------------------------- overlapping reads (newest intent wins)
+// Each request answers through its own deferred, in the order the test chooses.
+function queued(t,extra={}){
+  const waits=[];const h=setup(t,{...extra,api:(path)=>{const d=deferred();waits.push({path,d});return d.promise;}});
+  h.P.state.requestsPageSize=undefined;
+  return {...h,waits,read:prefix=>waits.filter(w=>w.path.startsWith(prefix))};
+}
+test('a poll still reading page 1 never overwrites the page 2 the user opened',async t=>{
+  const h=queued(t);
+  const poll=h.P.fetchRequests();                                     // the 30-second poll, page 1
+  h.P.state.requestsPage=2;const next=h.P.fetchRequests();              // the user's next page
+  h.read('/arr/requests')[1].d.resolve({requests:[{id:'page-2'}],totalPages:3});await next;
+  h.read('/arr/requests')[0].d.resolve({requests:[{id:'page-1'}],totalPages:3,canApproveRequests:true});assert.equal(await poll,null);
+  assert.deepEqual(plain(h.P.state.requests).map(r=>r.id),['page-2']);
+  assert.equal(h.P.state.canApproveRequests,false);
+  assert.equal(new URL(h.read('/arr/requests')[1].path,'http://test').searchParams.get('skip'),String(h.P.state.requestsPageSize));
+});
+test('a filter\'s late answer never lands on another filter, and a newer read of the same page wins',async t=>{
+  const h=queued(t);
+  const pending=h.P.fetchRequests();
+  h.P.state.requestsFilter='pending';h.P.state.requestsPage=1;const filtered=h.P.fetchRequests();
+  h.read('/arr/requests')[1].d.resolve({requests:[{id:'pending'}]});await filtered;
+  h.read('/arr/requests')[0].d.resolve({requests:[{id:'all'}]});await pending;
+  assert.deepEqual(plain(h.P.state.requests).map(r=>r.id),['pending']);
+  // Two reads of the same page: only the newest publishes, whichever answers first.
+  const older=h.P.fetchRequests();const newer=h.P.fetchRequests();
+  h.read('/arr/requests')[3].d.resolve({requests:[{id:'newer'}]});await newer;
+  h.read('/arr/requests')[2].d.resolve({requests:[{id:'older'}]});await older;
+  assert.deepEqual(plain(h.P.state.requests).map(r=>r.id),['newer']);
+});
+test('a read whose page changed while it ran publishes nothing, even with no newer read',async t=>{
+  const h=queued(t);
+  const run=h.P.fetchHistory();
+  h.P.state.historyPage=3;                                             // e.g. a list re-sized without a read yet
+  h.read('/arr/history')[0].d.resolve({items:[{id:'page-1'}],visible:true,totalPages:5});
+  assert.equal(await run,null);assert.equal(h.P.state.history.length,0);
+});
+test('history pages race like requests: the page asked for last is the page shown',async t=>{
+  const h=queued(t);
+  const first=h.P.fetchHistory();h.P.state.historyPage=2;const second=h.P.fetchHistory();
+  h.read('/arr/history')[1].d.resolve({items:[{id:'h2'}],visible:true,totalPages:2});await second;
+  h.read('/arr/history')[0].d.resolve({items:[{id:'h1'}],visible:false,totalPages:9,errors:[{source:'Sonarr',instanceName:'TV',reason:'late'}]});await first;
+  assert.deepEqual(plain(h.P.state.history).map(i=>i.id),['h2']);
+  assert.equal(h.P.state.historyTotalPages,2);assert.equal(h.P.state.historyVisible,true);assert.equal(h.notices.length,0);
+});
+test('a late failure never empties the newer rows (queue, requests, history)',async t=>{
+  const h=queued(t);
+  for(const source of ['downloads','requests','history'])h.expectConsoleError(`Requests Page: Failed to fetch ${source}:`);
+  const oldQueue=h.P.fetchDownloads();const newQueue=h.P.fetchDownloads();
+  h.read('/arr/queue')[1].d.resolve({items:[{id:'q-new'}]});await newQueue;
+  h.read('/arr/queue')[0].d.reject(new Error('offline'));await oldQueue;
+  assert.deepEqual(plain(h.P.state.downloads).map(r=>r.id),['q-new']);
+  const oldRequests=h.P.fetchRequests();h.P.state.requestsPage=2;const newRequests=h.P.fetchRequests();
+  h.read('/arr/requests')[1].d.resolve({requests:[{id:'r2'}]});await newRequests;
+  h.read('/arr/requests')[0].d.reject(new Error('offline'));await oldRequests;
+  assert.deepEqual(plain(h.P.state.requests).map(r=>r.id),['r2']);
+  const oldHistory=h.P.fetchHistory();const newHistory=h.P.fetchHistory();
+  h.read('/arr/history')[1].d.resolve({items:[{id:'h-new'}],visible:true});await newHistory;
+  h.read('/arr/history')[0].d.reject(new Error('offline'));await oldHistory;
+  assert.deepEqual(plain(h.P.state.history).map(r=>r.id),['h-new']);
+});
+test('slow issue enrichment of an older page never replaces the issues of the page shown now',async t=>{
+  const details=[];const lists=[];
+  const h=setup(t,{ajax:options=>{
+    if(options.url.includes('/issue')){const d=deferred();lists.push(d);return d.promise;}
+    const d=deferred();details.push({url:options.url,d});return d.promise;
+  }});
+  const older=h.P.fetchIssues();
+  lists[0].resolve({results:[{id:1,media:{mediaType:'movie',tmdbId:11}}],pageInfo:{pages:2}});
+  for(let i=0;i<5&&details.length<1;i++)await new Promise(resolve=>setImmediate(resolve));
+  h.P.state.issuesPage=2;const newer=h.P.fetchIssues();
+  lists[1].resolve({results:[],pageInfo:{pages:2}});await newer;
+  details[0].d.resolve({id:11,title:'Old page'});await older;
+  assert.deepEqual(plain(h.P.state.issues),[]);
+  assert.equal(h.P.state.issuesPage,2);
+});

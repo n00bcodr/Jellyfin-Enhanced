@@ -45,8 +45,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <inheritdoc />
         public StatusViewer? Viewer(Guid userId)
         {
-            var user = _userManager.GetUserById(userId);
-            if (user == null) return null;
+            // An API key's user id is the empty GUID, which Jellyfin 12 refuses to look up (it throws).
+            var user = Helpers.ArrCaller.Find(userId, _userManager);
+            if (user == null || user.HasPermission(PermissionKind.IsDisabled)) return null;
             var isAdmin = user.HasPermission(PermissionKind.IsAdministrator);
             var allFolders = user.HasPermission(PermissionKind.EnableAllFolders);
             var folders = allFolders ? Array.Empty<Guid>() : user.GetPreferenceValues<Guid>(PreferenceKind.EnabledFolders);
@@ -161,21 +162,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (viewer.Handle is not User user) return Array.Empty<JfCopy>();
             // The key and its aliases of the same kind, one query per set of distinct providers
             // (Jellyfin matches any of the ids a query names; an item is listed once).
-            var ids = new[] { titleKey }.Concat(aliases ?? Array.Empty<TitleKey>())
-                .Where(k => k.IsMovie == titleKey.IsMovie)
-                .Select(k => (Provider: k.Provider switch { "tmdb" => "Tmdb", "tvdb" => "Tvdb", _ => "Imdb" }, k.Id))
-                .Distinct()
-                .ToList();
-            var queries = new List<Dictionary<string, string>>();
-            foreach (var (provider, id) in ids)
-            {
-                var into = queries.FirstOrDefault(q => !q.ContainsKey(provider));
-                if (into == null) queries.Add(into = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
-                into[provider] = id;
-            }
+            var queries = TitleAliases.ProviderQueries(titleKey, aliases ?? Array.Empty<TitleKey>());
             var items = new List<BaseItem>();
             var found = new HashSet<Guid>();
-            foreach (var providers in queries.Take(4))
+            foreach (var providers in queries)
             {
                 foreach (var item in _libraryManager.GetItemList(new InternalItemsQuery
                 {

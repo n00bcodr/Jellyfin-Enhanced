@@ -90,35 +90,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private void RefreshEpisodesAfterChange(InstanceState state, int seriesId)
         {
             if (state.ExistingEpisodes(seriesId) is not { HasValue: true, Retired: false } episodes) return;
-            using (ExecutionContext.SuppressFlow())
+            _ = StartBackground(async () =>
             {
-                _ = Task.Run(async () =>
+                try
                 {
-                    try
+                    if (episodes.Inflight is { } running)
                     {
-                        if (episodes.Inflight is { } running)
+                        try
                         {
-                            try
-                            {
-                                await running.ConfigureAwait(false);
-                            }
-                            catch (Exception)
-                            {
-                                // its outcome is recorded by the slot
-                            }
+                            await running.ConfigureAwait(false);
                         }
-                        await episodes.StartRefresh(_backgroundCalls, _now, _shutdown.Token).ConfigureAwait(false);
+                        catch (Exception)
+                        {
+                            // its outcome is recorded by the slot
+                        }
                     }
-                    catch (ObjectDisposedException)
-                    {
-                        // shutting down
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.Warning($"Arr state: re-reading episodes after a change failed ({ex.GetType().Name}).");
-                    }
-                });
-            }
+                    await episodes.StartRefresh(_backgroundCalls, _now, _shutdownToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.Warning($"Arr state: re-reading episodes after a change failed ({ex.GetType().Name}).");
+                }
+                return true;
+            }, false);
         }
 
         // Callers hold state.TitleGate.
@@ -173,7 +167,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             }
             try
             {
-                await slot.StartRefresh(_backgroundCalls, _now, _shutdown.Token).ConfigureAwait(false);
+                await slot.StartRefresh(_backgroundCalls, _now, _shutdownToken).ConfigureAwait(false);
             }
             catch (ObjectDisposedException)
             {
@@ -186,17 +180,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// Re-reads single titles (Radarr <c>movie/{id}</c>, Sonarr <c>series/{id}</c>) and patches the
         /// library index: a title the arr no longer has (404) is removed. More than
         /// <see cref="MaxTitleRereads"/> ids, or no index in memory, refreshes the whole library
-        /// instead. Returns the number of titles re-read.
+        /// instead. Returns the number of titles re-read, including partial progress when the
+        /// store shuts down. Explicit caller cancellation of an admitted reread still throws
+        /// <see cref="OperationCanceledException"/>.
         /// </summary>
         public Task<int> RefreshTitlesAsync(string instanceId, IReadOnlyCollection<int> arrIds, CancellationToken cancellationToken)
         {
-            Task<int> work;
-            using (ExecutionContext.SuppressFlow())
-            {
-                // Never on a request's counter: background calls.
-                work = Task.Run(() => RefreshTitlesCoreAsync(instanceId, arrIds, cancellationToken), CancellationToken.None);
-            }
-            return work;
+            // Never on a request's counter; owned through publication and observers at shutdown.
+            return StartBackground(() => RefreshTitlesCoreAsync(instanceId, arrIds, cancellationToken), 0);
         }
 
         /// <summary>
@@ -220,6 +211,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private async Task<int> RefreshTitlesCoreAsync(string instanceId, IReadOnlyCollection<int> arrIds, CancellationToken cancellationToken)
         {
             ArrCallCounter.Current.Value = _backgroundCalls;
+            cancellationToken.ThrowIfCancellationRequested();
             var connection = _factory.Registry.Get(instanceId);
             if (connection == null || StateFor(connection, out _) is not { } state) return 0;
             var ids = arrIds.Where(id => id > 0).Distinct().ToList();
@@ -228,48 +220,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             if (library == null) return 0;
             if (ids.Count > MaxTitleRereads)
             {
-                await RefreshForEventAsync(instanceId, ArrSnapshotKind.Library).ConfigureAwait(false);
+                await RefreshForEventAsync(instanceId, ArrSnapshotKind.Library).WaitAsync(cancellationToken).ConfigureAwait(false);
                 return 0;
             }
 
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdownToken);
             var read = 0;
             var first = true;
-            foreach (var id in ids)
+            try
             {
-                // Live updates switched off while the titles were being read: no more arr calls for them.
-                if (!first && !Live.ArrLiveFlags.Enabled(_config())) break;
-                first = false;
-                // Each title is applied as soon as it is read, unless a newer patch beat it.
-                var stamp = Interlocked.Read(ref _titleStamp);
-                var startedAt = _now();
-                var path = (connection.Kind == ArrKind.Radarr ? "movie/" : "series/") + id.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                if (connection.Kind == ArrKind.Radarr)
+                foreach (var id in ids)
                 {
-                    var r = await state.Client.GetAsync<ArrWireMovie>(path, null, ArrCallClass.Read, linked.Token).ConfigureAwait(false);
-                    if (r.Ok)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (_shutdownToken.IsCancellationRequested) break;
+                    // Live updates switched off while the titles were being read: no more arr calls for them.
+                    if (!first && !Live.ArrLiveFlags.Enabled(_config())) break;
+                    first = false;
+                    // Each title is applied as soon as it is read, unless a newer patch beat it.
+                    var stamp = Interlocked.Read(ref _titleStamp);
+                    var startedAt = _now();
+                    var path = (connection.Kind == ArrKind.Radarr ? "movie/" : "series/") + id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    if (connection.Kind == ArrKind.Radarr)
                     {
-                        var wire = r.Value!;
-                        ApplyTitleRead(state, id, stamp, startedAt, lib => lib.With(new[] { ArrStateLoaders.MergeMovie(lib.MovieById(id), wire) }, Array.Empty<ArrSeriesEntry>(), Array.Empty<int>()));
+                        var r = await state.Client.GetAsync<ArrWireMovie>(path, null, ArrCallClass.Read, linked.Token).ConfigureAwait(false);
+                        if (r.Ok)
+                        {
+                            var wire = r.Value!;
+                            ApplyTitleRead(state, id, stamp, startedAt, lib => lib.With(new[] { ArrStateLoaders.MergeMovie(lib.MovieById(id), wire) }, Array.Empty<ArrSeriesEntry>(), Array.Empty<int>()));
+                        }
+                        else if (r.Error!.Kind == ArrErrorKind.NotFound) ApplyTitleRead(state, id, stamp, startedAt, lib => lib.With(Array.Empty<ArrMovieEntry>(), Array.Empty<ArrSeriesEntry>(), new[] { id }));
+                        else continue;
                     }
-                    else if (r.Error!.Kind == ArrErrorKind.NotFound) ApplyTitleRead(state, id, stamp, startedAt, lib => lib.With(Array.Empty<ArrMovieEntry>(), Array.Empty<ArrSeriesEntry>(), new[] { id }));
-                    else continue;
-                }
-                else
-                {
-                    var r = await state.Client.GetAsync<ArrWireSeries>(path, null, ArrCallClass.Read, linked.Token).ConfigureAwait(false);
-                    if (r.Ok)
+                    else
                     {
-                        var wire = r.Value!;
-                        ApplyTitleRead(state, id, stamp, startedAt, lib => lib.With(Array.Empty<ArrMovieEntry>(), new[] { ArrStateLoaders.MergeSeries(lib.SeriesById(id), wire) }, Array.Empty<int>()));
-                        // The series' files changed: its episodes (episode chips, season rows), when
-                        // someone has read them, are read again too.
-                        RefreshEpisodesAfterChange(state, id);
+                        var r = await state.Client.GetAsync<ArrWireSeries>(path, null, ArrCallClass.Read, linked.Token).ConfigureAwait(false);
+                        if (r.Ok)
+                        {
+                            var wire = r.Value!;
+                            ApplyTitleRead(state, id, stamp, startedAt, lib => lib.With(Array.Empty<ArrMovieEntry>(), new[] { ArrStateLoaders.MergeSeries(lib.SeriesById(id), wire) }, Array.Empty<int>()));
+                            // The series' files changed: its episodes (episode chips, season rows), when
+                            // someone has read them, are read again too.
+                            RefreshEpisodesAfterChange(state, id);
+                        }
+                        else if (r.Error!.Kind == ArrErrorKind.NotFound) ApplyTitleRead(state, id, stamp, startedAt, lib => lib.With(Array.Empty<ArrMovieEntry>(), Array.Empty<ArrSeriesEntry>(), new[] { id }));
+                        else continue;
                     }
-                    else if (r.Error!.Kind == ArrErrorKind.NotFound) ApplyTitleRead(state, id, stamp, startedAt, lib => lib.With(Array.Empty<ArrMovieEntry>(), Array.Empty<ArrSeriesEntry>(), new[] { id }));
-                    else continue;
+                    read++;
                 }
-                read++;
+            }
+            catch (OperationCanceledException) when (_shutdownToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                // ArrClient sees the linked token as its caller's cancellation. Here a store stop
+                // is a normal end to background rereading; keep completed patches and their count.
             }
             return read;
         }

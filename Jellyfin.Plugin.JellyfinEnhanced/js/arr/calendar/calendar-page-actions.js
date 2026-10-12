@@ -47,6 +47,16 @@
     renderPage();
   }
 
+  /**
+   * Reads the events again after a failed load (the error box's Try again). Ignored while a load is
+   * already running, so repeated clicks start one read.
+   * @returns {Promise<void>|undefined}
+   */
+  function retry() {
+    if (state.isLoading) return undefined;
+    return loadAllData();
+  }
+
   // Switch between month/week/agenda views
   function setViewMode(mode) {
     if (state.viewMode === mode) return;
@@ -266,6 +276,7 @@
   }
 
   P.loadAllData = loadAllData;
+  P.retry = retry;
   P.setViewMode = setViewMode;
   P.setDisplayMode = setDisplayMode;
   P.shiftPeriod = shiftPeriod;

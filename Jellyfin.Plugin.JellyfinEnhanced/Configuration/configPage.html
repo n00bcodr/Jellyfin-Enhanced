@@ -1423,7 +1423,7 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="downloadsFilterByUserRequests" is="emby-checkbox" type="checkbox"/><span>Filter Downloads by User Requests</span></label></div>
                             <div class="je-setting-description" data-desc-for="downloadsFilterByUserRequests">
-                                <div class="fieldDescription je-field-desc-xl">When enabled, non-admin users only see downloads for content they requested. When disabled, all authenticated users can see every item in the download queue, including content requested by other users.</div>
+                                <div class="fieldDescription je-field-desc-xl">Non-admin users only ever see downloads and history of titles they can open in Jellyfin (library access and parental limits apply, down to single episodes). A title not in Jellyfin yet shows when they can open a library its Sonarr/Radarr instance is linked to (any instance without linked libraries counts as open), or, for users with parental limits, only when they asked for it. When enabled, non-admin users additionally see only content they requested in Seerr. Administrators always see the whole queue.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="downloadsPageShowIssues" is="emby-checkbox" type="checkbox"/><span>Show Seerr Issues Section</span></label></div>
                             <div class="je-setting-description" data-desc-for="downloadsPageShowIssues">
@@ -1618,7 +1618,7 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="calendarFilterByLibraryAccess" is="emby-checkbox" type="checkbox"/><span>Filter by Library Access</span></label></div>
                             <div class="je-setting-description" data-desc-for="calendarFilterByLibraryAccess">
-                                <div class="fieldDescription">When enabled, the calendar only shows items from libraries the user has access to. Upcoming items not yet in Jellyfin are filtered based on their Sonarr/Radarr root folder.</div>
+                                <div class="fieldDescription">When enabled, users who aren't administrators see an item Jellyfin already has only if Jellyfin lets them open it. An upcoming item not yet in Jellyfin shows only when the library it will land in can be told (the libraries linked to its Sonarr/Radarr instance, or else its folder through the instance's path mappings) and the user can open that library. Otherwise it is hidden from them: set a path mapping or link libraries on the instance.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="calendarShowOnlyRequested" is="emby-checkbox" type="checkbox"/><span>Show Requested Only (Default)</span></label></div>
                             <div class="je-setting-description" data-desc-for="calendarShowOnlyRequested">

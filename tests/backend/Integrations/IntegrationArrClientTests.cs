@@ -248,6 +248,144 @@ public class IntegrationArrClientTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => caller.GetAsync<JsonElement>("movie", cancellationToken: cts.Token));
     }
 
+    /// <summary>A transport whose calls wait until released, counting how many are in flight at once.</summary>
+    private sealed class Gate : IDisposable
+    {
+        private readonly object _lock = new();
+        private readonly List<TaskCompletionSource> _waiting = new();
+        public int InFlight;
+        public int Peak;
+        public int Started;
+        public IntegrationTransport Transport { get; }
+
+        public Gate()
+        {
+            Transport = new IntegrationTransport(async (_, ct) =>
+            {
+                var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                lock (_lock)
+                {
+                    _waiting.Add(release);
+                    Started++;
+                    InFlight++;
+                    Peak = Math.Max(Peak, InFlight);
+                }
+                try
+                {
+                    await release.Task.WaitAsync(ct);
+                    return IntegrationTransport.Response("[]");
+                }
+                finally
+                {
+                    lock (_lock)
+                    {
+                        InFlight--;
+                        _waiting.Remove(release);
+                    }
+                }
+            });
+        }
+
+        public void ReleaseOne()
+        {
+            lock (_lock) _waiting[0].TrySetResult();
+        }
+
+        public void ReleaseAll()
+        {
+            lock (_lock) foreach (var w in _waiting.ToList()) w.TrySetResult();
+        }
+
+        public async Task UntilStarted(int count)
+        {
+            for (var i = 0; i < 500 && Volatile.Read(ref Started) < count; i++) await Task.Delay(10);
+            Assert.Equal(count, Volatile.Read(ref Started));
+        }
+
+        public void Dispose() => Transport.Dispose();
+    }
+
+    [Fact]
+    public async Task TheFifthCallWaitsForAPermitAndNoMoreThanFourRunAtOnce()
+    {
+        using var gate = new Gate();
+        var client = Client(gate.Transport);
+        var calls = Enumerable.Range(0, ArrClient.MaxConcurrency + 1).Select(_ => client.GetAsync<JsonElement>("movie")).ToList();
+        await gate.UntilStarted(ArrClient.MaxConcurrency);
+        await Task.Delay(100);
+        Assert.Equal(ArrClient.MaxConcurrency, gate.Started);        // the fifth is waiting for a permit
+        gate.ReleaseOne();
+        await gate.UntilStarted(ArrClient.MaxConcurrency + 1);       // ... and goes as soon as one frees
+        gate.ReleaseAll();
+        Assert.All(await Task.WhenAll(calls), r => Assert.True(r.Ok));
+        Assert.Equal(4, gate.Peak);
+    }
+
+    [Fact]
+    public async Task ACancelledWaiterDoesNotShrinkTheCapacity()
+    {
+        using var gate = new Gate();
+        var client = Client(gate.Transport);
+        var first = Enumerable.Range(0, 4).Select(_ => client.GetAsync<JsonElement>("movie")).ToList();
+        await gate.UntilStarted(4);
+        using (var cts = new CancellationTokenSource())
+        {
+            var waiter = client.GetAsync<JsonElement>("movie", cancellationToken: cts.Token);
+            await Task.Delay(50);
+            cts.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiter);
+        }
+        gate.ReleaseAll();
+        await Task.WhenAll(first);
+        // All four permits are back: four new calls run at once.
+        var second = Enumerable.Range(0, 4).Select(_ => client.GetAsync<JsonElement>("movie")).ToList();
+        await gate.UntilStarted(8);
+        Assert.Equal(4, gate.InFlight);
+        gate.ReleaseAll();
+        Assert.All(await Task.WhenAll(second), r => Assert.True(r.Ok));
+        Assert.Equal(4, gate.Peak);
+    }
+
+    [Fact]
+    public async Task CancellingACallInFlightFreesItsPermit()
+    {
+        using var gate = new Gate();
+        var client = Client(gate.Transport);
+        using var cts = new CancellationTokenSource();
+        var cancelled = client.GetAsync<JsonElement>("movie", cancellationToken: cts.Token);
+        var others = Enumerable.Range(0, 3).Select(_ => client.GetAsync<JsonElement>("movie")).ToList();
+        await gate.UntilStarted(4);
+        var waiting = client.GetAsync<JsonElement>("movie");
+        await Task.Delay(50);
+        Assert.Equal(4, gate.Started);
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        await gate.UntilStarted(5);                                  // the waiting call took the freed permit
+        gate.ReleaseAll();
+        Assert.True((await waiting).Ok);
+        await Task.WhenAll(others);
+        Assert.Equal(4, gate.Peak);
+    }
+
+    [Fact]
+    public void TheFactoryKeepsOneClientPerInstanceUntilItsKeyOrUrlChanges()
+    {
+        using var arr = new FakeArr();
+        arr.Configure(("Movies", ArrKind.Radarr, "http://radarr.lan:7878", "RADARR-KEY-0123456789"));
+        var id = arr.Instance("Movies").Id;
+        var first = arr.Factory.For(id).Value!;
+        Assert.Same(first, arr.Factory.For(id).Value);               // one gate per instance, shared by every caller
+        // The same instance (same id) at another address gets a fresh client (and status cache).
+        var config = arr.Plugin.Plugin.Configuration;
+        var rows = System.Text.Json.Nodes.JsonNode.Parse(config.RadarrInstances)!.AsArray();
+        rows[0]!["Url"] = "http://radarr2.lan:7878";
+        config.RadarrInstances = rows.ToJsonString();
+        Assert.Equal(id, arr.Instance("Movies").Id);
+        var second = arr.Factory.For(id).Value!;
+        Assert.NotSame(first, second);
+        Assert.Same(second, arr.Factory.For(id).Value);
+    }
+
     [Fact]
     public async Task PagedListsFollowTotalRecordsWithAnExplicitPageSize()
     {

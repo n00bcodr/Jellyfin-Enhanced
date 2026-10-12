@@ -6,7 +6,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
     public class ArrItem
     {
         /// <summary>
-        /// Your system ID (from Radarr/Sonarr)
+        /// The event's row id, unique across instances and sources and opaque to clients:
+        /// <c>sonarr|{instanceId}|{episodeId}</c>, <c>radarr|{instanceId}|{movieId}-{releaseType}</c>
+        /// or <c>shoko|{episodeId}</c> (see <see cref="Services.Arr.ArrLegacyViews.RowId"/>).
         /// </summary>
         [JsonPropertyName("id")]
         public string? Id { get; set; } = string.Empty;
@@ -187,11 +189,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
         public List<string>? AlsoInInstances { get; set; }
 
         /// <summary>
-        /// Root folder path from Sonarr/Radarr (used server-side for library access fallback).
-        /// Not serialized to clients to avoid exposing server filesystem paths.
+        /// The title's folder as Sonarr/Radarr sees it (server-side only: which Jellyfin library a
+        /// title not in Jellyfin yet lands in). Never sent to clients (server paths).
         /// </summary>
         [JsonIgnore]
         [Newtonsoft.Json.JsonIgnore]
-        public string? RootFolderPath { get; set; }
+        public string? ArrPath { get; set; }
+
+        /// <summary>The instance the event came from (server-side only; null for Shoko).</summary>
+        [JsonIgnore]
+        [Newtonsoft.Json.JsonIgnore]
+        public string? InstanceId { get; set; }
     }
 }

@@ -17,6 +17,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     /// </summary>
     [ApiController]
     [Route("JellyfinEnhanced")]
+    [PrivateResponse]
     public class ArrStateController : ControllerBase
     {
         private readonly ArrStateStore _store;
@@ -54,12 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Accepted(new { requested = true });
         }
 
-        private bool IsAdmin()
-        {
-            if (User.IsInRole("Administrator")) return true;
-            var id = UserHelper.GetCurrentUserId(User);
-            var user = id.HasValue ? _userManager.GetUserById(id.Value) : null;
-            return user != null && user.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator);
-        }
+        // A person with Jellyfin's administrator permission (never an API key or an unknown user).
+        private bool IsAdmin() => ArrCaller.IsAdmin(User, _userManager);
     }
 }

@@ -86,6 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         [HttpGet("arr/admin/manage")]
         [Authorize]
+        [PrivateResponse]
         public async Task<IActionResult> GetManage([FromQuery] string? itemId, [FromQuery] string? key, CancellationToken cancellationToken)
         {
             if (Viewer(_manage.Status) is not { IsAdmin: true } viewer) return Forbid();
@@ -102,7 +103,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             if (_manage.Resolve(viewer, id, key) is not { } target) return NotFound(new { code = "not_found" });
             using var scope = _manage.Status.Store.BeginRequest("arr/admin/manage");
-            Response.Headers["Cache-Control"] = "no-store";
             var overview = await _manage.OverviewAsync(viewer, target.Key, target.Item, cancellationToken).ConfigureAwait(false);
             return File(JsonSerializer.SerializeToUtf8Bytes(overview, CamelCase), "application/json; charset=utf-8");
         }
@@ -110,6 +110,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Search now for the title in scope on one instance (administrators only; audited, one idempotency key per click).</summary>
         [HttpPost("arr/admin/manage/search")]
         [Authorize]
+        [PrivateResponse]
+        [BodyLimit]
         public async Task<IActionResult> Search([FromBody] ManageSearchRequest? request, CancellationToken cancellationToken)
         {
             if (Viewer(_manage.Status) is not { IsAdmin: true } viewer) return Forbid();
@@ -127,7 +129,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 // The audit line keeps the user id either way.
             }
-            Response.Headers["Cache-Control"] = "no-store";
             var outcome = await _manage.SearchAsync(viewer, userName, request.InstanceId, key, request.IdempotencyKey, cancellationToken).ConfigureAwait(false);
             return Ok(new
             {
@@ -141,10 +142,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             });
         }
 
-        private StatusViewer? Viewer(ArrStatusService status)
-        {
-            var id = UserHelper.GetCurrentUserId(User);
-            return id.HasValue ? status.View.Viewer(id.Value) : null;
-        }
+        // A person only (never an API key or an unknown user).
+        private StatusViewer? Viewer(ArrStatusService status) => ArrCaller.Human(User, status.View);
     }
 }

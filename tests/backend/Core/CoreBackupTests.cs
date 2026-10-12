@@ -437,13 +437,14 @@ public class CoreBackupTests
     {
         using var rig = new Rig();
         var zip = rig.Export(JeBackupSecrets.Exclude);
-        JeBackupController Make(bool admin, Dictionary<string, StringValues>? fields = null)
+        var callers = new TestCallers();
+        JeBackupController Make(bool admin, Dictionary<string, StringValues>? fields = null, System.Security.Claims.ClaimsPrincipal? caller = null)
         {
-            var c = new JeBackupController(rig.Service, Mock.Of<IUserManager>(), rig.F.Core.Logger)
+            var c = new JeBackupController(rig.Service, callers.Users.Object, rig.F.Core.Logger)
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
             };
-            c.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, admin ? "Administrator" : "User")], "test"));
+            c.HttpContext.User = caller ?? callers.Person(admin);
             if (fields != null)
             {
                 var files = new FormFileCollection { new FormFile(new MemoryStream(zip), 0, zip.Length, "file", "backup.zip") };
@@ -454,6 +455,9 @@ public class CoreBackupTests
         }
 
         Assert.IsType<ForbidResult>(Make(false).Export(new JeBackupExportRequest()));
+        // An API key (the administrator role claim, no person) and a user Jellyfin doesn't know are refused too.
+        Assert.IsType<ForbidResult>(Make(false, caller: TestCallers.ApiKey()).Export(new JeBackupExportRequest()));
+        Assert.IsType<ForbidResult>(await Make(false, new() { ["confirm"] = "restore" }, TestCallers.Unknown()).Restore());
         Assert.IsType<ForbidResult>(await Make(false, new()).Inspect());
         Assert.IsType<ForbidResult>(await Make(false, new() { ["confirm"] = "restore" }).Restore());
 

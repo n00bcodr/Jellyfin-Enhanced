@@ -264,7 +264,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (CopiesOf(key.Title, viewer).FirstOrDefault(x => x.Visible) is not { } series) return null;
             Guid? id = key.Episode is int e
                 ? _view.Episodes(series.ItemId, season, viewer, includeVirtual: true)
-                    .FirstOrDefault(x => !x.Hidden && x.Season == season && (x.Episode == e || (x.EpisodeEnd is int end && x.Episode <= e && e <= end)))?.ItemId
+                    .FirstOrDefault(x => !x.Hidden && x.Season == season && new EpisodeRange(x.Episode, x.EpisodeEnd).Contains(e))?.ItemId
                 : _view.Seasons(series.ItemId, viewer).FirstOrDefault(x => !x.Hidden && x.Season == season)?.ItemId;
             return id is Guid found ? _view.Resolve(found, viewer) : null;
         }

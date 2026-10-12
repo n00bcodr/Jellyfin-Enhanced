@@ -26,6 +26,128 @@ public class IntegrationNotifyHardeningTests
 {
     private const string Dune = "movie:tmdb:693134";
 
+    [Fact]
+    public async Task ACombinedFileWithMoreThanFiftyEpisodesIsFullyBatchedOnceAcrossARestart()
+    {
+        const string show = "tv:tvdb:371980";
+        var series = Guid.NewGuid();
+        using var rig = await Started(r =>
+        {
+            r.Request(1, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 1 });
+            r.View.AddCopy(TitleKey.Parse(show)!, new JfCopy { ItemId = series, DateCreated = r.Arr.Now.UtcDateTime.AddDays(-30) });
+            r.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = r.Arr.Now.UtcDateTime.AddDays(-30) });
+        });
+        rig.Phones(rig.Emma);
+        rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 2, EpisodeEnd = 61, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(show);
+        rig.Open();
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.Step(show);
+        var told = Assert.Single(rig.Inbox(rig.Emma));
+        Assert.Equal(("episodes", "60"), (told.Kind, Params(told.Payload)["count"]));
+        Assert.Single(rig.Pushes);
+        rig.Open();
+        await rig.Step(show);
+        Assert.Single(rig.Inbox(rig.Emma));
+        Assert.Single(rig.Pushes);
+    }
+
+    [Theory]
+    [InlineData(int.MaxValue)]
+    [InlineData(100000)]
+    public async Task AnEnormousHiddenCombinedFileSuppressesPendingTailEpisodesWithoutExpansion(int end)
+    {
+        const string show = "tv:tvdb:371980";
+        var series = Guid.NewGuid();
+        using var rig = await Started(r =>
+        {
+            r.Request(1, 95396, r.Kid, type: "tv", tvdb: 371980, seasons: new[] { 1 });
+            r.View.AddCopy(TitleKey.Parse(show)!, new JfCopy { ItemId = series, DateCreated = r.Arr.Now.UtcDateTime.AddDays(-30) });
+        });
+        foreach (var number in new[] { 60, 5000 })
+            rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = number, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(show);
+        Assert.NotNull(rig.NotifyStore.Batch(rig.Kid.UserId, show));
+        rig.View.EpisodesBySeries[series].Clear();
+        rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, EpisodeEnd = end }, rig.Admin.UserId);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.Step(show);
+        Assert.Empty(rig.Inbox(rig.Kid));
+        Assert.Null(rig.NotifyStore.Batch(rig.Kid.UserId, show));
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5));
+    }
+
+    [Theory]
+    [InlineData(int.MaxValue)]
+    [InlineData(100000)]
+    public async Task EnormousVisibleCombinedFilesMatchPendingTailEpisodesAndBoundDiscovery(int end)
+    {
+        const string show = "tv:tvdb:371980";
+        var series = Guid.NewGuid();
+        using var rig = await Started(r =>
+        {
+            r.Request(1, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 1 });
+            r.View.AddCopy(TitleKey.Parse(show)!, new JfCopy { ItemId = series, DateCreated = r.Arr.Now.UtcDateTime.AddDays(-30) });
+        });
+        rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 5000, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(show);
+        rig.View.EpisodesBySeries[series].Clear();
+        rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, EpisodeEnd = end, DateCreated = rig.Arr.Now.UtcDateTime });
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        Assert.Equal(1, rig.Service.FlushBatches(rig.Arr.Now));
+        var told = Assert.Single(rig.Inbox(rig.Emma));
+        Assert.Equal("5000", Params(told.Payload)["episode"]);
+        await rig.Step(show);
+        var batch = rig.NotifyStore.Batch(rig.Emma.UserId, show);
+        Assert.NotNull(batch);
+        using var payload = JsonDocument.Parse(batch!.Value.Episodes);
+        Assert.Equal(EpisodeRange.MaxSyntheticEpisodes, payload.RootElement.GetProperty("Episodes").GetArrayLength());
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ActualSonarrEpisodesBeyondSyntheticRowsAreDiscoveredByRangeMembership()
+    {
+        const string show = "tv:tvdb:371980";
+        var series = Guid.NewGuid();
+        using var rig = await Started(r =>
+        {
+            r.Request(1, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 1 });
+            r.View.AddCopy(TitleKey.Parse(show)!, new JfCopy { ItemId = series, DateCreated = r.Arr.Now.UtcDateTime.AddDays(-30) });
+            var episode = FakeArr.Episode(5000, "2026-01-01T00:00:00Z", episode: 5000);
+            episode["seriesId"] = 5;
+            r.Sonarr.Episodes.Add(episode);
+        });
+        var instance = Assert.Single(rig.Store.Instances(ArrKind.Sonarr));
+        var read = await rig.Store.GetEpisodesAsync(instance, 5, default);
+        Assert.NotNull(read.Value);
+        rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, EpisodeEnd = int.MaxValue, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(show);
+        using var batch = JsonDocument.Parse(rig.NotifyStore.Batch(rig.Emma.UserId, show)!.Value.Episodes);
+        var episodes = batch.RootElement.GetProperty("Episodes").EnumerateArray().ToArray();
+        Assert.Equal(EpisodeRange.MaxSyntheticEpisodes + 1, episodes.Length);
+        Assert.Contains(episodes, e => e.GetProperty("E").GetInt32() == 5000);
+    }
+
+    [Fact]
+    public async Task ACombinedFileEndingAtTheLastIntegerHasABoundedWatchBaselineAcrossReads()
+    {
+        const string show = "tv:tvdb:371980";
+        var series = Guid.NewGuid();
+        using var rig = await Started(r =>
+        {
+            r.Request(1, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 1 });
+            r.View.AddCopy(TitleKey.Parse(show)!, new JfCopy { ItemId = series, DateCreated = r.Arr.Now.UtcDateTime.AddDays(-30) });
+            r.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = int.MaxValue - 2, EpisodeEnd = int.MaxValue, DateCreated = r.Arr.Now.UtcDateTime.AddDays(-30) });
+        });
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        await rig.Step(show);
+        Assert.Empty(rig.Inbox(rig.Emma));
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5));
+    }
+
     private static Dictionary<string, string> Params(string payload) => JsonSerializer.Deserialize<Dictionary<string, string>>(payload)!;
 
     // Every delivery of a user: channel, status and attempts.

@@ -20,6 +20,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         private readonly object _lock = new();
         private readonly Func<T?, CancellationToken, Task<ArrResult<T>>> _loader;
+        private readonly Func<Task, bool>? _trackBackground;
         private T? _value;
         private DateTimeOffset _loadedAt;
         private ArrError? _error;
@@ -35,10 +36,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private long _failedRefreshes;
         private List<Func<T, T?>>? _patchesDuringRefresh;
 
-        public ArrSnapshotSlot(ArrSnapshotKind kind, Func<T?, CancellationToken, Task<ArrResult<T>>> loader)
+        public ArrSnapshotSlot(ArrSnapshotKind kind, Func<T?, CancellationToken, Task<ArrResult<T>>> loader, Func<Task, bool>? trackBackground = null)
         {
             Kind = kind;
             _loader = loader;
+            _trackBackground = trackBackground;
         }
 
         /// <summary>Raised after every refresh (on the refresh's thread) with the value when it succeeded.</summary>
@@ -222,7 +224,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             lock (_lock)
             {
                 if (_inflight != null) return _inflight;
-                if (_retired) return Task.CompletedTask;
+                if (_retired || shutdown.IsCancellationRequested) return Task.CompletedTask;
                 _requestedFor = null;
                 _inflightStartedAt = null;
                 Task<Task> outer;
@@ -231,6 +233,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     outer = new Task<Task>(() => RunAsync(background, now, shutdown));
                 }
                 var inner = outer.Unwrap();
+                // Register before scheduling: shutdown either owns this entire refresh (including
+                // observers) or refuses it. Even slots from replaced states remain owned.
+                if (_trackBackground?.Invoke(inner) == false) return Task.CompletedTask;
                 _inflight = inner;
                 outer.Start(TaskScheduler.Default);
                 return inner;
