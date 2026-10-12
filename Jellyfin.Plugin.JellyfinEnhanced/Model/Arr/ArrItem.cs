@@ -42,6 +42,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
         public string? ReleaseDate { get; set; }
 
         /// <summary>
+        /// The release is a calendar day without a time (Radarr's release dates; a Sonarr air date
+        /// with no air time): <see cref="ReleaseDateLocal"/> is that day, shown on that day in every
+        /// time zone and with no clock time.
+        /// </summary>
+        [JsonPropertyName("dateOnly")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool DateOnly { get; set; }
+
+        /// <summary>The release day ("yyyy-MM-dd") of a <see cref="DateOnly"/> release.</summary>
+        [JsonPropertyName("releaseDateLocal")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ReleaseDateLocal { get; set; }
+
+        /// <summary>
         /// Release type (DigitalRelease, PhysicalRelease, Episode, etc.)
         /// </summary>
         [JsonPropertyName("releaseType")]

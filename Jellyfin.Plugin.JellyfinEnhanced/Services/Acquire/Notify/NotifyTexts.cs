@@ -76,7 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                             named ? $"{title}{Scope(P("scope"))} needs a manual import" : "A download needs a manual import",
                             (P("instance").Length > 0 ? $"{P("instance")} can't import it on its own." : "Sonarr/Radarr can't import it on its own.") + (!hideTitles && P("message").Length > 0 ? $" It says: {P("message")}" : string.Empty)),
                         AttentionCode.ApprovedNotInArr => new NotifyMessage(
-                            named ? $"{title} was OK'd in Seerr, but no {(P("variant") == "4k" ? "4K " : string.Empty)}Sonarr/Radarr has it" : "A request OK'd in Seerr reached no Sonarr/Radarr",
+                            named ? $"{title} was OK'd in Seerr, but none of the {(P("variant") == "4k" ? "4K " : string.Empty)}Sonarr/Radarr Jellyfin Enhanced watches has it" : "A request OK'd in Seerr reached no Sonarr/Radarr",
                             (P("user").Length > 0 && !hideTitles ? $"Asked for by {P("user")}. " : string.Empty) + "Check Seerr's Sonarr/Radarr settings."),
                         _ => new NotifyMessage("Something needs attention", "Open the Requests page to see what."),
                     };

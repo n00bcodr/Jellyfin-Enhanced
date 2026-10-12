@@ -372,7 +372,7 @@ public class IntegrationArrAdminAlertsTests
         Assert.Equal(("A download needs a manual import", "Sonarr can't import it on its own."), (hidden.Title, hidden.Body));
         var handoff = new Dictionary<string, string> { ["code"] = AttentionCode.ApprovedNotInArr, ["title"] = "Dune", ["user"] = "Emma", ["variant"] = "4k" };
         var h = NotifyTexts.Render(NotifyKind.Attention, handoff, hideTitles: false);
-        Assert.Equal(("Dune was OK'd in Seerr, but no 4K Sonarr/Radarr has it", "Asked for by Emma. Check Seerr's Sonarr/Radarr settings."), (h.Title, h.Body));
+        Assert.Equal(("Dune was OK'd in Seerr, but none of the 4K Sonarr/Radarr Jellyfin Enhanced watches has it", "Asked for by Emma. Check Seerr's Sonarr/Radarr settings."), (h.Title, h.Body));
         Assert.True(NotifyKind.IsAdminKind(NotifyKind.Attention));
         Assert.Contains(NotifyKind.Attention, NotifyKind.AdminKinds);
         Assert.Equal("#/details?id=" + new string('a', 32), NotifyDispatcher.InAppLink(new string('a', 32), NotifyKind.Attention));

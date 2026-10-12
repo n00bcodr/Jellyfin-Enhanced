@@ -133,8 +133,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>When Jellyfin added its copy.</summary>
         public DateTime? InJellyfinAt { get; init; }
 
-        /// <summary>Its downloads.</summary>
+        /// <summary>Its downloads (queue rows, at most 50).</summary>
         public IReadOnlyList<ManageQueueRow> Queue { get; init; } = Array.Empty<ManageQueueRow>();
+
+        /// <summary>How many queue rows it has in scope (more than <see cref="Queue"/> lists: "and N more").</summary>
+        public int QueueTotal { get; init; }
+
+        /// <summary>How many whole downloads it has in scope (more than <see cref="Downloads"/> lists: "and N more").</summary>
+        public int DownloadsTotal { get; init; }
+
+        /// <summary>When the queue shown was read, when that is past its freshness target (null: it is fresh).</summary>
+        public DateTimeOffset? QueueAsOf { get; init; }
+
+        /// <summary>
+        /// Its queue can't be read and what was last read is too old to say anything about now: no
+        /// queue rows or downloads (nor their actions) are given; the drawer says when it was last read.
+        /// </summary>
+        public bool QueueExpired { get; init; }
 
         /// <summary>Its timeline (oldest first): added, history events, Jellyfin Enhanced actions.</summary>
         public IReadOnlyList<ManageEvent> Timeline { get; init; } = Array.Empty<ManageEvent>();
@@ -309,7 +324,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             var kind = key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr;
             var audit = _audit.ReadRecent(500);
-            var jfCopies = _status.View.Copies(title, viewer);
+            var jfCopies = _status.CopiesOf(title, viewer);
             var holders = new List<(ArrConnection Instance, ArrMovieEntry? Movie, ArrSeriesEntry? Series)>();
             var instances = new List<ManageInstance>();
             string? name = null;
@@ -339,15 +354,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 tvdb ??= series?.TvdbId;
                 bool InScope(int? season, int? episode)
                     => (key.Season is not int s || season == s) && (key.Episode is not int e || episode == e);
-                var scoped = (queue.Value?.Records ?? Array.Empty<ArrQueueEntry>())
+                // An expired queue says nothing about now: no rows, no downloads to act on.
+                var records = queue.Expired ? null : queue.Value?.Records;
+                var scoped = (records ?? Array.Empty<ArrQueueEntry>())
                     .Where(r => (key.IsMovie ? r.MovieId : r.SeriesId) == arrId && InScope(r.SeasonNumber, r.EpisodeNumber))
                     .ToList();
                 // Phase 2: the whole downloads those rows belong to, with their actions (a pack's other
                 // episodes count: removing it removes them too).
                 var scopedIds = new HashSet<int>(scoped.Select(r => r.Id));
-                var downloads = JellyfinBridge.Phase2(_config()) && scoped.Count > 0
-                    ? NeedsAttention.Group(instance, queue.Value, library.Value).Where(g => g.ArrId == arrId && g.Ids.Any(scopedIds.Contains)).Take(20).ToList()
+                var allDownloads = JellyfinBridge.Phase2(_config()) && scoped.Count > 0
+                    ? NeedsAttention.Group(instance, queue.Value, library.Value, row => _store.QueueSeen(instance, row)).Where(g => g.ArrId == arrId && g.Ids.Any(scopedIds.Contains)).ToList()
                     : new List<QueueGroup>();
+                var downloads = allDownloads.Take(20).ToList();
                 var rows = scoped
                     .Take(50)
                     .Select(r => new ManageQueueRow
@@ -398,17 +416,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     LastSearch = movie?.LastSearchTime,
                     Searching = searching,
                     Queue = rows,
+                    QueueTotal = scoped.Count,
                     Downloads = downloads,
+                    DownloadsTotal = allDownloads.Count,
+                    QueueAsOf = queue.Stale || queue.Expired ? queue.LoadedAt : null,
+                    QueueExpired = queue.Expired,
                     Timeline = events.Where(e => e.At != null).OrderBy(e => e.At).TakeLast(MaxEvents).ToList(),
                 });
             }
 
             // Which Jellyfin copy belongs to which instance (linked libraries, path mappings, folder names).
+            var arrCopies = holders.Select(h => new ArrCopyFacts(h.Instance) { Movie = h.Movie, Series = h.Series }).ToList();
             for (var i = 0; i < instances.Count; i++)
             {
-                var held = holders.FirstOrDefault(h => h.Instance.Id == instances[i].Id);
-                if (held.Instance == null) continue;
-                var match = StatusComposer.MatchCopies(new ArrCopyFacts(held.Instance) { Movie = held.Movie, Series = held.Series }, jfCopies, holders.Count).FirstOrDefault();
+                var held = arrCopies.FirstOrDefault(h => h.Instance.Id == instances[i].Id);
+                if (held == null) continue;
+                var match = StatusComposer.MatchCopies(held, jfCopies, arrCopies).FirstOrDefault();
                 if (match == null) continue;
                 var original = instances[i];
                 instances[i] = new ManageInstance
@@ -417,7 +440,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     Live = original.Live, Readable = original.Readable, InArr = original.InArr, ArrId = original.ArrId, TitleSlug = original.TitleSlug,
                     Monitored = original.Monitored, HasFile = original.HasFile, SizeOnDisk = original.SizeOnDisk, Path = original.Path,
                     QualityProfile = original.QualityProfile, MinimumAvailability = original.MinimumAvailability, LastSearch = original.LastSearch,
-                    Searching = original.Searching, Queue = original.Queue, Downloads = original.Downloads, Timeline = original.Timeline,
+                    Searching = original.Searching, Queue = original.Queue, QueueTotal = original.QueueTotal, Downloads = original.Downloads, DownloadsTotal = original.DownloadsTotal, QueueAsOf = original.QueueAsOf, QueueExpired = original.QueueExpired, Timeline = original.Timeline,
                     Library = match.LibraryName,
                     ItemId = match.ItemId.ToString("N", CultureInfo.InvariantCulture),
                     InJellyfinAt = match.DateCreated,

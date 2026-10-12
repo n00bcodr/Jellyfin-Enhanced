@@ -97,10 +97,27 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
         return copies.Count == 0 || copies.Any(c => c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId));
     }
 
-    public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer)
-        => CopiesByKey.TryGetValue(titleKey.ToString(), out var list)
-            ? list.Select(c => new JfCopy { ItemId = c.Copy.ItemId, LibraryId = c.Copy.LibraryId, LibraryName = c.Copy.LibraryName, Path = c.Copy.Path, DateCreated = c.Copy.DateCreated, Visible = c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId) }).ToList()
-            : new List<JfCopy>();
+    /// <summary>The keys every Copies call looked for (the key first, then its aliases of the same kind).</summary>
+    public List<IReadOnlyList<string>> CopyQueries { get; } = new();
+
+    /// <summary>Copies carrying the key or any alias of the same kind (Jellyfin's "any provider id"), once per item.</summary>
+    public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
+    {
+        var keys = new[] { titleKey }.Concat(aliases ?? Array.Empty<TitleKey>()).Where(k => k.IsMovie == titleKey.IsMovie).Select(k => k.Title.ToString()).Distinct().ToList();
+        CopyQueries.Add(keys);
+        var seen = new HashSet<Guid>();
+        var result = new List<JfCopy>();
+        foreach (var key in keys)
+        {
+            if (!CopiesByKey.TryGetValue(key, out var list)) continue;
+            foreach (var c in list)
+            {
+                if (!seen.Add(c.Copy.ItemId)) continue;
+                result.Add(new JfCopy { ItemId = c.Copy.ItemId, LibraryId = c.Copy.LibraryId, LibraryName = c.Copy.LibraryName, Path = c.Copy.Path, DateCreated = c.Copy.DateCreated, Visible = c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId) });
+            }
+        }
+        return result;
+    }
 
     /// <summary>Runs on every episode lookup (tests use it to make something happen mid-way).</summary>
     public Action? OnEpisodes { get; set; }

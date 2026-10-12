@@ -196,3 +196,28 @@ test('calendar card navigates to series while play button targets episode and un
   h.document.querySelector('button').click();assert.equal(h.window.location.hash,'#/details?id=episode-id');
   h.document.querySelector('[data-event-id="movie"]').click();assert.equal(h.window.location.hash,'#/details?id=episode-id');
 });
+
+test('a date-only release is on its own day west of UTC, with no clock time, and the request names the viewer\'s days', async t => {
+  const previous = process.env.TZ;
+  process.env.TZ = 'America/Los_Angeles';
+  t.after(() => { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; });
+  let asked = null;
+  const data = {events: [
+    {id: 'movie', type: 'Movie', releaseType: 'DigitalRelease', releaseDate: '2026-10-20T00:00:00.0000000Z', dateOnly: true, releaseDateLocal: '2026-10-20'},
+    {id: 'episode', type: 'Series', releaseType: 'Episode', releaseDate: '2026-10-21T02:00:00.0000000Z'}
+  ], errors: []};
+  const h = setup(t, {core: {api: {plugin: async path => {asked = path; return data;}}}});
+  await h.P.fetchCalendarEvents(new h.window.Date(2026, 9, 1), new h.window.Date(2026, 9, 31, 23, 59));
+  const query = new URLSearchParams(asked.slice(asked.indexOf('?') + 1));
+  assert.equal(query.get('startDay'), '2026-10-01');
+  assert.equal(query.get('endDay'), '2026-10-31');
+  const grouped = plain(h.P.groupEventsByDate(h.P.state.events));
+  // The release day stays the 20th (read as midnight UTC it would be the 19th at 5 PM here); the
+  // timed episode (02:00 UTC on the 21st) is the evening of the 20th here.
+  assert.deepEqual(Object.keys(grouped).sort(), ['2026-10-20']);
+  assert.deepEqual(grouped['2026-10-20'].map(e => e.id).sort(), ['episode', 'movie']);
+  const movie = h.P.state.events.find(e => e.id === 'movie');
+  const local = new h.window.Date(movie.releaseDate);
+  assert.deepEqual([local.getHours(), local.getMinutes()], [0, 0]);
+  assert.equal(movie.releaseDateUtc, '2026-10-20T00:00:00.0000000Z');
+});

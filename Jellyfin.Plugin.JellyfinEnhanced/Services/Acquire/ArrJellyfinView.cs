@@ -156,23 +156,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <inheritdoc />
-        public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer)
+        public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
         {
             if (viewer.Handle is not User user) return Array.Empty<JfCopy>();
-            var provider = titleKey.Provider switch
+            // The key and its aliases of the same kind, one query per set of distinct providers
+            // (Jellyfin matches any of the ids a query names; an item is listed once).
+            var ids = new[] { titleKey }.Concat(aliases ?? Array.Empty<TitleKey>())
+                .Where(k => k.IsMovie == titleKey.IsMovie)
+                .Select(k => (Provider: k.Provider switch { "tmdb" => "Tmdb", "tvdb" => "Tvdb", _ => "Imdb" }, k.Id))
+                .Distinct()
+                .ToList();
+            var queries = new List<Dictionary<string, string>>();
+            foreach (var (provider, id) in ids)
             {
-                "tmdb" => "Tmdb",
-                "tvdb" => "Tvdb",
-                _ => "Imdb",
-            };
-            var items = _libraryManager.GetItemList(new InternalItemsQuery
+                var into = queries.FirstOrDefault(q => !q.ContainsKey(provider));
+                if (into == null) queries.Add(into = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+                into[provider] = id;
+            }
+            var items = new List<BaseItem>();
+            var found = new HashSet<Guid>();
+            foreach (var providers in queries.Take(4))
             {
-                IncludeItemTypes = new[] { titleKey.IsMovie ? BaseItemKind.Movie : BaseItemKind.Series },
-                HasAnyProviderId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { { provider, titleKey.Id } },
-                Recursive = true,
-                Limit = 20,
-                DtoOptions = new DtoOptions(false),
-            });
+                foreach (var item in _libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    IncludeItemTypes = new[] { titleKey.IsMovie ? BaseItemKind.Movie : BaseItemKind.Series },
+                    HasAnyProviderId = providers,
+                    Recursive = true,
+                    Limit = 20,
+                    DtoOptions = new DtoOptions(false),
+                }))
+                {
+                    if (items.Count < 20 && found.Add(item.Id)) items.Add(item);
+                }
+            }
             var copies = new List<JfCopy>(items.Count);
             foreach (var item in items)
             {

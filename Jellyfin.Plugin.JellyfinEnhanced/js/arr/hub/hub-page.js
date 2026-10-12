@@ -29,7 +29,12 @@
         unsubscribe: null,
         reloadTimer: null,
         embedded: null,
-        generation: 0
+        generation: 0,
+        okAt: 0,
+        refreshFailed: false,
+        retryTimer: null,
+        retryDelay: 0,
+        hiddenListener: false
     };
 
     /**
@@ -178,6 +183,8 @@
         if (!state.visible) return;
         state.visible = false;
         state.generation++;
+        stopRetry();
+        state.refreshFailed = false;
         document.body.classList.remove('je-hub-active');
         leaveEmbedded();
         H.admin?.leave?.();
@@ -210,20 +217,119 @@
                 const since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : null;
                 const data = await JE.core.api.plugin('/acquire/hub', { skipRetry: true });
                 if (generation !== state.generation || !state.visible) return;
-                state.data = data && typeof data === 'object' ? data : null;
-                state.error = !state.data;
+                if (!data || typeof data !== 'object') throw new Error('empty answer');
+                state.data = data;
+                state.error = false;
+                state.refreshFailed = false;
+                state.okAt = Date.now();
+                stopRetry();
                 render();
                 follow(state.data, since);
             } catch (err) {
-                if (generation !== state.generation) return;
-                state.error = true;
+                if (generation !== state.generation || !state.visible) return;
                 console.warn(`${logPrefix} could not load the Requests page (${err?.status || err?.message || err})`);
+                if (state.data) {
+                    // A re-read failed: what is on screen stays, with a note saying so (the change
+                    // that asked for it has been used up, so it is tried again on our own).
+                    state.refreshFailed = true;
+                    scheduleRetry(generation);
+                } else {
+                    state.error = true;
+                }
                 render();
             } finally {
                 if (state.loading === run) state.loading = null;
             }
         })();
         return run.promise;
+    }
+
+    /**
+     * Tries a failed re-read again while the page is shown: after 5 s, then twice as long each
+     * time, at most a minute apart. Stops when the page is left or the user changes.
+     * @param {number} generation The visit the failure belongs to.
+     * @returns {void}
+     */
+    function scheduleRetry(generation) {
+        if (state.retryTimer) return;
+        state.retryDelay = JE.arrStatus.retryDelay(state.retryDelay);
+        state.retryTimer = setTimeout(() => {
+            state.retryTimer = null;
+            if (generation === state.generation && state.visible) load();
+        }, state.retryDelay);
+    }
+
+    /**
+     * Stops trying again (a read worked, or the page was left).
+     * @returns {void}
+     */
+    function stopRetry() {
+        if (state.retryTimer) clearTimeout(state.retryTimer);
+        state.retryTimer = null;
+        state.retryDelay = 0;
+    }
+
+    /**
+     * The note shown while a re-read has failed and the page shows what it had (with Retry).
+     * @returns {HTMLElement} Note.
+     */
+    function buildRefreshNote() {
+        return JE.arrStatus.staleNote(state.okAt, () => { stopRetry(); load(); }, 'je-hub-note je-hub-note-warn je-hub-refresh-failed');
+    }
+
+    /**
+     * The hub's lists as this user sees them: without what they hid with Hidden Content (when it
+     * filters requests; globally hidden items only, matched by Jellyfin item id, or by TMDB id within
+     * the same kind), and without a release day that has already passed where they are. Rendering
+     * and the tab counts both use it. Hidden Content filters what the hub shows, nothing else.
+     * @param {Object} data Hub response.
+     * @returns {Object} The response with filtered mine, soon and ready.
+     */
+    function visibleData(data) {
+        if (!data) return data;
+        const hidden = hiddenSets();
+        const shown = (e) => {
+            if (!hidden) return true;
+            if (e.itemId && hidden.ids.has(normalizeId(e.itemId))) return false;
+            const tmdb = e.tmdbId ? String(e.tmdbId) : '';
+            return !(tmdb && (e.kind === 'tv' ? hidden.shows : hidden.movies).has(tmdb));
+        };
+        return {
+            ...data,
+            mine: (data.mine || []).filter(shown),
+            soon: (data.soon || []).filter(e => shown(e) && !(e.nextDay && JE.arrStatus?.dayPassed?.(e.nextDay))),
+            ready: (data.ready || []).filter(shown)
+        };
+    }
+
+    /**
+     * A Jellyfin id without dashes, lower case.
+     * @param {string} id Id.
+     * @returns {string} Normalised id.
+     */
+    function normalizeId(id) {
+        return String(id).replace(/-/g, '').toLowerCase();
+    }
+
+    /**
+     * What this user hid everywhere (Hidden Content), when it filters requests: item ids, and TMDB
+     * ids of hidden movies and of hidden series. Null when nothing is filtered.
+     * @returns {{ids: Set<string>, movies: Set<string>, shows: Set<string>}|null} Sets.
+     */
+    function hiddenSets() {
+        const hc = JE.hiddenContent;
+        if (!hc || typeof hc.getSettings !== 'function' || typeof hc.getAllHiddenItems !== 'function') return null;
+        const settings = hc.getSettings() || {};
+        if (!settings.enabled || !settings.filterRequests) return null;
+        const sets = { ids: new Set(), movies: new Set(), shows: new Set() };
+        for (const item of hc.getAllHiddenItems() || []) {
+            if ((item.hideScope || 'global') !== 'global') continue;
+            if (item.itemId) sets.ids.add(normalizeId(item.itemId));
+            if (!item.tmdbId) continue;
+            if (item.type === 'Movie') sets.movies.add(String(item.tmdbId));
+            else if (item.type === 'Series') sets.shows.add(String(item.tmdbId));
+        }
+        return sets.ids.size || sets.movies.size || sets.shows.size ? sets : null;
     }
 
     /**
@@ -397,12 +503,14 @@
             panel.appendChild(box);
             return;
         }
-        const notes = H.buildNotes(state.data);
+        if (state.refreshFailed) panel.appendChild(buildRefreshNote());
+        const view = visibleData(state.data);
+        const notes = H.buildNotes(view);
         if (notes) panel.appendChild(notes);
         const actions = { open: openEntry, play: playEntry, manage: manageEntry };
-        if (state.tab === 'soon') H.renderSoon(panel, state.data, actions);
-        else if (state.tab === 'ready') H.renderReady(panel, state.data, actions);
-        else H.renderMine(panel, state.data, actions);
+        if (state.tab === 'soon') H.renderSoon(panel, view, actions);
+        else if (state.tab === 'ready') H.renderReady(panel, view, actions);
+        else H.renderMine(panel, view, actions);
     }
 
     /**
@@ -415,10 +523,11 @@
         const strip = root.querySelector('.je-hub-tabs');
         if (!strip) return;
         strip.textContent = '';
+        const view = visibleData(state.data);
         const counts = {
-            mine: (state.data?.mine || []).filter(e => e.group !== 'declined').length,
-            soon: (state.data?.soon || []).length,
-            ready: (state.data?.ready || []).length,
+            mine: (view?.mine || []).filter(e => e.group !== 'declined').length,
+            soon: (view?.soon || []).length,
+            ready: (view?.ready || []).length,
             overview: (H.admin?.state?.data?.overview?.needsAttention || []).length
         };
         for (const id of available) {
@@ -549,12 +658,19 @@
         document.addEventListener('viewshow', (e) => {
             if (state.visible && e.target && e.target.id !== PAGE_ID && !isRoute()) hide();
         });
+        // Hiding or unhiding something (here or on another page) shows at once.
+        window.addEventListener('je-hidden-content-changed', () => {
+            if (state.visible && state.data) render();
+        });
         handleNavigation();
     }
 
     JE.session?.onUserChange?.('arr-hub', () => {
         state.data = null;
         state.error = false;
+        state.refreshFailed = false;
+        state.okAt = 0;
+        stopRetry();
         state.generation++;
         follow(null);
         if (state.visible) {
@@ -579,6 +695,7 @@
 
     H.state = state;
     H.load = load;
+    H.visibleData = visibleData;
     H.renderTabs = refreshTabs;
     H.selectTab = selectTab;
     JE.arrHub = Object.freeze({ show, hide, refresh: load, isRoute });

@@ -103,6 +103,47 @@ public class ApiArrRoutesTests
     }
 
     [Fact]
+    public void AnotherUsersNewerHistoryNeverPushesYoursOutOfTheWindow()
+    {
+        var now = new DateTime(2026, 10, 12, 12, 0, 0, DateTimeKind.Utc);
+        var items = Enumerable.Range(0, 300)
+            .Select(i => new ArrLegacyHistoryItem { Source = "Radarr", Title = "Theirs " + i, TmdbId = 9000 + i, Date = now.AddMinutes(-i) })
+            .Concat(Enumerable.Range(0, 3).Select(i => new ArrLegacyHistoryItem { Source = "Radarr", Title = "Mine " + i, TmdbId = 603, Date = now.AddDays(-1).AddMinutes(-i) }))
+            .ToList();
+        var mine = JellyfinEnhancedController.HistoryWindow(items, new HashSet<(int, string)> { (603, "movie") });
+        Assert.Equal(new[] { "Mine 0", "Mine 1", "Mine 2" }, mine.Select(x => x.Title));
+        // Unfiltered (administrators, filter off): the newest 200.
+        var all = JellyfinEnhancedController.HistoryWindow(items, null);
+        Assert.Equal((200, "Theirs 0"), (all.Count, all[0].Title));
+    }
+
+    [Fact]
+    public void CalendarDateOnlyReleasesAreKeptByTheViewersDaysAndSaySo()
+    {
+        var radarr = new ArrConnection { Id = "r", Kind = ArrKind.Radarr, Name = "Movies", Url = "http://radarr.lan" };
+        var sonarr = new ArrConnection { Id = "s", Kind = ArrKind.Sonarr, Name = "TV", Url = "http://sonarr.lan" };
+        var movies = new ArrCalendarSnapshot { Entries = new[] { new ArrCalendarEntry { Id = 1, Title = "Dune", Releases = new Dictionary<string, DateTime> { ["DigitalRelease"] = new(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc) } } } };
+        // Los Angeles asks for 1–31 October: from 07:00 UTC on the 1st. A release dated the 1st (midnight
+        // UTC on the wire) is still on the 1st there.
+        var start = new DateTime(2026, 10, 1, 7, 0, 0, DateTimeKind.Utc);
+        var end = new DateTime(2026, 11, 1, 6, 59, 0, DateTimeKind.Utc);
+        var item = Assert.Single(ArrLegacyViews.CalendarItems(radarr, movies, start, end, "2026-10-01", "2026-10-31"));
+        Assert.Equal((true, "2026-10-01"), (item.DateOnly, item.ReleaseDateLocal));
+        // Outside the viewer's days: not listed.
+        Assert.Empty(ArrLegacyViews.CalendarItems(radarr, movies, start, end, "2026-10-02", "2026-10-31"));
+        // An episode with an air time stays an instant in the range; one without is a day.
+        var episodes = new ArrCalendarSnapshot { Entries = new[]
+        {
+            new ArrCalendarEntry { Id = 2, Title = "Show", AirDateUtc = new DateTime(2026, 10, 1, 2, 0, 0, DateTimeKind.Utc) },
+            new ArrCalendarEntry { Id = 3, Title = "Show", AirDateUtc = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc), AirDateIsDay = true },
+        } };
+        var listed = ArrLegacyViews.CalendarItems(sonarr, episodes, start, end, "2026-10-01", "2026-10-31").ToList();
+        Assert.Equal(new[] { "3" }, listed.Select(i => i.Id));
+        Assert.True(listed[0].DateOnly);
+        Assert.DoesNotContain("dateOnly", JsonSerializer.Serialize(ArrLegacyViews.CalendarItems(sonarr, episodes, start.AddHours(-6), end, null, null).Single(i => i.Id == "2")));
+    }
+
+    [Fact]
     public async Task LinksComeFromTheLibraryIndexWithoutACallPerId()
     {
         using var rig = new Rig();

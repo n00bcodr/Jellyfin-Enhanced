@@ -33,7 +33,9 @@
         panel: null,
         data: {},
         loadedAt: {},
+        okAt: {},
         failed: {},
+        retry: { timer: null, delay: 0, tab: null },
         loading: {},
         again: {},
         timer: null,
@@ -142,6 +144,7 @@
         state.tab = null;
         state.panel = null;
         state.generation++;
+        stopRetry();
         if (state.timer) clearTimeout(state.timer);
         state.timer = null;
         if (state.reloadTimer) clearTimeout(state.reloadTimer);
@@ -188,15 +191,21 @@
             try {
                 const data = await JE.core.api.plugin(ROUTES[tab], { skipRetry: true });
                 if (generation !== state.generation) return;
+                if (!data || typeof data !== 'object') throw new Error('empty answer');
                 const attention = (state.data.overview?.needsAttention || []).length;
-                state.data[tab] = data && typeof data === 'object' ? data : null;
-                state.failed[tab] = !state.data[tab];
+                state.data[tab] = data;
+                state.failed[tab] = false;
                 state.loadedAt[tab] = Date.now();
+                state.okAt[tab] = state.loadedAt[tab];
+                if (state.retry.tab === tab) stopRetry();
                 // The hub's Overview tab shows how many rows need attention: redraw its tab strip.
                 if (tab === 'overview' && (state.data.overview?.needsAttention || []).length !== attention) H.renderTabs?.();
             } catch (err) {
                 if (generation !== state.generation) return;
+                // What the tab shows stays (with a note saying the re-read failed), and it is tried
+                // again on its own, sooner than the fallback poll.
                 state.failed[tab] = true;
+                if (state.data[tab] && state.tab === tab) scheduleRetry(tab, generation);
                 console.warn(`${logPrefix} could not load the ${tab} tab (${err?.status || err?.message || err})`);
             } finally {
                 delete state.loading[tab];
@@ -209,6 +218,38 @@
         })();
         state.loading[tab] = run;
         return run;
+    }
+
+    /**
+     * Tries a failed re-read of the shown tab again: after 5 s, then twice as long each time, at
+     * most a minute apart; stops when the tab or the page is left.
+     * @param {string} tab Tab id.
+     * @param {number} generation The visit the failure belongs to.
+     * @returns {void}
+     */
+    function scheduleRetry(tab, generation) {
+        if (state.retry.timer && state.retry.tab === tab) return;
+        stopRetry(true);
+        state.retry.tab = tab;
+        state.retry.delay = JE.arrStatus.retryDelay(state.retry.delay);
+        state.retry.timer = setTimeout(() => {
+            state.retry.timer = null;
+            if (generation === state.generation && state.tab === tab && state.panel?.isConnected) load(tab, true);
+        }, state.retry.delay);
+    }
+
+    /**
+     * Stops trying again (a read worked, or the tab was left).
+     * @param {boolean} [keepDelay] Keep the backoff (switching the retried tab).
+     * @returns {void}
+     */
+    function stopRetry(keepDelay) {
+        if (state.retry.timer) clearTimeout(state.retry.timer);
+        state.retry.timer = null;
+        if (!keepDelay) {
+            state.retry.delay = 0;
+            state.retry.tab = null;
+        }
     }
 
     /**
@@ -240,6 +281,10 @@
             const box = el('div', 'je-hub-empty', tr(state.failed[state.tab] ? 'arr_ops_error' : 'arr_hub_loading'));
             panel.appendChild(box);
             return;
+        }
+        if (state.failed[state.tab]) {
+            const tab = state.tab;
+            panel.appendChild(JE.arrStatus.staleNote(state.okAt[tab] || state.loadedAt[tab] || 0, () => { stopRetry(); load(tab, true); }, 'je-ops-banner je-ops-banner-unknown'));
         }
         const ctx = context();
         try {

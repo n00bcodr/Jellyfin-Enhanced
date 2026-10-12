@@ -64,6 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly ArrStatusService _status;
         private readonly SeerrRequestReadModel _requests;
         private readonly IArrJellyfinView _view;
+        private readonly TitleAliases _aliases;
         private readonly ArrChangeFeed _feed;
         private readonly ArrStateStore _arr;
         private readonly INotifyUsers _users;
@@ -115,6 +116,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             _view = view;
             _feed = feed;
             _arr = arr;
+            _aliases = new TitleAliases(arr, requests);
             _users = users;
             _dispatcher = dispatcher;
             _library = library;
@@ -366,56 +368,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         // The key a title is looked at under: TMDB for a movie, TVDB for a series, when its own key is
         // another one and an arr library or one of Seerr's requests knows the canonical id.
-        private TitleKey Canonical(TitleKey key)
-        {
-            if ((key.IsMovie && key.Provider == "tmdb") || (!key.IsMovie && key.Provider == "tvdb")) return key;
-            var prefix = key.IsMovie ? "movie:tmdb:" : "tv:tvdb:";
-            var canonical = Aliases(key).FirstOrDefault(a => a.StartsWith(prefix, StringComparison.Ordinal));
-            return canonical != null && TitleKey.Parse(canonical) is { } parsed ? parsed : key;
-        }
+        private TitleKey Canonical(TitleKey key) => _aliases.Canonical(key);
 
         // The other keys of a title: the canonical feed key (TMDB movie / TVDB series) and the IMDb /
         // TMDB ids the arr libraries and Seerr's requests (titles no arr holds) know it by.
-        private IEnumerable<string> Aliases(TitleKey key)
-        {
-            var result = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var instance in _arr.Instances(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr))
-            {
-                if (_arr.PeekLibrary(instance.Id) is not { } library) continue;
-                if (key.IsMovie)
-                {
-                    var movie = key.Provider == "tmdb" && key.NumericId is int t ? library.MovieByTmdb(t) : key.Provider == "imdb" ? library.MovieByImdb(key.Id) : null;
-                    if (movie == null) continue;
-                    if (movie.TmdbId is > 0) result.Add(ArrTitleKey.Movie(movie.TmdbId.Value));
-                    if (!string.IsNullOrEmpty(movie.ImdbId)) result.Add("movie:imdb:" + movie.ImdbId);
-                }
-                else
-                {
-                    var series = key.Provider switch
-                    {
-                        "tvdb" when key.NumericId is int tv => library.SeriesByTvdb(tv),
-                        "tmdb" when key.NumericId is int tm => library.SeriesByTmdb(tm),
-                        "imdb" => library.SeriesByImdb(key.Id),
-                        _ => null,
-                    };
-                    if (series == null) continue;
-                    if (series.TvdbId is > 0) result.Add(ArrTitleKey.Series(series.TvdbId.Value));
-                    if (series.TmdbId is > 0) result.Add("tv:tmdb:" + series.TmdbId.Value.ToString(CultureInfo.InvariantCulture));
-                    if (!string.IsNullOrEmpty(series.ImdbId)) result.Add("tv:imdb:" + series.ImdbId);
-                }
-            }
-            // Seerr's requests for the title carry its other ids too (a title no arr holds).
-            foreach (var r in _requests.ForTitle(key))
-            {
-                if (r.IsMovie != key.IsMovie) continue;
-                if (key.IsMovie && r.TmdbId is > 0) result.Add(ArrTitleKey.Movie(r.TmdbId.Value));
-                if (!key.IsMovie && r.TvdbId is > 0) result.Add(ArrTitleKey.Series(r.TvdbId.Value));
-                if (!key.IsMovie && r.TmdbId is > 0) result.Add("tv:tmdb:" + r.TmdbId.Value.ToString(CultureInfo.InvariantCulture));
-                if (!string.IsNullOrEmpty(r.ImdbId)) result.Add((key.IsMovie ? "movie:imdb:" : "tv:imdb:") + r.ImdbId);
-            }
-            result.Remove(key.ToString());
-            return result;
-        }
+        private IEnumerable<string> Aliases(TitleKey key) => _aliases.Of(key).Select(k => k.ToString());
 
         /// <summary>
         /// A user's interest in one title: the part of it they asked for (Seerr) and/or follow, or
@@ -670,12 +627,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         // The viewer's copies of a series an interest counts: every copy they can open, or for a 4K
-        // request the copies of the 4K Sonarr instances (all of them when no 4K Sonarr is set up).
+        // request the copies of the 4K Sonarr instances. With none of those (or no 4K Sonarr set up),
+        // only the copy Seerr matched the request to, as the Requests page does: never the standard copy.
         private List<JfCopy> SeriesCopies(TitleKey key, StatusViewer viewer, bool only4k)
         {
-            var copies = _view.Copies(key, viewer);
-            var chosen = only4k ? FourKSeriesCopies(key, copies) ?? copies : copies;
-            return chosen.Where(c => c.Visible).ToList();
+            var copies = _view.Copies(key, viewer, _aliases.Of(key));
+            if (!only4k) return copies.Where(c => c.Visible).ToList();
+            var fourK = (FourKSeriesCopies(key, copies) ?? Array.Empty<JfCopy>()).Where(c => c.Visible).ToList();
+            if (fourK.Count == 0 && SeerrFourKItem(key, viewer.UserId) is Guid seerr) fourK = copies.Where(c => c.Visible && c.ItemId == seerr).ToList();
+            return fourK;
+        }
+
+        /// <summary>The Jellyfin item Seerr matched a user's 4K request for the title to (null: none, or not a 4K-only request).</summary>
+        private Guid? SeerrFourKItem(TitleKey key, Guid user)
+        {
+            var mine = new[] { key.ToString() }.Concat(Aliases(key)).Distinct(StringComparer.Ordinal)
+                .Select(TitleKey.Parse).Where(k => k != null).SelectMany(k => _requests.ForTitle(k!))
+                .GroupBy(r => r.Id).Select(g => g.First()).Where(r => r.RequestedBy == user).ToList();
+            return mine.Count > 0 ? RequestsHubService.ScopeOf(mine, user).JellyfinItemId : null;
         }
 
         /// <summary>
@@ -692,7 +661,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             {
                 if (SonarrSeries(instance, key) is { } series) arr.Add(new ArrCopyFacts(instance) { Series = series });
             }
-            return arr.Where(x => x.Instance.Role == "4k").SelectMany(x => StatusComposer.MatchCopies(x, copies, arr.Count)).Distinct().ToList();
+            // Positive matches only: "the only copy there is" may be the standard one.
+            return arr.Where(x => x.Instance.Role == "4k").SelectMany(x => StatusComposer.MatchCopies(x, copies, arr, soleFallback: false)).Distinct().ToList();
         }
 
         private ArrSeriesEntry? SonarrSeries(ArrConnection instance, TitleKey key)
@@ -986,7 +956,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             {
                 foreach (var k in keys)
                 {
-                    if (TitleKey.Parse(k) is { } parsed) items.AddRange(_view.Copies(parsed, viewer).Select(c => c.ItemId).Where(id => id != Guid.Empty));
+                    if (TitleKey.Parse(k) is { } parsed) items.AddRange(_view.Copies(parsed, viewer, _aliases.Of(parsed)).Select(c => c.ItemId).Where(id => id != Guid.Empty));
                 }
             }
             _store.InTransaction(tx => tx.ForgetTitle(user, keys, items));
@@ -1218,11 +1188,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     foreach (var admin in Admins()) Notify(admin, NotifyKind.LowDisk, "disk|" + item.InstanceId + "|" + item.Title + "|" + day, null, null, p, now, null);
                     continue;
                 }
-                if (!AlertCodes.Contains(item.Code) || (item.Since is DateTime started && started < baseline)) continue;
+                // A download's occurrence is when the arr added it (its "since" is when JE first saw the
+                // problem, which a restart moves on): the baseline and the event key go by it.
+                var occurred = item.Occurred ?? item.Since;
+                if (!AlertCodes.Contains(item.Code) || (occurred is DateTime started && started < baseline)) continue;
                 // Once per row and occurrence (a new download, a new OK in Seerr is a new one). The
                 // "told" mark commits with the alert and is kept fresh while the row is listed, so the
                 // inbox's 90-day housekeeping never makes a row that is still there alert again.
-                var eventKey = "attention|" + item.Id + "|" + (item.Since?.Ticks ?? 0).ToString(CultureInfo.InvariantCulture);
+                var eventKey = "attention|" + item.Id + "|" + (occurred?.Ticks ?? 0).ToString(CultureInfo.InvariantCulture);
                 var payload = AttentionPayload(item);
                 foreach (var admin in Admins()) Notify(admin, NotifyKind.Attention, eventKey, item.Key, null, payload, now, null, tx => tx.KeepMark(admin, "told|" + eventKey, now));
             }

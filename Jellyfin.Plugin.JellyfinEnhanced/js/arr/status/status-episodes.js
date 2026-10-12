@@ -26,7 +26,8 @@
                 if (upcoming) continue;
                 upcoming = true;
                 other.push(ep);
-            } else if (ep.stage === 'looking' || ep.stage === 'notHere') {
+            } else if ((ep.stage === 'looking' || ep.stage === 'notHere') && ep.reason?.code !== 'service_down') {
+                // An episode whose downloads can't be checked isn't missing: its chip says it takes longer.
                 missing.push(ep);
             } else {
                 other.push(ep);

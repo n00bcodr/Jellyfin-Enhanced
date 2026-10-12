@@ -92,8 +92,74 @@ test('every reason code reads as a plain family sentence from en.json', t => {
   assert.equal(text('awaiting_approval'), 'Waiting for Dad to OK it');
   assert.equal(h.S.familyText({ reason: { code: 'awaiting_approval' } }, {}), 'Waiting for the admin to OK it');
   assert.equal(text('not_visible_to_user'), 'Not in the library');
-  assert.equal(text('ready'), 'Ready to watch');
+  assert.equal(h.S.familyText({ stage: 'ready', reason: { code: 'ready' } }, ctx), 'Ready to watch');
   assert.equal(text('upgrading'), 'Ready · a better copy is coming');
+  assert.equal(text('client_unavailable'), 'Taking longer than usual');
+  assert.equal(text('partial'), 'Some episodes here, looking for the rest');
+});
+
+test('the pill never says "Ready to watch" for a code it does not know or a stage that is not ready', t => {
+  const h = setup(t);
+  const cs = readFileSync(resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/TitleStatus.cs'), 'utf8');
+  const block = cs.slice(cs.indexOf('public static class StatusReasonCode'), cs.indexOf('}', cs.indexOf('public static class StatusReasonCode')));
+  const codes = [...block.matchAll(/public const string \w+ = "([a-z_]+)";/g)].map(m => m[1]);
+  assert.ok(codes.includes('partial') && codes.includes('client_unavailable'));
+  const stages = ['asked', 'approved', 'notOut', 'looking', 'downloading', 'almostReady', 'notHere', 'none', 'futureStage'];
+  for (const code of codes.filter(c => c !== 'ready' && c !== 'upgrading')) {
+    for (const stage of stages) {
+      assert.notEqual(h.S.familyText({ stage, reason: { code } }, ctx), 'Ready to watch', `${code} / ${stage}`);
+    }
+  }
+  // A code from a newer server reads as its stage; an unknown stage as "No update yet".
+  assert.equal(h.S.familyText({ stage: 'downloading', reason: { code: 'future_code' } }, ctx), 'Downloading');
+  assert.equal(h.S.familyText({ stage: 'almostReady', reason: { code: 'future_code' } }, ctx), 'Almost ready');
+  assert.equal(h.S.familyText({ stage: 'ready', reason: { code: 'future_code' } }, ctx), 'Ready to watch');
+  assert.equal(h.S.familyText({ stage: 'futureStage', reason: { code: 'future_code' } }, ctx), 'No update yet');
+  // "ready" with a stage that isn't (never sent today, but never a lie either).
+  assert.equal(h.S.familyText({ stage: 'looking', reason: { code: 'ready' } }, ctx), 'Looking for it');
+  // A series card whose pill says "partial" (the Requests page's On the way list).
+  const pill = h.S.buildPill({ key: 'tv:tvdb:1', kind: 'series', stage: 'looking', reason: { code: 'partial' } }, ctx);
+  assert.equal(pill.querySelector('.je-arr-pill-text').textContent, 'Some episodes here, looking for the rest');
+  // The episode chip of a download whose client can't be reached.
+  assert.equal(h.S.chipText({ stage: 'downloading', reason: { code: 'client_unavailable' } }), 'Taking longer than usual');
+});
+
+for (const zone of ['America/Los_Angeles', 'Pacific/Kiritimati']) {
+  test(`a release day is that day in ${zone}, an instant is where the viewer is`, t => {
+    const previous = process.env.TZ;
+    process.env.TZ = zone;
+    t.after(() => { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; });
+    const h = setup(t);
+    const RealDate = h.window.Date;
+    // Noon on 12 Oct 2026 where the viewer is.
+    const now = new RealDate(2026, 9, 12, 12).getTime();
+    h.window.Date = class extends RealDate { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } };
+    const dayText = h.S.formatDate('2026-10-13');
+    assert.equal(dayText, 'tomorrow');
+    assert.equal(h.S.formatDate('2026-10-12'), 'today');
+    // Not rolled over: an impossible day is no date.
+    assert.equal(h.S.formatDate('2026-02-30'), '');
+    assert.equal(h.S.dayPassed('2026-10-11'), true);
+    assert.equal(h.S.dayPassed('2026-10-12'), false);
+    // The same day as an instant at midnight UTC is a day off on one side of UTC (why days are sent bare).
+    const asInstant = h.S.formatDate('2026-10-13T00:00:00Z');
+    assert.equal(asInstant, zone === 'America/Los_Angeles' ? 'today' : 'tomorrow');
+    assert.equal(h.S.familyText({ stage: 'notOut', reason: { code: 'not_released', params: { date: '2026-10-13' } } }, ctx), 'Not out yet, expected tomorrow');
+  });
+}
+
+test('series and season summaries keep a date-only next air day west of UTC', t => {
+  const previous = process.env.TZ;
+  process.env.TZ = 'America/Los_Angeles';
+  t.after(() => { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; });
+  const h = setup(t);
+  const RealDate = h.window.Date;
+  const now = new RealDate(2026, 9, 12, 12).getTime();
+  h.window.Date = class extends RealDate { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } };
+  const season = { kind: 'season', nextDay: '2026-10-13', summary: { aired: 4, ready: 4, nextAir: '2026-10-13T00:00:00Z', nextEpisode: 5 } };
+  assert.ok(h.S.summaryPieces(season).some(p => p.text === 'Episode 5 airs tomorrow'));
+  const series = { kind: 'series', nextDay: '2026-10-13', summary: { readySeasons: [1], nextAir: '2026-10-13T00:00:00Z', nextSeason: 2, nextEpisode: 6 } };
+  same(h.S.summaryPieces(series).map(p => p.text), ['Season 1 ready', 'Season 2 airing (ep 6 tomorrow)'], 'the series uses the calendar day too');
 });
 
 test('every key the status modules use, and every admin/fix text a server code can ask for, exists in en.json', () => {
@@ -181,6 +247,20 @@ test('series and season summaries read like "Seasons 1–2 ready · Season 3 air
   const block = h.S.buildSummary({ ...season, key: 'tv:tvdb:1:s9' });
   assert.equal(block.querySelectorAll('.je-arr-pill-small').length, 5);
   assert.equal(h.S.buildSummary({ kind: 'season', summary: {} }), null);
+});
+
+test('summary episodes whose downloads cannot be checked read as taking longer, not missing', t => {
+  const h = setup(t);
+  const status = { kind: 'season', reason: { code: 'service_down' }, summary: { aired: 10, ready: 4, missing: 6, unknown: 6 } };
+  const expected = [
+    { text: '4 of 10 ready', tone: 'ready', icon: 'check_circle' },
+    { text: '6 taking longer than usual', tone: 'attention', icon: 'schedule' }
+  ];
+  same(h.S.summaryPieces(status), expected, 'unknown downloads use attention words, tone and icon');
+  const { unknown, ...summary } = status.summary;
+  same(h.S.summaryPieces({ ...status, summary }), expected, 'older servers with only service_down still show taking longer');
+  same(h.S.summaryPieces({ kind: 'season', summary: { aired: 10, ready: 4, missing: 5, unknown: 2, attention: 1 } }).map(p => p.text),
+    ['4 of 10 ready', '3 missing', '3 taking longer than usual'], 'unknown and attention counts are combined');
 });
 
 const detailsHtml = '<div id="itemDetailPage" class="page libraryPage"><div class="detailPagePrimaryContent"><div class="detailSection"><form class="trackSelections"></form></div></div>'
@@ -277,6 +357,24 @@ test('season pages: chips on the rows the viewer has, the others in the banner, 
   h.JE.internals.arrStatusEpisodes.render(h.document.querySelector('#itemDetailPage'), { ...season, quiet: true, episodes: [season.episodes[0]] }, {});
   assert.equal(rows[0].querySelector('.je-arr-chip'), null);
   assert.equal(h.document.querySelector('.je-arr-banner'), null);
+});
+
+test('a season page never lists episodes whose downloads cannot be checked as missing', async t => {
+  const season = {
+    key: 'tv:tvdb:1:s1', kind: 'season', stage: 'looking', reason: { code: 'service_down' },
+    summary: { aired: 3, ready: 1, missing: 2, unknown: 1 },
+    episodes: [
+      { key: 'e1', season: 1, episode: 1, itemId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1', row: true, stage: 'ready', reason: { code: 'ready' } },
+      { key: 'e2', season: 1, episode: 2, row: false, stage: 'looking', reason: { code: 'service_down' } },
+      { key: 'e4', season: 1, episode: 4, row: false, stage: 'looking', reason: { code: 'looking' } }
+    ]
+  };
+  const h = setup(t, { html: detailsHtml, hash: '#/details?id=season1', responses: () => ({ items: [season] }) });
+  await h.JE.internals.arrStatusDetails.update(false);
+  const banner = h.document.querySelector('.je-arr-banner');
+  assert.equal(banner.querySelector('.je-arr-banner-title').textContent, 'Missing: E4');
+  assert.deepEqual([...banner.querySelectorAll('.je-arr-chip')].map(c => c.textContent), ['E2 · Taking longer than usual']);
+  same([...h.document.querySelectorAll('.je-arr-summary .je-arr-pill-text')].map(p => p.textContent), ['1 of 3 ready', '1 missing', '1 taking longer than usual']);
 });
 
 function cardsHtml(n, type = 'Movie') {

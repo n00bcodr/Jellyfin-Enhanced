@@ -427,6 +427,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/TitleAliases.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/TitleKey.cs",
       "category": "Services"
     },
@@ -495,11 +499,19 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrIds.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrInstanceRegistry.cs",
       "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrLegacyViews.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrQueueStates.cs",
       "category": "Services"
     },
     {
@@ -8735,7 +8747,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 440,
+    "files": 443,
     "routes": 217,
     "configuration_properties": 558,
     "storage_references": 80,

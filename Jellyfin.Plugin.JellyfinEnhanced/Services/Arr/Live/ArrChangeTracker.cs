@@ -87,6 +87,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             if (!_started) return Task.CompletedTask;
             _started = false;
             _store.SnapshotChanged -= OnSnapshotChanged;
+            _store.PipelineChanged -= OnPipelineChanged;
+            _store.QueueHealthChanged -= OnQueueHealthChanged;
             if (_libraryManager != null)
             {
                 _libraryManager.ItemAdded -= OnItemAdded;
@@ -106,6 +108,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             if (_started) return;
             _started = true;
             _store.SnapshotChanged += OnSnapshotChanged;
+            _store.PipelineChanged += OnPipelineChanged;
+            _store.QueueHealthChanged += OnQueueHealthChanged;
             if (_libraryManager != null)
             {
                 _libraryManager.ItemAdded += OnItemAdded;
@@ -166,6 +170,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                     return;
             }
             if (keys.Count > 0) _feed.Bump(keys, id);
+        }
+
+        /// <summary>
+        /// An instance's queue or history expired (or was read again after it had): every title it
+        /// holds now reads differently ("can't be checked", or live again) though no snapshot
+        /// changed, so they are announced like a first load (too many: a reset for everyone).
+        /// </summary>
+        internal void OnPipelineChanged(ArrConnection instance, bool expired)
+        {
+            if (!ArrLiveFlags.Enabled(_config())) return;
+            var library = _store.PeekLibrary(instance.Id);
+            if (library == null) return;
+            var keys = ArrChangeDetector.FirstLoad(instance.Kind, ArrSnapshotKind.Library, library, library);
+            if (keys == null)
+            {
+                _feed.ResetAll();
+                return;
+            }
+            if (keys.Count > 0) _feed.Bump(keys, instance.Id);
+        }
+
+        /// <summary>
+        /// An instance's queue reads started failing (or work again): the downloads it shows are no
+        /// longer fresh (their time left goes) or are again, though the queue itself didn't change,
+        /// so the titles in it are announced (too many: a reset for everyone).
+        /// </summary>
+        internal void OnQueueHealthChanged(ArrConnection instance, bool failing)
+        {
+            if (!ArrLiveFlags.Enabled(_config())) return;
+            if (_store.PeekQueue(instance.Id) is not { } queue) return;
+            var keys = ArrChangeDetector.FirstLoad(instance.Kind, ArrSnapshotKind.Queue, queue, _store.PeekLibrary(instance.Id));
+            if (keys == null)
+            {
+                _feed.ResetAll();
+                return;
+            }
+            if (keys.Count > 0) _feed.Bump(keys, instance.Id);
         }
 
         // A snapshot's first load: statuses served while it was cold said "loading" (or lacked its

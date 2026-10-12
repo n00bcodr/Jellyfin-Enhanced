@@ -51,6 +51,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public event Action<T?, T>? Replaced;
 
         /// <summary>
+        /// Called inside the slot's lock whenever a new value is put in place (a refresh or a patch),
+        /// with the value before and after, so publications are seen strictly in order. Keep it short;
+        /// it must never call back into the slot. Failures are ignored.
+        /// </summary>
+        public Action<T?, T>? Publishing { get; set; }
+
+        /// <summary>
         /// Raised when reads start failing (with the error) and when they work again (null), not on
         /// every failed attempt, so the log gets one line per outage.
         /// </summary>
@@ -196,6 +203,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 before = _value;
                 after = next;
                 _value = next;
+                Publish(before, after);
                 // A refresh that hasn't started reading yet (no start time) reads after this read.
                 var newerThanRefresh = readStartedAt is not { } read || (_inflightStartedAt is { } refresh && refresh <= read);
                 if (_inflight != null && newerThanRefresh) (_patchesDuringRefresh ??= new List<Func<T, T?>>()).Add(patch);
@@ -282,6 +290,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     before = _value;
                     after = value;
                     _value = value;
+                    Publish(before, after);
                     _loadedAt = started;
                     _error = null;
                     _failures = 0;
@@ -302,6 +311,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             Notify(() => Refreshed?.Invoke(this, result.Ok ? after : null));
             if (after != null) Notify(() => Replaced?.Invoke(before, after));
             if (startedFailing || recovered) Notify(() => HealthChanged?.Invoke(Kind, result.Error));
+        }
+
+        // Under the slot's lock.
+        private void Publish(T? before, T after)
+        {
+            try
+            {
+                Publishing?.Invoke(before, after);
+            }
+            catch (Exception)
+            {
+                // An observer never fails a publication.
+            }
         }
 
         private static void Notify(Action raise)

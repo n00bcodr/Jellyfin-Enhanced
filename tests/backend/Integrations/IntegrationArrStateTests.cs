@@ -707,4 +707,44 @@ public class IntegrationArrStateTests
         Assert.Null(store.PeekEpisodes(tv, 2));
         Assert.Equal(65, arr.CallCount("sonarr.lan", "/api/v3/episode"));
     }
+
+    [Fact]
+    public void ProviderIdZeroIsMissingEverywhere()
+    {
+        // The arrs send 0 for a title they couldn't match: never an id.
+        Assert.Null(ArrStateLoaders.ToMovie(new ArrWireMovie { Id = 1, TmdbId = 0 }).TmdbId);
+        var series = ArrStateLoaders.ToSeries(new ArrWireSeries { Id = 2, TvdbId = 0, TmdbId = 0 });
+        Assert.Equal((null, null), (series.TvdbId, series.TmdbId));
+        // A live resource with 0 keeps the positive id held.
+        Assert.Equal(603, ArrStateLoaders.MergeMovie(new ArrMovieEntry { Id = 1, TmdbId = 603 }, new ArrWireMovie { Id = 1, TmdbId = 0 }).TmdbId);
+        Assert.Equal(78874, ArrStateLoaders.MergeSeries(new ArrSeriesEntry { Id = 2, TvdbId = 78874 }, new ArrWireSeries { Id = 2, TvdbId = 0 }).TvdbId);
+        var queue = ArrStateLoaders.ToQueueEntry(new ArrWireQueueRecord { Id = 3, Movie = new ArrWireMovie { Id = 1, TmdbId = 0 } });
+        Assert.Null(queue.TmdbId);
+        Assert.Null(ArrStateLoaders.ToMovieCalendarEntry(new ArrWireMovie { Id = 1, TmdbId = 0, DigitalRelease = "2026-11-14T00:00:00Z" })!.TmdbId);
+        var episode = ArrStateLoaders.ToEpisodeEntry(new ArrWireEpisode { Id = 4, TvdbId = 0, SeasonNumber = 1, EpisodeNumber = 1, AirDateUtc = "2026-11-14T02:00:00Z", Series = new ArrWireSeries { Id = 2, TvdbId = 0, TmdbId = 0, Title = "A" } });
+        Assert.Equal((null, null, null), (episode!.TvdbId, episode.TmdbId, episode.EpisodeTvdbId));
+        // No key from 0 (Needs attention, the bridge, the path doctor).
+        Assert.Null(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.JellyfinBridge.KeyOf(ArrKind.Radarr, 0, null, null, null));
+        Assert.Null(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.JellyfinBridge.KeyOf(ArrKind.Sonarr, null, 0, 1, 2));
+        Assert.Equal("tv:tvdb:5:s1:e2", Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.JellyfinBridge.KeyOf(ArrKind.Sonarr, null, 5, 1, 2));
+    }
+
+    [Fact]
+    public void AnEpisodeWithoutAnAirTimeIsADayOnly()
+    {
+        Assert.False(Load(new System.Text.Json.Nodes.JsonObject { ["id"] = 1, ["seriesId"] = 7, ["seasonNumber"] = 1, ["episodeNumber"] = 1, ["airDateUtc"] = "2026-11-14T02:00:00Z", ["airDate"] = "2026-11-13" }).AirDateIsDay);
+        var day = Load(new System.Text.Json.Nodes.JsonObject { ["id"] = 2, ["seriesId"] = 7, ["seasonNumber"] = 1, ["episodeNumber"] = 2, ["airDate"] = "2026-11-21" });
+        Assert.True(day.AirDateIsDay);
+        Assert.Equal(new DateTime(2026, 11, 21, 0, 0, 0, DateTimeKind.Utc), day.AirDateUtc);
+
+        static ArrEpisodeEntry Load(System.Text.Json.Nodes.JsonObject episode)
+        {
+            using var arr = Rig(out _, out var sonarr);
+            sonarr.Series.Add(FakeArr.SeriesRow(7, 700, "Show"));
+            sonarr.Episodes.Add(episode);
+            var store = arr.Store();
+            var read = store.GetEpisodesAsync(arr.Instance("TV"), 7, default).GetAwaiter().GetResult();
+            return read.Value!.Episodes.Single();
+        }
+    }
 }

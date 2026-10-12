@@ -153,8 +153,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The item if the viewer can see it and it is a movie, series, season or episode; otherwise null.</summary>
         JfItemRef? Resolve(Guid itemId, StatusViewer viewer);
 
-        /// <summary>Every Jellyfin movie (or series) carrying the key's provider id, in any library.</summary>
-        IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer);
+        /// <summary>
+        /// Every Jellyfin movie (or series) carrying the key's provider id, or any of its
+        /// <paramref name="aliases"/> (the title's other ids, <see cref="TitleAliases"/>), in any
+        /// library: the key's kind only, once per item.
+        /// </summary>
+        IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null);
 
         /// <summary>
         /// The series' episodes the viewer can see (one season, or all when null), virtual ones included
@@ -184,6 +188,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>When it was OK'd.</summary>
         public DateTime? ApprovedAt { get; init; }
+
+        /// <summary>When a standard-quality request for it was OK'd (null: none; both null with <see cref="ApprovedAt"/> set: variant unknown).</summary>
+        public DateTime? ApprovedStandardAt { get; init; }
+
+        /// <summary>When a 4K request for it was OK'd (null: none).</summary>
+        public DateTime? Approved4kAt { get; init; }
+
+        /// <summary>
+        /// Seerr says the standard-quality variant is done: a request for it is completed, or its media
+        /// is (partly) available. A done variant is never "OK'd, but no Sonarr/Radarr has it".
+        /// </summary>
+        public bool StandardDone { get; init; }
+
+        /// <summary>Seerr says the 4K variant is done (see <see cref="StandardDone"/>).</summary>
+        public bool FourKDone { get; init; }
 
         /// <summary>The request was declined.</summary>
         public bool Declined { get; init; }

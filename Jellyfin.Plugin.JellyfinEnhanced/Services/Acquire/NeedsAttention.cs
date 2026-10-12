@@ -146,6 +146,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>When the arr added it.</summary>
         public DateTime? Added { get; init; }
 
+        /// <summary>
+        /// Since when (UTC) it has needed attention, as Jellyfin Enhanced first saw it (null: no
+        /// problem, or no clock). After a restart it may be late, never early.
+        /// </summary>
+        public DateTime? AttentionSince { get; init; }
+
         /// <summary>What needs attention (<see cref="AttentionCode"/>), or null.</summary>
         public string? Problem { get; init; }
 
@@ -188,6 +194,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Since when (UTC).</summary>
         public DateTime? Since { get; init; }
+
+        /// <summary>
+        /// When the subject began (a download: when the arr added it; otherwise <see cref="Since"/>):
+        /// identifies one occurrence for the administrators' alerts. Not sent.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public DateTime? Occurred { get; init; }
 
         /// <summary>The arr's (or Jellyfin's) own words.</summary>
         public string? Message { get; init; }
@@ -232,6 +245,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Why it can't be read (null: readable).</summary>
         public string? Error { get; init; }
+
+        /// <summary>
+        /// The queue or history is past its longest serve time and can't be read: their rows say
+        /// nothing about now, so no download row comes from them (the instance's own row does).
+        /// </summary>
+        public bool QueueExpired { get; init; }
 
         /// <summary>The live connection (null: live updates not expected).</summary>
         public ArrLiveConnectionStatus? Live { get; init; }
@@ -282,7 +301,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         Fixes = new[] { AttentionFix.OpenSystem },
                     });
                 }
-                foreach (var g in i.Queue)
+                foreach (var g in i.QueueExpired ? Array.Empty<QueueGroup>() : i.Queue)
                 {
                     if (g.Problem == null) continue;
                     var fixes = g.Problem switch
@@ -299,13 +318,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         Id = Id(g.Problem, c.Id, g.DownloadId),
                         Code = g.Problem,
                         Severity = g.Problem is AttentionCode.ImportBlocked or AttentionCode.DownloadFailed or AttentionCode.ClientUnavailable ? "error" : "warning",
-                        InstanceId = c.Id, Instance = c.Name, Title = g.Title, Year = g.Year, Key = g.Key, Scope = g.Scope, Episodes = g.Episodes, Since = g.Added,
+                        InstanceId = c.Id, Instance = c.Name, Title = g.Title, Year = g.Year, Key = g.Key, Scope = g.Scope, Episodes = g.Episodes,
+                        // "Since" is when JE first saw the problem; never the grab time (unknown: now).
+                        Since = g.AttentionSince ?? now, Occurred = g.Added ?? g.AttentionSince,
                         Message = g.Messages.FirstOrDefault(), Detail = g.Messages.Count > 1 ? string.Join(" — ", g.Messages.Skip(1)) : null,
                         Fixes = fixes, ArrLink = "/activity/queue", DownloadId = g.DownloadId,
                         Params = g.Percent is int pct ? new Dictionary<string, string> { ["pct"] = pct.ToString(CultureInfo.InvariantCulture) } : null,
                     });
                 }
-                foreach (var f in RecentFailures(c, i.History, i.Queue, now))
+                foreach (var f in i.QueueExpired ? Enumerable.Empty<AttentionItem>() : RecentFailures(c, i.History, i.Queue, now))
                 {
                     items.Add(f);
                 }
@@ -435,9 +456,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// The queue as downloads: rows grouped by download id (a season pack is one download), each
-        /// with its covered episodes, progress, the arr's words, what needs attention and the actions offered.
+        /// with its covered episodes, progress, the arr's words, what needs attention and the actions
+        /// offered. <paramref name="seen"/>: JE's first-seen clocks of the rows (a problem's
+        /// "since" is when JE first saw its earliest problem row; without clocks: now, never the grab time).
+        /// <paramref name="actionable"/> false (a queue too old to act on): no actions are offered.
         /// </summary>
-        internal static List<QueueGroup> Group(ArrConnection instance, ArrQueueSnapshot? queue, ArrLibrarySnapshot? library)
+        internal static List<QueueGroup> Group(ArrConnection instance, ArrQueueSnapshot? queue, ArrLibrarySnapshot? library, Func<ArrQueueEntry, ArrQueueSeen?>? seen = null, bool actionable = true)
         {
             var result = new List<QueueGroup>();
             if (queue == null) return result;
@@ -459,9 +483,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var status = Worst(list.Select(r => r.Status), new[] { "failed", "downloadClientUnavailable", "warning", "paused", "queued", "delay", "completed", "downloading" });
                 var messages = list.SelectMany(r => r.StatusMessages.Concat(string.IsNullOrWhiteSpace(r.ErrorMessage) ? Array.Empty<string>() : new[] { r.ErrorMessage! })).Distinct(StringComparer.Ordinal).Take(5).ToList();
                 var problem = ProblemOf(state, health, status);
-                // The client itself says no time is left while data is still missing: no progress.
-                if (problem == null && state == "downloading" && status == "downloading" && left > 0
-                    && list.All(r => r.TimeLeft is "00:00:00" or "0:00:00"))
+                // The client itself says no time is left while data is still missing: no progress (the
+                // same table's Stalled class, so the store's first-seen clock times it).
+                if (problem == null && left > 0 && list.All(r => ArrQueueStates.Classify(r) == ArrQueueClass.Stalled))
                     problem = AttentionCode.DownloadStalled;
                 var movie = instance.Kind == ArrKind.Radarr;
                 var series = !movie && first.SeriesId is int sid ? library?.SeriesById(sid) : null;
@@ -472,7 +496,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     actions.Add("remove_with_data");
                 }
                 actions.Add("search");
-                if (state is "importPending" or "importFailed") actions.Add("retry_import");
+                // A finished download the arr warns about (waiting to import) is offered the arr's own
+                // re-check of finished downloads, whatever pipeline state it reports.
+                if (state is "importPending" or "importFailed" || problem == AttentionCode.ImportWaiting) actions.Add("retry_import");
                 result.Add(new QueueGroup
                 {
                     InstanceId = instance.Id,
@@ -505,23 +531,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     Release = first.ReleaseTitle,
                     Messages = messages,
                     Added = list.Select(r => r.Added).Where(d => d.HasValue).DefaultIfEmpty(null).Min(),
+                    AttentionSince = problem == null || seen == null ? null
+                        : list.Select(r => seen(r)?.AttentionSince).Where(d => d.HasValue).DefaultIfEmpty(null).Min(),
                     Problem = problem,
-                    Actions = actions,
+                    Actions = actionable ? actions : Array.Empty<string>(),
                 });
             }
             return result.OrderBy(g => g.Problem == null ? 1 : 0).ThenBy(g => g.Added ?? DateTime.MaxValue).ToList();
         }
 
-        /// <summary>What needs attention about a download, from the arr's own states (null: nothing).</summary>
-        internal static string? ProblemOf(string? state, string? health, string? status)
+        /// <summary>
+        /// What needs attention about a download, from the arr's own states (null: nothing), by the
+        /// same precedence table the status composer uses (<see cref="ArrQueueStates"/>): a finished
+        /// download with a warning is waiting to import, not "downloading with a warning".
+        /// </summary>
+        internal static string? ProblemOf(string? state, string? health, string? status) => ArrQueueStates.Classify(status, state, health) switch
         {
-            if (state == "importBlocked") return AttentionCode.ImportBlocked;
-            if (state is "failed" or "failedPending" || status == "failed") return AttentionCode.DownloadFailed;
-            if (status == "downloadClientUnavailable") return AttentionCode.ClientUnavailable;
-            var warned = health is "warning" or "error" || status == "warning";
-            if (state is "importPending" or "importFailed") return warned || state == "importFailed" ? AttentionCode.ImportWaiting : null;
-            return warned ? AttentionCode.DownloadWarning : null;
-        }
+            ArrQueueClass.Failed => AttentionCode.DownloadFailed,
+            ArrQueueClass.ImportBlocked => AttentionCode.ImportBlocked,
+            ArrQueueClass.ImportWarned => AttentionCode.ImportWaiting,
+            ArrQueueClass.ClientUnavailable => AttentionCode.ClientUnavailable,
+            ArrQueueClass.Warned => AttentionCode.DownloadWarning,
+            _ => null,
+        };
 
         /// <summary>"S02E05", "S02E01–E08", "S02 (5)" (5 episodes, not in a row), "S01–S02 (12)".</summary>
         internal static string? ScopeText(IReadOnlyList<(int S, int E)> episodes)

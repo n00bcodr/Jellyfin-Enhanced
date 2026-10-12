@@ -114,6 +114,311 @@ public class IntegrationArrLiveStatusTests
         Assert.Null(TitleKey.Parse("tv:tvdb:78874:s1e2"));
     }
 
+    private static string Code(string body) => JsonDocument.Parse(body).RootElement.GetProperty("items")[0].GetProperty("reason").GetProperty("code").GetString()!;
+
+    private static JsonElement? ProgressOf(string body)
+        => JsonDocument.Parse(body).RootElement.GetProperty("items")[0].TryGetProperty("progress", out var p) ? p.Clone() : null;
+
+    // Lets the store's background refreshes finish.
+    private static async Task Settle(ArrStateStore store)
+    {
+        for (var i = 0; i < 300; i++)
+        {
+            if (store.Describe().Instances.All(x => x.Snapshots.All(s => !s.Refreshing))) return;
+            await Task.Delay(10);
+        }
+        throw new TimeoutException("refreshes did not finish");
+    }
+
+    [Fact]
+    public async Task AQueuePastItsServingLimitIsUnknownNotLiveAndTheFeedSaysSoAtExpiryAndRecovery()
+    {
+        using var rig = new Rig();
+        var row = FakeArr.RadarrQueueRow(1, 101, "Alpha");
+        row["sizeleft"] = 1160.0;                                  // 42 %
+        rig.Radarr.Queue.Add(row);
+        await rig.KeyAsync("movie:tmdb:101");
+        var live = await rig.KeyAsync("movie:tmdb:101");
+        Assert.Equal(("downloading", 42), (Code(live.Body), ProgressOf(live.Body)!.Value.GetProperty("percent").GetInt32()));
+        Assert.True(ProgressOf(live.Body)!.Value.TryGetProperty("etaSeconds", out _));
+
+        // Radarr stops answering. Within the longest serve time the old queue is still shown, but its
+        // time left goes (it would count down from a read that is minutes old).
+        rig.Radarr.FailWith = 503;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(9);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        var stale = await rig.KeyAsync("movie:tmdb:101");
+        Assert.Equal("downloading", Code(stale.Body));
+        Assert.False(ProgressOf(stale.Body)!.Value.TryGetProperty("etaSeconds", out _));
+        rig.Store.Tick();
+        var before = rig.Feed.Revision("movie:tmdb:101");
+
+        // Past it (10 minutes for the queue) with the latest read failed: unknown, never "Downloading
+        // 42 %" frozen, nor "looking" or "not in any arr".
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(2);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        var expired = await rig.KeyAsync("movie:tmdb:101");
+        Assert.Equal("service_down", Code(expired.Body));
+        Assert.Null(ProgressOf(expired.Body));
+        Assert.True(rig.Store.PipelineExpired(rig.RadarrConn));
+        // The reconciler's next pass announces the expiry (no snapshot changed, yet every title of the
+        // instance reads differently now).
+        rig.Store.Tick();
+        Assert.True(rig.Feed.Revision("movie:tmdb:101") > before);
+
+        // Radarr answers again: live again, and the recovery is announced too.
+        rig.Radarr.FailWith = 0;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(6);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        var back = await rig.KeyAsync("movie:tmdb:101");
+        Assert.Equal("downloading", Code(back.Body));
+        var expiredAt = rig.Feed.Revision("movie:tmdb:101");
+        await Task.WhenAll(rig.Store.Tick());
+        Assert.False(rig.Store.PipelineExpired(rig.RadarrConn));
+        Assert.True(rig.Feed.Revision("movie:tmdb:101") > expiredAt);
+    }
+
+    [Fact]
+    public async Task AQueueThatWasNeverReadAndCantBeIsUnknownNotLooking()
+    {
+        using var rig = new Rig();
+        // The library is read, the queue never: Radarr's queue route fails from the start.
+        await rig.Store.GetLibraryAsync(rig.RadarrConn, default);
+        rig.Radarr.Before = (path, ct) => path.Contains("/queue", StringComparison.Ordinal) ? throw new HttpRequestException("boom") : Task.CompletedTask;
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        Assert.Equal("service_down", Code((await rig.KeyAsync("movie:tmdb:101")).Body));
+        Assert.True(rig.Store.PipelineExpired(rig.RadarrConn));
+        rig.Radarr.Before = null;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(1);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        Assert.Equal("looking", Code((await rig.KeyAsync("movie:tmdb:101")).Body));
+        Assert.False(rig.Store.PipelineExpired(rig.RadarrConn));
+    }
+
+    [Fact]
+    public async Task AHistoryReadFailingPastItsThirtyMinutesMakesTheTitleUnknownToo()
+    {
+        using var rig = new Rig();
+        await rig.KeyAsync("movie:tmdb:101");
+        Assert.Equal("looking", Stage((await rig.KeyAsync("movie:tmdb:101")).Body));
+        // Only the history fails; the queue keeps being read. Under 30 minutes: still looking.
+        rig.Radarr.Before = (path, ct) => path.Contains("/history", StringComparison.Ordinal) ? throw new HttpRequestException("boom") : Task.CompletedTask;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(29);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        Assert.Equal("looking", Code((await rig.KeyAsync("movie:tmdb:101")).Body));
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(2);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        Assert.Equal("service_down", Code((await rig.KeyAsync("movie:tmdb:101")).Body));
+        // The library itself is still served as it was (only the downloads are unknown).
+        Assert.NotNull((await rig.Store.GetLibraryAsync(rig.RadarrConn, default)).Value);
+    }
+
+    [Fact]
+    public async Task AnExpiredHistorysLastFailureNeverDecidesWhereATitleIsNow()
+    {
+        using var rig = new Rig();
+        rig.Radarr.History.Add(FakeArr.HistoryRow(1, "downloadFailed", rig.Arr.Now.UtcDateTime.AddHours(-1), "dl9", 101, "Alpha"));
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        Assert.Equal("failed", Code((await rig.KeyAsync("movie:tmdb:101")).Body));
+        // The history can't be read for more than 30 minutes: Radarr may have grabbed another copy
+        // since, so the old failure says nothing about now.
+        rig.Radarr.Before = (path, ct) => path.Contains("/history", StringComparison.Ordinal) ? throw new HttpRequestException("boom") : Task.CompletedTask;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(29);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(2);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        Assert.Equal("service_down", Code((await rig.KeyAsync("movie:tmdb:101")).Body));
+    }
+
+    [Fact]
+    public async Task AnExpiredHistorysLastImportNeverSaysAlmostReady()
+    {
+        using var rig = new Rig();
+        // Radarr says no file; its history has an import an hour ago: almost ready (the file is on its way).
+        rig.Radarr.History.Add(FakeArr.HistoryRow(1, "downloadFolderImported", rig.Arr.Now.UtcDateTime.AddHours(-1), "dl9", 101, "Alpha"));
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        Assert.Equal("library_pending", Code((await rig.KeyAsync("movie:tmdb:101")).Body));
+        // The history can't be read for more than 30 minutes: that import says nothing about now.
+        rig.Radarr.Before = (path, ct) => path.Contains("/history", StringComparison.Ordinal) ? throw new HttpRequestException("boom") : Task.CompletedTask;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(29);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(2);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        Assert.Equal("service_down", Code((await rig.KeyAsync("movie:tmdb:101")).Body));
+    }
+
+    [Fact]
+    public async Task WithTheQueueUnknownAFreshHistorysFailureDoesNotDecideEither()
+    {
+        using var rig = new Rig();
+        rig.Radarr.History.Add(FakeArr.HistoryRow(1, "downloadFailed", rig.Arr.Now.UtcDateTime.AddHours(-1), "dl9", 101, "Alpha"));
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        Assert.Equal("failed", Code((await rig.KeyAsync("movie:tmdb:101")).Body));
+        // Only the queue fails, past its 10 minutes: what it is downloading now is unknown.
+        rig.Radarr.Before = (path, ct) => path.Contains("/queue", StringComparison.Ordinal) ? throw new HttpRequestException("boom") : Task.CompletedTask;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        Assert.Equal("service_down", Code((await rig.KeyAsync("movie:tmdb:101")).Body));
+    }
+
+    [Fact]
+    public async Task AQueueReadFailingInsideItsServingLimitAnnouncesItsDownloads()
+    {
+        using var rig = new Rig();
+        rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(1, 101, "Alpha"));
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        Assert.True(ProgressOf((await rig.KeyAsync("movie:tmdb:101")).Body)!.Value.TryGetProperty("etaSeconds", out _));
+        var before = rig.Feed.Revision("movie:tmdb:101");
+        // The next queue read fails, well inside the 10 minutes: the queue is still shown, but its
+        // time left goes; an open page hears about it at once (not at expiry).
+        rig.Radarr.FailWith = 503;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(2);
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.False(rig.Store.PipelineExpired(rig.RadarrConn));
+        var failing = rig.Feed.Revision("movie:tmdb:101");
+        Assert.True(failing > before);
+        Assert.False(ProgressOf((await rig.KeyAsync("movie:tmdb:101")).Body)!.Value.TryGetProperty("etaSeconds", out _));
+        // Read again: announced too (the time left is back, though the queue didn't change).
+        rig.Radarr.FailWith = 0;
+        rig.Arr.Now = rig.Arr.Now.AddSeconds(30);
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.True(rig.Feed.Revision("movie:tmdb:101") > failing);
+    }
+
+    [Fact]
+    public async Task AQueueReadFailingInsideFreshDropsItsEtaAndAnnouncesItsDownloads()
+    {
+        using var rig = new Rig();
+        rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(1, 101, "Alpha"));
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        var good = ProgressOf((await rig.KeyAsync("movie:tmdb:101")).Body)!.Value;
+        Assert.Equal(50, good.GetProperty("percent").GetInt32());
+        Assert.Equal(120, good.GetProperty("etaSeconds").GetInt64());
+        var before = rig.Feed.Revision("movie:tmdb:101");
+        // The held queue is still inside Fresh, but the latest read failed: its ETA is unknown.
+        rig.Radarr.FailWith = 503;
+        rig.Arr.Now = rig.Arr.Now.AddSeconds(10);
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.False(rig.Store.PipelineExpired(rig.RadarrConn));
+        Assert.True(rig.Feed.Revision("movie:tmdb:101") > before);
+        var held = ProgressOf((await rig.KeyAsync("movie:tmdb:101")).Body)!.Value;
+        Assert.Equal(50, held.GetProperty("percent").GetInt32());
+        Assert.False(held.TryGetProperty("etaSeconds", out _));
+    }
+
+    [Fact]
+    public async Task EveryQueueReadStampsItsClocksInOrderEvenWhenItsThreadIsLate()
+    {
+        using var rig = new Rig();
+        // A blocked import JE has watched for 7 hours.
+        var row = FakeArr.RadarrQueueRow(1, 101, "Alpha", state: "importBlocked", status: "warning");
+        rig.Radarr.Queue.Add(row);
+        await rig.Store.GetQueueAsync(rig.RadarrConn, default);
+        rig.Arr.Now = rig.Arr.Now.AddHours(7);
+        // Read 2 sees it healthy; its thread is descheduled right after publishing.
+        row["trackedDownloadState"] = "importPending";
+        row["trackedDownloadStatus"] = "ok";
+        using var held = new SemaphoreSlim(0);
+        using var entered = new SemaphoreSlim(0);
+        var once = 0;
+        rig.Store.QueueRefreshedHook = (_, _) =>
+        {
+            if (Interlocked.Exchange(ref once, 1) != 0) return;
+            entered.Release();
+            held.Wait(TimeSpan.FromSeconds(10));
+        };
+        var second = Task.Run(() => rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true));
+        Assert.True(await entered.WaitAsync(TimeSpan.FromSeconds(10)));
+        // Read 3 (published while read 2's thread still waits) sees it blocked again: a new problem.
+        row["trackedDownloadState"] = "importBlocked";
+        row["trackedDownloadStatus"] = "warning";
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(1);
+        var third = rig.Arr.Now.UtcDateTime;
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        held.Release();
+        await second;
+        // Later on, the new problem is as old as read 3: neither the 7-hour-old clock nor reset by
+        // read 2's thread finishing after it.
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(5);
+        var now = rig.Store.PeekQueue(rig.RadarrConn.Id)!.Records.Single();
+        Assert.Equal("importBlocked", now.TrackedDownloadState);
+        Assert.Equal(third, rig.Store.QueueSeen(rig.RadarrConn, now).AttentionSince);
+    }
+
+    [Fact]
+    public async Task QueueRowClocksStartWhenJeFirstSeesThemNotAtTheGrabAndSurviveReads()
+    {
+        using var rig = new Rig();
+        var row = FakeArr.RadarrQueueRow(1, 101, "Alpha", state: "importBlocked", status: "warning");
+        row["added"] = rig.Arr.Now.UtcDateTime.AddHours(-7).ToString("o");
+        rig.Radarr.Queue.Add(row);
+        var first = rig.Arr.Now.UtcDateTime;
+        await rig.Store.GetQueueAsync(rig.RadarrConn, default);
+        ArrQueueEntry Held() => rig.Store.PeekQueue(rig.RadarrConn.Id)!.Records.Single();
+        Assert.Equal(first, rig.Store.QueueSeen(rig.RadarrConn, Held()).AttentionSince);
+        // Repeated reads and progress moving don't reset it.
+        rig.Arr.Now = rig.Arr.Now.AddHours(1);
+        row["sizeleft"] = 10.0;
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.Equal(first, rig.Store.QueueSeen(rig.RadarrConn, Held()).AttentionSince);
+        // Healthy again, then blocked again: a new problem, a new clock.
+        row["trackedDownloadState"] = "importPending";
+        row["trackedDownloadStatus"] = "ok";
+        rig.Arr.Now = rig.Arr.Now.AddHours(1);
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.Null(rig.Store.QueueSeen(rig.RadarrConn, Held()).AttentionSince);
+        row["trackedDownloadState"] = "importBlocked";
+        row["trackedDownloadStatus"] = "warning";
+        rig.Arr.Now = rig.Arr.Now.AddHours(1);
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.Equal(rig.Arr.Now.UtcDateTime, rig.Store.QueueSeen(rig.RadarrConn, Held()).AttentionSince);
+        // The status says so; a restart (a new store) under-reports, never over-reports.
+        var status = await rig.Service.ForBatchAsync(rig.Admin, Array.Empty<Guid>(), new[] { TitleKey.Parse("movie:tmdb:101")! }, default);
+        Assert.Contains("\"since\":\"" + rig.Arr.Now.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture) + "\"", Encoding.UTF8.GetString(status.Json));
+        var restarted = rig.Arr.Store();
+        await restarted.GetQueueAsync(rig.RadarrConn, default);
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(5);
+        Assert.True(restarted.QueueSeen(rig.RadarrConn, restarted.PeekQueue(rig.RadarrConn.Id)!.Records.Single()).AttentionSince > rig.Arr.Now.UtcDateTime.AddMinutes(-6));
+    }
+
+    [Fact]
+    public void ASeasonPacksProblemIsTimedFromItsEarliestProblemEpisode()
+    {
+        var instance = new ArrConnection { Id = "s", Kind = ArrKind.Sonarr, Name = "TV", Url = "http://sonarr.lan" };
+        var t0 = new DateTime(2026, 10, 12, 8, 0, 0, DateTimeKind.Utc);
+        ArrQueueEntry Ep(int id, string state, string health) => new() { Id = id, DownloadId = "pack", Status = "completed", TrackedDownloadState = state, TrackedDownloadStatus = health, SeriesId = 7, EpisodeId = 70 + id, SeasonNumber = 1, EpisodeNumber = id, Added = t0.AddHours(-9) };
+        var queue = new ArrQueueSnapshot { Records = new[] { Ep(1, "importPending", "ok"), Ep(2, "importBlocked", "warning"), Ep(3, "importBlocked", "warning") }, TotalRecords = 3 };
+        var seen = new Dictionary<int, ArrQueueSeen>
+        {
+            [1] = new(ArrQueueClass.Importing, t0, null),
+            [2] = new(ArrQueueClass.ImportBlocked, t0.AddHours(2), t0.AddHours(2)),
+            [3] = new(ArrQueueClass.ImportBlocked, t0.AddHours(1), t0.AddHours(1)),
+        };
+        var group = Assert.Single(NeedsAttention.Group(instance, queue, null, r => seen[r.Id]));
+        Assert.Equal((AttentionCode.ImportBlocked, t0.AddHours(1)), (group.Problem, group.AttentionSince!.Value));
+        var item = Assert.Single(NeedsAttention.Derive(t0.AddHours(3), 10, 10, new[] { new AttentionInstance(instance) { Queue = new[] { group } } }, Array.Empty<BridgeMissing>(), Array.Empty<HandoffFact>()));
+        Assert.Equal((t0.AddHours(1), (DateTime?)t0.AddHours(-9)), (item.Since!.Value, item.Occurred));
+        // An instance whose queue expired gives no download rows (what it shows isn't now).
+        Assert.Empty(NeedsAttention.Derive(t0.AddHours(3), 10, 10, new[] { new AttentionInstance(instance) { Queue = new[] { group }, QueueExpired = true } }, Array.Empty<BridgeMissing>(), Array.Empty<HandoffFact>()));
+    }
+
     [Fact]
     public async Task ALiveLibraryPatchRefreshesTheCachedStatusThroughTheFeedRevision()
     {

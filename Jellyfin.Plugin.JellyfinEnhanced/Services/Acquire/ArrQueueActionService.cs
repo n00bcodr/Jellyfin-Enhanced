@@ -92,14 +92,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _feed = feed;
         }
 
-        /// <summary>The download as the queue snapshot has it (read from memory; a cold queue is loaded first).</summary>
+        /// <summary>
+        /// The download as the queue snapshot has it (read from memory; a cold queue is loaded first).
+        /// Null when it isn't there, or when the queue can't be read and what is held is too old to act
+        /// on (its downloads may have finished or changed since).
+        /// </summary>
         public async Task<QueueGroup?> FindAsync(string instanceId, string downloadId, CancellationToken cancellationToken)
+            => (await LookUpAsync(instanceId, downloadId, cancellationToken).ConfigureAwait(false)).Group;
+
+        private async Task<(QueueGroup? Group, bool Expired)> LookUpAsync(string instanceId, string downloadId, CancellationToken cancellationToken)
         {
             var instance = _store.Registry.Get(instanceId);
-            if (instance == null || !instance.Usable) return null;
+            if (instance == null || !instance.Usable) return (null, false);
             var queue = await _store.GetQueueAsync(instance, cancellationToken).ConfigureAwait(false);
+            if (queue.Expired) return (null, true);
             var library = await _store.GetLibraryAsync(instance, cancellationToken).ConfigureAwait(false);
-            return NeedsAttention.Group(instance, queue.Value, library.Value).FirstOrDefault(g => string.Equals(g.DownloadId, downloadId, StringComparison.Ordinal));
+            return (NeedsAttention.Group(instance, queue.Value, library.Value).FirstOrDefault(g => string.Equals(g.DownloadId, downloadId, StringComparison.Ordinal)), false);
         }
 
         /// <summary>Issues the Tier-3 token for removing one download together with its data, with what it covers.</summary>
@@ -118,8 +126,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // the queue is looked at: after a removal the download is no longer there to find.
             var replay = await _runner.ReplayAsync(viewer.UserId, QueueAction.AuditName(input.Action), input.InstanceId, input.IdempotencyKey, cancellationToken).ConfigureAwait(false);
             if (replay != null) return replay;
-            var group = await FindAsync(input.InstanceId, input.DownloadId, cancellationToken).ConfigureAwait(false);
+            var (group, expired) = await LookUpAsync(input.InstanceId, input.DownloadId, cancellationToken).ConfigureAwait(false);
             var instance = _store.Registry.Get(input.InstanceId);
+            if (expired)
+            {
+                return Refuse(viewer, userName, input, "queue_unreadable", "That download's queue can't be read right now, so nothing was changed. Try again once it can.");
+            }
             if (group == null || instance == null)
             {
                 return Refuse(viewer, userName, input, "not_in_queue", "That download is no longer in the queue.");

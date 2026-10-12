@@ -151,6 +151,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>Test seam: called after a read picked (or failed to pick) a series' episodes slot, before reading it.</summary>
         internal Action<int>? EpisodeSlotPicked { get; set; }
 
+        /// <summary>Tests: called on a queue refresh's thread after it was published, before its other observers.</summary>
+        internal Action<ArrConnection, ArrQueueSnapshot>? QueueRefreshedHook { get; set; }
+
         /// <summary>
         /// The episodes of one Sonarr series if they are already in memory, without loading or
         /// waiting (null otherwise). Counts as a read, so a held series stays fresh.
@@ -253,6 +256,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     continue;
                 }
                 if (StateFor(usable[id], out _) is not { } current || !ReferenceEquals(current, state)) continue;
+
+                var expired = PipelineExpired(state, now);
+                if (expired != state.PipelineExpired)
+                {
+                    state.PipelineExpired = expired;
+                    var handlers = PipelineChanged;
+                    if (handlers != null)
+                    {
+                        foreach (var handler in handlers.GetInvocationList().Cast<Action<ArrConnection, bool>>())
+                        {
+                            try
+                            {
+                                handler(state.Client.Connection, expired);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger?.Warning($"Arr state: an expiry observer failed ({ex.GetType().Name}).");
+                            }
+                        }
+                    }
+                }
 
                 foreach (var slot in state.Slots.Concat(state.EpisodeSlots()))
                 {
@@ -393,12 +417,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             {
                 return new ArrSnapshotRead<T> { Error = new ArrError(ArrErrorKind.Timeout, "Still loading from the instance; try again in a moment.") };
             }
+            var age = _now() - peek.LoadedAt;
             return new ArrSnapshotRead<T>
             {
                 Value = peek.Value,
                 LoadedAt = peek.Value != null ? peek.LoadedAt : null,
                 Error = peek.Error,
-                Stale = peek.Value != null && _now() - peek.LoadedAt > policy.Fresh,
+                Stale = peek.Value != null && age > policy.Fresh,
+                // Still too old after the wait, and the latest read failed: a queue or history that old
+                // says nothing about now (the library, calendar and system stay served as they are).
+                Expired = peek.Value != null && peek.Error != null && age > policy.MaxServe && Expires(slot.Kind),
             };
         }
 
@@ -442,7 +470,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             var state = new InstanceState(client, this);
             LoadLibraryCache(state);
             state.Library.Refreshed += (_, value) => { if (value != null) SaveLibraryCache(state, value); };
-            state.Queue.Refreshed += (_, value) => { if (value != null) OnQueueRefreshed(state, value); };
+            state.Queue.Refreshed += (_, value) =>
+            {
+                if (value == null) return;
+                QueueRefreshedHook?.Invoke(client.Connection, value);
+                OnQueueRefreshed(state, value);
+            };
+            // The clocks are stamped as each queue is published, in publication order.
+            state.Queue.Publishing = (_, after) => StampQueue(state, after);
             var name = client.Connection.Name;
             void Log(ArrSnapshotKind kind, ArrError? error)
             {
@@ -454,6 +489,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             WireLiveChanges(state);
             state.Library.HealthChanged += Log;
             state.Queue.HealthChanged += Log;
+            state.Queue.HealthChanged += (_, error) => RaiseQueueHealthChanged(client.Connection, error != null);
             state.History.HealthChanged += Log;
             state.Calendar.HealthChanged += Log;
             state.System.HealthChanged += Log;
@@ -461,6 +497,121 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         }
 
         private TimeSpan ColdWait(ArrSnapshotKind kind) => PolicyFor(kind, null, _now()).ColdWait;
+
+        /// <summary>The snapshots whose value expires (past its longest serve time it is unknown, not shown as live).</summary>
+        private static bool Expires(ArrSnapshotKind kind) => kind is ArrSnapshotKind.Queue or ArrSnapshotKind.History;
+
+        /// <summary>
+        /// True when the instance's queue or history is held but older than its longest serve time
+        /// and its latest read failed, or was never read and its read failed: what it is downloading
+        /// is unknown. (One nobody has read for a while, so not refreshed, isn't: the next read
+        /// refreshes it.) From memory only.
+        /// </summary>
+        public bool PipelineExpired(ArrConnection instance)
+            => _states.TryGetValue(instance.Id, out var state) && PipelineExpired(state, _now());
+
+        private bool PipelineExpired(InstanceState state, DateTimeOffset now)
+        {
+            return Expired(state.Queue, state, now) || Expired(state.History, state, now);
+        }
+
+        private bool Expired<T>(ArrSnapshotSlot<T> slot, InstanceState state, DateTimeOffset now)
+            where T : class
+        {
+            var peek = slot.Peek();
+            if (peek.Error == null) return false;
+            // Never read and the read failed, or held past its longest serve time with the latest read failed.
+            return peek.Value == null || now - peek.LoadedAt > PolicyFor(slot.Kind, state, now).MaxServe;
+        }
+
+        /// <summary>
+        /// Raised (from the reconciler's pass) when an instance's queue or history expires (true) or
+        /// is read again after it had (false): every status built on it changes, though no snapshot did.
+        /// </summary>
+        public event Action<ArrConnection, bool>? PipelineChanged;
+
+        /// <summary>
+        /// Raised when an instance's queue reads start failing (true) or succeed again (false). Inside
+        /// its longest serve time the queue is still shown, but no longer as fresh (no time left is
+        /// given): the statuses of its downloads change though no snapshot did.
+        /// </summary>
+        public event Action<ArrConnection, bool>? QueueHealthChanged;
+
+        private void RaiseQueueHealthChanged(ArrConnection connection, bool failing)
+        {
+            var handlers = QueueHealthChanged;
+            if (handlers == null) return;
+            foreach (var handler in handlers.GetInvocationList().Cast<Action<ArrConnection, bool>>())
+            {
+                try
+                {
+                    handler(connection, failing);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.Warning($"Arr state: a queue health observer failed ({ex.GetType().Name}).");
+                }
+            }
+        }
+
+        /// <summary>
+        /// When JE first saw a queue row of the instance in its current class, and in any problem
+        /// class (<see cref="ArrQueueSeen"/>). A row not stamped yet (read between a refresh and its
+        /// stamping), or whose class changed since, is answered as first seen now. From memory only.
+        /// </summary>
+        public ArrQueueSeen QueueSeen(ArrConnection instance, ArrQueueEntry row)
+        {
+            var now = _now().UtcDateTime;
+            var cls = ArrQueueStates.Classify(row);
+            ArrQueueSeen? held = null;
+            if (_states.TryGetValue(instance.Id, out var state))
+            {
+                lock (state.SeenGate) state.Seen.TryGetValue(SeenKey(row), out held);
+            }
+            return Advance(held, cls, now);
+        }
+
+        /// <summary>The clock of a row whose class is <paramref name="cls"/> now, from what was held (null: first seen now).</summary>
+        internal static ArrQueueSeen Advance(ArrQueueSeen? held, ArrQueueClass cls, DateTime now)
+        {
+            if (held == null) return new ArrQueueSeen(cls, now, ArrQueueStates.IsProblem(cls) ? now : null);
+            if (held.Class == cls) return held;
+            // One problem turning into another (stalled, then blocked) is the same trouble: its clocks
+            // carry on. Anything else starts the reason's clock again; leaving the problems clears it.
+            if (ArrQueueStates.IsProblem(cls) && ArrQueueStates.IsProblem(held.Class)) return new ArrQueueSeen(cls, held.ReasonSince, held.AttentionSince ?? now);
+            return new ArrQueueSeen(cls, now, ArrQueueStates.IsProblem(cls) ? now : null);
+        }
+
+        /// <summary>A queue row's identity for its clock: the download (or row) and the movie or episode, never the title.</summary>
+        private static string SeenKey(ArrQueueEntry row)
+            => (string.IsNullOrEmpty(row.DownloadId) ? "r:" + row.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) : "d:" + row.DownloadId)
+                + "|" + (row.MovieId is int m ? "m" + m.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    : row.EpisodeId is int e ? "e" + e.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-");
+
+        /// <summary>
+        /// Stamps the clocks of every row of a queue as published (a refresh or a live patch): rows
+        /// seen for the first time start now, a changed class moves on (<see cref="Advance"/>), and
+        /// rows no longer in the queue are forgotten. Runs inside the slot's lock as the queue is
+        /// published (<see cref="ArrSnapshotSlot{T}.Publishing"/>), so every publication is stamped, in
+        /// order (lock order: the slot's, then SeenGate; <see cref="QueueSeen"/> takes SeenGate alone).
+        /// </summary>
+        private void StampQueue(InstanceState state, ArrQueueSnapshot queue)
+        {
+            var now = _now().UtcDateTime;
+            lock (state.SeenGate)
+            {
+                var next = new Dictionary<string, ArrQueueSeen>(StringComparer.Ordinal);
+                foreach (var row in queue.Records)
+                {
+                    var key = SeenKey(row);
+                    if (next.ContainsKey(key)) continue;
+                    state.Seen.TryGetValue(key, out var held);
+                    next[key] = Advance(held, ArrQueueStates.Classify(row), now);
+                }
+                state.Seen.Clear();
+                foreach (var (key, value) in next) state.Seen[key] = value;
+            }
+        }
 
         private static string? DepartureKey(ArrQueueEntry row)
             => row.MovieId is int movie ? "m" + movie.ToString(System.Globalization.CultureInfo.InvariantCulture)
@@ -696,6 +847,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
             /// <summary>When each recently departed movie/episode left the queue.</summary>
             public ConcurrentDictionary<string, DateTimeOffset> Departures { get; } = new(StringComparer.Ordinal);
+
+            /// <summary>Guards <see cref="Seen"/>.</summary>
+            public object SeenGate { get; } = new();
+
+            /// <summary>The first-seen clocks of the queue rows held (see <see cref="QueueSeen"/>).</summary>
+            public Dictionary<string, ArrQueueSeen> Seen { get; } = new(StringComparer.Ordinal);
+
+            /// <summary>The queue or history was expired at the reconciler's last pass.</summary>
+            public bool PipelineExpired { get; set; }
 
             private readonly object _episodesLock = new();
             private readonly Dictionary<int, ArrSnapshotSlot<ArrEpisodesSnapshot>> _episodes = new();

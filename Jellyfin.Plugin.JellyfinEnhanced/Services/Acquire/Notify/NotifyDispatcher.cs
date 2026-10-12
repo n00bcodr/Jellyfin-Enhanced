@@ -36,6 +36,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly EmailSender _email;
         private readonly INotifyUsers? _users;
         private readonly IArrJellyfinView? _view;
+        private readonly TitleAliases? _aliases;
         private readonly Logger? _logger;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
@@ -44,15 +45,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private CancellationTokenSource? _loop;
 
         /// <summary>The dispatcher (DI).</summary>
-        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, Logger logger)
-            : this(store, ntfy, email, logger, null, null, users, view)
+        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger)
+            : this(store, ntfy, email, logger, null, null, users, view, aliases)
         {
         }
 
         /// <summary>A dispatcher with explicit configuration and clock (tests).</summary>
-        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null)
+        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null, TitleAliases? aliases = null)
         {
             _view = view;
+            _aliases = aliases;
             _store = store;
             _ntfy = ntfy;
             _email = email;
@@ -233,7 +235,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 return _view.Resolve(item, viewer) == null ? "The recipient can no longer open this title." : null;
             }
             var key = TitleKey.Parse(delivery.TitleKey);
-            return key != null && _view.Copies(key, viewer).Any(c => c.Visible) ? null : "The recipient can no longer open this title.";
+            return key != null && _view.Copies(key, viewer, _aliases?.Of(key)).Any(c => c.Visible) ? null : "The recipient can no longer open this title.";
         }
 
         /// <summary>

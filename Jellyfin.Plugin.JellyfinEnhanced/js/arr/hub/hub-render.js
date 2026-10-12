@@ -152,6 +152,13 @@
                 ? tr('arr_hub_admin_seerr_error', { error: data.admin.seerr.lastError })
                 : tr('arr_hub_unavailable')));
         }
+        if (data.more) box.appendChild(el('div', 'je-hub-note je-hub-more', tr('arr_hub_more')));
+        if (data.arr?.unavailable) {
+            // A Sonarr/Radarr can't be read: its titles say "taking longer than usual" for now.
+            const note = el('div', 'je-hub-note je-hub-note-warn je-hub-arr-unavailable', tr('arr_hub_arr_unavailable'));
+            note.setAttribute('role', 'status');
+            box.appendChild(note);
+        }
         return box.childNodes.length ? box : null;
     }
 
@@ -190,7 +197,9 @@
      */
     function renderSoon(panel, data, actions) {
         const ctx = context(data);
-        const entries = data.soon || [];
+        // A release date is a calendar day: kept by the server while it is that day anywhere, shown
+        // here until the viewer's own day has passed.
+        const entries = (data.soon || []).filter(e => !(e.nextDay && JE.arrStatus.dayPassed?.(e.nextDay)));
         if (!entries.length) {
             panel.appendChild(el('div', 'je-hub-empty', tr('arr_hub_empty_soon')));
             return;
@@ -198,7 +207,7 @@
         let day = null;
         let list = null;
         for (const entry of entries) {
-            const label = JE.arrStatus.formatDate(entry.nextDate);
+            const label = JE.arrStatus.formatDate(entry.nextDay || entry.nextDate);
             if (label !== day) {
                 day = label;
                 panel.appendChild(el('h2', 'je-hub-day', label));

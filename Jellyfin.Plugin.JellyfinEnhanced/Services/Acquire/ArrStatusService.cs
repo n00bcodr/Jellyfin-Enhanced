@@ -46,6 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
         private readonly ArrChangeFeed? _feed;
+        private readonly TitleAliases _aliases;
 
         /// <summary>The service for a Jellyfin installation (DI).</summary>
         public ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, ArrChangeFeed feed)
@@ -62,6 +63,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
             _now = now ?? (() => DateTimeOffset.UtcNow);
             _feed = feed;
+            _aliases = new TitleAliases(store, requests as SeerrRequestReadModel);
         }
 
         /// <summary>The per-user body cache.</summary>
@@ -128,11 +130,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var key in titleKeys)
             {
                 var facts = gather.Facts[key];
-                var copies = _view.Copies(key, viewer);
+                var copies = CopiesOf(key, viewer);
                 // A viewer with parental limits learns nothing about titles they can't open here
                 // (their rating isn't known until the title is in Jellyfin), unless they asked for it
-                // themselves. Anyone else who can't open any copy gets exactly the answer of a title
-                // nobody has (the composer sees to it).
+                // themselves and Jellyfin has no copy yet. Anyone else who can't open any copy gets
+                // exactly the answer of a title nobody has (the composer sees to it).
                 if (!MayAskByKey(viewer, key, copies)) continue;
                 statuses.Add(WithLiveKey(key.IsMovie
                     ? StatusComposer.Movie(facts, null, copies, c, detail: false)
@@ -171,12 +173,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var c = Context(viewer);
             var facts = gather.Facts[title];
             // Admins see every Sonarr holding a series; its Jellyfin copies tell which are in the library.
-            var seriesCopies = viewer.IsAdmin && item.Kind != "movie" && facts.Copies.Count(x => x.Series != null) > 1 ? _view.Copies(title, viewer) : null;
+            var seriesCopies = viewer.IsAdmin && item.Kind != "movie" && facts.Copies.Count(x => x.Series != null) > 1 ? CopiesOf(title, viewer) : null;
             TitleStatus status;
             switch (item.Kind)
             {
                 case "movie":
-                    status = StatusComposer.Movie(facts, item, _view.Copies(title, viewer), c, detail: true);
+                    status = StatusComposer.Movie(facts, item, CopiesOf(title, viewer), c, detail: true);
                     break;
                 case "series":
                     status = StatusComposer.Series(facts, item, _view.Episodes(item.ItemId, null, viewer, includeVirtual: false), _view.Seasons(item.ItemId, viewer), c, detail: true, seriesCopies);
@@ -232,9 +234,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// Whether a viewer may follow a title ("Notify me"): exactly when they may read its status by
-        /// key — a Jellyfin copy they can open, or no content limits, or they asked for it themselves.
+        /// key — a Jellyfin copy they can open, or no content limits, or they asked for it themselves
+        /// and Jellyfin has no copy of it yet.
         /// </summary>
-        internal bool MayFollow(StatusViewer viewer, TitleKey key) => MayAskByKey(viewer, key.Title, _view.Copies(key.Title, viewer));
+        internal bool MayFollow(StatusViewer viewer, TitleKey key) => MayAskByKey(viewer, key.Title, CopiesOf(key.Title, viewer));
 
         /// <summary>
         /// The status of one movie or series by its key, for a page about a title that may not be in
@@ -258,7 +261,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal JfItemRef? ScopeItem(StatusViewer viewer, TitleKey key)
         {
             if (key.IsMovie || key.Season is not int season) return null;
-            if (_view.Copies(key.Title, viewer).FirstOrDefault(x => x.Visible) is not { } series) return null;
+            if (CopiesOf(key.Title, viewer).FirstOrDefault(x => x.Visible) is not { } series) return null;
             Guid? id = key.Episode is int e
                 ? _view.Episodes(series.ItemId, season, viewer, includeVirtual: true)
                     .FirstOrDefault(x => !x.Hidden && x.Season == season && (x.Episode == e || (x.EpisodeEnd is int end && x.Episode <= e && e <= end)))?.ItemId
@@ -281,7 +284,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             ApplyRequests(gather, viewer);
             var facts = gather.Facts[title];
             var c = Context(viewer);
-            var series = _view.Copies(title, viewer).FirstOrDefault(x => x.Visible);
+            var series = CopiesOf(title, viewer).FirstOrDefault(x => x.Visible);
             // A stand-in for the missing Jellyfin item (no id): the arr's view of that season or episode.
             var standIn = new JfItemRef { Kind = key.Episode.HasValue ? "episode" : "season", Key = key, SeriesId = series?.ItemId, Season = season, Episode = key.Episode, Virtual = true };
             var status = key.Episode.HasValue
@@ -298,8 +301,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal sealed record KeyedStatus(TitleKey Key, TitleStatus Status, JfCopy? Visible, bool Scoped = false, DateTime? ArrivedAt = null);
 
         /// <summary>
-        /// The part of a title a request asked for: series seasons (none: the whole title), and
-        /// whether only the 4K copy was asked for (movie or series).
+        /// The part of a title a request asked for: series seasons (none: the whole title, or the
+        /// 4K Sonarr copies' monitored seasons for a 4K request), and whether only the 4K copy was
+        /// asked for (movie or series). With no 4K seasons to follow, the request alone decides.
         /// </summary>
         /// <remarks>
         /// <paramref name="Request"/>: the facts of those requests only (not other people's, other
@@ -307,12 +311,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <paramref name="Available"/>: Seerr says the variant asked for is available
         /// (<paramref name="AvailableAt"/>: when it last changed), which is all there is to go by
         /// for a 4K request when no 4K instance is set up in Jellyfin Enhanced.
+        /// <paramref name="JellyfinItemId"/>: the Jellyfin item Seerr matched the 4K copy to (4K
+        /// scopes only), used for Play when it is a copy the viewer can open; a 4K scope never falls
+        /// back to the standard copy.
         /// </remarks>
-        internal sealed record RequestScope(IReadOnlyList<int> Seasons, bool Only4k, RequestFacts? Request, bool Available = false, DateTime? AvailableAt = null)
+        internal sealed record RequestScope(IReadOnlyList<int> Seasons, bool Only4k, RequestFacts? Request, bool Available = false, DateTime? AvailableAt = null, Guid? JellyfinItemId = null)
         {
             /// <summary>A stable text form (part of the cache key; the request facts follow the read model's revision).</summary>
-            public override string ToString() => string.Join(".", Seasons) + (Only4k ? "4k" : string.Empty) + (Available ? "a" : string.Empty);
+            public override string ToString() => string.Join(".", Seasons) + (Only4k ? "4k" : string.Empty) + (Available ? "a" : string.Empty)
+                + (JellyfinItemId is Guid id ? "@" + id.ToString("N", CultureInfo.InvariantCulture) : string.Empty);
         }
+
+        /// <summary>The copy Seerr matched a 4K request to, when it is one the viewer can open (else null).</summary>
+        private static JfCopy? SeerrCopy(RequestScope scope, IReadOnlyList<JfCopy> copies)
+            => scope.JellyfinItemId is Guid id ? copies.FirstOrDefault(x => x.Visible && x.ItemId == id) : null;
 
         /// <summary>
         /// A body built from many titles composed by key (the Requests page), cached per user like
@@ -343,13 +355,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var whose = gather.Facts[whole.Key];
             var c = Context(viewer);
-            var copies = _view.Copies(whole.Key, viewer);
+            var copies = CopiesOf(whole.Key, viewer);
             if (scope.Only4k && !_store.Instances(whole.Key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr).Any(i => i.Role == "4k"))
             {
                 // No 4K instance set up in Jellyfin Enhanced: the standard copy says nothing about the
                 // 4K one, so the request (and Seerr's word that the 4K copy is available) is all there is.
                 var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, scope.Available, scope.AvailableAt);
-                return whole with { Status = WithLiveKey(only, whose), Scoped = true, ArrivedAt = at };
+                // Never the standard copy: Play opens the 4K copy Seerr names, when the viewer can open it.
+                return whole with { Status = WithLiveKey(only, whose), Visible = SeerrCopy(scope, copies), Scoped = true, ArrivedAt = at };
             }
             var facts = new TitleFacts(whose.Key) { Request = scope.Request, LiveKey = whose.LiveKey };
             facts.Copies.AddRange(whose.Copies);
@@ -358,10 +371,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             facts.Checked.AddRange(whose.Checked);
             if (whole.Key.IsMovie && scope.Only4k)
             {
-                var (status, arrived, shown) = StatusComposer.Requested4k(facts, whole.Status, copies, c);
-                return whole with { Status = WithLiveKey(status, facts), Visible = shown ?? whole.Visible, Scoped = true, ArrivedAt = arrived };
+                var (status, arrived, shown) = StatusComposer.Requested4k(facts, whole.Status, copies, c, SeerrCopy(scope, copies));
+                return whole with { Status = WithLiveKey(status, facts), Visible = shown ?? SeerrCopy(scope, copies), Scoped = true, ArrivedAt = arrived };
             }
-            if (!whole.Key.IsMovie && scope.Seasons.Count > 0)
+            var seasons = scope.Seasons;
+            if (!whole.Key.IsMovie && scope.Only4k && seasons.Count == 0)
+            {
+                seasons = StatusComposer.FourKOnly(facts).Copies.Where(x => x.Series != null)
+                    .SelectMany(x => x.Series!.Seasons).Where(s => s.Monitored && s.SeasonNumber > 0)
+                    .Select(s => s.SeasonNumber).Distinct().OrderBy(n => n).ToList();
+                if (seasons.Count == 0)
+                {
+                    var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, scope.Available, scope.AvailableAt);
+                    return whole with { Status = WithLiveKey(only, facts), Visible = SeerrCopy(scope, copies), Scoped = true, ArrivedAt = at };
+                }
+            }
+            if (!whole.Key.IsMovie && seasons.Count > 0)
             {
                 // A 4K request is followed (and "no 4K Sonarr has it" judged) through the 4K Sonarrs only.
                 if (scope.Only4k) facts = StatusComposer.FourKOnly(facts);
@@ -370,13 +395,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (scope.Only4k)
                 {
                     // The Jellyfin copies matched to the 4K Sonarr copies: their episodes, not the standard copy's.
-                    var count = whose.Copies.Count(x => x.Series != null);
-                    mine = facts.Copies.Where(x => x.Series != null).SelectMany(x => StatusComposer.MatchCopies(x, copies, count)).Distinct().ToList();
-                    shown = mine.FirstOrDefault(x => x.Visible);
+                    var siblings = StatusComposer.SeriesCopies(whose);
+                    // Positive matches only (never "the only copy there is": it may be the standard one).
+                    mine = facts.Copies.Where(x => x.Series != null).SelectMany(x => StatusComposer.MatchCopies(x, copies, siblings, soleFallback: false)).Distinct().ToList();
+                    shown = mine.FirstOrDefault(x => x.Visible) ?? SeerrCopy(scope, copies);
+                    if (mine.Count == 0 && shown != null) mine = new List<JfCopy> { shown };
                 }
                 var episodes = shown != null ? _view.Episodes(shown.ItemId, null, viewer, includeVirtual: false) : null;
-                var (status, arrived) = StatusComposer.RequestedSeasons(facts, whole.Status, scope.Seasons, episodes, mine, c, scope.Only4k);
-                return whole with { Status = WithLiveKey(status, facts), Visible = shown ?? whole.Visible, Scoped = true, ArrivedAt = arrived };
+                var (status, arrived) = StatusComposer.RequestedSeasons(facts, whole.Status, seasons, episodes, mine, c, scope.Only4k);
+                // A 4K scope never falls back to the standard copy (Play would open the HD item).
+                return whole with { Status = WithLiveKey(status, facts), Visible = scope.Only4k ? shown : shown ?? whole.Visible, Scoped = true, ArrivedAt = arrived };
             }
             return whole;
         }
@@ -398,7 +426,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private KeyedStatus? Compose(StatusViewer viewer, Gathered gather, TitleKey key, bool detail, RequestScope? scope = null)
         {
             var facts = gather.Facts[key];
-            var copies = _view.Copies(key, viewer);
+            var copies = CopiesOf(key, viewer);
             if (!MayAskByKey(viewer, key, copies)) return null;
             facts.Request = scope != null ? scope.Request : _requests.For(key, viewer);
             var c = Context(viewer);
@@ -410,14 +438,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// Whether a viewer may ask about a title by key: always, except a viewer with parental limits
-        /// and no Jellyfin copy they can open (the title's rating isn't known yet) who didn't ask for
-        /// it themselves.
+        /// and no Jellyfin copy they can open. Such a viewer may still follow a title they asked for
+        /// themselves while Jellyfin has no copy at all (its rating isn't known yet); once Jellyfin
+        /// has it and hides it from them, their limits have judged it, and their own request no
+        /// longer lets them see it.
         /// </summary>
         private bool MayAskByKey(StatusViewer viewer, TitleKey key, IReadOnlyList<JfCopy> copies)
-            => viewer.IsAdmin || !viewer.HasParentalLimit || copies.Any(x => x.Visible) || _requests.AskedBy(key, viewer.UserId);
+            => viewer.IsAdmin || !viewer.HasParentalLimit || copies.Any(x => x.Visible) || (copies.Count == 0 && _requests.AskedBy(key, viewer.UserId));
 
         /// <summary>The request facts in use (the Seerr read model, or none).</summary>
         internal IArrRequestFacts Requests => _requests;
+
+        /// <summary>The title's other ids (arr libraries, Seerr's requests), from memory.</summary>
+        internal TitleAliases Aliases => _aliases;
+
+        /// <summary>
+        /// Every Jellyfin copy of a title as the viewer sees it, found by the title's key and every
+        /// alias (a series Jellyfin knows only by its TMDB id is found by its TVDB key).
+        /// </summary>
+        internal IReadOnlyList<JfCopy> CopiesOf(TitleKey key, StatusViewer viewer) => _view.Copies(key, viewer, _aliases.Of(key));
 
         /// <summary>
         /// Sets the key the change feed announces a title under when it differs from the status key
@@ -557,9 +596,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         .Append(':').Append(string.Join(",", instance.LinkedLibraryIds))
                         .Append(':').Append(string.Join(",", instance.PathMappings.Select(m => m.ArrPath + ">" + m.JellyfinPath)))
                         .Append(':').Append(Stamp(library.LoadedAt)).Append(library.Error?.Kind.ToString() ?? string.Empty)
-                        .Append(':').Append(Stamp(queue.LoadedAt)).Append(':').Append(Stamp(history.LoadedAt)).Append(';');
-                    var queueIndex = queue.Value != null ? QueueIndex.GetValue(queue.Value, q => q.Records.Where(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId).HasValue).ToLookup(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId)!.Value)) : null;
-                    var historyIndex = history.Value != null ? HistoryIndex.GetValue(history.Value, h => h.Records.Where(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId).HasValue).ToLookup(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId)!.Value)) : null;
+                        .Append(':').Append(Stamp(queue.LoadedAt)).Append(queue.Error?.Kind.ToString() ?? string.Empty).Append(queue.Stale ? "s" : string.Empty).Append(queue.Expired ? "x" : string.Empty)
+                        .Append(':').Append(Stamp(history.LoadedAt)).Append(history.Error?.Kind.ToString() ?? string.Empty).Append(history.Expired ? "x" : string.Empty).Append(';');
+                    // Past its longest serve time with the latest read failed, the queue says nothing
+                    // about now: its rows aren't used (no frozen "Downloading 43%"), and titles of the
+                    // instance that aren't in Jellyfin read "can't be checked" (see ArrCopyFacts.QueueUnknown).
+                    // So is one that was never read and can't be (cold, and the read failed).
+                    var unknown = queue.Expired || history.Expired || (queue.Value == null && queue.Error != null) || (history.Value == null && history.Error != null);
+                    var queueLoadedAt = queue.LoadedAt?.UtcDateTime;
+                    // The latest read failed: the held rows' time left is no longer known.
+                    var queueStale = queue.Stale || (queue.Value != null && queue.Error != null);
+                    Func<ArrQueueEntry, ArrQueueSeen?> seen = row => _store.QueueSeen(instance, row);
+                    var queueIndex = queue.Value != null && !queue.Expired ? QueueIndex.GetValue(queue.Value, q => q.Records.Where(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId).HasValue).ToLookup(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId)!.Value)) : null;
+                    // An expired history says nothing about now either: its last rows never decide a status.
+                    var historyIndex = history.Value != null && !history.Expired ? HistoryIndex.GetValue(history.Value, h => h.Records.Where(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId).HasValue).ToLookup(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId)!.Value)) : null;
 
                     foreach (var title in distinct.Where(t => t.IsMovie == (kind == ArrKind.Radarr)))
                     {
@@ -583,6 +633,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                                 LeftQueue = (m, e) => _store.LeftQueueAt(instance, m, e)?.UtcDateTime,
                                 Queue = queueIndex?[movie.Id].ToList() ?? new List<ArrQueueEntry>(),
                                 History = historyIndex?[movie.Id].ToList() ?? new List<ArrHistoryEntry>(),
+                                Seen = seen,
+                                QueueLoadedAt = queueLoadedAt,
+                                QueueStale = queueStale,
+                                QueueUnknown = unknown,
                             });
                         }
                         else
@@ -609,6 +663,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                                 LibraryLoadedAt = library.LoadedAt?.UtcDateTime,
                                 EpisodesLoadedAt = episodes?.LoadedAt?.UtcDateTime,
                                 LeftQueue = (m, e) => _store.LeftQueueAt(instance, m, e)?.UtcDateTime,
+                                Seen = seen,
+                                QueueLoadedAt = queueLoadedAt,
+                                QueueStale = queueStale,
+                                QueueUnknown = unknown,
                             });
                         }
                     }

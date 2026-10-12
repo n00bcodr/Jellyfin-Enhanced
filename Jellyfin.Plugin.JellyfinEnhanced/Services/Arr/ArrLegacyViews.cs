@@ -154,15 +154,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         }
 
         /// <summary>Calendar events of one instance inside [start, end] (new objects per call: the route mutates them).</summary>
-        public static IEnumerable<ArrItem> CalendarItems(ArrConnection instance, ArrCalendarSnapshot calendar, DateTime start, DateTime end)
+        public static IEnumerable<ArrItem> CalendarItems(ArrConnection instance, ArrCalendarSnapshot calendar, DateTime start, DateTime end, string? startDay = null, string? endDay = null)
         {
+            // A date-only release is kept by its day, not its instant (midnight UTC): the days the
+            // viewer asked for (their local days), else the UTC days of the range.
+            var fromDay = startDay ?? start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var toDay = endDay ?? end.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            bool InDays(DateTime d)
+            {
+                var day = d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                return string.CompareOrdinal(day, fromDay) >= 0 && string.CompareOrdinal(day, toDay) <= 0;
+            }
+
             foreach (var e in calendar.Entries)
             {
                 if (instance.Kind == ArrKind.Sonarr)
                 {
-                    if (e.AirDateUtc is not DateTime air || air < start || air > end) continue;
+                    if (e.AirDateUtc is not DateTime air) continue;
+                    if (e.AirDateIsDay ? !InDays(air.ToUniversalTime()) : air < start || air > end) continue;
                     yield return new ArrItem
                     {
+                        DateOnly = e.AirDateIsDay,
+                        ReleaseDateLocal = e.AirDateIsDay ? air.ToUniversalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null,
                         Id = e.Id.ToString(CultureInfo.InvariantCulture),
                         Source = nameof(ArrType.Sonarr),
                         InstanceName = instance.Name,
@@ -192,10 +205,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
                 foreach (var (type, date) in e.Releases)
                 {
+                    // Radarr's release dates are calendar days.
                     var releaseUtc = date.ToUniversalTime();
-                    if (releaseUtc < start || releaseUtc > end) continue;
+                    if (!InDays(releaseUtc)) continue;
                     yield return new ArrItem
                     {
+                        DateOnly = true,
+                        ReleaseDateLocal = releaseUtc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                         Id = e.Id.ToString(CultureInfo.InvariantCulture) + "-" + type,
                         Source = nameof(ArrType.Radarr),
                         InstanceName = instance.Name,

@@ -501,7 +501,7 @@ test('administrators\' Needs attention alerts read like the Overview row and ope
   const rows = [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')];
   assert.deepEqual(rows.map(r => r.querySelector('.je-notify-text').textContent), [
     'Severance S02E05 needs a manual import in Sonarr',
-    "Dune (4K) was OK'd in Seerr, but no 4K Sonarr/Radarr has it",
+    "Dune (4K) was OK'd in Seerr, but none of the 4K Sonarr/Radarr Jellyfin Enhanced watches has it",
     'Low disk space on Radarr: /data/movies has 4% free (40 GB)'
   ]);
   rows[0].querySelector('.je-notify-body').click();

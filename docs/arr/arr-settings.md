@@ -133,7 +133,9 @@ refreshes it in the background while a page uses it:
 | Library (every movie or series with its ids and tags) | Every 15 minutes | Item-page links, request-card links, "not in Sonarr/Radarr" on requests, tag sync |
 
 Nothing is read until a page asks for it, and data nobody has looked at for a while stops being
-refreshed. After a restart the library list starts from a cached copy (in the `arr-state` folder of
+refreshed. A queue or history that can't be read again is still shown for a while (10 minutes for the
+queue, 30 for the history); after that, "Requests & downloads" treats what that app is downloading as
+unknown rather than showing it as current. After a restart the library list starts from a cached copy (in the `arr-state` folder of
 the plugin's data folder) and is refreshed in the background. A title you just added in Sonarr or
 Radarr can take up to 15 minutes to get its link, and a change to the calendar (a title added or
 removed) up to 15 minutes to show.
@@ -372,7 +374,9 @@ Found in the ***arr Settings** tab under "Requests Page (Downloads)".
 | **Poll Interval** | How often to refresh, in seconds (30–300, default: 30) |
 
 While the page is off (or **Show Downloads in Requests Page** is off) its queue and history routes return nothing as well.
-If an instance's history can't be read, the page says so instead of showing it as empty.
+If an instance's history can't be read, the page says so instead of showing it as empty. History lists
+the newest 200 events you may see (with **Filter by user requests**, your own titles first: other
+people's newer events never push yours out).
 
 !!! note
     The Requests page for downloads is separate from the Seerr Requests page. Both can be enabled independently. The Seerr Requests page (showing media requests and issues) is configured in the **Seerr Settings** tab.

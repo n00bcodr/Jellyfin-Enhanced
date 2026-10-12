@@ -77,6 +77,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Seasons asked for (series).</summary>
         public IReadOnlyList<int> Seasons { get; init; } = Array.Empty<int>();
 
+        /// <summary>
+        /// The Jellyfin item Seerr matched the variant asked for to (its media's jellyfinMediaId4k
+        /// for a 4K request, jellyfinMediaId otherwise), when it names one. A hint only: used when
+        /// it is a copy the viewer can open.
+        /// </summary>
+        public Guid? JellyfinItemId { get; init; }
+
         /// <summary>The title key (movie or series) the request is for, or null when it names no usable id.</summary>
         public TitleKey? Key => IsMovie
             ? TitleKey.ForMovie(TmdbId > 0 ? TmdbId.Value.ToString(CultureInfo.InvariantCulture) : null, ImdbId)
@@ -100,7 +107,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             Is4k ? "4k" : "std",
             string.Join(",", Seasons),
             RequestedByName ?? string.Empty,
-            ModifiedByName ?? string.Empty);
+            ModifiedByName ?? string.Empty,
+            JellyfinItemId?.ToString("N") ?? "-");
     }
 
     /// <summary>What Seerr (TMDB) says about a requested title, for the Requests page.</summary>
@@ -293,12 +301,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var considered = active.Count > 0 ? active : requests.ToList();
             var asked = considered.Where(r => r.CreatedAt.HasValue).Select(r => r.CreatedAt).DefaultIfEmpty(null).Min();
             var approved = active.Where(r => r.Status is SeerrRequestStatus.Approved or SeerrRequestStatus.Completed or SeerrRequestStatus.Failed).ToList();
+            DateTime? ApprovedOf(IReadOnlyList<SeerrRequestRecord> list)
+                => list.Count > 0 ? list.Select(r => r.UpdatedAt ?? r.CreatedAt).Where(d => d.HasValue).DefaultIfEmpty(null).Min() ?? asked : null;
+            // As the Overview's Needs attention judges a handoff: a variant with a completed request or
+            // (partly) available media is done, whatever the arrs hold now.
+            bool Done(bool fourK) => requests.Any(r => r.Is4k == fourK && (r.MediaStatus is 4 or 5 || r.Status == SeerrRequestStatus.Completed));
             return new RequestFacts
             {
                 AskedAt = asked,
                 AskedByViewer = considered.Any(r => r.RequestedBy == userId),
                 Pending = active.Count > 0 && active.All(r => r.Status == SeerrRequestStatus.Pending),
-                ApprovedAt = approved.Count > 0 ? approved.Select(r => r.UpdatedAt ?? r.CreatedAt).Where(d => d.HasValue).DefaultIfEmpty(null).Min() ?? asked : null,
+                ApprovedAt = ApprovedOf(approved),
+                ApprovedStandardAt = ApprovedOf(approved.Where(r => !r.Is4k).ToList()),
+                Approved4kAt = ApprovedOf(approved.Where(r => r.Is4k).ToList()),
+                StandardDone = Done(false),
+                FourKDone = Done(true),
                 Declined = active.Count == 0,
             };
         }
@@ -617,6 +634,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Id = record.Id, IsMovie = false, TmdbId = record.TmdbId, TvdbId = meta.TvdbId, ImdbId = record.ImdbId, Is4k = record.Is4k,
                 Status = record.Status, MediaStatus = record.MediaStatus, CreatedAt = record.CreatedAt, UpdatedAt = record.UpdatedAt,
                 RequestedBy = record.RequestedBy, RequestedByName = record.RequestedByName, ModifiedByName = record.ModifiedByName, Seasons = record.Seasons,
+                JellyfinItemId = record.JellyfinItemId,
             };
         }
 
@@ -716,7 +734,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         Int(item, "id")?.ToString(CultureInfo.InvariantCulture) ?? "-",
                         Int(item, "status")?.ToString(CultureInfo.InvariantCulture) ?? "-",
                         Str(item, "updatedAt") ?? "-",
-                        media.ValueKind == JsonValueKind.Object ? (Int(media, "status")?.ToString(CultureInfo.InvariantCulture) ?? "-") + "/" + (Int(media, "status4k")?.ToString(CultureInfo.InvariantCulture) ?? "-") : "-"));
+                        media.ValueKind == JsonValueKind.Object
+                            ? (Int(media, "status")?.ToString(CultureInfo.InvariantCulture) ?? "-") + "/" + (Int(media, "status4k")?.ToString(CultureInfo.InvariantCulture) ?? "-")
+                                + "/" + (Str(media, "jellyfinMediaId") ?? "-") + "/" + (Str(media, "jellyfinMediaId4k") ?? "-")
+                            : "-"));
                 }
             }
             return string.Join(",", parts);
@@ -755,6 +776,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 RequestedByName = NameOf(item, "requestedBy"),
                 ModifiedByName = NameOf(item, "modifiedBy"),
                 Seasons = seasons.Distinct().OrderBy(n => n).ToList(),
+                JellyfinItemId = Str(media, is4k ? "jellyfinMediaId4k" : "jellyfinMediaId") is { } jellyfinId && Guid.TryParse(jellyfinId, out var itemId) && itemId != Guid.Empty ? itemId : null,
             };
             return record.Key == null ? null : record;
         }

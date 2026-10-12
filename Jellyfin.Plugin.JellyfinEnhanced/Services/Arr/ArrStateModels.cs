@@ -181,6 +181,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>Air time (UTC), if known.</summary>
         public DateTime? AirDateUtc { get; init; }
 
+        /// <summary>
+        /// The air date is a calendar day only (Sonarr had no air time, so <see cref="AirDateUtc"/> is
+        /// its local air date read as midnight UTC): shown as that day wherever the viewer is.
+        /// </summary>
+        public bool AirDateIsDay { get; init; }
+
         /// <summary>Has a file.</summary>
         public bool HasFile { get; init; }
 
@@ -545,6 +551,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>Episode air time (Sonarr, UTC).</summary>
         public DateTime? AirDateUtc { get; init; }
 
+        /// <summary>Sonarr had no air time for the episode: <see cref="AirDateUtc"/> is its air day (midnight UTC).</summary>
+        public bool AirDateIsDay { get; init; }
+
         /// <summary>Release dates by type (CinemaRelease / PhysicalRelease / DigitalRelease), Radarr, UTC.</summary>
         public IReadOnlyDictionary<string, DateTime> Releases { get; init; } = new Dictionary<string, DateTime>();
 
@@ -712,6 +721,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>True when the value is older than its freshness target (a refresh is on its way).</summary>
         public bool Stale { get; init; }
+
+        /// <summary>
+        /// Queue and history only: the value held is older than the longest it may be served and
+        /// no read since has worked (the instance is down, or still hasn't answered). It is kept
+        /// (<see cref="Value"/>), but says nothing about now: what is downloading is unknown.
+        /// </summary>
+        public bool Expired { get; init; }
     }
 
     /// <summary>An instance's snapshots as a background reader got them (<see cref="ArrStateStore.ReadInBackgroundAsync"/>).</summary>

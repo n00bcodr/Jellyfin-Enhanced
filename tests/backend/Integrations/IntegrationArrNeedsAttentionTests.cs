@@ -78,7 +78,9 @@ public class IntegrationArrNeedsAttentionTests
         var item = Assert.Single(items);
         Assert.Equal((code, severity, fix), (item.Code, item.Severity, item.Fixes[0]));
         Assert.Equal(("Dune", 2021, "movie:tmdb:438631", "dl1", "Radarr", "/activity/queue"), (item.Title, item.Year, item.Key, item.DownloadId, item.Instance, item.ArrLink));
-        Assert.Equal(Now.AddMinutes(-41), item.Since);
+        // No first-seen clocks given: "since" is now, never the grab time (41 min ago); the grab
+        // time is kept apart for the alert keys.
+        Assert.Equal((Now, (DateTime?)Now.AddMinutes(-41)), (item.Since!.Value, item.Occurred));
         if (RowFor(scenario).StatusMessages.Count > 0) Assert.Equal(RowFor(scenario).StatusMessages[0], item.Message);
     }
 

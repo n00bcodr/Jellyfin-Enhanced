@@ -61,6 +61,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
         private readonly ArrStateStore _store;
+        private readonly Acquire.TitleAliases _aliases;
         private readonly IArrJellyfinView _view;
         private readonly IArrRequestFacts? _requests;
         private readonly Func<DateTimeOffset> _now;
@@ -79,6 +80,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             _libraryManager = libraryManager;
             _userManager = userManager;
             _store = store;
+            _aliases = new Acquire.TitleAliases(store, null);
             _view = view ?? new ArrJellyfinView(libraryManager, userManager);
             _requests = requests;
             _now = now ?? (() => DateTimeOffset.UtcNow);
@@ -241,25 +243,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
 
         // The title's ids as Jellyfin may know them: the key's own (TMDB for a movie, TVDB for a
         // series) plus the IMDb (and, for a series, TMDB) ids the arr libraries hold for it, so a
-        // Jellyfin copy matched only by one of those still decides.
+        // Jellyfin copy matched only by one of those still decides. The same resolver as the status
+        // (Acquire.TitleAliases), so the feed and the status never disagree about a copy.
         private Dictionary<string, string> Providers(bool movie, int id)
         {
             var providers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 [movie ? "Tmdb" : "Tvdb"] = id.ToString(CultureInfo.InvariantCulture),
             };
-            foreach (var c in _store.Registry.All().Where(c => c.Kind == (movie ? ArrKind.Radarr : ArrKind.Sonarr) && c.Usable))
+            var key = TitleKey.Parse(movie ? ArrTitleKey.Movie(id) : ArrTitleKey.Series(id));
+            if (key == null) return providers;
+            foreach (var alias in _aliases.FromArrs(key).Select(TitleKey.Parse))
             {
-                if (_store.PeekLibrary(c.Id) is not { } library) continue;
-                if (movie)
-                {
-                    if (library.MovieByTmdb(id)?.ImdbId is { Length: > 0 } imdb) providers.TryAdd("Imdb", imdb);
-                }
-                else if (library.SeriesByTvdb(id) is { } series)
-                {
-                    if (series.TmdbId is > 0 and var tmdb) providers.TryAdd("Tmdb", tmdb.ToString(CultureInfo.InvariantCulture));
-                    if (series.ImdbId is { Length: > 0 } imdb) providers.TryAdd("Imdb", imdb);
-                }
+                if (alias == null || alias.IsMovie != movie) continue;
+                providers.TryAdd(alias.Provider switch { "tmdb" => "Tmdb", "tvdb" => "Tvdb", _ => "Imdb" }, alias.Id);
             }
             return providers;
         }

@@ -162,13 +162,45 @@
     // ------------------------------------------------------------------ formatting
 
     /**
+     * A date from the server: a bare calendar day ("2026-11-14", a release date with no time) is that
+     * day where the viewer is (read as UTC midnight it would be a day early west of UTC); anything
+     * else is an instant.
+     * @param {string} iso ISO date or "yyyy-MM-dd".
+     * @returns {Date|null} The date, or null when invalid.
+     */
+    function parseDate(iso) {
+        if (!iso) return null;
+        const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+        if (day) {
+            const [year, month, date] = [Number(day[1]), Number(day[2]) - 1, Number(day[3])];
+            const d = new Date(year, month, date);
+            // Out-of-range parts would otherwise roll over into another date.
+            return d.getFullYear() === year && d.getMonth() === month && d.getDate() === date ? d : null;
+        }
+        const d = new Date(iso);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    /**
+     * True when a bare calendar day ("yyyy-MM-dd") is before the viewer's today.
+     * @param {string} day The day.
+     * @returns {boolean} Past.
+     */
+    function dayPassed(day) {
+        const d = parseDate(day);
+        if (!d) return false;
+        const now = new Date();
+        return d.getTime() < new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    }
+
+    /**
      * A date as the family reads it: "today", "tomorrow", a weekday within the week, else "14 Nov".
-     * @param {string} iso ISO date.
+     * @param {string} iso ISO date, or a bare calendar day "yyyy-MM-dd".
      * @returns {string} The date text ('' when invalid).
      */
     function formatDate(iso) {
-        const d = new Date(iso);
-        if (!iso || isNaN(d.getTime())) return '';
+        const d = parseDate(iso);
+        if (!d) return '';
         const now = new Date();
         const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
         const days = Math.round((startOf(d) - startOf(now)) / 86400000);
@@ -235,14 +267,37 @@
             case 'importing':
             case 'library_pending': return tr('arr_status_almost_ready');
             case 'import_blocked':
+            case 'client_unavailable':
             case 'approved_not_in_arr':
             case 'service_down': return tr('arr_status_taking_longer');
             case 'upgrading': return tr('arr_status_upgrading');
             case 'unmonitored': return tr('arr_status_unmonitored');
+            case 'partial': return tr('arr_status_partial');
             case 'not_in_arr':
             case 'not_visible_to_user': return tr('arr_status_not_here');
-            case 'ready':
-            default: return tr('arr_status_ready');
+            case 'ready': return status?.stage === 'ready' ? tr('arr_status_ready') : stageText(status, contact);
+            default: return stageText(status, contact);
+        }
+    }
+
+    /**
+     * The family sentence of a stage alone, for a reason code this client doesn't know (a newer
+     * server): never "Ready to watch" unless the stage is ready.
+     * @param {Object} status Status from the server.
+     * @param {string} contact The household contact.
+     * @returns {string} Text.
+     */
+    function stageText(status, contact) {
+        switch (status?.stage) {
+            case 'asked': return tr('arr_status_awaiting_approval', { contact });
+            case 'approved': return tr('arr_status_approved');
+            case 'notOut': return tr('arr_status_not_released');
+            case 'looking': return tr('arr_status_looking');
+            case 'downloading': return tr('arr_status_downloading');
+            case 'almostReady': return tr('arr_status_almost_ready');
+            case 'ready': return tr('arr_status_ready');
+            case 'notHere': return tr('arr_status_not_here');
+            default: return tr('arr_status_unknown');
         }
     }
 
@@ -265,7 +320,7 @@
             pieces.push({ text: tr('arr_summary_all_ready'), tone: 'ready', icon: 'check_circle' });
         }
         if (s.nextAir) {
-            const date = formatDate(s.nextAir);
+            const date = formatDate(status.nextDay || s.nextAir);
             let text;
             if (status.kind === 'series' && s.nextSeason != null && s.nextEpisode != null) {
                 text = s.nextEpisode > 1
@@ -280,8 +335,11 @@
         }
         if (s.downloading > 0) pieces.push({ text: tr('arr_summary_downloading', { n: s.downloading }), tone: 'downloading', icon: 'download' });
         if (s.almostReady > 0) pieces.push({ text: tr('arr_summary_almost_ready', { n: s.almostReady }), tone: 'almostReady', icon: 'hourglass_bottom' });
-        if (s.missing > 0) pieces.push({ text: tr('arr_summary_missing', { n: s.missing }), tone: 'looking', icon: 'search' });
-        if (s.attention > 0) pieces.push({ text: tr('arr_summary_attention', { n: s.attention }), tone: 'attention', icon: 'schedule' });
+        const missing = s.missing || 0;
+        const unknown = s.unknown == null && status.reason?.code === 'service_down' ? missing : Math.min(missing, s.unknown || 0);
+        if (missing - unknown > 0) pieces.push({ text: tr('arr_summary_missing', { n: missing - unknown }), tone: 'looking', icon: 'search' });
+        const attention = (s.attention || 0) + unknown;
+        if (attention > 0) pieces.push({ text: tr('arr_summary_attention', { n: attention }), tone: 'attention', icon: 'schedule' });
         return pieces;
     }
 
@@ -308,7 +366,7 @@
         if (ep.stage === 'ready') return code === 'upgrading' ? tr('arr_chip_upgrading') : tr('arr_chip_ready');
         if (ep.stage === 'downloading') {
             if (code === 'queued' || code === 'delay_held') return tr('arr_chip_queued');
-            if (code === 'stalled') return tr('arr_chip_taking_longer');
+            if (code === 'stalled' || code === 'client_unavailable') return tr('arr_chip_taking_longer');
             const pct = ep.progress?.percent;
             return typeof pct === 'number' ? tr('arr_chip_downloading_pct', { pct }) : tr('arr_chip_downloading');
         }
@@ -318,7 +376,7 @@
             return date ? tr('arr_chip_airs', { date: formatDate(date) }) : tr('arr_chip_not_aired');
         }
         if (ep.stage === 'asked') return tr('arr_chip_waiting_ok');
-        if (code === 'failed') return tr('arr_chip_taking_longer');
+        if (code === 'failed' || code === 'service_down') return tr('arr_chip_taking_longer');
         if (code === 'unmonitored') return tr('arr_chip_not_fetched');
         return tr('arr_chip_missing');
     }
@@ -399,6 +457,42 @@
             case 'upgrading': return tr('arr_admin_upgrading');
             default: return tr(`arr_admin_${code || 'ready'}`, params);
         }
+    }
+
+    // ------------------------------------------------------------------ failed re-reads
+
+    /** First and longest wait before a failed re-read is tried again (data stays on screen meanwhile). */
+    const RETRY_FIRST_MS = 5000;
+    const RETRY_MAX_MS = 60000;
+
+    /**
+     * The wait before the next try after a failed re-read: 5 s, then twice as long, at most a minute.
+     * @param {number} [previous] The wait before the last try (0 or none: the first).
+     * @returns {number} Milliseconds.
+     */
+    function retryDelay(previous) {
+        return Math.min(RETRY_MAX_MS, previous > 0 ? previous * 2 : RETRY_FIRST_MS);
+    }
+
+    /**
+     * The note shown while a re-read failed and the page still shows what it had: "Couldn't
+     * refresh · showing what we had at {time}" and a Retry button (role=status: read out once).
+     * @param {number} okAt When the data on screen was read (ms since epoch; 0: unknown).
+     * @param {Function} onRetry Called when Retry is pressed.
+     * @param {string} [cls] Extra class names.
+     * @returns {HTMLElement} Note.
+     */
+    function staleNote(okAt, onRetry, cls) {
+        const note = el('div', `je-arr-stale-note${cls ? ' ' + cls : ''}`);
+        note.setAttribute('role', 'status');
+        const time = okAt ? new Date(okAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
+        note.appendChild(el('span', 'je-arr-stale-text', tr('arr_hub_refresh_failed', { time })));
+        const retry = el('button', 'je-arr-stale-retry', tr('arr_hub_retry'));
+        retry.type = 'button';
+        retry.dataset.jeFocus = 'stale-retry';
+        retry.addEventListener('click', () => onRetry());
+        note.appendChild(retry);
+        return note;
     }
 
     // ------------------------------------------------------------------ DOM builders
@@ -722,12 +816,16 @@
         adminLines,
         adminReasonText,
         formatDate,
+        parseDate,
+        dayPassed,
         formatEta,
         ageText,
         buildPill,
         buildSummary,
         buildJourney,
         buildBadge,
+        staleNote,
+        retryDelay,
         subscribe,
         refresh,
         tr,

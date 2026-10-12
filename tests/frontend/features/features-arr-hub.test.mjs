@@ -537,3 +537,205 @@ test('keyboard and D-pad focus stays on the same tab, row or button when the pag
   await wait(20);
   assert.equal(h.document.activeElement, h.document.body);
 });
+
+/**
+ * Takes over the page's long timers (≥ 5 s: the re-read retries) so a test runs them when it wants;
+ * shorter ones run as usual.
+ */
+function holdLongTimers(h) {
+  const held = new Map();
+  let next = 1e6;
+  const realSet = h.window.setTimeout.bind(h.window);
+  const realClear = h.window.clearTimeout.bind(h.window);
+  h.window.setTimeout = (fn, ms, ...args) => {
+    if (!(ms >= 5000)) return realSet(fn, ms, ...args);
+    const id = next++;
+    held.set(id, { fn, ms });
+    return id;
+  };
+  h.window.clearTimeout = id => { if (held.has(id)) held.delete(id); else realClear(id); };
+  return {
+    delays: () => [...held.values()].map(x => x.ms),
+    run() { const all = [...held.entries()]; held.clear(); for (const [, x] of all) x.fn(); return all.length; }
+  };
+}
+
+test('a failed re-read keeps the rows, says so with Retry, tries again with backoff and stops when the page is left', async t => {
+  let n = 0;
+  const outcome = [];
+  const h = setup(t, {
+    hash: '#/requests',
+    responses: path => {
+      if (path !== '/acquire/hub') return null;
+      n++;
+      const next = outcome.shift();
+      return next === 'fail' ? Object.assign(new Error('HTTP 502'), { status: 502 }) : hubAnswer();
+    }
+  });
+  const timers = holdLongTimers(h);
+  h.JE.initializeArrStatus();
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.equal(page.querySelectorAll('.je-hub-row').length, 3);
+  assert.equal(page.querySelector('.je-hub-refresh-failed'), null);
+
+  // A change asks for a re-read that fails: the rows stay, with the note and a Retry.
+  outcome.push('fail');
+  h.live().at(-1).cb(['movie:tmdb:693134']);
+  await until(() => page.querySelector('.je-hub-refresh-failed'));
+  const note = page.querySelector('.je-hub-refresh-failed');
+  assert.equal(note.getAttribute('role'), 'status');
+  assert.match(note.textContent, /^Couldn't refresh · showing what we had at /);
+  const firstNote = note.querySelector('.je-arr-stale-text').textContent;
+  assert.equal(page.querySelectorAll('.je-hub-row').length, 3);
+  assert.deepEqual(timers.delays(), [5000]);
+  // The retry fails again: the time on the note is still the last good read; the wait doubles.
+  outcome.push('fail');
+  timers.run();
+  await until(() => timers.delays().length === 1);
+  assert.deepEqual(timers.delays(), [10000]);
+  assert.equal(page.querySelector('.je-hub-refresh-failed .je-arr-stale-text').textContent, firstNote);
+  // Retry by hand works: the note goes, nothing is scheduled.
+  page.querySelector('.je-hub-refresh-failed .je-arr-stale-retry').click();
+  await until(() => !page.querySelector('.je-hub-refresh-failed'));
+  assert.deepEqual(timers.delays(), []);
+  assert.equal(page.querySelectorAll('.je-hub-row').length, 3);
+
+  // Failing again, then leaving the page: the retry is dropped.
+  outcome.push('fail');
+  h.live().at(-1).cb(['movie:tmdb:693134']);
+  await until(() => timers.delays().length === 1);
+  h.window.location.hash = '#/home';
+  for (const fn of h.navigation) fn();
+  assert.deepEqual(timers.delays(), []);
+  const reads = n;
+  timers.run();
+  await wait(20);
+  assert.equal(n, reads);
+});
+
+test('a first read that fails shows the error box, not old rows', async t => {
+  const h = setup(t, { hash: '#/requests', responses: path => (path === '/acquire/hub' ? Object.assign(new Error('HTTP 500'), { status: 500 }) : null) });
+  h.JE.initializeArrStatus();
+  await wait(20);
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.equal(page.querySelector('.je-hub-empty').firstChild.textContent, "Couldn't load your requests. Try again in a moment.");
+  assert.equal(page.querySelector('.je-hub-refresh-failed'), null);
+});
+
+test('Hidden Content hides rows and counts on the Requests page (global hides, the same kind only)', async t => {
+  let settings = { enabled: true, filterRequests: true };
+  let hidden = [
+    { itemId: 'ABC', hideScope: 'global', type: 'Movie' },              // Sintel (ready) by item id
+    { tmdbId: 4, type: 'Movie', hideScope: 'global' },                 // Dune by TMDB id
+    { tmdbId: 9, type: 'Series', hideScope: 'global' },                // a series with Agent 327's TMDB id: not it
+    { tmdbId: 12, type: 'Movie', hideScope: 'nextup' }                 // Waiting Film hidden from Next Up only
+  ];
+  const h = setup(t, { hash: '#/requests', responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  h.JE.hiddenContent = { getSettings: () => settings, getAllHiddenItems: () => hidden };
+  h.JE.initializeArrStatus();
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  const titles = () => [...page.querySelectorAll('.je-hub-row .je-hub-name')].map(n => n.firstChild.textContent);
+  const count = tab => page.querySelector(`.je-hub-tab[data-tab="${tab}"] .je-hub-tab-count`)?.textContent ?? '';
+  assert.deepEqual(titles(), ['Waiting Film', '<img src=x onerror=alert(1)>']);
+  assert.equal(count('mine'), '1');
+  assert.equal(count('ready'), '');
+  page.querySelector('.je-hub-tab[data-tab="ready"]').click();
+  assert.equal(page.querySelector('.je-hub-empty').textContent, 'Nothing you asked for arrived in the last two weeks.');
+  page.querySelector('.je-hub-tab[data-tab="soon"]').click();
+  assert.deepEqual(titles(), ['Agent 327']);
+
+  // Unhiding (here or elsewhere) shows at once, without a new read.
+  const reads = h.calls.filter(c => c.path === '/acquire/hub').length;
+  hidden = [];
+  h.window.dispatchEvent(new h.window.CustomEvent('je-hidden-content-changed'));
+  assert.equal(count('ready'), '1');
+  assert.equal(count('mine'), '2');
+  // Hidden Content switched off for requests: nothing is hidden.
+  hidden = [{ tmdbId: 4, type: 'Movie', hideScope: 'global' }];
+  settings = { enabled: true, filterRequests: false };
+  h.window.dispatchEvent(new h.window.CustomEvent('je-hidden-content-changed'));
+  assert.equal(count('mine'), '2');
+  assert.equal(h.calls.filter(c => c.path === '/acquire/hub').length, reads);
+});
+
+test('Coming soon drops a release day that has passed here; the page says when titles are capped or downloads unknown', async t => {
+  const pad = n => String(n).padStart(2, '0');
+  const day = offset => { const d = new Date(Date.now() + offset * 86400000); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  const h = setup(t, {
+    hash: '#/requests?tab=soon',
+    responses: path => (path === '/acquire/hub' ? hubAnswer({
+      soon: [
+        entry('Yesterday Film', 'notOut', 'notOut', 'not_released', { key: 'movie:tmdb:5001', nextDate: iso(0), nextDay: day(-1) }),
+        entry('Today Film', 'notOut', 'notOut', 'not_released', { key: 'movie:tmdb:5002', nextDate: iso(0), nextDay: day(0) })
+      ],
+      more: true,
+      arr: { unavailable: true }
+    }) : null)
+  });
+  h.JE.initializeArrStatus();
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.deepEqual([...page.querySelectorAll('.je-hub-row .je-hub-name')].map(n => n.firstChild.textContent), ['Today Film']);
+  assert.equal(page.querySelector('.je-hub-day').textContent, 'today');
+  assert.equal(page.querySelector('.je-hub-tab[data-tab="soon"] .je-hub-tab-count').textContent, '1');
+  assert.match(page.querySelector('.je-hub-more').textContent, /200 at most/);
+  const arr = page.querySelector('.je-hub-arr-unavailable');
+  assert.equal(arr.getAttribute('role'), 'status');
+  assert.doesNotMatch(arr.textContent, /Radarr|Sonarr/);
+});
+
+test('the Manage drawer says when a queue it can\'t read was last read, and how old a stale one is', async t => {
+  let expired = true;
+  const h = setup(t, {
+    responses: path => path.startsWith('/arr/admin/manage?')
+      ? { key: 'movie:tmdb:1', kind: 'movie', title: 'Dune', status: status('looking', 'service_down'), instances: [{ id: 'r1', name: 'Radarr', kind: 'Radarr', inArr: true, readable: true, queue: [], queueTotal: 0, downloads: [], downloadsTotal: 0, timeline: [], queueAsOf: '2026-10-12T10:00:00Z', queueExpired: expired }], requests: [] }
+      : null
+  });
+  h.JE.initializeArrStatus();
+  await h.JE.arrManage.open({ key: 'movie:tmdb:1' });
+  const drawer = h.document.querySelector('.je-manage');
+  const note = drawer.querySelector('.je-manage-event-queue-asof');
+  assert.ok(note, 'the expired queue is said');
+  assert.equal(note.getAttribute('role'), 'status');
+  assert.match(note.querySelector('.je-manage-event-label').textContent, /^queue can't be read; last read /);
+  drawer.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  expired = false;
+  await h.JE.arrManage.open({ key: 'movie:tmdb:1' });
+  assert.match(h.document.querySelector('.je-manage .je-manage-event-queue-asof .je-manage-event-label').textContent, /^queue as of /);
+});
+
+test('the Manage drawer keeps what it shows when a re-read fails, says so, and retries until it works', async t => {
+  let fail = false;
+  let reads = 0;
+  const h = setup(t, {
+    responses: path => {
+      if (!path.startsWith('/arr/admin/manage?')) return null;
+      reads++;
+      return fail ? Object.assign(new Error('HTTP 502'), { status: 502 }) : { key: 'movie:tmdb:1', kind: 'movie', title: 'Dune', status: status('downloading', 'downloading'), instances: [{ id: 'r1', name: 'Radarr', kind: 'Radarr', inArr: true, readable: true, queue: [{ state: 'downloading', percent: 5 }], queueTotal: 3, downloads: [], downloadsTotal: 0, timeline: [] }], requests: [] };
+    }
+  });
+  const timers = holdLongTimers(h);
+  h.JE.initializeArrStatus();
+  await h.JE.arrManage.open({ key: 'movie:tmdb:1' });
+  const drawer = h.document.querySelector('.je-manage');
+  assert.match(drawer.textContent, /and 2 more/);
+  fail = true;
+  h.live().find(s => s.keys.includes('movie:tmdb:1')).cb(['movie:tmdb:1']);
+  await until(() => drawer.querySelector('.je-manage-stale'));
+  assert.equal(drawer.querySelector('.je-manage-stale').getAttribute('role'), 'status');
+  assert.equal(drawer.querySelector('.je-manage-title').textContent, 'Manage · Dune');
+  assert.deepEqual(timers.delays(), [5000]);
+  fail = false;
+  timers.run();
+  await until(() => !drawer.querySelector('.je-manage-stale'));
+  assert.deepEqual(timers.delays(), []);
+  // Closing drops a pending retry.
+  fail = true;
+  h.live().find(s => s.keys.includes('movie:tmdb:1')).cb(['movie:tmdb:1']);
+  await until(() => timers.delays().length === 1);
+  drawer.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.deepEqual(timers.delays(), []);
+  assert.ok(reads >= 3);
+});

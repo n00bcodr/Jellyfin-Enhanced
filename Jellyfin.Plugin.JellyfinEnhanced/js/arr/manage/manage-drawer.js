@@ -172,7 +172,7 @@
         root.addEventListener('keydown', onKey);
         document.body.appendChild(overlay);
         document.addEventListener('focusin', keepFocus, true);
-        current = { target, overlay, root, opener, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {} };
+        current = { target, overlay, root, opener, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
         JE.internals.arrManage.injectStyles?.();
         renderShell(root, null);
         root.focus();
@@ -240,14 +240,43 @@
             const since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : null;
             const data = await JE.core.api.plugin(`/arr/admin/manage?${q}`, { skipRetry: true });
             if (current !== state || state.generation !== mine) return;
+            if (!data || typeof data !== 'object') throw new Error('empty answer');
             state.data = data;
+            state.okAt = Date.now();
+            state.refreshFailed = false;
+            stopRetry(state);
             renderShell(state.root, data);
             follow(state, data, since);
         } catch (err) {
-            if (current !== state) return;
+            if (current !== state || state.generation !== mine) return;
             console.warn(`${logPrefix} could not load (${err?.status || err?.message || err})`);
-            if (!state.data) renderShell(state.root, null, true);
+            if (!state.data) {
+                renderShell(state.root, null, true);
+                return;
+            }
+            // A re-read failed: the drawer keeps what it shows, says so, and tries again on its own
+            // (the feed change that asked for it has been used up).
+            state.refreshFailed = true;
+            renderShell(state.root, state.data);
+            if (!state.retryTimer) {
+                state.retryDelay = JE.arrStatus.retryDelay(state.retryDelay);
+                state.retryTimer = setTimeout(() => {
+                    state.retryTimer = null;
+                    if (current === state) load(state.generation);
+                }, state.retryDelay);
+            }
         }
+    }
+
+    /**
+     * Stops trying a failed re-read again (a read worked, or the drawer closed).
+     * @param {Object} state Drawer state.
+     * @returns {void}
+     */
+    function stopRetry(state) {
+        if (state.retryTimer) clearTimeout(state.retryTimer);
+        state.retryTimer = null;
+        state.retryDelay = 0;
     }
 
     /**
@@ -282,6 +311,7 @@
         generation++;
         if (state.unsubscribe) state.unsubscribe();
         if (state.reloadTimer) clearTimeout(state.reloadTimer);
+        stopRetry(state);
         document.removeEventListener('focusin', keepFocus, true);
         // The Remove dialog it opened (in the hub's dialog layer) goes with it.
         JE.internals.arrHub?.admin?.closeDialog?.('drawer');
@@ -326,6 +356,10 @@
             chips.appendChild(chip);
         }
         if (chips.childNodes.length) root.appendChild(chips);
+        if (current?.refreshFailed && current.data === data) {
+            const state = current;
+            root.appendChild(JE.arrStatus.staleNote(state.okAt, () => { stopRetry(state); load(state.generation); }, 'je-manage-stale'));
+        }
         const tabs = el('div', 'je-manage-tabs');
         tabs.setAttribute('role', 'tablist');
         const tab = el('span', 'je-manage-tab', tr('arr_manage_overview'));
@@ -387,6 +421,9 @@
                 const row = downloadRow(instance, download, data);
                 if (row) card.appendChild(row);
             }
+            // Only the first downloads are listed: say how many more there are (the Activity tab has them all).
+            const moreDownloads = (instance.downloadsTotal || 0) - (instance.downloads || []).length;
+            if (moreDownloads > 0) card.appendChild(el('div', 'je-manage-more', tr('arr_manage_and_more', { n: moreDownloads })));
         }
         // The last Search now outcome survives the re-render the search itself triggers (feed change).
         const result = el('div', `je-manage-result${current?.result?.failed ? ' je-manage-result-failed' : ''}`, current?.result?.message || '');
@@ -555,6 +592,17 @@
             li.appendChild(body);
             list.appendChild(li);
         }
+        // The queue shown is older than its freshness target, or can't be read and too old to say
+        // anything about now (then the server gives no rows or downloads): say when it was read.
+        if (instance.queueAsOf) {
+            const li = el('li', `je-manage-event je-manage-event-queue-asof${instance.queueExpired ? ' je-manage-event-warn' : ''}`);
+            li.setAttribute('role', 'status');
+            li.appendChild(JE.arrStatus.icon(instance.queueExpired ? 'cloud_off' : 'schedule', 'je-manage-event-icon'));
+            const body = el('div', 'je-manage-event-body');
+            body.appendChild(el('span', 'je-manage-event-label', tr(instance.queueExpired ? 'arr_ops_queue_expired' : 'arr_ops_as_of', { time: when(instance.queueAsOf) })));
+            li.appendChild(body);
+            list.appendChild(li);
+        }
         for (const row of instance.queue || []) {
             const li = el('li', `je-manage-event je-manage-event-queue${row.health && row.health !== 'ok' ? ' je-manage-event-warn' : ''}`);
             li.appendChild(JE.arrStatus.icon('downloading', 'je-manage-event-icon'));
@@ -570,6 +618,8 @@
             li.appendChild(body);
             list.appendChild(li);
         }
+        const moreRows = (instance.queueTotal || 0) - (instance.queue || []).length;
+        if (moreRows > 0) list.appendChild(el('li', 'je-manage-event je-manage-more', tr('arr_manage_and_more', { n: moreRows })));
         if (instance.itemId) {
             const li = el('li', 'je-manage-event je-manage-event-inJellyfin');
             li.appendChild(JE.arrStatus.icon(EVENT_ICONS.inJellyfin, 'je-manage-event-icon'));

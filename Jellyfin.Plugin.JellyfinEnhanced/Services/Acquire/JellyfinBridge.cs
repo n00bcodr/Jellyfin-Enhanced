@@ -1153,8 +1153,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         internal static string? KeyOf(ArrKind kind, int? tmdb, int? tvdb, int? season, int? episode)
         {
-            if (kind == ArrKind.Radarr) return tmdb is int t ? "movie:tmdb:" + t.ToString(CultureInfo.InvariantCulture) : null;
-            if (tvdb is not int v) return null;
+            // Provider id 0 is "none" (the arrs send it for titles they couldn't match), never a key.
+            if (kind == ArrKind.Radarr) return tmdb is > 0 and int t ? "movie:tmdb:" + t.ToString(CultureInfo.InvariantCulture) : null;
+            if (tvdb is not > 0) return null;
+            var v = tvdb.Value;
             var key = "tv:tvdb:" + v.ToString(CultureInfo.InvariantCulture);
             if (season is int s) key += ":s" + s.ToString(CultureInfo.InvariantCulture);
             if (season.HasValue && episode is int e) key += ":e" + e.ToString(CultureInfo.InvariantCulture);
@@ -1196,10 +1198,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var samples = new List<PathDoctorSample>();
                 var snapshot = _store.PeekLibrary(instance.Id);
                 IEnumerable<(string Title, string Path, bool Movie, string Provider, string Id)> candidates = instance.Kind == ArrKind.Radarr
-                    ? (snapshot?.Movies ?? Array.Empty<ArrMovieEntry>()).Where(m => m.HasFile && m.Path != null && m.TmdbId != null)
+                    ? (snapshot?.Movies ?? Array.Empty<ArrMovieEntry>()).Where(m => m.HasFile && m.Path != null && m.TmdbId is > 0)
                         .OrderByDescending(m => m.Added ?? DateTime.MinValue)
                         .Select(m => (m.Title, m.Path!, true, "tmdb", m.TmdbId!.Value.ToString(CultureInfo.InvariantCulture)))
-                    : (snapshot?.Series ?? Array.Empty<ArrSeriesEntry>()).Where(s => s.EpisodeFileCount > 0 && s.Path != null && s.TvdbId != null)
+                    : (snapshot?.Series ?? Array.Empty<ArrSeriesEntry>()).Where(s => s.EpisodeFileCount > 0 && s.Path != null && s.TvdbId is > 0)
                         .OrderByDescending(s => s.Added ?? DateTime.MinValue)
                         .Select(s => (s.Title, s.Path!, false, "tvdb", s.TvdbId!.Value.ToString(CultureInfo.InvariantCulture)));
                 var looked = 0;

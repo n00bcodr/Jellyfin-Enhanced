@@ -69,6 +69,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.SeerrRequestReadModel>();
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.SeerrRequestReadModel>());
             serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts>(sp => sp.GetRequiredService<Services.Acquire.SeerrRequestReadModel>());
+            serviceCollection.AddSingleton<Services.Acquire.TitleAliases>();
             serviceCollection.AddSingleton<Services.Acquire.ArrStatusService>();
             // The Requests page (everyone's own requests) and the administrator's Manage drawer.
             serviceCollection.AddSingleton<Services.Acquire.RequestsHubService>();

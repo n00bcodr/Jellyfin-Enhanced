@@ -185,7 +185,7 @@ test('the Overview shows instance cards, Needs attention in the arrs\' words wit
   assert.equal(sub('low_disk'), '412 GB free');
   assert.equal(title('not_in_jellyfin'), 'In Sonarr, not in Jellyfin · The Flash S09E05');
   assert.match(sub('not_in_jellyfin'), /^Imported to \/media\/tv\/The Flash\/Season 09\/E05\.mkv; Jellyfin hasn't picked it up · 12 min ago$/);
-  assert.match(sub('approved_not_in_arr'), /^OK'd in Seerr 20 min ago, but no Sonarr\/Radarr has it · asked by Emma$/);
+  assert.match(sub('approved_not_in_arr'), /^OK'd in Seerr 20 min ago, but none of the Sonarr\/Radarr Jellyfin Enhanced watches has it · asked by Emma$/);
   assert.match(sub('download_stalled'), /reports no time left at 35%/);
   // Titles are text, never HTML.
   assert.equal(page.querySelectorAll('img[src="x"]').length, 0);
@@ -354,12 +354,12 @@ test('the status pill: "Taking longer than usual" for the family, the admin line
   assert.equal(S.familyText(status, { contact: 'Dad' }), 'Taking longer than usual');
   const lines = S.adminLines({ ...status, admin: { variants: [], approvedNotInArrSince: iso(-20) } });
   assert.equal(lines.length, 1);
-  assert.match(lines[0].text, /^OK'd in Seerr 20 min ago, but no Sonarr\/Radarr has it$/);
+  assert.match(lines[0].text, /^OK'd in Seerr 20 min ago, but none of the Sonarr\/Radarr Jellyfin Enhanced watches has it$/);
   assert.equal(lines[0].fix, "Fix: check Seerr's Sonarr/Radarr settings");
   assert.equal(lines[0].attention, true);
   // A 4K request no 4K Radarr has says so (a standard copy may well exist).
   const fourK = S.adminLines({ ...status, admin: { variants: [], approvedNotInArrSince: iso(-20), approvedNotIn4k: true } });
-  assert.equal(fourK[0].text, "4K request OK'd in Seerr 20 min ago, but no 4K Radarr has it");
+  assert.equal(fourK[0].text, "4K request OK'd in Seerr 20 min ago, but none of the 4K Radarr Jellyfin Enhanced watches has it");
   assert.equal(S.ageText(iso(-3 * 60)), '3 h');
   assert.equal(S.ageText(iso(-3 * 1440)), '3 d');
   assert.equal(S.ageText(iso(5)), '');
@@ -566,7 +566,7 @@ test('a 4K request no 4K Radarr has is its own Needs attention row, worded for 4
   });
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-ops-item[data-attention="approved_not_in_arr"]'));
-  assert.match(h.document.querySelector('.je-ops-item[data-attention="approved_not_in_arr"] .je-ops-item-sub').textContent, /^4K request OK'd in Seerr 30 min ago, but no 4K Radarr has it · asked by Emma$/);
+  assert.match(h.document.querySelector('.je-ops-item[data-attention="approved_not_in_arr"] .je-ops-item-sub').textContent, /^4K request OK'd in Seerr 30 min ago, but none of the 4K Radarr Jellyfin Enhanced watches has it · asked by Emma$/);
 });
 
 test('the drawer\'s Remove dialog survives hub re-renders and goes away with the drawer', async t => {
@@ -670,8 +670,132 @@ test('a 4K series request no 4K Sonarr has says Sonarr, on the card and in Needs
     }
   });
   const series = { key: 'tv:tvdb:72658', kind: 'series', stage: 'approved', reason: { code: 'approved_not_in_arr' }, attention: true, actions: [], admin: { variants: [], approvedNotInArrSince: iso(-20), approvedNotIn4k: true } };
-  assert.equal(h.JE.arrStatus.adminLines(series)[0].text, "4K request OK'd in Seerr 20 min ago, but no 4K Sonarr has it");
+  assert.equal(h.JE.arrStatus.adminLines(series)[0].text, "4K request OK'd in Seerr 20 min ago, but none of the 4K Sonarr Jellyfin Enhanced watches has it");
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-ops-item[data-attention="approved_not_in_arr"]'));
-  assert.match(h.document.querySelector('.je-ops-item[data-attention="approved_not_in_arr"] .je-ops-item-sub').textContent, /^4K request OK'd in Seerr 30 min ago, but no 4K Sonarr has it · asked by Emma$/);
+  assert.match(h.document.querySelector('.je-ops-item[data-attention="approved_not_in_arr"] .je-ops-item-sub').textContent, /^4K request OK'd in Seerr 30 min ago, but none of the 4K Sonarr Jellyfin Enhanced watches has it · asked by Emma$/);
+});
+
+test('a tab whose re-read fails keeps what it shows with a note, retries on its own, and says how old a queue is', async t => {
+  let fail = false;
+  const h = setup(t, {
+    hash: '#/requests?tab=activity',
+    responses: path => {
+      if (path !== '/arr/admin/hub/activity') return null;
+      if (fail) return Object.assign(new Error('HTTP 502'), { status: 502 });
+      const a = activity();
+      a.instances[0] = card('r1', 'Radarr', 'Radarr', { queueAsOf: iso(-12), queueExpired: true });
+      return a;
+    }
+  });
+  h.allowConsoleError?.(/could not load/);
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-dl'));
+  // The Radarr card's queue is past its serving limit: said on the card line and above the queue.
+  assert.match(h.document.querySelector('.je-ops-section').textContent, /Radarr · queue can't be read; last read /);
+  // The history is the newest N events of every instance.
+  assert.match(h.document.body.textContent, /The newest 2 events/);
+  fail = true;
+  await h.JE.internals.arrHub.admin.refresh();
+  await until(() => h.document.querySelector('.je-arr-stale-note'));
+  const note = h.document.querySelector('.je-arr-stale-note');
+  assert.equal(note.getAttribute('role'), 'status');
+  assert.ok(h.document.querySelector('.je-ops-dl'), 'the downloads stay on screen');
+  fail = false;
+  note.querySelector('.je-arr-stale-retry').click();
+  await until(() => !h.document.querySelector('.je-arr-stale-note'));
+  assert.equal(h.document.querySelector('.je-arr-stale-note'), null);
+});
+
+/**
+ * Holds the page's long timers (5 s and more: retries and polls) so a test runs them when it wants;
+ * ids grow, so the timers set after a mark are the ones a step started.
+ */
+function holdLongTimers(h) {
+  const held = new Map();
+  let next = 1e6;
+  const realSet = h.window.setTimeout.bind(h.window);
+  const realClear = h.window.clearTimeout.bind(h.window);
+  h.window.setTimeout = (fn, ms, ...args) => {
+    if (!(ms >= 5000)) return realSet(fn, ms, ...args);
+    const id = next++;
+    held.set(id, { fn, ms });
+    return id;
+  };
+  h.window.clearTimeout = id => { if (held.has(id)) held.delete(id); else realClear(id); };
+  return {
+    mark: () => next,
+    since: mark => [...held.entries()].filter(([id]) => id >= mark).map(([, x]) => x.ms),
+    runSince(mark) {
+      const due = [...held.entries()].filter(([id]) => id >= mark);
+      for (const [id] of due) held.delete(id);
+      for (const [, x] of due) x.fn();
+      return due.length;
+    }
+  };
+}
+
+test('a tab whose re-read keeps failing retries on its own after 5 s, backs off to a minute, and stops when left', async t => {
+  let fail = false;
+  let reads = 0;
+  const h = setup(t, {
+    hash: '#/requests?tab=activity',
+    responses: path => {
+      if (path !== '/arr/admin/hub/activity') return null;
+      reads++;
+      return fail ? Object.assign(new Error('HTTP 502'), { status: 502 }) : activity();
+    }
+  });
+  h.allowConsoleError?.(/could not load/);
+  const timers = holdLongTimers(h);
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-dl'));
+  fail = true;
+  let mark = timers.mark();
+  await h.JE.internals.arrHub.admin.refresh();
+  await until(() => h.document.querySelector('.je-arr-stale-note'));
+  assert.deepEqual(timers.since(mark), [5000]);
+  // Each failed retry waits twice as long, at most a minute.
+  for (const delay of [10000, 20000, 40000, 60000, 60000]) {
+    const before = reads;
+    const run = mark;
+    mark = timers.mark();
+    assert.equal(timers.runSince(run), 1);
+    await until(() => reads === before + 1 && timers.since(mark).length === 1);
+    assert.deepEqual(timers.since(mark), [delay]);
+    assert.ok(h.document.querySelector('.je-arr-stale-note'), 'the note stays while it fails');
+  }
+  // It works again: the note goes without a click, and nothing more is retried.
+  fail = false;
+  const before = reads;
+  const run = mark;
+  mark = timers.mark();
+  timers.runSince(run);
+  await until(() => reads === before + 1 && !h.document.querySelector('.je-arr-stale-note'));
+  assert.deepEqual(timers.since(mark), []);
+  // A new failure starts again at 5 s; leaving the tabs drops the pending retry.
+  fail = true;
+  mark = timers.mark();
+  await h.JE.internals.arrHub.admin.refresh();
+  await until(() => timers.since(mark).length === 1);
+  assert.deepEqual(timers.since(mark), [5000]);
+  h.JE.internals.arrHub.admin.leave();
+  assert.deepEqual(timers.since(mark), []);
+  const after = reads;
+  await wait(20);
+  assert.equal(reads, after);
+});
+
+test('a 4K handoff row is tagged 4K in its title', async t => {
+  const h = setup(t, {
+    responses: (path) => {
+      if (path !== '/arr/admin/hub/overview') return null;
+      const o = overview();
+      o.needsAttention = [{ id: 'a9', code: 'approved_not_in_arr', severity: 'warning', title: 'Sintel', year: 2010, key: 'movie:tmdb:45745', since: iso(-30), message: 'Emma', params: { variant: '4k' }, fixes: ['open_seerr'] }];
+      return o;
+    }
+  });
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-item[data-attention="approved_not_in_arr"]'));
+  assert.match(h.document.querySelector('.je-ops-item[data-attention="approved_not_in_arr"] .je-ops-item-title').textContent, /Sintel \(2010\) \[4K\]/);
 });

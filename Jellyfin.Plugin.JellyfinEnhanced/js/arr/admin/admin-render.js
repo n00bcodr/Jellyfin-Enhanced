@@ -238,6 +238,8 @@
         const line = el('div', 'je-ops-line');
         line.appendChild(el('span', '', tr('arr_ops_in_queue', { n: card.queue || 0 })));
         if (card.queueAttention) line.appendChild(el('span', 'je-ops-warn', tr('arr_ops_queue_attention', { n: card.queueAttention })));
+        // The queue shown is older than it should be (the latest read failed or is under way).
+        if (card.queueAsOf) line.appendChild(el('span', card.queueExpired ? 'je-ops-bad' : 'je-ops-warn', tr(card.queueExpired ? 'arr_ops_queue_expired' : 'arr_ops_as_of', { time: when(card.queueAsOf) })));
         if (card.error) line.appendChild(el('span', 'je-ops-bad', card.error));
         else line.appendChild(el('span', card.health === 'ok' ? 'je-ops-ok' : card.health === 'error' ? 'je-ops-bad' : 'je-ops-warn',
             card.health === 'ok' ? tr('arr_ops_health_ok') : tr('arr_ops_health_issues', { n: card.healthIssues })));
@@ -260,7 +262,7 @@
         const name = item.code === 'not_in_jellyfin'
             ? tr('arr_ops_code_not_in_jellyfin', { instance: item.instance || '' })
             : tr(`arr_ops_code_${item.code}`);
-        const subject = [item.title ? item.title + (item.year && item.code !== 'low_disk' ? ` (${item.year})` : '') : '', item.scope || ''].filter(Boolean).join(' ');
+        const subject = [item.title ? item.title + (item.year && item.code !== 'low_disk' ? ` (${item.year})` : '') : '', item.scope || '', item.params?.variant === '4k' ? tr('arr_ops_tag_4k') : ''].filter(Boolean).join(' ');
         const parts = [name];
         if (item.code === 'low_disk' && item.params?.used) parts.push(`${item.title} ${item.params.used}%`);
         else if (subject && item.code !== 'instance_down' && item.code !== 'live_down' && item.code !== 'webhook_silent') parts.push(subject);
@@ -473,6 +475,10 @@
         const queue = el('section', 'je-ops-box je-ops-section');
         queue.appendChild(el('h2', 'je-ops-box-title', tr('arr_ops_queue_title', { n: (data.queue || []).length })));
         if (data.truncated) queue.appendChild(el('div', 'je-ops-item-sub je-ops-warn', tr('arr_ops_queue_truncated')));
+        for (const card of (data.instances || []).filter(c => c.queueAsOf)) {
+            queue.appendChild(el('div', `je-ops-item-sub ${card.queueExpired ? 'je-ops-bad' : 'je-ops-warn'}`,
+                `${card.name} · ${tr(card.queueExpired ? 'arr_ops_queue_expired' : 'arr_ops_as_of', { time: when(card.queueAsOf) })}`));
+        }
         if (!(data.queue || []).length) queue.appendChild(el('div', 'je-ops-empty', tr('arr_ops_queue_empty')));
         for (const g of data.queue || []) {
             // A download is its instance's: two instances may report the same download id (one client).
@@ -522,6 +528,8 @@
 
         const history = el('section', 'je-ops-box je-ops-section');
         history.appendChild(el('h2', 'je-ops-box-title', tr('arr_ops_history_title')));
+        // The newest 100 events of every instance together (the arrs' own history holds more).
+        if ((data.history || []).length) history.appendChild(el('div', 'je-ops-item-sub', tr('arr_ops_history_newest', { n: data.history.length })));
         if (!(data.history || []).length) history.appendChild(el('div', 'je-ops-empty', tr('arr_ops_history_empty')));
         else {
             const table = el('table', 'je-ops-table');

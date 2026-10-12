@@ -395,6 +395,29 @@ public class IntegrationNotificationsTests
     }
 
     [Fact]
+    public async Task ASeriesJellyfinKnowsOnlyByItsTmdbIdStillGetsItsEpisodeBatchOnce()
+    {
+        // Sonarr has Severance (TVDB 371980, TMDB 95396); Jellyfin's copy carries only the TMDB id.
+        // Emma follows it by its TMDB key: the canonical key is the TVDB one, and the copy is still
+        // found by the alias.
+        using var rig = await Started(r => r.Sonarr.Series[0]["tmdbId"] = 95396);
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("SonarrZ").Id, ArrSnapshotKind.Library, force: true);
+        var series = Guid.NewGuid();
+        var tmdbKey = TitleKey.Parse("tv:tmdb:95396")!;
+        rig.View.AddCopy(tmdbKey, new JfCopy { ItemId = series, Path = "/tv/Severance", DateCreated = rig.Arr.Now.UtcDateTime.AddDays(-30) });
+        rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime.AddDays(-30) });
+        Assert.Equal("ok", await rig.Service.SetFollowAsync(rig.Emma, tmdbKey, true, default));
+        rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(Severance);
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.Step();
+        var batch = Assert.Single(rig.Inbox(rig.Emma));
+        Assert.Equal(("episodes", "single", "2"), (batch.Kind, Params(batch.Payload)["mode"], Params(batch.Payload)["episode"]));
+        // The Jellyfin lookup asked for the key and every alias of its kind (never a movie key).
+        Assert.Contains(rig.View.CopyQueries, q => q.Contains("tv:tvdb:371980") && q.Contains("tv:tmdb:95396") && q.All(k => k.StartsWith("tv:", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task ASeasonRequestTellsAboutThatSeasonOnlyAndAnUpgradedEpisodeIsNotNewAgain()
     {
         using var rig = await Started(r => r.Request(3, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 2 }));
@@ -656,27 +679,85 @@ public class IntegrationNotificationsTests
     public async Task TheStuckDigestListsDownloadsNeedingAttentionForHoursOnceADayAtItsHour()
     {
         using var rig = await Started();
+        // Added 7 hours ago, but first seen blocked now: "stuck for hours" is counted from when JE
+        // first saw the problem (never from the grab), so it is not in today's digest.
         var old = FakeArr.RadarrQueueRow(2, 693134, "Dune Part Two", state: "importBlocked", status: "warning");
         old["added"] = rig.Arr.Now.UtcDateTime.AddHours(-7).ToString("o");
-        var fresh = FakeArr.RadarrQueueRow(3, 1, "Fresh Film", state: "importBlocked", status: "warning");
-        fresh["added"] = rig.Arr.Now.UtcDateTime.AddHours(-1).ToString("o");
         var fine = FakeArr.RadarrQueueRow(4, 2, "Fine Film");
         fine["added"] = rig.Arr.Now.UtcDateTime.AddHours(-9).ToString("o");
-        rig.Radarr.Queue.AddRange(new[] { old, fresh, fine });
+        rig.Radarr.Queue.AddRange(new[] { old, fine });
         await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
         var hour = TimeZoneInfo.ConvertTime(rig.Arr.Now, TimeZoneInfo.Local).Hour;
         // Not its hour: nothing.
         rig.Config.ArrNotifyDigestHour = (hour + 1) % 24;
         await rig.Service.AdminChecksAsync(default);
         Assert.DoesNotContain(rig.Inbox(rig.Admin), n => n.Kind == "stuck_digest");
+        // Its hour, first sight: nothing stuck yet (the day is done).
         rig.Config.ArrNotifyDigestHour = hour;
         await rig.Service.AdminChecksAsync(default);
+        await rig.Service.AdminChecksAsync(default);
+        Assert.DoesNotContain(rig.Inbox(rig.Admin), n => n.Kind == "stuck_digest");
+
+        // A day later the same download is still blocked (every re-read keeps its clock), and a new
+        // one has just been seen blocked: only the first is stuck.
+        rig.Arr.Now = rig.Arr.Now.AddDays(1);
+        var fresh = FakeArr.RadarrQueueRow(3, 1, "Fresh Film", state: "importBlocked", status: "warning");
+        fresh["added"] = rig.Arr.Now.UtcDateTime.AddHours(-30).ToString("o");
+        rig.Radarr.Queue.Add(fresh);
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
+        rig.Config.ArrNotifyDigestHour = TimeZoneInfo.ConvertTime(rig.Arr.Now, TimeZoneInfo.Local).Hour;
+        await ChecksSurvivingErrors(rig);
         await rig.Service.AdminChecksAsync(default);
         var digest = Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "stuck_digest");
         var p = Params(digest.Payload);
         Assert.Equal(("1", "6"), (p["count"], p["hours"]));
         Assert.Equal("Dune Part Two (RadarrZ, import_blocked)", p["items"]);
         Assert.Empty(rig.Inbox(rig.Emma));
+    }
+
+    [Fact]
+    public async Task AStalledDownloadIsStuckFromWhenJeFirstSawItStallNotFromItsGrab()
+    {
+        using var rig = await Started();
+        // Grabbed 7 hours ago and downloading normally; now the client says no time is left while
+        // data is still missing (download_stalled). First sight: not stuck yet.
+        var row = FakeArr.RadarrQueueRow(2, 693134, "Dune Part Two");
+        row["added"] = rig.Arr.Now.UtcDateTime.AddHours(-7).ToString("o");
+        row["timeleft"] = "00:00:00";
+        rig.Radarr.Queue.Add(row);
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
+        rig.Config.ArrNotifyDigestHour = TimeZoneInfo.ConvertTime(rig.Arr.Now, TimeZoneInfo.Local).Hour;
+        await ChecksSurvivingErrors(rig);
+        await rig.Service.AdminChecksAsync(default);
+        Assert.DoesNotContain(rig.Inbox(rig.Admin), n => n.Kind == "stuck_digest");
+        // A day later it is still stalled (every re-read keeps its clock): stuck.
+        rig.Arr.Now = rig.Arr.Now.AddDays(1);
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
+        rig.Config.ArrNotifyDigestHour = TimeZoneInfo.ConvertTime(rig.Arr.Now, TimeZoneInfo.Local).Hour;
+        await ChecksSurvivingErrors(rig);
+        await rig.Service.AdminChecksAsync(default);
+        var digest = Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "stuck_digest");
+        Assert.Equal("Dune Part Two (RadarrZ, download_stalled)", Params(digest.Payload)["items"]);
+    }
+
+    [Fact]
+    public async Task AFinishedDownloadTheArrCannotImportIsReportedInTheStuckDigest()
+    {
+        using var rig = await Started();
+        // Sonarr/Radarr leave a finished download it can't import at state "downloading" with a
+        // warning: it is waiting to import (not downloading), and it is listed once it lasts.
+        var row = FakeArr.RadarrQueueRow(2, 693134, "Dune Part Two", state: "downloading", status: "warning");
+        row["status"] = "completed";
+        row["sizeleft"] = 0;
+        rig.Radarr.Queue.Add(row);
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
+        rig.Arr.Now = rig.Arr.Now.AddHours(7);
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
+        rig.Config.ArrNotifyDigestHour = TimeZoneInfo.ConvertTime(rig.Arr.Now, TimeZoneInfo.Local).Hour;
+        await ChecksSurvivingErrors(rig);
+        await rig.Service.AdminChecksAsync(default);
+        var digest = Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "stuck_digest");
+        Assert.Equal("Dune Part Two (RadarrZ, import_waiting)", Params(digest.Payload)["items"]);
     }
 
     [Fact]
@@ -886,6 +967,66 @@ public class IntegrationNotificationsTests
         var uhd = Guid.NewGuid();
         var episode = Guid.NewGuid();
         rig.View.AddCopy(TitleKey.Parse(Severance)!, new JfCopy { ItemId = uhd, Path = "/media/tv4k/Severance", LibraryName = "Shows 4K", DateCreated = rig.Arr.Now.UtcDateTime });
+        rig.View.AddEpisode(uhd, new JfEpisode { ItemId = episode, Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(Severance);
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.Step();
+        await rig.Step(Severance);
+        var told = Assert.Single(rig.Inbox(rig.Emma));
+        var p = Params(told.Payload);
+        Assert.Equal(("single", "2", "1", "4k", episode.ToString("N")), (p["mode"], p["season"], p["episode"], p["variant"], told.ItemId));
+    }
+
+    [Fact]
+    public async Task AFourKSeasonRequestHeldOnlyByTheFourKSonarrIsNeverToldAboutTheStandardCopy()
+    {
+        // Only the 4K Sonarr has Severance (its own folder, no links or mappings). The standard
+        // copy in Jellyfin can't be told apart from a 4K one by any rule, so it never counts as it.
+        using var rig = await Started(r =>
+        {
+            FourKSonarr(r);
+            r.Sonarr.Series.RemoveAll(x => (int?)x["tvdbId"] == 371980);
+            r.Request(30, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 2 }, is4k: true);
+        });
+        var hd = Guid.NewGuid();
+        rig.View.AddCopy(TitleKey.Parse(Severance)!, new JfCopy { ItemId = hd, Path = "/media/tv/Severance", LibraryName = "Shows", DateCreated = rig.Arr.Now.UtcDateTime.AddDays(-30) });
+        rig.View.AddEpisode(hd, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime.AddDays(-30) });
+        await rig.Step(Severance);
+        rig.View.AddEpisode(hd, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(Severance);
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.Step();
+        await rig.Step(Severance);
+        Assert.Empty(rig.Inbox(rig.Emma));
+    }
+
+    [Fact]
+    public async Task AFourKSeasonRequestWithNoFourKSonarrIsToldOnlyAboutTheCopySeerrMatchedItTo()
+    {
+        // Jellyfin Enhanced watches only a standard Sonarr; Seerr sends 4K requests to one it doesn't
+        // watch. Emma asks for Season 2 of Severance in 4K; Seerr names the Jellyfin item of the 4K copy.
+        var uhd = Guid.NewGuid();
+        using var rig = await Started(r =>
+        {
+            r.Request(30, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 2 }, is4k: true);
+            r.Seerr.Requests[^1]["media"]!["jellyfinMediaId4k"] = uhd.ToString("N");
+        });
+        var hd = Guid.NewGuid();
+        rig.View.AddCopy(TitleKey.Parse(Severance)!, new JfCopy { ItemId = hd, Path = "/data/tv/Severance", LibraryName = "Shows", DateCreated = rig.Arr.Now.UtcDateTime.AddDays(-30) });
+        rig.View.AddEpisode(hd, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime.AddDays(-30) });
+        await rig.Step(Severance);
+        // HD episodes of Season 2 arrive (someone else's HD request): not what she asked for.
+        rig.View.AddEpisode(hd, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
+        rig.View.AddEpisode(hd, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 3, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(Severance);
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.Step();
+        await rig.Step(Severance);
+        Assert.Empty(rig.Inbox(rig.Emma));
+
+        // The 4K copy Seerr named gets S2E1: told, linked to that episode.
+        var episode = Guid.NewGuid();
+        rig.View.AddCopy(TitleKey.Parse(Severance)!, new JfCopy { ItemId = uhd, Path = "/srv/uhd/Severance", LibraryName = "Shows 4K", DateCreated = rig.Arr.Now.UtcDateTime });
         rig.View.AddEpisode(uhd, new JfEpisode { ItemId = episode, Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime });
         await rig.Step(Severance);
         rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
@@ -1374,6 +1515,9 @@ public class IntegrationNotificationsTests
         var old = FakeArr.RadarrQueueRow(2, 693134, "Dune Part Two", state: "importBlocked", status: "warning");
         old["added"] = rig.Arr.Now.UtcDateTime.AddHours(-7).ToString("o");
         rig.Radarr.Queue.Add(old);
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
+        // Stuck for hours since JE first saw it.
+        rig.Arr.Now = rig.Arr.Now.AddHours(7);
         await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
         rig.Config.ArrNotifyDigestHour = TimeZoneInfo.ConvertTime(rig.Arr.Now, TimeZoneInfo.Local).Hour;
         FailInserts(rig, NotifyKind.StuckDigest, on: true);

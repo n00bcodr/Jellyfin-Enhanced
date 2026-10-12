@@ -96,6 +96,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Downloads needing attention.</summary>
         public int QueueAttention { get; init; }
 
+        /// <summary>
+        /// When the queue shown was read (UTC), only when it is older than its freshness target
+        /// (the latest read failed or is on its way): the tabs say "as of {time}".
+        /// </summary>
+        public DateTimeOffset? QueueAsOf { get; init; }
+
+        /// <summary>The queue or history is past its longest serve time and can't be read: what it shows is not live.</summary>
+        public bool QueueExpired { get; init; }
+
         /// <summary>The worst health check (ok when none).</summary>
         public string Health { get; init; } = "ok";
 
@@ -352,7 +361,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var instance in Usable())
             {
                 var read = await ReadAsync(instance, cancellationToken).ConfigureAwait(false);
-                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value);
+                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row));
                 downloading += groups.Count;
                 var live = Live(instance, read.History.Value);
                 cards.Add(Card(instance, read, groups, live, config));
@@ -395,7 +404,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var instance in Usable())
             {
                 var read = background ? await BackgroundReadAsync(instance, cancellationToken).ConfigureAwait(false) : await ReadAsync(instance, cancellationToken).ConfigureAwait(false);
-                facts.Add(Facts(instance, read, NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value), Live(instance, read.History.Value)));
+                facts.Add(Facts(instance, read, NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row)), Live(instance, read.History.Value)));
             }
             return Derive(now, config, facts);
         }
@@ -407,6 +416,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             System = read.System.Value,
             History = read.History.Value,
             Error = read.Error,
+            QueueExpired = read.Queue.Expired || read.History.Expired,
             Live = live.Expected ? live.Connection : null,
             WebhookSilent = live.WebhookSilent,
         };
@@ -434,7 +444,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var instance in Usable())
             {
                 var read = await ReadAsync(instance, cancellationToken).ConfigureAwait(false);
-                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value);
+                // A queue that can't be read any more is listed as last read, with no actions on it.
+                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row), actionable: !read.Queue.Expired);
                 truncated |= read.Queue.Value?.Truncated == true;
                 queue.AddRange(groups);
                 cards.Add(Card(instance, read, groups, Live(instance, read.History.Value), config));
@@ -465,7 +476,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var instance in Usable())
             {
                 var read = await ReadAsync(instance, cancellationToken).ConfigureAwait(false);
-                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value);
+                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row));
                 var system = read.System.Value;
                 list.Add(new AdminSystemInstance
                 {
@@ -511,9 +522,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// Seerr requests OK'd longer than <paramref name="grace"/> ago (still OK'd or failed in Seerr,
         /// not available) for titles no usable Sonarr/Radarr of their kind holds — judged only when
-        /// every such instance's library is in memory. A title's 4K requests are judged on the 4K
-        /// Radarr/Sonarr instances alone, as its status is (none set up: never listed; the request is
-        /// all there is). Empty when phase 2 or Seerr is off.
+        /// every such instance's library is in memory. Per variant: a title's 4K requests are judged
+        /// on the 4K Radarr/Sonarr instances alone and its other requests on the other instances, as
+        /// its status is (none of that variant set up: never listed; the request is all there is),
+        /// so a finished standard request never hides a stuck 4K one. Empty when phase 2 or Seerr is off.
         /// </summary>
         internal IReadOnlyList<HandoffFact> Handoffs(DateTime now, TimeSpan? grace)
         {
@@ -537,15 +549,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
-        /// True when an instance of the title's kind (<paramref name="fourK"/>: a 4K Radarr/Sonarr) holds it;
-        /// false when none does; null when that can't be said: no such instance is set up, one has no
-        /// library in memory, or its latest library read failed (the index held is from before, so it
-        /// says nothing about a title added since).
+        /// True when an instance of the title's kind and the request's variant holds it (<paramref name="fourK"/>:
+        /// a 4K Radarr/Sonarr; otherwise any other role: standard, anime, custom); false when none does;
+        /// null when that can't be said: JE watches no instance of that variant, one has no library in
+        /// memory, or its latest library read failed (the index held is from before, so it says nothing
+        /// about a title added since).
         /// </summary>
         private bool? HeldByAnArr(TitleKey key, bool fourK)
         {
             var kind = key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr;
-            var instances = _store.Registry.Usable(kind).Where(i => !fourK || i.Role == "4k").ToList();
+            var instances = _store.Registry.Usable(kind).Where(i => (i.Role == "4k") == fourK).ToList();
             if (instances.Count == 0) return null;
             var unknown = false;
             foreach (var instance in instances)
@@ -630,6 +643,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Live = live,
                 Queue = groups.Count,
                 QueueAttention = groups.Count(g => g.Problem != null),
+                QueueAsOf = read.Queue.Stale || read.Queue.Expired ? read.Queue.LoadedAt : null,
+                QueueExpired = read.Queue.Expired || read.History.Expired,
                 Health = issues.Any(h => string.Equals(h.Type, "error", StringComparison.OrdinalIgnoreCase)) ? "error" : issues.Count > 0 ? "warning" : "ok",
                 HealthIssues = issues.Count,
                 Disks = (system?.RootFolders ?? Array.Empty<ArrDiskEntry>()).Where(r => !string.IsNullOrWhiteSpace(r.Path)).Select(r =>

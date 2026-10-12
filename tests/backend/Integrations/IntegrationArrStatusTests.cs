@@ -79,7 +79,23 @@ public class IntegrationArrStatusTests
         ("import blocked", () => Copy(Movie(), queue: new[] { Row(status: "completed", state: "importBlocked", tracked: "warning", messages: new[] { "Manual Import required." }) }), StatusStage.AlmostReady, StatusReasonCode.ImportBlocked, true),
         ("imported, not in Jellyfin", () => Copy(Movie(hasFile: true)), StatusStage.AlmostReady, StatusReasonCode.LibraryPending, false),
         ("imported (history ahead of a stale index)", () => Copy(Movie(), history: new[] { Event("downloadFolderImported", Now.AddMinutes(-3)), Event("grabbed", Now.AddMinutes(-10)) }), StatusStage.AlmostReady, StatusReasonCode.LibraryPending, false),
+        // One precedence table: a finished download the arr warns about is waiting to import (never
+        // "downloading" with no attention), and a state the table doesn't know never looks like progress.
+        ("finished, still 'downloading' with a warning (can't import)", () => Copy(Movie(), queue: new[] { Row(status: "completed", state: "downloading", tracked: "warning", left: 0, messages: new[] { "Not a valid local path" }) }), StatusStage.AlmostReady, StatusReasonCode.ImportBlocked, true),
+        ("download client unavailable (no tracked fields)", () => Copy(Movie(), queue: new[] { Bare("downloadClientUnavailable") }), StatusStage.Downloading, StatusReasonCode.ClientUnavailable, true),
+        ("fallback (delay profile)", () => Copy(Movie(), queue: new[] { Row(status: "fallback") }), StatusStage.Downloading, StatusReasonCode.DelayHeld, false),
+        ("paused with a warning", () => Copy(Movie(), queue: new[] { Row(status: "paused", tracked: "warning") }), StatusStage.Downloading, StatusReasonCode.Stalled, true),
+        ("a future state the table doesn't know", () => Copy(Movie(), queue: new[] { Row(status: "futureState", state: "futureState") }), StatusStage.Downloading, StatusReasonCode.Queued, false),
+        ("finished but ignored", () => Copy(Movie(), queue: new[] { Row(status: "completed", state: "ignored") }), StatusStage.Downloading, StatusReasonCode.Queued, false),
+        ("states in other letter cases", () => Copy(Movie(), queue: new[] { Row(status: "Completed", state: "ImportBlocked", tracked: "Warning") }), StatusStage.AlmostReady, StatusReasonCode.ImportBlocked, true),
     };
+
+    /// <summary>The table rows whose status carries progress (only an explicit "downloading").</summary>
+    private static readonly HashSet<string> RowsWithProgress = new() { "downloading", "stalled (arr warning)" };
+
+    /// <summary>A queue row with only a client status (no tracked state or health, nothing downloaded).</summary>
+    private static ArrQueueEntry Bare(string status)
+        => new() { Id = 9, DownloadId = "dl9", Status = status, Size = 1000, SizeLeft = 1000, TimeLeft = "00:10:00", MovieId = 7, Added = Now.AddMinutes(-30) };
 
     public static TheoryData<string> MovieRows()
     {
@@ -97,7 +113,323 @@ public class IntegrationArrStatusTests
         var facts = copy == null ? MovieFacts() : MovieFacts(copy);
         var status = StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), Ctx(), detail: false);
         Assert.True((row.Stage, row.Code, row.Attention) == Of(status), $"{scenario}: got {Of(status)}");
+        Assert.True(RowsWithProgress.Contains(scenario) == (status.Progress != null), $"{scenario}: progress {status.Progress?.Percent}");
         Assert.Null(status.Admin);
+        // The Overview's Needs attention list reads the same rows by the same table.
+        if (copy?.Queue.Count > 0)
+        {
+            var q = copy.Queue[0];
+            Assert.True(row.Attention == (NeedsAttention.ProblemOf(q.TrackedDownloadState, q.TrackedDownloadStatus, q.Status) != null), $"{scenario}: Needs attention disagrees");
+        }
+    }
+
+    [Fact]
+    public void TheBestRowOfSeveralIsChosenByTheSameTable()
+    {
+        // A finished download the arr can't import outranks a healthy one further along (less left).
+        var healthy = Row(left: 10);
+        var stuck = Row(status: "completed", state: "downloading", tracked: "warning", left: 500);
+        var status = StatusComposer.Movie(MovieFacts(Copy(Movie(), queue: new[] { healthy, stuck })), null, Array.Empty<JfCopy>(), Ctx(), false);
+        Assert.Equal((StatusStage.AlmostReady, StatusReasonCode.ImportBlocked, true), Of(status));
+        var admin = StatusComposer.Movie(MovieFacts(Copy(Movie(), queue: new[] { Bare("downloadClientUnavailable") })), null, Array.Empty<JfCopy>(), Ctx(Admin), false);
+        Assert.Equal(StatusFix.CheckClient, Assert.Single(admin.Admin!.Variants).Fix);
+    }
+
+    [Fact]
+    public void ProblemsAreTimedFromWhenJeFirstSawThemWaitingDownloadsFromTheGrab()
+    {
+        // Added 30 min ago, first seen blocked 20 min ago: the reason's "since" is JE's first sight.
+        var blocked = Row(status: "completed", state: "importBlocked", tracked: "warning");
+        var seenAt = Now.AddMinutes(-20);
+        var copy = new ArrCopyFacts(Radarr) { Movie = Movie(), Queue = new[] { blocked }, Seen = r => new ArrQueueSeen(ArrQueueClass.ImportBlocked, seenAt, seenAt) };
+        var status = StatusComposer.Movie(MovieFacts(copy), null, Array.Empty<JfCopy>(), Ctx(Admin), false);
+        Assert.Equal("2026-10-12T11:40:00Z", status.Reason.Params!["since"]);
+        Assert.Equal(seenAt, Assert.Single(status.Admin!.Variants).Since);
+        // A clock for another class (the row changed since it was stamped): first seen now.
+        var stale = new ArrCopyFacts(Radarr) { Movie = Movie(), Queue = new[] { blocked }, Seen = r => new ArrQueueSeen(ArrQueueClass.Downloading, seenAt, null) };
+        Assert.Equal(Now, Assert.Single(StatusComposer.Movie(MovieFacts(stale), null, Array.Empty<JfCopy>(), Ctx(Admin), false).Admin!.Variants).Since);
+        // No stamp yet: first seen now.
+        var none = new ArrCopyFacts(Radarr) { Movie = Movie(), Queue = new[] { blocked }, Seen = r => null };
+        Assert.Equal(Now, Assert.Single(StatusComposer.Movie(MovieFacts(none), null, Array.Empty<JfCopy>(), Ctx(Admin), false).Admin!.Variants).Since);
+        // A download waiting in line keeps the grab time.
+        var queued = new ArrCopyFacts(Radarr) { Movie = Movie(), Queue = new[] { Row(status: "queued") }, Seen = r => new ArrQueueSeen(ArrQueueClass.Queued, seenAt, null) };
+        Assert.Equal(Now.AddMinutes(-30), Assert.Single(StatusComposer.Movie(MovieFacts(queued), null, Array.Empty<JfCopy>(), Ctx(Admin), false).Admin!.Variants).Since);
+    }
+
+    [Fact]
+    public void TheFirstSeenClockKeepsRunningThroughProblemsAndStartsAgainAfterHealth()
+    {
+        var t0 = Now;
+        var blocked = ArrStateStore.Advance(null, ArrQueueClass.ImportBlocked, t0);
+        Assert.Equal((t0, (DateTime?)t0), (blocked.ReasonSince, blocked.AttentionSince));
+        // Repeated reads keep it; stalled -> blocked is the same trouble.
+        Assert.Same(blocked, ArrStateStore.Advance(blocked, ArrQueueClass.ImportBlocked, t0.AddHours(1)));
+        var stalled = ArrStateStore.Advance(null, ArrQueueClass.Warned, t0);
+        var then = ArrStateStore.Advance(stalled, ArrQueueClass.ImportBlocked, t0.AddHours(2));
+        Assert.Equal((ArrQueueClass.ImportBlocked, t0, (DateTime?)t0), (then.Class, then.ReasonSince, then.AttentionSince));
+        // Blocked -> healthy -> blocked starts again.
+        var healthy = ArrStateStore.Advance(then, ArrQueueClass.Importing, t0.AddHours(3));
+        Assert.Null(healthy.AttentionSince);
+        var again = ArrStateStore.Advance(healthy, ArrQueueClass.ImportBlocked, t0.AddHours(4));
+        Assert.Equal(t0.AddHours(4), again.AttentionSince);
+    }
+
+    [Fact]
+    public void AnExpiredQueueIsUnknownNeverLookingOrAFrozenDownload()
+    {
+        // The instance's queue is past its longest serve time and can't be read: its rows are gone
+        // from the facts, and the title isn't "looking" (nor "not in any arr").
+        var unknown = new ArrCopyFacts(Radarr) { Movie = Movie(), QueueUnknown = true };
+        var status = StatusComposer.Movie(MovieFacts(unknown), null, Array.Empty<JfCopy>(), Ctx(), false);
+        Assert.Equal(StatusReasonCode.ServiceDown, status.Reason.Code);
+        Assert.Null(status.Progress);
+        // The library still says the file is there: almost ready, as before.
+        Assert.Equal(StatusReasonCode.LibraryPending, StatusComposer.Movie(MovieFacts(new ArrCopyFacts(Radarr) { Movie = Movie(hasFile: true), QueueUnknown = true }), null, Array.Empty<JfCopy>(), Ctx(), false).Reason.Code);
+        // A Ready title stays Ready (no "a better copy is coming" from an expired queue).
+        var item = new JfItemRef { ItemId = Guid.NewGuid(), Kind = "movie", Key = MovieKey, DateCreated = Now.AddDays(-40) };
+        Assert.Equal(StatusReasonCode.Ready, StatusComposer.Movie(MovieFacts(new ArrCopyFacts(Radarr) { Movie = Movie(hasFile: true), QueueUnknown = true }), item, null, Ctx(), false).Reason.Code);
+        // An episode of an expired Sonarr that has aired and isn't here: can't be checked, and the
+        // series isn't "Ready" for it.
+        var series = new ArrSeriesEntry { Id = 3, TvdbId = 279121, Title = "Show", Monitored = true };
+        var episodes = new ArrEpisodesSnapshot(3, new[] { new ArrEpisodeEntry { Id = 31, SeasonNumber = 1, EpisodeNumber = 1, AirDateUtc = Now.AddDays(-3), Monitored = true } });
+        var sonarr = new ArrCopyFacts(Sonarr) { Series = series, Episodes = episodes, QueueUnknown = true };
+        Assert.Equal(StatusReasonCode.ServiceDown, StatusComposer.EpisodeFromArr(sonarr, 1, 1, episodes.Find(1, 1), Ctx()).Reason);
+    }
+
+    [Fact]
+    public void TheTimeLeftCountsFromWhenTheQueueWasReadAndGoesOnceItIsStale()
+    {
+        var row = new ArrQueueEntry { Id = 1, Status = "downloading", TrackedDownloadState = "downloading", TrackedDownloadStatus = "ok", Size = 100, SizeLeft = 75, TimeLeft = "00:10:00", MovieId = 7 };
+        var read4MinAgo = new ArrCopyFacts(Radarr) { Movie = Movie(), QueueLoadedAt = Now.AddMinutes(-4) };
+        Assert.Equal(360L, StatusComposer.Progress(row, Ctx(), read4MinAgo)!.EtaSeconds);
+        var stale = new ArrCopyFacts(Radarr) { Movie = Movie(), QueueLoadedAt = Now.AddMinutes(-4), QueueStale = true };
+        var progress = StatusComposer.Progress(row, Ctx(), stale)!;
+        Assert.Equal((25, (long?)null), (progress.Percent, progress.EtaSeconds));
+    }
+
+    [Fact]
+    public void AnOkdRequestIsOverdueOnlyForAVariantJeWatches()
+    {
+        var ctx = new ComposeContext(Admin, Now, 24) { HandoffGrace = TimeSpan.FromMinutes(15) };
+        var approved = Now.AddHours(-1);
+        // Only a standard Radarr is watched; only a 4K request was OK'd: no verdict ("not in any arr" stays).
+        var facts = MovieFacts();
+        facts.Checked.Add(Radarr);
+        facts.Request = new RequestFacts { ApprovedAt = approved, Approved4kAt = approved };
+        Assert.Equal(StatusReasonCode.Approved, StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), ctx, false).Reason.Code);
+        // The standard request is judged on the standard Radarr.
+        facts.Request = new RequestFacts { ApprovedAt = approved, ApprovedStandardAt = approved };
+        Assert.Equal(StatusReasonCode.ApprovedNotInArr, StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), ctx, false).Reason.Code);
+        // With a 4K Radarr watched too, a 4K request's verdict comes from it (a stale 4K read: none).
+        facts.Checked.Add(Radarr4k);
+        facts.Request = new RequestFacts { ApprovedAt = approved, Approved4kAt = approved };
+        Assert.Equal(StatusReasonCode.ApprovedNotInArr, StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), ctx, false).Reason.Code);
+        facts.Stale.Add(Radarr4k);
+        Assert.Equal(StatusReasonCode.Approved, StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), ctx, false).Reason.Code);
+    }
+
+    [Fact]
+    public void DateOnlyReleaseDaysAreSentAsDaysEpisodeTimesAsInstants()
+    {
+        var notOut = StatusComposer.Movie(MovieFacts(Copy(Movie(available: false, cinemas: new DateTime(2026, 11, 14, 0, 0, 0, DateTimeKind.Utc)))), null, Array.Empty<JfCopy>(), Ctx(), false);
+        Assert.Equal(("2026-11-14", "2026-11-14"), (notOut.Reason.Params!["date"], notOut.NextDay));
+        var series = new ArrSeriesEntry { Id = 3, TvdbId = 279121, Title = "Show", Monitored = true };
+        var timed = new ArrEpisodeEntry { Id = 31, SeasonNumber = 1, EpisodeNumber = 1, AirDateUtc = new DateTime(2026, 11, 14, 2, 0, 0, DateTimeKind.Utc), Monitored = true };
+        var dayOnly = new ArrEpisodeEntry { Id = 32, SeasonNumber = 1, EpisodeNumber = 2, AirDateUtc = new DateTime(2026, 11, 21, 0, 0, 0, DateTimeKind.Utc), AirDateIsDay = true, Monitored = true };
+        var copy = new ArrCopyFacts(Sonarr) { Series = series, Episodes = new ArrEpisodesSnapshot(3, new[] { timed, dayOnly }) };
+        Assert.Equal("2026-11-14T02:00:00Z", StatusComposer.Episode(EpisodeFacts(copy), Virtual(1, 1), Ctx(), false).Reason.Params!["date"]);
+        var day = StatusComposer.Episode(EpisodeFacts(copy), Virtual(1, 2), Ctx(), false);
+        Assert.Equal(("2026-11-21", "2026-11-21"), (day.Reason.Params!["date"], day.NextDay));
+
+        static TitleFacts EpisodeFacts(ArrCopyFacts c)
+        {
+            var f = new TitleFacts(ShowKey);
+            f.Copies.Add(c);
+            return f;
+        }
+
+        static JfItemRef Virtual(int s, int e) => new() { ItemId = Guid.NewGuid(), Kind = "episode", Key = ShowKey.WithEpisode(s, e), Season = s, Episode = e, Virtual = true };
+    }
+
+    [Fact]
+    public void ADateOnlyNextEpisodeStaysADayOnTheSeasonTheSeriesAndARequestedSeason()
+    {
+        // Sonarr gave only the air date of S2E1 (no time): the season, the series and a request for
+        // Season 2 carry it as a day, never as the instant midnight UTC (a day early west of UTC).
+        var series = new ArrSeriesEntry
+        {
+            Id = 3, TvdbId = 279121, Title = "Show", Monitored = true, Added = Now.AddDays(-100),
+            Seasons = new[] { new ArrSeasonEntry { SeasonNumber = 1, Monitored = true, TotalEpisodeCount = 1 }, new ArrSeasonEntry { SeasonNumber = 2, Monitored = true, TotalEpisodeCount = 1 } },
+        };
+        var aired = new ArrEpisodeEntry { Id = 11, SeasonNumber = 1, EpisodeNumber = 1, AirDateUtc = Now.AddDays(-30), HasFile = true, Monitored = true };
+        var dayOnly = new ArrEpisodeEntry { Id = 21, SeasonNumber = 2, EpisodeNumber = 1, AirDateUtc = new DateTime(2026, 11, 21, 0, 0, 0, DateTimeKind.Utc), AirDateIsDay = true, Monitored = true };
+        var facts = new TitleFacts(ShowKey);
+        facts.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = new ArrEpisodesSnapshot(3, new[] { aired, dayOnly }) });
+        var jf = new List<JfEpisode> { new() { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = Now.AddDays(-29) } };
+        var season = StatusComposer.Season(facts, new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = ShowKey.WithSeason(2), SeriesId = SeriesItem, Season = 2 }, jf, Ctx(), detail: false);
+        Assert.Equal(("2026-11-21", true), (season.NextDay, season.Summary!.NextAirIsDay));
+        var whole = StatusComposer.Series(facts, new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey }, jf, null, Ctx(), detail: false);
+        Assert.Equal("2026-11-21", whole.NextDay);
+        var copies = new[] { new JfCopy { ItemId = SeriesItem, Visible = true, Path = "/data/tv/Show" } };
+        var (requested, _) = StatusComposer.RequestedSeasons(facts, whole, new[] { 2 }, jf, copies, Ctx());
+        Assert.Equal((StatusStage.NotOut, "2026-11-21", "2026-11-21"), (requested.Stage, requested.Reason.Params!["date"], requested.NextDay));
+        // A timed episode stays an instant.
+        var timedFacts = new TitleFacts(ShowKey);
+        timedFacts.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = new ArrEpisodesSnapshot(3, new[] { aired, new ArrEpisodeEntry { Id = 21, SeasonNumber = 2, EpisodeNumber = 1, AirDateUtc = new DateTime(2026, 11, 21, 2, 0, 0, DateTimeKind.Utc), Monitored = true } }) });
+        Assert.Null(StatusComposer.Series(timedFacts, new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey }, jf, null, Ctx(), detail: false).NextDay);
+    }
+
+    [Fact]
+    public void ARequestedSeasonWithNothingHereYetIsLookingNotSomeEpisodesHere()
+    {
+        // Season 2 asked for: Sonarr has its three aired episodes monitored, none on disk, none in
+        // Jellyfin. Nothing is here, so it is never "Some episodes here, looking for the rest".
+        var series = new ArrSeriesEntry { Id = 3, TvdbId = 279121, Title = "Show", Monitored = true, Added = Now.AddHours(-2) };
+        var episodes = new ArrEpisodesSnapshot(3, new[]
+        {
+            new ArrEpisodeEntry { Id = 11, SeasonNumber = 1, EpisodeNumber = 1, AirDateUtc = Now.AddDays(-300), HasFile = true, Monitored = true },
+            new ArrEpisodeEntry { Id = 21, SeasonNumber = 2, EpisodeNumber = 1, AirDateUtc = Now.AddDays(-30), Monitored = true },
+            new ArrEpisodeEntry { Id = 22, SeasonNumber = 2, EpisodeNumber = 2, AirDateUtc = Now.AddDays(-23), Monitored = true },
+            new ArrEpisodeEntry { Id = 23, SeasonNumber = 2, EpisodeNumber = 3, AirDateUtc = Now.AddDays(-16), Monitored = true },
+        });
+        var facts = new TitleFacts(ShowKey);
+        facts.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = episodes });
+        var jf = new List<JfEpisode> { new() { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = Now.AddDays(-299) } };
+        var copies = new[] { new JfCopy { ItemId = SeriesItem, Visible = true, Path = "/data/tv/Show" } };
+        var whole = StatusComposer.Series(facts, new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey }, jf, null, Ctx(), detail: false);
+        var (requested, _) = StatusComposer.RequestedSeasons(facts, whole, new[] { 2 }, jf, copies, Ctx());
+        Assert.Equal((StatusStage.Looking, StatusReasonCode.Looking), (requested.Stage, requested.Reason.Code));
+        var season = StatusComposer.Season(facts, new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = ShowKey.WithSeason(2), SeriesId = SeriesItem, Season = 2 }, jf, Ctx(), detail: false);
+        Assert.Equal(StatusReasonCode.Looking, season.Reason.Code);
+        // One of them here: now some are.
+        jf.Add(new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 1, DateCreated = Now.AddDays(-1) });
+        var (partial, _) = StatusComposer.RequestedSeasons(facts, whole, new[] { 2 }, jf, copies, Ctx());
+        Assert.Equal(StatusReasonCode.Partial, partial.Reason.Code);
+    }
+
+    [Fact]
+    public void ASeriesWhoseDownloadsCantBeCheckedIsServiceDownNotPartial()
+    {
+        // Sonarr's queue expired: its six aired, wanted episodes that aren't here can't be checked;
+        // four are in Jellyfin. The season, the series and the request say "can't be checked".
+        var series = new ArrSeriesEntry { Id = 3, TvdbId = 279121, Title = "Show", Monitored = true, Added = Now.AddDays(-100) };
+        var list = Enumerable.Range(1, 10).Select(n => new ArrEpisodeEntry { Id = 100 + n, SeasonNumber = 1, EpisodeNumber = n, AirDateUtc = Now.AddDays(-20 + n), HasFile = n <= 4, Monitored = true }).ToArray();
+        var facts = new TitleFacts(ShowKey);
+        facts.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = new ArrEpisodesSnapshot(3, list), QueueUnknown = true });
+        var jf = Enumerable.Range(1, 4).Select(n => new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = n, DateCreated = Now.AddDays(-10) }).ToList();
+        var copies = new[] { new JfCopy { ItemId = SeriesItem, Visible = true, Path = "/data/tv/Show" } };
+        var whole = StatusComposer.Series(facts, new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey }, jf, null, Ctx(), detail: false);
+        Assert.Equal((StatusStage.Looking, StatusReasonCode.ServiceDown), (whole.Stage, whole.Reason.Code));
+        var season = StatusComposer.Season(facts, new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = ShowKey.WithSeason(1), SeriesId = SeriesItem, Season = 1 }, jf, Ctx(), detail: false);
+        Assert.Equal(StatusReasonCode.ServiceDown, season.Reason.Code);
+        var (requested, _) = StatusComposer.RequestedSeasons(facts, whole, new[] { 1 }, jf, copies, Ctx());
+        Assert.Equal(StatusReasonCode.ServiceDown, requested.Reason.Code);
+        foreach (var status in new[] { whole, season, requested })
+        {
+            using var json = JsonDocument.Parse(Json(status));
+            var summary = json.RootElement.GetProperty("summary");
+            Assert.Equal(6, summary.GetProperty("missing").GetInt32());
+            Assert.Equal(summary.GetProperty("missing").GetInt32(), summary.GetProperty("unknown").GetInt32());
+        }
+        // Readable again: some here, looking for the rest.
+        var readable = new TitleFacts(ShowKey);
+        readable.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = new ArrEpisodesSnapshot(3, list) });
+        Assert.Equal(StatusReasonCode.Partial, StatusComposer.Series(readable, new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey }, jf, null, Ctx(), detail: false).Reason.Code);
+    }
+
+    [Fact]
+    public void AnOverdueVariantIsFlaggedForAdminsEvenWhileTheOtherVariantsCopyLeadsTheTitle()
+    {
+        var ctx = new ComposeContext(Admin, Now, 24) { HandoffGrace = TimeSpan.FromMinutes(15) };
+        var approved = Now.AddDays(-2);
+        // Both OK'd two days ago; Radarr 4K has it (looking), the standard Radarr JE watches doesn't.
+        var facts = MovieFacts(Copy(Movie(), Radarr4k));
+        facts.Checked.Add(Radarr);
+        facts.Checked.Add(Radarr4k);
+        facts.Request = new RequestFacts { ApprovedAt = approved, ApprovedStandardAt = approved, Approved4kAt = approved };
+        var status = StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), ctx, false);
+        Assert.Equal(StatusStage.Looking, status.Stage);
+        Assert.Equal((approved, (bool?)null), (status.Admin!.ApprovedNotInArrSince!.Value, status.Admin.ApprovedNotIn4k));
+        // The other way round: the standard copy leads, the 4K variant is the overdue one.
+        var other = MovieFacts(Copy(Movie()));
+        other.Checked.Add(Radarr);
+        other.Checked.Add(Radarr4k);
+        other.Request = facts.Request;
+        var flagged = StatusComposer.Movie(other, null, Array.Empty<JfCopy>(), ctx, false).Admin!;
+        Assert.Equal((approved, (bool?)true), (flagged.ApprovedNotInArrSince!.Value, flagged.ApprovedNotIn4k));
+        // Only the standard one was asked for (and Radarr holds it): no line. A family member never gets one.
+        other.Request = new RequestFacts { ApprovedAt = approved, ApprovedStandardAt = approved };
+        Assert.Null(StatusComposer.Movie(other, null, Array.Empty<JfCopy>(), ctx, false).Admin!.ApprovedNotInArrSince);
+        Assert.Null(StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), new ComposeContext(Member, Now, 24) { HandoffGrace = TimeSpan.FromMinutes(15) }, false).Admin);
+    }
+
+    [Fact]
+    public void AFinishedRequestIsNeverOverdueOnATitleThatIsHere()
+    {
+        var ctx = new ComposeContext(Admin, Now, 24) { HandoffGrace = TimeSpan.FromMinutes(15) };
+        var approved = Now.AddDays(-2);
+        // The movie is in Jellyfin; the standard Radarr JE watches (read) no longer holds it (removed
+        // after import, or Seerr sent it to a Radarr JE doesn't watch). Seerr marked the request done.
+        var hd = new JfCopy { ItemId = Guid.NewGuid(), Visible = true, Path = "/media/movies/Dune Part Two (2024)/Dune.mkv", DateCreated = Now.AddDays(-1) };
+        SeerrRequestRecord Record(int status, int media) => new() { Id = 1, IsMovie = true, TmdbId = 693134, Status = status, MediaStatus = media, CreatedAt = approved.AddMinutes(-5), UpdatedAt = approved };
+        var facts = MovieFacts();
+        facts.Checked.Add(Radarr);
+        facts.Request = SeerrRequestReadModel.FactsOf(new[] { Record(SeerrRequestStatus.Completed, 5) }, Admin.UserId);
+        var ready = StatusComposer.Movie(facts, null, new[] { hd }, ctx, false);
+        Assert.Equal(StatusStage.Ready, ready.Stage);
+        Assert.Null(ready.Admin!.ApprovedNotInArrSince);
+        // Available in Seerr while the request still reads "OK'd": done too.
+        facts.Request = SeerrRequestReadModel.FactsOf(new[] { Record(SeerrRequestStatus.Approved, 5) }, Admin.UserId);
+        Assert.Null(StatusComposer.Movie(facts, null, new[] { hd }, ctx, false).Admin!.ApprovedNotInArrSince);
+        // Not here and not done (Seerr still processing it): the line is about a real stuck handoff.
+        facts.Request = SeerrRequestReadModel.FactsOf(new[] { Record(SeerrRequestStatus.Approved, 3) }, Admin.UserId);
+        var stuck = StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), ctx, false);
+        Assert.Equal((StatusReasonCode.ApprovedNotInArr, approved), (stuck.Reason.Code, stuck.Admin!.ApprovedNotInArrSince!.Value));
+        // A series by key and on its page follow the same rule.
+        var show = new TitleFacts(ShowKey) { Request = SeerrRequestReadModel.FactsOf(new[] { new SeerrRequestRecord { Id = 2, TmdbId = 1, TvdbId = 279121, Status = SeerrRequestStatus.Completed, MediaStatus = 5, CreatedAt = approved, UpdatedAt = approved, Seasons = new[] { 1 } } }, Admin.UserId) };
+        show.Checked.Add(Sonarr);
+        var series = new JfCopy { ItemId = Guid.NewGuid(), Visible = true, Path = "/media/tv/Show", DateCreated = Now.AddDays(-1) };
+        Assert.Null(StatusComposer.SeriesByKey(show, new[] { series }, ctx).Admin?.ApprovedNotInArrSince);
+        var episodes = new[] { new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = Now.AddDays(-1) } };
+        Assert.Null(StatusComposer.Series(show, new JfItemRef { ItemId = series.ItemId, Kind = "series", Key = ShowKey }, episodes, null, ctx, detail: false).Admin?.ApprovedNotInArrSince);
+    }
+
+    [Fact]
+    public void AFourKOnlyRequestNoRadarrHoldsSaysItIsAboutTheFourKRequest()
+    {
+        // Only a 4K request, OK'd two days ago; both Radarrs were read and hold nothing.
+        var ctx = new ComposeContext(Admin, Now, 24) { HandoffGrace = TimeSpan.FromMinutes(15) };
+        var approved = Now.AddDays(-2);
+        var facts = MovieFacts();
+        facts.Checked.Add(Radarr);
+        facts.Checked.Add(Radarr4k);
+        facts.Request = new RequestFacts { AskedAt = approved, ApprovedAt = approved, Approved4kAt = approved };
+        var status = StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), ctx, false);
+        Assert.Equal(StatusReasonCode.ApprovedNotInArr, status.Reason.Code);
+        Assert.Equal((approved, (bool?)true), (status.Admin!.ApprovedNotInArrSince!.Value, status.Admin.ApprovedNotIn4k));
+        // A standard request in the same place reads as one.
+        facts.Request = new RequestFacts { AskedAt = approved, ApprovedAt = approved, ApprovedStandardAt = approved };
+        Assert.Null(StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), ctx, false).Admin!.ApprovedNotIn4k);
+    }
+
+    [Fact]
+    public void AFourKRequestHeldOnlyByTheFourKRadarrNeverTakesTheStandardCopyForIts()
+    {
+        // Only Radarr 4K (root /movies4k, no links or mappings) has Dune; Jellyfin has only the HD copy.
+        var hd = new JfCopy { ItemId = Guid.NewGuid(), Visible = true, Path = "/media/movies/Dune Part Two (2024)/Dune.mkv", DateCreated = Now.AddDays(-2) };
+        var facts = MovieFacts(Copy(Movie(hasFile: true, path: "/movies4k/Dune Part Two (2024)"), Radarr4k));
+        var placeholder = new TitleStatus { Key = MovieKey.ToString(), Kind = "movie" };
+        var (status, arrived, shown) = StatusComposer.Requested4k(facts, placeholder, new[] { hd }, Ctx());
+        Assert.NotEqual(StatusStage.Ready, status.Stage);
+        Assert.Null(arrived);
+        Assert.Null(shown);
+        // Seerr's own 4K item, when the viewer can open it, is the 4K copy.
+        var uhd = new JfCopy { ItemId = Guid.NewGuid(), Visible = true, Path = "/srv/uhd/Dune.mkv", DateCreated = Now.AddDays(-1) };
+        var (seerr, seerrArrived, seerrShown) = StatusComposer.Requested4k(facts, placeholder, new[] { hd, uhd }, Ctx(), uhd);
+        Assert.Equal((StatusStage.Ready, uhd.ItemId), (seerr.Stage, seerrShown!.ItemId));
+        Assert.Equal(uhd.DateCreated, seerrArrived);
+        // The whole title still counts the HD copy (it is there).
+        Assert.Equal(StatusStage.Ready, StatusComposer.Movie(facts, null, new[] { hd }, Ctx(), false).Stage);
     }
 
     [Fact]
@@ -105,7 +437,9 @@ public class IntegrationArrStatusTests
     {
         var notOut = StatusComposer.Movie(MovieFacts(Copy(Movie(available: false, cinemas: Now.AddDays(-10), digital: Now.AddDays(33)))), null, Array.Empty<JfCopy>(), Ctx(), false);
         Assert.Equal(Now.AddDays(33), notOut.NextDate);
-        Assert.Equal("2026-11-14T12:00:00Z", notOut.Reason.Params!["date"]);
+        // Radarr's release dates are calendar days: sent as the day, so no time zone moves them.
+        Assert.Equal("2026-11-14", notOut.Reason.Params!["date"]);
+        Assert.Equal("2026-11-14", notOut.NextDay);
 
         var downloading = StatusComposer.Movie(MovieFacts(Copy(Movie(), queue: new[] { Row() })), null, Array.Empty<JfCopy>(), Ctx(), false);
         Assert.Equal(42, downloading.Progress!.Percent);
@@ -114,6 +448,45 @@ public class IntegrationArrStatusTests
         // No estimated completion: the arr's "timeleft" is used.
         var row = new ArrQueueEntry { Id = 1, Status = "downloading", TrackedDownloadState = "downloading", TrackedDownloadStatus = "ok", Size = 100, SizeLeft = 75, TimeLeft = "00:05:00", MovieId = 7 };
         Assert.Equal((25, 300L), (StatusComposer.Progress(row, Ctx())!.Percent, StatusComposer.Progress(row, Ctx())!.EtaSeconds!.Value));
+    }
+
+    [Fact]
+    public void ADateOnlyReleaseOrAirDayStaysTheDateWhileThatDayLastsSomewhere()
+    {
+        var day = new DateTime(2026, 10, 13, 0, 0, 0, DateTimeKind.Utc);
+        var early = day.AddHours(1); // still the 12th west of UTC
+        // Radarr: in cinemas, digital release on the 13th, not available yet.
+        var movie = MovieFacts(Copy(Movie(available: false, cinemas: day.AddDays(-30), digital: day)));
+        var notOut = StatusComposer.Movie(movie, null, Array.Empty<JfCopy>(), new ComposeContext(Member, early, 24), false);
+        Assert.Equal((StatusReasonCode.InCinemas, "2026-10-13"), (notOut.Reason.Code, notOut.NextDay));
+        Assert.Null(StatusComposer.Movie(movie, null, Array.Empty<JfCopy>(), new ComposeContext(Member, day.AddHours(37), 24), false).NextDay);
+
+        // A cinema-only release is a calendar day too: it hasn't begun everywhere at 01:00 UTC.
+        var cinema = MovieFacts(Copy(Movie(available: false, cinemas: day)));
+        var notInCinemas = StatusComposer.Movie(cinema, null, Array.Empty<JfCopy>(), new ComposeContext(Member, early, 24), false);
+        Assert.Equal((StatusStage.NotOut, StatusReasonCode.NotReleased, "2026-10-13"), (notInCinemas.Stage, notInCinemas.Reason.Code, notInCinemas.NextDay));
+        Assert.Equal(StatusReasonCode.InCinemas, StatusComposer.Movie(cinema, null, Array.Empty<JfCopy>(), new ComposeContext(Member, day.AddHours(37), 24), false).Reason.Code);
+
+        // Sonarr: an episode with an air day and no time (no airDateUtc).
+        var series = new ArrSeriesEntry { Id = 3, TvdbId = 279121, Title = "Show", Monitored = true, Added = day.AddDays(-100) };
+        var list = new[]
+        {
+            new ArrEpisodeEntry { Id = 101, SeasonNumber = 1, EpisodeNumber = 1, AirDateUtc = day.AddDays(-7), HasFile = true, Monitored = true },
+            new ArrEpisodeEntry { Id = 102, SeasonNumber = 1, EpisodeNumber = 2, AirDateUtc = day, AirDateIsDay = true, Monitored = true },
+        };
+        var show = new TitleFacts(ShowKey);
+        show.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = new ArrEpisodesSnapshot(3, list) });
+        var jf = new List<JfEpisode> { new() { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = day.AddDays(-6) } };
+        var item = new JfItemRef { ItemId = Guid.NewGuid(), Kind = "series", Key = ShowKey };
+        var airing = StatusComposer.Series(show, item, jf, null, new ComposeContext(Member, early, 24), detail: false);
+        Assert.Equal("2026-10-13", airing.NextDay);
+        Assert.Equal(0, airing.Summary!.Missing);
+        var episode = StatusComposer.EpisodeFromArr(show.Copies[0], 1, 2, list[1], new ComposeContext(Member, early, 24));
+        Assert.Equal((StatusReasonCode.NotAired, "2026-10-13"), (episode.Reason, episode.Day));
+        // Once the day is over everywhere: aired, and wanted.
+        var later = new ComposeContext(Member, day.AddHours(37), 24);
+        Assert.Equal(StatusStage.Looking, StatusComposer.EpisodeFromArr(show.Copies[0], 1, 2, list[1], later).Stage);
+        Assert.Equal(1, StatusComposer.Series(show, item, jf, null, later, detail: false).Summary!.Missing);
     }
 
     [Fact]
@@ -168,18 +541,79 @@ public class IntegrationArrStatusTests
             new JfCopy { ItemId = Guid.NewGuid(), Path = "/rigmedia/movies4k/Sintel (2010) [tmdbid-45745]/Sintel (2010) Remux-2160p.mkv", LibraryId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2" },
         };
         ArrCopyFacts At(ArrConnection instance, string path) => Copy(Movie(path: path), instance);
+        var std = At(Radarr, "/data/media/movies/Sintel (2010) [tmdbid-45745]");
+        var uhd = At(Radarr4k, "/data/media/movies4k/Sintel (2010) [tmdbid-45745]");
+        var both = new[] { std, uhd };
         // Folder names (no mapping configured): "movies/Sintel…" vs "movies4k/Sintel…".
-        Assert.Equal(jf[0].ItemId, Assert.Single(StatusComposer.MatchCopies(At(Radarr, "/data/media/movies/Sintel (2010) [tmdbid-45745]"), jf, 2)).ItemId);
-        Assert.Equal(jf[1].ItemId, Assert.Single(StatusComposer.MatchCopies(At(Radarr4k, "/data/media/movies4k/Sintel (2010) [tmdbid-45745]"), jf, 2)).ItemId);
+        Assert.Equal(jf[0].ItemId, Assert.Single(StatusComposer.MatchCopies(std, jf, both)).ItemId);
+        Assert.Equal(jf[1].ItemId, Assert.Single(StatusComposer.MatchCopies(uhd, jf, both)).ItemId);
         // Linked libraries win over paths.
-        var linked = new ArrConnection { Id = Radarr.Id, Kind = ArrKind.Radarr, Name = "x", Role = "standard", LinkedLibraryIds = new[] { "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2" } };
-        Assert.Equal(jf[1].ItemId, Assert.Single(StatusComposer.MatchCopies(At(linked, "/data/media/movies/Sintel (2010) [tmdbid-45745]"), jf, 2)).ItemId);
+        var linked = At(new ArrConnection { Id = Radarr.Id, Kind = ArrKind.Radarr, Name = "x", Role = "standard", LinkedLibraryIds = new[] { "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2" } }, "/data/media/movies/Sintel (2010) [tmdbid-45745]");
+        Assert.Equal(jf[1].ItemId, Assert.Single(StatusComposer.MatchCopies(linked, jf, new[] { linked, uhd })).ItemId);
         // Path mappings.
-        var mapped = new ArrConnection { Id = Radarr.Id, Kind = ArrKind.Radarr, Name = "x", Role = "standard", PathMappings = new[] { new Jellyfin.Plugin.JellyfinEnhanced.Model.Arr.ArrPathMapping { ArrPath = "/srv/uhd", JellyfinPath = "/rigmedia/movies4k" } } };
-        Assert.Equal(jf[1].ItemId, Assert.Single(StatusComposer.MatchCopies(At(mapped, "/srv/uhd/Sintel (2010) [tmdbid-45745]"), jf, 2)).ItemId);
+        var mapped = At(new ArrConnection { Id = Radarr.Id, Kind = ArrKind.Radarr, Name = "x", Role = "standard", PathMappings = new[] { new Jellyfin.Plugin.JellyfinEnhanced.Model.Arr.ArrPathMapping { ArrPath = "/srv/uhd", JellyfinPath = "/rigmedia/movies4k" } } }, "/srv/uhd/Sintel (2010) [tmdbid-45745]");
+        Assert.Equal(jf[1].ItemId, Assert.Single(StatusComposer.MatchCopies(mapped, jf, new[] { mapped, std })).ItemId);
         // One instance only: every copy is its copy; two instances and nothing matches: none.
-        Assert.Equal(2, StatusComposer.MatchCopies(At(Radarr, "/elsewhere/Sintel"), jf, 1).Count);
-        Assert.Empty(StatusComposer.MatchCopies(At(Radarr, "/elsewhere/Sintel"), jf, 2));
+        var elsewhere = At(Radarr, "/elsewhere/Sintel");
+        Assert.Equal(2, StatusComposer.MatchCopies(elsewhere, jf, new[] { elsewhere }).Count);
+        Assert.Empty(StatusComposer.MatchCopies(elsewhere, jf, new[] { elsewhere, uhd }));
+    }
+
+    [Fact]
+    public void CopyMatchingRespectsFolderBoundariesTheLongestMappingAndAmbiguousFolders()
+    {
+        var movies = new JfCopy { ItemId = Guid.NewGuid(), Path = "/media/movies/Sintel (2010)/Sintel.mkv" };
+        var movies4k = new JfCopy { ItemId = Guid.NewGuid(), Path = "/media/movies4k/Sintel (2010)/Sintel.2160p.mkv" };
+        var jf = new[] { movies, movies4k };
+        ArrCopyFacts At(ArrConnection instance, string path) => Copy(Movie(path: path), instance);
+        ArrConnection Mapped(ArrConnection like, params (string Arr, string Jf)[] maps) => new()
+        {
+            Id = like.Id, Kind = like.Kind, Name = like.Name, Role = like.Role,
+            PathMappings = maps.Select(m => new Jellyfin.Plugin.JellyfinEnhanced.Model.Arr.ArrPathMapping { ArrPath = m.Arr, JellyfinPath = m.Jf }).ToArray(),
+        };
+
+        // A folder boundary: a mapping to /media/movies never takes /media/movies4k/… (no StartsWith).
+        var std = At(Mapped(Radarr, ("/data", "/media/movies")), "/data/Sintel (2010)");
+        var uhd = At(Mapped(Radarr4k, ("/data4k", "/media/movies4k")), "/data4k/Sintel (2010)");
+        Assert.Equal(movies.ItemId, Assert.Single(StatusComposer.MatchCopies(std, jf, new[] { std, uhd })).ItemId);
+        Assert.Equal(movies4k.ItemId, Assert.Single(StatusComposer.MatchCopies(uhd, jf, new[] { std, uhd })).ItemId);
+
+        // Overlapping mappings: the longest whose arr side holds the folder wins.
+        var nested = At(Mapped(Radarr4k, ("/data", "/media/movies"), ("/data/uhd", "/media/movies4k")), "/data/uhd/Sintel (2010)");
+        Assert.Equal(movies4k.ItemId, Assert.Single(StatusComposer.MatchCopies(nested, jf, new[] { nested, std })).ItemId);
+
+        // Once a mapping applies, its answer is final: the 4K copy has no file in Jellyfin yet, so it
+        // matches nothing (it never falls through to the folder names and pairs with the HD copy).
+        var noFile = At(Mapped(Radarr4k, ("/movies", "/media/uhd")), "/movies/Sintel (2010)");
+        var stdPlain = At(Radarr, "/films/Sintel (2010)");
+        Assert.Empty(StatusComposer.MatchCopies(noFile, new[] { movies }, new[] { stdPlain, noFile }));
+
+        // Two hosts both rooted at /movies (no mappings): which Jellyfin copy is whose can't be told, so
+        // neither copy claims one by folder name (the 4K copy never borrows the standard copy).
+        var hostA = At(Radarr, "/movies/Sintel (2010)");
+        var hostB = At(Radarr4k, "/movies/Sintel (2010)");
+        var shared = new JfCopy { ItemId = Guid.NewGuid(), Path = "/movies/Sintel (2010)/Sintel.mkv" };
+        Assert.Empty(StatusComposer.MatchCopies(hostB, new[] { shared }, new[] { hostA, hostB }));
+        Assert.Empty(StatusComposer.MatchCopies(hostA, new[] { shared }, new[] { hostA, hostB }));
+
+        // A copy a sibling claims by its mapping is not up for the folder-name match.
+        var claimer = At(Mapped(Radarr4k, ("/uhd", "/media/movies")), "/uhd/Sintel (2010)");
+        var byName = At(Radarr, "/srv/movies/Sintel (2010)");
+        Assert.Empty(StatusComposer.MatchCopies(byName, new[] { movies }, new[] { byName, claimer }));
+        Assert.Equal(movies.ItemId, Assert.Single(StatusComposer.MatchCopies(byName, new[] { movies }, new[] { byName })).ItemId);
+    }
+
+    [Fact]
+    public void AFourKOnlyMovieWhoseCopyMatchesNothingNeverBorrowsTheStandardCopy()
+    {
+        // Radarr and Radarr 4K on two hosts, both rooted at /movies; Jellyfin has only the HD copy.
+        var hd = new JfCopy { ItemId = Guid.NewGuid(), Visible = true, Path = "/movies/Dune Part Two (2024)/Dune.mkv", DateCreated = Now.AddDays(-2) };
+        var facts = MovieFacts(Copy(Movie(hasFile: true, path: "/movies/Dune Part Two (2024)")), Copy(Movie(path: "/movies/Dune Part Two (2024)"), Radarr4k));
+        var placeholder = new TitleStatus { Key = MovieKey.ToString(), Kind = "movie" };
+        var (status, arrived, shown) = StatusComposer.Requested4k(facts, placeholder, new[] { hd }, Ctx());
+        Assert.NotEqual(StatusStage.Ready, status.Stage);
+        Assert.Null(arrived);
+        Assert.Null(shown);
     }
 
     [Fact]

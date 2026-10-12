@@ -10184,6 +10184,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private const int HistoryWindowSize = 200;
 
         /// <summary>
+        /// The history the Requests page pages through: the user's own titles (when filtered), newest
+        /// first, then the newest <see cref="HistoryWindowSize"/>. Filtered first, so other people's
+        /// events never push the user's own out of the window.
+        /// </summary>
+        internal static List<Services.Arr.ArrLegacyHistoryItem> HistoryWindow(IEnumerable<Services.Arr.ArrLegacyHistoryItem> merged, HashSet<(int TmdbId, string MediaType)>? allowedRequests)
+            => FilterByAllowedRequests(merged.OrderByDescending(i => i.Date ?? DateTime.MinValue), allowedRequests, x => x.Source, x => x.TmdbId)
+                .Take(HistoryWindowSize)
+                .ToList();
+
+        /// <summary>
         /// Recently imported/failed downloads of every enabled instance (served from ArrStateStore's
         /// history ring). Instances whose history can't be read are reported in <c>errors</c>
         /// instead of looking like "no history".
@@ -10228,11 +10238,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     errors.Add(Services.Arr.ArrLegacyViews.InstanceError(instances[i], error, isAdmin));
             }
 
-            var window = merged
-                .OrderByDescending(i => i.Date ?? DateTime.MinValue)
-                .Take(HistoryWindowSize)
-                .ToList();
-            var filtered = FilterByAllowedRequests(window, allowedRequests, x => x.Source, x => x.TmdbId);
+            var filtered = HistoryWindow(merged, allowedRequests);
             var totalPages = filtered.Count == 0 ? 0 : (int)Math.Ceiling(filtered.Count / (double)take);
             var page = filtered.Skip(skip).Take(take).ToList();
 
@@ -10775,6 +10781,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 (startDate, endDate) = (endDate, startDate);
             }
 
+            // The viewer's own first and last day (their time zone): date-only releases are kept by day.
+            static string? Day(Microsoft.Extensions.Primitives.StringValues value)
+                => System.Text.RegularExpressions.Regex.IsMatch(value.ToString(), "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(50)) ? value.ToString() : null;
+            var startDay = Request.Query.TryGetValue("startDay", out var startDayValue) ? Day(startDayValue) : null;
+            var endDay = Request.Query.TryGetValue("endDay", out var endDayValue) ? Day(endDayValue) : null;
+            if (startDay != null && endDay != null && string.CompareOrdinal(startDay, endDay) > 0) (startDay, endDay) = (endDay, startDay);
+
             // cap the requested range to prevent an authed
             // user from passing start=1900..end=2099 and triggering 200 years
             // worth of arr-side calendar fetches + dedup loops.
@@ -10868,7 +10881,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             for (int i = 0; i < arrInstances.Count; i++)
             {
                 if (calendarReads[i].Value is { } calendar)
-                    events.AddRange(Services.Arr.ArrLegacyViews.CalendarItems(arrInstances[i], calendar, startDate, endDate));
+                    events.AddRange(Services.Arr.ArrLegacyViews.CalendarItems(arrInstances[i], calendar, startDate, endDate, startDay, endDay));
                 if (calendarReads[i].Error is { } error)
                     errors.Add(Services.Arr.ArrLegacyViews.InstanceError(arrInstances[i], error, isAdmin));
             }

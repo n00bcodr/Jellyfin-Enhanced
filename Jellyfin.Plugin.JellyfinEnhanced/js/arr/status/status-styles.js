@@ -28,6 +28,11 @@ button.je-arr-pill:focus-visible, .layout-tv button.je-arr-pill:focus { outline:
 .je-arr-tone-looking { --je-arr-tone: #b8bcc2; }
 .je-arr-tone-notOut { --je-arr-tone: #e5a00d; }
 .je-arr-tone-asked, .je-arr-tone-approved { --je-arr-tone: #c084fc; }
+.je-arr-stale-note { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em 1em; padding: 0.5em 1em; margin: 0 0 1em;
+  border-radius: 8px; background: rgba(245,158,11,0.10); border-left: 3px solid #f59e0b; }
+.je-arr-stale-retry { font: inherit; color: inherit; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 6px; padding: 0.35em 1em; min-height: 2.75em; min-width: 2.75em; cursor: pointer; }
+.je-arr-stale-retry:focus-visible, .layout-tv .je-arr-stale-retry:focus { outline: 3px solid #fff; outline-offset: 2px; }
 .je-arr-tone-attention { --je-arr-tone: #f59e0b; }
 .je-arr-tone-notHere, .je-arr-tone-none { --je-arr-tone: #8a8f96; }
 .je-arr-tone-partial { --je-arr-tone: #818cf8; }

@@ -156,6 +156,32 @@
   }
 
   /**
+   * A date as the viewer's local calendar day ("yyyy-MM-dd").
+   * @param {Date} date Date.
+   * @returns {string} Day.
+   */
+  function localDay(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  /**
+   * A date-only release (a release day with no time: Radarr's dates, an episode with no air time)
+   * placed at the start of that day where the viewer is, so it lands on that day and shows no clock
+   * time (read as midnight UTC it would be the day before, at "5:00 PM", west of UTC). The UTC value
+   * stays in releaseDateUtc.
+   * @param {Object} event Calendar event from the server.
+   * @returns {Object} The event.
+   */
+  function asLocalDay(event) {
+    const parts = event.dateOnly && /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(event.releaseDateLocal || ''));
+    if (!parts) return event;
+    const local = new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+    if (Number.isNaN(local.getTime())) return event;
+    return { ...event, releaseDateUtc: event.releaseDate, releaseDate: local.toISOString() };
+  }
+
+  /**
    * Fetch calendar events from backend
    */
   async function fetchCalendarEvents(startDate, endDate) {
@@ -167,10 +193,13 @@
       const query = new URLSearchParams({
         start: startDate.toISOString(),
         end: endDate.toISOString(),
+        // The viewer's own first and last day: date-only releases are kept by day, not by instant.
+        startDay: localDay(startDate),
+        endDay: localDay(endDate),
       });
       const data = await JE.core.api.plugin(`/arr/calendar?${query.toString()}`);
       if (JE.session && !JE.session.isCurrent(epoch)) return null;
-      state.events = (data.events || []).filter((evt) => evt && evt.releaseDate);
+      state.events = (data.events || []).filter((evt) => evt && evt.releaseDate).map(asLocalDay);
       // Surface per-instance errors from the backend envelope so a misconfigured or
       // unreachable arr instance doesn't silently leave the calendar looking fine.
       surfaceCalendarErrors(data.errors);

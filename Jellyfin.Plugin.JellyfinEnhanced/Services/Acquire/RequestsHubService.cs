@@ -74,6 +74,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Release or next air date, when there is one.</summary>
         public DateTime? NextDate { get; init; }
 
+        /// <summary><see cref="NextDate"/> as a calendar day ("yyyy-MM-dd") when it has no time (release dates).</summary>
+        public string? NextDay { get; init; }
+
         /// <summary>The group (<see cref="HubGroup"/>).</summary>
         public string Group { get; init; } = HubGroup.OnTheWay;
 
@@ -91,6 +94,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public bool Loaded { get; init; }
 
         /// <summary>The last read failed (what is shown may be out of date).</summary>
+        public bool Unavailable { get; init; }
+    }
+
+    /// <summary>The Requests page's Sonarr/Radarr line (family-safe: no instance names, no error text).</summary>
+    public sealed class HubArr
+    {
+        /// <summary>
+        /// A Sonarr/Radarr's downloads can't be read right now (its queue or history is past its
+        /// longest serve time): the titles it holds read "can't be checked" until it answers again.
+        /// </summary>
         public bool Unavailable { get; init; }
     }
 
@@ -122,6 +135,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Seerr's line.</summary>
         public HubSeerr Seerr { get; init; } = new();
 
+        /// <summary>The Sonarr/Radarr line.</summary>
+        public HubArr Arr { get; init; } = new();
+
         /// <summary>My requests: needs OK, on the way, not out yet, said no.</summary>
         public IReadOnlyList<HubEntry> Mine { get; init; } = Array.Empty<HubEntry>();
 
@@ -133,6 +149,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Administrators only; absent for everyone else.</summary>
         public HubAdmin? Admin { get; init; }
+
+        /// <summary>
+        /// The user has more titles than the page lists (<see cref="RequestsHubService.MaxTitles"/>):
+        /// open requests first, then the newest; the page says "Showing your newest 200 titles".
+        /// </summary>
+        public bool More { get; init; }
     }
 
     /// <summary>
@@ -186,12 +208,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             _requests.Touch();
             var config = _config();
-            var entries = _requests.ForUser(viewer.UserId)
+            var now = _status.Now.UtcDateTime;
+            // Open requests first (an old one still waiting never drops off the end), then the newest.
+            // Only titles certainly finished for the page are left out before composing: declined
+            // ones older than the page keeps them. A finished one stays a candidate (after the open
+            // ones, so it never pushes one out of the cap): its "Ready" days count from when it
+            // arrived in Jellyfin, which only composing knows (Seerr may mark it available without
+            // touching the request).
+            var titles = _requests.ForUser(viewer.UserId)
                 .GroupBy(r => r.Key!.ToString())
                 .Select(g => g.ToList())
-                .OrderByDescending(g => g.Max(r => r.CreatedAt ?? DateTime.MinValue))
-                .Take(MaxTitles)
+                .Where(g => g.Any(r => r.Active) || now - LastChange(g) <= DeclinedFor)
+                .OrderBy(g => IsOpen(g) ? 0 : 1)
+                .ThenByDescending(g => g.Max(r => r.CreatedAt ?? DateTime.MinValue))
                 .ToList();
+            var more = titles.Count > MaxTitles;
+            var entries = titles.Take(MaxTitles).ToList();
             var keys = entries.Select(g => g[0].Key!).ToList();
             // Each title is judged by the part asked for: a request for Season 3 of a series Jellyfin
             // already has isn't "Ready", nor is a 4K request for a title Jellyfin has in standard
@@ -206,8 +238,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var adminTabs = viewer.IsAdmin
                 ? (config?.DownloadsPageEnabled == true ? "d" : "-") + (config?.CalendarPageEnabled == true ? "c" : "-") + (JellyfinBridge.Phase2(config) ? "h" : "-") + (state.LastError ?? string.Empty) + state.LastReadAt?.UtcTicks.ToString(CultureInfo.InvariantCulture)
                 : string.Empty;
-            var what = string.Join("|", _requests.Active ? "on" : "off", _requests.Loaded ? "loaded" : "-", state.LastError == null ? "ok" : "err", adminTabs);
-            return _status.ForTitlesAsync(viewer, keys, "hub", what, titles => Build(viewer, entries, titles, config, state), cancellationToken, scopes);
+            var arrDown = ArrUnavailable();
+            var what = string.Join("|", _requests.Active ? "on" : "off", _requests.Loaded ? "loaded" : "-", state.LastError == null ? "ok" : "err", arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs);
+            return _status.ForTitlesAsync(viewer, keys, "hub", what, composed => Build(viewer, entries, composed, config, state, arrDown, more), cancellationToken, scopes);
+        }
+
+        /// <summary>A title's requests still under way: one is not declined, and neither Seerr nor its media says it is done.</summary>
+        private static bool IsOpen(IReadOnlyList<SeerrRequestRecord> records)
+            => records.Any(r => r.Active && r.Status != SeerrRequestStatus.Completed && r.MediaStatus != 5);
+
+        private static DateTime LastChange(IReadOnlyList<SeerrRequestRecord> records)
+            => records.Max(r => r.UpdatedAt ?? r.CreatedAt ?? DateTime.MinValue);
+
+        /// <summary>True when any Sonarr/Radarr's queue or history has expired (see <see cref="HubArr.Unavailable"/>).</summary>
+        private bool ArrUnavailable()
+        {
+            var store = _status.Store;
+            return store.Instances(Arr.ArrKind.Radarr).Concat(store.Instances(Arr.ArrKind.Sonarr)).Any(store.PipelineExpired);
         }
 
         /// <summary>
@@ -234,10 +281,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 only4k,
                 SeerrRequestReadModel.FactsOf(records, userId),
                 available.Count > 0,
-                available.Select(r => r.UpdatedAt ?? r.CreatedAt).Where(d => d.HasValue).DefaultIfEmpty(null).Max());
+                available.Select(r => r.UpdatedAt ?? r.CreatedAt).Where(d => d.HasValue).DefaultIfEmpty(null).Max(),
+                // Seerr's own match of the 4K copy (a hint for Play: used only when the viewer can open it).
+                only4k ? asked.OrderByDescending(r => r.UpdatedAt ?? r.CreatedAt).Select(r => r.JellyfinItemId).FirstOrDefault(id => id.HasValue) : null);
         }
 
-        private byte[] Build(StatusViewer viewer, List<List<SeerrRequestRecord>> entries, IReadOnlyList<ArrStatusService.KeyedStatus> titles, PluginConfiguration? config, SeerrReadModelState state)
+        private byte[] Build(StatusViewer viewer, List<List<SeerrRequestRecord>> entries, IReadOnlyList<ArrStatusService.KeyedStatus> titles, PluginConfiguration? config, SeerrReadModelState state, bool arrDown, bool more)
         {
             var now = _status.Now.UtcDateTime;
             var byKey = titles.ToDictionary(t => t.Key.ToString(), StringComparer.Ordinal);
@@ -259,7 +308,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         mine.Add(entry);
                         break;
                 }
-                if (entry.Group != HubGroup.Declined && entry.NextDate is DateTime next && next > now && next - now <= SoonWithin) soon.Add(entry);
+                if (entry.Group != HubGroup.Declined && entry.NextDate is DateTime next && next - now <= SoonWithin
+                    && (entry.NextDay == null ? next > now : StatusComposer.DayStillAhead(next, now))) soon.Add(entry);
             }
             var (contact, lookingHours) = _status.Texts();
             var response = new HubResponse
@@ -267,6 +317,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Contact = contact,
                 LookingHours = lookingHours,
                 Seerr = new HubSeerr { Configured = _requests.Active, Loaded = _requests.Loaded, Unavailable = state.LastError != null },
+                Arr = new HubArr { Unavailable = arrDown },
+                More = more,
                 Mine = mine.OrderBy(e => GroupOrder(e.Group)).ThenByDescending(e => e.AskedAt ?? DateTime.MinValue).ToList(),
                 Soon = soon.OrderBy(e => e.NextDate).ToList(),
                 Ready = ready.OrderByDescending(e => e.ReadyAt ?? DateTime.MinValue).ToList(),
@@ -323,7 +375,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             var meta = _requests.Meta(first.IsMovie, records.Select(r => r.TmdbId).FirstOrDefault(t => t > 0));
             // The arrs' dates first; for a title no arr has yet, the date Seerr (TMDB) gives.
-            var next = status.NextDate ?? status.Summary?.NextAir ?? (meta?.NextDate is DateTime seerrDate && seerrDate > now ? seerrDate : null);
+            // Seerr's (TMDB's) dates are calendar days; so are Radarr's release dates (NextDay).
+            DateTime? next;
+            string? nextDay;
+            if (status.NextDate is DateTime arrDate)
+            {
+                next = arrDate;
+                nextDay = status.NextDay;
+            }
+            else if (status.Summary?.NextAir is DateTime airs)
+            {
+                next = airs;
+                // A Sonarr air date without a time is a calendar day too.
+                nextDay = status.Summary.NextAirIsDay ? StatusComposer.DayOf(airs) : null;
+            }
+            else if (meta?.NextDate is DateTime seerrDate && StatusComposer.DayStillAhead(seerrDate, now))
+            {
+                next = seerrDate;
+                nextDay = StatusComposer.DayOf(seerrDate);
+            }
+            else
+            {
+                next = null;
+                nextDay = null;
+            }
             return new HubEntry
             {
                 Key = status.Key,
@@ -340,6 +415,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 AskedAt = records.Select(r => r.CreatedAt).Where(d => d.HasValue).DefaultIfEmpty(null).Min(),
                 ReadyAt = readyAt,
                 NextDate = next,
+                NextDay = nextDay,
                 Group = group,
                 Status = status,
             };

@@ -504,6 +504,36 @@ public class ApiArrAdminHubTests
     }
 
     [Fact]
+    public async Task NoQueueActionRunsOnADownloadFromAQueueThatCantBeRead()
+    {
+        using var rig = new Rig();
+        await rig.Warm();
+        var radarr = rig.Instance("RadarrMainZ");
+        var c = rig.Controller(rig.AdminUser);
+        // Radarr's queue stops answering for longer than its serving limit (10 minutes).
+        rig.Radarr.FailWith = 503;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        for (var i = 0; i < 300 && !(await rig.Store.GetQueueAsync(radarr, default)).Expired; i++) await Task.Delay(10);
+        Assert.True((await rig.Store.GetQueueAsync(radarr, default)).Expired);
+        // The Sintel download read 11 minutes ago: refused before any call, audited; no Tier-3 token.
+        var refused = Json(await Act(rig, rig.AdminUser, "RadarrMainZ", "dl2", "remove"));
+        Assert.Equal("Rejected", refused.GetProperty("status").GetString());
+        Assert.Equal(("queue.remove", "rejected", "queue_unreadable"), rig.Audit.ReadRecent(1).Select(a => (a.Action, a.Outcome, a.Error)).Single());
+        Assert.Equal(404, (await Send(() => c.Confirm(new QueueConfirmRequest { InstanceId = radarr.Id, DownloadId = "dl2" }, default))).Status);
+        Assert.Equal(0, rig.Arr.CallCount("radarr.lan", "queue/2"));
+        // The Activity tab lists what was last read, with no actions on it.
+        var activity = Json(await Send(() => c.GetActivity(default)));
+        var sintel = activity.GetProperty("queue").EnumerateArray().Single(g => g.GetProperty("downloadId").GetString() == "dl2");
+        Assert.Equal(0, sintel.GetProperty("actions").GetArrayLength());
+        Assert.Contains(activity.GetProperty("queue").EnumerateArray(), g => g.GetProperty("instanceId").GetString() == rig.Instance("SonarrZ").Id && g.GetProperty("actions").GetArrayLength() > 0);
+
+        // Readable again: offered and run.
+        rig.Radarr.FailWith = 0;
+        await rig.Store.RefreshForEventAsync(radarr.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.Equal("Succeeded", Json(await Act(rig, rig.AdminUser, "RadarrMainZ", "dl2", "remove")).GetProperty("status").GetString());
+    }
+
+    [Fact]
     public async Task EveryActionAndRefusalLeavesAnAuditRowAndRetryImportUsesTheArrsCommand()
     {
         using var rig = new Rig();

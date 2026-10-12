@@ -414,6 +414,8 @@ public class ApiArrRequestsHubTests
             Assert.NotNull(entry);
             Assert.Equal(("needsOk", "asked"), (entry!.Value.GetProperty("group").GetString(), entry.Value.GetProperty("status").GetProperty("stage").GetString()));
             Assert.Null(Find(sam, "ready", "movie:tmdb:45745"));
+            // The 4K card never links to the standard copy (Play would open the HD item).
+            Assert.False(entry.Value.TryGetProperty("itemId", out _));
             // Emma's own (standard) Sintel request is still ready for her.
             Assert.NotNull(Find(Root(await Hub(rig, rig.Emma)), "ready", "movie:tmdb:45745"));
         }
@@ -480,6 +482,38 @@ public class ApiArrRequestsHubTests
         Assert.Equal(StatusReasonCode.Approved, card!.Value.GetProperty("status").GetProperty("reason").GetProperty("code").GetString());
         var hub = new ArrAdminHubService(rig.Store, null!, rig.Requests, null, null, () => rig.Arr.Plugin.Plugin.Configuration, () => rig.Arr.Now);
         Assert.DoesNotContain(hub.Handoffs(rig.Arr.Now.UtcDateTime, TimeSpan.FromMinutes(15)), h => h.Key == "tv:tvdb:121361");
+    }
+
+    [Fact]
+    public async Task EachVariantOfARequestIsJudgedOnItsOwnInstances()
+    {
+        // The Matrix: only the 4K Radarr holds it. Emma's standard request (OK'd two days ago) is in
+        // no standard Radarr: listed, as a standard row. Sam's 4K request is held: not listed.
+        // Agent 327's standard request is in the standard Radarr, but its 4K request (OK'd) is in no
+        // 4K Radarr: the finished standard request doesn't hide the stuck 4K one.
+        using var rig = await Ready(r =>
+        {
+            r.Arr.Plugin.Plugin.Configuration.ArrPhase2Enabled = true;
+            r.Radarr4k.Movies.Add(FakeArr.Movie(5, 603, "The Matrix", path: "/data/movies4k/The Matrix (1999)"));
+            r.Seerr.Requests.Add(FakeSeerr.Request(51, "movie", 603, 2, r.Emma.UserId, Asked, Asked.AddHours(1), userName: "EmmaAsks"));
+            r.Seerr.Requests.Add(FakeSeerr.Request(52, "movie", 603, 2, r.Sam.UserId, Asked, Asked.AddHours(1), is4k: true));
+            r.Seerr.Requests.Add(FakeSeerr.Request(53, "movie", 457784, 2, r.Sam.UserId, Asked, Asked.AddHours(1), is4k: true, userName: "SamAsks"));
+        });
+        await Hub(rig, rig.Emma);   // reads both Radarr libraries
+        var hub = new ArrAdminHubService(rig.Store, null!, rig.Requests, null, null, () => rig.Arr.Plugin.Plugin.Configuration, () => rig.Arr.Now);
+        var handoffs = hub.Handoffs(rig.Arr.Now.UtcDateTime, TimeSpan.FromMinutes(15));
+        Assert.Contains(handoffs, h => h.Key == "movie:tmdb:603" && !h.FourK);
+        Assert.DoesNotContain(handoffs, h => h.Key == "movie:tmdb:603" && h.FourK);
+        Assert.Contains(handoffs, h => h.Key == "movie:tmdb:457784" && h.FourK);
+        Assert.DoesNotContain(handoffs, h => h.Key == "movie:tmdb:457784" && !h.FourK);
+        // The rows of one title's two variants are two rows with their own ids; the 4K one says so.
+        var items = NeedsAttention.Derive(rig.Arr.Now.UtcDateTime, 10, 10, Array.Empty<AttentionInstance>(), Array.Empty<BridgeMissing>(), new[]
+        {
+            new HandoffFact("movie:tmdb:1", "X", null, true, rig.Arr.Now.UtcDateTime, null),
+            new HandoffFact("movie:tmdb:1", "X", null, true, rig.Arr.Now.UtcDateTime, null, FourK: true),
+        });
+        Assert.Equal(2, items.Select(i => i.Id).Distinct().Count());
+        Assert.Equal("4k", Assert.Single(items, i => i.Params != null).Params!["variant"]);
     }
 
     [Fact]
@@ -597,6 +631,7 @@ public class ApiArrRequestsHubTests
             Assert.NotNull(entry);
             Assert.Equal(("needsOk", "asked"), (entry!.Value.GetProperty("group").GetString(), entry.Value.GetProperty("status").GetProperty("stage").GetString()));
             Assert.Null(Find(sam, "ready", "movie:tmdb:45745"));
+            Assert.False(entry.Value.TryGetProperty("itemId", out _));
         }
 
         // OK'd, and Seerr says the 4K copy is available (since two hours ago): Ready, arrived then.
@@ -614,7 +649,202 @@ public class ApiArrRequestsHubTests
             var ready = Find(Root(await Hub(rig, rig.Sam)), "ready", "movie:tmdb:45745");
             Assert.NotNull(ready);
             Assert.Equal(availableAt, ready!.Value.GetProperty("readyAt").GetDateTime().ToUniversalTime());
+            // Seerr names no 4K item: no Play (the standard copy is not the 4K one).
+            Assert.False(ready.Value.TryGetProperty("itemId", out _));
         }
+    }
+
+    [Fact]
+    public async Task PlayOnAFourKCardOpensOnlyTheFourKItemSeerrNamesAndOnlyWhenTheViewerCanOpenIt()
+    {
+        var fourK = Guid.NewGuid();
+        // No 4K instance in Jellyfin Enhanced; Seerr says the 4K copy is available and names its item.
+        async Task<JsonElement?> ReadyFor(Guid? seerrItem, bool visible, bool is4k = true, bool mergedWithSintel = false)
+        {
+            using var rig = await Ready(r =>
+            {
+                if (mergedWithSintel) seerrItem = r.Sintel;
+                Roles(r, radarr4k: false, sonarr4k: false);
+                SintelSince(r, -60);
+                r.View.AddCopy(TitleKey.Parse("movie:tmdb:45745")!, new JfCopy { ItemId = fourK, Path = "/media/movies4k/Sintel (2010)/Sintel.mkv", LibraryName = "Movies 4K", DateCreated = r.Arr.Now.UtcDateTime.AddHours(-2) }, visible ? Array.Empty<Guid>() : new[] { r.Admin.UserId });
+                var request = FakeSeerr.Request(21, "movie", 45745, 2, r.Sam.UserId, Asked.AddHours(6), r.Arr.Now.UtcDateTime.AddHours(-2), is4k: is4k);
+                request["media"]![is4k ? "status4k" : "status"] = 5;
+                if (seerrItem is Guid id) request["media"]![is4k ? "jellyfinMediaId4k" : "jellyfinMediaId"] = id.ToString();
+                r.Seerr.Requests.Add(request);
+            });
+            return Find(Root(await Hub(rig, rig.Sam)), "ready", "movie:tmdb:45745");
+        }
+        // A separate 4K copy the viewer can open: Play opens it.
+        Assert.Equal(fourK.ToString("N"), (await ReadyFor(fourK, visible: true))!.Value.GetProperty("itemId").GetString());
+        // Merged versions (Seerr names the one item that holds both): that item.
+        var merged = await ReadyFor(null, visible: true, mergedWithSintel: true);
+        Assert.NotNull(merged!.Value.GetProperty("itemId").GetString());
+        // Seerr names no item: no Play.
+        Assert.False((await ReadyFor(null, visible: true))!.Value.TryGetProperty("itemId", out _));
+        // The 4K copy is in a library the viewer can't open: no Play.
+        Assert.False((await ReadyFor(fourK, visible: false))!.Value.TryGetProperty("itemId", out _));
+        // An id Seerr names that isn't a copy of the title: ignored.
+        Assert.False((await ReadyFor(Guid.NewGuid(), visible: true))!.Value.TryGetProperty("itemId", out _));
+    }
+
+    [Fact]
+    public void SeerrsJellyfinItemOfTheVariantAskedForIsRead()
+    {
+        var item = Guid.NewGuid();
+        var std = Guid.NewGuid();
+        var json = FakeSeerr.Request(1, "movie", 603, 2, Guid.NewGuid(), Asked, is4k: true);
+        json["media"]!["jellyfinMediaId"] = std.ToString("N");
+        json["media"]!["jellyfinMediaId4k"] = item.ToString();
+        var fourK = SeerrRequestReadModel.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!;
+        Assert.Equal(item, fourK.JellyfinItemId);
+        json["is4k"] = false;
+        Assert.Equal(std, SeerrRequestReadModel.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!.JellyfinItemId);
+        json["media"]!["jellyfinMediaId"] = "not-a-guid";
+        Assert.Null(SeerrRequestReadModel.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!.JellyfinItemId);
+        // Part of the request's signature: a change of the matched item is a change.
+        json["media"]!["jellyfinMediaId"] = std.ToString("N");
+        var a = SeerrRequestReadModel.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!;
+        json["media"]!["jellyfinMediaId"] = Guid.NewGuid().ToString("N");
+        Assert.NotEqual(a.Signature, SeerrRequestReadModel.Parse(JsonDocument.Parse(json.ToJsonString()).RootElement)!.Signature);
+    }
+
+    [Fact]
+    public async Task AMemberWithLimitsNoLongerSeesTheirOwnRequestOnceJellyfinHasTheTitleAndHidesIt()
+    {
+        var kidFilm = TitleKey.Parse("movie:tmdb:666")!;
+        var copy = Guid.NewGuid();
+        using var rig = await Ready(r => r.View.AddCopy(kidFilm, new JfCopy { ItemId = copy, Path = "/media/movies/Kid Film/kid.mkv", LibraryName = "Movies" }, r.Admin.UserId));
+        // The kid's request: Jellyfin has the film and hides it from them (their limits judged it).
+        var kid = Root(await Hub(rig, rig.Kid));
+        Assert.Empty(kid.GetProperty("mine").EnumerateArray());
+        Assert.Empty(kid.GetProperty("ready").EnumerateArray());
+        var c = rig.StatusController(rig.Kid);
+        Assert.Equal(0, Root(await Send(c, () => c.GetStatuses(null, "movie:tmdb:666", default, false))).GetProperty("items").GetArrayLength());
+        Assert.False(rig.Service.MayFollow(rig.Kid, kidFilm));
+        var etag = (await Hub(rig, rig.Kid)).ETag;
+        // The limit is loosened (the copy becomes visible): it comes back, under a new ETag.
+        rig.View.CopiesByKey[kidFilm.ToString()][0] = (rig.View.CopiesByKey[kidFilm.ToString()][0].Copy, null);
+        rig.View.Rev++;
+        var again = await Hub(rig, rig.Kid);
+        Assert.NotEqual(etag, again.ETag);
+        Assert.Single(Root(again).GetProperty("mine").EnumerateArray().Concat(Root(again).GetProperty("ready").EnumerateArray()));
+        Assert.True(rig.Service.MayFollow(rig.Kid, kidFilm));
+    }
+
+    [Fact]
+    public async Task JellyfinCopiesAreFoundByEveryIdTheTitleIsKnownBy()
+    {
+        // Dune is in Jellyfin known only by its IMDb id (Radarr knows both): asked about by its TMDB
+        // key, the copy is found (Ready); a copy hidden from the viewer stays hidden.
+        var dune = Guid.NewGuid();
+        using var rig = await Ready(r => r.View.AddCopy(TitleKey.Parse("movie:imdb:tt693134")!, new JfCopy { ItemId = dune, Path = "/media/movies/Dune/Dune.mkv", LibraryName = "Movies", DateCreated = r.Arr.Now.UtcDateTime.AddHours(-1) }));
+        var status = await rig.Service.ForBatchAsync(rig.Emma, Array.Empty<Guid>(), new[] { TitleKey.Parse("movie:tmdb:693134")! }, default);
+        Assert.Equal("ready", JsonDocument.Parse(status.Json).RootElement.GetProperty("items")[0].GetProperty("stage").GetString());
+        Assert.Contains(rig.View.CopyQueries, q => q.Contains("movie:tmdb:693134") && q.Contains("movie:imdb:tt693134") && q.All(k => k.StartsWith("movie:", StringComparison.Ordinal)));
+        Assert.Equal(dune.ToString("N"), Find(Root(await Hub(rig, rig.Emma)), "ready", "movie:tmdb:693134")!.Value.GetProperty("itemId").GetString());
+        // Firefly (TVDB 78874) in Jellyfin only by its TMDB id 1437: Sonarr knows both.
+        rig.Sonarr.Series[0]["tmdbId"] = 1437;
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("SonarrZ").Id, ArrSnapshotKind.Library, force: true);
+        var tmdbOnly = Guid.NewGuid();
+        rig.View.CopiesByKey.Remove("tv:tvdb:78874");
+        rig.View.AddCopy(TitleKey.Parse("tv:tmdb:1437")!, new JfCopy { ItemId = tmdbOnly, Path = "/media/tv/Firefly", LibraryName = "Shows" }, rig.Admin.UserId);
+        rig.View.Rev++;
+        var c = rig.StatusController(rig.Emma);
+        var emma = Root(await Send(c, () => c.GetStatuses(null, "tv:tvdb:78874", default, false)));
+        // The copy is found, but Emma can't open it: the answer of a title nobody has (not Ready).
+        Assert.NotEqual("ready", emma.GetProperty("items")[0].GetProperty("stage").GetString());
+        var admin = rig.Service.CopiesOf(TitleKey.Parse("tv:tvdb:78874")!, rig.Admin);
+        Assert.Equal(tmdbOnly, Assert.Single(admin).ItemId);
+    }
+
+    [Fact]
+    public async Task OldOpenRequestsSurviveTheCapAndThePageSaysWhenThereAreMore()
+    {
+        using var rig = await Ready(r =>
+        {
+            // 30 old requests still waiting for an OK, then 220 newer ones Seerr says are available.
+            for (var i = 0; i < 30; i++)
+                r.Seerr.Requests.Add(FakeSeerr.Request(1000 + i, "movie", 50000 + i, 1, r.Sam.UserId, Asked.AddDays(-20).AddMinutes(i)));
+            for (var i = 0; i < 220; i++)
+                r.Seerr.Requests.Add(FakeSeerr.Request(2000 + i, "movie", 60000 + i, 5, r.Sam.UserId, Asked.AddMinutes(i), Asked.AddMinutes(i), mediaStatus: 5));
+            // And one declined 40 days ago: not listed (nor counted against the cap).
+            r.Seerr.Requests.Add(FakeSeerr.Request(3000, "movie", 70000, 3, r.Sam.UserId, Asked.AddDays(-41), Asked.AddDays(-40)));
+        });
+        var sam = Root(await Hub(rig, rig.Sam));
+        var waiting = sam.GetProperty("mine").EnumerateArray().Count(e => e.GetProperty("group").GetString() == "needsOk");
+        Assert.Equal(31, waiting);      // his 30 old ones and Sam Film
+        Assert.True(sam.GetProperty("more").GetBoolean());
+        Assert.False(Root(await Hub(rig, rig.Emma)).GetProperty("more").GetBoolean());
+    }
+
+    [Fact]
+    public async Task AReleaseDayStaysInComingSoonThroughThatDayWhereverTheViewerIs()
+    {
+        // Waiting Film (no arr has it): Seerr's (TMDB's) release date is today, a calendar day. At
+        // 14:00 UTC it is still today west of UTC: it stays in Coming soon, as a day.
+        using var rig = await Ready(r => r.Seerr.Movies[999]["releaseDate"] = r.Arr.Now.UtcDateTime.ToString("yyyy-MM-dd"));
+        rig.Arr.Now = rig.Arr.Now.UtcDateTime.Date.AddHours(14);
+        var entry = Find(Root(await Hub(rig, rig.Emma)), "soon", "movie:tmdb:999");
+        Assert.NotNull(entry);
+        Assert.Equal(rig.Arr.Now.UtcDateTime.ToString("yyyy-MM-dd"), entry!.Value.GetProperty("nextDay").GetString());
+        // The day is over everywhere (36 h after it began): gone.
+        rig.Arr.Now = rig.Arr.Now.UtcDateTime.Date.AddHours(37);
+        Assert.Null(Find(Root(await Hub(rig, rig.Emma)), "soon", "movie:tmdb:999"));
+        // An arr's release date is a day too.
+        var agent = Find(Root(await Hub(rig, rig.Emma)), "mine", "movie:tmdb:457784");
+        Assert.Equal("2026-10-20", agent!.Value.GetProperty("nextDay").GetString());
+        // ... and stays one past midnight UTC (Seerr has no date for it): at 1 AM UTC on the 20th it
+        // is still the 19th west of UTC, so Agent 327 is still coming, as that day.
+        rig.Arr.Now = new DateTimeOffset(2026, 10, 20, 1, 0, 0, TimeSpan.Zero);
+        var due = Find(Root(await Hub(rig, rig.Emma)), "soon", "movie:tmdb:457784");
+        Assert.NotNull(due);
+        Assert.Equal("2026-10-20", due!.Value.GetProperty("nextDay").GetString());
+        rig.Arr.Now = new DateTimeOffset(2026, 10, 21, 13, 0, 0, TimeSpan.Zero);
+        Assert.Null(Find(Root(await Hub(rig, rig.Emma)), "soon", "movie:tmdb:457784"));
+    }
+
+    [Fact]
+    public async Task ACinemaOnlyReleaseStaysInComingSoonThroughItsCalendarDay()
+    {
+        using var rig = await Ready(r =>
+        {
+            var movie = r.Radarr.Movies[2];
+            movie["digitalRelease"] = null;
+            movie["inCinemas"] = "2026-10-20T00:00:00Z";
+            r.Seerr.Movies[457784]["releaseDate"] = null;
+        });
+        rig.Arr.Now = new DateTimeOffset(2026, 10, 20, 1, 0, 0, TimeSpan.Zero);
+        var entry = Find(Root(await Hub(rig, rig.Emma)), "soon", "movie:tmdb:457784");
+        Assert.NotNull(entry);
+        Assert.Equal("2026-10-20", entry!.Value.GetProperty("nextDay").GetString());
+        Assert.Equal("not_released", entry.Value.GetProperty("status").GetProperty("reason").GetProperty("code").GetString());
+        rig.Arr.Now = new DateTimeOffset(2026, 10, 21, 13, 0, 0, TimeSpan.Zero);
+        var later = Root(await Hub(rig, rig.Emma));
+        Assert.Null(Find(later, "soon", "movie:tmdb:457784"));
+        Assert.Equal("in_cinemas", Find(later, "mine", "movie:tmdb:457784")!.Value.GetProperty("status").GetProperty("reason").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task ThePageSaysSoWhenASonarrOrRadarrsDownloadsCantBeRead()
+    {
+        using var rig = await Ready();
+        Assert.False(Root(await Hub(rig, rig.Emma)).GetProperty("arr").GetProperty("unavailable").GetBoolean());
+        rig.Radarr.FailWith = 503;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await Hub(rig, rig.Emma);
+        for (var i = 0; i < 300 && !rig.Store.PipelineExpired(rig.Arr.Instance("RadarrMainZ")); i++)
+        {
+            await Task.Delay(10);
+            await Hub(rig, rig.Emma);
+        }
+        var emma = await Hub(rig, rig.Emma);
+        var root = Root(emma);
+        Assert.True(root.GetProperty("arr").GetProperty("unavailable").GetBoolean());
+        // Dune isn't "Downloading 50 %" any more, and no instance name reaches the family body.
+        var dune = Find(root, "mine", "movie:tmdb:693134");
+        Assert.Equal("service_down", dune!.Value.GetProperty("status").GetProperty("reason").GetProperty("code").GetString());
+        Assert.False(dune.Value.GetProperty("status").TryGetProperty("progress", out _));
+        foreach (var word in Forbidden.Split('|')) Assert.DoesNotContain(word, emma.Body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -663,6 +893,87 @@ public class ApiArrRequestsHubTests
         Assert.NotNull(ready);
         Assert.Equal(arrived, ready!.Value.GetProperty("readyAt").GetDateTime().ToUniversalTime());
         Assert.Equal(fourKItem.ToString("N"), ready.Value.GetProperty("itemId").GetString());
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task AFourKSeriesRequestWithoutSeasonsNeverFollowsTheStandardCopy(bool hasFourKSeries, bool monitored)
+    {
+        const string firefly = "tv:tvdb:78874";
+        using var rig = await Ready(r =>
+        {
+            var sonarr4k = Roles(r, radarr4k: true, sonarr4k: true)!;
+            r.Sonarr.Series[0]["seasons"] = new JsonArray(new JsonObject { ["seasonNumber"] = 1, ["monitored"] = true, ["statistics"] = new JsonObject { ["episodeCount"] = 1, ["episodeFileCount"] = 1, ["totalEpisodeCount"] = 1 } });
+            r.Sonarr.Episodes[0]["episodeNumber"] = 1;
+            r.Sonarr.Episodes[0]["hasFile"] = true;
+            FireflyS1Since(r, -1);
+            r.View.CopiesByKey[firefly].Clear();
+            r.View.AddCopy(TitleKey.Parse(firefly)!, new JfCopy { ItemId = r.Firefly, Path = "/media/tv/Firefly", LibraryName = "Shows", DateCreated = r.Arr.Now.UtcDateTime.AddDays(-1) });
+            if (hasFourKSeries)
+            {
+                var row = FakeArr.SeriesRow(1, 78874, "Firefly");
+                row["path"] = "/data/tv4k/Firefly";
+                row["statistics"]!["episodeFileCount"] = 0;
+                row["seasons"] = new JsonArray(new JsonObject { ["seasonNumber"] = 1, ["monitored"] = monitored, ["statistics"] = new JsonObject { ["episodeCount"] = 1, ["episodeFileCount"] = 0, ["totalEpisodeCount"] = 1 } });
+                sonarr4k.Series.Add(row);
+            }
+            r.Seerr.Requests.Add(FakeSeerr.Request(23, "tv", 1437, 2, r.Emma.UserId, Asked.AddHours(6), Asked.AddHours(7), tvdb: 78874, is4k: true, seasons: []));
+        });
+        var root = Root(await Hub(rig, rig.Emma));
+        Assert.Null(Find(root, "ready", firefly));
+        var entry = Find(root, "mine", firefly);
+        Assert.NotNull(entry);
+        Assert.Equal(monitored ? "looking" : "approved", entry!.Value.GetProperty("status").GetProperty("stage").GetString());
+        Assert.False(entry.Value.TryGetProperty("itemId", out var id) && id.ValueKind == JsonValueKind.String);
+        if (monitored) Assert.Equal(1, entry.Value.GetProperty("status").GetProperty("summary").GetProperty("missing").GetInt32());
+    }
+
+    [Fact]
+    public async Task AFourKSeasonRequestHeldOnlyByTheFourKSonarrNeverOpensTheStandardCopy()
+    {
+        const string firefly = "tv:tvdb:78874";
+        // Only the 4K Sonarr has Firefly (root /data/tv4k, no links or mappings); Jellyfin has the
+        // standard copy only (Season 1 for two months). Emma's 4K request for Season 1 was OK'd.
+        using var rig = await Ready(r =>
+        {
+            var sonarr4k = Roles(r, radarr4k: true, sonarr4k: true)!;
+            var row = FakeArr.SeriesRow(1, 78874, "Firefly");
+            row["path"] = "/data/tv4k/Firefly";
+            row["seasons"] = new JsonArray(new JsonObject { ["seasonNumber"] = 1, ["monitored"] = true, ["statistics"] = new JsonObject { ["episodeCount"] = 1, ["episodeFileCount"] = 0, ["totalEpisodeCount"] = 1 } });
+            sonarr4k.Series.Add(row);
+            r.Sonarr.Series.Clear();
+            r.Sonarr.Episodes.Clear();
+            FireflyS1Since(r, -60);
+            r.Seerr.Requests.Add(FakeSeerr.Request(23, "tv", 1437, 2, r.Emma.UserId, Asked.AddHours(6), Asked.AddHours(7), tvdb: 78874, is4k: true, seasons: [1]));
+        });
+        var emma = Root(await Hub(rig, rig.Emma));
+        Assert.Null(Find(emma, "ready", firefly));
+        var entry = Find(emma, "mine", firefly);
+        Assert.NotNull(entry);
+        Assert.NotEqual("ready", entry!.Value.GetProperty("status").GetProperty("stage").GetString());
+        Assert.False(entry.Value.TryGetProperty("itemId", out var id) && id.ValueKind == JsonValueKind.String);
+    }
+
+    [Fact]
+    public async Task AnOldRequestWhoseTitleArrivedYesterdayIsListedAsReady()
+    {
+        // OK'd 40 days ago; Seerr's media sync marked it available without touching the request;
+        // Jellyfin got it yesterday. It is ready since yesterday, not finished long ago.
+        var item = Guid.NewGuid();
+        using var rig = await Ready(r =>
+        {
+            var old = r.Arr.Now.UtcDateTime.AddDays(-40);
+            r.Seerr.Requests.Add(FakeSeerr.Request(60, "movie", 4242, 2, r.Sam.UserId, old, old, mediaStatus: 5));
+            r.Seerr.Movies[4242] = new JsonObject { ["title"] = "Late Film", ["releaseDate"] = "2024-01-01", ["posterPath"] = "/p4242.jpg" };
+            var key = TitleKey.Parse("movie:tmdb:4242")!;
+            r.View.AddItem(new JfItemRef { ItemId = item, Kind = "movie", Key = key, Path = "/media/movies/Late Film (2024)/Late.mkv", DateCreated = r.Arr.Now.UtcDateTime.AddDays(-1) });
+            r.View.AddCopy(key, new JfCopy { ItemId = item, Path = "/media/movies/Late Film (2024)/Late.mkv", LibraryName = "Movies", DateCreated = r.Arr.Now.UtcDateTime.AddDays(-1) });
+        });
+        var ready = Find(Root(await Hub(rig, rig.Sam)), "ready", "movie:tmdb:4242");
+        Assert.NotNull(ready);
+        Assert.Equal(item.ToString("N"), ready!.Value.GetProperty("itemId").GetString());
     }
 
     [Fact]
@@ -732,6 +1043,49 @@ public class ApiArrRequestsHubTests
         Assert.Equal(400, (await Manage(rig, rig.Admin, null, "movie:nope:1")).Status);
         Assert.Equal(400, (await Manage(rig, rig.Admin, "not-a-guid", null)).Status);
         Assert.Equal(404, (await Manage(rig, rig.Admin, Guid.NewGuid().ToString("N"), null)).Status);
+    }
+
+    [Fact]
+    public async Task TheDrawerSaysHowManyMoreQueueRowsAndDownloadsThereAreThanItLists()
+    {
+        // Firefly: a 60-episode season pack (one download) and 25 single-episode downloads.
+        using var rig = await Ready(r =>
+        {
+            r.Arr.Plugin.Plugin.Configuration.ArrPhase2Enabled = true;
+            for (var e = 1; e <= 60; e++)
+            {
+                var row = FakeArr.SonarrQueueRow(100 + e, "pack", 1, e, "Firefly", 78874);
+                r.Sonarr.Queue.Add(row);
+            }
+            for (var d = 1; d <= 25; d++) r.Sonarr.Queue.Add(FakeArr.SonarrQueueRow(500 + d, "single" + d, 2, d, "Firefly", 78874));
+        });
+        var root = Root(await Manage(rig, rig.Admin, null, "tv:tvdb:78874"));
+        var sonarr = root.GetProperty("instances").EnumerateArray().Single(i => i.GetProperty("name").GetString() == "SonarrZ");
+        Assert.Equal((50, 85), (sonarr.GetProperty("queue").GetArrayLength(), sonarr.GetProperty("queueTotal").GetInt32()));
+        Assert.Equal((20, 26), (sonarr.GetProperty("downloads").GetArrayLength(), sonarr.GetProperty("downloadsTotal").GetInt32()));
+    }
+
+    [Fact]
+    public async Task TheDrawerOffersNoDownloadsFromAQueueThatCantBeReadAndSaysWhenItWasLastRead()
+    {
+        using var rig = await Ready(r => r.Arr.Plugin.Plugin.Configuration.ArrPhase2Enabled = true);
+        static JsonElement Main(JsonElement root) => root.GetProperty("instances").EnumerateArray().Single(i => i.GetProperty("name").GetString() == "RadarrMainZ");
+        static bool Has(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind != JsonValueKind.Null;
+        var live = Main(Root(await Manage(rig, rig.Admin, null, "movie:tmdb:693134")));
+        Assert.Equal((1, 1, false, false), (live.GetProperty("queue").GetArrayLength(), live.GetProperty("downloads").GetArrayLength(), Has(live, "queueAsOf"), live.GetProperty("queueExpired").GetBoolean()));
+        // Radarr stops answering for longer than the queue's serving limit (10 minutes).
+        rig.Radarr.FailWith = 503;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await Manage(rig, rig.Admin, null, "movie:tmdb:693134");
+        for (var i = 0; i < 300 && !rig.Store.PipelineExpired(rig.Arr.Instance("RadarrMainZ")); i++)
+        {
+            await Task.Delay(10);
+            await Manage(rig, rig.Admin, null, "movie:tmdb:693134");
+        }
+        var gone = Main(Root(await Manage(rig, rig.Admin, null, "movie:tmdb:693134")));
+        Assert.Equal((0, 0, 0, 0), (gone.GetProperty("queue").GetArrayLength(), gone.GetProperty("queueTotal").GetInt32(), gone.GetProperty("downloads").GetArrayLength(), gone.GetProperty("downloadsTotal").GetInt32()));
+        Assert.True(gone.GetProperty("queueExpired").GetBoolean());
+        Assert.True(Has(gone, "queueAsOf"));
     }
 
     [Fact]

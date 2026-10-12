@@ -78,6 +78,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public const string Downloading = "downloading";
         /// <summary>The arr warns about the download.</summary>
         public const string Stalled = "stalled";
+        /// <summary>The download client can't be reached: no progress is known (family: "taking longer than usual").</summary>
+        public const string ClientUnavailable = "client_unavailable";
         /// <summary>The download failed; the arr looks for another copy.</summary>
         public const string Failed = "failed";
         /// <summary>Downloaded; the arr is importing it.</summary>
@@ -131,6 +133,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public const string MonitorAndSearch = "monitor_and_search";
         /// <summary>Check the instance (System / health).</summary>
         public const string Health = "health";
+        /// <summary>Check the download client (is it running, can the arr reach it).</summary>
+        public const string CheckClient = "check_client";
     }
 
     /// <summary>A reason code and its parameters (dates as ISO 8601 UTC, numbers as text). Family-safe values only.</summary>
@@ -192,6 +196,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Next air time (UTC).</summary>
         public DateTime? NextAir { get; init; }
+
+        /// <summary>
+        /// <see cref="NextAir"/> is a calendar day (Sonarr gave only the air date), not an instant.
+        /// Server-side only: the statuses carry it as <c>nextDay</c>.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool NextAirIsDay { get; init; }
+
+        /// <summary>
+        /// Of <see cref="Missing"/>, the episodes whose downloads can't be checked now (their
+        /// instance's queue or history expired); the client shows them as taking longer, not missing.
+        /// </summary>
+        public int Unknown { get; init; }
 
         /// <summary>Season of the next episode.</summary>
         public int? NextSeason { get; init; }
@@ -385,6 +402,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Release, air or "expected" date, when there is one.</summary>
         public DateTime? NextDate { get; init; }
+
+        /// <summary>
+        /// <see cref="NextDate"/> as a calendar day ("yyyy-MM-dd") when it is a date without a time (a
+        /// release date, an air date with no time): shown as that day in every time zone. Null otherwise.
+        /// </summary>
+        public string? NextDay { get; init; }
 
         /// <summary>Journey strip (details pages only).</summary>
         public IReadOnlyList<JourneyStop>? Journey { get; init; }
