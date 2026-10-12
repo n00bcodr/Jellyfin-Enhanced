@@ -20,6 +20,12 @@ const lockableKeys = fixture('lockable-keys.json');
 /** The page's loader for the policy script (inside its first inline script), as it ships. */
 const loaderSource = /\(function \(\) \{\s*function showPolicyLoadFailure\(\)[\s\S]*?\n        \}\)\(\);/.exec(pageSource)?.[0];
 
+/** The page's quality-category arrows (helper + delegated click handler), taken from configPage.html as it ships. */
+const categoryArrowsSource = [
+  /function refreshQualityCatAdminArrows\(container\) \{[\s\S]*?\n        \}/.exec(pageSource)?.[0],
+  /\(function \(\) \{\s*document\.addEventListener\('click', function \(e\) \{\s*var btn = e\.target\.closest && e\.target\.closest\('#qualityCategoriesAdmin[\s\S]*?\n        \}\)\(\);/.exec(pageSource)?.[0]
+];
+
 /** The page's own save-side lock decision, taken from configPage.html as it ships. */
 const applyLocksSource = /function jeApplyUserSettingsLocks\(config\) \{[\s\S]*?\n        \}/.exec(pageSource)?.[0];
 
@@ -111,6 +117,52 @@ test('ticking a lock explains its effect before saving and marks the form change
   h.policy.markSaved(h.policy.applyLocks([]));
   assert.equal(h.policy.pendingState(), '');
   assert.equal(impact.hidden, true);
+});
+
+test('the impact text follows the admin value when the control (or the tag order) changes after the lock is ticked', async t => {
+  const h = setup(t);
+  await h.policy.decorate(h.page);
+  const impact = h.document.querySelector('#jeUserSettingsPolicyImpact');
+  const pip = h.page.querySelector('#autoPipEnabled');
+  pip.checked = false;
+  h.tick('AutoPipEnabled');
+  assert.match(impact.textContent, /Locking Auto Picture-in-Picture on tab switch to Off:/);
+
+  pip.checked = true;
+  pip.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.match(impact.textContent, /Locking Auto Picture-in-Picture on tab switch to On: users who chose something else will see On\./);
+  assert.doesNotMatch(impact.textContent, /to Off/);
+
+  // A select-backed setting.
+  const select = h.page.querySelector('#watchProgressDefaultMode');
+  h.tick('WatchProgressMode');
+  select.value = 'time';
+  select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  const option = [...select.options].find(entry => entry.value === 'time').textContent.trim();
+  assert.ok(impact.textContent.includes(' to ' + option + ': users who chose something else will see ' + option + '.'));
+
+  // A tag order row moved by its arrows (the page moves the row element).
+  h.tick('ResolutionTagOrder');
+  assert.match(impact.textContent, /to position 1:/);
+  assert.ok(categoryArrowsSource.every(Boolean), 'the page still has its category arrows');
+  h.window.eval(categoryArrowsSource.join('\n'));
+  const container = h.page.querySelector('#qualityCategoriesAdmin');
+  const order = () => [...container.querySelectorAll('[data-order-key]')].map(row => row.dataset.orderKey);
+  // Badges sit inside their rows, so the arrows (which swap a row with the next element) still work.
+  assert.deepEqual([...container.children].filter(child => !child.matches('.je-quality-cat-admin-row, .fieldDescription')), []);
+  container.querySelector('[data-order-key="ResolutionTagOrder"] .je-cat-down').click();
+  assert.deepEqual(order().slice(0, 2), ['SourceTagOrder', 'ResolutionTagOrder']);
+  assert.match(container.querySelector('[data-order-key="ResolutionTagOrder"] .je-user-default-badge').textContent, / · 1 of 2 locked ›$/);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(impact.textContent, /to position 2:/);
+  assert.doesNotMatch(impact.textContent, /to position 1:/);
+
+  // A control with no lock change leaves the text as it is.
+  const before = impact.textContent;
+  const other = h.page.querySelector('#showFileSizes');
+  other.checked = !other.checked;
+  other.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.equal(impact.textContent, before);
 });
 
 test('saving locks: fetched minus unticked rendered rows plus ticked ones; unknown keys keep their lock', async t => {

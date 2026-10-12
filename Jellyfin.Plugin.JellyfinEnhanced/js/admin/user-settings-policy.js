@@ -255,7 +255,11 @@
             }
             badge.appendChild(document.createTextNode(' '));
             badge.appendChild(jumpLink('›', 'admin', '#' + ROW_ID_PREFIX + items[0].entry.Key, 'Lock or unlock in User settings policy'));
-            anchor.insertAdjacentElement('afterend', badge);
+            // A quality tag category row is moved by its arrows, which swap it with the next row
+            // element: its badge goes inside the row (under the checkbox) so it moves with it.
+            const inside = anchor.matches('.je-quality-cat-admin-row') && anchor.querySelector('.checkboxContainer');
+            if (inside) inside.appendChild(badge);
+            else anchor.insertAdjacentElement('afterend', badge);
         });
     }
 
@@ -463,6 +467,7 @@
         api.ready = true;
         refresh();
         bindPolicyExtras(page);
+        watchControls(page);
         state.overview = null;
         if (isDetailsOpen(page)) showCounts(page);
         showUpgradeCard(page);
@@ -668,6 +673,29 @@
         if (button && !button.dataset.jeBound) {
             button.dataset.jeBound = '1';
             button.addEventListener('click', () => openApplyDialog());
+        }
+    }
+
+    /**
+     * Rewrites the lock impact text when a control that holds a locked setting's admin value
+     * changes, or the quality tag categories are reordered, so the text shows the value the lock
+     * would enforce now. Bound once per page element.
+     * @param {Element} page The admin page.
+     */
+    function watchControls(page) {
+        if (page.dataset.jeImpactBound) return;
+        page.dataset.jeImpactBound = '1';
+        const update = (event) => {
+            if (state.page !== page) return;
+            const target = event.target;
+            const mirrored = Array.from(state.byKey.values()).some(item => item.control && (item.control === target || item.control.contains(target)));
+            if (mirrored) renderImpact(page);
+        };
+        page.addEventListener('change', update);
+        page.addEventListener('input', update);
+        const order = page.querySelector('#qualityCategoriesAdmin');
+        if (order && typeof MutationObserver === 'function') {
+            new MutationObserver(() => { if (state.page === page) renderImpact(page); }).observe(order, { childList: true });
         }
     }
 
