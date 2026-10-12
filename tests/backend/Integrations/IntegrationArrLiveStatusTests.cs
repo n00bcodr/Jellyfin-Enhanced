@@ -610,6 +610,164 @@ public class IntegrationArrLiveStatusTests
     }
 
     [Fact]
+    public async Task ADownloadAPagedQueueReadMissedKeepsDownloadingUntilItReallyLeaves()
+    {
+        using var rig = new Rig();
+        // Alpha downloading in the middle of a 1001-row Radarr queue (read over three pages).
+        for (var i = 1; i <= 1000; i++) rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(1000 + i, 90000 + i, "Filler" + i));
+        var alpha = FakeArr.RadarrQueueRow(1, 101, "Alpha");
+        rig.Radarr.Queue.Insert(500, alpha);
+        async Task Refresh()
+        {
+            rig.Store.RequestRefresh(rig.RadarrConn.Id, ArrSnapshotKind.Queue);
+            rig.Arr.Now += TimeSpan.FromSeconds(3);
+            await Task.WhenAll(rig.Store.Tick());
+            await Until(() => rig.Store.Describe().Instances.All(x => x.Snapshots.All(s => !s.Refreshing)));
+        }
+        await rig.KeyAsync("movie:tmdb:101");
+        Assert.Equal("downloading", Stage((await rig.KeyAsync("movie:tmdb:101")).Body));
+
+        // A download ahead of it leaves between pages 1 and 2 and another joins: the read is
+        // complete by count, yet Alpha slid onto page 1 unseen. It is still downloading.
+        var churned = false;
+        rig.Radarr.BeforePage = (path, page) =>
+        {
+            if (path != "/api/v3/queue" || page != 2 || churned) return;
+            churned = true;
+            rig.Radarr.Queue.RemoveAt(0);
+            rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(3000, 93000, "Joined"));
+        };
+        await Refresh();
+        var missed = rig.Store.PeekQueue(rig.RadarrConn.Id)!;
+        Assert.True(missed.Paged);
+        Assert.False(missed.Incomplete);
+        Assert.DoesNotContain(missed.Records, r => r.MovieId == 1);
+        // Page 1 already saw the filler before it left: only Alpha is a suspect so far.
+        Assert.Contains(missed.Records, r => r.MovieId == 1001);
+        Assert.Equal(1, Assert.Single(rig.Store.MissedQueueRows(rig.RadarrConn)).MovieId);
+        Assert.Null(rig.Store.LeftQueueAt(rig.RadarrConn, 1, null));
+        Assert.Equal("downloading", Stage((await rig.KeyAsync("movie:tmdb:101")).Body));
+
+        // It imports: the next complete read lacks it too, so it left. Neither read holds its row,
+        // so the confirmation itself announces the title, and the status says "almost ready".
+        rig.Radarr.BeforePage = null;
+        rig.Radarr.Queue.Remove(alpha);
+        var cursor = rig.Feed.Revision("movie:tmdb:101");
+        // Hold this read's observer while a later read publishes: departure metadata belongs
+        // to the confirming read, not a mutable field the later read can overwrite.
+        using var held = new SemaphoreSlim(0);
+        using var entered = new SemaphoreSlim(0);
+        var changes = new System.Collections.Concurrent.ConcurrentQueue<ArrSnapshotChange>();
+        rig.Store.SnapshotChanged += c => { if (c.Kind == ArrSnapshotKind.Queue && c.Instance.Id == rig.RadarrConn.Id) changes.Enqueue(c); };
+        var once = 0;
+        rig.Store.QueueRefreshedHook = (_, _) =>
+        {
+            if (Interlocked.Exchange(ref once, 1) != 0) return;
+            entered.Release();
+            held.Wait(TimeSpan.FromSeconds(10));
+        };
+        var confirming = Task.Run(() => rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true));
+        ArrQueueSnapshot? confirmingSnapshot = null;
+        try
+        {
+            Assert.True(await entered.WaitAsync(TimeSpan.FromSeconds(10)));
+            confirmingSnapshot = rig.Store.PeekQueue(rig.RadarrConn.Id);
+            Assert.NotNull(confirmingSnapshot);
+            Assert.NotNull(rig.Store.LeftQueueAt(rig.RadarrConn, 1, null));
+            // This read confirms Alpha, but first misses the filler that page 1 had seen.
+            Assert.Null(rig.Store.LeftQueueAt(rig.RadarrConn, 1001, null));
+            Assert.Equal(1001, Assert.Single(rig.Store.MissedQueueRows(rig.RadarrConn)).MovieId);
+            await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        }
+        finally { held.Release(); }
+        await confirming;
+        var alphaChange = Assert.Single(changes, c => ReferenceEquals(c.After, confirmingSnapshot));
+        Assert.Equal("dl1", Assert.Single(alphaChange.Departed!).DownloadId);
+        // The later read confirms the filler. It must not overwrite the delayed Alpha payload.
+        var fillerChange = Assert.Single(changes, c => !ReferenceEquals(c.After, confirmingSnapshot));
+        Assert.Equal("dl1001", Assert.Single(fillerChange.Departed!).DownloadId);
+        Assert.Equal(new[] { 1, 1001 }, changes.SelectMany(c => c.Departed ?? Array.Empty<ArrQueueEntry>()).Select(r => r.MovieId!.Value).OrderBy(id => id));
+        Assert.Empty(rig.Store.MissedQueueRows(rig.RadarrConn));
+        Assert.DoesNotContain(rig.Store.PeekQueue(rig.RadarrConn.Id)!.Records, r => r.MovieId is 1 or 1001);
+        Assert.NotNull(rig.Store.LeftQueueAt(rig.RadarrConn, 1001, null));
+        Assert.NotNull(rig.Store.LeftQueueAt(rig.RadarrConn, 1, null));
+        await Until(() => rig.Feed.Revision("movie:tmdb:101") > cursor);
+        Assert.Equal("almostReady", Stage((await rig.KeyAsync("movie:tmdb:101")).Body));
+    }
+
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 1)]
+    [InlineData(false, 11)]
+    [InlineData(true, 11)]
+    public async Task MissedQueueRowsKeepTheirClocksButNeverRenewTheirEtaOrServingLimit(bool warned, int minutes)
+    {
+        using var rig = new Rig();
+        for (var i = 1; i <= 1000; i++) rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(1000 + i, 90000 + i, "Filler" + i));
+        var alpha = FakeArr.RadarrQueueRow(1, 101, "Alpha", status: warned ? "warning" : "ok");
+        rig.Radarr.Queue.Insert(500, alpha);
+        await rig.KeyAsync("movie:tmdb:101");
+        await Settle(rig.Store);
+        var row = rig.Store.PeekQueue(rig.RadarrConn.Id)!.Records.Single(r => r.MovieId == 1);
+        var first = rig.Store.QueueSeen(rig.RadarrConn, row);
+        Assert.Equal(warned, first.AttentionSince.HasValue);
+        var churned = false;
+        rig.Radarr.BeforePage = (path, page) =>
+        {
+            if (path != "/api/v3/queue" || page != 2 || churned) return;
+            churned = true;
+            rig.Radarr.Queue.RemoveAt(0);
+            rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(3000, 93000, "Joined"));
+        };
+        rig.Arr.Now += TimeSpan.FromMinutes(minutes);
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.DoesNotContain(rig.Store.PeekQueue(rig.RadarrConn.Id)!.Records, r => r.MovieId == 1);
+        Assert.Equal(first, rig.Store.QueueSeen(rig.RadarrConn, row));
+        Assert.Null(rig.Store.LeftQueueAt(rig.RadarrConn, 1, null));
+        var missed = await rig.KeyAsync("movie:tmdb:101");
+        if (minutes > 10)
+        {
+            // A fresh complete read did not see Alpha. Its old state cannot become fresh again.
+            Assert.Equal("service_down", Code(missed.Body));
+            Assert.Null(ProgressOf(missed.Body));
+            Assert.Empty(rig.Store.MissedQueueRows(rig.RadarrConn));
+        }
+        else
+        {
+            Assert.Equal("downloading", Stage(missed.Body));
+            Assert.Equal(50, ProgressOf(missed.Body)!.Value.GetProperty("percent").GetInt32());
+            Assert.False(ProgressOf(missed.Body)!.Value.TryGetProperty("etaSeconds", out _));
+            rig.Radarr.FailWith = 503;
+            rig.Arr.Now += TimeSpan.FromSeconds(10);
+            await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+            var failed = await rig.KeyAsync("movie:tmdb:101");
+            Assert.False(ProgressOf(failed.Body)!.Value.TryGetProperty("etaSeconds", out _));
+            rig.Arr.Now += TimeSpan.FromMinutes(11);
+            await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+            var expired = await rig.KeyAsync("movie:tmdb:101");
+            Assert.Equal("service_down", Code(expired.Body));
+            Assert.Null(ProgressOf(expired.Body));
+        }
+        // Seeing the same download again preserves the clock, even after its state expired.
+        rig.Radarr.FailWith = 0;
+        rig.Radarr.BeforePage = null;
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.Equal(first, rig.Store.QueueSeen(rig.RadarrConn, row));
+        Assert.Equal("downloading", Stage((await rig.KeyAsync("movie:tmdb:101")).Body));
+        // Departure proof forgets that clock; a new grab starts a new one.
+        rig.Radarr.Queue.Remove(alpha);
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.NotNull(rig.Store.LeftQueueAt(rig.RadarrConn, 1, null));
+        rig.Arr.Now += TimeSpan.FromMinutes(1);
+        rig.Radarr.Queue.Insert(500, alpha);
+        await rig.Store.RefreshForEventAsync(rig.RadarrConn.Id, ArrSnapshotKind.Queue, force: true);
+        var newClock = rig.Store.QueueSeen(rig.RadarrConn, row);
+        Assert.Equal(rig.Arr.Now.UtcDateTime, newClock.ReasonSince);
+        Assert.Equal(warned ? rig.Arr.Now.UtcDateTime : (DateTime?)null, newClock.AttentionSince);
+    }
+
+    [Fact]
     public async Task JellyfinAddsOfTitlesKnownByAnotherIdAnnounceTheArrCopysKey()
     {
         using var rig = new Rig();

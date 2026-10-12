@@ -93,7 +93,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             return ArrResult<ArrEpisodesSnapshot>.Success(new ArrEpisodesSnapshot(seriesId, list));
         }
 
-        /// <summary>The whole queue, every page (the old routes stopped at 1000 rows).</summary>
+        /// <summary>
+        /// The whole queue, every page (the old routes stopped at 1000 rows), counted by row id. Rows
+        /// move between pages while they are read (both arrs sort by the changing time left): when
+        /// fewer distinct rows came back than the arr reported, the queue is read once more; when
+        /// that is short too, the read is published marked <see cref="ArrQueueSnapshot.Incomplete"/>.
+        /// That is not a failure (the arr answered): the slot keeps a recent complete snapshot over
+        /// it, and no row that was merely missed is taken for a download that left the queue.
+        /// </summary>
         internal static async Task<ArrResult<ArrQueueSnapshot>> LoadQueueAsync(ArrClient client, CancellationToken ct)
         {
             if (await CheckAppAsync(client, ct).ConfigureAwait(false) is { } wrong) return ArrResult<ArrQueueSnapshot>.Failure(wrong);
@@ -101,17 +108,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             var query = client.Connection.Kind == ArrKind.Sonarr
                 ? Query(("includeEpisode", "true"), ("includeSeries", "true"), ("sortKey", "timeleft"), ("sortDirection", "ascending"))
                 : Query(("includeMovie", "true"));
-            var pages = await client.GetAllPagesAsync<ArrWireQueueRecord>("queue", query, pageSize: 500, maxRecords: QueueMaxRecords, cancellationToken: ct).ConfigureAwait(false);
-            if (!pages.Ok) return ArrResult<ArrQueueSnapshot>.Failure(pages.Error!);
-
-            // Rows can move between pages while they are read: keep the first sighting of each id.
-            var seen = new HashSet<int>();
-            var rows = new List<ArrQueueEntry>(pages.Value!.Records.Count);
-            foreach (var r in pages.Value.Records)
+            ArrPagedList<ArrWireQueueRecord>? read = null;
+            for (var attempt = 0; attempt < 2 && (read == null || read.Short); attempt++)
             {
-                if (seen.Add(r.Id)) rows.Add(ToQueueEntry(r));
+                var pages = await client.GetAllPagesAsync<ArrWireQueueRecord>("queue", query, pageSize: 500, maxRecords: QueueMaxRecords, cancellationToken: ct, idOf: r => r.Id).ConfigureAwait(false);
+                if (!pages.Ok) return ArrResult<ArrQueueSnapshot>.Failure(pages.Error!);
+                read = pages.Value!;
             }
-            return ArrResult<ArrQueueSnapshot>.Success(new ArrQueueSnapshot { Records = rows, TotalRecords = pages.Value.TotalRecords, Truncated = pages.Value.Truncated });
+            var rows = read!.Records.Select(ToQueueEntry).ToList();
+            return ArrResult<ArrQueueSnapshot>.Success(new ArrQueueSnapshot { Records = rows, TotalRecords = read.TotalRecords, Paged = read.Pages > 1, Truncated = read.Truncated, Incomplete = read.Short });
+        }
+
+        /// <summary>
+        /// The queue in one unpaged read (<c>queue/details</c>), for when every row of one download
+        /// must be known and the paged snapshot may be missing some: rows can't move between pages
+        /// of a read that has none. Narrowed to one movie or series when it is known.
+        /// </summary>
+        internal static async Task<ArrResult<List<ArrQueueEntry>>> LoadQueueDetailsAsync(ArrClient client, int? arrId, CancellationToken ct)
+        {
+            var sonarr = client.Connection.Kind == ArrKind.Sonarr;
+            var pairs = new List<(string Key, string Value)>(sonarr ? new[] { ("includeEpisode", "true"), ("includeSeries", "true") } : new[] { ("includeMovie", "true") });
+            if (arrId is int id) pairs.Add((sonarr ? "seriesId" : "movieId", id.ToString(CultureInfo.InvariantCulture)));
+            var read = await client.GetAsync<List<ArrWireQueueRecord>>("queue/details", Query(pairs.ToArray()), ArrCallClass.List, ct).ConfigureAwait(false);
+            if (!read.Ok) return ArrResult<List<ArrQueueEntry>>.Failure(read.Error!);
+            return ArrResult<List<ArrQueueEntry>>.Success((read.Value ?? new List<ArrWireQueueRecord>()).Select(ToQueueEntry).ToList());
         }
 
         /// <summary>
@@ -134,7 +154,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             if (!incremental)
             {
                 var query = Query(include.Concat(new[] { ("sortKey", "date"), ("sortDirection", "descending") }).ToArray());
-                var pages = await client.GetAllPagesAsync<ArrWireHistoryRecord>("history", query, pageSize: 250, maxRecords: HistoryFullRead, cancellationToken: ct).ConfigureAwait(false);
+                var pages = await client.GetAllPagesAsync<ArrWireHistoryRecord>("history", query, pageSize: 250, maxRecords: HistoryFullRead, cancellationToken: ct, idOf: r => r.Id).ConfigureAwait(false);
                 if (!pages.Ok) return ArrResult<ArrHistorySnapshot>.Failure(pages.Error!);
                 return ArrResult<ArrHistorySnapshot>.Success(BuildHistory(pages.Value!.Records.Select(ToHistoryEntry), null, now));
             }

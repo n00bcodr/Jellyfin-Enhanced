@@ -11,6 +11,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
@@ -46,12 +47,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             return Array.Empty<TaskTriggerInfo>();
         }
 
-        /// <summary>Tag labels per provider id, unioned over every instance of one kind.</summary>
+        /// <summary>
+        /// The prefix the sync writes and clears: the configured one, or the default when it is null
+        /// or empty. Empty would match every tag (<c>StartsWith("")</c>), so it never reaches the
+        /// sync. Whitespace is kept as typed, as the client's tag links read it.
+        /// </summary>
+        internal static string ResolveTagPrefix(Configuration.PluginConfiguration? config)
+            => string.IsNullOrEmpty(config?.ArrTagsPrefix) ? Configuration.PluginConfiguration.DefaultArrTagsPrefix : config.ArrTagsPrefix;
+
+        /// <summary>
+        /// Tag labels per provider id, unioned over every instance of one kind, plus which ids any
+        /// arr entry has at all (tagged or not): an item whose only ids are aliases (TMDB/IMDb for a
+        /// series, IMDb for a movie) is known to be absent only when no entry has them.
+        /// </summary>
         private sealed class TagIndex
         {
             public Dictionary<int, List<string>> ByTmdb { get; } = new();
             public Dictionary<int, List<string>> ByTvdb { get; } = new();
             public Dictionary<string, List<string>> ByImdb { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public HashSet<int> EntryTmdb { get; } = new();
+            public HashSet<string> EntryImdb { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>
+            /// Radarr only: the TMDB ids (0 for none) of the movie entries that carry each IMDb id.
+            /// An IMDb id more than one movie carries (a duplicate entry, a stale id) names none of them.
+            /// </summary>
+            public Dictionary<string, HashSet<int>> MovieImdbOwners { get; } = new(StringComparer.OrdinalIgnoreCase);
 
             /// <summary>
             /// False when some instance of this kind could not be read (or its list is corrupt): the
@@ -94,7 +115,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         /// <summary>
         /// Reads the library index of every enabled instance of a kind (a fresh read, through the
         /// shared arr state store) and indexes the tag labels by provider id. Movies are matched by
-        /// TMDB; series by TVDB, TMDB and IMDb (Jellyfin series often lack one of them).
+        /// TMDB and IMDb; series by TVDB, TMDB and IMDb (Jellyfin items often lack one of them).
         /// </summary>
         private async Task<TagIndex> CollectAsync(ArrKind kind, bool corrupt, CancellationToken cancellationToken)
         {
@@ -145,23 +166,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 var mapped = 0;
                 foreach (var movie in library.Movies)
                 {
+                    var imdb = TitleAliases.FromIds(true, movie.TmdbId, null, movie.ImdbId).Select(TitleKey.Parse).FirstOrDefault(k => k?.Provider == "imdb")?.Id;
+                    if (movie.TmdbId is > 0 and var movieTmdb) index.EntryTmdb.Add(movieTmdb);
+                    if (imdb != null)
+                    {
+                        index.EntryImdb.Add(imdb);
+                        if (!index.MovieImdbOwners.TryGetValue(imdb, out var owners)) index.MovieImdbOwners[imdb] = owners = new HashSet<int>();
+                        owners.Add(movie.TmdbId is > 0 and var owner ? owner : 0);
+                    }
                     var labels = library.Labels(movie.Tags);
                     if (labels.Count == 0) continue;
-                    if (movie.TmdbId is > 0 and var tmdb) { TagIndex.Add(index.ByTmdb, tmdb, labels); mapped++; }
+                    var any = false;
+                    if (movie.TmdbId is > 0 and var tmdb) { TagIndex.Add(index.ByTmdb, tmdb, labels); any = true; }
+                    if (imdb != null) { TagIndex.Add(index.ByImdb, imdb, labels); any = true; }
+                    if (any) mapped++;
                 }
                 foreach (var series in library.Series)
                 {
+                    var imdb = TitleAliases.FromIds(false, series.TmdbId, series.TvdbId, series.ImdbId).Select(TitleKey.Parse).FirstOrDefault(k => k?.Provider == "imdb")?.Id;
+                    if (series.TmdbId is > 0 and var seriesTmdb) index.EntryTmdb.Add(seriesTmdb);
+                    if (imdb != null) index.EntryImdb.Add(imdb);
                     var labels = library.Labels(series.Tags);
                     if (labels.Count == 0) continue;
                     var any = false;
                     if (series.TvdbId is > 0 and var tvdb) { TagIndex.Add(index.ByTvdb, tvdb, labels); any = true; }
                     if (series.TmdbId is > 0 and var tmdb) { TagIndex.Add(index.ByTmdb, tmdb, labels); any = true; }
-                    if (!string.IsNullOrWhiteSpace(series.ImdbId)) { TagIndex.Add(index.ByImdb, series.ImdbId.Trim(), labels); any = true; }
+                    if (imdb != null) { TagIndex.Add(index.ByImdb, imdb, labels); any = true; }
                     if (any) mapped++;
                 }
                 _logger.Info($"Fetched {mapped} {(kind == ArrKind.Radarr ? "movie" : "series")} tag mappings from {instance.Name}");
             }
             return index;
+        }
+
+        /// <summary>
+        /// The Radarr labels of a Jellyfin movie, and whether its place in Radarr is certain (so old
+        /// prefixed tags may be cleared). A TMDB id some Radarr movie has decides alone. Otherwise the
+        /// IMDb id decides when exactly one Radarr movie (one TMDB id, on any number of instances)
+        /// carries it; carried by several, it names none: no labels, and the old tags are kept. With
+        /// neither matching, a TMDB id proves the movie is not in Radarr. When some Radarr instance
+        /// could not be read, the IMDb id decides nothing: the movie's own TMDB id may be on the
+        /// unread instance, and one owner of the IMDb id among the instances read is no proof of one
+        /// owner in all, so no labels are added from it.
+        /// </summary>
+        private static (List<string>? Tags, bool Proven) MatchMovie(TagIndex radarr, int? tmdb, string? imdb)
+        {
+            if (tmdb is int t && radarr.EntryTmdb.Contains(t)) return (radarr.ByTmdb.GetValueOrDefault(t), true);
+            if (!radarr.Complete) return (null, false);
+            if (imdb != null && radarr.MovieImdbOwners.TryGetValue(imdb, out var owners))
+            {
+                return owners.Count == 1 ? (radarr.ByImdb.GetValueOrDefault(imdb), true) : (null, false);
+            }
+            return (null, tmdb != null);
         }
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
@@ -201,8 +257,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             var processedItems = 0;
             var updatedItemNames = new List<string>(); // Track updated items for batch logging
 
-            string tagPrefix = config.ArrTagsPrefix ?? "Requested by: ";
-            bool clearOldTags = config.ArrTagsClearOldTags;
+            string tagPrefix = ResolveTagPrefix(config);
+            // Belt and braces: an empty prefix would match (and clear) every tag an item has.
+            bool clearOldTags = config.ArrTagsClearOldTags && tagPrefix.Length > 0;
 
             // Parse sync filter - if empty, sync all tags
             var syncFilterTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -222,34 +279,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                 List<string>? tagsToAdd = null;
                 var kindComplete = true;
+                // Whether the arrs' answer for this item can be trusted to be complete: it has the
+                // kind's own id (TMDB for a movie, TVDB for a series: absent from every instance
+                // means not there), or an alias id some arr entry has (tagged or not). An item with
+                // no usable id, or only aliases no entry has, may well be in the arr under ids
+                // Jellyfin doesn't know: its prefixed tags are kept.
+                var proven = false;
 
-                // Check if it's a movie
+                // Check if it's a movie: TMDB (Radarr's own id) when a Radarr movie has it; IMDb only
+                // when none does, and only when one movie (one TMDB id) carries that IMDb id.
                 if (item is Movie movie)
                 {
                     kindComplete = radarrTags.Complete;
-                    if (int.TryParse(movie.GetProviderId(MetadataProvider.Tmdb), out var tmdbIdInt))
-                    {
-                        tagsToAdd = radarrTags.ByTmdb.GetValueOrDefault(tmdbIdInt);
-                    }
+                    var keys = TitleAliases.FromProviderIds(true, movie.GetProviderId(MetadataProvider.Tmdb), null, movie.GetProviderId(MetadataProvider.Imdb));
+                    (tagsToAdd, proven) = MatchMovie(radarrTags, keys.FirstOrDefault(k => k.Provider == "tmdb")?.NumericId, keys.FirstOrDefault(k => k.Provider == "imdb")?.Id);
                 }
                 // Check if it's a series: TVDB (Sonarr's own id), then TMDB and IMDb. The labels of
                 // every id that matches are combined, so a series is found whichever ids it has.
                 else if (item is Series series)
                 {
                     kindComplete = sonarrTags.Complete;
-                    var byTvdb = int.TryParse(series.GetProviderId(MetadataProvider.Tvdb), out var tvdb) ? sonarrTags.ByTvdb.GetValueOrDefault(tvdb) : null;
-                    var byTmdb = int.TryParse(series.GetProviderId(MetadataProvider.Tmdb), out var tmdb) ? sonarrTags.ByTmdb.GetValueOrDefault(tmdb) : null;
-                    var imdbId = series.GetProviderId(MetadataProvider.Imdb);
-                    var byImdb = string.IsNullOrWhiteSpace(imdbId) ? null : sonarrTags.ByImdb.GetValueOrDefault(imdbId.Trim());
+                    var keys = TitleAliases.FromProviderIds(false, series.GetProviderId(MetadataProvider.Tmdb), series.GetProviderId(MetadataProvider.Tvdb), series.GetProviderId(MetadataProvider.Imdb));
+                    var tvdb = keys.FirstOrDefault(k => k.Provider == "tvdb")?.NumericId;
+                    var tmdb = keys.FirstOrDefault(k => k.Provider == "tmdb")?.NumericId;
+                    var imdb = keys.FirstOrDefault(k => k.Provider == "imdb")?.Id;
+                    var byTvdb = tvdb is int v ? sonarrTags.ByTvdb.GetValueOrDefault(v) : null;
+                    var byTmdb = tmdb is int t ? sonarrTags.ByTmdb.GetValueOrDefault(t) : null;
+                    var byImdb = imdb == null ? null : sonarrTags.ByImdb.GetValueOrDefault(imdb);
                     tagsToAdd = TagIndex.Union(byTvdb, byTmdb, byImdb);
+                    proven = tvdb != null
+                        || (tmdb is int et && sonarrTags.EntryTmdb.Contains(et))
+                        || (imdb != null && sonarrTags.EntryImdb.Contains(imdb));
                 }
 
                 var existingTags = item.Tags?.ToList() ?? new List<string>();
                 var modified = false;
 
                 // Clear old tags with the prefix if enabled - but only when every instance of this
-                // kind was read: a failed read must not strip the tags it would have confirmed.
-                if (clearOldTags && kindComplete)
+                // kind was read (a failed read must not strip the tags it would have confirmed) and
+                // the item's absence from the arrs can be proven (see above).
+                if (clearOldTags && kindComplete && !proven)
+                {
+                    _logger.Debug($"Arr Tags Sync: keeping the prefixed tags of {item.Name}: none of its ids proves it is (or isn't) in {(item is Movie ? "Radarr" : "Sonarr")}.");
+                }
+                if (clearOldTags && kindComplete && proven)
                 {
                     var tagsToRemove = existingTags
                         .Where(t => t.StartsWith(tagPrefix, StringComparison.OrdinalIgnoreCase))

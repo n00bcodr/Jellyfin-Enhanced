@@ -458,8 +458,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>The arr's <c>totalRecords</c>.</summary>
         public int TotalRecords { get; init; }
 
+        /// <summary>
+        /// True when the read took more than one page. Rows can move between pages unseen even when
+        /// the distinct rows match totalRecords (one leaves before a page boundary while another
+        /// joins after it), so a paged read does not prove that a row it lacks has left, nor that a
+        /// download's rows are all in it.
+        /// </summary>
+        public bool Paged { get; init; }
+
         /// <summary>True when the row cap stopped the read early.</summary>
         public bool Truncated { get; init; }
+
+        /// <summary>
+        /// True when rows moved between pages during two reads in a row, so fewer distinct rows came
+        /// back than the arr reported: every row held is real, but some may be missing. It never
+        /// replaces a recent complete read, and no row is taken for a download that left the queue
+        /// because of it.
+        /// </summary>
+        public bool Incomplete { get; init; }
     }
 
     /// <summary>One history record (slim).</summary>

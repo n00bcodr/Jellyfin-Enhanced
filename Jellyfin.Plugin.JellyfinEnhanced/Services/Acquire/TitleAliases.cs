@@ -68,21 +68,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Every usable key for these provider ids, in canonical-provider order.</summary>
         internal static IReadOnlyList<string> FromIds(bool isMovie, int? tmdbId, int? tvdbId, string? imdbId)
         {
-            var keys = new List<string>();
+            string? Num(int? n) => n is > 0 ? n.Value.ToString(CultureInfo.InvariantCulture) : null;
+            return FromProviderIds(isMovie, Num(tmdbId), Num(tvdbId), imdbId).Select(k => k.ToString()).ToArray();
+        }
+
+        /// <summary>
+        /// Validated, normalized provider keys from Jellyfin metadata, in canonical-provider order.
+        /// Numeric ids must fit the arr APIs' positive integer ids; IMDb validation is shared with
+        /// <see cref="TitleKey"/>. Also used by <see cref="FromIds"/> for typed arr/Seerr ids.
+        /// </summary>
+        internal static IReadOnlyList<TitleKey> FromProviderIds(bool isMovie, string? tmdbId, string? tvdbId, string? imdbId)
+        {
+            var keys = new List<TitleKey>();
             void Add(TitleKey? key)
             {
-                if (key != null) keys.Add(key.ToString());
+                if (key != null && (key.Provider == "imdb" || key.NumericId is > 0)) keys.Add(key);
             }
-            string? Num(int? n) => n is > 0 ? n.Value.ToString(CultureInfo.InvariantCulture) : null;
             if (isMovie)
             {
-                Add(TitleKey.ForMovie(Num(tmdbId), null));
+                Add(TitleKey.ForMovie(tmdbId, null));
                 Add(TitleKey.ForMovie(null, imdbId));
             }
             else
             {
-                Add(TitleKey.ForSeries(Num(tvdbId), null, null));
-                Add(TitleKey.ForSeries(null, Num(tmdbId), null));
+                Add(TitleKey.ForSeries(tvdbId, null, null));
+                Add(TitleKey.ForSeries(null, tmdbId, null));
                 Add(TitleKey.ForSeries(null, null, imdbId));
             }
             return keys;

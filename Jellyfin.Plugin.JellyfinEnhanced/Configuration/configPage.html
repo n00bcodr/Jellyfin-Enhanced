@@ -7691,7 +7691,7 @@
 
                 // Load multi-instance Sonarr/Radarr
                 loadArrInstances(config);
-                document.querySelector('#arrTagsPrefix').value = config.ArrTagsPrefix || 'Requested by: ';
+                document.querySelector('#arrTagsPrefix').value = config.ArrTagsPrefix || 'JE Arr Tag: ';
                 document.querySelector('#arrTagsClearOldTags').checked = config.ArrTagsClearOldTags !== false;
                 document.querySelector('#arrTagsShowAsLinks').checked = config.ArrTagsShowAsLinks !== false;
                 document.querySelector('#arrTagsSyncFilter').value = config.ArrTagsSyncFilter || '';
@@ -8335,7 +8335,7 @@
                     Dashboard.alert({ title: '⚠ Incomplete *arr instance', message: msg });
                 });
             }
-            config.ArrTagsPrefix = document.querySelector('#arrTagsPrefix').value || 'Requested by: ';
+            config.ArrTagsPrefix = document.querySelector('#arrTagsPrefix').value || 'JE Arr Tag: ';
             config.ArrTagsClearOldTags = document.querySelector('#arrTagsClearOldTags').checked;
             config.ArrTagsShowAsLinks = document.querySelector('#arrTagsShowAsLinks').checked;
             config.ArrTagsSyncFilter = document.querySelector('#arrTagsSyncFilter').value || '';

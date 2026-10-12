@@ -41,6 +41,10 @@
 .je-ops-item-title { font-weight: 700; overflow-wrap: anywhere; }
 .je-ops-item-sub { font-size: 0.88em; opacity: 0.8; margin-top: 0.15em; overflow-wrap: anywhere; }
 .je-ops-fixes { display: flex; flex-wrap: wrap; gap: 0.4em; justify-content: flex-end; flex: 0 0 auto; max-width: 50%; }
+.je-ops-group-list { list-style: none; margin: 0.5em 0 0; padding: 0 0 0 0.8em; border-left: 2px solid rgba(255,255,255,0.12); }
+.je-ops-group-member { padding: 0.3em 0; }
+.je-ops-group-member .je-ops-item-title { font-weight: 600; }
+.je-ops-delete-also { margin: 0.4em 0 0.8em; padding-left: 1.2em; }
 .je-ops-btn { font: inherit; font-size: 0.9em; font-weight: 600; display: inline-flex; align-items: center; gap: 0.3em; min-height: 2.4em; padding: 0.25em 0.8em;
   border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.06); color: inherit; cursor: pointer; text-decoration: none; }
 .je-ops-btn:hover { background: rgba(255,255,255,0.12); }

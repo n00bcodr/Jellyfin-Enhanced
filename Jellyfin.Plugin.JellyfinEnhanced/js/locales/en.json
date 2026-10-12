@@ -1114,6 +1114,16 @@
     "arr_ops_fix_open_system": "Open System",
     "arr_ops_fix_open_seerr": "Open Seerr's settings",
     "arr_ops_keeps_partial": "Keeps the partial download; delete it too?",
+    "arr_ops_group_count": "{n} titles",
+    "arr_ops_group_titles": "{titles} and {n} more",
+    "arr_ops_group_show": "Show all {n}",
+    "arr_ops_group_hide": "Hide the list",
+    "arr_ops_group_missing_not_scanned": "Imported; Jellyfin hasn't picked them up yet",
+    "arr_ops_group_missing_not_visible": "Jellyfin can't see their files: check the path mappings (System → Path doctor)",
+    "arr_ops_group_missing_outside_library": "No Jellyfin library contains their folders",
+    "arr_ops_group_approved": "OK'd in Seerr, but none of the Sonarr/Radarr Jellyfin Enhanced watches has them",
+    "arr_ops_group_approved_4k": "4K requests OK'd in Seerr, but none of the 4K Radarr Jellyfin Enhanced watches has them",
+    "arr_ops_group_approved_4k_series": "4K requests OK'd in Seerr, but none of the 4K Sonarr Jellyfin Enhanced watches has them",
     "arr_ops_low_disk_sub": "{free} free",
     "arr_ops_stalled_sub": "The download client reports no time left at {pct}%",
     "arr_ops_missing_not_scanned": "Imported to {path}; Jellyfin hasn't picked it up",
@@ -1229,6 +1239,9 @@
     "arr_ops_delete_title": "Remove and delete the download?",
     "arr_ops_delete_body": "This removes {title} from {instance}'s queue and deletes what the download client has of it. Partial data can't be recovered.",
     "arr_ops_delete_type": "Type {word} to confirm.",
+    "arr_ops_delete_blocklist": "The release is blocklisted, so it won't be grabbed again.",
+    "arr_ops_delete_search": "{instance} then searches for another copy.",
     "arr_ops_confirm_word": "DELETE",
-    "arr_ops_not_in_queue": "That download is no longer in the queue."
+    "arr_ops_not_in_queue": "That download is no longer in the queue.",
+    "arr_ops_queue_changing": "The queue is changing; try again in a moment."
 }

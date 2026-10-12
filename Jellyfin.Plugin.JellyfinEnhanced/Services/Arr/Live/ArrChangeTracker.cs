@@ -161,7 +161,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             switch (change.Kind)
             {
                 case ArrSnapshotKind.Queue:
-                    keys = ArrChangeDetector.Queue(kind, change.Before as ArrQueueSnapshot, (ArrQueueSnapshot)change.After, _store.PeekLibrary(id));
+                    keys = ArrChangeDetector.Queue(kind, change.Before as ArrQueueSnapshot, (ArrQueueSnapshot)change.After, _store.PeekLibrary(id), change.Departed);
                     break;
                 case ArrSnapshotKind.Library:
                     keys = ArrChangeDetector.Library(change.Before as ArrLibrarySnapshot, (ArrLibrarySnapshot)change.After, change.ChangedIds);

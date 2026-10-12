@@ -25,13 +25,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         // A history read can return a record dated a little before the newest one already held.
         private static readonly TimeSpan HistorySkew = TimeSpan.FromMinutes(1);
 
-        /// <summary>Title keys whose queue rows changed.</summary>
-        public static IReadOnlyCollection<string> Queue(ArrKind kind, ArrQueueSnapshot? before, ArrQueueSnapshot after, ArrLibrarySnapshot? library)
+        /// <summary>
+        /// Title keys whose queue rows changed, plus those of <paramref name="departed"/> (rows an
+        /// earlier paged read missed that this read confirmed gone).
+        /// </summary>
+        public static IReadOnlyCollection<string> Queue(ArrKind kind, ArrQueueSnapshot? before, ArrQueueSnapshot after, ArrLibrarySnapshot? library, IEnumerable<ArrQueueEntry>? departed = null)
         {
             if (before == null) return Array.Empty<string>();
             var a = QueueFingerprints(kind, before, library);
             var b = QueueFingerprints(kind, after, library);
             var changed = new HashSet<string>(StringComparer.Ordinal);
+            // Rows an earlier paged read missed, confirmed gone by this read: neither side holds them.
+            foreach (var r in departed ?? Array.Empty<ArrQueueEntry>())
+            {
+                if (LeafKey(kind, r.TmdbId, r.TvdbId, r.MovieId, r.SeriesId, r.SeasonNumber, r.EpisodeNumber, library) is { } leaf) changed.Add(leaf);
+            }
             foreach (var (leaf, print) in b)
             {
                 if (!a.TryGetValue(leaf, out var old) || !string.Equals(old, print, StringComparison.Ordinal)) changed.Add(leaf);

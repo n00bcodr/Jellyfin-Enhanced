@@ -92,32 +92,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _feed = feed;
         }
 
+        /// <summary>The refusal when a download's rows can't all be known right now.</summary>
+        public const string QueueChangingMessage = "The queue is changing; try again in a moment.";
+
         /// <summary>
-        /// The download as the queue snapshot has it (read from memory; a cold queue is loaded first).
-        /// Null when it isn't there, or when the queue can't be read and what is held is too old to act
-        /// on (its downloads may have finished or changed since).
+        /// The download with every one of its queue rows (null when it isn't in the queue). Read from
+        /// the queue snapshot (memory; a cold queue is loaded first); when that snapshot may be missing
+        /// rows (read over more than one page, or cut, or rows moved), the download's rows are read again
+        /// from the arr in one unpaged read, so an action and its confirmation always cover the whole
+        /// download (a season pack's every episode).
         /// </summary>
         public async Task<QueueGroup?> FindAsync(string instanceId, string downloadId, CancellationToken cancellationToken)
-            => (await LookUpAsync(instanceId, downloadId, cancellationToken).ConfigureAwait(false)).Group;
+            => (await LookupAsync(instanceId, downloadId, cancellationToken).ConfigureAwait(false)).Group;
 
-        private async Task<(QueueGroup? Group, bool Expired)> LookUpAsync(string instanceId, string downloadId, CancellationToken cancellationToken)
+        /// <summary>
+        /// Issues the Tier-3 token for removing one download together with its data, with what it
+        /// covers. <c>QueueChanging</c> is set (and no token issued) when the download's rows can't
+        /// all be read right now.
+        /// </summary>
+        public async Task<(QueueConfirmation? Confirmation, bool QueueChanging)> ConfirmAsync(StatusViewer viewer, string instanceId, string downloadId, CancellationToken cancellationToken)
+        {
+            var (group, expired, unsure) = await LookupAsync(instanceId, downloadId, cancellationToken).ConfigureAwait(false);
+            if (unsure) return (null, true);
+            if (expired || group == null || !group.Actions.Contains(QueueAction.RemoveWithData)) return (null, false);
+            var (token, expires) = _runner.Tokens.Issue(viewer.UserId, QueueAction.AuditName(QueueAction.RemoveWithData), group.InstanceId, Target(group.DownloadId));
+            return (new QueueConfirmation { Token = token, ExpiresAt = expires, Download = group }, false);
+        }
+
+        /// <summary>
+        /// The download from the snapshot, or — when it was paged, partial or cut — from an unpaged
+        /// read of the arr's queue. Expired: too old to act on. Unsure: that read failed.
+        /// </summary>
+        private async Task<(QueueGroup? Group, bool Expired, bool Unsure)> LookupAsync(string instanceId, string downloadId, CancellationToken cancellationToken)
         {
             var instance = _store.Registry.Get(instanceId);
-            if (instance == null || !instance.Usable) return (null, false);
+            if (instance == null || !instance.Usable) return (null, false, false);
             var queue = await _store.GetQueueAsync(instance, cancellationToken).ConfigureAwait(false);
-            if (queue.Expired) return (null, true);
+            if (queue.Expired) return (null, true, false);
             var library = await _store.GetLibraryAsync(instance, cancellationToken).ConfigureAwait(false);
-            return (NeedsAttention.Group(instance, queue.Value, library.Value).FirstOrDefault(g => string.Equals(g.DownloadId, downloadId, StringComparison.Ordinal)), false);
+            var group = Pick(NeedsAttention.Group(instance, queue.Value, library.Value), downloadId);
+            if (queue.Value is not { } snapshot || !(snapshot.Incomplete || snapshot.Truncated || snapshot.Paged)) return (group, false, false);
+
+            // A read over more than one page, or cut, or with rows moved may miss rows: 7 of a pack's 8
+            // episodes (or not at all) must not be acted on, or confirmed for deletion, as such.
+            var client = _clients.For(instance.Id);
+            if (!client.Ok) return (null, false, true);
+            var rows = await ArrStateLoaders.LoadQueueDetailsAsync(client.Value!, group?.ArrId, cancellationToken).ConfigureAwait(false);
+            if (!rows.Ok) return (null, false, true);
+            var mine = rows.Value!.Where(r => downloadId.StartsWith("row:", StringComparison.Ordinal)
+                ? string.IsNullOrEmpty(r.DownloadId) && downloadId == "row:" + r.Id.ToString(CultureInfo.InvariantCulture)
+                : string.Equals(r.DownloadId, downloadId, StringComparison.Ordinal)).ToList();
+            return (Pick(NeedsAttention.Group(instance, new ArrQueueSnapshot { Records = mine, TotalRecords = mine.Count }, library.Value), downloadId), false, false);
         }
 
-        /// <summary>Issues the Tier-3 token for removing one download together with its data, with what it covers.</summary>
-        public async Task<QueueConfirmation?> ConfirmAsync(StatusViewer viewer, string instanceId, string downloadId, CancellationToken cancellationToken)
-        {
-            var group = await FindAsync(instanceId, downloadId, cancellationToken).ConfigureAwait(false);
-            if (group == null || !group.Actions.Contains(QueueAction.RemoveWithData)) return null;
-            var (token, expires) = _runner.Tokens.Issue(viewer.UserId, QueueAction.AuditName(QueueAction.RemoveWithData), group.InstanceId, Target(group.DownloadId));
-            return new QueueConfirmation { Token = token, ExpiresAt = expires, Download = group };
-        }
+        private static QueueGroup? Pick(IEnumerable<QueueGroup> groups, string downloadId)
+            => groups.FirstOrDefault(g => string.Equals(g.DownloadId, downloadId, StringComparison.Ordinal));
 
         /// <summary>Runs a queue action once per idempotency key (audited; Tier 3 needs its token).</summary>
         public async Task<ArrActionOutcome> RunAsync(StatusViewer viewer, string? userName, QueueActionInput input, CancellationToken cancellationToken)
@@ -126,12 +155,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // the queue is looked at: after a removal the download is no longer there to find.
             var replay = await _runner.ReplayAsync(viewer.UserId, QueueAction.AuditName(input.Action), input.InstanceId, input.IdempotencyKey, cancellationToken).ConfigureAwait(false);
             if (replay != null) return replay;
-            var (group, expired) = await LookUpAsync(input.InstanceId, input.DownloadId, cancellationToken).ConfigureAwait(false);
+            var (group, expired, unsure) = await LookupAsync(input.InstanceId, input.DownloadId, cancellationToken).ConfigureAwait(false);
             var instance = _store.Registry.Get(input.InstanceId);
             if (expired)
             {
                 return Refuse(viewer, userName, input, "queue_unreadable", "That download's queue can't be read right now, so nothing was changed. Try again once it can.");
             }
+            if (unsure) return Refuse(viewer, userName, input, "queue_changing", QueueChangingMessage);
             if (group == null || instance == null)
             {
                 return Refuse(viewer, userName, input, "not_in_queue", "That download is no longer in the queue.");

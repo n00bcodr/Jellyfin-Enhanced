@@ -247,7 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArrTagsSyncEnabled = false;
             SonarrApiKey = "";
             RadarrApiKey = "";
-            ArrTagsPrefix = "JE Arr Tag: ";
+            ArrTagsPrefix = DefaultArrTagsPrefix;
             ArrTagsClearOldTags = true;
             ArrTagsShowAsLinks = true;
             ArrTagsLinksFilter = "";
@@ -966,6 +966,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShokoShowTrailers { get; set; }
         public bool ShokoShowParodies { get; set; }
         public bool ShokoShowOther { get; set; }
+
+        /// <summary>The arr tag prefix used when none is configured (also the configuration page's fallback).</summary>
+        public const string DefaultArrTagsPrefix = "JE Arr Tag: ";
 
         // Arr Tags Sync Settings
         public bool ArrTagsSyncEnabled { get; set; }

@@ -104,7 +104,7 @@ the Requests page (everyone else never receives them):
     |---|---|
     | Import blocked (the app says it needs a manual import) | **Open in Sonarr/Radarr** (its queue), **Remove & search again** |
     | Waiting to import, with the app's warning ("Sample") | **Retry import** (the app's own "check finished downloads" command), Open in…, Remove & search again |
-    | Download warning ("no peers") / stalled (the download client reports no time left with data still missing) | **Remove & search again** (keeps the partial download; "delete it too?" asks separately) |
+    | Download warning ("no peers") / stalled (the download client reports no time left with data still missing) | **Remove & search again** (keeps the partial download; "delete it too?" asks separately, with the same blocklist and search choices) |
     | Download client unavailable (the app can't reach it; no progress is known) | **Open System**, Open in… |
     | Download failed and nothing new since | **Search now** |
     | Low disk / root folder missing / the app's health checks | **Open System**, Open in… |
@@ -112,8 +112,12 @@ the Requests page (everyone else never receives them):
     | OK'd in Seerr, but none of the Sonarr/Radarr Jellyfin Enhanced watches has it (a 4K request: none of the 4K ones; tagged [4K]) | **Open Seerr's settings** (usually Seerr's own Sonarr/Radarr settings) |
     | An app that can't be read, a live connection down for 10 minutes, a webhook silent for a day | **Open System** |
 
-  plus the next 24 hours (episodes airing, movies coming out) and two weeks of grabs and imports. A
-  download's "for 3 h" counts from when Jellyfin Enhanced first saw the problem (not from the grab), so a
+  Three or more rows with the same reason (and app) whose only fix is a page link (Open Seerr's settings, Open
+  System) share one row with that fix, what they have in common (why Jellyfin can't list them, or which app
+  lacks them) and a **Show all** list; rows with a fix of their own stay apart. The count
+  still counts every row. Then the next 24 hours (episodes airing, movies coming out) and two weeks of grabs and
+  imports.
+  A download's "for 3 h" counts from when Jellyfin Enhanced first saw the problem (not from the grab), so a
   restart may make it read late, never early (a stalled download too: from when it stalled); the daily digest
   lists what has been stuck that long. A finished
   download the app can't import is "Waiting to import", never "downloading". When an app's queue is out of
@@ -122,10 +126,14 @@ the Requests page (everyone else never receives them):
   open is refused and nothing is sent to the app).
 - **Activity**: every download (a season pack is one download), with the app's own words, progress and
   **Remove…** (keeps the download client's data; optionally blocklist the release and search for another
-  copy), **Search again**, **Retry import** (where the app retries imports itself) and **Remove and delete
-  data…**, which shows what it covers ("This download covers S02E01–E08; removing it affects all 8 episodes")
-  and needs the word DELETE typed and a one-time confirmation from the server. Below, the newest 100 history
-  events of all the apps together.
+  copy), **Search again** and **Retry import** (where the app retries imports itself). Deleting the download's
+  data too is offered only inside the Remove dialog ("Delete the download's data too…", where the download
+  allows it): it keeps that dialog's blocklist and search choices, shows what it covers ("This download covers
+  S02E01–E08; removing it affects all 8 episodes") and needs the word DELETE typed and a one-time confirmation
+  from the server. Every action covers all of the download's rows: when the queue is read over more than
+  one page (more than 500 queue rows; Sonarr lists each episode of a season pack as its own row), or could
+  not be read whole, the download's rows are read again in one read before the action or the confirmation,
+  and if that fails the action says "The queue is changing; try again in a moment." Below, the recent history.
   Sonarr and Radarr have no way to change a download's priority, so neither does this tab.
 - **System**: per app its version, health checks, disks, scheduled tasks, live connection and webhook; Seerr's
   request list; and the **Jellyfin bridge**: recent imports Jellyfin doesn't list yet (with why: not scanned
@@ -337,7 +345,7 @@ Display synced *arr tags as clickable links on item detail pages.
 
 **Tag Prefix:**
 
-- Default: `JE Arr Tag: `
+- Default: `JE Arr Tag: ` (also used when the prefix is left empty)
 - Prefix added to synced tags
 - Helps identify plugin-managed tags
 
@@ -384,7 +392,7 @@ internal-tag,do-not-show
 - Only matching tags synced from *arr
 - Leave empty to sync all tags
 
-**How titles are matched:** movies by their TMDB id; series by TVDB, TMDB or IMDb id (whichever the Jellyfin series has). If a Sonarr or Radarr instance can't be read during a run, **Clear Old Tags** skips the titles of that kind for that run, so a temporary outage never strips their tags.
+**How titles are matched:** movies by their TMDB id, or by their IMDb id when no Radarr movie has that TMDB id and exactly one Radarr movie has that IMDb id (an IMDb id several Radarr movies share matches none of them, and the IMDb fallback is skipped for a run in which a Radarr instance can't be read); series by TVDB, TMDB or IMDb id (whichever the Jellyfin item has). **Clear Old Tags** only removes tags from a title whose place in Sonarr/Radarr is certain: a movie with a TMDB id (unless no Radarr movie has it and its IMDb id is one several Radarr movies share), a series with a TVDB id, or a title whose other id matches a Sonarr/Radarr entry. A title with no usable id, or only ids no entry has, keeps its tags. If a Sonarr or Radarr instance can't be read during a run, **Clear Old Tags** skips the titles of that kind for that run, so a temporary outage never strips their tags.
 
 ### Custom Styling
 

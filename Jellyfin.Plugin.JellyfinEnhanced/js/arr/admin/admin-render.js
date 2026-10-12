@@ -36,6 +36,10 @@
         open_system: 'dns',
         open_seerr: 'open_in_new'
     };
+    // Fixes that act on a page, not on one row: rows that offer only these can share one row.
+    const PAGE_FIXES = new Set(['open_seerr', 'open_system']);
+    // Rows alike enough to share one: from this many on.
+    const GROUP_MIN = 3;
     const ACTION_KEYS = {
         'movie.search': 'arr_ops_audit_search',
         'series.search': 'arr_ops_audit_search',
@@ -296,6 +300,144 @@
     }
 
     /**
+     * The key rows share a collapsed row by: the same reason, instance, severity and fixes, and
+     * (for not in Jellyfin) the same cause, (for OK'd in Seerr) the same copy and, for 4K, kind. Null when the row
+     * offers a fix of its own (a button that acts on that row) or stands for a disk, not a title:
+     * such rows always stay on their own.
+     * @param {Object} item Row.
+     * @returns {string|null} Key.
+     */
+    function attentionGroupKey(item) {
+        const fixes = item.fixes || [];
+        if (!fixes.length || !fixes.every(f => PAGE_FIXES.has(f)) || item.code === 'low_disk') return null;
+        return [
+            item.code, item.instanceId || '', item.severity || '', fixes.join(','),
+            item.code === 'not_in_jellyfin' ? item.message || '' : '',
+            // A 4K copy is worded per kind ("no 4K Sonarr" / "no 4K Radarr"); the standard wording is shared.
+            item.code === 'approved_not_in_arr' && item.params?.variant === '4k' ? `4k:${String(item.key || '').split(':')[0]}` : ''
+        ].join('|');
+    }
+
+    /**
+     * Needs attention rows in order, with rows that share a key (GROUP_MIN or more) folded into
+     * one entry at the place of the first.
+     * @param {Object[]} items Rows.
+     * @returns {Array<{item: Object}|{key: string, items: Object[]}>} Entries.
+     */
+    function groupAttention(items) {
+        const byKey = new Map();
+        for (const item of items) {
+            const key = attentionGroupKey(item);
+            if (key === null) continue;
+            if (!byKey.has(key)) byKey.set(key, []);
+            byKey.get(key).push(item);
+        }
+        const entries = [];
+        const placed = new Set();
+        for (const item of items) {
+            const key = attentionGroupKey(item);
+            const members = key === null ? null : byKey.get(key);
+            if (!members || members.length < GROUP_MIN) {
+                entries.push({ item });
+            } else if (!placed.has(key)) {
+                placed.add(key);
+                entries.push({ key, items: members });
+            }
+        }
+        return entries;
+    }
+
+    /**
+     * What every row of a collapsed group shares beyond its reason, worded for many titles: why
+     * Jellyfin doesn't list them (not in Jellyfin), or which app lacks them (OK'd in Seerr, 4K or
+     * not). Empty for reasons whose heading says it all.
+     * @param {Object} item The group's first row (the group key fixes these properties).
+     * @returns {string} Text.
+     */
+    function groupReason(item) {
+        if (item.code === 'not_in_jellyfin') {
+            const cause = ['not_scanned', 'not_visible', 'outside_library'].includes(item.message) ? item.message : 'not_scanned';
+            return tr(`arr_ops_group_missing_${cause}`);
+        }
+        if (item.code === 'approved_not_in_arr') {
+            if (item.params?.variant !== '4k') return tr('arr_ops_group_approved');
+            return tr(String(item.key || '').startsWith('tv:') ? 'arr_ops_group_approved_4k_series' : 'arr_ops_group_approved_4k');
+        }
+        return '';
+    }
+
+    /**
+     * A title as a group lists it: "Inception (2010) S01".
+     * @param {Object} item Row.
+     * @returns {string} Text.
+     */
+    function memberName(item) {
+        return [item.title ? item.title + (item.year ? ` (${item.year})` : '') : '', item.scope || ''].filter(Boolean).join(' ');
+    }
+
+    /**
+     * One collapsed row for rows that share a reason and a page-level fix: the reason, how many,
+     * the first few titles, the shared fix, and a toggle that lists every row.
+     * @param {string} key Group key.
+     * @param {Object[]} members Rows.
+     * @param {Object} ctx Callbacks and helpers.
+     * @returns {HTMLElement} Row.
+     */
+    function attentionGroup(key, members, ctx) {
+        const first = members[0];
+        const expanded = !!ctx.expanded?.has(key);
+        const row = el('div', 'je-ops-item je-ops-group');
+        row.dataset.attention = first.code;
+        row.dataset.group = key;
+        const ic = el('span', `je-ops-icon ${first.severity === 'error' ? 'je-ops-bad' : 'je-ops-warn'}`);
+        ic.appendChild(icon(CODE_ICONS[first.code] || 'report'));
+        row.appendChild(ic);
+        const body = el('div', 'je-ops-item-body');
+        const name = first.code === 'not_in_jellyfin'
+            ? tr('arr_ops_code_not_in_jellyfin', { instance: first.instance || '' })
+            : tr(`arr_ops_code_${first.code}`);
+        body.appendChild(el('div', 'je-ops-item-title', [name, tr('arr_ops_group_count', { n: members.length }), first.code !== 'not_in_jellyfin' ? first.instance : ''].filter(Boolean).join(' · ')));
+        // The property the rows were grouped by, so two groups of one reason read differently.
+        const reason = groupReason(first);
+        if (reason) body.appendChild(el('div', 'je-ops-item-sub je-ops-group-reason', reason));
+        const names = members.map(memberName).filter(Boolean);
+        if (names.length) {
+            const shown = names.slice(0, 3).join(', ');
+            body.appendChild(el('div', 'je-ops-item-sub', names.length > 3 ? tr('arr_ops_group_titles', { titles: shown, n: names.length - 3 }) : shown));
+        }
+        const listId = `je-ops-group-${key.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+        const toggle = el('button', 'je-ops-link', tr(expanded ? 'arr_ops_group_hide' : 'arr_ops_group_show', { n: members.length }));
+        toggle.type = 'button';
+        toggle.setAttribute('aria-expanded', String(expanded));
+        toggle.setAttribute('aria-controls', listId);
+        toggle.dataset.jeFocus = `group:${key}`;
+        toggle.addEventListener('click', () => ctx.toggleGroup?.(key));
+        body.appendChild(toggle);
+        if (expanded) {
+            const list = el('ul', 'je-ops-group-list');
+            list.id = listId;
+            for (const item of members) {
+                const li = el('li', 'je-ops-group-member');
+                li.appendChild(el('div', 'je-ops-item-title', memberName(item) || itemTitle(item)));
+                const sub = itemSub(item);
+                if (sub) li.appendChild(el('div', 'je-ops-item-sub', sub));
+                list.appendChild(li);
+            }
+            body.appendChild(list);
+        }
+        row.appendChild(body);
+        const fixes = el('div', 'je-ops-fixes');
+        // The fixes act on a page, so one set serves every member.
+        const shared = { ...first, id: `group:${key}` };
+        (first.fixes || []).forEach((fix, i) => {
+            const node = fixButton(fix, shared, ctx, i === 0);
+            if (node) fixes.appendChild(node);
+        });
+        if (fixes.childNodes.length) row.appendChild(fixes);
+        return row;
+    }
+
+    /**
      * Needs attention (Overview).
      * @param {Object[]} items Rows.
      * @param {Object} ctx Callbacks and helpers.
@@ -310,7 +452,13 @@
             box.appendChild(el('div', 'je-ops-empty', tr('arr_ops_all_clear')));
             return box;
         }
-        for (const item of items) {
+        for (const entry of groupAttention(items)) {
+            if (entry.key) {
+                ctx.noteGroup?.(entry.key, entry.items.map(m => m.id));
+                box.appendChild(attentionGroup(entry.key, entry.items, ctx));
+                continue;
+            }
+            const item = entry.item;
             const row = el('div', 'je-ops-item');
             row.dataset.attention = item.code;
             const ic = el('span', `je-ops-icon ${item.severity === 'error' ? 'je-ops-bad' : 'je-ops-warn'}`);
@@ -320,7 +468,9 @@
             body.appendChild(el('div', 'je-ops-item-title', itemTitle(item)));
             const sub = itemSub(item);
             if (sub) body.appendChild(el('div', 'je-ops-item-sub', sub));
-            if ((item.fixes || []).includes('remove_search')) {
+            // Remove & search again keeps the download's data: deleting it too is offered (with the
+            // same blocklist / search choices) where the download allows it.
+            if ((item.fixes || []).includes('remove_search') && ctx.canDeleteData?.(item) !== false) {
                 const more = el('button', 'je-ops-link', tr('arr_ops_keeps_partial'));
                 more.type = 'button';
                 more.dataset.jeFocus = `delete:${item.id}`;
@@ -517,7 +667,8 @@
             add('remove', tr('arr_ops_action_remove'), 'remove_circle_outline');
             add('search', tr('arr_ops_action_search'), 'search');
             add('retry_import', tr('arr_ops_fix_retry_import'), 'replay');
-            add('remove_with_data', tr('arr_ops_action_remove_with_data'), 'delete_forever', 'je-ops-btn-danger');
+            // No row-level "delete data" button: deleting the download's data is offered inside the
+            // Remove dialog (when the download allows it), with that dialog's blocklist choices.
             const open = linkButton(ctx.arrUrl(g.instanceId, '/activity/queue'), tr('arr_ops_fix_open_in_arr', { instance: g.instance }), `dl:${dk}:open`);
             if (open) actions.appendChild(open);
             body.appendChild(actions);

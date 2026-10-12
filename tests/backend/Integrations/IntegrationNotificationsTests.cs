@@ -277,6 +277,27 @@ public class IntegrationNotificationsTests
     }
 
     [Fact]
+    public async Task ConfirmedQueueDepartureDoesNotAnnounceReadyBeforeJellyfinHasTheCopy()
+    {
+        using var rig = await Started(r => r.Request(1, 693134, r.Emma));
+        Assert.Equal("ok", await rig.Service.SetFollowAsync(rig.Sam, TitleKey.Parse(Dune)!, true, default));
+        var instance = rig.Store.Instances(ArrKind.Radarr).Single();
+        var library = rig.Store.PeekLibrary(instance.Id)!;
+        var keys = ArrChangeDetector.Queue(ArrKind.Radarr, new ArrQueueSnapshot(), new ArrQueueSnapshot(), library,
+            new[] { new ArrQueueEntry { MovieId = 2, TmdbId = 693134 } });
+        Assert.Equal(new[] { Dune }, keys);
+        rig.Feed.Bump(keys, instance.Id);
+        await rig.Step(keys.ToArray());
+        Assert.Empty(rig.Inbox(rig.Emma));
+        Assert.Empty(rig.Inbox(rig.Sam));
+        var item = rig.Arrive(Dune, rig.Emma.UserId, rig.Sam.UserId);
+        await rig.Step(keys.ToArray());
+        await rig.Step(keys.ToArray());
+        Assert.Equal(("ready", item.ToString("N")), (Assert.Single(rig.Inbox(rig.Emma)).Kind, Assert.Single(rig.Inbox(rig.Emma)).ItemId));
+        Assert.Single(rig.Inbox(rig.Sam));
+    }
+
+    [Fact]
     public async Task UsersWhoCannotOpenTheCopyAreNeverTold()
     {
         // Sam follows Dune but can't open the library it lands in; the kid (parental limits) asked

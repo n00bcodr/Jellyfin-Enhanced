@@ -234,7 +234,9 @@ test('Remove & search again asks first (keeps the data); deleting the data needs
   const pack = page.querySelector('.je-ops-dl[data-download-id="pack"]');
   assert.match(pack.textContent, /Peacemaker · S02E01–E03 · Sonarr/);
   assert.match(pack.textContent, /client reports no peers/);
-  assert.equal([...pack.querySelectorAll('.je-ops-btn')].map(b => [...b.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('')).join('|'), 'Remove…|Search again|Remove and delete data…|Open in Sonarr');
+  // No row-level "delete data" button: that lives inside the Remove dialog.
+  assert.equal([...pack.querySelectorAll('.je-ops-btn')].map(b => [...b.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('')).join('|'), 'Remove…|Search again|Open in Sonarr');
+  assert.equal(page.querySelector('.je-ops-dl .je-ops-btn-danger'), null);
   assert.match(page.querySelector('.je-ops-table').textContent, /Imported/);
   assert.match(page.querySelector('.je-ops-table').textContent, /somethingNew/);
 
@@ -261,11 +263,18 @@ test('Remove & search again asks first (keeps the data); deleting the data needs
   await until(() => page.querySelector('.je-ops-banner'));
   assert.equal(page.querySelector('.je-ops-banner').textContent, 'Done. Removed from the queue.');
 
-  // Tier 3: the server's token, then the typed word.
-  page.querySelector('[data-je-focus="dl:s1|pack:remove_with_data"]').click();
+  // Tier 3, from inside the Remove dialog with its choices (blocklist on by default, search
+  // again unticked here): the server's token, then the typed word.
+  remove.click();
+  dialog = h.document.querySelector('.je-ops-dialog');
+  dialog.querySelectorAll('input[type="checkbox"]')[1].checked = false;
+  const deleteToo = dialog.querySelector('.je-ops-btn-danger');
+  assert.equal(deleteToo.textContent, "Delete the download's data too…");
+  deleteToo.click();
   await until(() => h.document.querySelector('.je-ops-warnbox'));
   dialog = h.document.querySelector('.je-ops-dialog');
   assert.match(dialog.textContent, /deletes what the download client has of it/);
+  assert.deepEqual([...dialog.querySelectorAll('.je-ops-delete-also li')].map(li => li.textContent), ["The release is blocklisted, so it won't be grabbed again."]);
   const confirm = dialog.querySelector('.je-ops-btn-danger');
   assert.equal(confirm.disabled, true);
   confirm.click();
@@ -283,6 +292,7 @@ test('Remove & search again asks first (keeps the data); deleting the data needs
   assert.deepEqual({ ...posts[1].body }, { instanceId: 's1', downloadId: 'pack' });
   assert.equal(posts[2].body.action, 'remove_with_data');
   assert.equal(posts[2].body.confirmationToken, 'TOKEN-1');
+  assert.deepEqual([posts[2].body.blocklist, posts[2].body.searchAgain], [true, false]);
   assert.equal(h.document.querySelector('.je-ops-dialog'), null);
 });
 
@@ -711,8 +721,9 @@ test('Cancel closes every dialog: the tabs\' Remove, the drawer\'s Remove and th
   page.querySelector('[data-je-focus="dl:s1|pack:remove"]').click();
   assert.equal(h.JE.internals.arrHub.admin.state.dialog?.owner, 'tabs');
   cancelled();
-  // Tabs: Remove and delete data… (Tier 3).
-  page.querySelector('[data-je-focus="dl:s1|pack:remove_with_data"]').click();
+  // Tabs: Remove… → Delete the download's data too… (Tier 3).
+  page.querySelector('[data-je-focus="dl:s1|pack:remove"]').click();
+  h.document.querySelector('.je-ops-dialog .je-ops-btn-danger').click();
   await until(() => h.document.querySelector('.je-ops-warnbox'));
   cancelled();
   // The Manage drawer's Remove….
@@ -721,6 +732,26 @@ test('Cancel closes every dialog: the tabs\' Remove, the drawer\'s Remove and th
   h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]').click();
   assert.equal(h.JE.internals.arrHub.admin.state.dialog?.owner, 'drawer');
   cancelled();
+});
+
+test('delete-data confirmation: a queue that is changing (409) says so and opens no dialog', async t => {
+  const h = setup(t, {
+    hash: '#/requests?tab=activity',
+    responses: (path) => {
+      if (path === '/arr/admin/hub/activity') return activity();
+      if (path === '/arr/admin/queue/confirm') return Object.assign(new Error('Conflict'), { status: 409 });
+      return null;
+    }
+  });
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-dl'));
+  const page = h.document.getElementById('je-requests-hub-page');
+  page.querySelector('[data-je-focus="dl:s1|pack:remove"]').click();
+  h.document.querySelector('.je-ops-dialog .je-ops-btn-danger').click();
+  await until(() => h.JE.internals.arrHub.admin.state.banner);
+  assert.equal(h.document.querySelector('.je-ops-warnbox'), null);
+  assert.match(h.JE.internals.arrHub.admin.state.banner.message, /The queue is changing; try again in a moment\./);
+  assert.equal(h.JE.internals.arrHub.admin.state.banner.failed, true);
 });
 
 test('a 4K series request no 4K Sonarr has says Sonarr, on the card and in Needs attention', async t => {
@@ -861,4 +892,182 @@ test('a 4K handoff row is tagged 4K in its title', async t => {
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-ops-item[data-attention="approved_not_in_arr"]'));
   assert.match(h.document.querySelector('.je-ops-item[data-attention="approved_not_in_arr"] .je-ops-item-title').textContent, /Sintel \(2010\) \[4K\]/);
+});
+
+// C09: repeated Needs attention rows with only page-level fixes collapse into one row.
+const approved = (i, extra = {}) => ({ id: `ok${i}`, code: 'approved_not_in_arr', severity: 'warning', title: `Film ${i}`, year: 2000 + i, key: `movie:tmdb:${100 + i}`, since: iso(-20), message: 'Emma', fixes: ['open_seerr'], ...extra });
+const missing = (i, instanceId, problem, extra = {}) => ({ id: `m${instanceId}${i}`, code: 'not_in_jellyfin', severity: 'warning', instanceId, instance: instanceId === 's1' ? 'Sonarr' : 'Radarr', title: `Show ${i}`, since: iso(-30), message: problem, detail: `/media/x${i}`, fixes: problem === 'not_scanned' ? ['scan_now', 'open_system'] : ['open_system'], arrPath: `/data/x${i}`, ...extra });
+
+test('Needs attention: three or more rows alike with only page-level fixes share one row; others stay apart', async t => {
+  let rows = [];
+  const h = setup(t, { responses: path => (path === '/arr/admin/hub/overview' ? { ...overview(), needsAttention: rows } : null) });
+  rows = [
+    // Movies and series OK'd for the standard copy read the same: one row.
+    ...Array.from({ length: 11 }, (_, i) => approved(i + 1, i === 1 ? { title: '<img src=x onerror=alert(1)>' } : i % 3 === 2 ? { key: `tv:tvdb:${500 + i}` } : {})),
+    // 4K copies read per kind ("no 4K Radarr" / "no 4K Sonarr"): three 4K movies share a row, one 4K series stays apart.
+    approved(20, { params: { variant: '4k' } }), approved(21, { params: { variant: '4k' } }), approved(22, { params: { variant: '4k' } }),
+    approved(23, { key: 'tv:tvdb:999', params: { variant: '4k' } }),
+    missing(1, 's1', 'not_visible'), missing(2, 's1', 'not_visible'),  // only two: apart
+    missing(3, 's1', 'outside_library'), missing(4, 's1', 'outside_library'), missing(5, 's1', 'outside_library'),
+    missing(6, 'r1', 'outside_library'),                               // other instance: apart
+    missing(7, 's1', 'not_scanned'), missing(8, 's1', 'not_scanned'), missing(9, 's1', 'not_scanned') // a Scan now each: apart
+  ];
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-attention .je-ops-item'));
+  const page = h.document.getElementById('je-requests-hub-page');
+  const box = page.querySelector('.je-ops-attention');
+  // The count still counts every row.
+  assert.equal(box.querySelector('.je-ops-count').textContent, String(rows.length));
+  const groups = [...box.querySelectorAll('.je-ops-group')];
+  assert.equal(groups.length, 3);
+  assert.equal(box.querySelectorAll('.je-ops-item').length, 3 + 1 + 2 + 1 + 3);
+  const [ok, ok4k, outside] = groups;
+  assert.equal(ok4k.querySelector('.je-ops-item-title').textContent, "OK'd in Seerr, not in Sonarr/Radarr · 3 titles");
+  assert.equal(ok.querySelector('.je-ops-item-title').textContent, "OK'd in Seerr, not in Sonarr/Radarr · 11 titles");
+  // The property the rows were grouped by is on the collapsed row, so the two groups read differently.
+  const reason = g => g.querySelector('.je-ops-group-reason')?.textContent;
+  assert.equal(reason(ok), "OK'd in Seerr, but none of the Sonarr/Radarr Jellyfin Enhanced watches has them");
+  assert.equal(reason(ok4k), "4K requests OK'd in Seerr, but none of the 4K Radarr Jellyfin Enhanced watches has them");
+  assert.notEqual(reason(ok), reason(ok4k));
+  const titlesLine = g => g.querySelector('.je-ops-item-sub:not(.je-ops-group-reason)').textContent;
+  assert.equal(titlesLine(ok), 'Film 1 (2001), <img src=x onerror=alert(1)> (2002), Film 3 (2003) and 8 more');
+  assert.equal(page.querySelectorAll('img[src="x"]').length, 0);
+  // One shared fix.
+  const links = ok.querySelectorAll('a.je-ops-btn');
+  assert.equal(links.length, 1);
+  assert.equal(links[0].getAttribute('href'), 'http://seerr.test/settings/services');
+  assert.equal(outside.querySelector('.je-ops-item-title').textContent, 'In Sonarr, not in Jellyfin · 3 titles');
+  assert.equal(reason(outside), 'No Jellyfin library contains their folders');
+  assert.equal(outside.querySelector('.je-ops-btn').textContent.trim().endsWith('Open System'), true);
+  // Rows that stayed apart.
+  assert.equal(box.querySelectorAll('.je-ops-item:not(.je-ops-group)[data-attention="approved_not_in_arr"]').length, 1);
+  assert.equal(box.querySelectorAll('.je-ops-item:not(.je-ops-group)[data-attention="not_in_jellyfin"]').length, 2 + 1 + 3);
+  // The group sits where its first row was.
+  assert.equal(box.querySelectorAll('.je-ops-item')[0], ok);
+
+  // The toggle lists every row; expansion and focus survive a redraw (a poll).
+  let toggle = ok.querySelector('button.je-ops-link');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(toggle.textContent, 'Show all 11');
+  assert.equal(ok.querySelector('.je-ops-group-list'), null);
+  toggle.focus();
+  toggle.click();
+  let group = page.querySelector('.je-ops-group[data-attention="approved_not_in_arr"]');
+  toggle = group.querySelector('button.je-ops-link');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(toggle.textContent, 'Hide the list');
+  const list = group.querySelector('.je-ops-group-list');
+  assert.equal(toggle.getAttribute('aria-controls'), list.id);
+  assert.equal(list.querySelectorAll('li').length, 11);
+  assert.match(list.querySelector('li .je-ops-item-sub').textContent, /^OK'd in Seerr 20 min ago, but none of the Sonarr\/Radarr Jellyfin Enhanced watches has it · asked by Emma$/);
+  assert.equal(h.document.activeElement, toggle);
+  await h.JE.internals.arrHub.admin.refresh();
+  group = page.querySelector('.je-ops-group[data-attention="approved_not_in_arr"]');
+  assert.equal(group.querySelector('button.je-ops-link').getAttribute('aria-expanded'), 'true');
+  assert.equal(group.querySelectorAll('.je-ops-group-list li').length, 11);
+  assert.equal(h.document.activeElement?.dataset?.jeFocus, group.querySelector('button.je-ops-link').dataset.jeFocus);
+  // The other group stays closed.
+  assert.equal(page.querySelector('.je-ops-group[data-attention="not_in_jellyfin"] .je-ops-group-list'), null);
+
+  // Down to two: the rows stand apart again, and focus on the group's toggle moves to a former
+  // row's fix rather than dropping to the page.
+  rows = [approved(1), approved(2)];
+  await h.JE.internals.arrHub.admin.refresh();
+  assert.equal(page.querySelectorAll('.je-ops-group').length, 0);
+  assert.equal(page.querySelectorAll('.je-ops-attention .je-ops-item').length, 2);
+  assert.equal(h.document.activeElement?.dataset?.jeFocus, 'fix:ok1:open_seerr');
+
+  // A row's fix is focused when a third row folds the rows together: focus goes to the shared fix.
+  page.querySelector('[data-je-focus="fix:ok2:open_seerr"]').focus();
+  rows = [approved(1), approved(2), approved(3)];
+  await h.JE.internals.arrHub.admin.refresh();
+  group = page.querySelector('.je-ops-group[data-attention="approved_not_in_arr"]');
+  assert.ok(group);
+  assert.equal(h.document.activeElement, group.querySelector('a.je-ops-btn'));
+  assert.match(h.document.activeElement.dataset.jeFocus, /^fix:group:.*:open_seerr$/);
+
+  // The group's shared fix is focused when it splits again: the same fix of a former row.
+  rows = [approved(2), approved(3)];
+  await h.JE.internals.arrHub.admin.refresh();
+  assert.equal(page.querySelectorAll('.je-ops-group').length, 0);
+  assert.equal(h.document.activeElement?.dataset?.jeFocus, 'fix:ok2:open_seerr');
+});
+
+test('Needs attention: groups of one reason split by cause say the cause on the collapsed row', async t => {
+  const rows = [
+    missing(1, 's1', 'not_visible'), missing(2, 's1', 'not_visible'), missing(3, 's1', 'not_visible'),
+    missing(4, 's1', 'outside_library'), missing(5, 's1', 'outside_library'), missing(6, 's1', 'outside_library')
+  ];
+  const h = setup(t, { responses: path => (path === '/arr/admin/hub/overview' ? { ...overview(), needsAttention: rows } : null) });
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-attention .je-ops-group'));
+  const groups = [...h.document.querySelectorAll('.je-ops-attention .je-ops-group')];
+  assert.equal(groups.length, 2);
+  // Same heading, different cause.
+  assert.equal(groups[0].querySelector('.je-ops-item-title').textContent, groups[1].querySelector('.je-ops-item-title').textContent);
+  assert.equal(groups[0].querySelector('.je-ops-group-reason').textContent, "Jellyfin can't see their files: check the path mappings (System → Path doctor)");
+  assert.equal(groups[1].querySelector('.je-ops-group-reason').textContent, 'No Jellyfin library contains their folders');
+});
+
+// C52: deleting a download's data only from the Remove dialog, with its choices.
+test('a download that can\'t be removed with its data offers no delete option, in the row or the Remove dialog', async t => {
+  const h = setup(t, {
+    hash: '#/requests?tab=activity',
+    responses: path => {
+      if (path !== '/arr/admin/hub/activity') return null;
+      const a = activity();
+      a.queue[0].actions = ['remove', 'search'];
+      return a;
+    }
+  });
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-dl'));
+  const page = h.document.getElementById('je-requests-hub-page');
+  page.querySelector('[data-je-focus="dl:s1|pack:remove"]').click();
+  const dialog = h.document.querySelector('.je-ops-dialog');
+  assert.ok(dialog);
+  assert.equal(dialog.querySelector('.je-ops-btn-danger'), null);
+  assert.doesNotMatch(dialog.textContent, /Delete the download's data too/);
+  // The other download allows it.
+  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  page.querySelector('[data-je-focus="dl:r1|dlB:remove"]').click();
+  assert.ok(h.document.querySelector('.je-ops-dialog .je-ops-btn-danger'));
+});
+
+test('the Overview\'s "delete it too?" sends Remove & search again\'s choices (blocklist on) and shows them first', async t => {
+  const posts = [];
+  const h = setup(t, {
+    responses: (path, options) => {
+      if (path === '/arr/admin/hub/overview') return overview();
+      if (path === '/arr/admin/hub/activity') {
+        const a = activity();
+        a.queue.push({ instanceId: 'r1', instance: 'Radarr', kind: 'Radarr', downloadId: 'dlC', ids: [10], title: 'Plan 9', episodes: 0, status: 'delay', state: 'downloading', actions: ['search'] });
+        return a;
+      }
+      if (path === '/arr/admin/queue/confirm') { posts.push({ path, body: options.body }); return { token: 'TOKEN-2', download: { title: 'Peacemaker', scope: 'S02E05', instance: 'Sonarr' } }; }
+      if (options?.method === 'POST') { posts.push({ path, body: options.body }); return { status: 'Succeeded', message: 'Done.' }; }
+      return null;
+    }
+  });
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-item[data-attention="import_blocked"]'));
+  const page = h.document.getElementById('je-requests-hub-page');
+  page.querySelector('[data-je-focus="delete:a1"]').click();
+  await until(() => h.document.querySelector('.je-ops-warnbox'));
+  const dialog = h.document.querySelector('.je-ops-dialog');
+  assert.deepEqual([...dialog.querySelectorAll('.je-ops-delete-also li')].map(li => li.textContent), ["The release is blocklisted, so it won't be grabbed again.", 'Sonarr then searches for another copy.']);
+  const input = dialog.querySelector('input[type="text"]');
+  input.value = 'DELETE';
+  input.dispatchEvent(new h.window.Event('input'));
+  dialog.querySelector('.je-ops-btn-danger').click();
+  await until(() => posts.length === 2);
+  assert.deepEqual({ ...posts[1].body, idempotencyKey: 'k' }, { instanceId: 's1', downloadId: 'dlA', action: 'remove_with_data', blocklist: true, searchAgain: true, confirmationToken: 'TOKEN-2', idempotencyKey: 'k' });
+
+  // Once the Activity answer says a download can't be removed with its data, the Overview doesn't offer it.
+  page.querySelector('.je-hub-tab[data-tab="activity"]').click();
+  await until(() => page.querySelector('.je-ops-dl'));
+  page.querySelector('.je-hub-tab[data-tab="overview"]').click();
+  await until(() => page.querySelector('.je-ops-item[data-attention="download_stalled"]'));
+  assert.equal(page.querySelector('[data-je-focus="delete:a7"]'), null);
+  assert.ok(page.querySelector('[data-je-focus="delete:a1"]'));
 });

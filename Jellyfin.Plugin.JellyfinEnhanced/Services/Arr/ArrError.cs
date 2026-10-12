@@ -142,7 +142,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>The arr's <c>totalRecords</c>.</summary>
         public int TotalRecords { get; init; }
 
+        /// <summary>The number of page requests made.</summary>
+        public int Pages { get; init; }
+
         /// <summary>True when the record cap stopped the traversal before <see cref="TotalRecords"/>.</summary>
         public bool Truncated { get; init; }
+
+        /// <summary>
+        /// True when the whole list was walked (no cap) but holds fewer distinct rows than the largest
+        /// <see cref="TotalRecords"/> reported: rows moved between pages while they were read, so some
+        /// were never seen. Only set when the read counted rows by id. Equal counts do not prove
+        /// completeness when more than one page was read.
+        /// </summary>
+        public bool Short { get; init; }
     }
 }

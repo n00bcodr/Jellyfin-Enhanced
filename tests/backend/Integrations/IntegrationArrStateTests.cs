@@ -49,6 +49,408 @@ public class IntegrationArrStateTests
         Assert.Equal(1500, ArrLegacyViews.QueueItems(arr.Instance("TV"), read.Value).Count());
     }
 
+    // C76 helpers: a Sonarr queue of n single-episode rows (one download each, ids = episode ids),
+    // read once so the store holds a complete snapshot to compare against.
+    private static async Task<(FakeArr Arr, FakeArr.Host Sonarr, ArrStateStore Store, ArrConnection Tv)> QueueOf(int n)
+    {
+        var arr = Rig(out _, out var sonarr);
+        for (var i = 1; i <= n; i++) sonarr.Queue.Add(FakeArr.SonarrQueueRow(i, "dl" + i, 1, i));
+        var store = arr.Store();
+        var tv = arr.Instance("TV");
+        Assert.Equal(Math.Min(n, ArrStateLoaders.QueueMaxRecords), (await store.GetQueueAsync(tv, default)).Value!.Records.Count);
+        return (arr, sonarr, store, tv);
+    }
+
+    private static async Task Refresh(FakeArr arr, ArrStateStore store, ArrConnection instance)
+    {
+        store.RequestRefresh(instance.Id, ArrSnapshotKind.Queue);
+        arr.Now += TimeSpan.FromSeconds(3);
+        await Task.WhenAll(store.Tick());
+        await Settle(store);
+    }
+
+    // The last row moves to the front (its time left dropped) between page 1 and page 2: page 2
+    // starts with a row page 1 already gave, and the moved row is on no page.
+    private static void MoveLastToFront(FakeArr.Host host)
+    {
+        var last = host.Queue[^1];
+        host.Queue.RemoveAt(host.Queue.Count - 1);
+        host.Queue.Insert(0, last);
+    }
+
+    [Fact]
+    public async Task ARowMovingAcrossThePageBoundaryIsReadAgainNotTakenForADeparture()
+    {
+        var (arr, sonarr, store, tv) = await QueueOf(501);
+        using var _ = arr;
+        var moves = 0;
+        sonarr.BeforePage = (path, page) => { if (page == 2 && moves++ == 0) MoveLastToFront(sonarr); };
+        var queueCalls = arr.CallCount("sonarr.lan", "/api/v3/queue");
+
+        await Refresh(arr, store, tv);
+
+        var read = await store.GetQueueAsync(tv, default);
+        Assert.Null(read.Error);
+        Assert.Equal(501, read.Value!.Records.Select(r => r.Id).Distinct().Count());
+        Assert.Contains(read.Value.Records, r => r.Id == 501);
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+        // The short read (pages 1, 2 and the arr's "past the end" answer) and one more read.
+        Assert.True(arr.CallCount("sonarr.lan", "/api/v3/queue") - queueCalls >= 4);
+    }
+
+    [Fact]
+    public async Task AShortQueuesRetryReadIsOwnedAndCancelledAtShutdown()
+    {
+        var (arr, sonarr, store, tv) = await QueueOf(501);
+        using var rig = arr;
+        var complete = store.PeekQueue(tv.Id);
+        var pages = 0;
+        sonarr.BeforePage = (path, page) => { if (page == 2) MoveLastToFront(sonarr); };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sonarr.Before = async (path, ct) =>
+        {
+            if (path != "/api/v3/queue" || Interlocked.Increment(ref pages) <= 3) return;
+            // The first pass stops when page 2 adds no id. Hold page 2 of its retry.
+            using var registration = ct.Register(() => cancelled.TrySetResult());
+            entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, ct);
+        };
+        var refresh = store.RefreshForEventAsync(tv.Id, ArrSnapshotKind.Queue, force: true);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await store.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Same(complete, store.PeekQueue(tv.Id));
+            Assert.Null(store.LeftQueueAt(tv, null, 501));
+            var reads = pages;
+            await store.RefreshForEventAsync(tv.Id, ArrSnapshotKind.Queue, force: true);
+            Assert.Equal(reads, pages);
+            store.Dispose();
+        }
+        finally
+        {
+            await store.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
+    public async Task APersistentlyShortQueueReadKeepsTheLastCompleteSnapshotQuietlyAndRecordsNoDeparture()
+    {
+        var (arr, sonarr, store, tv) = await QueueOf(501);
+        using var _ = arr;
+        var before = await store.GetQueueAsync(tv, default);
+        var changes = new List<ArrSnapshotChange>();
+        store.SnapshotChanged += c => { if (c.Kind == ArrSnapshotKind.Queue) lock (changes) changes.Add(c); };
+        sonarr.BeforePage = (path, page) => { if (page == 2) MoveLastToFront(sonarr); };
+        arr.Now += TimeSpan.FromMinutes(1);
+
+        await Refresh(arr, store, tv);
+
+        // The arr answered: no error (no "can't be read" row, no legacy error entry, no admin alert),
+        // the complete read is kept with its own age, and nothing changed. A page reading it now
+        // doesn't start another read (it was checked just now).
+        var calls = arr.CallCount("sonarr.lan", "/api/v3/queue");
+        var read = await store.GetQueueAsync(tv, default);
+        await Settle(store);
+        Assert.Equal(calls, arr.CallCount("sonarr.lan", "/api/v3/queue"));
+        Assert.Null(read.Error);
+        Assert.Same(before.Value, read.Value);
+        Assert.Equal(before.LoadedAt, read.LoadedAt);
+        Assert.True(read.Stale);
+        Assert.Empty(changes);
+        for (var id = 1; id <= 501; id++) Assert.Null(store.LeftQueueAt(tv, null, id));
+        var queueSlot = store.Describe().Instances.Single(i => i.Name == "TV").Snapshots.Single(x => x.Kind == ArrSnapshotKind.Queue);
+        Assert.Equal((0L, (ArrSlotError?)null), (queueSlot.FailedRefreshes, queueSlot.LastError));
+        // Download groups (the admin hub's ids) still come from the complete read.
+        var groups = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.NeedsAttention.Group(tv, store.PeekQueue(tv.Id), null);
+        Assert.Equal(501, groups.Sum(g => g.Ids.Count));
+
+        // No backoff, and no re-read at once either: the next read comes at the normal interval.
+        await Task.WhenAll(store.Tick());
+        Assert.Equal(calls, arr.CallCount("sonarr.lan", "/api/v3/queue"));
+        arr.Now += TimeSpan.FromSeconds(31);
+        await Task.WhenAll(store.Tick());
+        await Settle(store);
+        Assert.True(arr.CallCount("sonarr.lan", "/api/v3/queue") > calls);
+        Assert.Same(before.Value, store.PeekQueue(tv.Id));
+
+        // Still changing once the kept read is QueueKeepHeld old: the incomplete read is shown (its
+        // rows are live), still with no departure, and the baseline still holds every row.
+        arr.Now += ArrStateStore.QueueKeepHeld;
+        await Refresh(arr, store, tv);
+        read = await store.GetQueueAsync(tv, default);
+        Assert.Null(read.Error);
+        Assert.True(read.Value!.Incomplete);
+        Assert.Equal(500, read.Value.Records.Count);
+        Assert.NotEmpty(changes);
+        for (var id = 1; id <= 501; id++) Assert.Null(store.LeftQueueAt(tv, null, id));
+        // A later incomplete read replaces an incomplete one.
+        var incomplete = read.Value;
+        arr.Now += TimeSpan.FromMinutes(1);
+        await Refresh(arr, store, tv);
+        Assert.NotSame(incomplete, store.PeekQueue(tv.Id));
+
+        // The queue settles: the next read is complete again; still no row counts as having left.
+        sonarr.BeforePage = null;
+        arr.Now += TimeSpan.FromMinutes(1);
+        await Refresh(arr, store, tv);
+        read = await store.GetQueueAsync(tv, default);
+        Assert.Null(read.Error);
+        Assert.False(read.Value!.Incomplete);
+        Assert.Equal(501, read.Value.Records.Count);
+        for (var id = 1; id <= 501; id++) Assert.Null(store.LeftQueueAt(tv, null, id));
+    }
+
+    [Fact]
+    public async Task AColdQueueReadThatStaysShortStillServesItsRowsWithNoError()
+    {
+        using var arr = Rig(out _, out var sonarr);
+        for (var i = 1; i <= 501; i++) sonarr.Queue.Add(FakeArr.SonarrQueueRow(i, "dl" + i, 1, i));
+        sonarr.BeforePage = (path, page) => { if (page == 2) MoveLastToFront(sonarr); };
+        var store = arr.Store();
+        var tv = arr.Instance("TV");
+
+        var read = await store.GetQueueAsync(tv, default);
+
+        Assert.Null(read.Error);
+        Assert.True(read.Value!.Incomplete);
+        Assert.Equal(500, read.Value.Records.Select(r => r.Id).Distinct().Count());
+        // The legacy Downloads route lists them, with no error entry (it adds one only for read.Error).
+        Assert.Equal(500, ArrLegacyViews.QueueItems(tv, read.Value).Count());
+
+        // The first complete read after it finds no departure for the row the cold read missed.
+        sonarr.BeforePage = null;
+        await Refresh(arr, store, tv);
+        Assert.False(store.PeekQueue(tv.Id)!.Incomplete);
+        for (var id = 1; id <= 501; id++) Assert.Null(store.LeftQueueAt(tv, null, id));
+    }
+
+    [Fact]
+    public async Task AQueueShrinkingWhileReadRecordsOnlyTheRowThatReallyLeft()
+    {
+        var (arr, sonarr, store, tv) = await QueueOf(1001);
+        using var _ = arr;
+        var removed = 0;
+        // Row 1 imports between page 1 and page 2: every later row moves up one place, so row 501
+        // slips from page 2 onto page 1, which was already read.
+        sonarr.BeforePage = (path, page) => { if (page == 2 && removed++ == 0) sonarr.Queue.RemoveAt(0); };
+
+        await Refresh(arr, store, tv);
+
+        var read = await store.GetQueueAsync(tv, default);
+        Assert.Null(read.Error);
+        Assert.Equal(1000, read.Value!.Records.Count);
+        Assert.Equal(1000, read.Value.TotalRecords);
+        Assert.Null(store.LeftQueueAt(tv, null, 1));
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+
+        sonarr.BeforePage = null;
+        await Refresh(arr, store, tv);
+        Assert.NotNull(store.LeftQueueAt(tv, null, 1));
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+
+        // A queue that now fits in one page records departures at once; row 501 still downloads.
+        sonarr.Queue.RemoveAll(r => (int)r["id"]! < 992 && (int)r["id"]! != 501);
+        await Refresh(arr, store, tv);
+        Assert.False(store.PeekQueue(tv.Id)!.Paged);
+        Assert.NotNull(store.LeftQueueAt(tv, null, 2));
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+        Assert.Null(store.LeftQueueAt(tv, null, 1001));
+    }
+
+    [Fact]
+    public async Task MoreDistinctRowsThanTheReportedTotalAreAccepted()
+    {
+        var (arr, sonarr, store, tv) = await QueueOf(600);
+        using var _ = arr;
+        var added = 0;
+        // A grab lands between the pages, but every page still reports 600 rows.
+        sonarr.ReportedTotal = (_, _) => 600;
+        sonarr.BeforePage = (path, page) => { if (page == 2 && added++ == 0) sonarr.Queue.Add(FakeArr.SonarrQueueRow(601, "dl601", 1, 601)); };
+
+        await Refresh(arr, store, tv);
+
+        var read = await store.GetQueueAsync(tv, default);
+        Assert.Null(read.Error);
+        Assert.Equal(601, read.Value!.Records.Count);
+        Assert.Equal(600, read.Value.TotalRecords);
+        Assert.True(read.Value.Records.Count > read.Value.TotalRecords);
+        Assert.False(read.Value.Incomplete);
+        Assert.False(read.Value.Truncated);
+    }
+
+    /// <summary>A count-preserving queue change cannot prove a missed row left the queue.</summary>
+    [Fact]
+    public async Task ARowMissedWhileTheQueueChurnsBetweenPagesIsNotTakenForADeparture()
+    {
+        var (arr, sonarr, store, tv) = await QueueOf(1001);
+        using var _ = arr;
+        var moved = false;
+        sonarr.BeforePage = (path, page) =>
+        {
+            if (path != "/api/v3/queue" || page != 2 || moved) return;
+            moved = true;
+            sonarr.Queue.RemoveAt(0);
+            sonarr.Queue.Add(FakeArr.SonarrQueueRow(1002, "dl1002", 1, 1002));
+        };
+
+        await Refresh(arr, store, tv);
+
+        var read = await store.GetQueueAsync(tv, default);
+        Assert.Null(read.Error);
+        Assert.False(read.Value!.Incomplete);
+        Assert.False(read.Value.Truncated);
+        Assert.True(read.Value.Paged);
+        Assert.Equal(1001, read.Value.TotalRecords);
+        Assert.Equal(1001, read.Value.Records.Count);
+        Assert.DoesNotContain(read.Value.Records, r => r.Id == 501);
+        Assert.Contains(read.Value.Records, r => r.Id == 1);
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+        Assert.Null(store.LeftQueueAt(tv, null, 1));
+
+        sonarr.BeforePage = null;
+        arr.Now += TimeSpan.FromMinutes(1);
+        await Refresh(arr, store, tv);
+        Assert.Contains(store.PeekQueue(tv.Id)!.Records, r => r.Id == 501);
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+        // Page 1 still held row 1 when it imported, so this is the first read that lacks it.
+        Assert.Null(store.LeftQueueAt(tv, null, 1));
+        await Refresh(arr, store, tv);
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+        Assert.NotNull(store.LeftQueueAt(tv, null, 1));
+    }
+
+    [Fact]
+    public async Task ARowAKeptShortReadShowedIsNotTakenForADepartureByTheNextChurnedRead()
+    {
+        var (arr, sonarr, store, tv) = await QueueOf(1001);
+        using var _ = arr;
+        // Read N: complete by count and paged, but row 501 slid onto page 1 unseen: a suspect.
+        var churned = false;
+        sonarr.BeforePage = (path, page) =>
+        {
+            if (path != "/api/v3/queue" || page != 2 || churned) return;
+            churned = true;
+            sonarr.Queue.RemoveAt(0);
+            sonarr.Queue.Add(FakeArr.SonarrQueueRow(1002, "dl1002", 1, 1002));
+        };
+        await Refresh(arr, store, tv);
+        var held = store.PeekQueue(tv.Id)!;
+        Assert.True(held.Paged);
+        Assert.False(held.Incomplete);
+        Assert.DoesNotContain(held.Records, r => r.Id == 501);
+        Assert.Equal(new[] { 501 }, store.MissedQueueRows(tv).Select(r => r.Id).ToArray());
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+
+        // Read N+1 (within QueueKeepHeld): short on both attempts, so it is kept behind N and not
+        // published. It holds row 501: still in the queue.
+        sonarr.BeforePage = (path, page) => { if (page == 2) MoveLastToFront(sonarr); };
+        await Refresh(arr, store, tv);
+        Assert.Same(held, store.PeekQueue(tv.Id));
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+
+        // Read N+2: complete and paged, and the queue churns at the boundary again so row 501 is
+        // missed again. Seen in between, this is a first miss, not the second in a row.
+        sonarr.BeforePage = null;
+        sonarr.Queue.Sort((a, b) => ((int)a!["id"]!).CompareTo((int)b!["id"]!));
+        var e = sonarr.Queue.Single(r => (int)r["id"]! == 501);
+        sonarr.Queue.Remove(e);
+        sonarr.Queue.Insert(500, e);
+        churned = false;
+        sonarr.BeforePage = (path, page) =>
+        {
+            if (path != "/api/v3/queue" || page != 2 || churned) return;
+            churned = true;
+            sonarr.Queue.RemoveAt(0);
+            sonarr.Queue.Add(FakeArr.SonarrQueueRow(1003, "dl1003", 1, 1003));
+        };
+        await Refresh(arr, store, tv);
+        var read = store.PeekQueue(tv.Id)!;
+        Assert.NotSame(held, read);
+        Assert.True(read.Paged);
+        Assert.False(read.Incomplete);
+        Assert.DoesNotContain(read.Records, r => r.Id == 501);
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+        Assert.Contains(store.MissedQueueRows(tv), r => r.Id == 501);
+
+        // It really leaves: the next complete read lacking it counts it gone.
+        sonarr.BeforePage = null;
+        sonarr.Queue.Remove(e);
+        await Refresh(arr, store, tv);
+        Assert.NotNull(store.LeftQueueAt(tv, null, 501));
+        Assert.DoesNotContain(store.MissedQueueRows(tv), r => r.Id == 501);
+    }
+
+    [Fact]
+    public async Task AQueueCutAtTheRowCapRecordsNoDepartures()
+    {
+        var cap = ArrStateLoaders.QueueMaxRecords;
+        var (arr, sonarr, store, tv) = await QueueOf(cap + 1);
+        using var _ = arr;
+        Assert.True(store.PeekQueue(tv.Id)!.Truncated);
+
+        // The last row the cap let in drops to the end, past the cap: it is still in the queue.
+        var row = sonarr.Queue[cap - 1];
+        sonarr.Queue.RemoveAt(cap - 1);
+        sonarr.Queue.Add(row);
+        await Refresh(arr, store, tv);
+
+        Assert.True(store.PeekQueue(tv.Id)!.Truncated);
+        Assert.DoesNotContain(store.PeekQueue(tv.Id)!.Records, r => r.Id == cap);
+        Assert.Null(store.LeftQueueAt(tv, null, cap));
+
+        // A complete read afterwards may compare against the cut one: what left it really left.
+        sonarr.Queue.RemoveRange(0, sonarr.Queue.Count - 10);
+        arr.Now += TimeSpan.FromMinutes(1);
+        await Refresh(arr, store, tv);
+        Assert.False(store.PeekQueue(tv.Id)!.Truncated);
+        Assert.NotNull(store.LeftQueueAt(tv, null, 1));
+    }
+
+    [Fact]
+    public async Task ARowHiddenPastTheRowCapIsStillFoundLeavingByTheNextCompleteRead()
+    {
+        var cap = ArrStateLoaders.QueueMaxRecords;
+        var (arr, sonarr, store, tv) = await QueueOf(cap);
+        using var _ = arr;
+        Assert.False(store.PeekQueue(tv.Id)!.Truncated);
+        var e = sonarr.Queue[^1];
+        var eId = (int)e["id"]!;
+
+        // A new download sorts first: E is pushed past the cap, still in the queue.
+        sonarr.Queue.Insert(0, FakeArr.SonarrQueueRow(cap + 1, "dl-new", 1, cap + 1));
+        await Refresh(arr, store, tv);
+        Assert.True(store.PeekQueue(tv.Id)!.Truncated);
+        Assert.DoesNotContain(store.PeekQueue(tv.Id)!.Records, r => r.Id == eId);
+        Assert.Null(store.LeftQueueAt(tv, null, eId));
+
+        // The queue stays over the cap for more reads: the baseline holds the distinct rows seen
+        // (cap + 1), well within its limit, so E is kept rather than the baseline starting over.
+        for (var n = 0; n < 3; n++)
+        {
+            arr.Now += TimeSpan.FromMinutes(1);
+            await Refresh(arr, store, tv);
+            Assert.True(store.PeekQueue(tv.Id)!.Truncated);
+            Assert.Null(store.LeftQueueAt(tv, null, eId));
+        }
+
+        // E imports: the queue is back to the cap. Two complete paged reads establish it left.
+        sonarr.Queue.Remove(e);
+        arr.Now += TimeSpan.FromMinutes(1);
+        await Refresh(arr, store, tv);
+        Assert.False(store.PeekQueue(tv.Id)!.Truncated);
+        Assert.Null(store.LeftQueueAt(tv, null, eId));
+        Assert.Null(store.LeftQueueAt(tv, null, cap + 1));
+        Assert.Null(store.LeftQueueAt(tv, null, 1));
+        await Refresh(arr, store, tv);
+        Assert.NotNull(store.LeftQueueAt(tv, null, eId));
+        Assert.Null(store.LeftQueueAt(tv, null, cap + 1));
+        Assert.Null(store.LeftQueueAt(tv, null, 1));
+    }
+
     [Fact]
     public async Task WarmSnapshotsAreServedWithZeroUpstreamCallsPerRequest()
     {
@@ -598,6 +1000,41 @@ public class IntegrationArrStateTests
         Assert.Contains("loop failed during shutdown", File.ReadAllText(arr.Plugin.Core.Logger.CurrentLogFilePath));
         reconciler.Dispose();
         store.Dispose();
+    }
+
+    [Fact]
+    public async Task AKeptReadResetsMissBookkeepingBeforeALaterReadDespiteADelayedObserver()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var seen = false;
+        var laterSawReset = false;
+        var reads = 0;
+        var slot = new ArrSnapshotSlot<ArrQueueSnapshot>(ArrSnapshotKind.Queue, (_, _) =>
+        {
+            var first = Interlocked.Increment(ref reads) == 1;
+            if (!first) laterSawReset = seen;
+            return Task.FromResult(ArrResult<ArrQueueSnapshot>.Success(new ArrQueueSnapshot { Incomplete = first }));
+        }, q => q.Incomplete, TimeSpan.FromMinutes(2));
+        slot.Seed(new ArrQueueSnapshot(), now);
+        slot.Kept += _ => seen = true;
+        using var entered = new SemaphoreSlim(0);
+        using var release = new SemaphoreSlim(0);
+        slot.Refreshed += (_, value) =>
+        {
+            if (value != null) return;
+            entered.Release();
+            release.Wait(TimeSpan.FromSeconds(5));
+        };
+        var kept = slot.StartRefresh(new ArrCallCounter(), () => now, default);
+        try
+        {
+            Assert.True(await entered.WaitAsync(TimeSpan.FromSeconds(5)));
+            await slot.StartRefresh(new ArrCallCounter(), () => now, default).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(laterSawReset);
+        }
+        finally { release.Release(); }
+        await kept.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(2, reads);
     }
 
     [Fact]

@@ -33,6 +33,10 @@ internal sealed class FakeArr : IDisposable
         public string? RedirectTo { get; set; }
         /// <summary>Non-null: awaited (with the call's cancellation token) before a call to this path is answered.</summary>
         public Func<string, CancellationToken, Task>? Before { get; set; }
+        /// <summary>Non-null: called (under the host's lock) before a page of a paged list is cut, with the path and page number — mutate the list here to move rows between pages mid-read.</summary>
+        public Action<string, int>? BeforePage { get; set; }
+        /// <summary>The paged answer's totalRecords from the path and real count; null reports the real count.</summary>
+        public Func<string, int, int>? ReportedTotal { get; set; }
         /// <summary>Connect → notifications (webhooks) the arr holds, with ids.</summary>
         public List<JsonObject> Notifications { get; } = new();
         /// <summary>Called when a notification is created or changed, or tested (the arr would send its Test event here); return an error message to fail the save.</summary>
@@ -41,6 +45,8 @@ internal sealed class FakeArr : IDisposable
         public List<(string Method, string Path, string Body)> Writes { get; } = new();
         /// <summary>Non-zero: <c>POST /command</c> answers with this HTTP status (other calls as usual).</summary>
         public int CommandFailWith { get; set; }
+        /// <summary>Non-zero: <c>GET /queue/details</c> answers with this HTTP status (other calls as usual).</summary>
+        public int DetailsFailWith { get; set; }
         /// <summary>What <c>GET /command/{id}</c> answers for commands posted to <c>/command</c>.</summary>
         public string CommandStatus { get; set; } = "completed";
         /// <summary>The message of those commands.</summary>
@@ -210,6 +216,8 @@ internal sealed class FakeArr : IDisposable
                 host.Queue.RemoveAll(q => ids.Contains((int)q["id"]!));
                 return IntegrationTransport.Response("{}");
             }
+            if (path == "/api/v3/queue/details" && host.DetailsFailWith != 0)
+                return IntegrationTransport.Response("{\"message\":\"boom\"}", host.DetailsFailWith);
             if (path == "/api/v3/queue/details")
                 return IntegrationTransport.Response(new JsonArray(host.Queue.Select(q => q.DeepClone()).ToArray()).ToJsonString());
             switch (path)
@@ -223,9 +231,11 @@ internal sealed class FakeArr : IDisposable
                 case "/api/v3/series":
                     return IntegrationTransport.Response(new JsonArray(host.Series.Select(m => m.DeepClone()).ToArray()).ToJsonString());
                 case "/api/v3/queue":
-                    return Page(host.Queue, query);
+                    host.BeforePage?.Invoke(path, PageNumber(query));
+                    return Page(host, path, host.Queue, query);
                 case "/api/v3/history":
-                    return Page(host.History.OrderByDescending(h => (string)h["date"]!).ToList(), query);
+                    host.BeforePage?.Invoke(path, PageNumber(query));
+                    return Page(host, path, host.History.OrderByDescending(h => (string)h["date"]!).ToList(), query);
                 case "/api/v3/history/since":
                 {
                     var since = DateTime.Parse(query["date"]!, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
@@ -322,14 +332,23 @@ internal sealed class FakeArr : IDisposable
         return IntegrationTransport.Response("{}", 404);
     }
 
-    private static HttpResponseMessage Page(List<JsonObject> all, System.Collections.Specialized.NameValueCollection query)
+    private static int PageNumber(System.Collections.Specialized.NameValueCollection query) => int.Parse(query["page"] ?? "1", CultureInfo.InvariantCulture);
+
+    // Like Sonarr's and Radarr's queue paging: a page past the end is answered with page
+    // max(total / size, 1) (integer division), not with an empty page.
+    private static HttpResponseMessage Page(Host host, string path, List<JsonObject> all, System.Collections.Specialized.NameValueCollection query)
     {
-        var page = int.Parse(query["page"] ?? "1", CultureInfo.InvariantCulture);
+        var page = PageNumber(query);
         var size = int.Parse(query["pageSize"] ?? "10", CultureInfo.InvariantCulture);
         var records = all.Skip((page - 1) * size).Take(size).Select(r => r.DeepClone()).ToArray();
+        if (records.Length == 0 && page > 1)
+        {
+            page = Math.Max(all.Count / size, 1);
+            records = all.Skip((page - 1) * size).Take(size).Select(r => r.DeepClone()).ToArray();
+        }
         return IntegrationTransport.Response(new JsonObject
         {
-            ["page"] = page, ["pageSize"] = size, ["totalRecords"] = all.Count, ["records"] = new JsonArray(records),
+            ["page"] = page, ["pageSize"] = size, ["totalRecords"] = host.ReportedTotal?.Invoke(path, all.Count) ?? all.Count, ["records"] = new JsonArray(records),
         }.ToJsonString());
     }
 

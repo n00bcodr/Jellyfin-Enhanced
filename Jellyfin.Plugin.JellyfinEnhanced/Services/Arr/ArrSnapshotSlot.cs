@@ -21,8 +21,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private readonly object _lock = new();
         private readonly Func<T?, CancellationToken, Task<ArrResult<T>>> _loader;
         private readonly Func<Task, bool>? _trackBackground;
+        private readonly Func<T, bool>? _incomplete;
+        private readonly TimeSpan _keepHeldFor;
         private T? _value;
         private DateTimeOffset _loadedAt;
+        private DateTimeOffset _keptAt = DateTimeOffset.MinValue;
         private ArrError? _error;
         private DateTimeOffset _errorAt;
         private int _failures;
@@ -36,14 +39,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private long _failedRefreshes;
         private List<Func<T, T?>>? _patchesDuringRefresh;
 
-        public ArrSnapshotSlot(ArrSnapshotKind kind, Func<T?, CancellationToken, Task<ArrResult<T>>> loader, Func<Task, bool>? trackBackground = null)
+        /// <summary>A snapshot with optional completeness policy and background-task ownership.</summary>
+        /// <param name="kind">Snapshot kind.</param>
+        /// <param name="loader">Reads the snapshot (gets the value held, if any).</param>
+        /// <param name="incomplete">
+        /// Optional: tells a read that the arr answered but that may be missing rows (see
+        /// <paramref name="keepHeldFor"/>).
+        /// </param>
+        /// <param name="keepHeldFor">
+        /// How old a complete value may be and still be kept over an incomplete read: such a refresh
+        /// then keeps the value held (with its own age), counts as no failure (no backoff, no
+        /// error) and raises no change. An older value, or an incomplete one, is replaced by it.
+        /// </param>
+        /// <param name="trackBackground">Registers the full refresh before scheduling, or refuses it during shutdown.</param>
+        public ArrSnapshotSlot(ArrSnapshotKind kind, Func<T?, CancellationToken, Task<ArrResult<T>>> loader, Func<T, bool>? incomplete = null, TimeSpan keepHeldFor = default, Func<Task, bool>? trackBackground = null)
         {
             Kind = kind;
             _loader = loader;
+            _incomplete = incomplete;
+            _keepHeldFor = keepHeldFor;
             _trackBackground = trackBackground;
         }
 
-        /// <summary>Raised after every refresh (on the refresh's thread) with the value when it succeeded.</summary>
+        /// <summary>
+        /// Raised after every refresh (on the refresh's thread) with the value when it succeeded and
+        /// was published; null when it failed or was kept (see <see cref="Kept"/>).
+        /// </summary>
         public event Action<ArrSnapshotSlot<T>, T?>? Refreshed;
 
         /// <summary>
@@ -65,6 +86,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// </summary>
         public event Action<ArrSnapshotKind, ArrError?>? HealthChanged;
 
+        /// <summary>
+        /// Raised with a read the arr answered that was not published: an incomplete read kept
+        /// behind a recent complete value. Its rows are real even though nobody is shown them.
+        /// Runs under the publication lock; handlers must be quick and must not start reads.
+        /// </summary>
+        public event Action<T>? Kept;
+
         public ArrSnapshotKind Kind { get; }
 
         /// <summary>Last good value, when it was read, and the error of the latest attempt if that failed afterwards.</summary>
@@ -85,6 +113,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public DateTimeOffset LoadedAt
         {
             get { lock (_lock) return _loadedAt; }
+        }
+
+        /// <summary>
+        /// When the instance was last read successfully: <see cref="LoadedAt"/>, or later when an
+        /// incomplete read was answered and the held value kept (its age stays <see cref="LoadedAt"/>).
+        /// Refreshes are paced from this, so a kept value isn't read again at once.
+        /// </summary>
+        public DateTimeOffset CheckedAt
+        {
+            get { lock (_lock) return _keptAt > _loadedAt ? _keptAt : _loadedAt; }
         }
 
         public DateTimeOffset LastRead
@@ -277,7 +315,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 recovered = result.Ok && _failures > 0;
                 var patches = _patchesDuringRefresh;
                 _patchesDuringRefresh = null;
-                if (result.Ok)
+                if (result.Ok && KeepHeld(result.Value!, started))
+                {
+                    // The arr answered, so this is no failure; the held value (with live patches
+                    // already applied to it) stays, with its own age.
+                    _keptAt = started;
+                    // Like Publishing, this bookkeeping must precede the next read.
+                    Notify(() => Kept?.Invoke(result.Value!));
+                    _error = null;
+                    _failures = 0;
+                }
+                else if (result.Ok)
                 {
                     var value = result.Value!;
                     // Live patches that arrived while this read ran are newer than (or equal to) it.
@@ -331,6 +379,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             }
         }
 
+        // Under the lock: an incomplete read doesn't replace a complete value that is recent enough.
+        private bool KeepHeld(T read, DateTimeOffset started)
+            => _incomplete != null && _value != null && _incomplete(read) && !_incomplete(_value) && started - _loadedAt <= _keepHeldFor;
+
         private static void Notify(Action raise)
         {
             try
@@ -373,6 +425,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         bool HasValue { get; }
 
         DateTimeOffset LoadedAt { get; }
+
+        DateTimeOffset CheckedAt { get; }
 
         DateTimeOffset LastRead { get; }
 

@@ -280,7 +280,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         {
             var connection = state.Client.Connection;
             state.Library.Replaced += (before, after) => Raise(new ArrSnapshotChange(connection, ArrSnapshotKind.Library, before, after, null));
-            state.Queue.Replaced += (before, after) => Raise(new ArrSnapshotChange(connection, ArrSnapshotKind.Queue, before, after, null));
+            state.Queue.Replaced += (before, after) =>
+            {
+                state.ConfirmedDepartures.TryGetValue(after, out var departed);
+                state.ConfirmedDepartures.Remove(after);
+                Raise(new ArrSnapshotChange(connection, ArrSnapshotKind.Queue, before, after, null) { Departed = departed });
+            };
             state.History.Replaced += (before, after) => Raise(new ArrSnapshotChange(connection, ArrSnapshotKind.History, before, after, null));
             state.Calendar.Replaced += (before, after) => Raise(new ArrSnapshotChange(connection, ArrSnapshotKind.Calendar, before, after, null));
             state.System.Replaced += (before, after) => Raise(new ArrSnapshotChange(connection, ArrSnapshotKind.System, before, after, null));
@@ -310,5 +315,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
     /// and after. <see cref="ChangedIds"/> lists the arr ids a library patch touched (null: compare
     /// the whole snapshot).
     /// </summary>
-    public sealed record ArrSnapshotChange(ArrConnection Instance, ArrSnapshotKind Kind, object? Before, object After, IReadOnlyCollection<int>? ChangedIds);
+    public sealed record ArrSnapshotChange(ArrConnection Instance, ArrSnapshotKind Kind, object? Before, object After, IReadOnlyCollection<int>? ChangedIds)
+    {
+        /// <summary>
+        /// Queue rows an earlier paged read had missed that this queue read confirmed gone. The
+        /// before/after rows can't show them leaving (both lack them), yet their statuses change
+        /// now (to "almost ready"). Null when there are none.
+        /// </summary>
+        public IReadOnlyCollection<ArrQueueEntry>? Departed { get; init; }
+    }
 }

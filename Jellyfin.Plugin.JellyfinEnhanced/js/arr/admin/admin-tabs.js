@@ -43,6 +43,9 @@
         reloadTimer: null,
         generation: 0,
         busy: new Set(),
+        expanded: new Set(),
+        // Collapsed Needs attention rows of the last draw: group key → member row ids.
+        groups: new Map(),
         results: {},
         banner: null,
         dialog: null
@@ -287,6 +290,8 @@
             panel.appendChild(JE.arrStatus.staleNote(state.okAt[tab] || state.loadedAt[tab] || 0, () => { stopRetry(); load(tab, true); }, 'je-ops-banner je-ops-banner-unknown'));
         }
         const ctx = context();
+        const previousGroups = state.groups;
+        state.groups = new Map();
         try {
             if (state.tab === 'overview') A.renderOverview(panel, data, ctx);
             else if (state.tab === 'activity') A.renderActivity(panel, data, ctx);
@@ -296,9 +301,49 @@
             console.warn(`${logPrefix} could not draw the ${state.tab} tab`, err);
         }
         if (focus !== null && !panel.contains(document.activeElement)) {
-            const target = [...panel.querySelectorAll('[data-je-focus]')].find(n => n.dataset.jeFocus === focus);
+            const nodes = [...panel.querySelectorAll('[data-je-focus]')];
+            const target = nodes.find(n => n.dataset.jeFocus === focus)
+                || focusFallbacks(focus, previousGroups, state.groups).map(match => nodes.find(n => match(n.dataset.jeFocus))).find(Boolean);
             target?.focus({ preventScroll: true });
         }
+    }
+
+    /**
+     * Where focus goes when its control is gone because rows split out of, or folded into, a
+     * collapsed Needs attention row: a group's control → the same fix (or any fix) of its former
+     * rows (or the group that holds them under a new key); a row's fix → the same fix (or the
+     * toggle) of the group that now holds the row.
+     * @param {string} focus The focus id before the redraw.
+     * @param {Map<string, string[]>} before Groups of the previous draw.
+     * @param {Map<string, string[]>} now Groups of this draw.
+     * @returns {Array<function(string): boolean>} Focus id tests to try, best first.
+     */
+    function focusFallbacks(focus, before, now) {
+        const fixOf = rest => {
+            const at = rest.lastIndexOf(':');
+            return at < 0 ? null : { head: rest.slice(0, at), fix: rest.slice(at + 1) };
+        };
+        if (focus.startsWith('group:') || focus.startsWith('fix:group:')) {
+            const split = focus.startsWith('group:') ? { head: focus.slice('group:'.length), fix: null } : fixOf(focus.slice('fix:group:'.length));
+            const members = split && before.get(split.head);
+            if (!members) return [];
+            const out = split.fix ? members.map(id => f => f === `fix:${id}:${split.fix}`) : [];
+            // Any fix of a former row (the toggle has no counterpart on a row of its own).
+            out.push(...members.map(id => f => f.startsWith(`fix:${id}:`)));
+            // Or the group that holds them now (its key changed).
+            for (const [key, ids] of now) {
+                if (ids.some(id => members.includes(id))) out.push(f => f === (split.fix ? `fix:group:${key}:${split.fix}` : `group:${key}`), f => f === `group:${key}`);
+            }
+            return out;
+        }
+        if (focus.startsWith('fix:')) {
+            const split = fixOf(focus.slice('fix:'.length));
+            if (!split) return [];
+            for (const [key, members] of now) {
+                if (members.includes(split.head)) return [f => f === `fix:group:${key}:${split.fix}`, f => f === `group:${key}`];
+            }
+        }
+        return [];
     }
 
     /**
@@ -309,12 +354,39 @@
         return {
             busy: state.busy,
             results: state.results,
+            expanded: state.expanded,
+            toggleGroup,
+            noteGroup: (key, ids) => state.groups.set(key, ids),
+            canDeleteData,
             arrUrl,
             seerrUrl,
             act,
             queue: queueAction,
             scan: scanNow
         };
+    }
+
+    /**
+     * Opens or closes a collapsed Needs attention row (kept across redraws until the user changes).
+     * @param {string} key Group key.
+     * @returns {void}
+     */
+    function toggleGroup(key) {
+        if (state.expanded.has(key)) state.expanded.delete(key);
+        else state.expanded.add(key);
+        draw();
+    }
+
+    /**
+     * Whether a Needs attention row's download may be removed with its data: what the Activity
+     * answer says about that download when it was read; otherwise left to the server, which
+     * refuses a download that doesn't allow it when the confirmation is asked for.
+     * @param {Object} item Row (instanceId, downloadId).
+     * @returns {boolean} True when "delete the data too" may be offered.
+     */
+    function canDeleteData(item) {
+        const group = (state.data.activity?.queue || []).find(g => g.instanceId === item.instanceId && g.downloadId === item.downloadId);
+        return group ? (group.actions || []).includes('remove_with_data') : true;
     }
 
     /**
@@ -378,18 +450,21 @@
             case 'remove_search': {
                 // The row says how many episodes the download covers (the Activity answer too, when read).
                 const group = (state.data.activity?.queue || []).find(g => g.instanceId === item.instanceId && g.downloadId === item.downloadId);
-                removeDialog({ instanceId: item.instanceId, downloadId: item.downloadId, title: [item.title, item.scope].filter(Boolean).join(' '), scope: item.scope, episodes: item.episodes || group?.episodes || 0, instance: item.instance }, item.id, opener, true);
+                removeDialog({ instanceId: item.instanceId, downloadId: item.downloadId, title: [item.title, item.scope].filter(Boolean).join(' '), scope: item.scope, episodes: item.episodes || group?.episodes || 0, instance: item.instance, canDeleteData: canDeleteData(item) }, item.id, opener, true);
                 return;
             }
             case 'remove_with_data':
-                confirmDataDialog({ instanceId: item.instanceId, downloadId: item.downloadId }, item.id, opener);
+                // "delete it too?" under Remove & search again: that fix's choices (the Remove
+                // dialog's defaults for it), shown in the confirmation.
+                confirmDataDialog({ instanceId: item.instanceId, downloadId: item.downloadId, instance: item.instance }, item.id, opener, { blocklist: true, searchAgain: true });
                 return;
         }
     }
 
     /**
      * Runs a queue action from the Activity tab.
-     * @param {string} action remove, remove_with_data, search or retry_import.
+     * @param {string} action remove, search or retry_import (removing with the data starts in the
+     *   Remove dialog).
      * @param {Object} g Download.
      * @param {HTMLElement} [opener] The control clicked.
      * @returns {void}
@@ -397,9 +472,8 @@
     function queueAction(action, g, opener) {
         const busyId = A.downloadKey(g);
         if (state.busy.has(busyId)) return;
-        const target = { instanceId: g.instanceId, downloadId: g.downloadId, title: [g.title, g.scope].filter(Boolean).join(' '), scope: g.scope, episodes: g.episodes, instance: g.instance };
+        const target = { instanceId: g.instanceId, downloadId: g.downloadId, title: [g.title, g.scope].filter(Boolean).join(' '), scope: g.scope, episodes: g.episodes, instance: g.instance, canDeleteData: (g.actions || []).includes('remove_with_data') };
         if (action === 'remove') removeDialog(target, busyId, opener, false);
-        else if (action === 'remove_with_data') confirmDataDialog(target, busyId, opener);
         else runQueue({ instanceId: g.instanceId, downloadId: g.downloadId, action }, busyId, opener);
     }
 
@@ -587,9 +661,9 @@
 
     /**
      * Tier 2: remove a download from the queue keeping its data, with blocklist / search again
-     * choices and the blast radius of a season pack. "Delete the download's data too" leads to the
-     * Tier 3 dialog.
-     * @param {Object} target Download (instanceId, downloadId, title, scope, episodes).
+     * choices and the blast radius of a season pack. "Delete the download's data too" (only when the
+     * download allows it) leads to the Tier 3 dialog with the choices made here.
+     * @param {Object} target Download (instanceId, downloadId, title, scope, episodes, canDeleteData).
      * @param {string} busyId Row id.
      * @param {HTMLElement} opener The control clicked.
      * @param {boolean} searchByDefault Pre-tick "search again" (the Remove & search again fix).
@@ -627,7 +701,7 @@
         data.addEventListener('click', () => confirmDataDialog(target, busyId, opener, { blocklist: block.checked, searchAgain: search.checked }));
         cancel.addEventListener('click', () => closeDialog());
         buttons.appendChild(cancel);
-        if (!run) buttons.appendChild(data);
+        if (!run && target.canDeleteData) buttons.appendChild(data);
         buttons.appendChild(ok);
         box.appendChild(buttons);
         ok.focus();
@@ -639,7 +713,8 @@
      * @param {Object} target Download (instanceId, downloadId).
      * @param {string} busyId Row id.
      * @param {HTMLElement} opener The control clicked.
-     * @param {{blocklist?: boolean, searchAgain?: boolean}} [choices] Choices from the Tier 2 dialog.
+     * @param {{blocklist: boolean, searchAgain: boolean}} choices The blocklist / search again choices
+     *   (shown in the dialog and sent with the removal).
      * @returns {Promise<void>}
      */
     async function confirmDataDialog(target, busyId, opener, choices) {
@@ -656,7 +731,7 @@
         } catch (err) {
             state.busy.delete(busyId);
             if (generation !== state.generation || !tab || state.tab !== tab) return;
-            report(busyId, { status: 'Failed', message: err?.status === 404 ? tr('arr_ops_not_in_queue') : (err?.message || String(err)) });
+            report(busyId, { status: 'Failed', message: err?.status === 404 ? tr('arr_ops_not_in_queue') : err?.status === 409 ? tr('arr_ops_queue_changing') : (err?.message || String(err)) });
             return;
         }
         state.busy.delete(busyId);
@@ -670,6 +745,14 @@
         if (dl.episodes > 1) warn.appendChild(el('p', '', tr('arr_ops_remove_pack', { scope: dl.scope || '', n: dl.episodes })));
         warn.appendChild(el('p', '', [dl.release, dl.client, dl.size ? A.size(dl.size) : ''].filter(Boolean).join(' · ')));
         box.appendChild(warn);
+        const also = [];
+        if (choices?.blocklist === true) also.push(tr('arr_ops_delete_blocklist'));
+        if (choices?.searchAgain === true) also.push(tr('arr_ops_delete_search', { instance: dl.instance || target.instance || '' }));
+        if (also.length) {
+            const list = el('ul', 'je-ops-delete-also');
+            for (const line of also) list.appendChild(el('li', '', line));
+            box.appendChild(list);
+        }
         box.appendChild(el('p', '', tr('arr_ops_delete_type', { word })));
         const input = document.createElement('input');
         input.type = 'text';
@@ -706,6 +789,7 @@
         state.results = {};
         state.banner = null;
         state.busy.clear();
+        state.expanded.clear();
         leave();
         closeDialog();
     });

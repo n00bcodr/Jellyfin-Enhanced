@@ -411,6 +411,65 @@ public class IntegrationArrClientTests
     }
 
     [Fact]
+    public async Task PagedListsCountedByIdStopOnARepeatedPageAndReportAShortRead()
+    {
+        // Five rows, two per page; between pages the list reorders so page 2 repeats a row of page 1,
+        // and a page past the end is answered with an earlier page (as the arrs do).
+        var calls = 0;
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            calls++;
+            var page = int.Parse(System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query)["page"]!);
+            int[] ids = page switch { 1 => [1, 2], 2 => [2, 3], 3 => [4, 5], _ => [4, 5] };
+            return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { page, pageSize = 2, totalRecords = 5, records = ids.Select(i => new { id = i }) })));
+        });
+        var client = Client(transport);
+
+        var raw = await client.GetAllPagesAsync<JsonElement>("queue", pageSize: 2);
+        Assert.Equal(6, raw.Value!.Records.Count);       // raw rows reach the total with a repeat...
+        Assert.False(raw.Value.Short);                   // ...and without ids nothing can tell
+
+        calls = 0;
+        var byId = await client.GetAllPagesAsync<JsonElement>("queue", pageSize: 2, idOf: r => r.GetProperty("id").GetInt32());
+        Assert.Equal([1, 2, 3, 4, 5], byId.Value!.Records.Select(r => r.GetProperty("id").GetInt32()));
+        Assert.False(byId.Value.Short);
+        Assert.Equal(3, calls);
+
+        // Row 5 is never served: page 4 repeats page 3, so paging stops there, short of the total.
+        using var shortTransport = new IntegrationTransport((request, _) =>
+        {
+            var page = int.Parse(System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query)["page"]!);
+            int[] ids = page switch { 1 => [1, 2], 2 => [2, 3], _ => [3, 4] };
+            return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { page, pageSize = 2, totalRecords = 5, records = ids.Select(i => new { id = i }) })));
+        });
+        var shortRead = await Client(shortTransport).GetAllPagesAsync<JsonElement>("queue", pageSize: 2, idOf: r => r.GetProperty("id").GetInt32());
+        Assert.Equal([1, 2, 3, 4], shortRead.Value!.Records.Select(r => r.GetProperty("id").GetInt32()));
+        Assert.True(shortRead.Value.Short);
+        Assert.False(shortRead.Value.Truncated);
+    }
+
+    /// <summary>Distinct rows exceeding a reported total are complete and retain the page count.</summary>
+    [Fact]
+    public async Task PagedListsWithMoreDistinctRowsThanTheReportedTotalAreNotShort()
+    {
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            var page = int.Parse(System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query)["page"]!);
+            int[] ids = page switch { 1 => [1, 2], 2 => [3, 4], _ => [5, 6] };
+            return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { page, pageSize = 2, totalRecords = 5, records = ids.Select(i => new { id = i }) })));
+        });
+
+        var read = await Client(transport).GetAllPagesAsync<JsonElement>("queue", pageSize: 2, idOf: r => r.GetProperty("id").GetInt32());
+
+        Assert.Null(read.Error);
+        Assert.Equal([1, 2, 3, 4, 5, 6], read.Value!.Records.Select(r => r.GetProperty("id").GetInt32()));
+        Assert.Equal(5, read.Value.TotalRecords);
+        Assert.False(read.Value.Short);
+        Assert.False(read.Value.Truncated);
+        Assert.Equal(3, read.Value.Pages);
+    }
+
+    [Fact]
     public async Task UrlBaseAndAbsolutePathsAreBuiltFromTheInstanceUrl()
     {
         var seen = new List<string>();

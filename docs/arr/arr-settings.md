@@ -140,6 +140,17 @@ the plugin's data folder) and is refreshed in the background. A title you just a
 Radarr can take up to 15 minutes to get its link, and a change to the calendar (a title added or
 removed) up to 15 minutes to show.
 
+A busy queue can reorder while it is read page by page (Sonarr and Radarr sort it by time left), so a
+row can be missed. The queue is then read once more; if rows still moved, the last complete copy is
+kept for up to 2 minutes (it shows its age), and after that the newest read is shown. Neither counts as
+the instance being unreachable. A row missing from a queue read over more than one page (more than
+500 queue rows; Sonarr lists each episode of a season pack as its own row, so a few season packs can be
+enough) only counts as gone when the next complete read lacks it too; even a kept short read that
+shows it restarts that count. Until then it keeps its last queue state and first-seen problem clock,
+with no time-left estimate. Its old state expires ten minutes after its last published sighting, even if a
+newer read missed it. A finished download in such a queue shows as importing one refresh later. No download
+counts as finished because a read missed it.
+
 Every read checks that the address really is Sonarr or Radarr (a Sonarr address in a Radarr box shows
 "wrong app at this URL" instead of odd results) and never follows a redirect, the same as the **Test**
 button. An instance that can't be read shows a short reason on the page; administrators also see the

@@ -610,6 +610,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     var queueIndex = queue.Value != null && !queue.Expired ? QueueIndex.GetValue(queue.Value, q => q.Records.Where(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId).HasValue).ToLookup(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId)!.Value)) : null;
                     // An expired history says nothing about now either: its last rows never decide a status.
                     var historyIndex = history.Value != null && !history.Expired ? HistoryIndex.GetValue(history.Value, h => h.Records.Where(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId).HasValue).ToLookup(r => (kind == ArrKind.Radarr ? r.MovieId : r.SeriesId)!.Value)) : null;
+                    // Suspects are useful only while the queue is still within its serving limit.
+                    var missedState = _store.MissedQueueState(instance);
+                    var missed = queue.Expired ? Array.Empty<ArrQueueEntry>() : missedState.Current;
+                    // A suspect can expire before the newer snapshot does. That changes the body
+                    // even if the feed and the snapshot's timestamp have not changed.
+                    revision.Append("missedExpired:").Append(string.Join(",", missedState.Expired.Select(r => r.Id))).Append(';');
 
                     foreach (var title in distinct.Where(t => t.IsMovie == (kind == ArrKind.Radarr)))
                     {
@@ -631,12 +637,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                                 Movie = movie,
                                 LibraryLoadedAt = library.LoadedAt?.UtcDateTime,
                                 LeftQueue = (m, e) => _store.LeftQueueAt(instance, m, e)?.UtcDateTime,
-                                Queue = queueIndex?[movie.Id].ToList() ?? new List<ArrQueueEntry>(),
+                                Queue = QueueRowsOf(queueIndex, missed, movie.Id, movie: true),
                                 History = historyIndex?[movie.Id].ToList() ?? new List<ArrHistoryEntry>(),
                                 Seen = seen,
                                 QueueLoadedAt = queueLoadedAt,
-                                QueueStale = queueStale,
-                                QueueUnknown = unknown,
+                                QueueStale = queueStale || missed.Any(r => r.MovieId == movie.Id),
+                                QueueUnknown = unknown || missedState.Expired.Any(r => r.MovieId == movie.Id),
                             });
                         }
                         else
@@ -657,7 +663,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                             facts.Copies.Add(new ArrCopyFacts(instance)
                             {
                                 Series = series,
-                                Queue = queueIndex?[series.Id].ToList() ?? new List<ArrQueueEntry>(),
+                                Queue = QueueRowsOf(queueIndex, missed, series.Id, movie: false),
                                 History = historyIndex?[series.Id].ToList() ?? new List<ArrHistoryEntry>(),
                                 Episodes = episodes?.Value,
                                 LibraryLoadedAt = library.LoadedAt?.UtcDateTime,
@@ -665,8 +671,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                                 LeftQueue = (m, e) => _store.LeftQueueAt(instance, m, e)?.UtcDateTime,
                                 Seen = seen,
                                 QueueLoadedAt = queueLoadedAt,
-                                QueueStale = queueStale,
-                                QueueUnknown = unknown,
+                                QueueStale = queueStale || missed.Any(r => r.SeriesId == series.Id),
+                                QueueUnknown = unknown || missedState.Expired.Any(r => r.SeriesId == series.Id),
                             });
                         }
                     }
@@ -674,6 +680,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             result.Revision = revision.ToString();
             return result;
+        }
+
+        /// <summary>
+        /// The queue rows of one movie or series: the snapshot's, plus the rows a paged read missed
+        /// that aren't known to have left (<see cref="ArrStateStore.MissedQueueRows"/>), unless the
+        /// snapshot holds that movie or episode after all.
+        /// </summary>
+        private static List<ArrQueueEntry> QueueRowsOf(ILookup<int, ArrQueueEntry>? index, IReadOnlyList<ArrQueueEntry> missed, int id, bool movie)
+        {
+            var rows = index?[id].ToList() ?? new List<ArrQueueEntry>();
+            foreach (var row in missed)
+            {
+                if ((movie ? row.MovieId : row.SeriesId) != id) continue;
+                if (rows.Any(r => movie ? r.MovieId == row.MovieId : r.EpisodeId == row.EpisodeId)) continue;
+                rows.Add(row);
+            }
+            return rows;
         }
 
         /// <summary>

@@ -387,6 +387,150 @@ public class ApiArrAdminHubTests
         Assert.Contains("MoviesSearch", rig.Radarr.Writes[2].Body, StringComparison.Ordinal);
     }
 
+    // A Sonarr queue of 501 rows whose last row moves to the front while page 2 is read (both reads
+    // come back one row short), with an 8-episode pack in rows 494-501: the cold snapshot holds 7 of it.
+    private static void ShortQueueWithAPack(Rig rig)
+    {
+        rig.Sonarr.Queue.Clear();
+        for (var i = 1; i <= 493; i++) rig.Sonarr.Queue.Add(FakeArr.SonarrQueueRow(1000 + i, "dl" + i, 1, i));
+        for (var e = 1; e <= 8; e++) rig.Sonarr.Queue.Add(FakeArr.SonarrQueueRow(1493 + e, "bigpack", 3, e, "Peacemaker", 391153));
+        rig.Sonarr.BeforePage = (path, page) =>
+        {
+            if (path != "/api/v3/queue" || page != 2) return;
+            var last = rig.Sonarr.Queue[^1];
+            rig.Sonarr.Queue.RemoveAt(rig.Sonarr.Queue.Count - 1);
+            rig.Sonarr.Queue.Insert(0, last);
+        };
+    }
+
+    [Fact]
+    public async Task AColdPersistentlyShortQueueStillConfirmsAndRemovesTheWholePack()
+    {
+        using var rig = new Rig();
+        ShortQueueWithAPack(rig);
+        var tv = rig.Instance("SonarrZ");
+        var snapshot = (await rig.Store.GetQueueAsync(tv, default)).Value!;
+        Assert.True(snapshot.Incomplete);
+        Assert.Equal(7, snapshot.Records.Count(r => r.DownloadId == "bigpack"));
+
+        // The confirmation names all 8 episodes (read again in one unpaged read), not the 7 held.
+        var c = rig.Controller(rig.AdminUser);
+        var confirm = Json(await Send(() => c.Confirm(new QueueConfirmRequest { InstanceId = tv.Id, DownloadId = "bigpack" }, default)));
+        var download = confirm.GetProperty("download");
+        Assert.Equal((8, 8, "S03E01–E08"), (download.GetProperty("episodes").GetInt32(), download.GetProperty("ids").GetArrayLength(), download.GetProperty("scope").GetString()));
+        Assert.Contains(rig.Arr.Calls, call => call.StartsWith("sonarr.lan/api/v3/queue/details", StringComparison.Ordinal) && call.Contains("seriesId=", StringComparison.Ordinal));
+
+        // The removal acts on every row of the download.
+        var done = Json(await Act(rig, rig.AdminUser, "SonarrZ", "bigpack", "remove_with_data", token: confirm.GetProperty("token").GetString()));
+        Assert.Equal("Succeeded", done.GetProperty("status").GetString());
+        var write = Assert.Single(rig.Sonarr.Writes);
+        Assert.Equal("/api/v3/queue/bulk?removeFromClient=true&blocklist=false&skipRedownload=true", write.Path);
+        Assert.Equal(Enumerable.Range(1494, 8), JsonNode.Parse(write.Body)!["ids"]!.AsArray().Select(n => (int)n!).OrderBy(i => i));
+        Assert.Equal("8", rig.Audit.ReadRecent(1).Single().Details!["rows"]);
+    }
+
+    /// <summary>A paged snapshot missing one pack row still confirms, searches and removes all eight.</summary>
+    [Fact]
+    public async Task APackWithARowMissedByAPagedReadIsConfirmedSearchedAndRemovedWhole()
+    {
+        using var rig = new Rig();
+        rig.Sonarr.Queue.Clear();
+        for (var i = 1; i <= 493; i++) rig.Sonarr.Queue.Add(FakeArr.SonarrQueueRow(1000 + i, "dl" + i, 1, i));
+        for (var e = 1; e <= 8; e++) rig.Sonarr.Queue.Add(FakeArr.SonarrQueueRow(1493 + e, "bigpack", 3, e, "Peacemaker", 391153));
+        for (var i = 502; i <= 1001; i++) rig.Sonarr.Queue.Add(FakeArr.SonarrQueueRow(1000 + i, "dl" + i, 1, i));
+        var moved = false;
+        rig.Sonarr.BeforePage = (path, page) =>
+        {
+            if (path != "/api/v3/queue" || page != 2 || moved) return;
+            moved = true;
+            rig.Sonarr.Queue.RemoveAt(0);
+            rig.Sonarr.Queue.Add(FakeArr.SonarrQueueRow(2002, "dl1002", 1, 1002));
+        };
+        var tv = rig.Instance("SonarrZ");
+        var snapshot = (await rig.Store.GetQueueAsync(tv, default)).Value!;
+        Assert.False(snapshot.Incomplete);
+        Assert.False(snapshot.Truncated);
+        Assert.True(snapshot.Paged);
+        Assert.Equal(1001, snapshot.TotalRecords);
+        Assert.Equal(1001, snapshot.Records.Count);
+        Assert.Equal(7, snapshot.Records.Count(r => r.DownloadId == "bigpack"));
+
+        var c = rig.Controller(rig.AdminUser);
+        var confirm = Json(await Send(() => c.Confirm(new QueueConfirmRequest { InstanceId = tv.Id, DownloadId = "bigpack" }, default)));
+        var download = confirm.GetProperty("download");
+        Assert.Equal((8, 8, "S03E01–E08"), (download.GetProperty("episodes").GetInt32(), download.GetProperty("ids").GetArrayLength(), download.GetProperty("scope").GetString()));
+        Assert.Contains(rig.Arr.Calls, call => call.StartsWith("sonarr.lan/api/v3/queue/details", StringComparison.Ordinal) && call.Contains("seriesId=", StringComparison.Ordinal));
+
+        var search = Json(await Act(rig, rig.AdminUser, "SonarrZ", "bigpack", "search"));
+        Assert.Equal("Succeeded", search.GetProperty("status").GetString());
+        var command = JsonNode.Parse(Assert.Single(rig.Sonarr.Writes).Body)!;
+        Assert.Equal("EpisodeSearch", (string?)command["name"]);
+        Assert.Equal(Enumerable.Range(1494, 8), command["episodeIds"]!.AsArray().Select(n => (int)n!).OrderBy(i => i));
+
+        var done = Json(await Act(rig, rig.AdminUser, "SonarrZ", "bigpack", "remove_with_data", token: confirm.GetProperty("token").GetString()));
+        Assert.Equal("Succeeded", done.GetProperty("status").GetString());
+        var write = rig.Sonarr.Writes.Last();
+        Assert.Equal("/api/v3/queue/bulk?removeFromClient=true&blocklist=false&skipRedownload=true", write.Path);
+        Assert.Equal(Enumerable.Range(1494, 8), JsonNode.Parse(write.Body)!["ids"]!.AsArray().Select(n => (int)n!).OrderBy(i => i));
+        Assert.Equal("8", rig.Audit.ReadRecent(1).Single().Details!["rows"]);
+    }
+
+    [Fact]
+    public async Task APackStraddlingTheQueueRowCapIsConfirmedWithEveryEpisode()
+    {
+        using var rig = new Rig();
+        var cap = ArrStateLoaders.QueueMaxRecords;
+        rig.Sonarr.Queue.Clear();
+        for (var i = 1; i <= cap - 6; i++) rig.Sonarr.Queue.Add(FakeArr.SonarrQueueRow(i, "dl" + i, 1, 1));
+        for (var e = 1; e <= 8; e++) rig.Sonarr.Queue.Add(FakeArr.SonarrQueueRow(cap - 6 + e, "bigpack", 3, e, "Peacemaker", 391153));
+        var tv = rig.Instance("SonarrZ");
+        var snapshot = (await rig.Store.GetQueueAsync(tv, default)).Value!;
+        Assert.True(snapshot.Truncated);
+        Assert.Equal(6, snapshot.Records.Count(r => r.DownloadId == "bigpack"));
+
+        var (confirmation, changing) = await rig.Queue.ConfirmAsync(rig.AdminUser, tv.Id, "bigpack", default);
+        Assert.False(changing);
+        Assert.Equal((8, 8), (confirmation!.Download.Episodes, confirmation.Download.Ids.Count));
+    }
+
+    [Fact]
+    public async Task AShortQueueWhoseRowsCantBeReadAgainRefusesTheConfirmationAndTheActions()
+    {
+        using var rig = new Rig();
+        ShortQueueWithAPack(rig);
+        var tv = rig.Instance("SonarrZ");
+        Assert.True((await rig.Store.GetQueueAsync(tv, default)).Value!.Incomplete);
+        rig.Sonarr.DetailsFailWith = 400;
+
+        var c = rig.Controller(rig.AdminUser);
+        var confirm = await Send(() => c.Confirm(new QueueConfirmRequest { InstanceId = tv.Id, DownloadId = "bigpack" }, default));
+        Assert.Equal(409, confirm.Status);
+        Assert.Equal("queue_changing", Json(confirm).GetProperty("code").GetString());
+        var removed = Json(await Act(rig, rig.AdminUser, "SonarrZ", "bigpack", "remove"));
+        Assert.Equal("Rejected", removed.GetProperty("status").GetString());
+        Assert.Equal(("queue.remove", "queue_changing"), rig.Audit.ReadRecent(1).Select(a => (a.Action, a.Error)).Single());
+        Assert.Empty(rig.Sonarr.Writes);
+
+        // A complete paged read still needs an unpaged read of the download's rows.
+        rig.Sonarr.BeforePage = null;
+        rig.Sonarr.DetailsFailWith = 0;
+        await rig.Store.RefreshForEventAsync(tv.Id, ArrSnapshotKind.Queue, true);
+        Assert.False(rig.Store.PeekQueue(tv.Id)!.Incomplete);
+        Assert.True(rig.Store.PeekQueue(tv.Id)!.Paged);
+        var details = rig.Arr.CallCount("sonarr.lan", "queue/details");
+        Assert.Equal(8, (await rig.Queue.FindAsync(tv.Id, "bigpack", default))!.Episodes);
+        Assert.Equal(details + 1, rig.Arr.CallCount("sonarr.lan", "queue/details"));
+
+        // Once the queue fits in one page, the snapshot supplies every row without another read.
+        rig.Sonarr.Queue.RemoveAll(r => (int)r["id"]! <= 1100);
+        await rig.Store.RefreshForEventAsync(tv.Id, ArrSnapshotKind.Queue, true);
+        Assert.False(rig.Store.PeekQueue(tv.Id)!.Paged);
+        Assert.False(rig.Store.PeekQueue(tv.Id)!.Incomplete);
+        details = rig.Arr.CallCount("sonarr.lan", "queue/details");
+        Assert.Equal(8, (await rig.Queue.FindAsync(tv.Id, "bigpack", default))!.Episodes);
+        Assert.Equal(details, rig.Arr.CallCount("sonarr.lan", "queue/details"));
+    }
+
     [Fact]
     public async Task ARetryOfASucceededRemovalWithTheSameKeyGetsItsOutcomeBackNotARefusal()
     {
@@ -501,6 +645,30 @@ public class ApiArrAdminHubTests
         Assert.Equal(("queue.remove_with_data", "succeeded", 3, "yes"), (audit.Action, audit.Outcome, audit.Tier, audit.Details!["deleteData"]));
         // Every attempt left a line: 1 missing + 2 bad tokens + 1 other-download + 1 done.
         Assert.Equal(5, rig.Audit.ReadRecent(50).Count(a => a.Action == "queue.remove_with_data"));
+    }
+
+    [Fact]
+    public async Task AnExpiredPartialQueueIsRefusedBeforeItsDetailsAreReadOrATokenIsIssued()
+    {
+        using var rig = new Rig();
+        ShortQueueWithAPack(rig);
+        await rig.Warm();
+        var tv = rig.Instance("SonarrZ");
+        Assert.True((await rig.Store.GetQueueAsync(tv, default)).Value!.Incomplete);
+        rig.Arr.Now += TimeSpan.FromMinutes(11);
+        rig.Sonarr.FailWith = 503;
+        await rig.Store.RefreshForEventAsync(tv.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.True((await rig.Store.GetQueueAsync(tv, default)).Expired);
+        var details = rig.Arr.CallCount("sonarr.lan", "/api/v3/queue/details");
+        Assert.Null(await rig.Queue.FindAsync(tv.Id, "bigpack", default));
+        var (confirmation, changing) = await rig.Queue.ConfirmAsync(rig.AdminUser, tv.Id, "bigpack", default);
+        Assert.Null(confirmation);
+        Assert.False(changing);
+        var refused = Json(await Act(rig, rig.AdminUser, "SonarrZ", "bigpack", "remove"));
+        Assert.Equal("Rejected", refused.GetProperty("status").GetString());
+        Assert.Equal("queue_unreadable", Assert.Single(rig.Audit.ReadRecent(1)).Error);
+        Assert.Equal(details, rig.Arr.CallCount("sonarr.lan", "/api/v3/queue/details"));
+        Assert.Empty(rig.Sonarr.Writes);
     }
 
     [Fact]
@@ -638,6 +806,45 @@ public class ApiArrAdminHubTests
         Assert.Equal(StatusReasonCode.Approved, await Code(rig.Member));
         var overview = Json(await Send(() => rig.Controller(rig.AdminUser).GetOverview(default)));
         Assert.Contains(overview.GetProperty("needsAttention").EnumerateArray(), i => i.GetProperty("code").GetString() == AttentionCode.ApprovedNotInArr && i.GetProperty("message").GetString() == "Emma");
+    }
+
+    [Fact]
+    public async Task AQueueThatKeepsChangingWhileItIsReadIsNoInstanceDown()
+    {
+        using var rig = new Rig();
+        // More than one page of Sonarr queue, and every read sees the last row jump to the front
+        // between page 1 and page 2 (imports and grabs reorder a queue sorted by time left).
+        // 501 rows: page 2 holds one row, so the moved row leaves page 2 holding only a repeat.
+        for (var i = 100; i < 598; i++) rig.Sonarr.Queue.Add(FakeArr.SonarrQueueRow(i, "dl" + i, 1, i, "Peacemaker", 391153));
+        await rig.Warm();
+        rig.Sonarr.BeforePage = (path, page) =>
+        {
+            if (path != "/api/v3/queue" || page != 2) return;
+            var last = rig.Sonarr.Queue[^1];
+            rig.Sonarr.Queue.RemoveAt(rig.Sonarr.Queue.Count - 1);
+            rig.Sonarr.Queue.Insert(0, last);
+        };
+        var sonarr = rig.Instance("SonarrZ");
+        async Task RefreshQueue()
+        {
+            rig.Store.RequestRefresh(sonarr.Id, ArrSnapshotKind.Queue);
+            rig.Arr.Now += TimeSpan.FromSeconds(3);
+            await Task.WhenAll(rig.Store.Tick());
+            for (var i = 0; i < 200 && rig.Store.Describe().Instances.Any(x => x.Snapshots.Any(s => s.Refreshing)); i++) await Task.Delay(10);
+        }
+        static bool Down(JsonElement overview) => overview.GetProperty("needsAttention").EnumerateArray().Any(i => i.GetProperty("code").GetString() == AttentionCode.InstanceDown);
+
+        // Kept over the changing read, then (once that is old) the changing read itself: never "can't be read".
+        foreach (var wait in new[] { TimeSpan.FromMinutes(1), ArrStateStore.QueueKeepHeld })
+        {
+            rig.Arr.Now += wait;
+            await RefreshQueue();
+            var read = await rig.Store.GetQueueAsync(sonarr, default);
+            Assert.Null(read.Error);
+            Assert.Equal(wait == ArrStateStore.QueueKeepHeld, read.Value!.Incomplete);
+            Assert.False(Down(Json(await Send(() => rig.Controller(rig.AdminUser).GetOverview(default)))));
+        }
+        Assert.True(rig.Store.PeekQueue(sonarr.Id)!.Incomplete);
     }
 
     [Fact]

@@ -607,6 +607,36 @@ public class ApiArrRoutesTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConfirmedQueueDeparturesUseTheSharedAliasesAndAudience(bool visible)
+    {
+        using var rig = new Rig();
+        var callers = new TestCallers();
+        callers.Register(rig.Member, admin: false);
+        var arrMovie = FakeArr.Movie(1, 101, "Alpha");
+        arrMovie["imdbId"] = "tt101";
+        rig.Radarr.Movies.Add(arrMovie);
+        var instance = rig.Arr.Instance("Movies");
+        var librarySnapshot = (await rig.Store.GetLibraryAsync(instance, default)).Value!;
+        var movie = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid() };
+        movie.ProviderIds = new() { ["Imdb"] = "tt101" };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>())).Returns((MediaBrowser.Controller.Entities.InternalItemsQuery q) =>
+            q.HasAnyProviderId?.Values.Contains("tt101") == true && (q.User == null || visible)
+                ? new List<MediaBrowser.Controller.Entities.BaseItem> { movie } : new List<MediaBrowser.Controller.Entities.BaseItem>());
+        var audience = new ArrFeedAudience(library.Object, callers.Users.Object, rig.Store, () => rig.Arr.Now, new FakeJellyfinView());
+        // Neither snapshot holds the row: H4's explicit departure payload is the only diff.
+        var keys = ArrChangeDetector.Queue(ArrKind.Radarr, new ArrQueueSnapshot(), new ArrQueueSnapshot(), librarySnapshot,
+            new[] { new ArrQueueEntry { MovieId = 1, TmdbId = 101 } });
+        Assert.Equal(new[] { "movie:tmdb:101" }, keys);
+        var changes = keys.Select(k => new ArrFeedChange(k, 1, instance.Id)).ToArray();
+        var shown = audience.Visible(rig.Member, false, changes, new HashSet<string>(keys));
+        Assert.Equal(visible ? keys : Array.Empty<string>(), shown);
+        Assert.Equal(keys, audience.Visible(Guid.NewGuid(), true, changes));
+    }
+
     [Fact]
     public async Task WithPhaseOneOffAMemberWithLimitsStillSeesTheAbsentTitlesTheyAskedForButNotOnesJellyfinHides()
     {

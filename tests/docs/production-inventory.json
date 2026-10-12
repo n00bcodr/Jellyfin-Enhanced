@@ -5661,7 +5661,7 @@
       "name": "ArrTagsPrefix",
       "type": "string",
       "initializer": null,
-      "constructor_assignment": "\"JE Arr Tag: \"",
+      "constructor_assignment": "DefaultArrTagsPrefix",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {

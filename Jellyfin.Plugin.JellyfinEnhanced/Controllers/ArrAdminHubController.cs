@@ -148,7 +148,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// Step one of "remove with data": what the download covers and a one-time token (two minutes,
-        /// bound to this administrator, the instance and the download) that the action needs.
+        /// bound to this administrator, the instance and the download) that the action needs. 409
+        /// <c>queue_changing</c> when the download's rows can't all be read right now.
         /// </summary>
         [HttpPost("arr/admin/queue/confirm")]
         [Authorize]
@@ -158,7 +159,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Admin() is not { } viewer) return Denied("arr/admin/queue/confirm");
             if (!_hub.Enabled) return StatusCode(403, new { code = "feature_disabled" });
             if (request == null || !ValidId(request.InstanceId) || !ValidDownload(request.DownloadId)) return BadRequest(new { code = "invalid_request" });
-            var confirmation = await _queue.ConfirmAsync(viewer, request.InstanceId!, request.DownloadId!, cancellationToken).ConfigureAwait(false);
+            var (confirmation, changing) = await _queue.ConfirmAsync(viewer, request.InstanceId!, request.DownloadId!, cancellationToken).ConfigureAwait(false);
+            if (changing) return StatusCode(409, new { code = "queue_changing", message = ArrQueueActionService.QueueChangingMessage });
             if (confirmation == null) return NotFound(new { code = "not_in_queue" });
             return Json(confirmation);
         }

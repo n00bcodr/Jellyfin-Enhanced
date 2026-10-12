@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,6 +40,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private const int EpisodeSeriesPerInstance = 64;
         private const int CacheFileVersion = 2;
         private static readonly TimeSpan DepartureMemory = TimeSpan.FromMinutes(10);
+
+        /// <summary>
+        /// How old a complete queue read may be and still be kept over a read during which rows moved
+        /// between pages (<see cref="ArrQueueSnapshot.Incomplete"/>). Past it, the incomplete read is
+        /// shown (its rows are live) rather than progress frozen for long.
+        /// </summary>
+        internal static readonly TimeSpan QueueKeepHeld = TimeSpan.FromMinutes(2);
+
+        private static readonly TimeSpan QueueMaxServe = TimeSpan.FromMinutes(10);
+
+        // Rows the departure baseline may hold across partial queue reads before it starts over.
+        private const int QueueBaselineMax = 2 * ArrStateLoaders.QueueMaxRecords;
         private const int RangeLoadsPerInstance = 2;
         private static readonly TimeSpan RangeTtl = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan RangeFailureRetry = TimeSpan.FromSeconds(30);
@@ -315,7 +328,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                         if (slot.InBackoff(now)) continue;
                         var policy = PolicyFor(slot.Kind, state, now);
                         if (now - slot.LastInterest > policy.Interest) continue;
-                        if (slot.HasValue && now - slot.LoadedAt < policy.Interval) continue;
+                        if (slot.HasValue && now - slot.CheckedAt < policy.Interval) continue;
                     }
                     started.Add(slot.StartRefresh(_backgroundCalls, _now, _shutdownToken));
                 }
@@ -532,10 +545,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             var policy = PolicyFor(slot.Kind, state, now);
             var peek = slot.Peek();
             // A background reader takes what is held (the reconciler keeps it at the idle pace); a
-            // page wants it within the snapshot's freshness target.
-            if (peek.Value != null && now - peek.LoadedAt <= (background ? policy.MaxServe : policy.Fresh))
+            // page wants it within the snapshot's freshness target. A value kept over an incomplete
+            // read was checked then (CheckedAt), so it isn't read again at once; it says its age.
+            if (peek.Value != null && now - slot.CheckedAt <= (background ? policy.MaxServe : policy.Fresh))
             {
-                return new ArrSnapshotRead<T> { Value = peek.Value, LoadedAt = peek.LoadedAt, Error = peek.Error };
+                return new ArrSnapshotRead<T> { Value = peek.Value, LoadedAt = peek.LoadedAt, Error = peek.Error, Stale = !background && now - peek.LoadedAt > policy.Fresh };
             }
 
             // Past its freshness target: refresh in the background (unless backing off after failures).
@@ -621,10 +635,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             {
                 if (value == null) return;
                 QueueRefreshedHook?.Invoke(client.Connection, value);
-                OnQueueRefreshed(state, value);
             };
-            // The clocks are stamped as each queue is published, in publication order.
-            state.Queue.Publishing = (_, after) => StampQueue(state, after);
+            // Publish rows, their suspect/departure decisions and first-seen clocks in one order,
+            // before any reader can observe the new snapshot without its retained rows.
+            state.Queue.Publishing = (_, after) =>
+            {
+                OnQueueRefreshed(state, after);
+                StampQueue(state, after);
+            };
+            state.Queue.Kept += read => OnQueueReadKept(state, read);
             var name = client.Connection.Name;
             void Log(ArrSnapshotKind kind, ArrError? error)
             {
@@ -738,8 +757,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>
         /// Stamps the clocks of every row of a queue as published (a refresh or a live patch): rows
         /// seen for the first time start now, a changed class moves on (<see cref="Advance"/>), and
-        /// rows no longer in the queue are forgotten. Runs inside the slot's lock as the queue is
-        /// published (<see cref="ArrSnapshotSlot{T}.Publishing"/>), so every publication is stamped, in
+        /// confirmed departures are forgotten while missed/partial rows retain their clocks. Runs inside
+        /// the slot's lock as the queue is published (<see cref="ArrSnapshotSlot{T}.Publishing"/>), so every publication is stamped, in
         /// order (lock order: the slot's, then SeenGate; <see cref="QueueSeen"/> takes SeenGate alone).
         /// </summary>
         private void StampQueue(InstanceState state, ArrQueueSnapshot queue)
@@ -754,6 +773,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     if (next.ContainsKey(key)) continue;
                     state.Seen.TryGetValue(key, out var held);
                     next[key] = Advance(held, ArrQueueStates.Classify(row), now);
+                }
+                // Retain clocks of suspects and partial-read baseline rows after the departure
+                // decision. A confirmed departure is in neither set, so its clock is forgotten.
+                foreach (var row in (state.QueueRows?.Values.Select(r => r.Row) ?? Enumerable.Empty<ArrQueueEntry>())
+                    .Concat(state.QueueSuspects?.Values.Select(s => s.Row) ?? Enumerable.Empty<ArrQueueEntry>()))
+                {
+                    var key = SeenKey(row);
+                    if (state.Seen.TryGetValue(key, out var held)) next.TryAdd(key, held);
                 }
                 state.Seen.Clear();
                 foreach (var (key, value) in next) state.Seen[key] = value;
@@ -779,42 +806,139 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         }
 
         /// <summary>
+        /// Queue rows the last complete read over more than one page lacked and that no later read
+        /// has shown leaving yet: a row moving between pages while they were read is missed, so it
+        /// counts as gone only once the next complete read lacks it too (see
+        /// <see cref="OnQueueRefreshed"/>). Until then statuses keep showing its last queue state
+        /// (still downloading), not "looking" — and not "almost ready", which only a real departure
+        /// earns. Empty when there are none still inside their serving limit.
+        /// </summary>
+        public IReadOnlyList<ArrQueueEntry> MissedQueueRows(ArrConnection instance)
+            => MissedQueueState(instance).Current;
+
+        /// <summary>
+        /// Retained rows keep their own last-sighting age, not the age of a newer queue read that
+        /// missed them. Expired rows still await departure proof but cannot decide a current state.
+        /// </summary>
+        internal (IReadOnlyList<ArrQueueEntry> Current, IReadOnlyList<ArrQueueEntry> Expired) MissedQueueState(ArrConnection instance)
+        {
+            if (!_states.TryGetValue(instance.Id, out var state) || state.QueueSuspects is not { Count: > 0 } suspects)
+                return (Array.Empty<ArrQueueEntry>(), Array.Empty<ArrQueueEntry>());
+            var now = _now();
+            return (suspects.Values.Where(s => now - s.SeenAt <= QueueMaxServe).Select(s => s.Row).ToArray(),
+                suspects.Values.Where(s => now - s.SeenAt > QueueMaxServe).Select(s => s.Row).ToArray());
+        }
+
+        /// <summary>
         /// A download that left the queue was most likely imported (or removed, or failed): the
         /// library entry (<c>hasFile</c>, a series' file counts), the history (the import or failure
         /// event) and the episodes of its series are asked for again soon (debounced), instead of
         /// waiting for their own, slower interval — per departed row, so one episode importing while
-        /// another of the same series still downloads counts too. A download that joined the queue
-        /// (a grab) refreshes the history for the journey's "grabbed" date. Only while "Requests &amp;
+        /// another of the same series still downloads counts too. A row missing from a paged queue
+        /// (more than 500 rows; Sonarr lists each episode of a season pack as its own row) needs two
+        /// complete reads in a row without it, or a one-page read, before it counts as gone: its
+        /// departure is seen one poll later, and meanwhile it keeps its last queue state
+        /// (<see cref="MissedQueueRows"/>). A read that shows it again, even one that is not
+        /// published (<see cref="OnQueueReadKept"/>), starts that count over.
+        /// A download that joined the queue (a grab) refreshes the history for the journey's
+        /// "grabbed" date. Only while "Requests &amp;
         /// downloads" phase 1 is on (checked when the queue is read, so switching it takes effect at
         /// once); with it off the snapshots keep their own intervals, as before.
         /// </summary>
         private void OnQueueRefreshed(InstanceState state, ArrQueueSnapshot queue)
         {
             var titles = new HashSet<int>();
-            var rows = new Dictionary<string, int?>(StringComparer.Ordinal);
+            var now = _now();
+            var rows = new Dictionary<string, QueueKnownRow>(StringComparer.Ordinal);
             foreach (var row in queue.Records)
             {
-                var title = row.MovieId ?? row.SeriesId;
-                if (title is int t) titles.Add(t);
-                if (DepartureKey(row) is { } key) rows[key] = title;
+                if (TitleOf(row) is int t) titles.Add(t);
+                if (DepartureKey(row) is { } key) rows[key] = new QueueKnownRow(row, now);
             }
             var previous = state.QueueTitles;
             var previousRows = state.QueueRows;
-            state.QueueTitles = titles;
-            state.QueueRows = rows;
-            var now = _now();
+            // A queue cut at the row cap, or read while rows moved between pages, holds only part of
+            // the queue: a row missing from it may be past the cap or merely missed, so nothing counts
+            // as having left. The baseline the next complete read is compared with keeps every row
+            // seen since the last complete read (this read's rows are all real), so a row that leaves
+            // meanwhile, or was hidden past the cap, is still found leaving then. The cap is on the
+            // distinct rows kept: reads of the same queue mostly share their rows.
+            var partial = queue.Truncated || queue.Incomplete;
+            Dictionary<string, QueueKnownRow>? merged = null;
+            if (partial && previous != null && previousRows != null)
+            {
+                merged = new Dictionary<string, QueueKnownRow>(previousRows, StringComparer.Ordinal);
+                foreach (var (key, row) in rows) merged[key] = row;
+            }
+            if (merged != null && previous != null && merged.Count <= QueueBaselineMax)
+            {
+                state.QueueTitles = new HashSet<int>(previous.Concat(titles));
+                state.QueueRows = merged;
+            }
+            else
+            {
+                state.QueueTitles = titles;
+                state.QueueRows = rows;
+            }
             foreach (var (key, at) in state.Departures)
             {
                 if (now - at > DepartureMemory) state.Departures.TryRemove(key, out _);
             }
-            if (previous == null) return;
-            var affected = new HashSet<int>(previous.Where(t => !titles.Contains(t)));
-            foreach (var (key, title) in previousRows ?? new Dictionary<string, int?>(StringComparer.Ordinal))
+            if (previous == null)
             {
-                if (rows.ContainsKey(key)) continue;
-                state.Departures[key] = now;
-                if (title is int t) affected.Add(t);
+                state.QueueSuspects = null;
+                return;
             }
+            var affected = new HashSet<int>();
+            // The suspects are replaced, never changed in place: statuses read them on other threads.
+            var before = state.QueueSuspects;
+            if (partial)
+            {
+                // Rows this read holds are in the published snapshot (and the baseline) again.
+                if (before != null && before.Keys.Any(rows.ContainsKey))
+                {
+                    var kept = before.Where(kv => !rows.ContainsKey(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+                    state.QueueSuspects = kept.Count > 0 ? kept : null;
+                }
+            }
+            else
+            {
+                Dictionary<string, QueueSuspect>? suspects = null;
+                List<ArrQueueEntry>? confirmed = null;
+                foreach (var (key, suspect) in before ?? new Dictionary<string, QueueSuspect>(StringComparer.Ordinal))
+                {
+                    if (rows.ContainsKey(key)) continue;
+                    if (suspect.SeenSince && queue.Paged)
+                    {
+                        // A read that wasn't published showed it after it was first missed: this is
+                        // a first miss again, not the second in a row.
+                        (suspects ??= new Dictionary<string, QueueSuspect>(StringComparer.Ordinal))[key] = suspect with { SeenSince = false };
+                        continue;
+                    }
+                    state.Departures[key] = now;
+                    if (TitleOf(suspect.Row) is int t) affected.Add(t);
+                    (confirmed ??= new List<ArrQueueEntry>()).Add(suspect.Row);
+                }
+                affected.UnionWith(previous.Where(t => !titles.Contains(t)));
+                foreach (var (key, row) in previousRows ?? new Dictionary<string, QueueKnownRow>(StringComparer.Ordinal))
+                {
+                    if (rows.ContainsKey(key)) continue;
+                    if (queue.Paged)
+                    {
+                        (suspects ??= new Dictionary<string, QueueSuspect>(StringComparer.Ordinal))[key] = new QueueSuspect(row.Row, false, row.SeenAt);
+                    }
+                    else
+                    {
+                        state.Departures[key] = now;
+                        if (TitleOf(row.Row) is int t) affected.Add(t);
+                    }
+                }
+                state.QueueSuspects = suspects;
+                // This read's own row diff can't show them leaving (the read before lacked them too):
+                // the change feed is told with the snapshot change that follows.
+                if (confirmed != null) state.ConfirmedDepartures.Add(queue, confirmed);
+            }
+            // A row that joined is real even in a partial read (a grab: the history has news).
             var joined = titles.Any(t => !previous.Contains(t)) || (previousRows != null && rows.Keys.Any(k => !previousRows.ContainsKey(k)));
             if (_config() is not { ArrIntegrationEnabled: true, ArrPhase1Enabled: true }) return;
             var due = now + DebounceDelay;
@@ -828,6 +952,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             }
             if (affected.Count > 0 || joined) state.History.Request(due);
         }
+
+        /// <summary>
+        /// A queue read that was not published (an incomplete read kept behind a recent complete
+        /// one) still saw real rows: a suspect among them is no longer missed in a row, so the next
+        /// complete paged read that lacks it is its first miss again. Nothing else changes — no
+        /// baseline, no departure, no reads.
+        /// </summary>
+        private static void OnQueueReadKept(InstanceState state, ArrQueueSnapshot read)
+        {
+            var before = state.QueueSuspects;
+            if (before == null) return;
+            Dictionary<string, QueueSuspect>? after = null;
+            foreach (var row in read.Records)
+            {
+                if (DepartureKey(row) is not { } key || !before.TryGetValue(key, out var suspect) || suspect.SeenSince) continue;
+                after ??= new Dictionary<string, QueueSuspect>(before, StringComparer.Ordinal);
+                after[key] = suspect with { SeenSince = true };
+            }
+            if (after != null) state.QueueSuspects = after;
+        }
+
+        private static int? TitleOf(ArrQueueEntry row) => row.MovieId ?? row.SeriesId;
+
+        /// <summary>A row a complete paged read missed: its last queue state, and whether a read that was not published showed it since.</summary>
+        private sealed record QueueSuspect(ArrQueueEntry Row, bool SeenSince, DateTimeOffset SeenAt);
+
+        /// <summary>A baseline row and the last publication that actually saw it.</summary>
+        private sealed record QueueKnownRow(ArrQueueEntry Row, DateTimeOffset SeenAt);
 
         /// <summary>Freshness and refresh policy per snapshot kind.</summary>
         private Policy PolicyFor(ArrSnapshotKind kind, InstanceState? state, DateTimeOffset now)
@@ -845,7 +997,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     return new Policy(
                         Fresh: poll + TimeSpan.FromSeconds(5),
                         Interval: active ? poll : TimeSpan.FromMinutes(5),
-                        MaxServe: kind == ArrSnapshotKind.Queue ? TimeSpan.FromMinutes(10) : TimeSpan.FromMinutes(30),
+                        MaxServe: kind == ArrSnapshotKind.Queue ? QueueMaxServe : TimeSpan.FromMinutes(30),
                         Interest: TimeSpan.FromMinutes(15),
                         ColdWait: TimeSpan.FromSeconds(15));
                 }
@@ -960,15 +1112,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             {
                 Client = client;
                 _trackBackground = store.TrackBackground;
-                Library = new ArrSnapshotSlot<ArrLibrarySnapshot>(ArrSnapshotKind.Library, (_, ct) => ArrStateLoaders.LoadLibraryAsync(client, ct), store.TrackBackground);
-                Queue = new ArrSnapshotSlot<ArrQueueSnapshot>(ArrSnapshotKind.Queue, (_, ct) => ArrStateLoaders.LoadQueueAsync(client, ct), store.TrackBackground);
-                History = new ArrSnapshotSlot<ArrHistorySnapshot>(ArrSnapshotKind.History, (prev, ct) => ArrStateLoaders.LoadHistoryAsync(client, prev, store._now(), ct), store.TrackBackground);
+                Library = new ArrSnapshotSlot<ArrLibrarySnapshot>(ArrSnapshotKind.Library, (_, ct) => ArrStateLoaders.LoadLibraryAsync(client, ct), trackBackground: store.TrackBackground);
+                Queue = new ArrSnapshotSlot<ArrQueueSnapshot>(ArrSnapshotKind.Queue, (_, ct) => ArrStateLoaders.LoadQueueAsync(client, ct), q => q.Incomplete, QueueKeepHeld, trackBackground: store.TrackBackground);
+                History = new ArrSnapshotSlot<ArrHistorySnapshot>(ArrSnapshotKind.History, (prev, ct) => ArrStateLoaders.LoadHistoryAsync(client, prev, store._now(), ct), trackBackground: store.TrackBackground);
                 Calendar = new ArrSnapshotSlot<ArrCalendarSnapshot>(ArrSnapshotKind.Calendar, (_, ct) =>
                 {
                     var (start, end) = ArrStateLoaders.CalendarWindow(store._now());
                     return ArrStateLoaders.LoadCalendarAsync(client, start, end, ct);
-                }, store.TrackBackground);
-                System = new ArrSnapshotSlot<ArrSystemSnapshot>(ArrSnapshotKind.System, (_, ct) => ArrStateLoaders.LoadSystemAsync(client, store._config() is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase2Enabled: true }, ct), store.TrackBackground);
+                }, trackBackground: store.TrackBackground);
+                System = new ArrSnapshotSlot<ArrSystemSnapshot>(ArrSnapshotKind.System, (_, ct) => ArrStateLoaders.LoadSystemAsync(client, store._config() is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase2Enabled: true }, ct), trackBackground: store.TrackBackground);
                 Slots = new IArrSnapshotSlot[] { Library, Queue, History, Calendar, System };
                 Ranges = new CalendarRangeCache(client, store._backgroundCalls, store._now, store._shutdownToken, store.TrackBackground);
             }
@@ -994,8 +1146,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             /// <summary>Movie/series ids in the queue at the last refresh (null before the first).</summary>
             public HashSet<int>? QueueTitles { get; set; }
 
-            /// <summary>Movie ("m…") and episode ("e…") keys in the queue at the last refresh, with their movie/series id.</summary>
-            public Dictionary<string, int?>? QueueRows { get; set; }
+            /// <summary>Movie ("m…") and episode ("e…") keys in the queue at the last refresh, with their row.</summary>
+            public Dictionary<string, QueueKnownRow>? QueueRows { get; set; }
+
+            /// <summary>
+            /// Rows the last complete paged read lacked, with their last queue state. They count as
+            /// having left only when the next complete read lacks them too. Replaced, never changed
+            /// in place (statuses read it on other threads).
+            /// </summary>
+            public IReadOnlyDictionary<string, QueueSuspect>? QueueSuspects { get; set; }
+
+            /// <summary>
+            /// Suspects each published queue read confirmed gone. Keyed by its snapshot so a delayed
+            /// change observer cannot take a later read's departures; weak keys retain no old reads.
+            /// </summary>
+            public ConditionalWeakTable<ArrQueueSnapshot, List<ArrQueueEntry>> ConfirmedDepartures { get; } = new();
 
             /// <summary>When each recently departed movie/episode left the queue.</summary>
             public ConcurrentDictionary<string, DateTimeOffset> Departures { get; } = new(StringComparer.Ordinal);
@@ -1043,7 +1208,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                         if (!evicted) return null;
                     }
                     var client = Client;
-                    slot = new ArrSnapshotSlot<ArrEpisodesSnapshot>(ArrSnapshotKind.Episodes, (_, ct) => ArrStateLoaders.LoadEpisodesAsync(client, seriesId, ct), _trackBackground);
+                    slot = new ArrSnapshotSlot<ArrEpisodesSnapshot>(ArrSnapshotKind.Episodes, (_, ct) => ArrStateLoaders.LoadEpisodesAsync(client, seriesId, ct), trackBackground: _trackBackground);
                     slot.Replaced += (before, after) => EpisodesReplaced?.Invoke(before, after);
                     slot.Touch(now);
                     _episodes[seriesId] = slot;

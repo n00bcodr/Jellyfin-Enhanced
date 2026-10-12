@@ -141,12 +141,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>
         /// Reads every record of a paged list (<c>{page, pageSize, totalRecords, records}</c>) with an
         /// explicit page size, following <c>totalRecords</c>, up to <paramref name="maxRecords"/>.
+        /// With <paramref name="idOf"/>, rows are counted (and kept) once per id: the arrs page a
+        /// list sorted by a value that changes while it is read (the queue by time left), so a row
+        /// can show up on two pages while another moves past the page boundary unseen, and they
+        /// answer a page past the end with an earlier page. Paging then stops at the first page that
+        /// brings no new id; <see cref="ArrPagedList{T}.Short"/> tells the caller the read holds
+        /// fewer distinct rows than the largest <c>totalRecords</c> any page reported. Equal counts
+        /// do not prove completeness when more than one page was read.
         /// </summary>
-        public async Task<ArrResult<ArrPagedList<T>>> GetAllPagesAsync<T>(string path, IEnumerable<KeyValuePair<string, string?>>? query = null, int pageSize = 250, int maxRecords = 50_000, CancellationToken cancellationToken = default)
+        public async Task<ArrResult<ArrPagedList<T>>> GetAllPagesAsync<T>(string path, IEnumerable<KeyValuePair<string, string?>>? query = null, int pageSize = 250, int maxRecords = 50_000, CancellationToken cancellationToken = default, Func<T, int>? idOf = null)
         {
             pageSize = Math.Clamp(pageSize, 1, 1000);
             var records = new List<T>();
+            var seen = idOf == null ? null : new HashSet<int>();
             var total = 0;
+            var pages = 0;
+            // Every page but the last adds at least one row, so the cap bounds the number of pages.
             for (var page = 1; ; page++)
             {
                 var pageQuery = (query ?? Enumerable.Empty<KeyValuePair<string, string?>>())
@@ -156,19 +166,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 var result = await GetAsync<ArrPage<T>>(path, pageQuery, ArrCallClass.List, cancellationToken).ConfigureAwait(false);
                 if (!result.Ok) return ArrResult<ArrPagedList<T>>.Failure(result.Error!);
 
+                pages++;
                 var body = result.Value!;
                 total = Math.Max(total, body.TotalRecords);
                 var got = body.Records ?? new List<T>();
-                records.AddRange(got);
+                var added = 0;
+                foreach (var row in got)
+                {
+                    if (seen != null && !seen.Add(idOf!(row))) continue;
+                    records.Add(row);
+                    added++;
+                }
                 if (records.Count >= maxRecords)
                 {
                     var truncated = records.Count > maxRecords || records.Count < total;
                     if (records.Count > maxRecords) records.RemoveRange(maxRecords, records.Count - maxRecords);
-                    return ArrResult<ArrPagedList<T>>.Success(new ArrPagedList<T> { Records = records, TotalRecords = total, Truncated = truncated });
+                    return ArrResult<ArrPagedList<T>>.Success(new ArrPagedList<T> { Records = records, TotalRecords = total, Pages = pages, Truncated = truncated });
                 }
-                if (got.Count == 0 || records.Count >= total) break;
+                if (added == 0 || records.Count >= total) break;
             }
-            return ArrResult<ArrPagedList<T>>.Success(new ArrPagedList<T> { Records = records, TotalRecords = total });
+            return ArrResult<ArrPagedList<T>>.Success(new ArrPagedList<T> { Records = records, TotalRecords = total, Pages = pages, Short = seen != null && records.Count < total });
         }
 
         /// <summary>Builds the absolute URL for a path and query (exposed for tests).</summary>
