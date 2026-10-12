@@ -632,15 +632,15 @@
 /* ---------------------------------------------------------------------------
    Tab Navigation (sits inside .je-sticky-header which handles pinning)
    --------------------------------------------------------------------------- */
-/* Wraps onto a second row on desktop so every tab stays visible (at 1400 px the strip used to
-   hide Keyboard, Admin and Docs); phones keep the single swipeable strip (see the mobile block). */
 .je-tab-bar {
     display: flex;
-    flex-wrap: wrap;
     gap: 10px;
     padding: 12px 0;
     margin: 0;
     border-bottom: 1px solid var(--je-border);
+    overflow-x: auto;
+    scrollbar-width: none;
+    cursor: grab;
     user-select: none;
 }
 .je-tab-bar::-webkit-scrollbar { display: none; }
@@ -2113,13 +2113,7 @@ body.je-has-kefintweaks  .je-installed-badge[data-plugin="kefintweaks"]  { displ
         border-right: none;
         border-bottom: 1px solid var(--je-border);
     }
-    .je-tab-bar {
-        padding: 10px 0;
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        scrollbar-width: none;
-        cursor: grab;
-    }
+    .je-tab-bar { padding: 10px 0; }
     /* Prefix with #JellyfinEnhancedPage to match the base rule's specificity
        (1,1,0). Class-only selectors (0,1,0) here lose the cascade to the
        prefixed base, leaving desktop padding/grid values stuck on phones. */
