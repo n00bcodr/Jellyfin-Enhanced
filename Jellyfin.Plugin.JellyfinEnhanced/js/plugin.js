@@ -1107,6 +1107,136 @@
         return isCurrent();
     }
 
+    // ---- Revision check on focus (design 6.3) ----
+    // When the page becomes visible or the window gets focus, at most once a minute and never
+    // while hidden or on a timer, one small request asks whether the user's settings file or the
+    // admin configuration changed since this page last loaded them (another device or tab, an
+    // administrator). Only then is the bootstrap fetched again (one request) and applied:
+    // JE.pluginConfig in place, the settings beneath edits not yet saved (config.js), announced
+    // with `je:settings-changed`.
+    const REVISION_CHECK_MIN_INTERVAL_MS = 60000;
+    let lastRevisionCheckAt = 0;
+    let revisionCheckInFlight = false;
+    // Set once the route answered 404/405 (the server was rolled back under this page).
+    let revisionRouteMissing = false;
+    // The ConfigEpoch of the admin configuration JE.pluginConfig was last built from (patch answers
+    // and the panel's refresh bring a newer Meta.ConfigEpoch without the configuration itself).
+    let appliedConfigEpoch = null;
+    // The settings revision the last check saw, for a page with no settings Meta to compare with.
+    let lastSeenSettingsRevision = null;
+
+    /**
+     * Copies a fresh public config into JE.pluginConfig in place (modules may hold the object),
+     * dropping fields the server no longer sends.
+     * @param {object} publicConfig `PublicConfig` from the bootstrap.
+     */
+    function replacePublicConfig(publicConfig) {
+        for (const key of Object.keys(JE.pluginConfig)) {
+            if (!Object.prototype.hasOwnProperty.call(publicConfig, key)) delete JE.pluginConfig[key];
+        }
+        Object.assign(JE.pluginConfig, publicConfig);
+    }
+
+    /**
+     * The config fields whose value differs between two plugin config objects.
+     * @param {object} before The config as it was.
+     * @param {object} after The config as it is now.
+     * @returns {string[]} Field names (PascalCase, as the server sends them).
+     */
+    function changedConfigKeys(before, after) {
+        const keys = new Set(Object.keys(before).concat(Object.keys(after)));
+        return Array.from(keys).filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+    }
+
+    /**
+     * Fetches the bootstrap again for the signed-in user and applies what an administrator or
+     * another device may have changed: capabilities, the public and private config (in place) and
+     * the settings document with its Meta (config.js lands it beneath pending and unsaved edits
+     * and announces the changed keys). The other per-user documents are left as they are.
+     * @param {string} userId The user the check was made for.
+     * @param {() => boolean} isCurrent False once the user changed meanwhile.
+     * @param {string|null} answeredConfigEpoch The ConfigEpoch the revision check answered.
+     * @returns {Promise<boolean>} Whether the refresh was applied.
+     */
+    async function refreshFromServer(userId, isCurrent, answeredConfigEpoch) {
+        const bootstrap = await fetchBootstrap().catch((e) => {
+            console.warn('🪼 Jellyfin Enhanced: Could not refresh settings after a change on the server.', e);
+            return null;
+        });
+        if (!bootstrap || !isCurrent() || !bootstrapMatchesUser(bootstrap, userId)) return false;
+        if (JE.userConfig?.settingsStatus === 'loading') return false;
+        const previousConfig = { ...JE.pluginConfig };
+        applyCapabilities(bootstrap);
+        replacePublicConfig(bootstrap.PublicConfig);
+        applyPrivateConfig(bootstrap.PrivateConfig);
+        applyDeliveryPluginFlags(bootstrap.HasCustomTabs === true, bootstrap.HasPluginPages === true);
+        // The answer that triggered the refresh is no newer than this bootstrap, so at worst a
+        // later check fetches once more.
+        appliedConfigEpoch = bootstrap.UserSettings?.SettingsMeta?.ConfigEpoch || answeredConfigEpoch || null;
+        const fresh = buildUserConfigFromBootstrap(bootstrap.UserSettings);
+        JE.internals?.settingsSync?.applyRefresh(fresh, { previousConfig, configKeys: changedConfigKeys(previousConfig, JE.pluginConfig) });
+        return true;
+    }
+
+    /**
+     * The focus/visibility handler: asks GET user-settings/{userId}/revision whether the settings
+     * file or the admin configuration changed, and refreshes from the bootstrap when either did.
+     * Does nothing while the page is hidden, before boot completed, while the user's settings are
+     * loading after a switch, within a minute of the last check, while one is in flight, or on a
+     * server that does not advertise the route. An answer that arrives after a user switch is dropped.
+     * @returns {Promise<void>}
+     */
+    async function checkSettingsRevision() {
+        if (document.visibilityState === 'hidden' || revisionCheckInFlight || revisionRouteMissing || !JE.initialized) return;
+        if (!Array.isArray(JE.serverCapabilities) || !JE.serverCapabilities.includes('settingsRevision')) return;
+        const userId = typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null;
+        if (!userId || JE.userConfig?.settingsStatus === 'loading') return;
+        const now = Date.now();
+        if (now - lastRevisionCheckAt < REVISION_CHECK_MIN_INTERVAL_MS) return;
+        lastRevisionCheckAt = now;
+        const epoch = JE.session ? JE.session.getEpoch() : 0;
+        const isCurrent = () => (!JE.session || JE.session.isCurrent(epoch)) && ApiClient.getCurrentUserId?.() === userId;
+        revisionCheckInFlight = true;
+        try {
+            let answer;
+            try {
+                answer = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/revision?_=${now}`),
+                    dataType: 'json'
+                });
+            } catch (e) {
+                if (e?.status === 404 || e?.status === 405) revisionRouteMissing = true;
+                return; // a failed check is retried on a later focus
+            }
+            if (!isCurrent() || !answer || typeof answer !== 'object') return;
+            const meta = JE.settingsMeta;
+            const knownSettings = meta ? meta.revision : lastSeenSettingsRevision;
+            if (answer.Settings === knownSettings && answer.Config === appliedConfigEpoch) return;
+            if (document.visibilityState === 'hidden') {
+                lastRevisionCheckAt = 0; // hidden again meanwhile: refresh on the next return instead
+                return;
+            }
+            if (await refreshFromServer(userId, isCurrent, answer.Config)) lastSeenSettingsRevision = answer.Settings;
+        } finally {
+            revisionCheckInFlight = false;
+        }
+    }
+
+    /**
+     * Starts the revision check: on visibilitychange to visible and on window focus. Called once,
+     * when boot has completed.
+     * @param {object|null} bootstrap The boot bootstrap (its Meta's ConfigEpoch is the applied config's).
+     */
+    function registerSettingsRevisionCheck(bootstrap) {
+        appliedConfigEpoch = bootstrap?.UserSettings?.SettingsMeta?.ConfigEpoch || null;
+        lastRevisionCheckAt = Date.now(); // boot just loaded everything
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') checkSettingsRevision();
+        });
+        window.addEventListener('focus', () => { checkSettingsRevision(); });
+    }
+
     /**
      * Seeds the admin's default display language into the per-user
      * `${userId}-language` key — only when the user has no language set yet,
@@ -1165,6 +1295,9 @@
             privateConfigKeys = [];
             // Untaken startup answers belong to the previous user.
             prefetched = null;
+            // The revision check starts over for the incoming user, whose data loads now.
+            lastSeenSettingsRevision = null;
+            lastRevisionCheckAt = Date.now();
         });
 
         // Async re-bootstrap: after a switch to a signed-in user, reload that
@@ -1455,6 +1588,10 @@
             // and every enabled initializeX() has run. Automation (E2E) waits on this
             // instead of racing individual JE.* properties that appear mid-boot.
             JE.initialized = true;
+
+            // Changes made elsewhere (another device, an administrator) arrive when the user
+            // comes back to this page.
+            registerSettingsRevisionCheck(bootstrap);
 
             // Final Stage: Hide splash screen
             if (typeof JE.hideSplashScreen === 'function') {

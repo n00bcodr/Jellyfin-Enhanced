@@ -73,6 +73,7 @@ public class ApiRoutingTests
     [Theory]
     [InlineData("private-config")]
     [InlineData("admin/user-settings/registry")]
+    [InlineData("user-settings/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/revision")]
     [InlineData("host-compat")]
     [InlineData("jellyfin-urls")]
     [InlineData("jellyseerr/status")]

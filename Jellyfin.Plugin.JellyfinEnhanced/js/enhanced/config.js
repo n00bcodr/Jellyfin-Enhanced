@@ -75,6 +75,53 @@
         return locked.includes(camel);
     };
 
+    // JE.settings.onChange handlers: camelCase key → handlers, in registration order.
+    const _changeHandlers = new Map();
+
+    /**
+     * Registers a live-apply handler for one setting. It runs when the key's value changes from
+     * outside this page's own edits: another device or tab, an administrator (both noticed by the
+     * focus check or a save answer), or a save the server refused. JE.currentSettings already holds
+     * the new value; the `je:settings-changed` event follows the handlers. Changes the user makes on
+     * this page are applied by the code that makes them, which does not call the handler.
+     * @param {string} key The setting, in camelCase ('qualityTagsEnabled') or PascalCase.
+     * @param {(value: *, key: string, detail: object) => void} fn Called with the new value, the
+     *   camelCase key and the event detail ({ keys, rejected, meta?, config? }).
+     * @returns {() => void} Removes the handler again.
+     */
+    JE.settings.onChange = (key, fn) => {
+        if (typeof key !== 'string' || !key || typeof fn !== 'function') return () => {};
+        const camel = key.charAt(0).toLowerCase() + key.slice(1);
+        if (!_changeHandlers.has(camel)) _changeHandlers.set(camel, []);
+        _changeHandlers.get(camel).push(fn);
+        return () => {
+            const handlers = _changeHandlers.get(camel) || [];
+            const index = handlers.indexOf(fn);
+            if (index >= 0) handlers.splice(index, 1);
+        };
+    };
+
+    /**
+     * Announces settings that changed from outside this page's own edits: runs the JE.settings.onChange
+     * handlers of every changed key (a throwing handler is logged and the others still run), then
+     * dispatches `je:settings-changed` on document with the same detail.
+     * @param {{keys: string[], rejected: Array<{key: string, reason: string}>, meta?: boolean, config?: string[]}} detail
+     *   keys: camelCase settings whose value changed; meta: the per-key state (locks, gates,
+     *   following, ...) changed; config: admin config fields that changed.
+     */
+    function announceSettingsChanged(detail) {
+        for (const key of detail.keys) {
+            for (const fn of (_changeHandlers.get(key) || []).slice()) {
+                try {
+                    fn(JE.currentSettings?.[key], key, detail);
+                } catch (e) {
+                    console.error(`🪼 Jellyfin Enhanced: A settings change handler for ${key} failed:`, e);
+                }
+            }
+        }
+        document.dispatchEvent(new CustomEvent('je:settings-changed', { detail }));
+    }
+
     // ---- Key-level settings.json saves (POST settings.json/patch) ----
     // A save sends only the keys that differ from the last values the server confirmed (the
     // baseline), so two devices or tabs no longer revert each other's unrelated settings, and an
@@ -399,10 +446,66 @@
         }
         if (changed.length || rejected.length || metaChanged) {
             if (rejected.length) console.warn('🪼 Jellyfin Enhanced: The server did not accept some settings:', rejected);
-            document.dispatchEvent(new CustomEvent('je:settings-changed', { detail: metaChanged ? { keys: changed, rejected, meta: true } : { keys: changed, rejected } }));
+            announceSettingsChanged(metaChanged ? { keys: changed, rejected, meta: true } : { keys: changed, rejected });
         }
         batch.waiters.forEach(w => w.resolve({ rejected: rejected.filter(r => w.keys.includes(r.key)) }));
     }
+
+    /**
+     * Takes a settings document fetched again from the server (the focus check in plugin.js,
+     * design 6.3) as the new baseline. A key lands in JE.currentSettings only where this page
+     * still shows what the server last confirmed: an edit still pending, or one made on the page
+     * and not saved yet, stays on top. Locks, gates and the other per-key state come with the new
+     * Meta. Changed keys, a changed Meta and changed admin config fields are announced through
+     * announceSettingsChanged. A document the server reports unavailable is ignored (the page
+     * keeps what it has); one that loads after an unavailable one makes the settings writable again.
+     * @param {{settings: object, settingsStatus: string, settingsMeta?: object}} fresh userConfig
+     *   built from the bootstrap.
+     * @param {{previousConfig?: object, configKeys?: string[]}} [options] previousConfig: the
+     *   plugin config before the same refresh replaced it (what the page's values were merged
+     *   with); configKeys: the config fields it changed.
+     * @returns {string[]} The camelCase settings keys whose value changed.
+     */
+    function applyRefresh(fresh, options = {}) {
+        const userConfig = JE.userConfig;
+        const configKeys = Array.isArray(options.configKeys) ? options.configKeys : [];
+        if (!userConfig || !fresh || userConfig.settingsStatus === 'loading') return [];
+        const state = syncState();
+        if (!state) return [];
+        const changed = [];
+        let metaChanged = false;
+        if (fresh.settingsStatus === 'ok' && fresh.settings && typeof fresh.settings === 'object') {
+            // What the page showed until now: the last confirmed values merged with the config of
+            // that time, pending edits on top. Nothing to compare with while the settings were unavailable.
+            const wasLoaded = userConfig.settingsStatus === 'ok';
+            const before = mergeSettings(wasLoaded ? state.baseline : {}, options.previousConfig || JE.pluginConfig || {});
+            for (const [key, edit] of Object.entries(state.pending)) before[key] = edit.value;
+            const metaBefore = metaGates(userConfig.settingsMeta);
+            userConfig.settings = fresh.settings;
+            userConfig.settingsStatus = 'ok';
+            if (fresh.settingsMeta) userConfig.settingsMeta = fresh.settingsMeta;
+            else delete userConfig.settingsMeta;
+            // Takes the new baseline (a patch answer in flight then only settles its own keys).
+            const after = JE.loadSettings();
+            const current = JE.currentSettings || (JE.currentSettings = {});
+            for (const key of new Set(Object.keys(before).concat(Object.keys(after)))) {
+                if (key === 'lastOpenedTab' || !sameValue(current[key], before[key]) || sameValue(current[key], after[key])) continue;
+                current[key] = after[key];
+                changed.push(key);
+            }
+            metaChanged = metaGates(userConfig.settingsMeta) !== metaBefore;
+        }
+        if (changed.length || metaChanged || configKeys.length) {
+            const detail = { keys: changed, rejected: [] };
+            if (metaChanged) detail.meta = true;
+            if (configKeys.length) detail.config = configKeys.slice();
+            announceSettingsChanged(detail);
+        }
+        return changed;
+    }
+
+    JE.internals = JE.internals || {};
+    JE.internals.settingsSync = { applyRefresh };
 
     /**
      * Makes settings follow the server default again ("Use server default"): a Follow operation in

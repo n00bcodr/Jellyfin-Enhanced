@@ -3948,7 +3948,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // What this server supports beyond the original endpoints, so a newer client can
                 // fall back when it talks to an older (rolled-back) server:
                 //   settingsPatch — POST user-settings/{userId}/settings.json/patch and SettingsMeta.
-                Capabilities = new[] { "settingsPatch" },
+                //   settingsRevision — GET user-settings/{userId}/revision (the focus check).
+                Capabilities = new[] { "settingsPatch", "settingsRevision" },
                 UserSettings = new
                 {
                     Settings = settingsSnapshot?.Settings,
@@ -4935,6 +4936,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // The plain shape (resolved values plus IsAdmin) is what every client has always read;
             // ?meta=true wraps it with the per-key state as a sibling.
             return Ok(meta ? new System.Text.Json.Nodes.JsonObject { ["Settings"] = snapshot.Settings, ["Meta"] = snapshot.Meta } : snapshot.Settings);
+        }
+
+        /// <summary>
+        /// The change markers an open page compares on focus (design 6.3), about 100 bytes:
+        /// <c>{ "Settings": file revision, "Config": ConfigEpoch }</c>, the same values as Meta's
+        /// <c>Revision</c> and <c>ConfigEpoch</c>. When either differs from what the page last saw it
+        /// re-fetches the bootstrap. Reads the file's bytes only: nothing is seeded, resolved or
+        /// quarantined, and a user without a settings file gets an empty Settings revision.
+        /// </summary>
+        [HttpGet("user-settings/{userId}/revision")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult GetUserSettingsRevision(string userId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            string? revision;
+            try
+            {
+                revision = _userConfigurationManager.GetUserConfigurationRevision(authorizedUserId, "settings.json");
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                // The page keeps what it has and asks again on a later focus.
+                return SettingsUnavailable();
+            }
+
+            return Ok(new { Settings = revision ?? string.Empty, Config = JellyfinEnhanced.Instance?.ConfigEpoch ?? string.Empty });
         }
 
         /// <summary>The served settings.json document (resolved values plus the caller's IsAdmin) and its Meta, from one read.</summary>
