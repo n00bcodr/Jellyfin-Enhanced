@@ -282,7 +282,8 @@
             if (fullyLocked) title = "Locked for every user: users get this value and can't change it.";
             else if (lockedCount > 0) title = 'User default: ' + lockedCount + ' of ' + items.length + ' of these settings are locked for every user; the rest each user can change in their Jellyfin Enhanced panel.';
             title += ' Applies to: ' + reach + '. ' + (lockedCount > 0 ? 'Click to change ' + (fullyLocked ? 'it' : 'them') : 'Click to lock it') + ' in User settings policy.';
-            const chip = jumpLink('', 'admin', '#' + ROW_ID_PREFIX + items[0].entry.Key, title);
+            const accessibleName = title.startsWith(text) ? title : text + '. ' + title;
+            const chip = jumpLink('', 'admin', '#' + ROW_ID_PREFIX + items[0].entry.Key, accessibleName);
             chip.classList.add(CHIP_CLASS);
             chip.classList.toggle('je-user-default-chip-locked', fullyLocked);
             chip.classList.toggle('je-user-default-chip-partial', lockedCount > 0 && !fullyLocked);
@@ -297,8 +298,9 @@
             // selectors, whether its upgrade runs before or after this decoration.
             const labelText = label.querySelector(':scope > input[type="checkbox"]')
                 && (label.querySelector(':scope > span.checkboxLabel') || label.querySelector(':scope > span:not(.checkboxOutline)'));
-            nameControlWithoutChip(label, labelText || label);
-            (labelText || label).appendChild(chip);
+            const host = labelText || label;
+            nameControlWithoutChip(label, host);
+            host.insertBefore(chip, host.querySelector(':scope > .dep-required-icon, :scope > .dep-hint-text'));
         });
     }
 

@@ -37,6 +37,13 @@ const highlightSource = /function highlightTextIn\(element, query\) \{[\s\S]*?\n
 const clearHighlightsSource = /function clearHighlights\(\) \{[\s\S]*?\n            \}/.exec(pageSource)?.[0];
 const skipTagsSource = /const SKIP_TAGS = new Set\([^;]+;/.exec(pageSource)?.[0];
 
+/** The page's individual dependency decoration and tag bookkeeping, as they ship. */
+const individualDependencySources = [
+  /function addDepTag\(el, tag\) \{[\s\S]*?\n        \}/.exec(pageSource)?.[0],
+  /function removeDepTag\(el, tag\) \{[\s\S]*?\n        \}/.exec(pageSource)?.[0],
+  /function updateIndividualDep\(dep\) \{[\s\S]*?\n        \}/.exec(pageSource)?.[0]
+];
+
 /** Runs the page's actual search helpers with their enclosing search state. */
 function searchHelpers(h) {
   assert.ok(highlightSource && clearHighlightsSource && skipTagsSource);
@@ -179,6 +186,53 @@ test('checkbox checked-state selectors survive chips, re-rendering and either up
         assert.equal(label.querySelector(':scope > .emby-checkbox:checked + span + .checkboxOutline'), null);
         input.checked = true;
       });
+    }
+  }
+});
+
+test('auto-skip chips precede dependency decorations in either load order and after re-rendering', async t => {
+  assert.ok(individualDependencySources.every(Boolean));
+  for (const dependencyFirst of [true, false]) {
+    const h = setup(t);
+    const updateDependency = h.window.eval('(function () {\n' + individualDependencySources.join('\n') + '\nreturn updateIndividualDep;\n})()');
+    for (const [id, key, name] of [
+      ['autoSkipIntro', 'AutoSkipIntro', 'Auto-skip Intro'],
+      ['autoSkipOutro', 'AutoSkipOutro', 'Auto-skip Outro']
+    ]) {
+      const control = h.document.getElementById(id);
+      const label = control.closest('label');
+      const text = label.querySelector('span.checkboxLabel');
+      const textNode = text.firstChild;
+      const dep = {
+        id,
+        /** Simulates a missing Intro Skipper plugin. */
+        checkFn: () => false,
+        hint: 'Install Intro Skipper plugin to enable',
+        icon: 'key'
+      };
+      if (dependencyFirst) updateDependency(dep);
+      await h.policy.decorate(h.page);
+      if (!dependencyFirst) updateDependency(dep);
+      const icon = text.querySelector('.dep-required-icon');
+      const hint = text.querySelector('.dep-hint-text');
+      assert.ok(icon && hint);
+      /** Checks placement, uniqueness and names with the real dependency decorations present. */
+      const check = () => {
+        const chips = label.querySelectorAll('a.je-user-default-chip');
+        assert.equal(chips.length, 1);
+        assert.deepEqual([...text.childNodes], [textNode, chips[0], icon, hint]);
+        assert.equal(textNode.textContent, name);
+        assert.equal(control.getAttribute('aria-label'), name);
+        assert.equal(h.row(key).querySelector('th').textContent.trim(), name);
+      };
+      check();
+      h.tick(key);
+      check();
+      assert.equal(chipText(text.querySelector('a.je-user-default-chip')), 'Locked for users');
+      await h.policy.decorate(h.page);
+      check();
+      h.tick(key, false);
+      check();
     }
   }
 });
@@ -396,7 +450,10 @@ test('chip tooltips and accessible labels explain each reach and live unlocked, 
       assert.equal(chip.classList.contains('je-user-default-chip-locked'), locked);
       assert.equal(chip.classList.contains('je-user-default-chip-partial'), partial);
       assert.equal(chip.title, title);
-      assert.equal(chip.getAttribute('aria-label'), title);
+      const accessibleName = chip.getAttribute('aria-label');
+      assert.ok(accessibleName.startsWith(chipText(chip)));
+      assert.ok(accessibleName.includes('Applies to: ' + reach.text + '.'));
+      assert.equal(accessibleName, text === 'User default' ? title : text + '. ' + title);
     };
     const unlocked = 'User default: each user starts with this value and can change it in their Jellyfin Enhanced panel. Applies to: ' + reach.text + '. Click to lock it in User settings policy.';
     check('User default', 'person', unlocked, false);
