@@ -32,6 +32,24 @@ const applyLocksSource = /function jeApplyUserSettingsLocks\(config\) \{[\s\S]*?
 /** The page's delegated jump handler, including its handling of already-prevented clicks. */
 const jumpHandlerSource = /form\.addEventListener\('click', \(e\) => \{\s*const link = e\.target\.closest\('\.je-jump-link'\);[\s\S]*?\n            \}\);/.exec(pageSource)?.[0];
 
+/** The page's search text splitting and cleanup, including flex/grid protection spans. */
+const highlightSource = /function highlightTextIn\(element, query\) \{[\s\S]*?\n            \}/.exec(pageSource)?.[0];
+const clearHighlightsSource = /function clearHighlights\(\) \{[\s\S]*?\n            \}/.exec(pageSource)?.[0];
+const skipTagsSource = /const SKIP_TAGS = new Set\([^;]+;/.exec(pageSource)?.[0];
+
+/** Runs the page's actual search helpers with their enclosing search state. */
+function searchHelpers(h) {
+  assert.ok(highlightSource && clearHighlightsSource && skipTagsSource);
+  return h.window.eval(`(function () {
+    const form = document.getElementById('JellyfinEnhancedPage');
+    let allMatches = [], currentMatchIdx = -1;
+    ${skipTagsSource}
+    ${highlightSource}
+    ${clearHighlightsSource}
+    return { highlightTextIn, clearHighlights };
+  })()`);
+}
+
 /** Visible chip text, excluding the decorative Material icon's ligature. */
 function chipText(chip) {
   return [...chip.childNodes].filter(node => node.nodeType === 3).map(node => node.textContent).join('');
@@ -228,6 +246,112 @@ test('existing explicit control names survive unless aria-labelledby would inclu
     assert.equal(quality.getAttribute('aria-label'), 'Enable Quality Tags');
     assert.equal(category.hasAttribute('aria-labelledby'), false);
     assert.equal(category.getAttribute('aria-label'), 'Show resolution (4K, 1080p, ...)');
+  }
+});
+
+test('partial search highlights before decoration preserve full control and policy names after clearing', async t => {
+  for (const display of ['inline', 'flex']) {
+    const h = setup(t);
+    const control = h.document.getElementById('autoPipEnabled');
+    const label = control.labels[0];
+    const text = label.querySelector('.checkboxLabel');
+    const name = text.textContent.trim();
+    text.style.display = display;
+    const search = searchHelpers(h);
+    search.highlightTextIn(text, 'picture');
+    assert.equal(text.querySelectorAll('mark.je-search-match').length, 2);
+    assert.equal(text.querySelectorAll('.je-search-wrap').length, display === 'flex' ? 1 : 0);
+    await h.policy.decorate(h.page);
+    assert.equal(control.getAttribute('aria-label'), name);
+    assert.equal(control.dataset.jeChipName, '1');
+    assert.equal(h.row('AutoPipEnabled').querySelector('th').textContent, name);
+    search.clearHighlights();
+    assert.equal(text.querySelector('.je-search-match, .je-search-wrap'), null);
+    assert.equal(text.firstChild.textContent, name, 'cleanup normalizes the original text');
+    await h.policy.decorate(h.page);
+    assert.equal(control.getAttribute('aria-label'), name);
+    assert.equal(h.row('AutoPipEnabled').querySelector('th').textContent, name);
+    assert.equal(label.querySelectorAll('a.je-user-default-chip').length, 1);
+  }
+});
+
+test('whole-label search highlights before decoration never generate an empty control name', async t => {
+  const h = setup(t);
+  const control = h.document.getElementById('watchProgressDefaultMode');
+  const label = control.labels[0];
+  const name = label.textContent.trim();
+  label.style.display = 'flex';
+  const search = searchHelpers(h);
+  search.highlightTextIn(label, name.toLowerCase());
+  assert.equal(label.firstChild.matches('mark.je-search-match'), true);
+  assert.equal(label.querySelector('.je-search-wrap'), null, 'whole-node matches need no wrapper');
+  for (let render = 0; render < 2; render++) {
+    await h.policy.decorate(h.page);
+    assert.equal(control.getAttribute('aria-label'), name);
+    assert.equal(label.querySelectorAll('a.je-user-default-chip').length, 1);
+    search.clearHighlights();
+  }
+});
+
+test('markup-provided aria-label without a generated marker survives highlighted renders', async t => {
+  const h = setup(t);
+  const control = h.document.getElementById('autoPipEnabled');
+  const label = control.labels[0];
+  control.setAttribute('aria-label', 'Markup-provided name');
+  const search = searchHelpers(h);
+  search.highlightTextIn(label.querySelector('.checkboxLabel'), 'picture');
+  for (let render = 0; render < 2; render++) {
+    await h.policy.decorate(h.page);
+    assert.equal(control.getAttribute('aria-label'), 'Markup-provided name');
+    assert.equal(control.hasAttribute('data-je-chip-name'), false);
+    assert.equal(label.querySelectorAll('a.je-user-default-chip').length, 1);
+    search.clearHighlights();
+  }
+});
+
+test('generated control names refresh with label text and are removed when it becomes blank', async t => {
+  const h = setup(t);
+  const control = h.document.getElementById('autoPipEnabled');
+  const label = control.labels[0];
+  const text = label.querySelector('.checkboxLabel');
+  await h.policy.decorate(h.page);
+  text.firstChild.textContent = '  Updated   label\n text  ';
+  h.tick('AutoPipEnabled');
+  assert.equal(control.getAttribute('aria-label'), 'Updated label text');
+  text.firstChild.textContent = '   ';
+  await h.policy.decorate(h.page);
+  assert.equal(control.hasAttribute('aria-label'), false);
+  assert.equal(control.hasAttribute('data-je-chip-name'), false);
+  assert.equal(label.querySelectorAll('a.je-user-default-chip').length, 1);
+  text.firstChild.textContent = 'Restored label';
+  await h.policy.decorate(h.page);
+  assert.equal(control.getAttribute('aria-label'), 'Restored label');
+});
+
+test('names retain highlighted tag context and headings while excluding decorative label hints', async t => {
+  const h = setup(t);
+  const control = h.document.getElementById('qualityTagsEnabled');
+  const label = control.labels[0];
+  const text = label.querySelector('.checkboxLabel');
+  const name = text.textContent.trim();
+  const legend = control.closest('fieldset').querySelector('legend');
+  const tabTitle = h.page.querySelector('.jellyfin-tab-button[data-tab="display"] h3');
+  const search = searchHelpers(h);
+  search.highlightTextIn(text, 'quality');
+  search.highlightTextIn(legend, 'media');
+  search.highlightTextIn(tabTitle, 'display');
+  const hints = h.document.createElement('span');
+  hints.innerHTML = '<sup> β</sup><span class="je-new-badge"><i class="material-icons">auto_awesome</i>New in v1</span><i class="material-icons je-info-icon">info</i><i class="material-icons dep-required-icon">key</i><span class="dep-hint-text">Plugin required</span><span class="parent-hint-test">Enable parent</span><span class="fieldDescription">Description inside label</span><span aria-hidden="true">Decorative hint</span>';
+  text.append(...hints.childNodes);
+  for (let render = 0; render < 2; render++) {
+    await h.policy.decorate(h.page);
+    assert.equal(control.getAttribute('aria-label'), name);
+    assert.equal(h.row('QualityTagsEnabled').querySelector('th').textContent, name);
+    assert.equal(h.row('QualityTagsPosition').querySelector('th').textContent, 'Quality Tags: Position');
+    assert.equal(h.row('QualityTagsEnabled').previousElementSibling.textContent, 'Display · Media Tags');
+    assert.equal(label.querySelectorAll('a.je-user-default-chip').length, 1);
+    assert.ok(text.querySelector('.je-new-badge'), 'decorations remain in the live label');
+    search.clearHighlights();
   }
 });
 

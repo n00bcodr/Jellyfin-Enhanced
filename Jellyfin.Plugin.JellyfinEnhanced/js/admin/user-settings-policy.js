@@ -84,18 +84,16 @@
     }
 
     /**
-     * An element's own text, without nested badges and hints (a beta mark, a plugin hint).
+     * Label text without decorative badges, hints and icon glyphs; keeps search highlights.
      * @param {Element|null} element The element.
      * @returns {string}
      */
-    function ownText(element) {
+    function textWithoutHints(element) {
         if (!element) return '';
-        return Array.from(element.childNodes)
-            .filter(node => node.nodeType === 3)
-            .map(node => node.textContent)
-            .join(' ')
-            .replace(/\s+/g, ' ')
-            .trim();
+        const clone = element.cloneNode(true);
+        clone.querySelectorAll('a.' + CHIP_CLASS + ', sup, .je-new-badge, .material-icons, .dep-hint-text, .dep-required-icon, [class*="parent-hint-"], .fieldDescription, .checkboxOutline, [aria-hidden="true"], img')
+            .forEach(hint => hint.remove());
+        return clone.textContent.replace(/\s+/g, ' ').trim();
     }
 
     /**
@@ -113,7 +111,7 @@
         }
         const toggle = row && row.querySelector('.checkboxContainer input');
         if (!toggle || toggle === control) return '';
-        return ownText(toggle.closest('label') && toggle.closest('label').querySelector('span')).replace(/^Enable /, '');
+        return textWithoutHints(toggle.closest('label') && toggle.closest('label').querySelector('span')).replace(/^Enable /, '');
     }
 
     /**
@@ -126,12 +124,12 @@
     function controlName(page, control, entry) {
         let name = '';
         if (control && control.matches('[data-order-key]')) {
-            const label = ownText(control.querySelector('label span'));
+            const label = textWithoutHints(control.querySelector('label span'));
             name = label ? label + ' (order)' : '';
         } else if (control) {
             const wrapping = control.closest('label');
             const forLabel = Array.from(page.querySelectorAll('label[for]')).find(label => label.htmlFor === control.id);
-            name = ownText(wrapping && wrapping.querySelector('span')) || ownText(forLabel);
+            name = textWithoutHints(wrapping && wrapping.querySelector('span')) || textWithoutHints(forLabel);
         }
         if (!name) return wordsFromKey(entry.Key);
         const context = control ? tagContext(control) : '';
@@ -229,10 +227,10 @@
     }
 
     /**
-     * Names the labelled control from the label's own text, leaving the chip's name out.
+     * Refreshes generated control names from label text, leaving the chip's name out.
      * Keeps existing explicit names unless their reference would include the appended chip.
      * @param {HTMLLabelElement} label The chip's label.
-     * @param {Element} text The element whose own text names the control and receives the chip.
+     * @param {Element} text The element whose text names the control and receives the chip.
      */
     function nameControlWithoutChip(label, text) {
         const control = label.control || label.querySelector('input, select, textarea')
@@ -247,7 +245,16 @@
             if (!includesChip) return;
             control.removeAttribute('aria-labelledby');
         }
-        if (!control.hasAttribute('aria-label')) control.setAttribute('aria-label', ownText(text));
+        const generated = control.dataset.jeChipName === '1';
+        if (control.hasAttribute('aria-label') && !generated) return;
+        const name = textWithoutHints(text);
+        if (name) {
+            control.setAttribute('aria-label', name);
+            control.dataset.jeChipName = '1';
+        } else if (generated) {
+            control.removeAttribute('aria-label');
+            delete control.dataset.jeChipName;
+        }
     }
 
     /**
@@ -368,7 +375,7 @@
         if (!tab) return '';
         const button = Array.from(document.querySelectorAll('.jellyfin-tab-button')).find(entry => entry.dataset.tab === tab.id);
         const legend = control.closest('fieldset') && control.closest('fieldset').querySelector('legend');
-        return [ownText(button && button.querySelector('h3')), ownText(legend)].filter(Boolean).join(' · ');
+        return [textWithoutHints(button && button.querySelector('h3')), textWithoutHints(legend)].filter(Boolean).join(' · ');
     }
 
     /**
