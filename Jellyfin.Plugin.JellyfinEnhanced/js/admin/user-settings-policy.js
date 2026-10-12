@@ -1,7 +1,7 @@
 /**
  * @file Admin page (Configuration/configPage.html) add-on: the "User settings policy" table on
  * the Admin tab, whose Lock column is the only place an administrator locks a per-user setting,
- * and a small badge under every admin control that is also a per-user default.
+ * and an inline chip beside every admin control's label that is also a per-user default.
  *
  * Not part of the client bundle (not in component-scripts.json). The page loads it with a
  * versioned URL and calls window.JellyfinEnhancedAdminPolicy.decorate(page) after every
@@ -27,7 +27,7 @@
     const CARD_PATH = '/JellyfinEnhanced/admin/user-settings/upgrade-card';
     const COLUMNS = 7;
     const ROW_ID_PREFIX = 'jePolicyRow-';
-    const BADGE_CLASS = 'je-user-default-badge';
+    const CHIP_CLASS = 'je-user-default-chip';
 
     const state = {
         page: null,          // the page element the rows were rendered into
@@ -177,14 +177,14 @@
     }
 
     /**
-     * Where the setting takes effect under the saved configuration, as badge text.
+     * Where the setting takes effect under the saved configuration, for chip tooltips.
      * @param {object} entry A registry entry.
-     * @returns {{text: string, nativeOff: boolean}}
+     * @returns {string}
      */
     function reachText(entry) {
-        if (entry.EffectiveReach === 'Both') return { text: 'Web + native posters', nativeOff: false };
-        if (entry.Reach === 'Both') return { text: 'Web only (native poster tags are off)', nativeOff: true };
-        return { text: 'Web only', nativeOff: false };
+        if (entry.EffectiveReach === 'Both') return 'web overlays and poster images in native TV and phone apps';
+        if (entry.Reach === 'Both') return 'Web only (native poster tags are off)';
+        return 'Web only';
     }
 
     /**
@@ -207,12 +207,12 @@
     }
 
     /**
-     * Element a control's badge follows: the row or container that holds it, so the toggle and
-     * position of one tag row, or a category and its order, share one badge.
+     * Container that groups defaults, so the toggle and position of one tag row, or a category
+     * and its order, share one chip.
      * @param {Element} control The control or row.
      * @returns {Element}
      */
-    function badgeAnchor(control) {
+    function chipAnchor(control) {
         return control.closest('.je-quality-cat-admin-row')
             || control.closest('.je-tag-row')
             || control.closest('.checkboxContainer, .inputContainer, .selectContainer')
@@ -220,48 +220,55 @@
     }
 
     /**
-     * Writes (or rewrites) the badge under every control that is a per-user default.
+     * Cancels label activation without stopping the page's delegated jump handler. Native
+     * keyboard activation (Enter on the link) also dispatches this click.
+     * @param {MouseEvent} event The chip click.
+     */
+    function preventChipLabelActivation(event) {
+        event.preventDefault();
+    }
+
+    /**
+     * Writes (or rewrites) a chip inside each per-user default group's main control label.
      * @param {Element} page The admin page.
      */
-    function renderBadges(page) {
-        page.querySelectorAll('.' + BADGE_CLASS).forEach(badge => badge.remove());
+    function renderChips(page) {
+        page.querySelectorAll('a.' + CHIP_CLASS).forEach(chip => chip.remove());
         const groups = new Map();
         state.byKey.forEach((item) => {
             if (!item.control) return;
-            const anchor = badgeAnchor(item.control);
+            const anchor = chipAnchor(item.control);
             if (!groups.has(anchor)) groups.set(anchor, []);
             groups.get(anchor).push(item);
         });
         groups.forEach((items, anchor) => {
-            const badge = document.createElement('div');
-            badge.className = BADGE_CLASS;
+            const label = anchor.querySelector('.checkboxContainer label')
+                || anchor.querySelector('label');
+            if (!label) return;
             const reach = reachText(items[0].entry);
             const lockedCount = items.filter(item => item.checkbox && item.checkbox.checked).length;
-            const label = document.createElement('span');
-            label.textContent = 'User default · ';
-            badge.appendChild(label);
-            if (reach.nativeOff) {
-                const reachLabel = document.createElement('span');
-                reachLabel.textContent = 'Web only (';
-                badge.appendChild(reachLabel);
-                badge.appendChild(jumpLink('native poster tags are off', 'display', '#nativePosterTagsEnabled'));
-                badge.appendChild(document.createTextNode(')'));
-            } else {
-                badge.appendChild(document.createTextNode(reach.text));
-            }
-            if (lockedCount > 0) {
-                const locked = document.createElement('strong');
-                locked.className = 'je-user-default-badge-locked';
-                locked.textContent = items.length > 1 && lockedCount < items.length ? ' · ' + lockedCount + ' of ' + items.length + ' locked' : ' · Locked';
-                badge.appendChild(locked);
-            }
-            badge.appendChild(document.createTextNode(' '));
-            badge.appendChild(jumpLink('›', 'admin', '#' + ROW_ID_PREFIX + items[0].entry.Key, 'Lock or unlock in User settings policy'));
-            // A quality tag category row is moved by its arrows, which swap it with the next row
-            // element: its badge goes inside the row (under the checkbox) so it moves with it.
-            const inside = anchor.matches('.je-quality-cat-admin-row') && anchor.querySelector('.checkboxContainer');
-            if (inside) inside.appendChild(badge);
-            else anchor.insertAdjacentElement('afterend', badge);
+            const fullyLocked = lockedCount === items.length;
+            const text = fullyLocked ? 'Locked for users' : lockedCount > 0 ? lockedCount + ' of ' + items.length + ' locked' : 'User default';
+            let title = 'User default: each user starts with this value and can change it in their Jellyfin Enhanced panel.';
+            if (fullyLocked) title = "Locked for every user: users get this value and can't change it.";
+            else if (lockedCount > 0) title = 'User default: ' + lockedCount + ' of ' + items.length + ' of these settings are locked for every user; the rest each user can change in their Jellyfin Enhanced panel.';
+            title += ' Applies to: ' + reach + '. ' + (lockedCount > 0 ? 'Click to change ' + (fullyLocked ? 'it' : 'them') : 'Click to lock it') + ' in User settings policy.';
+            const chip = jumpLink('', 'admin', '#' + ROW_ID_PREFIX + items[0].entry.Key, title);
+            chip.classList.add(CHIP_CLASS);
+            chip.classList.toggle('je-user-default-chip-locked', fullyLocked);
+            chip.classList.toggle('je-user-default-chip-partial', lockedCount > 0 && !fullyLocked);
+            chip.title = title;
+            const icon = document.createElement('i');
+            icon.className = 'material-icons';
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = lockedCount > 0 ? 'lock' : 'person';
+            chip.append(icon, document.createTextNode(text));
+            chip.addEventListener('click', preventChipLabelActivation, true);
+            // Keep input + text span + checkboxOutline adjacent for emby-checkbox's checked
+            // selectors, whether its upgrade runs before or after this decoration.
+            const labelText = label.querySelector(':scope > input[type="checkbox"]')
+                && (label.querySelector(':scope > span.checkboxLabel') || label.querySelector(':scope > span:not(.checkboxOutline)'));
+            (labelText || label).appendChild(chip);
         });
     }
 
@@ -317,7 +324,7 @@
         status.classList.toggle('je-policy-status-error', !!isError);
     }
 
-    /** Updates the summary line, impact text and badges after a lock checkbox changes. */
+    /** Updates the summary line, impact text and chips after a lock checkbox changes. */
     function refresh() {
         const page = state.page;
         if (!page) return;
@@ -325,7 +332,7 @@
         const summary = page.querySelector('#jeUserSettingsPolicySummaryCount');
         if (summary) summary.textContent = state.entries.length + ' settings, ' + lockedNow + ' locked';
         renderImpact(page);
-        renderBadges(page);
+        renderChips(page);
     }
 
     /**

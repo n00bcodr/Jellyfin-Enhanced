@@ -2389,11 +2389,39 @@ div#bazarrMappingsValidationResult {
 .je-ts-pick-controls input:disabled { opacity: 0.4; }
 #tagStylePresets .je-ts-presets-row:last-child { align-items: stretch; }
 
-/* User settings policy (Admin tab) and the "User default" badges under mirrored controls,
+/* User settings policy (Admin tab) and the "User default" chips beside mirrored control labels,
    both rendered by js/admin/user-settings-policy.js. */
-.je-user-default-badge { margin: -6px 0 10px 0; font-size: 0.8em; opacity: 0.7; }
-.je-user-default-badge a.je-jump-link { color: inherit; text-decoration: underline; }
-.je-user-default-badge-locked { font-weight: 600; opacity: 1; }
+.je-user-default-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 10px;
+    /* Keep the pill's border/padding within the surrounding label's line box. */
+    margin-block: -2px;
+    padding: 1px 8px 1px 6px;
+    border-radius: 999px;
+    font-size: 0.72em;
+    font-weight: 500;
+    line-height: 1.6;
+    vertical-align: middle;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.05);
+    text-decoration: none;
+    white-space: nowrap;
+}
+.je-user-default-chip .material-icons { font-size: 14px; }
+a.je-user-default-chip:hover { color: rgba(255, 255, 255, 0.9); background: rgba(255, 255, 255, 0.09); }
+.je-user-default-chip-locked { border-color: rgba(0, 164, 220, 0.6); color: #4fc3f7; background: rgba(0, 164, 220, 0.10); }
+a.je-user-default-chip-locked:hover { color: #81d4fa; background: rgba(0, 164, 220, 0.16); }
+.je-user-default-chip-partial .material-icons { color: #4fc3f7; }
+a.je-user-default-chip:focus-visible { outline: 2px solid var(--primary-accent-color, #00a4dc); outline-offset: 2px; }
+.je-user-default-chip-sample { margin: -2px 2px; cursor: default; }
+#JellyfinEnhancedPage.je-light-theme .je-user-default-chip { border-color: rgba(0, 0, 0, 0.2); color: rgba(0, 0, 0, 0.7); background: rgba(0, 0, 0, 0.04); }
+#JellyfinEnhancedPage.je-light-theme a.je-user-default-chip:hover { color: rgba(0, 0, 0, 0.9); background: rgba(0, 0, 0, 0.08); }
+#JellyfinEnhancedPage.je-light-theme .je-user-default-chip-locked { border-color: rgba(0, 119, 163, 0.5); color: #0077a3; background: rgba(0, 119, 163, 0.08); }
+#JellyfinEnhancedPage.je-light-theme a.je-user-default-chip-locked:hover { color: #005d80; background: rgba(0, 119, 163, 0.14); }
+#JellyfinEnhancedPage.je-light-theme .je-user-default-chip-partial .material-icons { color: #0077a3; }
 .je-policy-status { margin: 8px 0; font-size: 0.9em; opacity: 0.8; }
 .je-policy-status[hidden], .je-policy-impact[hidden] { display: none; }
 .je-policy-status-error { opacity: 1; padding: 8px 12px; border-left: 3px solid #f0ad4e; border-radius: 4px; background: rgba(240, 173, 78, 0.12); }

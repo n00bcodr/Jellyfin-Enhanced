@@ -29,7 +29,27 @@ const categoryArrowsSource = [
 /** The page's own save-side lock decision, taken from configPage.html as it ships. */
 const applyLocksSource = /function jeApplyUserSettingsLocks\(config\) \{[\s\S]*?\n        \}/.exec(pageSource)?.[0];
 
-function setup(t, { registry = registryDefault, ajax } = {}) {
+/** The page's delegated jump handler, including its handling of already-prevented clicks. */
+const jumpHandlerSource = /form\.addEventListener\('click', \(e\) => \{\s*const link = e\.target\.closest\('\.je-jump-link'\);[\s\S]*?\n            \}\);/.exec(pageSource)?.[0];
+
+/** Visible chip text, excluding the decorative Material icon's ligature. */
+function chipText(chip) {
+  return [...chip.childNodes].filter(node => node.nodeType === 3).map(node => node.textContent).join('');
+}
+
+/** Mimics the label structure emby-checkbox adds when its custom input is upgraded. */
+function upgradeCheckbox(input) {
+  const label = input.parentElement;
+  input.classList.add('emby-checkbox');
+  label.classList.add('emby-checkbox-label');
+  label.querySelector('span').classList.add('checkboxLabel');
+  const outline = input.ownerDocument.createElement('span');
+  outline.className = 'checkboxOutline';
+  outline.innerHTML = '<span class="material-icons checkboxIcon checkboxIcon-checked" aria-hidden="true"></span>';
+  label.appendChild(outline);
+}
+
+function setup(t, { registry = registryDefault, ajax, upgraded = true } = {}) {
   const requests = [];
   const h = createHarness({
     html: pageMarkup,
@@ -40,6 +60,7 @@ function setup(t, { registry = registryDefault, ajax } = {}) {
   t.after(() => h.close());
   h.allowConsoleError(/Could not parse CSS stylesheet/);
   const page = h.document.querySelector('#JellyfinEnhancedPage');
+  if (upgraded) page.querySelectorAll('input[is="emby-checkbox"]').forEach(upgradeCheckbox);
   h.load('admin/user-settings-policy.js');
   const policy = h.window.JellyfinEnhancedAdminPolicy;
   const row = key => h.document.getElementById(`jePolicyRow-${key}`);
@@ -52,7 +73,7 @@ function setup(t, { registry = registryDefault, ajax } = {}) {
   return { ...h, page, policy, row, tick, requests, applyLocks };
 }
 
-test('every lockable key gets exactly one policy row tied to its admin control, and one badge per control', async t => {
+test('every lockable key gets one policy row and one inline chip per control group, including on revisit', async t => {
   assert.ok(applyLocksSource, 'jeApplyUserSettingsLocks is in configPage.html');
   const h = setup(t);
   assert.equal(h.policy.ready, false);
@@ -63,11 +84,16 @@ test('every lockable key gets exactly one policy row tied to its admin control, 
 
   const rows = [...h.document.querySelectorAll('#jeUserSettingsPolicyTable tbody tr[data-setting-key]')];
   assert.deepEqual(rows.map(row => row.dataset.settingKey).sort(), [...lockableKeys].sort());
+  const groups = new Set();
   for (const entry of registryDefault.filter(e => e.Lockable)) {
     const matches = entry.RowKey
       ? [...h.page.querySelectorAll('[data-order-key]')].filter(el => el.dataset.orderKey === entry.RowKey)
       : [...h.page.querySelectorAll('[id]')].filter(el => el.id === entry.ControlId);
     assert.equal(matches.length, 1, `${entry.Key}: one admin control or row`);
+    const group = matches[0].closest('.je-quality-cat-admin-row, .je-tag-row')
+      || matches[0].closest('.checkboxContainer, .inputContainer, .selectContainer');
+    groups.add(group);
+    assert.equal(group.querySelectorAll('a.je-user-default-chip').length, 1, `${entry.Key}: one chip in its group`);
     const link = h.row(entry.Key).querySelector('th a.je-jump-link');
     assert.ok(link, `${entry.Key}: the row links to its control`);
     assert.ok(link.dataset.jumpTab && h.document.getElementById(link.dataset.jumpTab), `${entry.Key}: jumps to a real tab`);
@@ -77,21 +103,169 @@ test('every lockable key gets exactly one policy row tied to its admin control, 
   assert.equal(h.row('RatingTagsOnMovies').querySelector('th').textContent, 'Rating Tags: Show on movies');
   assert.equal(h.row('AutoSkipIntro').querySelector('th').textContent.trim(), 'Auto-skip Intro');
 
-  const badges = [...h.page.querySelectorAll('.je-user-default-badge')];
-  const anchors = new Set(badges.map(badge => badge.previousElementSibling));
-  assert.equal(anchors.size, badges.length, 'one badge per control (a tag row shares one)');
-  const qualityBadge = h.page.querySelector('#qualityTagsEnabled').closest('.je-tag-row').nextElementSibling;
-  assert.ok(qualityBadge.classList.contains('je-user-default-badge'));
-  assert.match(qualityBadge.textContent, /^User default · Web only \(native poster tags are off\) ›$/);
-  assert.equal(qualityBadge.querySelector('a[data-jump-target="#nativePosterTagsEnabled"]').dataset.jumpTab, 'display');
-  assert.equal(qualityBadge.querySelector('a[aria-label]').dataset.jumpTarget, '#jePolicyRow-QualityTagsEnabled');
-  const pipBadge = h.page.querySelector('#autoPipEnabled').closest('.checkboxContainer').nextElementSibling;
-  assert.equal(pipBadge.textContent, 'User default · Web only ›');
+  const chips = [...h.page.querySelectorAll('a.je-user-default-chip')];
+  assert.equal(chips.length, groups.size);
+  const pipLabel = h.page.querySelector('#autoPipEnabled').closest('label');
+  const qualityLabel = h.page.querySelector('#qualityTagsEnabled').closest('label');
+  const categoryLabel = h.page.querySelector('#showResolutionTag').closest('label');
+  const selectLabel = h.page.querySelector('label.inputLabel[for="watchProgressDefaultMode"]');
+  for (const label of [pipLabel, qualityLabel, categoryLabel]) {
+    assert.ok(label.querySelector(':scope > span.checkboxLabel > a.je-user-default-chip:last-child'), 'chip follows text inside the checkbox text span');
+    assert.ok(label.querySelector(':scope > input + span + .checkboxOutline'), 'checked-state sibling chain is preserved');
+  }
+  assert.equal(selectLabel.lastElementChild.matches('a.je-user-default-chip'), true);
+  assert.equal(chipText(selectLabel.lastElementChild), 'User default');
+  assert.equal(qualityLabel.querySelector('a').dataset.jumpTarget, '#jePolicyRow-QualityTagsEnabled');
+  for (const chip of chips) {
+    assert.equal(chipText(chip), 'User default');
+    assert.equal(chip.querySelector('i.material-icons[aria-hidden="true"]').textContent, 'person');
+    assert.equal(chip.getAttribute('href'), '#');
+    assert.equal(chip.dataset.jumpTab, 'admin');
+    assert.equal(chip.getAttribute('aria-label'), chip.title);
+  }
+  // No decoration is inserted between the control group and its description.
+  assert.equal(qualityLabel.closest('.je-tag-row').nextElementSibling.dataset.descFor, 'qualityTagsEnabled');
+  assert.equal(pipLabel.closest('.checkboxContainer').nextElementSibling.dataset.descFor, 'autoPipEnabled');
+  assert.equal(h.page.querySelectorAll('.je-user-default-chip-sample').length, 2);
+  assert.equal(h.page.querySelectorAll('a.je-user-default-chip-sample').length, 0);
 
   // Decorating again (every pageshow) does not duplicate anything.
   await h.policy.decorate(h.page);
   assert.equal(h.document.querySelectorAll('#jeUserSettingsPolicyTable tbody tr[data-setting-key]').length, lockableKeys.length);
-  assert.equal(h.page.querySelectorAll('.je-user-default-badge').length, badges.length);
+  assert.equal(h.page.querySelectorAll('a.je-user-default-chip').length, chips.length);
+  assert.equal(h.page.querySelectorAll('.je-user-default-chip-sample').length, 2);
+  for (const group of groups) assert.equal(group.querySelectorAll('a.je-user-default-chip').length, 1);
+});
+
+test('checkbox checked-state selectors survive chips, re-rendering and either upgrade order', async t => {
+  for (const upgraded of [true, false]) {
+    const h = setup(t, { upgraded });
+    const checkboxes = ['autoPipEnabled', 'qualityTagsEnabled', 'showResolutionTag'].map(id => h.page.querySelector('#' + id));
+    const originalText = checkboxes.map(input => input.parentElement.querySelector('span').textContent);
+    checkboxes.forEach(input => { input.checked = true; });
+    for (let render = 0; render < 2; render++) {
+      await h.policy.decorate(h.page);
+      checkboxes.forEach((input, index) => {
+        const label = input.parentElement;
+        const text = label.querySelector(':scope > span:not(.checkboxOutline)');
+        const chip = text.querySelector(':scope > a.je-user-default-chip');
+        assert.ok(chip, 'the chip is nested before and after upgrade');
+        assert.equal(text.lastChild, chip);
+        assert.equal(text.firstChild.textContent, originalText[index]);
+        if (!upgraded && render === 0) upgradeCheckbox(input);
+        const outline = label.querySelector(':scope > .checkboxOutline');
+        assert.equal(label.querySelector(':scope > input + span + .checkboxOutline'), outline);
+        assert.ok(label.querySelector(':scope > .emby-checkbox:checked + span + .checkboxOutline > .checkboxIcon-checked'), 'the checked icon selector still matches');
+        assert.equal(label.querySelectorAll('a.je-user-default-chip').length, 1);
+        input.checked = false;
+        assert.equal(label.querySelector(':scope > .emby-checkbox:checked + span + .checkboxOutline'), null);
+        input.checked = true;
+      });
+    }
+  }
+});
+
+test('input defaults put the chip after the inputLabel text', async t => {
+  // The current registry uses checkbox/select defaults; also cover the inputContainer contract.
+  const registry = [{ ...registryDefault.find(e => e.Key === 'AutoPipEnabled'), ControlId: 'testInputDefault' }];
+  const h = setup(t, { registry });
+  const container = h.document.createElement('div');
+  container.className = 'inputContainer';
+  container.innerHTML = '<label class="inputLabel" for="testInputDefault">Input default</label><input id="testInputDefault" type="text">';
+  h.page.appendChild(container);
+  await h.policy.decorate(h.page);
+  const label = container.querySelector('.inputLabel');
+  assert.equal(label.firstChild.textContent, 'Input default');
+  assert.equal(label.lastElementChild.matches('a.je-user-default-chip'), true);
+  assert.equal(container.querySelectorAll('a.je-user-default-chip').length, 1);
+});
+
+test('chip tooltips and accessible labels explain each reach and live unlocked, partial and fully locked states', async t => {
+  const cases = [
+    { Reach: 'Web', EffectiveReach: 'Web', text: 'Web only' },
+    { Reach: 'Both', EffectiveReach: 'Both', text: 'web overlays and poster images in native TV and phone apps' },
+    { Reach: 'Both', EffectiveReach: 'Web', text: 'Web only (native poster tags are off)' }
+  ];
+  for (const reach of cases) {
+    const registry = registryDefault.map(e => e.Key === 'QualityTagsEnabled' ? { ...e, Reach: reach.Reach, EffectiveReach: reach.EffectiveReach } : e);
+    const h = setup(t, { registry });
+    await h.policy.decorate(h.page);
+    const label = h.page.querySelector('#qualityTagsEnabled').closest('label');
+    /** Checks the current replacement chip's visible state and exact tooltip/accessible name. */
+    const check = (text, icon, title, locked, partial = false) => {
+      const chips = label.querySelectorAll('a.je-user-default-chip');
+      assert.equal(chips.length, 1);
+      const chip = chips[0];
+      assert.equal(chipText(chip), text);
+      assert.equal(chip.querySelector('.material-icons').textContent, icon);
+      assert.equal(chip.classList.contains('je-user-default-chip-locked'), locked);
+      assert.equal(chip.classList.contains('je-user-default-chip-partial'), partial);
+      assert.equal(chip.title, title);
+      assert.equal(chip.getAttribute('aria-label'), title);
+    };
+    const unlocked = 'User default: each user starts with this value and can change it in their Jellyfin Enhanced panel. Applies to: ' + reach.text + '. Click to lock it in User settings policy.';
+    check('User default', 'person', unlocked, false);
+    h.tick('QualityTagsPosition');
+    const partiallyLocked = 'User default: 1 of 2 of these settings are locked for every user; the rest each user can change in their Jellyfin Enhanced panel. Applies to: ' + reach.text + '. Click to change them in User settings policy.';
+    check('1 of 2 locked', 'lock', partiallyLocked, false, true);
+    h.tick('QualityTagsEnabled');
+    check('Locked for users', 'lock', "Locked for every user: users get this value and can't change it. Applies to: " + reach.text + '. Click to change it in User settings policy.', true);
+    h.tick('QualityTagsPosition', false);
+    check('1 of 2 locked', 'lock', partiallyLocked, false, true);
+    h.tick('QualityTagsEnabled', false);
+    check('User default', 'person', unlocked, false);
+  }
+});
+
+test('a group of three defaults counts locks and saved locks initialise the chip', async t => {
+  const registry = [
+    ...registryDefault,
+    { ...registryDefault.find(e => e.Key === 'QualityTagsPosition'), Key: 'ExtraGroupedDefault' }
+  ].map(e => e.Key === 'QualityTagsEnabled' ? { ...e, Locked: true } : e);
+  const h = setup(t, { registry });
+  await h.policy.decorate(h.page);
+  const label = h.page.querySelector('#qualityTagsEnabled').closest('label');
+  assert.equal(chipText(label.querySelector('a')), '1 of 3 locked');
+  assert.equal(label.querySelector('a').classList.contains('je-user-default-chip-partial'), true);
+  assert.equal(label.querySelector('a').classList.contains('je-user-default-chip-locked'), false);
+  h.tick('QualityTagsPosition');
+  assert.equal(chipText(label.querySelector('a')), '2 of 3 locked');
+  h.tick('ExtraGroupedDefault');
+  assert.equal(chipText(label.querySelector('a')), 'Locked for users');
+  assert.equal(label.querySelectorAll('a.je-user-default-chip').length, 1);
+});
+
+test('chip clicks cancel checkbox label activation and still reach the real delegated jump handler', async t => {
+  const h = setup(t);
+  await h.policy.decorate(h.page);
+  assert.ok(jumpHandlerSource, 'the page has its delegated jump handler');
+  const jumps = [];
+  h.window.jeJumpToTab = (tab, target) => jumps.push({ tab, target });
+  h.window.eval('(function (form) {\n' + jumpHandlerSource + '\n})(document.querySelector("#JellyfinEnhancedPage form"));');
+  for (const id of ['autoPipEnabled', 'qualityTagsEnabled', 'showResolutionTag']) {
+    const checkbox = h.page.querySelector('#' + id);
+    const label = checkbox.closest('label');
+    const chip = label.querySelector('a.je-user-default-chip');
+    for (const checked of [false, true]) {
+      checkbox.checked = checked;
+      const before = jumps.length;
+      chip.querySelector('i').click(); // nested icon clicks also cancel the label's default action
+      assert.equal(checkbox.checked, checked);
+      assert.equal(jumps.length, before + 1);
+      assert.deepEqual(jumps.at(-1), { tab: 'admin', target: chip.dataset.jumpTarget });
+      chip.focus();
+      assert.equal(h.document.activeElement, chip);
+      // jsdom does not synthesise Enter activation; dispatch its native keyboard click (detail 0).
+      const click = new h.window.MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 });
+      assert.equal(chip.dispatchEvent(click), false, 'the click default is prevented');
+      assert.equal(checkbox.checked, checked);
+      assert.equal(jumps.length, before + 2);
+    }
+    // Ordinary label activation still works.
+    checkbox.checked = false;
+    label.querySelector('span').click();
+    assert.equal(checkbox.checked, true);
+  }
 });
 
 test('ticking a lock explains its effect before saving and marks the form changed until saved', async t => {
@@ -109,7 +283,9 @@ test('ticking a lock explains its effect before saving and marks the form change
   assert.equal(impact.hidden, false);
   assert.match(impact.textContent, /Locking Auto Picture-in-Picture on tab switch to On: users who chose something else will see On\. Their choice is kept and comes back if you unlock\./);
   assert.match(impact.textContent, /Locking Enable Quality Tags to Off: .*Applies to web overlays and to poster images in native TV and phone apps\./);
-  assert.match(h.page.querySelector('#autoPipEnabled').closest('.checkboxContainer').nextElementSibling.textContent, / · Locked ›$/);
+  const pipChip = h.page.querySelector('#autoPipEnabled').closest('label').querySelector('a.je-user-default-chip');
+  assert.equal(chipText(pipChip), 'Locked for users');
+  assert.ok(pipChip.classList.contains('je-user-default-chip-locked'));
   assert.match(h.document.querySelector('#jeUserSettingsPolicySummaryCount').textContent, /2 locked$/);
 
   h.tick('QualityTagsEnabled', false);
@@ -148,11 +324,12 @@ test('the impact text follows the admin value when the control (or the tag order
   h.window.eval(categoryArrowsSource.join('\n'));
   const container = h.page.querySelector('#qualityCategoriesAdmin');
   const order = () => [...container.querySelectorAll('[data-order-key]')].map(row => row.dataset.orderKey);
-  // Badges sit inside their rows, so the arrows (which swap a row with the next element) still work.
+  // Chips sit inside their rows, so the arrows (which swap a row with the next element) still work.
   assert.deepEqual([...container.children].filter(child => !child.matches('.je-quality-cat-admin-row, .fieldDescription')), []);
   container.querySelector('[data-order-key="ResolutionTagOrder"] .je-cat-down').click();
   assert.deepEqual(order().slice(0, 2), ['SourceTagOrder', 'ResolutionTagOrder']);
-  assert.match(container.querySelector('[data-order-key="ResolutionTagOrder"] .je-user-default-badge').textContent, / · 1 of 2 locked ›$/);
+  const movedChip = container.querySelector('[data-order-key="ResolutionTagOrder"] label > span > a.je-user-default-chip');
+  assert.equal(chipText(movedChip), '1 of 2 locked');
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.match(impact.textContent, /to position 2:/);
   assert.doesNotMatch(impact.textContent, /to position 1:/);
