@@ -207,6 +207,9 @@ function showModal(data, mediaType) {
         modal._cleanupTvListener = () => document.removeEventListener('jellyseerr-tv-requested', handleTvRequest);
     }
 
+    // Let other surfaces add to the modal (Requests & downloads: the status pill).
+    document.dispatchEvent(new CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data, mediaType } }));
+
     // Trigger animation
     setTimeout(() => modal.classList.add('active'), 10);
 }

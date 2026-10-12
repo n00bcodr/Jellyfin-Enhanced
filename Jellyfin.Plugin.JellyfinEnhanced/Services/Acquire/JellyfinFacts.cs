@@ -200,6 +200,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>What is known about requests for a title (movie or series key), as seen by the viewer; null when nothing.</summary>
         RequestFacts? For(TitleKey titleKey, StatusViewer viewer);
+
+        /// <summary>
+        /// True when this user asked for the title (movie or series key) themselves. Such a title is
+        /// theirs to follow even before it is in Jellyfin, whatever their content limits.
+        /// </summary>
+        bool AskedBy(TitleKey titleKey, Guid userId);
+
+        /// <summary>True when anyone has a request for the title (movie or series key), declined ones included.</summary>
+        bool Requested(TitleKey titleKey);
+
+        /// <summary>
+        /// <see cref="AskedBy"/>, or true for a few minutes after the user's last request for the
+        /// title went away (the change feed's audience: the announcement of a deleted request is
+        /// read after the list no longer has it, and the requester must still hear about it).
+        /// </summary>
+        bool AskedLatelyBy(TitleKey titleKey, Guid userId);
+
+        /// <summary><see cref="Requested"/>, or true for a few minutes after the title's last request went away (the change feed's audience).</summary>
+        bool RequestedLately(TitleKey titleKey);
     }
 
     /// <summary>No request system: the composer works from the arrs and Jellyfin alone.</summary>
@@ -210,5 +229,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <inheritdoc />
         public RequestFacts? For(TitleKey titleKey, StatusViewer viewer) => null;
+
+        /// <inheritdoc />
+        public bool AskedBy(TitleKey titleKey, Guid userId) => false;
+
+        /// <inheritdoc />
+        public bool Requested(TitleKey titleKey) => false;
+
+        /// <inheritdoc />
+        public bool AskedLatelyBy(TitleKey titleKey, Guid userId) => false;
+
+        /// <inheritdoc />
+        public bool RequestedLately(TitleKey titleKey) => false;
     }
 }

@@ -7,6 +7,7 @@ using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 using MediaBrowser.Controller.Entities;
@@ -52,6 +53,7 @@ public class ApiArrLiveRoutesTests
         public ArrAuditLog Audit { get; }
         public ArrWebhookProvisioner Provisioner { get; }
         public ArrLiveService Live { get; }
+        public SeerrRequestReadModel Requests { get; }
         public ArrConnection Instance => Arr.Instance("Movies");
         public Guid UserId { get; } = Guid.NewGuid();
         public string AuditPath => Path.Combine(Arr.Plugin.Core.Root, ArrAuditLog.FileName);
@@ -73,6 +75,7 @@ public class ApiArrLiveRoutesTests
             Provisioner = new ArrWebhookProvisioner(Arr.Factory, new ArrActionRunner(Audit, new ArrConfirmationTokens()), Receiver);
             var tracker = new ArrChangeTracker(Store, Feed, Router, null, null, () => Arr.Plugin.Plugin.Configuration);
             tracker.Start();
+            Requests = new SeerrRequestReadModel(new IntegrationTransport((_, _) => throw new InvalidOperationException("no Seerr in these tests")), Feed, null, () => Arr.Plugin.Plugin.Configuration, () => Arr.Now);
             Live = new ArrLiveService(Store, Router, tracker, null, () => Arr.Plugin.Plugin.Configuration, (_, _, _) => throw new ArrLiveConnectException("not in tests"), null, null);
             // The fake arr sends its Test event to JE when a webhook is saved or tested, like the real ones.
             Radarr.OnNotificationTest = n => Receiver.Receive(Instance.Id, HeaderOf(n), Encoding.UTF8.GetBytes("{\"eventType\":\"Test\",\"instanceName\":\"x\"}"), "arr") == ArrWebhookOutcome.Accepted ? null : "Unable to send test message";
@@ -85,7 +88,7 @@ public class ApiArrLiveRoutesTests
         public ArrLiveController Controller(bool admin = true, Guid? user = null)
         {
             var users = new Mock<IUserManager>();
-            var controller = new ArrLiveController(Feed, Limits, Audience, Receiver, Provisioner, Live, Router, Store, Audit, users.Object, Arr.Plugin.Core.Logger)
+            var controller = new ArrLiveController(Feed, Limits, Audience, Receiver, Provisioner, Live, Router, Store, Audit, users.Object, Arr.Plugin.Core.Logger, Requests)
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
             };
@@ -105,7 +108,11 @@ public class ApiArrLiveRoutesTests
 
         public string Logs() => string.Join("\n", Directory.GetFiles(Arr.Plugin.Core.Root, "JellyfinEnhanced_*.log").Select(File.ReadAllText));
 
-        public void Dispose() => Arr.Dispose();
+        public void Dispose()
+        {
+            Requests.Dispose();
+            Arr.Dispose();
+        }
     }
 
     private static int Status(IActionResult r) => r switch
@@ -261,6 +268,25 @@ public class ApiArrLiveRoutesTests
 
     private static async Task<JsonElement> Changes(ArrLiveController c, string? epoch, long? cursor, int wait, params string[] keys)
         => Body(await c.GetChanges(new ArrChangesRequest { Epoch = epoch, Cursor = cursor, Wait = wait, Keys = keys.ToList() }, default));
+
+    [Fact]
+    public async Task AnOpenRequestsPageKeepsSeerrOnTheFastRefreshThroughItsFeedPolls()
+    {
+        using var rig = new Rig();
+        var epoch = Body(await rig.Controller(admin: false).GetChanges(new ArrChangesRequest(), default)).GetProperty("epoch").GetString();
+        // Other pages (titles only, another user's list key, or the caller's own list key, which
+        // Seerr's more-info modal follows for a series known only by TMDB) don't count as the Requests page.
+        await Changes(rig.Controller(admin: false), epoch, 0, 0, "movie:tmdb:101", ArrTitleKey.UserRequests(Guid.NewGuid()));
+        await Changes(rig.Controller(admin: false), epoch, 0, 0, "tv:tmdb:5", ArrTitleKey.UserRequests(rig.UserId));
+        Assert.Null(rig.Requests.WatchedAt);
+        // The Requests page follows the request-list state key: every poll renews the watch.
+        rig.Arr.Now = new DateTimeOffset(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
+        await Changes(rig.Controller(admin: false), epoch, 0, 0, "movie:tmdb:101", ArrTitleKey.UserRequests(rig.UserId), ArrTitleKey.RequestsState);
+        Assert.Equal(rig.Arr.Now, rig.Requests.WatchedAt);
+        rig.Arr.Now += TimeSpan.FromMinutes(5);
+        await Changes(rig.Controller(admin: false), epoch, 0, 0, ArrTitleKey.RequestsState);
+        Assert.Equal(rig.Arr.Now, rig.Requests.WatchedAt);
+    }
 
     [Fact]
     public async Task TheFeedBootstrapsWaitsWakesFiltersAndResets()

@@ -38,7 +38,9 @@
     const BACKOFF_MAX_MS = 60000;
     const DISABLED_RETRY_MS = 5 * 60 * 1000;
     const REQUEST_TIMEOUT_MS = (WAIT_SECONDS + 15) * 1000;
-    const KEY_SHAPE = /^(movie:tmdb:[1-9][0-9]{0,8}|tv:tvdb:[1-9][0-9]{0,8}(:s(0|[1-9][0-9]{0,3})(:e(0|[1-9][0-9]{0,4}))?)?)$/;
+    // Title keys, plus a user's own request-list key (req:u:<user id>; only that user hears about it)
+    // and the shared request-list state key (req:state: Seerr first read, failure, recovery).
+    const KEY_SHAPE = /^(movie:tmdb:[1-9][0-9]{0,8}|tv:tvdb:[1-9][0-9]{0,8}(:s(0|[1-9][0-9]{0,3})(:e(0|[1-9][0-9]{0,4}))?)?|req:u:[0-9a-f]{32}|req:state)$/;
 
     /**
      * @typedef {Object} Subscription

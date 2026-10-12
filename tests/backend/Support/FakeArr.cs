@@ -39,6 +39,10 @@ internal sealed class FakeArr : IDisposable
         public Func<JsonObject, string?>? OnNotificationTest { get; set; }
         /// <summary>Request bodies of writes, by method and path.</summary>
         public List<(string Method, string Path, string Body)> Writes { get; } = new();
+        /// <summary>What <c>GET /command/{id}</c> answers for commands posted to <c>/command</c>.</summary>
+        public string CommandStatus { get; set; } = "completed";
+        /// <summary>The message of those commands.</summary>
+        public string? CommandMessage { get; set; } = "Completed";
     }
 
     public ApiPluginFixture Plugin { get; } = new();
@@ -173,6 +177,17 @@ internal sealed class FakeArr : IDisposable
         lock (host)
         {
             if (path.StartsWith("/api/v3/notification", StringComparison.Ordinal)) return Notification(host, request, path);
+            if (path == "/api/v3/command" && request.Method == HttpMethod.Post)
+            {
+                var body = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+                host.Writes.Add(("POST", path, body));
+                var command = JsonNode.Parse(body)!.AsObject();
+                command["id"] = 900 + host.Writes.Count;
+                command["status"] = "queued";
+                return IntegrationTransport.Response(command.ToJsonString(), 201);
+            }
+            if (path.StartsWith("/api/v3/command/", StringComparison.Ordinal) && int.TryParse(path["/api/v3/command/".Length..], out var commandId))
+                return IntegrationTransport.Response(new JsonObject { ["id"] = commandId, ["status"] = host.CommandStatus, ["message"] = host.CommandMessage }.ToJsonString());
             if (request.Method == HttpMethod.Get && TitleById(host, path) is { } title) return title;
             switch (path)
             {

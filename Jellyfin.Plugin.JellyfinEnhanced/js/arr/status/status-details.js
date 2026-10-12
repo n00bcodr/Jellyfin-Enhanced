@@ -136,6 +136,7 @@
             state.quiet = true;
             clear();
             JE.internals?.arrStatusEpisodes?.clear?.();
+            JE.internals?.arrManage?.attachDetails?.(visiblePage(), null);
             release();
             return;
         }
@@ -146,6 +147,8 @@
         }
         const block = render(livePage, status, data);
         state.quiet = !block;
+        // Administrators (only they get the admin block) get the Manage button in the action row.
+        JE.internals?.arrManage?.attachDetails?.(livePage, status);
         // The title's own key and, for a title Jellyfin knows by another id, the key the feed announces it under.
         const keys = [status.key, status.liveKey].filter(Boolean);
         state.unsubscribe = JE.arrStatus.subscribe(keys, () => update(true), { since: data.since ?? null });

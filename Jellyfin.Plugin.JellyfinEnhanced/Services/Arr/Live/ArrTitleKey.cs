@@ -73,6 +73,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             return true;
         }
 
+        /// <summary>
+        /// The feed key that changes when a user's own request list changes (a request made,
+        /// answered or removed in Seerr): <c>req:u:&lt;user id, 32 hex&gt;</c>. Only that user ever
+        /// hears about it (see <see cref="ArrFeedAudience"/>).
+        /// </summary>
+        public static string UserRequests(Guid userId) => UserRequestsPrefix + userId.ToString("N", CultureInfo.InvariantCulture);
+
+        /// <summary>True for a <see cref="UserRequests"/> key, with the user it belongs to.</summary>
+        public static bool TryParseUserRequests(string? key, out Guid userId)
+        {
+            userId = Guid.Empty;
+            return key is { Length: 38 }
+                && key.StartsWith(UserRequestsPrefix, StringComparison.Ordinal)
+                && key.AsSpan(UserRequestsPrefix.Length).IndexOfAnyExcept("0123456789abcdef") < 0
+                && Guid.TryParseExact(key.AsSpan(UserRequestsPrefix.Length), "N", out userId);
+        }
+
+        /// <summary>
+        /// The shared feed key that changes when the Seerr request list as a whole changes state (first
+        /// read, a failure, the recovery): every Requests page follows it. It carries nothing private
+        /// and reaches everyone.
+        /// </summary>
+        public const string RequestsState = "req:state";
+
+        /// <summary>True for any key the change feed carries: a title key, a user's request-list key or <see cref="RequestsState"/>.</summary>
+        public static bool IsFeedKey(string? key) => IsValid(key) || TryParseUserRequests(key, out _) || string.Equals(key, RequestsState, StringComparison.Ordinal);
+
+        private const string UserRequestsPrefix = "req:u:";
+
         /// <summary>The title-level key (movie or series) a key belongs to.</summary>
         public static string? TitleOf(string? key)
         {

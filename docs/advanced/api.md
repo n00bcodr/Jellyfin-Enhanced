@@ -716,9 +716,13 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | DELETE | `arr/admin/instances/{id}/webhook` | Admin, Requests & downloads (new): remove the webhook and forget its secret (body `{"consent":true}`; audited) |
 | POST | `arr/admin/instances/{id}/webhook/manual` | Admin, phase 1 on: copy-paste set-up (address, header name and the secret); audited |
 | POST | `arr/hook/{instanceId}` | Anonymous, phase 1 on: the arrs' webhook receiver. Needs the instance's secret in `X-JE-Hook-Secret`; body ≤ 1 MiB; only triggers re-reads; `204`, or `401`/`400`/`413`/`429` with no body |
-| POST | `acquire/changes` | Any signed-in user, phase 1 on: the change feed. Body `{"epoch","cursor","keys":["movie:tmdb:…","tv:tvdb:…[:s…[:e…]]"],"wait":25}`; answers `{"epoch","cursor","keys","reset"}` as soon as a title the caller asked about (and may open) changes, or after `wait` seconds. The first call (no epoch) returns the current position. At most 500 keys (`400 too_many_keys` beyond; send no keys to hear about every title the caller may open). At most 4 waits per user (`429` beyond) |
+| POST | `acquire/changes` | Any signed-in user, phase 1 on: the change feed. Body `{"epoch","cursor","keys":["movie:tmdb:…","tv:tvdb:…[:s…[:e…]]","req:u:<own user id>","req:state"],"wait":25}` (`req:u:…` changes when the caller's own Seerr request list does; nobody else ever hears it. `req:state` changes for everyone when the request list is first read, can't be read or recovers. A poll that follows `req:state` counts as the Requests page being open: only that page follows it); answers `{"epoch","cursor","keys","reset"}` as soon as a title the caller asked about (and may open) changes, or after `wait` seconds. The first call (no epoch) returns the current position. At most 500 keys (`400 too_many_keys` beyond; send no keys to hear about every title the caller may open). At most 4 waits per user (`429` beyond) |
 | GET | `acquire/status?ids=&keys=` | Any user, Requests & downloads + status on pages on: where each title has got to, for up to 100 Jellyfin item ids (items the caller can't open are left out) and up to 50 title keys (`movie:tmdb:603`, `tv:tvdb:78874`) |
 | GET | `acquire/status/item/{itemId}` | Same, for one item's details page: the journey (movies, episodes), per-season state (series) or per-episode state (seasons). An empty `items` list when the caller can't see the item or it has no status (other item types, no provider id) |
+| GET | `acquire/status?keys=&detail=true` | Same, for exactly one title key, with a movie's journey (Seerr's more-info window; `400 detail_needs_one_key` otherwise) |
+| GET | `acquire/hub` | Any signed-in user, phase 1 and the Requests page on: the caller's own Seerr requests with their status (of the part asked for: the requested seasons of a series, the 4K copy of a 4K-only request): `mine` (groups `needsOk`, `onTheWay`, `notOut`, `declined`), `soon` (a date in the next 60 days), `ready` (arrived in the last 14 days), plus `seerr` (`configured`, `loaded`, `unavailable`). Administrators also get `admin` (`downloads`/`calendar` tabs, the request list's last read and error). Private `ETag` |
+| GET | `arr/admin/manage?itemId=` or `?key=` | Admin, phase 1 and the Manage button on: the Manage drawer for a Jellyfin item or a title key (`movie:…`, `tv:…[:s…[:e…]]`): the admin status (of that season or episode for a season or episode key), every instance of the title's kind (in it or not, monitored, profile, path, its Jellyfin copy, queue rows, timeline of added/history events/Jellyfin Enhanced actions) and Seerr's requests with who asked. `403` for anyone else |
+| POST | `arr/admin/manage/search` | Admin, same switches: Search now on one instance (body `{"instanceId","key","idempotencyKey"}`; movie, series, season or episode search; audited; the answer has `status`, `message`, `readBack`) |
 | POST | `admin/secrets/rollback` | Admin: write stored credentials back into the plugin configuration before a downgrade (body `{"confirm":"write-credentials-to-plugin-config"}`; `409` if `secrets.json` can't be read) |
 | GET | `arr/identify-url` | Resolve which configured instance owns a given item |
 | GET | `arr/series-slug`, `arr/series-slugs` | Admin, Arr Links on: Sonarr URL slug lookup, single/batch |
@@ -749,7 +753,11 @@ under. Non-admins never get instance names, URLs, paths, download clients, relea
 the arr's own messages; admins also get an `admin` block with one entry per instance. Responses are
 per user with a private `ETag` (`Cache-Control: private, no-cache`; `If-None-Match` answers `304`), are
 served from the snapshots without calling Sonarr or Radarr, and answer `403` with `code: "feature_disabled"`
-while the feature is off.
+while the feature is off. Request facts (asked, OK'd, declined; "you" or "someone in your household") come from
+Seerr's request list, which Jellyfin Enhanced reads in the background (every few minutes, every 30 seconds while
+someone has the Requests page open, and a second after a request is made or answered through Jellyfin Enhanced);
+no status route or `acquire/hub` calls Seerr. A user with a parental rating or tag limit gets statuses by key only
+for titles Jellyfin lets them open or that they asked for themselves.
 
 ### Backup & restore
 

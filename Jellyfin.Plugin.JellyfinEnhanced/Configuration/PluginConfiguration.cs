@@ -227,6 +227,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArrStatusLookingHours = 24;
             ArrHouseholdContactName = "";
             ArrWebhookJellyfinUrl = string.Empty;
+            ArrRequestsHubEnabled = true;
+            ArrManageDrawerEnabled = true;
+            ArrSeerrModalStatus = true;
+            ArrSeerrRefreshMinutes = 5;
 
             // Shoko Settings (single-instance, like Jellyseerr — Shoko is one server per household)
             ShokoUrl = "";
@@ -819,6 +823,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// when setting up their webhooks. Empty: the administrator types it when setting one up.
         /// </summary>
         public string ArrWebhookJellyfinUrl { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The "Requests" page (<c>#/requests</c>, sidebar link): everyone's own requests (My requests,
+        /// Coming soon, Ready); administrators also get the Downloads and Calendar pages as tabs. Needs
+        /// phase 1. On by default (when phase 1 is on).
+        /// </summary>
+        public bool ArrRequestsHubEnabled { get; set; } = true;
+
+        /// <summary>
+        /// The administrator's "Manage" drawer on details pages (and in the Seerr more-info modal):
+        /// why a title is where it is, its timeline and copies across instances, Search now and
+        /// Open in Sonarr/Radarr. Needs phase 1. On by default (when phase 1 is on).
+        /// </summary>
+        public bool ArrManageDrawerEnabled { get; set; } = true;
+
+        /// <summary>Show the status pill in the Seerr more-info modal (titles not in the library yet). Needs phase 1. On by default.</summary>
+        public bool ArrSeerrModalStatus { get; set; } = true;
+
+        /// <summary>
+        /// How often Seerr's request list is read again for the status and the Requests page (minutes,
+        /// 1-60, default 5; every 30 seconds while someone has the Requests page open). Requests made
+        /// or answered through Jellyfin Enhanced are picked up at once.
+        /// </summary>
+        public int ArrSeerrRefreshMinutes { get; set; } = 5;
 
         /// <summary>
         /// Folder the scheduled "Back up Jellyfin Enhanced data" task writes to. Empty: the

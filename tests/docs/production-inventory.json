@@ -91,6 +91,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsHubController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ActivityPlaybackConsumer.cs",
       "category": "EventHandlers"
     },
@@ -327,6 +331,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrManageService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrStatusCache.cs",
       "category": "Services"
     },
@@ -336,6 +344,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/JellyfinFacts.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/RequestsHubService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrRequestReadModel.cs",
       "category": "Services"
     },
     {
@@ -839,7 +855,27 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-page.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-render.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-styles.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/live/arr-live.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/manage/manage-drawer.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/manage/manage-styles.js",
       "category": "js"
     },
     {
@@ -888,6 +924,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/status/status-episodes.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/status/status-modal.js",
       "category": "js"
     },
     {
@@ -3401,6 +3441,33 @@
       "method": "GetView",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/hub",
+      "method": "GetHub",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsHubController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/manage",
+      "method": "GetManage",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsHubController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/manage/search",
+      "method": "Search",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RequestsHubController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
     }
   ],
   "configuration_properties": [
@@ -4866,6 +4933,38 @@
       "type": "string",
       "initializer": "string.Empty",
       "constructor_assignment": "string.Empty",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrRequestsHubEnabled",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrManageDrawerEnabled",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrSeerrModalStatus",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrSeerrRefreshMinutes",
+      "type": "int",
+      "initializer": "5",
+      "constructor_assignment": "5",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -8146,9 +8245,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 404,
-    "routes": 192,
-    "configuration_properties": 531,
+    "files": 414,
+    "routes": 195,
+    "configuration_properties": 535,
     "storage_references": 79,
     "scheduled_tasks": 14,
     "locales": 33

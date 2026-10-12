@@ -148,6 +148,17 @@
         return get(`/acquire/status?${q.join('&')}`, { priority: 'low', signal });
     }
 
+    /**
+     * Status of one title by key, with a movie's journey (a page about a title that may not be in
+     * Jellyfin yet: the Seerr more-info modal).
+     * @param {string} key Movie or series key.
+     * @param {AbortSignal} [signal] Abort signal.
+     * @returns {Promise<Object|null>} The response.
+     */
+    function fetchKey(key, signal) {
+        return get(`/acquire/status?keys=${encodeURIComponent(key)}&detail=true`, { signal });
+    }
+
     // ------------------------------------------------------------------ formatting
 
     /**
@@ -684,10 +695,13 @@
         enabled,
         fetchItem,
         fetchBatch,
+        fetchKey,
+        feedPosition,
         familyText,
         summaryPieces,
         chipText,
         adminLines,
+        adminReasonText,
         formatDate,
         formatEta,
         buildPill,

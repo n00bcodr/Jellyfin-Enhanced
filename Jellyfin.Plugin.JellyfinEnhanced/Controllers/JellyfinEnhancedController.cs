@@ -849,6 +849,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        /// <summary>
+        /// A request was made, answered or removed through Jellyfin Enhanced: the Requests &amp;
+        /// downloads read model of Seerr's requests reads them again in about a second (it is a
+        /// no-op while that feature is off).
+        /// </summary>
+        private void SeerrRequestsChanged()
+        {
+            try
+            {
+                (HttpContext?.RequestServices?.GetService(typeof(Services.Acquire.SeerrRequestReadModel)) as Services.Acquire.SeerrRequestReadModel)?.RequestRefresh();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Shutting down.
+            }
+        }
+
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
         {
             // Propagate client disconnects (superseded search queries, page
@@ -1115,6 +1132,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             && content != null)
                         {
                             EvictMovieTvCacheForRequest(content);
+                        }
+                        if (method != HttpMethod.Get && apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase))
+                        {
+                            SeerrRequestsChanged();
                         }
                         return method == HttpMethod.Get
                             ? await ApplyParentalFilterAsync(json, apiPath, jellyfinUserId)
@@ -3809,6 +3830,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // phase on) and the poster-badge toggle; nothing about the instances themselves.
                 ArrStatusEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled,
                 ArrStatusPosterBadges = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrStatusPosterBadges,
+                ArrRequestsHubEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrRequestsHubEnabled,
+                ArrManageDrawerEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrManageDrawerEnabled,
+                ArrSeerrModalStatus = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrSeerrModalStatus,
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
@@ -10704,6 +10728,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape());
             }
 
+            SeerrRequestsChanged();
             return Ok(new { success = true });
         }
 

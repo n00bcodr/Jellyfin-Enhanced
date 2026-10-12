@@ -99,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                 var now = _now();
                 foreach (var key in keys.Distinct(StringComparer.Ordinal))
                 {
-                    if (!ArrTitleKey.IsValid(key)) continue;
+                    if (!ArrTitleKey.IsFeedKey(key)) continue;
                     _cursor++;
                     _ring[_next] = new Entry(_cursor, key, instanceId, now);
                     _next = (_next + 1) % Capacity;

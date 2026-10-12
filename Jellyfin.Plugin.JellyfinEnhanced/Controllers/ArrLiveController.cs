@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Jellyfin.Data;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets;
@@ -80,6 +81,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly ArrAuditLog _audit;
         private readonly IUserManager _userManager;
         private readonly Logger _logger;
+        private readonly SeerrRequestReadModel _requests;
 
         /// <summary>Creates the controller.</summary>
         public ArrLiveController(
@@ -93,7 +95,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             ArrStateStore store,
             ArrAuditLog audit,
             IUserManager userManager,
-            Logger logger)
+            Logger logger,
+            SeerrRequestReadModel requests)
         {
             _feed = feed;
             _limits = limits;
@@ -106,6 +109,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _audit = audit;
             _userManager = userManager;
             _logger = logger;
+            _requests = requests;
         }
 
         /// <summary>Phase 1 on (and the master switch). Tests replace the configuration source.</summary>
@@ -177,7 +181,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             HashSet<string>? wanted = null;
             if (request.Keys is { Count: > 0 })
             {
-                wanted = new HashSet<string>(request.Keys.Where(ArrTitleKey.IsValid), StringComparer.Ordinal);
+                wanted = new HashSet<string>(request.Keys.Where(ArrTitleKey.IsFeedKey), StringComparer.Ordinal);
+                // Only the Requests page follows the shared request-list state key (the Seerr
+                // more-info modal may follow the caller's own request list too): while it is open
+                // (it long-polls continuously), Seerr is re-read every 30 s.
+                if (wanted.Contains(ArrTitleKey.RequestsState)) _requests.Touch();
             }
             var wait = TimeSpan.FromSeconds(Math.Clamp(request.Wait ?? MaxWaitSeconds, 0, MaxWaitSeconds));
 

@@ -30,8 +30,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
     /// limit (rating, blocked or allowed tags, unrated items, blocked folders), and they can open
     /// a library the arr instance is linked to (an instance with no linked libraries is open to
     /// all). A change that names no instance (Jellyfin's own library adds and removes) is checked
-    /// against the instances that hold the title; none holding it means no.</description></item>
+    /// against the instances that hold the title; none holding it means no (but see the request
+    /// rule below); or</description></item>
+    /// <item><description>it is not in Jellyfin at all and they asked for it themselves (the
+    /// request read model says so), whatever their limits: they already know the title; or</description></item>
+    /// <item><description>it is not in Jellyfin, no arr instance holds it, someone in the household
+    /// asked for it in Seerr, the change names no instance (a request change) and the user has no
+    /// content limits (the same people who can read its status by key).</description></item>
     /// </list>
+    /// "Asked for" includes requests deleted in the last few minutes, so the deletion itself is
+    /// announced to the people who could follow the title before it.
+    /// A user's request-list key (<see cref="ArrTitleKey.UserRequests"/>) reaches that user only,
+    /// administrators included; the shared <see cref="ArrTitleKey.RequestsState"/> key reaches everyone.
     /// Season and episode keys are checked against that season or episode when Jellyfin has it
     /// (Jellyfin can hide one episode of a visible series), otherwise as their series. A title in
     /// Jellyfin that the user can't open is never announced. A Jellyfin copy known only by another
@@ -50,41 +60,64 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private readonly IUserManager _userManager;
         private readonly ArrStateStore _store;
         private readonly IArrJellyfinView _view;
+        private readonly IArrRequestFacts? _requests;
         private readonly Func<DateTimeOffset> _now;
         private readonly ConcurrentDictionary<(Guid User, string Key, string? Instance), (bool Visible, DateTimeOffset At, string Stamp)> _cache = new();
         private (IReadOnlyList<ArrConnection>? Instances, string Stamp) _registryStamp;
 
         /// <summary>Creates the filter (DI).</summary>
-        public ArrFeedAudience(ILibraryManager libraryManager, IUserManager userManager, ArrStateStore store, IArrJellyfinView view)
-            : this(libraryManager, userManager, store, null, view)
+        public ArrFeedAudience(ILibraryManager libraryManager, IUserManager userManager, ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests)
+            : this(libraryManager, userManager, store, null, view, requests)
         {
         }
 
-        /// <summary>Creates the filter with a clock and its own Jellyfin view (tests).</summary>
-        internal ArrFeedAudience(ILibraryManager libraryManager, IUserManager userManager, ArrStateStore store, Func<DateTimeOffset>? now = null, IArrJellyfinView? view = null)
+        /// <summary>Creates the filter with a clock, its own Jellyfin view and request facts (tests).</summary>
+        internal ArrFeedAudience(ILibraryManager libraryManager, IUserManager userManager, ArrStateStore store, Func<DateTimeOffset>? now = null, IArrJellyfinView? view = null, IArrRequestFacts? requests = null)
         {
             _libraryManager = libraryManager;
             _userManager = userManager;
             _store = store;
             _view = view ?? new ArrJellyfinView(libraryManager, userManager);
+            _requests = requests;
             _now = now ?? (() => DateTimeOffset.UtcNow);
         }
 
         /// <inheritdoc />
         public IReadOnlyCollection<string> Visible(Guid userId, bool isAdmin, IReadOnlyList<ArrFeedChange> changes)
         {
-            if (isAdmin) return changes.Select(c => c.Key).ToList();
             if (changes.Count == 0) return Array.Empty<string>();
+            // Request-list keys reach their owner only; everything else is a title key.
+            var own = new List<string>();
+            var titles = new List<ArrFeedChange>(changes.Count);
+            foreach (var change in changes)
+            {
+                if (ArrTitleKey.TryParseUserRequests(change.Key, out var owner))
+                {
+                    if (owner == userId) own.Add(change.Key);
+                }
+                else if (change.Key == ArrTitleKey.RequestsState)
+                {
+                    own.Add(change.Key);
+                }
+                else
+                {
+                    titles.Add(change);
+                }
+            }
+            if (isAdmin) return own.Concat(titles.Select(c => c.Key)).ToList();
+            if (titles.Count == 0) return own;
+            changes = titles;
             var user = _userManager.GetUserById(userId);
-            if (user == null) return Array.Empty<string>();
+            if (user == null) return own;
             if (_cache.Count > MaxCacheEntries) _cache.Clear();
 
             var now = _now();
             // What every answer depends on besides the key: a change to any of it decides afresh.
             var stamp = (_view.Viewer(userId)?.PolicyRevision ?? string.Empty)
                 + "|" + _view.Revision.ToString(CultureInfo.InvariantCulture)
-                + "|" + RegistryStamp();
-            var visible = new List<string>();
+                + "|" + RegistryStamp()
+                + "|" + (_requests?.Revision ?? 0).ToString(CultureInfo.InvariantCulture);
+            var visible = own;
             foreach (var change in changes)
             {
                 if (!ArrTitleKey.TryParse(change.Key, out _, out _, out _, out _)) continue;
@@ -141,10 +174,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             {
                 return false;
             }
+            // Not in Jellyfin: someone who asked for it hears about it whatever their limits.
+            var title = TitleKey.Parse(type == "movie" ? ArrTitleKey.Movie(id) : ArrTitleKey.Series(id));
+            // "Asked" includes a request deleted in the last few minutes: its own announcement is
+            // decided after the list no longer has it.
+            if (_requests != null && title != null && _requests.AskedLatelyBy(title, user.Id)) return true;
             if (!Unrestricted(user)) return false;
-            var instances = instanceId != null
+            var instances = (instanceId != null
                 ? new[] { instanceId }
-                : Holders(type == "movie" ? ArrKind.Radarr : ArrKind.Sonarr, id);
+                : Holders(type == "movie" ? ArrKind.Radarr : ArrKind.Sonarr, id)).ToList();
+            // A title only Seerr knows (no arr holds it yet): its request changes (approved, declined)
+            // reach every member without content limits, who can already read its status by key
+            // ("Asked by someone in your household").
+            if (instanceId == null && instances.Count == 0) return _requests != null && title != null && _requests.RequestedLately(title);
             return instances.Any(i => CanOpenLinkedLibrary(user, i));
         }
 

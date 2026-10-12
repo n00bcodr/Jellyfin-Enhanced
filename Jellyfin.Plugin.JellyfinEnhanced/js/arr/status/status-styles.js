@@ -97,6 +97,9 @@ button.je-arr-pill:focus-visible, .layout-tv button.je-arr-pill:focus { outline:
 .layout-tv .je-arr-ring { width: 48px; height: 48px; }
 .layout-tv .je-arr-ring-text { font-size: 13px; }
 .layout-tv .je-arr-badge-chip { font-size: 14px; line-height: 20px; }
+.je-arr-modal-status { margin: 0.4em 0 0.8em; }
+.je-arr-modal-status .je-arr-status { margin: 0; }
+.je-arr-modal-status .je-arr-modal-manage { margin-top: 0.6em; }
 `;
 
     /**
@@ -124,6 +127,8 @@ button.je-arr-pill:focus-visible, .layout-tv button.je-arr-pill:focus { outline:
         ensure();
         if (typeof JE.initializeArrStatusDetails === 'function') JE.initializeArrStatusDetails();
         if (typeof JE.initializeArrStatusCards === 'function') JE.initializeArrStatusCards();
+        if (typeof JE.initializeArrStatusModal === 'function') JE.initializeArrStatusModal();
+        if (typeof JE.initializeArrHub === 'function') JE.initializeArrHub();
     }
 
     JE.internals = JE.internals || {};

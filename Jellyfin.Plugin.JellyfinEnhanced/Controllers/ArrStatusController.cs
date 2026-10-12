@@ -33,10 +33,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// Statuses for many items at once (poster cards on a page): <paramref name="ids"/> are
         /// Jellyfin item ids (up to 100; items the caller can't see are left out),
         /// <paramref name="keys"/> title keys such as <c>movie:tmdb:603</c> or <c>tv:tvdb:78874</c> (up to 50).
+        /// With <paramref name="detail"/> (exactly one key, no ids) a movie also gets its journey: a
+        /// page about a title that may not be in Jellyfin yet (the Seerr more-info modal).
         /// </summary>
         [HttpGet("acquire/status")]
         [Authorize]
-        public async Task<IActionResult> GetStatuses([FromQuery] string? ids, [FromQuery] string? keys, CancellationToken cancellationToken)
+        public async Task<IActionResult> GetStatuses([FromQuery] string? ids, [FromQuery] string? keys, CancellationToken cancellationToken, [FromQuery] bool detail = false)
         {
             if (!_service.Enabled) return StatusCode(403, new { code = "feature_disabled" });
             if (Viewer() is not { } viewer) return StatusCode(403, new { code = "user_required" });
@@ -57,8 +59,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (idList.Count > ArrStatusService.MaxIds || keyList.Count > ArrStatusService.MaxKeys)
                 return BadRequest(new { code = "too_many", maxIds = ArrStatusService.MaxIds, maxKeys = ArrStatusService.MaxKeys });
 
+            if (detail && (keyList.Count != 1 || idList.Count > 0)) return BadRequest(new { code = "detail_needs_one_key" });
+
             using var scope = _service.Store.BeginRequest("acquire/status");
-            var body = await _service.ForBatchAsync(viewer, idList, keyList, cancellationToken).ConfigureAwait(false);
+            var body = detail
+                ? await _service.ForKeyDetailAsync(viewer, keyList[0], cancellationToken).ConfigureAwait(false)
+                : await _service.ForBatchAsync(viewer, idList, keyList, cancellationToken).ConfigureAwait(false);
             return Send(body);
         }
 

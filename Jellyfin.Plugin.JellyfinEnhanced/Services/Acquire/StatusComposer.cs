@@ -523,18 +523,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var visible = copies.Any(x => x.Visible);
             var copy = PrimarySeriesCopy(facts);
-            var family = copy;
-            if (!visible && copies.Count > 0 && !c.Viewer.IsAdmin)
-            {
-                // Only in libraries this family member can't open: the Sonarr copies that are (or may
-                // be) those hidden series are left out, so the answer is the one they would get if the
-                // hidden copies didn't exist (a title nobody has, when nothing else is left).
-                var count = SeriesCopyCount(facts);
-                family = facts.Copies.Where(x => x.Series != null)
-                    .Where(x => MatchCopies(x, copies, count).Count == 0 && x.Series!.EpisodeFileCount == 0 && RecentImport(x, c, TimeSpan.FromDays(30)) == null)
-                    .OrderBy(x => RoleOrder(x.Instance.Role))
-                    .FirstOrDefault();
-            }
+            var family = SeriesCopyForViewer(facts, copies, c);
             var state = family == null
                 ? (visible ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready) : NothingKnown(facts))
                 : SeriesCopyState(WithoutHiddenRows(family, hidden), visible, c);
@@ -568,6 +557,142 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 NextDate = state.Date,
                 Admin = admin,
             };
+        }
+
+        /// <summary>
+        /// The Sonarr copy a series asked about by key is judged by for this viewer: the primary one,
+        /// except for a family member whose only Jellyfin copies are in libraries they can't open.
+        /// Then the Sonarr copies that are (or may be) those hidden series are left out, so the answer
+        /// is the one they would get if the hidden copies didn't exist (a title nobody has, when
+        /// nothing else is left: null).
+        /// </summary>
+        private static ArrCopyFacts? SeriesCopyForViewer(TitleFacts facts, IReadOnlyList<JfCopy> copies, ComposeContext c)
+        {
+            if (copies.Count == 0 || copies.Any(x => x.Visible) || c.Viewer.IsAdmin) return PrimarySeriesCopy(facts);
+            var count = SeriesCopyCount(facts);
+            return facts.Copies.Where(x => x.Series != null)
+                .Where(x => MatchCopies(x, copies, count).Count == 0 && x.Series!.EpisodeFileCount == 0 && RecentImport(x, c, TimeSpan.FromDays(30)) == null)
+                .OrderBy(x => RoleOrder(x.Instance.Role))
+                .FirstOrDefault();
+        }
+
+        /// <summary>
+        /// The seasons a request asked for, by key (the Requests page): where those seasons have got
+        /// to rather than the whole series, so a request for a missing season of a series already in
+        /// Jellyfin isn't "Ready". Ready only when every requested season is (Sonarr's monitored
+        /// episodes of it all in Jellyfin, or, with no Sonarr copy, at least one of its episodes);
+        /// otherwise the seasons still to come decide the stage, and the request facts fill in when no
+        /// arr is working on them. Also returns when the newest episode of those seasons arrived.
+        /// <paramref name="series"/> is the whole-series status (its admin block is kept);
+        /// <paramref name="copies"/> are the series' Jellyfin copies as the viewer sees them: a family
+        /// member whose copies are all in libraries they can't open learns nothing from the Sonarr
+        /// copies that are (or may be) those (as <see cref="SeriesByKey"/>).
+        /// </summary>
+        public static (TitleStatus Status, DateTime? ArrivedAt) RequestedSeasons(TitleFacts facts, TitleStatus series, IReadOnlyList<int> seasons, IReadOnlyList<JfEpisode>? jfEpisodes, IReadOnlyList<JfCopy> copies, ComposeContext c)
+        {
+            var (visibleEpisodes, hidden) = SplitHidden(jfEpisodes, null);
+            var wanted = new HashSet<int>(seasons);
+            var real = (visibleEpisodes ?? Array.Empty<JfEpisode>()).Where(e => !e.Virtual && wanted.Contains(e.Season)).ToList();
+            var arrived = real.Select(e => e.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max();
+            var copy = SeriesCopyForViewer(facts, copies, c);
+            CopyState state;
+            StatusSummary? summary = null;
+            if (copy == null)
+            {
+                state = wanted.All(n => real.Any(e => e.Season == n))
+                    ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: arrived)
+                    : ApplyRequest(NothingKnown(facts), facts.Request);
+            }
+            else
+            {
+                var per = wanted.OrderBy(n => n).Select(n => copy.Episodes != null
+                    ? Summarize(EpisodeStates(copy, n, visibleEpisodes, c, hidden).Select(e => (e.State, e.Arr, n, e.Episode)).ToList(), c)
+                    : SeasonFromStats(copy, n, visibleEpisodes, c, hidden)).ToList();
+                var waiting = per.Where(x => SummaryStage(x) != StatusStage.Ready).ToList();
+                if (waiting.Count == 0)
+                {
+                    summary = Combine(per);
+                    state = new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: arrived);
+                }
+                else
+                {
+                    summary = Combine(waiting);
+                    var stage = SummaryStage(summary);
+                    state = stage is StatusStage.None or StatusStage.Ready
+                        // Nothing monitored, queued or aired there yet: the request says where it is.
+                        ? ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored), facts.Request)
+                        : new CopyState(stage, SummaryReason(summary), Attention: summary.Attention > 0, Date: summary.NextAir);
+                }
+            }
+            var status = new TitleStatus
+            {
+                Key = series.Key,
+                Kind = "series",
+                Stage = state.Stage,
+                Reason = Reason(state),
+                Attention = state.Attention,
+                Quiet = state.Stage is StatusStage.Ready or StatusStage.None && !state.Attention,
+                NextDate = state.Date,
+                Summary = summary,
+                Admin = series.Admin,
+            };
+            return (status, state.Stage == StatusStage.Ready ? arrived : null);
+        }
+
+        /// <summary>
+        /// A movie asked for in 4K only, by key (the Requests page): where the 4K copies have got to,
+        /// so a 4K request for a movie Jellyfin already has in standard quality isn't "Ready". Also
+        /// returns when the 4K copy arrived. <paramref name="movie"/> is the whole-title status (its
+        /// admin block is kept).
+        /// </summary>
+        public static (TitleStatus Status, DateTime? ArrivedAt, JfCopy? Shown) Requested4k(TitleFacts facts, TitleStatus movie, IReadOnlyList<JfCopy> copies, ComposeContext c)
+        {
+            var count = facts.Copies.Count(x => x.Movie != null);
+            var fourK = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey };
+            fourK.Copies.AddRange(facts.Copies.Where(x => x.Movie != null && x.Instance.Role == "4k"));
+            fourK.Unreadable.AddRange(facts.Unreadable);
+            var jf = fourK.Copies.SelectMany(x => MatchCopies(x, copies, count)).Distinct().ToList();
+            var scoped = Movie(fourK, null, jf, c, detail: false);
+            var status = new TitleStatus
+            {
+                Key = movie.Key,
+                Kind = "movie",
+                Stage = scoped.Stage,
+                Reason = scoped.Reason,
+                Attention = scoped.Attention,
+                Quiet = scoped.Quiet,
+                Progress = scoped.Progress,
+                NextDate = scoped.NextDate,
+                Admin = movie.Admin,
+            };
+            var arrived = scoped.Stage == StatusStage.Ready ? jf.Where(x => x.Visible).Select(x => x.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max() : null;
+            // The 4K copy the viewer can open (Play opens it, not the standard one).
+            return (status, arrived, jf.FirstOrDefault(x => x.Visible));
+        }
+
+        /// <summary>
+        /// The part of a title a request asked for when no arr instance set up in Jellyfin Enhanced
+        /// can say where it is (a 4K request with no 4K instance): the request alone. Ready only when
+        /// Seerr says that variant is available (<paramref name="availableAt"/>: when it said so);
+        /// otherwise waiting for an OK, OK'd or said no. Also returns when it arrived.
+        /// <paramref name="whole"/> is the whole-title status (its key, kind and admin block are kept).
+        /// </summary>
+        public static (TitleStatus Status, DateTime? ArrivedAt) RequestedOnly(TitleStatus whole, RequestFacts? request, bool available, DateTime? availableAt)
+        {
+            var state = available
+                ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: availableAt)
+                : ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.NotInArr), request);
+            var status = new TitleStatus
+            {
+                Key = whole.Key,
+                Kind = whole.Kind,
+                Stage = state.Stage,
+                Reason = Reason(state),
+                Attention = state.Attention,
+                Quiet = state.Stage is StatusStage.Ready or StatusStage.None && !state.Attention,
+                Admin = whole.Admin,
+            };
+            return (status, available ? availableAt : null);
         }
 
         /// <summary>The copy without the queue rows of episodes or seasons Jellyfin hides from the viewer.</summary>

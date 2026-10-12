@@ -194,6 +194,26 @@ Turning it on currently adds:
 
 Each instance also gets a permanent id the first time the plugin starts with this version, whether or not the switch is on.
 
+### Requests page, Manage and Seerr's window (phase 1)
+
+Under **Show where things have got to (status on pages)**:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Show status badges on posters** | On | Corner badge on poster cards while something downloads, is almost ready or takes longer than usual |
+| **"Still looking" after (hours)** | 24 | When "Looking for it" becomes "Still looking, we'll keep trying" (1-720) |
+| **What the family calls you** | (empty: "the admin") | Used in family texts: "Waiting for Dad to OK it" |
+| **Requests page** | On | The "Requests" sidebar page (`#/requests`): everyone's own requests (waiting for an OK, on the way, not out yet, said no), Coming soon and Ready. Administrators also get the Downloads and Calendar pages as tabs when those pages are on; with it on, the Downloads page's own sidebar link reads "Downloads" |
+| **Manage button for administrators** | On | The Manage panel on details pages, Seerr's more-info window and the Requests page: explanation, Search now, Open in Sonarr/Radarr, versions across instances, timeline, Seerr's requests |
+| **Show the status in Seerr's more-info window** | On | The pill and journey for titles not in the library yet (needs "Use the more-info window" on the Seerr tab) |
+| **Read Seerr's requests every (minutes)** | 5 | How often Seerr's request list is read in the background (1-60); every 30 seconds while someone has the Requests page open, and about a second after a request is made, approved, declined or removed through Jellyfin Enhanced |
+
+Requests come from Seerr (Seerr tab), matched to Jellyfin users through Seerr's own user import; with Seerr off
+the Requests page says requests aren't set up, and statuses still work from Sonarr/Radarr alone. Seerr is read with
+its API key in the background only: opening a page never calls Seerr, Sonarr or Radarr. **Search now** asks that
+Sonarr/Radarr to search for the movie, series, season or episode the page is about; each one is recorded in the
+arr action audit log (who, when, the outcome and how the search ended).
+
 ### Live updates (phase 1)
 
 **Show where things have got to (status on pages)**, under the master switch, shows each title's status

@@ -64,10 +64,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Arr.ArrStateStore>();
             serviceCollection.AddHostedService<Services.Arr.ArrStateReconciler>();
             // Phase 1 status on pages: the Jellyfin side of the status composer, the request facts
-            // (none until a request read model registers its own) and the per-user status service.
+            // (Seerr's requests, read in the background by the read model) and the per-user status service.
             serviceCollection.AddSingleton<Services.Acquire.IArrJellyfinView, Services.Acquire.ArrJellyfinView>();
-            serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts, Services.Acquire.NoRequestFacts>();
+            serviceCollection.AddSingleton<Services.Acquire.SeerrRequestReadModel>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.SeerrRequestReadModel>());
+            serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts>(sp => sp.GetRequiredService<Services.Acquire.SeerrRequestReadModel>());
             serviceCollection.AddSingleton<Services.Acquire.ArrStatusService>();
+            // The Requests page (everyone's own requests) and the administrator's Manage drawer.
+            serviceCollection.AddSingleton<Services.Acquire.RequestsHubService>();
+            serviceCollection.AddSingleton<Services.Acquire.ArrManageService>();
             // Live updates (phase 1, inert while off): the change feed browsers long-poll, what feeds
             // it (snapshot diffs, Jellyfin library adds/removes), one SignalR connection per arr,
             // the webhook receiver + one-click set-up, and the re-reads live hints trigger.

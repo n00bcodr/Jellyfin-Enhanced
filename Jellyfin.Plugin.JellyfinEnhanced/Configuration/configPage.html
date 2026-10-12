@@ -2549,6 +2549,26 @@
                             <div class="je-setting-description" data-desc-for="arrHouseholdContactName">
                                 <div class="fieldDescription">Used in family status texts, e.g. "Waiting for Dad to OK it". Leave empty for a neutral wording.</div>
                             </div>
+                            <!-- Phase 1: Requests page, Manage drawer, Seerr modal status, Seerr request list -->
+                            <div class="checkboxContainer"><label><input id="arrRequestsHubEnabled" is="emby-checkbox" type="checkbox"/><span>Requests page</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrRequestsHubEnabled">
+                                <div class="fieldDescription">A "Requests" page in the sidebar (<code>#/requests</code>) where everyone sees their own requests and where each has got to: waiting for an OK, on the way, not out yet, said no; what is coming soon; and what arrived in the last two weeks. Requests are read from Seerr (Seerr tab), so this shows nothing until Seerr is set up. Administrators also get the Downloads and Calendar pages as tabs there (when those pages are on); the old pages stay where they are, and the Downloads page's own sidebar link is then called "Downloads".</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="arrManageDrawerEnabled" is="emby-checkbox" type="checkbox"/><span>Manage button for administrators</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrManageDrawerEnabled">
+                                <div class="fieldDescription">Adds a Manage button on details pages, in Seerr's more-info window and on the Requests page (administrators only). It opens a panel that explains where the title has got to, lists its copies in every Sonarr/Radarr, shows a timeline (added, grabbed, imported, in Jellyfin, and searches run from here), and offers <strong>Search now</strong> (recorded in the arr action audit log) and <strong>Open in Sonarr/Radarr</strong>.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="arrSeerrModalStatus" is="emby-checkbox" type="checkbox"/><span>Show the status in Seerr's more-info window</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrSeerrModalStatus">
+                                <div class="fieldDescription">Titles that aren't in the library yet get the same status pill and journey in Seerr's more-info window ("Waiting for Dad to OK it", "Downloading · 42%"). Needs "Use the more-info window" on the Seerr tab.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="arrSeerrRefreshMinutes">Read Seerr's requests every (minutes)</label>
+                                <input id="arrSeerrRefreshMinutes" is="emby-input" type="number" min="1" max="60"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="arrSeerrRefreshMinutes">
+                                <div class="fieldDescription">How often Seerr's request list is read in the background for the status and the Requests page. Every 30 seconds while someone has the Requests page open; requests made or answered through Jellyfin Enhanced show within seconds. 1-60, default 5.</div>
+                            </div>
                             <!-- Phase 1 live updates: webhooks and per-instance live status (the phase 1 switch above covers both). -->
                             <div id="arrLiveSettings" class="je-arr-live-settings">
                                 <div class="inputContainer">
@@ -7347,6 +7367,10 @@
                 document.querySelector('#arrStatusLookingHours').value = (config.ArrStatusLookingHours !== undefined && config.ArrStatusLookingHours !== null) ? config.ArrStatusLookingHours : 24;
                 document.querySelector('#arrHouseholdContactName').value = config.ArrHouseholdContactName || '';
                 document.querySelector('#arrWebhookJellyfinUrl').value = config.ArrWebhookJellyfinUrl || '';
+                document.querySelector('#arrRequestsHubEnabled').checked = config.ArrRequestsHubEnabled !== false;
+                document.querySelector('#arrManageDrawerEnabled').checked = config.ArrManageDrawerEnabled !== false;
+                document.querySelector('#arrSeerrModalStatus').checked = config.ArrSeerrModalStatus !== false;
+                document.querySelector('#arrSeerrRefreshMinutes').value = (config.ArrSeerrRefreshMinutes !== undefined && config.ArrSeerrRefreshMinutes !== null) ? config.ArrSeerrRefreshMinutes : 5;
                 jeApplyArrIntegrationVisibility();
                 document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
@@ -7973,6 +7997,11 @@
             config.ArrStatusLookingHours = isNaN(__lookingHours) ? 24 : Math.min(720, Math.max(1, __lookingHours));
             config.ArrHouseholdContactName = (document.querySelector('#arrHouseholdContactName').value || '').trim().slice(0, 40);
             config.ArrWebhookJellyfinUrl = document.querySelector('#arrWebhookJellyfinUrl').value.trim();
+            config.ArrRequestsHubEnabled = document.querySelector('#arrRequestsHubEnabled').checked;
+            config.ArrManageDrawerEnabled = document.querySelector('#arrManageDrawerEnabled').checked;
+            config.ArrSeerrModalStatus = document.querySelector('#arrSeerrModalStatus').checked;
+            var __seerrMinutes = parseInt(document.querySelector('#arrSeerrRefreshMinutes').value, 10);
+            config.ArrSeerrRefreshMinutes = isNaN(__seerrMinutes) ? 5 : Math.min(60, Math.max(1, __seerrMinutes));
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
@@ -9400,7 +9429,7 @@
             { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
-            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrWebhookJellyfinUrl'] },
+            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },

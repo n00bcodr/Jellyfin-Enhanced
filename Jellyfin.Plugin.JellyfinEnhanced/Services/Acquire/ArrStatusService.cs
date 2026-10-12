@@ -129,10 +129,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 var facts = gather.Facts[key];
                 var copies = _view.Copies(key, viewer);
-                // A viewer with parental limits learns nothing about titles they can't open here:
-                // their rating isn't known until the title is in Jellyfin. Anyone else who can't open
-                // any copy gets exactly the answer of a title nobody has (the composer sees to it).
-                if (!viewer.IsAdmin && viewer.HasParentalLimit && !copies.Any(x => x.Visible)) continue;
+                // A viewer with parental limits learns nothing about titles they can't open here
+                // (their rating isn't known until the title is in Jellyfin), unless they asked for it
+                // themselves. Anyone else who can't open any copy gets exactly the answer of a title
+                // nobody has (the composer sees to it).
+                if (!MayAskByKey(viewer, key, copies)) continue;
                 statuses.Add(WithLiveKey(key.IsMovie
                     ? StatusComposer.Movie(facts, null, copies, c, detail: false)
                     : StatusComposer.SeriesByKey(facts, copies, c, copies.FirstOrDefault(x => x.Visible) is { } shown ? HiddenFromViewer(facts, shown.ItemId, viewer) : null), facts));
@@ -182,6 +183,187 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             return Cache.Put(cacheKey, Serialize(new[] { WithLiveKey(status, facts) }));
         }
+
+        /// <summary>
+        /// The status of one movie or series by its key, for a page about a title that may not be in
+        /// Jellyfin (the Seerr more-info modal): a movie also gets its journey. Empty when the viewer
+        /// may not ask about it by key (see <see cref="MayAskByKey"/>).
+        /// </summary>
+        public async Task<StatusBody> ForKeyDetailAsync(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
+        {
+            var title = key.Title;
+            var gather = await GatherAsync(new[] { title }, loadEpisodes: null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            var cacheKey = CacheKey(viewer, "key", title.ToString(), gather.Revision);
+            if (Cache.Get(cacheKey) is { } hit) return hit;
+            var composed = Compose(viewer, gather, title, detail: true);
+            return Cache.Put(cacheKey, Serialize(composed == null ? Array.Empty<TitleStatus>() : new[] { composed.Status }));
+        }
+
+        /// <summary>
+        /// The Jellyfin season or episode item a season/episode key names, when the viewer can see the
+        /// series (a virtual episode included); null otherwise or for movie/series keys.
+        /// </summary>
+        internal JfItemRef? ScopeItem(StatusViewer viewer, TitleKey key)
+        {
+            if (key.IsMovie || key.Season is not int season) return null;
+            if (_view.Copies(key.Title, viewer).FirstOrDefault(x => x.Visible) is not { } series) return null;
+            Guid? id = key.Episode is int e
+                ? _view.Episodes(series.ItemId, season, viewer, includeVirtual: true)
+                    .FirstOrDefault(x => !x.Hidden && x.Season == season && (x.Episode == e || (x.EpisodeEnd is int end && x.Episode <= e && e <= end)))?.ItemId
+                : _view.Seasons(series.ItemId, viewer).FirstOrDefault(x => !x.Hidden && x.Season == season)?.ItemId;
+            return id is Guid found ? _view.Resolve(found, viewer) : null;
+        }
+
+        /// <summary>
+        /// The full status of a season or episode Jellyfin has no item for, by key (the Manage drawer):
+        /// where Sonarr has got to with that season or episode, not the whole series. Reads the
+        /// series' episodes from the arr when they aren't in memory (administrators only).
+        /// </summary>
+        internal async Task<StatusBody> ForScopeKeyAsync(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
+        {
+            if (key.IsMovie || key.Season is not int season) return await ForKeyDetailAsync(viewer, key, cancellationToken).ConfigureAwait(false);
+            var title = key.Title;
+            var gather = await GatherAsync(new[] { title }, loadEpisodes: new[] { title }, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            var cacheKey = CacheKey(viewer, "scope", key.ToString(), gather.Revision);
+            if (Cache.Get(cacheKey) is { } hit) return hit;
+            ApplyRequests(gather, viewer);
+            var facts = gather.Facts[title];
+            var c = Context(viewer);
+            var series = _view.Copies(title, viewer).FirstOrDefault(x => x.Visible);
+            // A stand-in for the missing Jellyfin item (no id): the arr's view of that season or episode.
+            var standIn = new JfItemRef { Kind = key.Episode.HasValue ? "episode" : "season", Key = key, SeriesId = series?.ItemId, Season = season, Episode = key.Episode, Virtual = true };
+            var status = key.Episode.HasValue
+                ? StatusComposer.Episode(facts, standIn, c, detail: true)
+                : StatusComposer.Season(facts, standIn, series != null ? _view.Episodes(series.ItemId, season, viewer, includeVirtual: false) : Array.Empty<JfEpisode>(), c, detail: true);
+            return Cache.Put(cacheKey, Serialize(new[] { WithLiveKey(status, facts) }));
+        }
+
+        /// <summary>
+        /// One title composed by key for <see cref="ForTitlesAsync"/>: its status and the Jellyfin copy
+        /// the viewer can open, if any. <paramref name="Scoped"/>: the status is of the part asked for
+        /// (<see cref="RequestScope"/>), and <paramref name="ArrivedAt"/> is when that part arrived.
+        /// </summary>
+        internal sealed record KeyedStatus(TitleKey Key, TitleStatus Status, JfCopy? Visible, bool Scoped = false, DateTime? ArrivedAt = null);
+
+        /// <summary>
+        /// The part of a title a request asked for: series seasons (none: the whole title), and
+        /// whether only the 4K copy was asked for (movie or series).
+        /// </summary>
+        /// <remarks>
+        /// <paramref name="Request"/>: the facts of those requests only (not other people's, other
+        /// seasons' or the other quality's); the title is always composed with them.
+        /// <paramref name="Available"/>: Seerr says the variant asked for is available
+        /// (<paramref name="AvailableAt"/>: when it last changed), which is all there is to go by
+        /// for a 4K request when no 4K instance is set up in Jellyfin Enhanced.
+        /// </remarks>
+        internal sealed record RequestScope(IReadOnlyList<int> Seasons, bool Only4k, RequestFacts? Request, bool Available = false, DateTime? AvailableAt = null)
+        {
+            /// <summary>A stable text form (part of the cache key; the request facts follow the read model's revision).</summary>
+            public override string ToString() => string.Join(".", Seasons) + (Only4k ? "4k" : string.Empty) + (Available ? "a" : string.Empty);
+        }
+
+        /// <summary>
+        /// A body built from many titles composed by key (the Requests page), cached per user like
+        /// the status bodies: <paramref name="what"/> names everything else the body depends on.
+        /// Titles the viewer may not ask about by key are left out. Never calls an arr.
+        /// </summary>
+        internal async Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null)
+        {
+            var titles = keys.Select(k => k.Title).Distinct().ToList();
+            var gather = await GatherAsync(titles, loadEpisodes: null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            RequestScope? ScopeOf(TitleKey t) => scopes != null && scopes.TryGetValue(t, out var scope) ? scope : null;
+            var cacheKey = CacheKey(viewer, route, what + "|" + string.Join(",", titles.Select(t => t + (ScopeOf(t) is { } scope ? "@" + scope : string.Empty))), gather.Revision);
+            if (Cache.Get(cacheKey) is { } hit) return hit;
+            var result = new List<KeyedStatus>();
+            foreach (var title in titles)
+            {
+                if (Compose(viewer, gather, title, detail: false, ScopeOf(title)) is not { } composed) continue;
+                result.Add(ScopeOf(title) is { } asked ? Scoped(viewer, gather, composed, asked) : composed);
+            }
+            return Cache.Put(cacheKey, build(result));
+        }
+
+        /// <summary>
+        /// The status of the part of a title that was asked for (requested seasons; the 4K copy),
+        /// when that differs from the whole title. Jellyfin and memory only.
+        /// </summary>
+        private KeyedStatus Scoped(StatusViewer viewer, Gathered gather, KeyedStatus whole, RequestScope scope)
+        {
+            var whose = gather.Facts[whole.Key];
+            var c = Context(viewer);
+            var copies = _view.Copies(whole.Key, viewer);
+            if (scope.Only4k && !_store.Instances(whole.Key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr).Any(i => i.Role == "4k"))
+            {
+                // No 4K instance set up in Jellyfin Enhanced: the standard copy says nothing about the
+                // 4K one, so the request (and Seerr's word that the 4K copy is available) is all there is.
+                var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, scope.Available, scope.AvailableAt);
+                return whole with { Status = WithLiveKey(only, whose), Scoped = true, ArrivedAt = at };
+            }
+            var facts = new TitleFacts(whose.Key) { Request = scope.Request, LiveKey = whose.LiveKey };
+            facts.Copies.AddRange(whose.Copies);
+            facts.Unreadable.AddRange(whose.Unreadable);
+            if (whole.Key.IsMovie && scope.Only4k)
+            {
+                var (status, arrived, shown) = StatusComposer.Requested4k(facts, whole.Status, copies, c);
+                return whole with { Status = WithLiveKey(status, facts), Visible = shown ?? whole.Visible, Scoped = true, ArrivedAt = arrived };
+            }
+            if (!whole.Key.IsMovie && scope.Seasons.Count > 0)
+            {
+                // A 4K request is followed through the 4K Sonarr copies only.
+                if (scope.Only4k) facts.Copies.RemoveAll(x => x.Instance.Role != "4k");
+                var shown = whole.Visible;
+                var mine = copies;
+                if (scope.Only4k)
+                {
+                    // The Jellyfin copies matched to the 4K Sonarr copies: their episodes, not the standard copy's.
+                    var count = whose.Copies.Count(x => x.Series != null);
+                    mine = facts.Copies.Where(x => x.Series != null).SelectMany(x => StatusComposer.MatchCopies(x, copies, count)).Distinct().ToList();
+                    shown = mine.FirstOrDefault(x => x.Visible);
+                }
+                var episodes = shown != null ? _view.Episodes(shown.ItemId, null, viewer, includeVirtual: false) : null;
+                var (status, arrived) = StatusComposer.RequestedSeasons(facts, whole.Status, scope.Seasons, episodes, mine, c);
+                return whole with { Status = WithLiveKey(status, facts), Visible = shown ?? whole.Visible, Scoped = true, ArrivedAt = arrived };
+            }
+            return whole;
+        }
+
+        /// <summary>The household contact name and "still looking" hours, as the status responses carry them.</summary>
+        internal (string Contact, int LookingHours) Texts()
+        {
+            var config = _config();
+            return ((config?.ArrHouseholdContactName ?? string.Empty).Trim() is { Length: <= 40 } name ? name : string.Empty, Math.Clamp(config?.ArrStatusLookingHours ?? 24, 1, 720));
+        }
+
+        /// <summary>Now, by the service's clock.</summary>
+        internal DateTimeOffset Now => _now();
+
+        /// <summary>
+        /// A title composed by key. With a <paramref name="scope"/> (a Requests page entry), the
+        /// request facts are that entry's own, not every household member's for the title.
+        /// </summary>
+        private KeyedStatus? Compose(StatusViewer viewer, Gathered gather, TitleKey key, bool detail, RequestScope? scope = null)
+        {
+            var facts = gather.Facts[key];
+            var copies = _view.Copies(key, viewer);
+            if (!MayAskByKey(viewer, key, copies)) return null;
+            facts.Request = scope != null ? scope.Request : _requests.For(key, viewer);
+            var c = Context(viewer);
+            var status = key.IsMovie
+                ? StatusComposer.Movie(facts, null, copies, c, detail)
+                : StatusComposer.SeriesByKey(facts, copies, c, copies.FirstOrDefault(x => x.Visible) is { } shown ? HiddenFromViewer(facts, shown.ItemId, viewer) : null);
+            return new KeyedStatus(key, WithLiveKey(status, facts), copies.FirstOrDefault(x => x.Visible));
+        }
+
+        /// <summary>
+        /// Whether a viewer may ask about a title by key: always, except a viewer with parental limits
+        /// and no Jellyfin copy they can open (the title's rating isn't known yet) who didn't ask for
+        /// it themselves.
+        /// </summary>
+        private bool MayAskByKey(StatusViewer viewer, TitleKey key, IReadOnlyList<JfCopy> copies)
+            => viewer.IsAdmin || !viewer.HasParentalLimit || copies.Any(x => x.Visible) || _requests.AskedBy(key, viewer.UserId);
+
+        /// <summary>The request facts in use (the Seerr read model, or none).</summary>
+        internal IArrRequestFacts Requests => _requests;
 
         /// <summary>
         /// Sets the key the change feed announces a title under when it differs from the status key

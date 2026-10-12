@@ -1,0 +1,539 @@
+// Requests & downloads, phase 1: the Requests page (#/requests), the administrator's Manage drawer
+// and the status pill in Seerr's more-info modal, rendered by the real modules from server answers.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { setTimeout as wait } from 'node:timers/promises';
+import { createHarness, jsRoot } from '../helpers/harness.mjs';
+
+const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
+const MODULES = [
+  'arr/status/status-core.js', 'arr/status/status-episodes.js', 'arr/status/status-details.js', 'arr/status/status-cards.js',
+  'arr/status/status-modal.js', 'arr/status/status-styles.js',
+  'arr/manage/manage-styles.js', 'arr/manage/manage-drawer.js',
+  'arr/hub/hub-styles.js', 'arr/hub/hub-render.js', 'arr/hub/hub-page.js'
+];
+const USER = '0123456789abcdef0123456789abcdef';
+
+function translate(key, params) {
+  const text = en[key];
+  if (text === undefined) throw new Error(`missing en.json key ${key}`);
+  return Object.entries(params || {}).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), text);
+}
+
+function setup(t, { html = '', hash = '#/home', config = {}, responses = () => null, downloads, calendar } = {}) {
+  const calls = [];
+  const subscriptions = [];
+  const navigation = [];
+  const h = createHarness({
+    html: `<div class="mainDrawer"><div class="jellyfinEnhancedSection"></div></div><div class="mainAnimatedPages"><div class="mainAnimatedPage" id="homePage"></div></div>${html}`,
+    url: `http://jellyfin.test/web/index.html${hash}`,
+    apiClient: { getCurrentUserId: () => USER, serverAddress: () => 'http://jellyfin.test' },
+    JE: {
+      pluginConfig: { ArrStatusEnabled: true, ArrRequestsHubEnabled: true, ArrManageDrawerEnabled: true, ArrSeerrModalStatus: true, ...config },
+      t: translate,
+      helpers: { debounce: fn => fn, onSidebarRebuilt: () => {} },
+      core: {
+        api: {
+          plugin: async (path, options) => {
+            calls.push({ path, options });
+            const answer = responses(path, options, calls.length);
+            if (answer instanceof Error) throw answer;
+            return answer;
+          }
+        },
+        navigation: { onNavigate: fn => { navigation.push(fn); return () => {}; }, onViewPage: fn => () => {} },
+        lifecycle: { register: () => ({ track: x => x }) }
+      },
+      arr: {
+        live: { position: () => ({ epoch: 'e1', cursor: 7 }) },
+        onStatusChange(keys, cb, opts) {
+          const sub = { keys: [...keys], cb, opts, active: true };
+          subscriptions.push(sub);
+          return () => { sub.active = false; };
+        }
+      },
+      downloadsPage: downloads,
+      calendarPage: calendar,
+      session: { getEpoch: () => 0, isCurrent: () => true, onUserChange: () => {} }
+    }
+  });
+  t.after(() => h.close());
+  for (const m of MODULES) h.load(m);
+  return { ...h, calls, subscriptions, navigation, live: () => subscriptions.filter(s => s.active) };
+}
+
+/** Waits (up to 5 s) until `check` is true: the drawer's re-reads are timer-driven and slow under coverage. */
+async function until(check, ms = 5000) {
+  const end = Date.now() + ms;
+  while (!check() && Date.now() < end) await wait(20);
+}
+
+const iso = days => new Date(Date.now() + days * 86400000).toISOString();
+const status = (stage, code, extra = {}) => ({ key: 'movie:tmdb:1', kind: 'movie', stage, reason: { code }, quiet: false, actions: [], ...extra });
+const entry = (title, group, stage, code, { status: statusExtra, ...extra } = {}) => ({
+  key: extra.key || `movie:tmdb:${title.length}`, kind: 'movie', tmdbId: title.length, title, year: 2024, poster: '/p.jpg', request: 'approved',
+  askedAt: iso(-2), group, ...extra, status: status(stage, code, { key: extra.key || `movie:tmdb:${title.length}`, ...(statusExtra || {}) })
+});
+const hubAnswer = (over = {}) => ({
+  contact: 'Dad', lookingHours: 24, seerr: { configured: true, loaded: true, unavailable: false },
+  mine: [
+    entry('Waiting Film', 'needsOk', 'asked', 'awaiting_approval'),
+    entry('Dune', 'onTheWay', 'downloading', 'downloading', { key: 'movie:tmdb:693134', status: { progress: { percent: 42, etaSeconds: 720 } } }),
+    entry('<img src=x onerror=alert(1)>', 'declined', 'notHere', 'declined')
+  ],
+  soon: [entry('Agent 327', 'notOut', 'notOut', 'not_released', { nextDate: iso(8) })],
+  ready: [entry('Sintel', 'ready', 'ready', 'ready', { itemId: 'abc', readyAt: iso(-1), status: { quiet: true } })],
+  ...over
+});
+
+test('every key the Requests page, the Manage drawer and the modal pill use exists in en.json', () => {
+  const source = ['arr/hub/hub-render.js', 'arr/hub/hub-page.js', 'arr/manage/manage-drawer.js', 'arr/status/status-modal.js']
+    .map(m => readFileSync(resolve(jsRoot, m), 'utf8')).join('\n');
+  const keys = [...source.matchAll(/tr\('([a-z0-9_]+)'/g), ...source.matchAll(/'(arr_(?:hub|manage)_[a-z0-9_]+)'/g)].map(m => m[1]);
+  assert.ok(keys.length > 40);
+  for (const key of keys) assert.ok(key in en, key);
+  for (const status of ['pending', 'approved', 'declined', 'failed', 'available']) assert.ok(`arr_manage_request_${status}` in en, status);
+  for (const tab of ['mine', 'soon', 'ready', 'downloads', 'calendar']) assert.ok(`arr_hub_tab_${tab}` in en, tab);
+});
+
+test('#/requests shows the own tabs from one read, groups My requests and never parses titles as HTML', async t => {
+  const h = setup(t, { hash: '#/requests', responses: path => (path === '/acquire/hub' ? hubAnswer() : null) });
+  h.JE.initializeArrStatus();
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.ok(page && !page.classList.contains('hide'));
+  assert.ok(h.document.getElementById('homePage').classList.contains('hide'));
+  assert.equal(h.calls.filter(c => c.path === '/acquire/hub').length, 1);
+  const tabs = [...page.querySelectorAll('.je-hub-tab')].map(b => b.dataset.tab);
+  assert.deepEqual(tabs, ['mine', 'soon', 'ready']);
+  assert.equal(page.querySelector('.je-hub-tab[data-tab="mine"] .je-hub-tab-count').textContent, '2');
+  const groups = [...page.querySelectorAll('.je-hub-group-title')].map(e => e.textContent);
+  assert.deepEqual(groups, ['Waiting for Dad to OK', 'On the way', 'Said no']);
+  const dune = [...page.querySelectorAll('.je-hub-row')].find(r => r.dataset.jeArrKey === 'movie:tmdb:693134');
+  assert.match(dune.querySelector('.je-arr-pill-text').textContent, /^Downloading · 42% · about 12 min$/);
+  assert.equal(dune.querySelector('.je-hub-poster').getAttribute('src'), 'https://image.tmdb.org/t/p/w185/p.jpg');
+  assert.equal(page.querySelectorAll('img[src="x"]').length, 0);
+  assert.ok([...page.querySelectorAll('.je-hub-name')].some(n => n.textContent.startsWith('<img src=x')));
+  // No Manage button for a member (no admin block).
+  assert.equal(page.querySelectorAll('.je-hub-manage').length, 0);
+  // The sidebar link.
+  assert.equal(h.document.querySelector('.je-nav-requests-hub-item .navMenuOptionText').textContent, 'Requests');
+
+  // Coming soon: an agenda by day. Ready: Play opens the item.
+  page.querySelector('.je-hub-tab[data-tab="soon"]').click();
+  assert.equal(h.window.location.hash, '#/requests?tab=soon');
+  assert.equal(page.querySelectorAll('.je-hub-day').length, 1);
+  assert.equal(page.querySelector('.je-hub-name').textContent, 'Agent 327 (2024)');
+  page.querySelector('.je-hub-tab[data-tab="ready"]').click();
+  const shown = [];
+  h.window.Emby = { Page: { showItem: id => shown.push(id) } };
+  page.querySelector('.je-hub-btn-primary').click();
+  assert.deepEqual(shown, ['abc']);
+  // A quiet ready status shows no pill (the row says when it arrived).
+  assert.equal(page.querySelectorAll('.je-hub-row .je-arr-pill').length, 0);
+  assert.match(page.querySelector('.je-hub-meta').textContent, /^Arrived /);
+  assert.equal(h.calls.filter(c => c.path === '/acquire/hub').length, 1);
+});
+
+test('the page follows its titles and the user\'s request list on the change feed and re-reads once per burst', async t => {
+  let n = 0;
+  const h = setup(t, {
+    hash: '#/requests',
+    responses: path => {
+      if (path !== '/acquire/hub') return null;
+      n++;
+      return n === 1 ? hubAnswer() : hubAnswer({ mine: [entry('Waiting Film', 'onTheWay', 'approved', 'approved')] });
+    }
+  });
+  h.JE.initializeArrStatus();
+  await wait(10);
+  const sub = h.live().at(-1);
+  assert.ok(sub.keys.includes(`req:u:${USER}`));
+  assert.ok(sub.keys.includes('movie:tmdb:693134'));
+  assert.deepEqual(JSON.parse(JSON.stringify(sub.opts)), { since: { epoch: 'e1', cursor: 7 } });
+  sub.cb([`req:u:${USER}`]);
+  sub.cb(['movie:tmdb:693134']);
+  await until(() => h.calls.filter(c => c.path === '/acquire/hub').length >= 2);
+  await wait(400);
+  assert.equal(h.calls.filter(c => c.path === '/acquire/hub').length, 2);
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.deepEqual([...page.querySelectorAll('.je-hub-group-title')].map(e => e.textContent), ['On the way']);
+  assert.equal(page.querySelector('.je-arr-pill-text').textContent, "OK'd! Getting started");
+
+  // Jellyfin's own "Page not found" for #/requests is hidden while the page shows.
+  assert.ok(h.document.body.classList.contains('je-hub-active'));
+  // Navigating away hides the page and stops following.
+  h.window.location.hash = '#/home';
+  for (const fn of h.navigation) fn();
+  assert.ok(page.classList.contains('hide'));
+  assert.ok(!h.document.body.classList.contains('je-hub-active'));
+  assert.equal(h.live().length, 0);
+});
+
+test('administrators get Manage on rows and the Downloads/Calendar tabs; an embedded tab is left cleanly', async t => {
+  const rendered = [];
+  let polling = 0;
+  const downloads = { _state: {}, renderForCustomTab: node => { rendered.push(['downloads', node]); node.appendChild(Object.assign(node.ownerDocument.createElement('div'), { className: 'dl' })); }, stopPolling: () => { polling++; } };
+  const calendar = { renderForCustomTab: node => rendered.push(['calendar', node]) };
+  const h = setup(t, {
+    hash: '#/requests?tab=downloads',
+    downloads, calendar,
+    responses: path => (path === '/acquire/hub' ? hubAnswer({ admin: { downloads: true, calendar: false, seerr: { lastError: 'Seerr rejected the API key.' } }, seerr: { configured: true, loaded: true, unavailable: true } }) : null)
+  });
+  h.JE.initializeArrStatus();
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.deepEqual([...page.querySelectorAll('.je-hub-tab')].map(b => b.dataset.tab), ['mine', 'soon', 'ready', 'downloads']);
+  // The tab named in the URL waited for the answer, then rendered the Downloads page into its own container.
+  assert.equal(rendered.length, 1);
+  const node = rendered[0][1];
+  assert.ok(page.contains(node));
+  page.querySelector('.je-hub-tab[data-tab="mine"]').click();
+  assert.ok(!h.document.contains(node), 'the embedded container is removed');
+  assert.equal(polling, 1);
+  assert.equal(downloads._state._customTabMode, false);
+  // The admin's own error words, and Manage on rows.
+  assert.equal(page.querySelector('.je-hub-note-warn').textContent, 'Seerr couldn\'t be read: Seerr rejected the API key.');
+  const manage = [...page.querySelectorAll('.je-hub-manage')];
+  assert.equal(manage.length, 3);
+  manage[1].click();
+  await wait(5);
+  assert.ok(h.calls.some(c => c.path === '/arr/admin/manage?key=movie%3Atmdb%3A693134'));
+  assert.ok(h.document.querySelector('.je-manage'));
+  h.JE.arrManage.close();
+
+  // Leaving the page while the Downloads tab shows: its container leaves the document (the
+  // Downloads page must never render into the hidden hub later) and its polling stops.
+  page.querySelector('.je-hub-tab[data-tab="downloads"]').click();
+  const second = rendered.at(-1)[1];
+  assert.ok(h.document.contains(second));
+  h.window.location.hash = '#/home';
+  for (const fn of h.navigation) fn();
+  assert.ok(page.classList.contains('hide'));
+  assert.ok(!h.document.contains(second));
+  assert.equal(polling, 2);
+});
+
+test('nothing happens with the Requests page switched off', async t => {
+  const h = setup(t, { hash: '#/requests', config: { ArrRequestsHubEnabled: false } });
+  h.JE.initializeArrStatus();
+  await wait(10);
+  assert.equal(h.document.getElementById('je-requests-hub-page'), null);
+  assert.equal(h.document.querySelector('.je-nav-requests-hub-item'), null);
+  assert.equal(h.calls.length, 0);
+});
+
+const overview = () => ({
+  key: 'tv:tvdb:78874:s1:e4', kind: 'episode', season: 1, episode: 4, tvdbId: 78874, title: 'Firefly',
+  status: {
+    key: 'tv:tvdb:78874:s1:e4', kind: 'episode', stage: 'almostReady', reason: { code: 'import_blocked' }, attention: true, actions: [],
+    admin: { variants: [{ instance: 'Sonarr (rig)', instanceId: 's1', kind: 'Sonarr', stage: 'almostReady', reason: { code: 'import_blocked' }, attention: true, messages: ['Manual Import required.'], fix: 'manual_import' }] }
+  },
+  instances: [
+    { id: 's1', name: 'Sonarr (rig)', kind: 'Sonarr', role: 'standard', url: 'http://sonarr:8989', urlMappings: 'http://jellyfin.test|https://sonarr.example', live: true, readable: true, inArr: true, arrId: 1, titleSlug: 'firefly', monitored: true, sizeOnDisk: 3 * 1073741824, path: '/data/tv/Firefly',
+      queue: [{ season: 1, episode: 4, state: 'importBlocked', health: 'warning', percent: 100, client: 'Mock SABnzbd', release: 'Mystery.Show.S01E04', messages: ['Manual Import required.'] }],
+      timeline: [{ event: 'added', at: iso(-1) }, { event: 'grabbed', at: iso(-0.5), season: 1, episode: 4 }, { event: 'audit', at: iso(-0.1), text: 'episode.search · succeeded · jake' }] },
+    { id: 's2', name: 'Sonarr 4K', kind: 'Sonarr', role: '4k', url: 'http://sonarr4k:8989', urlMappings: '', live: false, readable: true, inArr: false }
+  ],
+  copies: [],
+  requests: [{ at: iso(-3), status: 'approved', by: 'Sam', answeredBy: 'Jake', is4k: false, seasons: [1] }]
+});
+
+test('the Manage drawer explains, offers Search now and Open in, lists versions, the timeline and the requests', async t => {
+  let posted = null;
+  const h = setup(t, {
+    responses: (path, options) => {
+      if (path.startsWith('/arr/admin/manage?')) return overview();
+      if (path === '/arr/admin/manage/search') { posted = options; return { status: 'Succeeded', message: 'Done.', readBack: 'Search finished: 0 reports downloaded.' }; }
+      return null;
+    }
+  });
+  h.JE.initializeArrStatus();
+  const opener = h.document.body.appendChild(h.document.createElement('button'));
+  opener.focus();
+  await h.JE.arrManage.open({ itemId: 'abc' });
+  assert.equal(h.calls[0].path, '/arr/admin/manage?itemId=abc');
+  const drawer = h.document.querySelector('.je-manage');
+  assert.equal(drawer.getAttribute('role'), 'dialog');
+  assert.equal(drawer.querySelector('.je-manage-title').textContent, 'Manage · Firefly · S01E04');
+  assert.ok(drawer.querySelector('.je-manage-card.je-manage-attention'));
+  assert.match(drawer.querySelector('.je-arr-admin-detail').textContent, /Manual Import required\./);
+  // Open in: the URL mapping for this Jellyfin address, the series page by slug.
+  const open = [...drawer.querySelectorAll('a.je-manage-btn')].find(a => a.textContent.includes('Open in Sonarr (rig)'));
+  assert.equal(open.getAttribute('href'), 'https://sonarr.example/series/firefly');
+  assert.equal(open.getAttribute('rel'), 'noopener noreferrer');
+  // Versions: the 4K instance doesn't have it; "Add in" opens its add page.
+  const add = [...drawer.querySelectorAll('a.je-manage-btn')].find(a => a.textContent.includes('Add in Sonarr 4K'));
+  assert.equal(add.getAttribute('href'), 'http://sonarr4k:8989/add/new?term=tvdb%3A78874');
+  assert.match(drawer.textContent, /Not in Sonarr 4K/);
+  // Timeline (with the queue row and a JE action) and requests.
+  const labels = [...drawer.querySelectorAll('.je-manage-event-label')].map(e => e.textContent);
+  assert.deepEqual(labels.slice(0, 3), ['Added', 'Grabbed', 'Jellyfin Enhanced: episode.search · succeeded · jake']);
+  assert.match(labels[3], /importBlocked 100% · Mock SABnzbd/);
+  assert.match(drawer.querySelector('.je-manage-request').textContent, /^Sam · .* · OK'd · Season 1$/);
+  // It follows the title on the feed.
+  assert.ok(h.live().some(s => s.keys.includes('tv:tvdb:78874:s1:e4')));
+
+  // Search now: one POST with a fresh idempotency key; the outcome is shown.
+  drawer.querySelector('.je-manage-btn-primary').click();
+  await wait(5);
+  assert.equal(posted.method, 'POST');
+  assert.equal(posted.body.instanceId, 's1');
+  assert.equal(posted.body.key, 'tv:tvdb:78874:s1:e4');
+  assert.ok(posted.body.idempotencyKey.length >= 8);
+  assert.equal(drawer.querySelector('.je-manage-result').textContent, 'Done. Search finished: 0 reports downloaded.');
+  // The search changes the title, so the drawer is read again: the outcome stays shown.
+  h.live().find(s => s.keys.includes('tv:tvdb:78874:s1:e4')).cb(['tv:tvdb:78874:s1:e4']);
+  const reads = () => h.calls.filter(c => c.path.startsWith('/arr/admin/manage?')).length;
+  await until(() => reads() >= 2);
+  await wait(20);
+  assert.ok(reads() >= 2);
+  assert.equal(drawer.querySelector('.je-manage-result').textContent, 'Done. Search finished: 0 reports downloaded.');
+
+  // Esc closes it and gives focus back.
+  drawer.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(h.document.querySelector('.je-manage'), null);
+  assert.equal(h.document.activeElement, opener);
+  assert.equal(h.live().length, 0);
+});
+
+test('details pages get the Manage button only with an admin status', t => {
+  const h = setup(t, { html: '<div id="itemDetailPage"><div class="mainDetailButtons"></div></div>' });
+  const page = h.document.getElementById('itemDetailPage');
+  const attach = h.JE.internals.arrManage.attachDetails;
+  attach(page, { itemId: 'abc', kind: 'movie', stage: 'ready' });
+  assert.equal(page.querySelectorAll('.je-manage-open').length, 0);
+  attach(page, { itemId: 'abc', kind: 'movie', stage: 'ready', admin: { variants: [] } });
+  attach(page, { itemId: 'abc', kind: 'movie', stage: 'ready', admin: { variants: [] } });
+  assert.equal(page.querySelectorAll('.je-manage-open').length, 1);
+  attach(page, null);
+  assert.equal(page.querySelectorAll('.je-manage-open').length, 0);
+});
+
+test('the Seerr more-info modal gets the pill and journey of its title, follows it, and admins get Manage', async t => {
+  const answers = { 'movie:tmdb:5': [status('downloading', 'downloading', { key: 'movie:tmdb:5', progress: { percent: 42 }, journey: [{ stage: 'asked', state: 'done', byYou: false }, { stage: 'downloading', state: 'current' }, { stage: 'ready', state: 'next' }] })] };
+  const h = setup(t, {
+    responses: path => {
+      const m = /keys=([^&]+)&detail=true/.exec(path);
+      return m ? { contact: 'Dad', items: answers[decodeURIComponent(m[1])] || [] } : null;
+    }
+  });
+  h.JE.initializeArrStatus();
+  const modal = h.document.body.appendChild(h.document.createElement('div'));
+  modal.innerHTML = '<div class="header-info"><div data-mount="je-requested-by"></div></div>';
+  h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data: { id: 5 }, mediaType: 'movie' } }));
+  await wait(5);
+  assert.equal(h.calls.at(-1).path, '/acquire/status?keys=movie%3Atmdb%3A5&detail=true');
+  const pill = modal.querySelector('.je-arr-modal-status .je-arr-pill');
+  assert.equal(pill.querySelector('.je-arr-pill-text').textContent, 'Downloading · 42%');
+  pill.click();
+  assert.match(modal.querySelector('.je-arr-journey').textContent, /Asked by someone in your household/);
+  assert.equal(modal.querySelectorAll('.je-arr-modal-manage').length, 0);
+  // A change on the feed re-reads in place.
+  answers['movie:tmdb:5'] = [status('ready', 'ready', { key: 'movie:tmdb:5', admin: { variants: [] } })];
+  h.live().at(-1).cb(['movie:tmdb:5']);
+  await wait(5);
+  assert.equal(modal.querySelector('.je-arr-pill-text').textContent, 'Ready to watch');
+  assert.equal(modal.querySelectorAll('.je-arr-modal-manage').length, 1);
+
+  // A series uses its TVDB id; a quiet answer shows nothing.
+  const other = h.document.body.appendChild(h.document.createElement('div'));
+  other.innerHTML = '<div data-mount="je-requested-by"></div>';
+  answers['tv:tvdb:78874'] = [status('ready', 'ready', { key: 'tv:tvdb:78874', quiet: true })];
+  h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-more-info-opened', { detail: { modal: other, data: { id: 1437, externalIds: { tvdbId: 78874 } }, mediaType: 'tv' } }));
+  await wait(5);
+  assert.equal(h.calls.at(-1).path, '/acquire/status?keys=tv%3Atvdb%3A78874&detail=true');
+  assert.equal(other.querySelectorAll('.je-arr-pill').length, 0);
+  // The first modal's late close event doesn't stop the second.
+  modal.remove();
+  h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-more-info-closed'));
+  assert.ok(h.live().some(s => s.keys.includes('tv:tvdb:78874')));
+  other.remove();
+  h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-more-info-closed'));
+  assert.equal(h.live().length, 0);
+});
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  return { promise, resolve };
+}
+
+test('leaving and coming back while the first read is still running starts a new read that renders and follows', async t => {
+  const answers = [];
+  const h = setup(t, {
+    hash: '#/requests',
+    responses: path => {
+      if (path !== '/acquire/hub') return null;
+      const d = deferred();
+      answers.push(d);
+      return d.promise;
+    }
+  });
+  h.JE.initializeArrStatus();
+  await wait(10);
+  assert.equal(answers.length, 1);
+  // Back, then Forward, before the first answer.
+  h.window.location.hash = '#/home';
+  for (const fn of h.navigation) fn();
+  h.window.location.hash = '#/requests';
+  for (const fn of h.navigation) fn();
+  await wait(10);
+  assert.equal(answers.length, 2, 'the new visit reads again');
+  answers[1].resolve(hubAnswer());
+  answers[0].resolve(hubAnswer({ mine: [] }));
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  assert.ok(!page.classList.contains('hide'));
+  assert.equal(page.querySelectorAll('.je-hub-group-title').length, 3);
+  const sub = h.live().at(-1);
+  assert.ok(sub, 'it follows the feed');
+  assert.ok(sub.keys.includes(`req:u:${USER}`));
+  // The shared request-list state (Seerr first read, failure, recovery) too.
+  assert.ok(sub.keys.includes('req:state'));
+});
+
+test('Search now stays busy across re-renders (no second search), and focus never leaves the drawer', async t => {
+  const posts = [];
+  const h = setup(t, {
+    responses: (path, options) => {
+      if (path.startsWith('/arr/admin/manage?')) {
+        const data = overview();
+        data.status.journey = [{ stage: 'asked', state: 'done' }, { stage: 'almostReady', state: 'current' }];
+        return data;
+      }
+      if (path === '/arr/admin/manage/search') {
+        const d = deferred();
+        posts.push(d);
+        return d.promise;
+      }
+      return null;
+    }
+  });
+  h.JE.initializeArrStatus();
+  await h.JE.arrManage.open({ key: 'tv:tvdb:78874:s1:e4' });
+  const drawer = h.document.querySelector('.je-manage');
+  const search = () => drawer.querySelector('.je-manage-btn-primary');
+  // Shift+Tab from the drawer itself (where focus is on open) wraps to its last control.
+  assert.equal(h.document.activeElement, drawer);
+  drawer.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }));
+  assert.ok(drawer.contains(h.document.activeElement) && h.document.activeElement !== drawer);
+
+  search().focus();
+  search().click();
+  await wait(5);
+  assert.equal(posts.length, 1);
+  assert.equal(search().getAttribute('aria-disabled'), 'true');
+  assert.match(search().textContent, /Searching…$/);
+  assert.equal(h.document.activeElement, search(), 'focus stays on the (busy) button');
+  // The search changes the title: the drawer re-renders, the button is still busy, a click does nothing.
+  const readsBefore = h.calls.filter(c => c.path.startsWith('/arr/admin/manage?')).length;
+  h.live().find(s => s.keys.includes('tv:tvdb:78874:s1:e4')).cb(['tv:tvdb:78874:s1:e4']);
+  await until(() => h.calls.filter(c => c.path.startsWith('/arr/admin/manage?')).length > readsBefore);
+  await wait(20);
+  assert.equal(search().getAttribute('aria-disabled'), 'true');
+  search().click();
+  await wait(5);
+  assert.equal(posts.length, 1, 'no second search while the first runs');
+  posts[0].resolve({ status: 'Succeeded', message: 'Done.' });
+  await wait(5);
+  assert.equal(search().getAttribute('aria-disabled'), null);
+  assert.equal(drawer.querySelector('.je-manage-result').textContent, 'Done.');
+  assert.ok(drawer.contains(h.document.activeElement));
+
+  // The journey pill keeps focus across a live re-render.
+  const pill = drawer.querySelector('.je-arr-pill');
+  pill.focus();
+  h.live().find(s => s.keys.includes('tv:tvdb:78874:s1:e4')).cb(['tv:tvdb:78874:s1:e4']);
+  await until(() => drawer.querySelector('.je-arr-pill') !== pill);
+  assert.notEqual(drawer.querySelector('.je-arr-pill'), pill, 're-rendered');
+  assert.equal(h.document.activeElement, drawer.querySelector('.je-arr-pill'));
+  // Focus moved to the page behind comes back to the drawer (Esc keeps working).
+  const behind = h.document.body.appendChild(h.document.createElement('button'));
+  behind.focus();
+  assert.ok(drawer.contains(h.document.activeElement));
+  drawer.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(h.document.querySelector('.je-manage'), null);
+  // Closed: focus is free again.
+  behind.focus();
+  assert.equal(h.document.activeElement, behind);
+});
+
+test('the drawer sits above Seerr\'s more-info window it can be opened from', () => {
+  const zOf = (file, selector) => {
+    const source = readFileSync(resolve(jsRoot, file), 'utf8');
+    const at = source.indexOf(selector);
+    assert.ok(at >= 0, selector);
+    return Number(/z-index:\s*(\d+)/.exec(source.slice(at))[1]);
+  };
+  const drawer = zOf('arr/manage/manage-styles.js', '.je-manage-overlay');
+  const modal = zOf('jellyseerr/moreinfo/more-info-modal-styles.js', '.je-more-info-modal');
+  const popup = zOf('jellyseerr/moreinfo/more-info-modal-styles.js', '.je-4k-popup');
+  assert.ok(drawer > modal, `${drawer} > ${modal}`);
+  assert.ok(drawer < popup, `${drawer} < ${popup}`);
+});
+
+test('the modal of a series known only by TMDB follows the viewer\'s own request list instead', async t => {
+  const h = setup(t, {
+    responses: path => (/detail=true/.test(path) ? { contact: 'Dad', items: [status('asked', 'awaiting_approval', { key: 'tv:tmdb:99' })] } : null)
+  });
+  h.JE.initializeArrStatus();
+  const modal = h.document.body.appendChild(h.document.createElement('div'));
+  modal.innerHTML = '<div data-mount="je-requested-by"></div>';
+  h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data: { id: 99, externalIds: {} }, mediaType: 'tv' } }));
+  await wait(5);
+  assert.equal(h.calls.at(-1).path, '/acquire/status?keys=tv%3Atmdb%3A99&detail=true');
+  assert.deepEqual(h.live().at(-1).keys, ['tv:tmdb:99', `req:u:${USER}`]);
+  // With a key the feed carries, no extra key.
+  assert.deepEqual([...h.JE.internals.arrStatusModal.followKeys('tv:tvdb:5', {})], ['tv:tvdb:5']);
+  assert.deepEqual([...h.JE.internals.arrStatusModal.followKeys('tv:tmdb:5', { liveKey: 'tv:tvdb:7' })], ['tv:tmdb:5', 'tv:tvdb:7']);
+});
+
+test('keyboard and D-pad focus stays on the same tab, row or button when the page re-renders', async t => {
+  let n = 0;
+  const h = setup(t, {
+    hash: '#/requests',
+    responses: path => {
+      if (path !== '/acquire/hub') return null;
+      n++;
+      // Second read: Dune's progress moved. Third: Dune has gone from the list.
+      if (n === 3) return hubAnswer({ mine: [entry('Waiting Film', 'needsOk', 'asked', 'awaiting_approval')] });
+      return hubAnswer(n === 1 ? {} : { mine: [entry('Dune', 'onTheWay', 'downloading', 'downloading', { key: 'movie:tmdb:693134', status: { progress: { percent: 43, etaSeconds: 700 } } })] });
+    }
+  });
+  h.JE.initializeArrStatus();
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  const dune = () => [...page.querySelectorAll('.je-hub-row')].find(r => r.dataset.jeArrKey === 'movie:tmdb:693134');
+  dune().focus();
+  const before = dune();
+  assert.equal(h.document.activeElement, before);
+  // A progress tick re-reads and rebuilds the list: focus is on the new Dune row, not <body>.
+  h.live().at(-1).cb(['movie:tmdb:693134']);
+  await until(() => h.calls.filter(c => c.path === '/acquire/hub').length >= 2 && dune() !== before);
+  assert.notEqual(dune(), before);
+  assert.equal(h.document.activeElement, dune());
+  // The row is gone after the next read: the selected tab gets focus.
+  h.live().at(-1).cb(['movie:tmdb:693134']);
+  await until(() => !dune());
+  await wait(20);
+  assert.equal(h.document.activeElement, page.querySelector('.je-hub-tab[data-tab="mine"]'));
+
+  // A tab chosen with the keyboard keeps focus once its panel is shown; so does a Play button.
+  page.querySelector('.je-hub-tab[data-tab="ready"]').focus();
+  page.querySelector('.je-hub-tab[data-tab="ready"]').click();
+  assert.equal(h.document.activeElement, page.querySelector('.je-hub-tab[data-tab="ready"]'));
+  page.querySelector('.je-hub-btn-primary').focus();
+  h.live().at(-1).cb(['movie:tmdb:5']);
+  await until(() => h.calls.filter(c => c.path === '/acquire/hub').length >= 4);
+  await wait(20);
+  assert.equal(h.document.activeElement?.dataset.jeFocus, 'play:movie:tmdb:6');
+  // Focus that was never on the page is left alone.
+  h.document.activeElement.blur();
+  h.live().at(-1).cb(['movie:tmdb:5']);
+  await until(() => h.calls.filter(c => c.path === '/acquire/hub').length >= 5);
+  await wait(20);
+  assert.equal(h.document.activeElement, h.document.body);
+});

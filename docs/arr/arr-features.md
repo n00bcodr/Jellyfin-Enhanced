@@ -27,6 +27,54 @@ The ARR integration provides convenient links to your Sonarr, Radarr, and Bazarr
 - **Calendar View** - Upcoming releases from Sonarr/Radarr
 - **Requests Page** - Monitor download queue and status
 - **Admin Only** - Links only visible to administrators
+- **Requests & downloads (new, experimental)** - Where every title has got to, on its own page, kept current live; see [below](#requests-downloads-new)
+
+## Requests & downloads (new)
+
+**Experimental and off by default** (*arr Settings tab → Requests & downloads (new) → Show where things have got
+to). Seerr stays in charge of requests: Jellyfin Enhanced reads Seerr's request list and Sonarr/Radarr, and shows
+everyone where the things they care about have got to, in plain words. Settings: [*arr Settings](arr-settings.md#requests-downloads-new).
+
+**One status language.** *Waiting for Dad to OK it → OK'd! Getting started → Not out yet → Looking for it →
+Downloading · 42% · about 12 min → Almost ready → Ready to watch*. "Ready" means a Jellyfin item *you* can open.
+Family members see these sentences only; administrators also see which Sonarr/Radarr holds each copy, the app's
+own message ("Manual Import required") and what would fix it.
+
+**Where it shows**
+
+- **Details pages**: a pill under the title (tap it for the journey: asked, OK'd, downloading, … with dates);
+  series and season pages get a summary ("Season 1 ready · 1 downloading"); seasons get episode chips and a
+  "Missing: E5, E6" line.
+- **Posters**: a small badge while something downloads, is almost ready or takes longer than usual.
+- **Seerr's more-info window**: the same pill and journey for titles that aren't in the library yet, e.g.
+  "Downloading · 42%" with "Asked by someone in your household → OK'd → Downloading".
+- **Requests page** (`#/requests`, "Requests" in the sidebar): your own requests, grouped into *Waiting for an
+  OK*, *On the way*, *Not out yet* and *Said no*; **Coming soon** (dates in the next two months, by day) and
+  **Ready** (what arrived in the last two weeks, with Play). Each request follows what it asked for: a request
+  for Season 3 of a show you already have waits for Season 3, and a 4K request for the 4K copy (with no 4K
+  Sonarr/Radarr set up in Jellyfin Enhanced, for Seerr to say the 4K copy is available). Nobody sees anyone
+  else's requests here, and someone else's request for the same title doesn't change how yours shows.
+  Administrators also get the **Downloads** and **Calendar** pages as tabs (when those pages are on); the old
+  pages stay where they are.
+
+Everything updates on open pages within seconds, without a reload: Jellyfin Enhanced keeps a live connection to
+each Sonarr/Radarr and reads Seerr's request list in the background; browsers only ever ask Jellyfin.
+
+**Manage (administrators).** A **Manage** button on details pages, in Seerr's more-info window and on the Requests
+page opens a panel (on the right on a computer, from the bottom on a phone) with:
+
+- *Where it has got to*: the status with every copy's reason and fix;
+- **Search now** (per Sonarr/Radarr; recorded in the arr action audit log) and **Open in Sonarr/Radarr**;
+- *Versions across instances*: the title in each Sonarr/Radarr of its kind (e.g. Radarr and Radarr 4K), with
+  monitoring, profile, size and its Jellyfin library, or "Not in Radarr 4K" with an **Add in Radarr 4K** link to
+  that app's add page;
+- a *timeline* per instance: added, grabbed, imported, failed, searches run from Jellyfin Enhanced, the download in
+  progress and when Jellyfin got it;
+- *Requests in Seerr*: who asked, when, and the answer.
+
+Privacy: family members only ever hear about titles they can open in Jellyfin (library access, parental rating and
+tags) or that they asked for themselves; nothing they receive names a server, path, download client, release or
+another person.
 
 ## ARR Links
 
