@@ -11,6 +11,7 @@ import { repositoryRoot } from '../helpers/discovery.mjs';
 
 const pagePath = resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html');
 const pageSource = readFileSync(pagePath, 'utf8');
+const pageCss = readFileSync(resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.css'), 'utf8');
 const pageMarkup = pageSource.slice(pageSource.indexOf('<div class="page'), pageSource.lastIndexOf('</body>'))
   .replace(/<script[\s\S]*?<\/script>/g, '');
 const fixture = name => JSON.parse(readFileSync(resolve(repositoryRoot, 'tests/fixtures/settings', name), 'utf8'));
@@ -32,7 +33,8 @@ const applyLocksSource = /function jeApplyUserSettingsLocks\(config\) \{[\s\S]*?
 /** The page's delegated jump handler, including its handling of already-prevented clicks. */
 const jumpHandlerSource = /form\.addEventListener\('click', \(e\) => \{\s*const link = e\.target\.closest\('\.je-jump-link'\);[\s\S]*?\n            \}\);/.exec(pageSource)?.[0];
 
-/** The page's search text splitting and cleanup, including flex/grid protection spans. */
+/** The page's searchable text, highlighting and cleanup, including flex/grid protection spans. */
+const searchableTextSource = /function getSearchableText\(element\) \{[\s\S]*?\n            \}/.exec(pageSource)?.[0];
 const highlightSource = /function highlightTextIn\(element, query\) \{[\s\S]*?\n            \}/.exec(pageSource)?.[0];
 const clearHighlightsSource = /function clearHighlights\(\) \{[\s\S]*?\n            \}/.exec(pageSource)?.[0];
 const skipTagsSource = /const SKIP_TAGS = new Set\([^;]+;/.exec(pageSource)?.[0];
@@ -46,20 +48,21 @@ const individualDependencySources = [
 
 /** Runs the page's actual search helpers with their enclosing search state. */
 function searchHelpers(h) {
-  assert.ok(highlightSource && clearHighlightsSource && skipTagsSource);
+  assert.ok(searchableTextSource && highlightSource && clearHighlightsSource && skipTagsSource);
   return h.window.eval(`(function () {
     const form = document.getElementById('JellyfinEnhancedPage');
     let allMatches = [], currentMatchIdx = -1;
     ${skipTagsSource}
+    ${searchableTextSource}
     ${highlightSource}
     ${clearHighlightsSource}
-    return { highlightTextIn, clearHighlights };
+    return { getSearchableText, highlightTextIn, clearHighlights };
   })()`);
 }
 
-/** Visible chip text, excluding the decorative Material icon's ligature. */
+/** Exact visible chip text; the decorative glyph has no DOM text. */
 function chipText(chip) {
-  return [...chip.childNodes].filter(node => node.nodeType === 3).map(node => node.textContent).join('');
+  return chip.textContent;
 }
 
 /** Mimics the label structure emby-checkbox adds when its custom input is upgraded. */
@@ -143,7 +146,7 @@ test('every lockable key gets one policy row and one inline chip per control gro
   assert.equal(qualityLabel.querySelector('a').dataset.jumpTarget, '#jePolicyRow-QualityTagsEnabled');
   for (const chip of chips) {
     assert.equal(chipText(chip), 'User default');
-    assert.equal(chip.querySelector('i.material-icons[aria-hidden="true"]').textContent, 'person');
+    assert.equal(chip.querySelector('i.material-icons.je-user-default-chip-icon[aria-hidden="true"]').textContent, '');
     assert.equal(chip.getAttribute('href'), '#');
     assert.equal(chip.dataset.jumpTab, 'admin');
     assert.equal(chip.getAttribute('aria-label'), chip.title);
@@ -160,6 +163,45 @@ test('every lockable key gets one policy row and one inline chip per control gro
   assert.equal(h.page.querySelectorAll('a.je-user-default-chip').length, chips.length);
   assert.equal(h.page.querySelectorAll('.je-user-default-chip-sample').length, 2);
   for (const group of groups) assert.equal(group.querySelectorAll('a.je-user-default-chip').length, 1);
+});
+
+test('chip glyphs do not match or break under the page\'s real settings search helpers', async t => {
+  const h = setup(t);
+  await h.policy.decorate(h.page);
+  const search = searchHelpers(h);
+  const fieldset = h.page.querySelector('#autoPipEnabled').closest('fieldset');
+  assert.ok(fieldset.querySelector('a.je-user-default-chip'), 'the real fieldset contains a default chip');
+  for (const query of ['person', 'lock', 'son', 'ock']) {
+    assert.equal(search.getSearchableText(fieldset).includes(query), false, query + ' has no searchable hit');
+    search.highlightTextIn(fieldset, query);
+    assert.equal(fieldset.querySelector('.je-search-match'), null, query + ' creates no highlight');
+    assert.equal(fieldset.querySelector('.je-user-default-chip-icon').textContent, '');
+    search.clearHighlights();
+  }
+  // The visible locked label remains searchable, while its glyph stays empty.
+  h.tick('AutoPipEnabled');
+  assert.equal(search.getSearchableText(fieldset).includes('lock'), true);
+  search.highlightTextIn(fieldset, 'ock');
+  const chip = fieldset.querySelector('#autoPipEnabled').closest('label').querySelector('a.je-user-default-chip');
+  assert.equal(chip.querySelector('.je-user-default-chip-icon').childNodes.length, 0);
+  assert.equal(chip.querySelector('.je-search-match').textContent, 'ock');
+  assert.equal(chip.textContent, 'Locked for users');
+  search.clearHighlights();
+});
+
+test('sample chips have text-free glyphs and CSS supplies both glyphs from chip state', t => {
+  const h = setup(t);
+  const samples = h.page.querySelectorAll('span.je-user-default-chip-sample');
+  assert.equal(samples.length, 2);
+  for (const chip of samples) {
+    const icon = chip.querySelector('i.material-icons.je-user-default-chip-icon[aria-hidden="true"]');
+    assert.ok(icon);
+    assert.equal(icon.childNodes.length, 0);
+    assert.equal(chip.textContent, 'User default');
+  }
+  assert.match(pageCss, /\.je-user-default-chip \.material-icons\s*\{\s*font-size:\s*14px;\s*\}/);
+  assert.match(pageCss, /\.je-user-default-chip-icon::before\s*\{\s*content:\s*'person';\s*\}/);
+  assert.match(pageCss, /\.je-user-default-chip-locked \.je-user-default-chip-icon::before,\s*\.je-user-default-chip-partial \.je-user-default-chip-icon::before\s*\{\s*content:\s*'lock';\s*\}/);
 });
 
 test('checkbox checked-state selectors survive chips, re-rendering and either upgrade order', async t => {
@@ -441,12 +483,12 @@ test('chip tooltips and accessible labels explain each reach and live unlocked, 
     await h.policy.decorate(h.page);
     const label = h.page.querySelector('#qualityTagsEnabled').closest('label');
     /** Checks the current replacement chip's visible state and exact tooltip/accessible name. */
-    const check = (text, icon, title, locked, partial = false) => {
+    const check = (text, title, locked, partial = false) => {
       const chips = label.querySelectorAll('a.je-user-default-chip');
       assert.equal(chips.length, 1);
       const chip = chips[0];
       assert.equal(chipText(chip), text);
-      assert.equal(chip.querySelector('.material-icons').textContent, icon);
+      assert.equal(chip.querySelector('i.material-icons.je-user-default-chip-icon[aria-hidden="true"]').textContent, '');
       assert.equal(chip.classList.contains('je-user-default-chip-locked'), locked);
       assert.equal(chip.classList.contains('je-user-default-chip-partial'), partial);
       assert.equal(chip.title, title);
@@ -456,16 +498,16 @@ test('chip tooltips and accessible labels explain each reach and live unlocked, 
       assert.equal(accessibleName, text === 'User default' ? title : text + '. ' + title);
     };
     const unlocked = 'User default: each user starts with this value and can change it in their Jellyfin Enhanced panel. Applies to: ' + reach.text + '. Click to lock it in User settings policy.';
-    check('User default', 'person', unlocked, false);
+    check('User default', unlocked, false);
     h.tick('QualityTagsPosition');
     const partiallyLocked = 'User default: 1 of 2 of these settings are locked for every user; the rest each user can change in their Jellyfin Enhanced panel. Applies to: ' + reach.text + '. Click to change them in User settings policy.';
-    check('1 of 2 locked', 'lock', partiallyLocked, false, true);
+    check('1 of 2 locked', partiallyLocked, false, true);
     h.tick('QualityTagsEnabled');
-    check('Locked for users', 'lock', "Locked for every user: users get this value and can't change it. Applies to: " + reach.text + '. Click to change it in User settings policy.', true);
+    check('Locked for users', "Locked for every user: users get this value and can't change it. Applies to: " + reach.text + '. Click to change it in User settings policy.', true);
     h.tick('QualityTagsPosition', false);
-    check('1 of 2 locked', 'lock', partiallyLocked, false, true);
+    check('1 of 2 locked', partiallyLocked, false, true);
     h.tick('QualityTagsEnabled', false);
-    check('User default', 'person', unlocked, false);
+    check('User default', unlocked, false);
   }
 });
 

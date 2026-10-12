@@ -2411,6 +2411,9 @@ div#bazarrMappingsValidationResult {
     white-space: nowrap;
 }
 .je-user-default-chip .material-icons { font-size: 14px; }
+.je-user-default-chip-icon::before { content: 'person'; }
+.je-user-default-chip-locked .je-user-default-chip-icon::before,
+.je-user-default-chip-partial .je-user-default-chip-icon::before { content: 'lock'; }
 a.je-user-default-chip:hover { color: rgba(255, 255, 255, 0.9); background: rgba(255, 255, 255, 0.09); }
 .je-user-default-chip-locked { border-color: rgba(0, 164, 220, 0.6); color: #4fc3f7; background: rgba(0, 164, 220, 0.10); }
 a.je-user-default-chip-locked:hover { color: #81d4fa; background: rgba(0, 164, 220, 0.16); }

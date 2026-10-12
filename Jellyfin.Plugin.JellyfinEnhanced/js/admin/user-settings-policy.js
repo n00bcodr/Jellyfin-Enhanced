@@ -289,9 +289,8 @@
             chip.classList.toggle('je-user-default-chip-partial', lockedCount > 0 && !fullyLocked);
             chip.title = title;
             const icon = document.createElement('i');
-            icon.className = 'material-icons';
+            icon.className = 'material-icons je-user-default-chip-icon';
             icon.setAttribute('aria-hidden', 'true');
-            icon.textContent = lockedCount > 0 ? 'lock' : 'person';
             chip.append(icon, document.createTextNode(text));
             chip.addEventListener('click', preventChipLabelActivation, true);
             // Keep input + text span + checkboxOutline adjacent for emby-checkbox's checked
