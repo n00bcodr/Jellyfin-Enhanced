@@ -1014,4 +1014,45 @@ public class CoreSettingsApplyDefaultsTests : IDisposable
         server.Controller().DismissUserSettingsUpgradeCard();
         Assert.Null(Card()["Adoptable"]);
     }
+
+    [Fact]
+    public void ThePerUserListShowsWhatAFollowingUserGetsNotTheCopyInTheFile()
+    {
+        using var server = new Server();
+        var casey = Person("casey");
+        var dana = Person("dana");
+        server.Live(casey, dana);
+        server.Write(casey.Id, UserSettingsRegistry.BuildDefaults(server.Config));
+        server.Write(dana.Id, UserSettingsRegistry.BuildDefaults(server.Config));
+        server.Apply("FollowAll", ["AutoPipEnabled", "WatchProgressMode"], dryRun: false, userIds: [casey.Id.ToString("N")]);
+
+        // The admin changes both defaults: casey's file still holds the old copies (nothing wrote it).
+        var oldPip = server.Config.AutoPipEnabled;
+        var newMode = server.Config.WatchProgressDefaultMode == "time" ? "percentage" : "time";
+        server.Save(c =>
+        {
+            c.AutoPipEnabled = !oldPip;
+            c.WatchProgressDefaultMode = newMode;
+        });
+        Assert.Equal(oldPip, server.Stored(casey.Id).AutoPipEnabled);
+
+        JObject Entry(string key, User user) => (JObject)((JArray)server.Overview(key)["Users"]!).Single(u => u.Value<string>("UserId") == user.Id.ToString("N"));
+        var pip = Entry("AutoPipEnabled", casey);
+        Assert.Equal("Following", pip.Value<string>("State"));
+        Assert.Equal(!oldPip, pip.Value<bool>("Value"));
+        Assert.True(pip.Value<bool>("SameAsDefault"));
+        var mode = Entry("WatchProgressMode", casey);
+        Assert.Equal(newMode, mode.Value<string>("Value"));
+        Assert.Equal(newMode, server.Get(casey.Id).Value<string>("WatchProgressMode"));
+        Assert.True(mode.Value<bool>("SameAsDefault"));
+
+        // dana keeps a copy of the old default: her stored value, as the Changed count says.
+        var danaPip = Entry("AutoPipEnabled", dana);
+        Assert.Equal("Existing", danaPip.Value<string>("State"));
+        Assert.Equal(oldPip, danaPip.Value<bool>("Value"));
+        Assert.False(danaPip.Value<bool>("SameAsDefault"));
+        var counts = ((JArray)server.Overview()["Settings"]!).Single(e => e.Value<string>("Key") == "AutoPipEnabled");
+        Assert.Equal(1, counts.Value<int>("Following"));
+        Assert.Equal(1, counts.Value<int>("Changed"));
+    }
 }

@@ -5471,7 +5471,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Forbid();
             }
 
-            var config = JellyfinEnhanced.Instance?.Configuration;
+            var config = JellyfinEnhanced.Instance?.CurrentConfiguration.Configuration;
             if (config == null)
             {
                 return StatusCode(503);
@@ -5504,7 +5504,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     continue;
                 }
 
-                var value = descriptor.Property.GetValue(document);
+                // A Following key gets the current default (the resolver's answer), not the copy
+                // cached in the file, which is stale after the admin changes that default. Other
+                // states show the stored value, as the Kept/Changed counts compare it.
+                var state = UserSettingsBulk.StateOf(UserSettingsResolver.Normalize(document!.Meta), descriptor.Key);
+                var value = descriptor.Property.GetValue(state == UserSettingsBulk.StateFollowing ? defaults : document);
                 var node = System.Text.Json.JsonSerializer.SerializeToNode(value, type);
                 if (value is string && !UserSettingsRegistry.TryValidate(descriptor, System.Text.Json.JsonSerializer.SerializeToElement(value, type), out _))
                 {
@@ -5513,7 +5517,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
 
                 entry["Value"] = node;
-                entry["State"] = UserSettingsBulk.StateOf(UserSettingsResolver.Normalize(document!.Meta), descriptor.Key);
+                entry["State"] = state;
                 entry["SameAsDefault"] = UserSettingsResolver.EqualsDefault(descriptor, value, defaults);
                 users.Add(entry);
             }
