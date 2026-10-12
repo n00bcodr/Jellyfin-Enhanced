@@ -247,7 +247,7 @@ test('a server without /patch (404 or 405) gets the whole document, now and for 
 });
 
 test('without the settingsPatch capability saves use the whole-document route', async t => {
-  const h = setup(t, { capabilities: null });
+  const h = setup(t, { capabilities: [] });
   h.JE.currentSettings.autoPipEnabled = true;
   await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
   assert.equal(h.requests.length, 1);

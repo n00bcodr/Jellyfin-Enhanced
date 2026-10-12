@@ -80,7 +80,8 @@
     // baseline), so two devices or tabs no longer revert each other's unrelated settings, and an
     // unrelated save no longer writes the defaults back as choices. Deltas made within
     // PATCH_WINDOW_MS go out as one request. Servers without the route (no 'settingsPatch' in the
-    // bootstrap Capabilities, or a 404/405 from it) get the whole document as before.
+    // bootstrap Capabilities, or a 404/405 from it) get the whole document as before. Without a
+    // bootstrap (JE.serverCapabilities null) the route is tried, so the 404/405 decides.
     const PATCH_WINDOW_MS = 250;
     // Keys of the served document that are never written: the caller's admin flag, and the panel's
     // last section (device-local since A7).
@@ -88,17 +89,21 @@
     // Set once the server answered 404/405 to /patch (rolled back under an open tab).
     let _patchUnsupported = false;
     // Per user id: { baseline, baselineSource, generation, pending, seq, batch, timer, chain }.
-    // pending: camelCase key → { value, seq } for edits not yet confirmed; seq numbers every
+    // pending: camelCase key → { value, seq } for edits (and Follows) not yet confirmed; seq numbers every
     // queued edit, so a finished request settles only the edits it carried (A-B-A safe).
     // generation counts the fresh server documents taken as the baseline from elsewhere.
     const _sync = {};
 
     /**
-     * Whether this server takes key-level saves.
+     * Whether this server takes key-level saves: it advertises them, or its capabilities are
+     * unknown (null: the bootstrap failed) and /patch has not answered 404/405 yet. Only the
+     * key-level route can change a setting that follows the server default.
      * @returns {boolean}
      */
     function patchSupported() {
-        return !_patchUnsupported && Array.isArray(JE.serverCapabilities) && JE.serverCapabilities.includes('settingsPatch');
+        if (_patchUnsupported) return false;
+        if (JE.serverCapabilities === null) return true;
+        return Array.isArray(JE.serverCapabilities) && JE.serverCapabilities.includes('settingsPatch');
     }
 
     /**
@@ -185,11 +190,13 @@
         }
         for (const key of follow) {
             // ...and "use the server default" after a value set in the same window replaces it.
-            if (Object.prototype.hasOwnProperty.call(batch.set, key)) {
-                if (state.pending[key]?.seq === batch.seqs[key]) delete state.pending[key];
-                delete batch.set[key];
-                delete batch.seqs[key];
-            }
+            delete batch.set[key];
+            // Until the answer, a whole-document save compares the key with the value shown now
+            // (it may be the dropped Set's), so an unrelated save does not turn it back into a Set
+            // that cancels this Follow. The answer settles it and shows the default.
+            const seq = ++state.seq;
+            state.pending[key] = { value: JE.currentSettings?.[key], seq };
+            batch.seqs[key] = seq;
             if (!batch.follow.includes(key)) batch.follow.push(key);
         }
         const done = new Promise((resolve, reject) => batch.waiters.push({ keys: Object.keys(delta).concat(follow), resolve, reject }));
@@ -369,10 +376,13 @@
             } else {
                 const previous = state.baseline;
                 const shown = mergeSettings(settings, JE.pluginConfig || {});
+                // A followed key shows the answer's value even when the baseline already had it
+                // (a Set of it earlier in the same window showed another value).
+                const followed = new Set(batch.follow || []);
                 for (const key of Object.keys(settings)) {
                     if (NEVER_PATCHED.has(key) || has(state.pending, key)) continue;
                     const serverChanged = !has(batch.set, key) && !sameValue(previous[key], settings[key]);
-                    if ((serverChanged || rejectedKeys.has(key)) && JE.currentSettings && !sameValue(JE.currentSettings[key], shown[key])) {
+                    if ((serverChanged || followed.has(key) || rejectedKeys.has(key)) && JE.currentSettings && !sameValue(JE.currentSettings[key], shown[key])) {
                         JE.currentSettings[key] = shown[key];
                         changed.push(key);
                     }

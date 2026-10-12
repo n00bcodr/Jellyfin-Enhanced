@@ -274,6 +274,50 @@ test('a value set and "use the server default" in the same window: the later one
   assert.deepEqual(h.server.state.chosen, ['AutoPauseEnabled']);
 });
 
+test('a value set and then "use the server default" in one window shows the default even when the baseline already had it', async t => {
+  const h = buildPanel(t, { values: { AutoPipEnabled: true, AutoPauseEnabled: true }, defaults: { AutoPipEnabled: true, AutoPauseEnabled: true }, chosen: ['AutoPipEnabled'] });
+  const events = [];
+  h.document.addEventListener('je:settings-changed', e => events.push(plain(e.detail.keys)));
+  h.JE.currentSettings.autoPipEnabled = false;
+  const set = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  const follow = h.JE.settings.follow(['autoPipEnabled']);
+  await h.flush();
+  await Promise.all([set, follow]);
+  assert.deepEqual(h.requests.map(r => r.body), [{ Set: {}, Follow: ['AutoPipEnabled'] }]);
+  assert.equal(h.JE.currentSettings.autoPipEnabled, true, 'the followed default is shown, not the dropped Set');
+  assert.ok(events.some(keys => keys.includes('autoPipEnabled')));
+
+  // The next unrelated save does not pin the dropped value as a choice.
+  h.requests.length = 0;
+  h.JE.currentSettings.autoPauseEnabled = false;
+  await Promise.all([h.JE.saveUserSettings('settings.json', h.JE.currentSettings), h.flush()]);
+  assert.deepEqual(h.requests.map(r => r.body), [{ Set: { AutoPauseEnabled: false } }]);
+  assert.deepEqual(h.server.state.following, ['AutoPipEnabled']);
+});
+
+test('a value set, "use the server default" and an unrelated save in one window keep the Follow', async t => {
+  const h = buildPanel(t, { values: { AutoPipEnabled: true, AutoPauseEnabled: true }, defaults: { AutoPipEnabled: false, AutoPauseEnabled: true }, chosen: ['AutoPipEnabled'] });
+  h.JE.currentSettings.autoPipEnabled = false;
+  const set = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  const follow = h.JE.settings.follow(['autoPipEnabled']);
+  h.JE.currentSettings.autoPauseEnabled = false;
+  const unrelated = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  await h.flush();
+  await Promise.all([set, follow, unrelated]);
+  assert.deepEqual(h.requests.map(r => r.body), [{ Set: { AutoPauseEnabled: false }, Follow: ['AutoPipEnabled'] }]);
+  assert.deepEqual(h.server.state.following, ['AutoPipEnabled']);
+  assert.equal(h.JE.currentSettings.autoPipEnabled, false);
+
+  // A value set after the Follow in the same window still wins.
+  h.requests.length = 0;
+  const again = h.JE.settings.follow(['autoPauseEnabled']);
+  h.JE.currentSettings.autoPauseEnabled = true;
+  const setAfter = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  await h.flush();
+  await Promise.all([again, setAfter]);
+  assert.deepEqual(h.requests.map(r => r.body), [{ Set: { AutoPauseEnabled: true } }]);
+});
+
 test('JE.settings.follow reports refused keys, and refuses when the server cannot follow', async t => {
   const h = buildPanel(t, { values: { AutoPipEnabled: true }, defaults: { AutoPipEnabled: false }, locked: ['AutoPipEnabled'] });
   const pending = h.JE.settings.follow(['autoPipEnabled', 'subtitleVerticalPosition']);

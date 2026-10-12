@@ -294,8 +294,44 @@ for (const settingsFails of [true, false]) test(`per-endpoint fallback marks set
   } });
   await until(() => h.plugin.initialized);
   assert.equal(h.plugin.userConfig.settingsStatus, settingsFails ? 'unavailable' : 'ok');
-  await h.plugin.saveUserSettings('settings.json', { ...h.plugin.currentSettings, autoPipEnabled: true });
-  assert.deepEqual(posts, settingsFails ? [] : ['/JellyfinEnhanced/user-settings/user-a/settings.json']);
+  // Without a bootstrap the capabilities are unknown, so the key-level route is tried.
+  assert.equal(h.plugin.serverCapabilities, null);
+  await h.plugin.saveUserSettings('settings.json', { ...h.plugin.currentSettings, autoPauseEnabled: true });
+  assert.deepEqual(posts, settingsFails ? [] : ['/JellyfinEnhanced/user-settings/user-a/settings.json/patch']);
+});
+
+// Design item C3 (review): a failed bootstrap must not strand settings that follow the server
+// default on the whole-document route (which refuses them): /patch is tried, and a server without
+// it (404/405) gets the whole document as before, from then on.
+for (const patchRoute of [true, false]) test(`after a failed bootstrap, settings saves try /patch ${patchRoute ? 'and use it' : 'and fall back on a 404'}`, async t => {
+  const posts = [];
+  const h = setup(t, { expectedConsoleErrors: ['Failed to fetch public config', 'Failed to fetch version'], ajax: async (path, request) => {
+    if (request.type === 'POST') {
+      posts.push({ path, body: JSON.parse(request.data) });
+      if (path.endsWith('/patch')) {
+        if (!patchRoute) throw Object.assign(new Error('Not Found'), { status: 404 });
+        return { success: true, Rejected: [], Settings: { AutoPauseEnabled: false, AutoPipEnabled: true }, Meta: { Following: [] } };
+      }
+      return {};
+    }
+    if (path.endsWith('/component-scripts.json')) return modules;
+    if (path === '/Plugins') return [];
+    if (path === '/JellyfinEnhanced/user-settings/user-a/settings.json') return { AutoPauseEnabled: false, AutoPipEnabled: false };
+    if (path.startsWith('/JellyfinEnhanced/user-settings/user-a/')) return {};
+    throw new Error('offline');
+  } });
+  await until(() => h.plugin.initialized);
+  h.plugin.currentSettings.autoPipEnabled = true;
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings);
+  h.plugin.currentSettings.autoPauseEnabled = true;
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings);
+  const patch = '/JellyfinEnhanced/user-settings/user-a/settings.json/patch', whole = '/JellyfinEnhanced/user-settings/user-a/settings.json';
+  if (patchRoute) {
+    assert.deepEqual(posts, [{ path: patch, body: { Set: { AutoPipEnabled: true } } }, { path: patch, body: { Set: { AutoPauseEnabled: true } } }]);
+  } else {
+    assert.deepEqual(posts.map(p => p.path), [patch, whole, whole]);
+    assert.equal(posts[2].body.AutoPauseEnabled, true);
+  }
 });
 
 // Between a user switch and the incoming user's settings arriving, JE.currentSettings is the

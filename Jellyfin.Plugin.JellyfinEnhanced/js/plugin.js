@@ -1023,11 +1023,17 @@
     /**
      * Records what the server supports beyond the original endpoints
      * (bootstrap `Capabilities`, e.g. 'settingsPatch'). A server without the
-     * field (an older or rolled-back one) supports none of them.
-     * @param {object} bootstrap - The bootstrap payload.
+     * field (an older or rolled-back one) supports none of them. Without a
+     * bootstrap (the request failed) they are unknown: null, and settings saves
+     * try the key-level route, falling back on a 404/405.
+     * @param {object|null} bootstrap - The bootstrap payload, or null when it failed.
      */
     function applyCapabilities(bootstrap) {
-        JE.serverCapabilities = Array.isArray(bootstrap?.Capabilities) ? bootstrap.Capabilities.slice() : [];
+        if (!bootstrap) {
+            JE.serverCapabilities = null;
+            return;
+        }
+        JE.serverCapabilities = Array.isArray(bootstrap.Capabilities) ? bootstrap.Capabilities.slice() : [];
     }
 
     /**
