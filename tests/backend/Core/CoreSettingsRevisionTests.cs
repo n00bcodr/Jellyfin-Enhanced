@@ -134,4 +134,45 @@ public class CoreSettingsRevisionTests
         var bootstrap = JObject.Parse(StjSerializer.Serialize(Assert.IsType<JsonResult>(endpoints.Controller(UserA).GetBootstrap()).Value));
         Assert.Equal(new[] { "settingsPatch", "settingsRevision" }, bootstrap["Capabilities"]!.Values<string>().ToArray());
     }
+
+    [Fact]
+    public void AnAdminSaveDuringABootstrapNeverPairsTheOldConfigWithTheNewEpoch()
+    {
+        // The client records the bootstrap's Meta ConfigEpoch as the epoch of the PublicConfig it
+        // applied; were they from different saves, the focus check would never refetch the new config.
+        using var endpoints = new Endpoints();
+        var plugin = endpoints.Plugin.Plugin;
+        var before = plugin.CurrentConfiguration;
+        var oldToast = before.Configuration.ToastDuration;
+        var saved = false;
+        // UserA has no settings.json: the bootstrap seeds it, and the admin saves right then.
+        void SaveDuringTheRequest(string userId, string fileName)
+        {
+            if (saved || fileName != "settings.json") return;
+            saved = true;
+            var options = Jellyfin.Extensions.Json.JsonDefaults.Options;
+            var next = StjSerializer.Deserialize<PluginConfiguration>(StjSerializer.Serialize(before.Configuration, options), options)!;
+            next.ToastDuration = oldToast + 1000;
+            plugin.UpdateConfiguration(next);
+        }
+
+        endpoints.Plugin.Core.Manager.UserConfigurationSaved += SaveDuringTheRequest;
+        JObject bootstrap;
+        try
+        {
+            bootstrap = JObject.Parse(StjSerializer.Serialize(Assert.IsType<JsonResult>(endpoints.Controller(UserA).GetBootstrap()).Value));
+        }
+        finally
+        {
+            endpoints.Plugin.Core.Manager.UserConfigurationSaved -= SaveDuringTheRequest;
+        }
+
+        Assert.True(saved);
+        Assert.NotEqual(before.Epoch, plugin.ConfigEpoch);
+        Assert.Equal(oldToast + 1000, plugin.Configuration.ToastDuration);
+        // One snapshot: the old config with the old epoch, so the next focus check sees a new epoch.
+        Assert.Equal(oldToast, bootstrap["PublicConfig"]!.Value<int>("ToastDuration"));
+        Assert.Equal(before.Epoch, bootstrap["UserSettings"]!["SettingsMeta"]!.Value<string>("ConfigEpoch"));
+        Assert.Equal(plugin.ConfigEpoch, Body(endpoints.Revision()).Value<string>("Config"));
+    }
 }
