@@ -106,6 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     metaChanged |= MakeChosen(meta, descriptor.Key, byOwner);
                 }
 
+                metaChanged |= ClearOperationStamp(meta, descriptor.Key);
                 result.Applied.Add(descriptor.Key);
             }
 
@@ -131,6 +132,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 Store(document, descriptor, descriptor.Property.GetValue(resolved.Defaults), result);
                 metaChanged |= MakeFollowing(meta, descriptor.Key);
+                metaChanged |= ClearOperationStamp(meta, descriptor.Key);
                 result.Applied.Remove(descriptor.Key);
                 result.Applied.Add(descriptor.Key);
             }
@@ -193,6 +195,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 Store(document, descriptor, coerced, result);
                 metaChanged |= MakeChosen(meta, descriptor.Key, byOwner);
+                metaChanged |= ClearOperationStamp(meta, descriptor.Key);
                 result.Applied.Add(descriptor.Key);
             }
 
@@ -309,6 +312,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             return changed;
         }
+
+        /// <summary>
+        /// Forgets which admin bulk operation last changed a key: the user (or an admin for them) has
+        /// now written it, so undoing that operation must keep this value (compare-and-swap undo).
+        /// </summary>
+        private static bool ClearOperationStamp(UserSettingsMeta meta, string key) => meta.Ops.Remove(key);
 
         private static void Finish(UserSettings document, UserSettingsMeta meta, bool metaChanged, DateTime utcNow, UserSettingsWriteResult result)
         {

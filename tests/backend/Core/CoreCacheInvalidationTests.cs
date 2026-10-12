@@ -218,7 +218,12 @@ public class CoreCacheInvalidationTests
         r.Library.Setup(l => l.GetItemById<BaseItem>(item.Id, jfUser)).Returns(item);
         var n = user.ToString("N");
         if (endpoint is "admin-unhide" or "unhide-continue-watching" or "reset-all")
-            r.Manager.SaveUserConfiguration(n, HiddenContent, HiddenItem(item.Id, "continuewatching"));
+        {
+            var hidden = HiddenItem(item.Id, "continuewatching");
+            // Reset-all (Overwrite) only writes a document whose settings differ from the defaults.
+            if (endpoint == "reset-all") hidden.Settings.FilterSearch = !hidden.Settings.FilterSearch;
+            r.Manager.SaveUserConfiguration(n, HiddenContent, hidden);
+        }
         var snapshot = r.Warm(user);
 
         IActionResult result = endpoint switch
@@ -382,7 +387,11 @@ public class CoreCacheInvalidationTests
         r.AddUser(admin);
         var user = Guid.NewGuid();
         var n = user.ToString("N");
-        r.Manager.SaveUserConfiguration(n, SpoilerBlur, new UserSpoilerBlur());
+        // Every document differs from the defaults, so the Overwrite rewrites all three (an
+        // unchanged document is no longer written).
+        r.Manager.SaveUserConfiguration(n, SpoilerBlur, new UserSpoilerBlur { Prefs = new SpoilerBlurUserPrefs { HideTags = false } });
+        r.Manager.SaveUserConfiguration(n, HiddenContent, new UserHiddenContent { Settings = new HiddenContentSettings { FilterSearch = !new HiddenContentSettings().FilterSearch } });
+        r.Manager.SaveUserConfiguration(n, "settings.json", new UserSettings { AutoPipEnabled = true });
         var snapshot = r.Warm(user);
 
         Assert.IsType<OkObjectResult>(r.Controller(admin, admin: true).ResetAllUsersSettings());

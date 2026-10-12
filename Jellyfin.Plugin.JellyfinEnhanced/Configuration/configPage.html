@@ -175,6 +175,8 @@
                         </div>
                     </div>
 
+                    <div class="je-upgrade-card je-info-banner je-fieldset-wide" role="region" aria-label="User settings" hidden></div>
+
                     <fieldset class="je-overview-section">
                         <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">sensors</i>Service Status</legend>
                         <div class="configSection">
@@ -214,8 +216,8 @@
                                 <button type="button" id="resetAllUserSettingsBtn" class="je-quick-action" data-action="apply-all-users">
                                     <i class="material-icons je-quick-action-icon" aria-hidden="true">group</i>
                                     <div class="je-quick-action-text">
-                                        <span class="je-quick-action-title">Overwrite everyone's personal settings</span>
-                                        <span class="je-quick-action-detail">Copies the values on this page (Display, Playback, ...) into every user's Jellyfin Enhanced panel, replacing anything they've customized for themselves</span>
+                                        <span class="je-quick-action-title">Apply defaults to users…</span>
+                                        <span class="je-quick-action-detail">Make users' panel settings follow your saved defaults, or overwrite them with your values. Preview first; every run can be undone</span>
                                     </div>
                                 </button>
                                 <button type="button" id="clearTagCachesQuickBtn" class="je-quick-action" data-action="clear-tag-caches">
@@ -226,7 +228,6 @@
                                     </div>
                                 </button>
                             </div>
-                            <div id="resetAllUserSettingsResult" class="je-reset-result" role="status" aria-live="polite" style="display: none;"></div>
                         </div>
                     </fieldset>
                 </div>
@@ -235,7 +236,7 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">person</i>
                         <div>
-                            Many of these are personal preferences, not just server-wide defaults. <br/>Each user can change these to their preference from the <strong>Jellyfin Enhanced panel</strong> which can be accessed via sidebar link, their user menu, or pressing <kbd class="je-kbd">?</kbd> while browsing. <br/> What you set here is just the starting point; to force every user's personal copy to match it again, save your changes, then use <a href="#" class="sectionTitle je-jump-link" data-jump-tab="overview" data-jump-target="#resetAllUserSettingsBtn">Overwrite everyone's personal settings</a> in Quick Actions.
+                            Many of these are personal preferences, not just server-wide defaults. <br/>Each user can change these to their preference from the <strong>Jellyfin Enhanced panel</strong> which can be accessed via sidebar link, their user menu, or pressing <kbd class="je-kbd">?</kbd> while browsing. <br/> What you set here is just the starting point; to force every user's personal copy to match it again, save your changes, then use <a href="#" class="sectionTitle je-jump-link" data-jump-tab="overview" data-jump-target="#resetAllUserSettingsBtn">Apply defaults to users…</a> in Quick Actions.
                         </div>
                     </div>
 
@@ -1027,7 +1028,7 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">person</i>
                         <div>
-                            Many of these are personal preferences, not just server-wide defaults. <br/>Each user can change these to their preference from the <strong>Jellyfin Enhanced panel</strong> which can be accessed via sidebar link, their user menu, or pressing <kbd class="je-kbd">?</kbd> while browsing. <br/> What you set here is just the starting point; to force every user's personal copy to match it again, save your changes, then use <a href="#" class="sectionTitle je-jump-link" data-jump-tab="overview" data-jump-target="#resetAllUserSettingsBtn">Overwrite everyone's personal settings</a> in Quick Actions.
+                            Many of these are personal preferences, not just server-wide defaults. <br/>Each user can change these to their preference from the <strong>Jellyfin Enhanced panel</strong> which can be accessed via sidebar link, their user menu, or pressing <kbd class="je-kbd">?</kbd> while browsing. <br/> What you set here is just the starting point; to force every user's personal copy to match it again, save your changes, then use <a href="#" class="sectionTitle je-jump-link" data-jump-tab="overview" data-jump-target="#resetAllUserSettingsBtn">Apply defaults to users…</a> in Quick Actions.
                         </div>
                     </div>
 
@@ -1347,7 +1348,7 @@
                                         <div class="je-info-banner-row">
                                             <i class="material-icons je-info-icon">tune</i>
                                             <div>
-                                                <strong>Defaults for new users</strong> and the <em>Overwrite everyone's personal settings</em> button in Overview &gt; Quick Actions. Existing users keep their current settings unless you click that button.
+                                                <strong>Defaults for new users</strong> and the <em>Overwrite with my current values</em> mode of <em>Apply defaults to users…</em> in Overview &gt; Quick Actions. Existing users keep their current settings unless you run it.
                                             </div>
                                         </div>
                                     </div>
@@ -3038,17 +3039,23 @@
                             <div class="je-setting-description" data-desc-for="newUsersFollowDefaults">
                                 <div class="fieldDescription">Off (as before): a new user starts with a copy of your current defaults and keeps it when you change a default later. On: a new user's settings follow your defaults and change when you change them, until the user picks something else. Existing users are not affected.</div>
                             </div>
+                            <div class="je-upgrade-card je-info-banner" role="region" aria-label="User settings" hidden></div>
                             <div id="jeUserSettingsPolicyStatus" class="je-policy-status" role="status" aria-live="polite">Loading the user settings policy…</div>
                             <div id="jeUserSettingsPolicyImpact" class="je-policy-impact" aria-live="polite" hidden></div>
                             <details id="jeUserSettingsPolicyDetails" class="je-details-section">
                                 <summary>Lock settings for every user <span id="jeUserSettingsPolicySummaryCount" class="je-policy-count"></span></summary>
                                 <div class="je-details-body">
+                                    <div id="jeUserSettingsPolicyCountsStatus" class="je-policy-status" role="status" aria-live="polite" hidden></div>
                                     <table id="jeUserSettingsPolicyTable" class="je-policy-table">
-                                        <thead><tr><th scope="col">Setting</th><th scope="col">Server default</th><th scope="col">Reach</th><th scope="col">Lock</th></tr></thead>
+                                        <thead><tr><th scope="col">Setting</th><th scope="col">Server default</th><th scope="col">Reach</th><th scope="col">Lock</th><th scope="col" class="je-policy-num">Follow</th><th scope="col" class="je-policy-num">Kept</th><th scope="col" class="je-policy-num">Changed</th></tr></thead>
                                         <tbody></tbody>
                                     </table>
                                 </div>
                             </details>
+                            <div class="je-apply-defaults-row">
+                                <button type="button" id="jeApplyDefaultsBtn" class="emby-button raised">Apply defaults to users…</button>
+                                <div class="fieldDescription">Make users' settings follow your saved defaults (without changing what they see today), or overwrite them with your current values. You see a preview first, and every run can be undone.</div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -8062,124 +8069,17 @@
             return false;
         }
 
-        const JE_RESET_DOCUMENTS = { settings: 'settings', hiddenContent: 'hidden-content settings', spoilerGuard: 'Spoiler Guard preferences' };
-        const JE_RESET_REASONS = { corrupt: 'the file is corrupt and was moved aside', unavailable: 'the file could not be read or written', error: 'unexpected error, see the server log' };
-
         /**
-         * Shows the per-user outcome of reset-all under Quick Actions (names via textContent) and
-         * returns a short title and message for the alert. Falls back to the old skip lists when
-         * the server sends no per-user results.
+         * Opens the "Apply defaults to users" dialog of the User settings policy script, which
+         * previews, applies and undoes; replaces the old save-and-overwrite-everyone action.
          */
-        function jeRenderResetResult(result) {
-            result = result || {};
-            const total = result.totalUsers || 0;
-            const users = Array.isArray(result.users) ? result.users : null;
-            const lines = [];
-            if (users) {
-                users.filter(function (u) { return u && Array.isArray(u.failures) && u.failures.length; })
-                    // Named users alphabetically, then folders with no Jellyfin user.
-                    .sort(function (a, b) { return (a.name ? 0 : 1) - (b.name ? 0 : 1) || String(a.name || a.userId).localeCompare(String(b.name || b.userId)); })
-                    .forEach(function (u) {
-                        const who = u.name ? u.name : 'Folder with no Jellyfin user (' + u.userId + ')';
-                        const what = u.failures.map(function (f) {
-                            return (JE_RESET_DOCUMENTS[f.document] || f.document) + ' not reset (' + (JE_RESET_REASONS[f.reason] || f.reason) + ')';
-                        });
-                        lines.push(who + ': ' + what.join('; '));
-                    });
-            } else {
-                (result.skippedSettingsUserIds || []).forEach(function (id) { lines.push(id + ': settings not reset'); });
-                (result.skippedHcUserIds || []).forEach(function (id) { lines.push(id + ': hidden-content settings not reset'); });
-            }
-            const failedUsers = users ? (result.failedUserCount || lines.length) : lines.length;
-            const status = result.status || (lines.length ? 'partial' : 'complete');
-            // The server could not list the user folders at all (not the same as "no users").
-            const listFailed = result.error === 'user-folders-unreadable';
-
-            const box = document.getElementById('resetAllUserSettingsResult');
-            if (box) {
-                box.textContent = '';
-                box.className = 'je-reset-result ' + (status === 'complete' ? 'je-info-banner' : status === 'failed' ? 'je-danger-banner' : 'je-note-banner');
-                const icon = document.createElement('i');
-                icon.className = 'material-icons ' + (status === 'complete' ? 'je-info-icon' : 'je-note-icon');
-                icon.setAttribute('aria-hidden', 'true');
-                icon.textContent = status === 'complete' ? 'check_circle' : 'warning_amber';
-                const body = document.createElement('div');
-                const head = document.createElement('strong');
-                head.textContent = listFailed
-                    ? 'Last run: the user settings folders could not be read, so no personal settings were reset. See the server log.'
-                    : status === 'complete'
-                    ? (total ? 'Last run: personal settings reset for all ' + total + ' users.' : 'Last run: no user has Jellyfin Enhanced settings yet.')
-                    : 'Last run: personal settings reset for ' + (result.userCount || 0) + ' of ' + total + ' users; ' + failedUsers + (failedUsers === 1 ? ' user was' : ' users were') + ' not fully reset.';
-                body.appendChild(head);
-                if (lines.length) {
-                    const list = document.createElement('ul');
-                    list.className = 'je-reset-result-list';
-                    lines.forEach(function (line) {
-                        const item = document.createElement('li');
-                        item.textContent = line;
-                        list.appendChild(item);
-                    });
-                    body.appendChild(list);
-                }
-                box.appendChild(icon);
-                box.appendChild(body);
-                box.style.display = '';
-            }
-
-            if (status === 'complete') {
-                return { title: 'Success', message: (total ? 'Configuration saved and applied to all ' + total + ' users.' : 'Configuration saved. No user has Jellyfin Enhanced settings yet, so there was nothing to reset.') + '\n\nSettings will take effect after users refresh their browsers.' };
-            }
-            if (listFailed) {
-                return { title: 'Reset failed', message: 'Configuration saved, but the user settings folders could not be read, so no personal settings were reset. Check the server log.' };
-            }
-            return {
-                title: status === 'failed' ? 'Reset failed' : 'Partly applied',
-                message: 'Configuration saved. Personal settings were reset for ' + (result.userCount || 0) + ' of ' + total + ' users, but ' + failedUsers + (failedUsers === 1 ? ' user was' : ' users were') + ' not fully reset. The users and reasons are listed under Quick Actions.'
-            };
-        }
-
-        // Saves current config and applies it to all users
-        async function resetAllUserSettings() {
-            if (confirm("Are you sure?\n\nThis saves the current configuration, then copies these Display/Playback/etc. values into every user's Jellyfin Enhanced panel settings, replacing anything they've customized for themselves. This cannot be undone per-user; each user would have to re-apply their own preferences afterward.")) {
-                Dashboard.showLoadingMsg();
-                try {
-                    // First, save the current configuration
-                    const config = await buildConfigFromForm();
-                    await ApiClient.updatePluginConfiguration(pluginId, config);
-                    const savedPolicy = window.JellyfinEnhancedAdminPolicy;
-                    if (savedPolicy && typeof savedPolicy.markSaved === 'function') { // no-op unless a save took its locks from the table
-                        savedPolicy.markSaved(config.LockedUserSettings);
-                    }
-                    jeMarkSaved();
-                    jeDiscardDraft();
-
-                    // Sync managed Custom Tabs entries — same flow as a normal save,
-                    // so "Apply to all users" doesn't silently skip the side-effect.
-                    const syncResult = await runCustomTabsSync(config);
-
-                    // Then reset all user settings to match the saved config
-                    const result = await ApiClient.ajax({
-                        type: 'POST',
-                        url: ApiClient.getUrl('/JellyfinEnhanced/reset-all-users-settings'),
-                        dataType: 'json'
-                    });
-
-                    Dashboard.hideLoadingMsg();
-                    const summary = jeRenderResetResult(result);
-                    let msg = summary.message;
-                    if (syncResult && syncResult.ok === false) {
-                        msg += '\n\n(Custom Tabs sync did not complete: ' + (syncResult.detail || 'see console') + ')';
-                    }
-                    Dashboard.alert({ title: summary.title, message: msg });
-                } catch (e) {
-                    Dashboard.hideLoadingMsg();
-                    console.error('Failed to save and apply settings:', e);
-                    Dashboard.alert({
-                        title: 'Error',
-                        message: 'Failed to save and apply settings to all users. Check server logs for details.'
-                    });
-                }
-            }
+        function jeOpenApplyDefaults() {
+            const policy = window.JellyfinEnhancedAdminPolicy;
+            if (policy && typeof policy.openApplyDialog === 'function' && policy.openApplyDialog()) return;
+            Dashboard.alert({
+                title: 'Apply defaults to users',
+                message: 'The user settings policy has not loaded, so defaults cannot be applied right now. Reload the page and try again.'
+            });
         }
 
         // ── Maintenance mode: user checklist ─────────────────────────────────────
@@ -8671,7 +8571,7 @@
 
         page.addEventListener('pageshow', loadConfig);
         form.addEventListener('submit', saveConfig);
-        resetAllUserSettingsBtn.addEventListener('click', resetAllUserSettings);
+        resetAllUserSettingsBtn.addEventListener('click', jeOpenApplyDefaults);
         initAutoMovieQualityMode();
 
         // Live-update the Requests Page requirements banner AND the dependency

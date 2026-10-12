@@ -184,7 +184,19 @@ public class CoreSettingsDefaultsTests
         Assert.Empty(response["skippedHcUserIds"]!);
 
         var settings = JObject.Parse(File.ReadAllText(endpoints.SettingsPath(UserA)));
-        Assert.True(JToken.DeepEquals(settings, JObject.Parse(File.ReadAllText(endpoints.SettingsPath(UserB)))), configName);
+        var settingsB = JObject.Parse(File.ReadAllText(endpoints.SettingsPath(UserB)));
+        // Reset-all runs on the "Apply defaults" engine (design C4): every key it changed is stamped
+        // with the run's undo id and is Existing again; the values are what the old reset wrote.
+        foreach (var written in new[] { settings, settingsB })
+        {
+            var meta = (JObject)written["_je"]!;
+            written.Remove("_je");
+            Assert.Empty(meta["Following"]!);
+            Assert.Empty(meta["Chosen"]!);
+            Assert.NotEmpty(((JObject)meta["Ops"]!).Properties());
+            Assert.All(((JObject)meta["Ops"]!).Properties(), op => Assert.Equal(response.Value<string>("UndoId"), op.Value.Value<string>()));
+        }
+        Assert.True(JToken.DeepEquals(settings, settingsB), configName);
         var hiddenA = manager.GetUserConfigurationStrict<UserHiddenContent>(a, "hidden-content.json");
         var hiddenB = manager.GetUserConfigurationStrict<UserHiddenContent>(b, "hidden-content.json");
         Assert.Equal("x", Assert.Single(hiddenA.Items).Key); // items are data and survive the reset

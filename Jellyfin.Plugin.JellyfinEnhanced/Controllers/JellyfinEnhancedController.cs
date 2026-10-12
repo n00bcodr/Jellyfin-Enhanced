@@ -5288,6 +5288,636 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(entries);
         }
 
+        /// <summary>The "Apply defaults to users" engine over this controller's user store, user list and hidden-content defaults.</summary>
+        private UserSettingsOperations SettingsOperations()
+            => new(_userConfigurationManager, _logger, TryListLiveUserNames, BuildHcDefaultSettings);
+
+        /// <summary>
+        /// Per-setting counts for the "User settings policy" table, read when the admin opens it: for
+        /// each key with an admin default, how many users follow it (Following), keep a copy of it
+        /// (Kept: not following, stored value equals the default, sentinels included) or have
+        /// something else (Changed); plus the Existing/Chosen split, how many users the
+        /// "Follow where nothing changes" mode would adopt keys for, and the users themselves (live
+        /// users and settings directories; files that are corrupt, oversized or unreadable are listed
+        /// and not counted). Reads every settings.json without quarantining, moving or writing
+        /// anything, and skips files over 256 KB.
+        /// </summary>
+        /// <returns>The overview.</returns>
+        [HttpGet("admin/user-settings/overview")]
+        [Authorize]
+        [Produces("application/json")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult GetUserSettingsOverview()
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503);
+            }
+
+            var operations = SettingsOperations();
+            var population = operations.ListUsers();
+            var documents = ReadSettingsForOverview(population);
+            var defaults = UserSettingsRegistry.BuildDefaults(config);
+            var keys = UserSettingsRegistry.All.Where(descriptor => descriptor.AdminProperty != null).ToList();
+            var adoptableUsers = 0;
+            var adoptableKeys = 0;
+            var metas = new List<(UserSettings Document, UserSettingsMeta Meta)>();
+            foreach (var (_, status, document) in documents)
+            {
+                if (status != UserDocumentPeekStatus.Loaded) continue;
+                var meta = UserSettingsResolver.Normalize(document!.Meta);
+                metas.Add((document, meta));
+                var adoptable = UserSettingsRegistry.All.Count(descriptor => UserSettingsBulk.IsAdoptable(descriptor, document, meta, defaults));
+                if (adoptable > 0)
+                {
+                    adoptableUsers++;
+                    adoptableKeys += adoptable;
+                }
+            }
+
+            var settings = new System.Text.Json.Nodes.JsonArray();
+            foreach (var descriptor in keys)
+            {
+                int following = 0, existing = 0, existingSame = 0, chosen = 0, kept = 0, changed = 0;
+                foreach (var (document, meta) in metas)
+                {
+                    var state = UserSettingsBulk.StateOf(meta, descriptor.Key);
+                    var same = UserSettingsResolver.EqualsDefault(descriptor, descriptor.Property.GetValue(document), defaults);
+                    if (state == UserSettingsBulk.StateFollowing)
+                    {
+                        following++;
+                        continue;
+                    }
+
+                    if (state == UserSettingsBulk.StateExisting)
+                    {
+                        existing++;
+                        if (same) existingSame++;
+                    }
+                    else
+                    {
+                        chosen++;
+                    }
+
+                    if (same) kept++;
+                    else changed++;
+                }
+
+                settings.Add(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["Key"] = descriptor.Key,
+                    ["Following"] = following,
+                    ["Existing"] = existing,
+                    ["ExistingSameAsDefault"] = existingSame,
+                    ["Chosen"] = chosen,
+                    ["Kept"] = kept,
+                    ["Changed"] = changed,
+                });
+            }
+
+            var userList = new System.Text.Json.Nodes.JsonArray();
+            foreach (var (user, status, _) in documents)
+            {
+                userList.Add(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["Id"] = user.Id,
+                    ["Name"] = user.Name,
+                    ["Live"] = user.Live,
+                    ["Orphan"] = population.LiveListed && !user.Live,
+                    ["Settings"] = OverviewStatus(status),
+                });
+            }
+
+            System.Text.Json.Nodes.JsonArray UsersWith(UserDocumentPeekStatus wanted) => new(documents
+                .Where(entry => entry.Status == wanted)
+                .Select(entry => (System.Text.Json.Nodes.JsonNode?)new System.Text.Json.Nodes.JsonObject { ["Id"] = entry.User.Id, ["Name"] = entry.User.Name })
+                .ToArray());
+
+            return Ok(new System.Text.Json.Nodes.JsonObject
+            {
+                ["ConfigEpoch"] = JellyfinEnhanced.Instance?.ConfigEpoch ?? string.Empty,
+                ["Users"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["Total"] = population.Users.Count,
+                    ["WithSettings"] = metas.Count,
+                    ["WithoutSettings"] = documents.Count(entry => entry.Status == UserDocumentPeekStatus.Missing),
+                    ["Orphans"] = population.LiveListed ? population.Users.Count(user => !user.Live) : 0,
+                    ["LiveListed"] = population.LiveListed,
+                    ["DirectoriesListed"] = population.DirectoriesListed,
+                },
+                ["Adoptable"] = new System.Text.Json.Nodes.JsonObject { ["Users"] = adoptableUsers, ["Keys"] = adoptableKeys },
+                ["Settings"] = settings,
+                ["Corrupt"] = UsersWith(UserDocumentPeekStatus.Corrupt),
+                ["Oversized"] = UsersWith(UserDocumentPeekStatus.Oversized),
+                ["Unavailable"] = UsersWith(UserDocumentPeekStatus.Unavailable),
+                ["UserList"] = userList,
+            });
+        }
+
+        /// <summary>
+        /// One setting across users, for the policy table's per-user list: every live user and
+        /// settings directory with the stored value and its state (Following, Existing, Chosen,
+        /// ChangedByAdmin; NoSettings for a user who has not used Jellyfin Enhanced yet; Corrupt,
+        /// Oversized or Unavailable for a file that cannot be read), whether it equals the default,
+        /// and whether the user is a directory with no live Jellyfin user. String values are checked
+        /// against the key's constraints again and left out (Invalid) when they do not pass. Reads
+        /// without quarantining or writing anything.
+        /// </summary>
+        /// <param name="key">A registry key with an admin default.</param>
+        /// <returns>The key, its default and lock, and one entry per user.</returns>
+        [HttpGet("admin/user-settings/overview/{key}")]
+        [Authorize]
+        [Produces("application/json")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult GetUserSettingsOverviewForKey(string key)
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503);
+            }
+
+            if (string.IsNullOrEmpty(key) || !UserSettingsRegistry.TryGet(key, out var descriptor) || descriptor.AdminProperty == null)
+            {
+                return NotFound(new { success = false, message = "Not a per-user setting with a server default." });
+            }
+
+            var population = SettingsOperations().ListUsers();
+            var defaults = UserSettingsRegistry.BuildDefaults(config);
+            var type = descriptor.Property.PropertyType;
+            var users = new System.Text.Json.Nodes.JsonArray();
+            foreach (var (user, status, document) in ReadSettingsForOverview(population))
+            {
+                var entry = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["UserId"] = user.Id,
+                    ["Name"] = user.Name,
+                    ["Live"] = user.Live,
+                    ["Orphan"] = population.LiveListed && !user.Live,
+                };
+                if (status != UserDocumentPeekStatus.Loaded)
+                {
+                    entry["Value"] = null;
+                    entry["State"] = status == UserDocumentPeekStatus.Missing ? "NoSettings" : status.ToString();
+                    entry["SameAsDefault"] = false;
+                    users.Add(entry);
+                    continue;
+                }
+
+                var value = descriptor.Property.GetValue(document);
+                var node = System.Text.Json.JsonSerializer.SerializeToNode(value, type);
+                if (value is string && !UserSettingsRegistry.TryValidate(descriptor, System.Text.Json.JsonSerializer.SerializeToElement(value, type), out _))
+                {
+                    node = null;
+                    entry["Invalid"] = true;
+                }
+
+                entry["Value"] = node;
+                entry["State"] = UserSettingsBulk.StateOf(UserSettingsResolver.Normalize(document!.Meta), descriptor.Key);
+                entry["SameAsDefault"] = UserSettingsResolver.EqualsDefault(descriptor, value, defaults);
+                users.Add(entry);
+            }
+
+            return Ok(new System.Text.Json.Nodes.JsonObject
+            {
+                ["Key"] = descriptor.Key,
+                ["Default"] = System.Text.Json.JsonSerializer.SerializeToNode(descriptor.Property.GetValue(defaults), type),
+                ["Locked"] = UserSettingsResolver.LockedKeys(config).Contains(descriptor.Key, StringComparer.Ordinal),
+                ["Users"] = users,
+            });
+        }
+
+        /// <summary>
+        /// "Apply defaults to users" (design 4.4): <c>{ "Keys": [...], "UserIds": [...] | null,
+        /// "Mode": "FollowIfUnchanged" | "FollowAll" | "Overwrite", "DryRun": true, "ConfigEpoch": "…" }</c>.
+        /// Keys must be registry keys (that can follow a default, for the Follow modes); UserIds,
+        /// when given, are limited to live users and settings directories, and anything else is
+        /// reported as unknown and never seeded. A dry run (the default) changes no byte on disk and
+        /// returns the ConfigEpoch it used; a real run must send that epoch back and is refused (409)
+        /// once the admin configuration was saved since. A real run that changed anything returns an
+        /// UndoId. Overwrite also resets hidden-content settings and Spoiler Guard preferences.
+        /// </summary>
+        /// <param name="request">The request body.</param>
+        /// <returns>Per-user, per-key results.</returns>
+        [HttpPost("admin/user-settings/apply")]
+        [Authorize]
+        [Produces("application/json")]
+        [RequestSizeLimit(64 * 1024)]
+        [RejectOversizedBody]
+        public IActionResult ApplyUserSettingsDefaults([FromBody] JsonElement request)
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503);
+            }
+
+            if (!TryReadApplyRequest(request, out var keys, out var userIds, out var mode, out var dryRun, out var configEpoch, out var error))
+            {
+                return BadRequest(new { success = false, message = error });
+            }
+
+            var currentEpoch = JellyfinEnhanced.Instance?.ConfigEpoch ?? string.Empty;
+            if (!dryRun && !string.Equals(configEpoch, currentEpoch, StringComparison.Ordinal))
+            {
+                return StatusCode(409, new System.Text.Json.Nodes.JsonObject
+                {
+                    ["success"] = false,
+                    ["message"] = "The plugin settings were saved since this preview. Preview again before applying.",
+                    ["ConfigEpoch"] = currentEpoch,
+                });
+            }
+
+            var operations = SettingsOperations();
+            var population = operations.ListUsers();
+            var known = population.Users.ToDictionary(user => user.Id, StringComparer.Ordinal);
+            var targets = new List<UserSettingsTarget>();
+            var unknown = new List<string>();
+            if (userIds == null)
+            {
+                targets.AddRange(population.Users);
+            }
+            else
+            {
+                foreach (var raw in userIds.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    if ((Guid.TryParseExact(raw, "N", out var id) || Guid.TryParseExact(raw, "D", out id)) && known.TryGetValue(id.ToString("N"), out var user))
+                    {
+                        if (!targets.Contains(user)) targets.Add(user);
+                    }
+                    else
+                    {
+                        unknown.Add(raw.Length > 64 ? raw[..64] : raw);
+                    }
+                }
+            }
+
+            var operationId = UserConfigurationManager.NewOperationId();
+            var (outcomes, recorded) = operations.Run(config, keys, mode, targets, dryRun, operationId, DateTime.UtcNow);
+            if (!dryRun)
+            {
+                var changedUsers = outcomes.Count(o => o.Changes.Count > 0 || o.DocumentChanges.Count > 0);
+                _logger.Info($"Applied defaults to users ({mode}, {keys.Count} settings): {changedUsers} of {outcomes.Count} users changed{(recorded ? ", undo " + operationId : string.Empty)}.");
+            }
+
+            var body = ApplyResultNode(outcomes, unknown, keys, mode, dryRun, currentEpoch);
+            body["UndoId"] = recorded ? operationId : null;
+            return Ok(body);
+        }
+
+        /// <summary>
+        /// Undoes an "Apply defaults to users" run (or a reset-all) by its UndoId, compare-and-swap:
+        /// each key, and each replaced hidden-content or Spoiler Guard section, is restored only while
+        /// it still holds what the run wrote and carries its stamp; anything changed since is kept
+        /// and reported. 400 for an id that is not an operation id, 404 for an unknown or expired one
+        /// (the last 20 are kept), 409 when it was already undone.
+        /// </summary>
+        /// <param name="undoId">The UndoId the run returned.</param>
+        /// <returns>Per-user results.</returns>
+        [HttpPost("admin/user-settings/undo/{undoId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult UndoUserSettingsOperation(string undoId)
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            if (string.IsNullOrEmpty(undoId) || !UserConfigurationManager.OperationIdPattern.IsMatch(undoId))
+            {
+                return BadRequest(new { success = false, message = "Invalid undo id." });
+            }
+
+            List<UserSettingsUndoOutcome> outcomes;
+            string? refused;
+            try
+            {
+                refused = SettingsOperations().Undo(undoId, JellyfinEnhanced.Instance?.Configuration, LiveUserNamesById(), DateTime.UtcNow, out outcomes);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Undo of user settings operation {undoId} failed: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "The undo could not be completed. Check the server log." });
+            }
+
+            if (refused == "not-found")
+            {
+                return NotFound(new { success = false, message = "There is no undo record with that id (only the last 20 are kept)." });
+            }
+
+            if (refused != null)
+            {
+                return StatusCode(409, new { success = false, message = "That change was already undone." });
+            }
+
+            var perUser = new System.Text.Json.Nodes.JsonArray();
+            foreach (var outcome in outcomes)
+            {
+                perUser.Add(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["Id"] = outcome.User.Id,
+                    ["Name"] = outcome.User.Name,
+                    ["Restored"] = Names(outcome.Restored),
+                    ["Kept"] = Names(outcome.Kept),
+                    ["Failed"] = new System.Text.Json.Nodes.JsonArray(outcome.Failed.Select(f => (System.Text.Json.Nodes.JsonNode?)new System.Text.Json.Nodes.JsonObject { ["Document"] = f.Key, ["Reason"] = f.Value }).ToArray()),
+                });
+            }
+
+            _logger.Info($"Undid user settings operation {undoId}: {outcomes.Sum(o => o.Restored.Count)} restored, {outcomes.Sum(o => o.Kept.Count)} changed since and kept.");
+            return Ok(new System.Text.Json.Nodes.JsonObject
+            {
+                ["success"] = true,
+                ["UndoId"] = undoId,
+                ["Restored"] = outcomes.Sum(o => o.Restored.Count),
+                ["Kept"] = outcomes.Sum(o => o.Kept.Count),
+                ["FailedUsers"] = outcomes.Count(o => o.Failed.Count > 0),
+                ["PerUser"] = perUser,
+            });
+        }
+
+        private const string UpgradeCardMarker = "upgrade-card-dismissed";
+
+        /// <summary>Whether the admin dismissed the one-time "users still have copies of your defaults" card for good.</summary>
+        /// <returns><c>{ "Dismissed": bool }</c>.</returns>
+        [HttpGet("admin/user-settings/upgrade-card")]
+        [Authorize]
+        [Produces("application/json")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult GetUserSettingsUpgradeCard()
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            return Ok(new { Dismissed = _userConfigurationManager.OperationMarkerExists(UpgradeCardMarker) });
+        }
+
+        /// <summary>Dismisses the one-time upgrade card for every admin, for good.</summary>
+        /// <returns><c>{ "Dismissed": true }</c>.</returns>
+        [HttpPost("admin/user-settings/upgrade-card/dismiss")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DismissUserSettingsUpgradeCard()
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            try
+            {
+                _userConfigurationManager.SetOperationMarker(UpgradeCardMarker);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not save the dismissed upgrade card: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Could not save that." });
+            }
+
+            return Ok(new { Dismissed = true });
+        }
+
+        /// <summary>Every user of a population with their settings.json read for an overview (no quarantine, 256 KB cap).</summary>
+        private List<(UserSettingsTarget User, UserDocumentPeekStatus Status, UserSettings? Document)> ReadSettingsForOverview(UserSettingsPopulation population)
+        {
+            var result = new List<(UserSettingsTarget, UserDocumentPeekStatus, UserSettings?)>();
+            foreach (var user in population.Users)
+            {
+                if (!user.HasDirectory)
+                {
+                    result.Add((user, UserDocumentPeekStatus.Missing, null));
+                    continue;
+                }
+
+                var status = _userConfigurationManager.PeekUserConfiguration<UserSettings>(user.Id, "settings.json", UserSettingsOperations.SettingsSizeLimit, out var document, out _);
+                result.Add((user, status, document));
+            }
+
+            return result;
+        }
+
+        private static string OverviewStatus(UserDocumentPeekStatus status) => status switch
+        {
+            UserDocumentPeekStatus.Loaded => "settings",
+            UserDocumentPeekStatus.Missing => "none",
+            _ => status.ToString().ToLowerInvariant(),
+        };
+
+        private static System.Text.Json.Nodes.JsonArray Names(IEnumerable<string> names)
+            => new(names.Select(name => (System.Text.Json.Nodes.JsonNode?)name).ToArray());
+
+        /// <summary>
+        /// The apply route's answer, the same for a dry run and a real run: counts, users skipped
+        /// (unknown id, no settings yet, corrupt or oversized file: left untouched) or failed (a
+        /// document that could not be read or written), per-key and per-user changes.
+        /// </summary>
+        private static System.Text.Json.Nodes.JsonObject ApplyResultNode(List<UserSettingsOutcome> outcomes, List<string> unknown, IReadOnlyList<UserSettingDescriptor> keys, UserSettingsApplyMode mode, bool dryRun, string configEpoch)
+        {
+            var skipped = new System.Text.Json.Nodes.JsonArray();
+            var failed = new System.Text.Json.Nodes.JsonArray();
+            foreach (var id in unknown)
+            {
+                skipped.Add(new System.Text.Json.Nodes.JsonObject { ["Id"] = id, ["Name"] = null, ["Reason"] = "unknown" });
+            }
+
+            var perKey = new System.Text.Json.Nodes.JsonObject();
+            foreach (var descriptor in keys)
+            {
+                perKey[descriptor.Key] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["Changed"] = outcomes.Count(o => o.Changes.Any(c => c.Key == descriptor.Key)),
+                    ["Visible"] = outcomes.Count(o => o.Changes.Any(c => c.Key == descriptor.Key && c.Visible)),
+                    ["Kept"] = outcomes.Count(o => o.Kept.Contains(descriptor.Key)),
+                };
+            }
+
+            var perUser = new System.Text.Json.Nodes.JsonArray();
+            int updated = 0, unchanged = 0;
+            foreach (var outcome in outcomes)
+            {
+                var user = outcome.User;
+                switch (outcome.Settings)
+                {
+                    case UserSettingsOutcome.None:
+                        skipped.Add(new System.Text.Json.Nodes.JsonObject { ["Id"] = user.Id, ["Name"] = user.Name, ["Reason"] = "no-settings" });
+                        break;
+                    case UserSettingsOutcome.Corrupt:
+                    case UserSettingsOutcome.Oversized:
+                        skipped.Add(new System.Text.Json.Nodes.JsonObject { ["Id"] = user.Id, ["Name"] = user.Name, ["Reason"] = outcome.Settings });
+                        break;
+                    case UserSettingsOutcome.Unavailable:
+                    case UserSettingsOutcome.Error:
+                        failed.Add(new System.Text.Json.Nodes.JsonObject { ["Id"] = user.Id, ["Name"] = user.Name, ["Document"] = "Settings", ["Reason"] = outcome.Settings });
+                        break;
+                }
+
+                foreach (var (document, result) in outcome.Documents)
+                {
+                    if (result != UserSettingsOutcome.Changed && result != UserSettingsOutcome.Unchanged && result != UserSettingsOutcome.None)
+                    {
+                        failed.Add(new System.Text.Json.Nodes.JsonObject { ["Id"] = user.Id, ["Name"] = user.Name, ["Document"] = document, ["Reason"] = result });
+                    }
+                }
+
+                var documentsChanged = outcome.Documents.Where(d => d.Value == UserSettingsOutcome.Changed).Select(d => d.Key).ToList();
+                if (outcome.Changes.Count > 0 || documentsChanged.Count > 0)
+                {
+                    updated++;
+                }
+                else if (outcome.Settings == UserSettingsOutcome.Unchanged)
+                {
+                    unchanged++;
+                }
+
+                if (outcome.Changes.Count > 0 || outcome.Kept.Count > 0 || documentsChanged.Count > 0)
+                {
+                    perUser.Add(new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["Id"] = user.Id,
+                        ["Name"] = user.Name,
+                        ["Changed"] = Names(outcome.Changes.Select(c => c.Key)),
+                        ["Visible"] = Names(outcome.Changes.Where(c => c.Visible).Select(c => c.Key)),
+                        ["Kept"] = Names(outcome.Kept),
+                        ["Documents"] = Names(documentsChanged),
+                    });
+                }
+            }
+
+            return new System.Text.Json.Nodes.JsonObject
+            {
+                ["success"] = true,
+                ["DryRun"] = dryRun,
+                ["ConfigEpoch"] = configEpoch,
+                ["Mode"] = mode.ToString(),
+                ["Keys"] = Names(keys.Select(k => k.Key)),
+                ["Users"] = outcomes.Count,
+                ["Updated"] = updated,
+                ["Unchanged"] = unchanged,
+                ["KeysChanged"] = outcomes.Sum(o => o.Changes.Count),
+                ["VisibleChanges"] = outcomes.Sum(o => o.Changes.Count(c => c.Visible)),
+                ["KeptChoices"] = outcomes.Count(o => o.Kept.Count > 0),
+                ["Skipped"] = skipped,
+                ["Failed"] = failed,
+                ["PerKey"] = perKey,
+                ["PerUser"] = perUser,
+            };
+        }
+
+        /// <summary>
+        /// Reads an apply body (names matched ignoring case; others ignored): Keys (required, registry
+        /// keys, each able to follow a default in the Follow modes), UserIds (null or absent for
+        /// everyone, else up to 10,000 strings), Mode (required), DryRun (default true) and
+        /// ConfigEpoch (required for a real run).
+        /// </summary>
+        private static bool TryReadApplyRequest(JsonElement request, out List<UserSettingDescriptor> keys, out List<string>? userIds, out UserSettingsApplyMode mode, out bool dryRun, out string? configEpoch, out string error)
+        {
+            keys = new List<UserSettingDescriptor>();
+            userIds = null;
+            mode = UserSettingsApplyMode.FollowIfUnchanged;
+            dryRun = true;
+            configEpoch = null;
+            error = string.Empty;
+            if (request.ValueKind != JsonValueKind.Object)
+            {
+                error = "The request must be a JSON object.";
+                return false;
+            }
+
+            JsonElement? keyList = null;
+            string? modeName = null;
+            foreach (var part in request.EnumerateObject())
+            {
+                if (string.Equals(part.Name, "Keys", StringComparison.OrdinalIgnoreCase))
+                {
+                    keyList = part.Value;
+                }
+                else if (string.Equals(part.Name, "UserIds", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (part.Value.ValueKind == JsonValueKind.Null) continue;
+                    if (part.Value.ValueKind != JsonValueKind.Array || part.Value.GetArrayLength() > 10000 || part.Value.EnumerateArray().Any(entry => entry.ValueKind != JsonValueKind.String))
+                    {
+                        error = "UserIds must be null or an array of user ids.";
+                        return false;
+                    }
+
+                    userIds = part.Value.EnumerateArray().Select(entry => entry.GetString() ?? string.Empty).ToList();
+                }
+                else if (string.Equals(part.Name, "Mode", StringComparison.OrdinalIgnoreCase))
+                {
+                    modeName = part.Value.ValueKind == JsonValueKind.String ? part.Value.GetString() : null;
+                }
+                else if (string.Equals(part.Name, "DryRun", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (part.Value.ValueKind != JsonValueKind.True && part.Value.ValueKind != JsonValueKind.False)
+                    {
+                        error = "DryRun must be true or false.";
+                        return false;
+                    }
+
+                    dryRun = part.Value.GetBoolean();
+                }
+                else if (string.Equals(part.Name, "ConfigEpoch", StringComparison.OrdinalIgnoreCase) && part.Value.ValueKind == JsonValueKind.String)
+                {
+                    configEpoch = part.Value.GetString();
+                }
+            }
+
+            if (modeName == null || !Enum.TryParse(modeName, ignoreCase: true, out mode) || !Enum.IsDefined(mode) || int.TryParse(modeName, out _))
+            {
+                error = "Mode must be FollowIfUnchanged, FollowAll or Overwrite.";
+                return false;
+            }
+
+            if (keyList is not { ValueKind: JsonValueKind.Array } list || list.GetArrayLength() == 0 || list.EnumerateArray().Any(entry => entry.ValueKind != JsonValueKind.String))
+            {
+                error = "Keys must be a non-empty array of setting keys.";
+                return false;
+            }
+
+            foreach (var name in list.EnumerateArray().Select(entry => entry.GetString() ?? string.Empty))
+            {
+                if (!UserSettingsRegistry.TryGet(name, out var descriptor))
+                {
+                    error = "Unknown setting: " + (name.Length > 64 ? name[..64] : name);
+                    return false;
+                }
+
+                if (mode != UserSettingsApplyMode.Overwrite && !UserSettingsRegistry.CanFollow(descriptor))
+                {
+                    error = descriptor.Key + " has no server default to follow.";
+                    return false;
+                }
+
+                if (!keys.Contains(descriptor)) keys.Add(descriptor);
+            }
+
+            if (!dryRun && string.IsNullOrEmpty(configEpoch))
+            {
+                error = "ConfigEpoch (from the preview) is required to apply.";
+                return false;
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// Reads a /patch body: an object with an optional "Set" object, an optional "Follow" array of
         /// strings and an optional "IfRevision" string (names matched ignoring case; others ignored).
@@ -5585,7 +6215,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
         }
 
-        private static HiddenContentSettings BuildHcDefaultSettings(PluginConfiguration src)
+        internal static HiddenContentSettings BuildHcDefaultSettings(PluginConfiguration src)
         {
             return new HiddenContentSettings
             {
@@ -8156,8 +8786,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(500, new { success = false, message = "Default plugin configuration not found." });
             }
 
-            var defaultUserSettings = UserSettingsRegistry.BuildDefaults(defaultConfig);
-
             var userCount = 0;
             var skippedSettings = new System.Collections.Generic.List<string>();
             var skippedHc = new System.Collections.Generic.List<string>();
@@ -8179,80 +8807,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     failedUserCount = 0,
                     skippedSpoilerUserIds = Array.Empty<string>(),
                     users = Array.Empty<ResetUserResult>(),
+                    UndoId = (string?)null,
                 });
             }
 
-            // Names for the result only. The directory walk above stays the source of who gets
-            // reset (#159); live users come through the GetAllUsers shim (#626), and a failure
-            // there only costs the names.
+            // A thin wrapper over "Apply defaults to users" (design 4.4): Overwrite, every key, every
+            // user folder, including hidden-content settings and Spoiler Guard preferences, with
+            // per-user results and an undo record. The directory walk stays the source of who gets
+            // reset (#159); live users come through the GetAllUsers shim (#626), and a failure there
+            // only costs the names.
             var liveNames = LiveUserNamesById();
-            foreach (var userId in userIds)
+            var targets = userIds.Select(id => new UserSettingsTarget(id, liveNames.TryGetValue(id, out var name) ? name : null, liveNames.ContainsKey(id), true)).ToList();
+            var operationId = UserConfigurationManager.NewOperationId();
+            var (outcomes, recorded) = SettingsOperations().Run(defaultConfig, UserSettingsRegistry.All, UserSettingsApplyMode.Overwrite, targets, dryRun: false, operationId, DateTime.UtcNow);
+            foreach (var outcome in outcomes)
             {
-                var result = new ResetUserResult
-                {
-                    UserId = userId,
-                    Name = liveNames.TryGetValue(userId, out var name) ? name : null,
-                };
+                var userId = outcome.User.Id;
+                var result = new ResetUserResult { UserId = userId, Name = outcome.User.Name };
                 results.Add(result);
 
-                try
+                if (outcome.Settings == UserSettingsOutcome.Changed || outcome.Settings == UserSettingsOutcome.Unchanged)
                 {
-                    // Same per-file lock as the settings POST and the first-access seed.
-                    lock (_userConfigurationManager.GetUserFileLock(userId, "settings.json"))
-                    {
-                        _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
-                    }
                     userCount++;
                     result.Settings = ResetOutcomeReset;
                 }
-                catch (Exception ex)
+                else if (outcome.Settings == UserSettingsOutcome.None)
                 {
-                    _logger.Warning($"Skipping settings.json reset for {ResolveUserDisplay(userId)}: {ex.Message}");
+                    // A folder without settings.json: its first use seeds the current defaults.
+                    result.Settings = "none";
+                }
+                else
+                {
                     skippedSettings.Add(userId);
-                    result.Fail("settings", ex);
+                    result.Fail("settings", outcome.Settings);
                 }
 
-                // Push HC Settings only — user's Items dict is data, not a default. Per-user errors are skipped, not fatal.
-                try
+                var hc = outcome.Documents.GetValueOrDefault(UserSettingsOperations.HiddenContentDocument, UserSettingsOutcome.Error);
+                if (hc == UserSettingsOutcome.Changed || hc == UserSettingsOutcome.Unchanged)
                 {
-                    _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
-                        userId, "hidden-content.json", hc =>
-                        {
-                            hc.Settings = BuildHcDefaultSettings(defaultConfig);
-                            return 1;
-                        });
                     result.HiddenContent = ResetOutcomeReset;
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.Warning($"Skipping HC settings reset for {ResolveUserDisplay(userId)}: {ex.Message}");
                     skippedHc.Add(userId);
-                    result.Fail("hiddenContent", ex);
+                    result.Fail("hiddenContent", hc);
                 }
 
-                // Spoiler Guard: reset only the settings-like override Prefs to
-                // "inherit admin policy". The Series/Movies/Collections/PendingTmdb lists
-                // are user DATA (like HC Items) and are deliberately preserved. Only touch
-                // existing files — creating spoilerblur.json here would seed empty state everywhere.
-                try
+                var spoiler = outcome.Documents.GetValueOrDefault(UserSettingsOperations.SpoilerGuardDocument, UserSettingsOutcome.None);
+                if (spoiler == UserSettingsOutcome.Changed || spoiler == UserSettingsOutcome.Unchanged)
                 {
-                    if (_userConfigurationManager.UserConfigurationExists(
-                            userId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName))
-                    {
-                        _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
-                            userId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName, sb =>
-                            {
-                                sb.Prefs = new SpoilerBlurUserPrefs();
-                                return 1;
-                            });
-                        result.SpoilerGuard = ResetOutcomeReset;
-                    }
+                    result.SpoilerGuard = ResetOutcomeReset;
                 }
-                catch (Exception ex)
+                else if (spoiler != UserSettingsOutcome.None)
                 {
-                    _logger.Warning($"Skipping Spoiler Guard prefs reset for {ResolveUserDisplay(userId)}: {ex.Message}");
                     skippedSpoiler.Add(userId);
-                    result.Fail("spoilerGuard", ex);
+                    result.Fail("spoilerGuard", spoiler);
                 }
             }
 
@@ -8264,7 +8873,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // "failed": nothing was reset although there were users. `success` keeps its old
             // meaning (the request ran) so existing callers are unaffected.
             var status = failedUsers == 0 ? "complete" : anyReset ? "partial" : "failed";
-            _logger.Info($"Reset settings for {userCount}/{userIds.Count()} users to plugin defaults. Skipped settings: {skippedSettings.Count}, skipped HC: {skippedHc.Count}, skipped Spoiler Guard: {skippedSpoiler.Count}.");
+            _logger.Info($"Reset settings for {userCount}/{userIds.Count()} users to plugin defaults. Skipped settings: {skippedSettings.Count}, skipped HC: {skippedHc.Count}, skipped Spoiler Guard: {skippedSpoiler.Count}.{(recorded ? " Undo: " + operationId : string.Empty)}");
             return Ok(new
             {
                 success = true,
@@ -8276,6 +8885,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 failedUserCount = failedUsers,
                 skippedSpoilerUserIds = skippedSpoiler,
                 users = results,
+                UndoId = recorded ? operationId : null,
             });
         }
 
@@ -8283,6 +8893,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// One user's outcome in the reset-all response. Each document is "reset" or "failed";
+        /// <see cref="Settings"/> is "none" for a folder with no settings.json (its first use seeds the defaults);
         /// <see cref="SpoilerGuard"/> is "none" when the user has no Spoiler Guard file (it is
         /// never created by a reset). <see cref="Name"/> is null for a directory with no live user.
         /// </summary>
@@ -8306,8 +8917,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             [JsonPropertyName("failures")]
             public System.Collections.Generic.List<ResetFailure> Failures { get; } = new();
 
-            /// <summary>Records a failed document with a coarse reason; the exception text stays in the log.</summary>
-            public void Fail(string document, Exception ex)
+            /// <summary>Records a failed document with a coarse reason (corrupt, oversized, unavailable or error); the details stay in the log.</summary>
+            public void Fail(string document, string reason)
             {
                 switch (document)
                 {
@@ -8315,9 +8926,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     case "hiddenContent": HiddenContent = "failed"; break;
                     default: SpoilerGuard = "failed"; break;
                 }
-                var reason = ex is InvalidDataException || ex is Newtonsoft.Json.JsonException ? "corrupt"
-                    : ex is IOException || ex is UnauthorizedAccessException ? "unavailable"
-                    : "error";
                 Failures.Add(new ResetFailure { Document = document, Reason = reason });
             }
         }
@@ -8337,6 +8945,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <see cref="UserManagerExtensions.GetAllUsers"/> shim. Empty when listing fails.
         /// </summary>
         private Dictionary<string, string> LiveUserNamesById()
+            => TryListLiveUserNames() ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Live Jellyfin user names keyed by the canonical (dashless, lowercase) id, through the
+        /// <see cref="UserManagerExtensions.GetAllUsers"/> shim; null (logged) when listing fails.
+        /// </summary>
+        private Dictionary<string, string>? TryListLiveUserNames()
         {
             var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
@@ -8348,7 +8963,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Could not list Jellyfin users for the reset results: {ex.Message}");
+                _logger.Warning($"Could not list Jellyfin users: {ex.Message}");
+                return null;
             }
             return names;
         }

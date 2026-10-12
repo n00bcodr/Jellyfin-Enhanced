@@ -293,6 +293,82 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         }
 
         /// <summary>
+        /// Read-only look at a per-user document for previews and admin overviews: never quarantines,
+        /// moves, deletes or writes anything, and never logs the file as corrupt (the caller reports
+        /// it). Files over <paramref name="maxBytes"/> are not read (<see cref="UserDocumentPeekStatus.Oversized"/>);
+        /// 0 means no limit. A path that exists but is not a file is <see cref="UserDocumentPeekStatus.Unavailable"/>.
+        /// </summary>
+        /// <param name="userId">The user id (any spelling).</param>
+        /// <param name="fileName">The per-user file name.</param>
+        /// <param name="maxBytes">Largest file to read, or 0 for no limit.</param>
+        /// <param name="value">The parsed document when Loaded.</param>
+        /// <param name="revision">The <see cref="ComputeRevision">revision</see> of the bytes read when Loaded.</param>
+        /// <returns>What was found.</returns>
+        public UserDocumentPeekStatus PeekUserConfiguration<T>(string userId, string fileName, long maxBytes, out T? value, out string? revision) where T : class
+        {
+            value = null;
+            revision = null;
+            var configPath = ResolveUserFile(userId, fileName);
+            byte[] bytes;
+            try
+            {
+                var info = new FileInfo(configPath);
+                if (!info.Exists)
+                {
+                    return Directory.Exists(configPath) ? UserDocumentPeekStatus.Unavailable : UserDocumentPeekStatus.Missing;
+                }
+
+                if (maxBytes > 0 && info.Length > maxBytes)
+                {
+                    return UserDocumentPeekStatus.Oversized;
+                }
+
+                bytes = File.ReadAllBytes(configPath);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+            {
+                return UserDocumentPeekStatus.Missing;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not read '{fileName}' for user '{userId}' (read-only check): {ex.Message}");
+                return UserDocumentPeekStatus.Unavailable;
+            }
+
+            if (maxBytes > 0 && bytes.Length > maxBytes)
+            {
+                return UserDocumentPeekStatus.Oversized;
+            }
+
+            var json = DecodeText(bytes);
+            if (string.IsNullOrWhiteSpace(json) || string.Equals(json.Trim(), "null", StringComparison.Ordinal))
+            {
+                return UserDocumentPeekStatus.Corrupt;
+            }
+
+            try
+            {
+                // Same null-skipping policy as the other readers.
+                value = JsonConvert.DeserializeObject<T>(json, new JsonSerializerSettings
+                {
+                    NullValueHandling = NullValueHandling.Ignore
+                });
+            }
+            catch (JsonException)
+            {
+                value = null;
+            }
+
+            if (value == null)
+            {
+                return UserDocumentPeekStatus.Corrupt;
+            }
+
+            revision = ComputeRevision(bytes);
+            return UserDocumentPeekStatus.Loaded;
+        }
+
+        /// <summary>
         /// The revision of a stored document: the first 12 lowercase hex digits of the SHA-256 of its
         /// bytes, so it changes with every content change and needs no state of its own.
         /// </summary>
@@ -702,6 +778,108 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 userIds = Array.Empty<string>();
                 return false;
             }
+        }
+
+        // ─── Admin bulk-operation records ────────────────────────────────────────
+        // "Apply defaults to users" keeps an undo record per run in <config>/_operations/<id>.json.
+        // The directory name is not a canonical user id, so every user-directory walker skips it.
+
+        /// <summary>The shape of an operation id: a UTC millisecond timestamp and 8 random hex digits.</summary>
+        public static readonly Regex OperationIdPattern = new Regex("^[0-9]{17}-[0-9a-f]{8}$", RegexOptions.Compiled);
+
+        private string OperationsDir => Path.Combine(_configBaseDir, "_operations");
+
+        /// <summary>A new operation id (<see cref="OperationIdPattern"/>); sorts by creation time.</summary>
+        public static string NewOperationId() => MigrationSuffix();
+
+        /// <summary>
+        /// The path of an operation record, refusing anything that is not an operation id or that
+        /// would resolve outside the operations directory.
+        /// </summary>
+        private string ResolveOperationFile(string operationId)
+        {
+            if (operationId == null || !OperationIdPattern.IsMatch(operationId))
+            {
+                throw new ArgumentException("Invalid operation id.", nameof(operationId));
+            }
+
+            var fullBase = Path.GetFullPath(OperationsDir + Path.DirectorySeparatorChar);
+            var full = Path.GetFullPath(Path.Combine(OperationsDir, operationId + ".json"));
+            if (!full.StartsWith(fullBase, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"Refusing operation path outside the operations directory: '{operationId}'");
+            }
+
+            return full;
+        }
+
+        /// <summary>
+        /// Saves an operation record (atomically), then deletes the oldest records beyond
+        /// <paramref name="keep"/>. Only files named like an operation id are counted or deleted.
+        /// </summary>
+        public void SaveOperationRecord(string operationId, object record, int keep)
+        {
+            var path = ResolveOperationFile(operationId);
+            Directory.CreateDirectory(OperationsDir);
+            var tempPath = path + ".tmp." + Guid.NewGuid().ToString("N");
+            try
+            {
+                File.WriteAllText(tempPath, JsonConvert.SerializeObject(record, Formatting.Indented));
+                File.Move(tempPath, path, overwrite: true);
+            }
+            catch
+            {
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); }
+                catch (Exception cleanupEx) { _logger.Warning($"Failed to clean up a temporary operation record: {cleanupEx.Message}"); }
+                throw;
+            }
+
+            if (keep <= 0) return;
+            try
+            {
+                var stale = Directory.GetFiles(OperationsDir, "*.json")
+                    .Select(file => Path.GetFileNameWithoutExtension(file))
+                    .Where(name => OperationIdPattern.IsMatch(name))
+                    .OrderByDescending(name => name, StringComparer.Ordinal)
+                    .Skip(keep)
+                    .ToList();
+                foreach (var name in stale)
+                {
+                    File.Delete(ResolveOperationFile(name));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not prune old operation records: {ex.Message}");
+            }
+        }
+
+        /// <summary>The text of an operation record; null when there is none with that id.</summary>
+        public string? ReadOperationRecord(string operationId)
+        {
+            var path = ResolveOperationFile(operationId);
+            return File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+
+        /// <summary>Whether a named marker file exists in the operations directory (admin page state).</summary>
+        public bool OperationMarkerExists(string name) => File.Exists(ResolveOperationMarker(name));
+
+        /// <summary>Creates a named marker file in the operations directory.</summary>
+        public void SetOperationMarker(string name)
+        {
+            var path = ResolveOperationMarker(name);
+            Directory.CreateDirectory(OperationsDir);
+            File.WriteAllText(path, DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        private string ResolveOperationMarker(string name)
+        {
+            if (string.IsNullOrEmpty(name) || !Regex.IsMatch(name, "^[a-z][a-z-]{0,40}$"))
+            {
+                throw new ArgumentException("Invalid marker name.", nameof(name));
+            }
+
+            return Path.Combine(OperationsDir, name);
         }
 
         // ─── Shared reviews file ─────────────────────────────────────────────────
@@ -1129,6 +1307,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 _logger.Error($"Error cleaning up processed watchlist items for user {userId}: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>Outcome of <see cref="UserConfigurationManager.PeekUserConfiguration{T}"/> (a read-only look).</summary>
+    public enum UserDocumentPeekStatus
+    {
+        /// <summary>No file.</summary>
+        Missing,
+
+        /// <summary>Read and parsed.</summary>
+        Loaded,
+
+        /// <summary>Empty, literal null or unparseable; left exactly as it is.</summary>
+        Corrupt,
+
+        /// <summary>Larger than the caller's limit; not read.</summary>
+        Oversized,
+
+        /// <summary>Could not be read (I/O, permission, not a file).</summary>
+        Unavailable,
     }
 
     /// <summary>Outcome of <see cref="UserConfigurationManager.ReadUserConfigurationChecked{T}"/>.</summary>

@@ -1559,8 +1559,7 @@
     border: 1px solid var(--je-border);
 }
 
-/* Per-user outcome of "Overwrite everyone's personal settings", under Quick Actions. */
-.je-reset-result { margin-top: 12px; }
+/* Users skipped or failed in an "Apply defaults to users" result. */
 .je-reset-result-list { margin: 6px 0 0; padding-left: 18px; }
 .je-reset-result-list li { margin: 2px 0; }
 
@@ -2416,3 +2415,46 @@ div#bazarrMappingsValidationResult {
 .je-policy-lock { display: inline-flex; align-items: center; gap: 6px; margin: 0; cursor: pointer; }
 .je-policy-lock .je-policy-lock-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .je-policy-table tr.je-policy-group th { padding-top: 14px; font-weight: 600; opacity: 0.8; border-bottom: 1px solid var(--je-border); }
+/* Follow / Kept / Changed counts, the per-user list, "Apply defaults to users" and the upgrade card (design C4). */
+.je-policy-table .je-policy-num { text-align: right; white-space: nowrap; width: 1%; }
+.je-policy-users-toggle { background: none; border: 0; padding: 2px 4px; color: var(--primary-accent-color, #00a4dc); font: inherit; cursor: pointer; border-radius: 4px; }
+.je-policy-users-toggle:hover, .je-policy-users-toggle:focus-visible { text-decoration: underline; }
+.je-policy-table tr.je-policy-users > td { background: var(--je-surface-1); padding: 8px 12px 12px; }
+.je-policy-users-table { width: 100%; border-collapse: collapse; }
+.je-policy-users-table th, .je-policy-users-table td { padding: 4px 8px; border-bottom: 1px solid var(--je-border); text-align: left; }
+.je-policy-users-table thead th { opacity: 0.7; font-weight: 600; }
+.je-policy-users-table tbody th { font-weight: 400; }
+.je-policy-follow-btn { margin: 0; padding: 2px 10px; font-size: 0.9em; }
+.je-policy-users-note { margin-top: 6px; font-size: 0.9em; }
+.je-apply-defaults-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.je-apply-defaults-row .emby-button { margin: 0; }
+.je-apply-defaults-row .fieldDescription { flex: 1 1 320px; margin: 0; }
+.je-upgrade-card[hidden] { display: none !important; }
+.je-upgrade-card { margin-bottom: 16px; }
+.je-upgrade-card-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.je-upgrade-card-actions .emby-button { margin: 0; }
+.je-apply-backdrop { position: fixed; inset: 0; z-index: 9999; background: var(--je-overlay-hard); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.je-apply-dialog { background: rgb(28, 28, 28); color: #fff; border: 1px solid var(--je-border); border-radius: 12px; padding: 20px 24px; width: min(760px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); }
+#JellyfinEnhancedPage.je-light-theme .je-apply-dialog { background: #fff; color: #111; }
+.je-apply-dialog h2 { margin: 0 0 6px; font-size: 1.3em; }
+.je-apply-section { border: 1px solid var(--je-border); border-radius: 8px; margin: 12px 0 0; padding: 8px 12px 10px; }
+.je-apply-section legend { padding: 0 6px; font-weight: 600; }
+.je-apply-choice { display: flex; align-items: center; gap: 8px; margin: 4px 0; cursor: pointer; }
+.je-apply-all { font-weight: 600; }
+.je-apply-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0 16px; }
+.je-apply-group > summary { cursor: pointer; list-style-position: outside; margin-left: 16px; }
+.je-apply-group > summary .je-apply-choice { display: inline-flex; margin: 2px 0; }
+.je-apply-keys { padding: 0 0 6px 28px; font-size: 0.9em; }
+.je-apply-users { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 16px; padding-left: 24px; max-height: 220px; overflow-y: auto; }
+.je-apply-users[hidden] { display: none; }
+.je-apply-mode { font-weight: 500; margin-top: 8px; }
+.je-apply-mode-note { margin: 0 0 4px 26px; }
+.je-apply-summary { margin: 14px 0 0; min-height: 1.4em; }
+.je-apply-summary:empty { display: none; }
+.je-apply-summary .je-apply-undo { margin: 8px 0 0; }
+.je-apply-per-user { margin-top: 6px; font-size: 0.9em; }
+.je-apply-per-user summary { cursor: pointer; }
+.je-apply-undo-result { margin-top: 6px; }
+.je-apply-buttons { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 16px; }
+.je-apply-buttons .emby-button { margin: 0; }
+.je-apply-buttons .emby-button[disabled] { opacity: 0.5; cursor: default; }

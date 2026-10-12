@@ -52,7 +52,8 @@ test('every lockable key gets exactly one policy row tied to its admin control, 
   assert.equal(h.policy.ready, false);
   assert.equal(await h.policy.decorate(h.page), true);
   assert.equal(h.policy.ready, true);
-  assert.deepEqual(h.requests, ['http://jellyfin.test/JellyfinEnhanced/admin/user-settings/registry']);
+  // The registry, then (C4) whether the upgrade card was dismissed; no user files are read.
+  assert.deepEqual(h.requests, ['http://jellyfin.test/JellyfinEnhanced/admin/user-settings/registry', 'http://jellyfin.test/JellyfinEnhanced/admin/user-settings/upgrade-card']);
 
   const rows = [...h.document.querySelectorAll('#jeUserSettingsPolicyTable tbody tr[data-setting-key]')];
   assert.deepEqual(rows.map(row => row.dataset.settingKey).sort(), [...lockableKeys].sort());
@@ -265,12 +266,13 @@ test('a failed save built from the table is never confirmed by a later save that
   const reload = h.policy.decorate(h.page);
   const duringReload = { LockedUserSettings: [] };
   assert.equal(h.applyLocks(duringReload), false);
-  const requestsDuring = h.requests.length;
+  const registryReads = () => h.requests.filter(url => url.endsWith('/registry')).length;
+  const requestsDuring = registryReads();
   h.policy.markSaved(duringReload.LockedUserSettings);
   gate.resolve();
   assert.equal(await reload, true);
   await settle();
-  assert.equal(h.requests.length, requestsDuring);
+  assert.equal(registryReads(), requestsDuring);
   assert.equal(h.policy.ready, true);
   assert.equal(h.row('ShowFileSizes').querySelector('input').checked, false);
   assert.equal(h.policy.pendingState(), '');

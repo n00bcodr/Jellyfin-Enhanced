@@ -9,13 +9,23 @@
  * from applyLocks(), which answers only while `ready` is true (rows freshly rendered for this
  * visit); otherwise the saved locks are left alone.
  *
- * Holds code only: every value comes from the authenticated registry route or the page, and is
- * written with textContent; innerHTML is used only for one static, value-free checkbox template.
+ * It also shows, when the table is opened, how many users follow, keep or changed each default
+ * (with a per-user list), runs the "Apply defaults to users" dialog (preview, apply, undo) and the
+ * one-time upgrade card. Those read and write only through the admin user-settings routes; nothing
+ * is previewed or applied while the page has unsaved changes.
+ *
+ * Holds code only: every value comes from the authenticated admin routes or the page, and is
+ * written with textContent; innerHTML is used only for static, value-free templates.
  */
 (function () {
     'use strict';
 
     const REGISTRY_PATH = '/JellyfinEnhanced/admin/user-settings/registry';
+    const OVERVIEW_PATH = '/JellyfinEnhanced/admin/user-settings/overview';
+    const APPLY_PATH = '/JellyfinEnhanced/admin/user-settings/apply';
+    const UNDO_PATH = '/JellyfinEnhanced/admin/user-settings/undo/';
+    const CARD_PATH = '/JellyfinEnhanced/admin/user-settings/upgrade-card';
+    const COLUMNS = 7;
     const ROW_ID_PREFIX = 'jePolicyRow-';
     const BADGE_CLASS = 'je-user-default-badge';
 
@@ -27,7 +37,10 @@
         run: 0,              // decoration sequence; only the latest one renders
         changes: 0,          // admin edits to lock checkboxes, counted
         changedAt: new Map(), // key -> value of `changes` at its last edit
-        submitted: null      // { changes, locks }: the edit counter and the list when applyLocks() last built a save
+        submitted: null,     // { changes, locks }: the edit counter and the list when applyLocks() last built a save
+        registry: [],        // every registry entry with an admin default (the dialog's settings)
+        overview: null,      // promise of the last overview answer, dropped after every change
+        dialog: null         // the open "Apply defaults to users" dialog's state
     };
 
     const api = {
@@ -36,7 +49,8 @@
         decorate,
         applyLocks,
         pendingState,
-        markSaved
+        markSaved,
+        openApplyDialog
     };
     window.JellyfinEnhancedAdminPolicy = api;
 
@@ -331,7 +345,8 @@
         if (!body) throw new Error('policy table missing');
         const previous = state.page === page ? state.byKey : new Map();
         state.page = page;
-        state.entries = registry.filter(entry => entry && typeof entry.Key === 'string' && entry.Lockable === true);
+        state.registry = registry.filter(entry => entry && typeof entry.Key === 'string');
+        state.entries = state.registry.filter(entry => entry.Lockable === true);
         state.baseline = new Set(state.entries.filter(entry => entry.Locked === true).map(entry => entry.Key));
         state.byKey = new Map();
         body.textContent = '';
@@ -353,7 +368,7 @@
                 const heading = document.createElement('tr');
                 heading.className = 'je-policy-group';
                 const cell = document.createElement('th');
-                cell.colSpan = 4;
+                cell.colSpan = COLUMNS;
                 cell.scope = 'colgroup';
                 cell.textContent = where || 'Other';
                 heading.appendChild(cell);
@@ -394,7 +409,15 @@
             });
             lockCell.appendChild(label);
 
-            row.append(nameCell, valueCell, reachCell, lockCell);
+            // Follow, Kept and Changed: filled from the overview when the table is opened.
+            const countCells = ['Following', 'Kept', 'Changed'].map((column) => {
+                const cell = document.createElement('td');
+                cell.className = 'je-policy-num';
+                cell.dataset.count = column;
+                return cell;
+            });
+
+            row.append(nameCell, valueCell, reachCell, lockCell, ...countCells);
             body.appendChild(row);
             state.byKey.set(entry.Key, { entry, control, name, checkbox });
         });
@@ -439,6 +462,10 @@
         setStatus(page, '');
         api.ready = true;
         refresh();
+        bindPolicyExtras(page);
+        state.overview = null;
+        if (isDetailsOpen(page)) showCounts(page);
+        showUpgradeCard(page);
         return true;
     }
 
@@ -492,6 +519,820 @@
         state.submitted = null;
         refresh();
         if (state.page) decorate(state.page, keepAfter);
+    }
+
+    // ── Counts, per-user list, "Apply defaults to users" and the upgrade card (design C4) ──
+
+    const STATE_TEXT = {
+        Following: 'Follows your default',
+        Existing: 'Kept from before',
+        Chosen: 'Their own choice',
+        ChangedByAdmin: 'Set by an administrator',
+        NoSettings: 'Hasn\'t used Jellyfin Enhanced yet (will get your current defaults)',
+        Corrupt: 'Settings file is corrupt (left untouched)',
+        Oversized: 'Settings file is too large to read (left untouched)',
+        Unavailable: 'Settings file could not be read'
+    };
+
+    const SKIP_TEXT = {
+        unknown: 'not a user on this server',
+        'no-settings': 'hasn\'t used Jellyfin Enhanced yet, will get your current defaults',
+        corrupt: 'settings file is corrupt, left untouched',
+        oversized: 'settings file is too large to read, left untouched'
+    };
+
+    const FAIL_TEXT = {
+        corrupt: 'the file is corrupt',
+        unavailable: 'the file could not be read or written',
+        oversized: 'the file is too large to read',
+        error: 'unexpected error, see the server log'
+    };
+
+    const DOCUMENT_TEXT = { Settings: 'settings', HiddenContent: 'hidden-content settings', SpoilerGuard: 'Spoiler Guard preferences' };
+
+    const MODES = [
+        {
+            id: 'FollowIfUnchanged',
+            label: 'Follow my defaults where nothing changes today',
+            note: 'Recommended. Only settings that are still a copy of your default start following it, so nobody sees a change now; they then change when you change the default. Users\' own choices are kept.'
+        },
+        {
+            id: 'FollowAll',
+            label: 'Follow my defaults for everyone selected',
+            note: 'Every selected setting follows your default from now on, including ones users changed for themselves, so values change for some users.'
+        },
+        {
+            id: 'Overwrite',
+            label: 'Overwrite with my current values',
+            note: 'The old behaviour: copies your current values into the selected settings, also resets every selected user\'s hidden-content settings and Spoiler Guard preferences, and users stop following your defaults. Hidden items, spoiler lists and bookmarks are never touched.'
+        }
+    ];
+
+    /**
+     * "1 user", "2 users".
+     * @param {number} count The number.
+     * @param {string} noun The singular noun.
+     * @returns {string}
+     */
+    function plural(count, noun) {
+        return count + ' ' + noun + (count === 1 ? '' : 's');
+    }
+
+    /**
+     * Sends a request to an admin route; a JSON error answer is returned as { status, body }.
+     * @param {string} type GET or POST.
+     * @param {string} path Route path.
+     * @param {object} [body] JSON body.
+     * @returns {Promise<{status: number, body: *}>}
+     */
+    async function request(type, path, body) {
+        const options = { type, url: ApiClient.getUrl(path), dataType: 'json' };
+        if (body !== undefined) {
+            options.contentType = 'application/json';
+            options.data = JSON.stringify(body);
+        }
+        try {
+            return { status: 200, body: await ApiClient.ajax(options) };
+        } catch (error) {
+            const status = error && typeof error.status === 'number' ? error.status : 0;
+            let answer = null;
+            try {
+                if (error && typeof error.json === 'function') answer = await error.json();
+            } catch (ignored) {
+                answer = null;
+            }
+            return { status, body: answer };
+        }
+    }
+
+    /**
+     * Whether the admin page has unsaved changes (its save dock is marked dirty).
+     * @param {Element} page The admin page.
+     * @returns {boolean}
+     */
+    function pageIsDirty(page) {
+        const dock = (page || document).querySelector('.je-save-dock');
+        return !!(dock && dock.classList.contains('je-dirty'));
+    }
+
+    /**
+     * Whether the policy table's details element is open.
+     * @param {Element} page The admin page.
+     * @returns {boolean}
+     */
+    function isDetailsOpen(page) {
+        const details = page.querySelector('#jeUserSettingsPolicyDetails');
+        return !!(details && details.open);
+    }
+
+    /**
+     * The overview (counts and users), fetched once and shared until something changes.
+     * @param {boolean} [fresh] Fetch again even when one is cached.
+     * @returns {Promise<object|null>} Null when it could not be loaded.
+     */
+    function loadOverview(fresh) {
+        if (!fresh && state.overview) return state.overview;
+        const promise = request('GET', OVERVIEW_PATH).then((answer) => {
+            if (answer.status !== 200 || !answer.body || !Array.isArray(answer.body.Settings)) {
+                if (state.overview === promise) state.overview = null;
+                return null;
+            }
+            return answer.body;
+        });
+        state.overview = promise;
+        return promise;
+    }
+
+    /** Forgets the overview and reloads whatever shows it (counts, upgrade card). */
+    function overviewChanged() {
+        state.overview = null;
+        const page = state.page;
+        if (!page || !page.isConnected) return;
+        if (isDetailsOpen(page)) showCounts(page);
+        showUpgradeCard(page);
+    }
+
+    /**
+     * Wires the table's open/close toggle (counts load only when it is opened) and the
+     * fieldset's apply button, once per page element.
+     * @param {Element} page The admin page.
+     */
+    function bindPolicyExtras(page) {
+        const details = page.querySelector('#jeUserSettingsPolicyDetails');
+        if (details && !details.dataset.jeCountsBound) {
+            details.dataset.jeCountsBound = '1';
+            details.addEventListener('toggle', () => { if (details.open) showCounts(page); });
+        }
+        const button = page.querySelector('#jeApplyDefaultsBtn');
+        if (button && !button.dataset.jeBound) {
+            button.dataset.jeBound = '1';
+            button.addEventListener('click', () => openApplyDialog());
+        }
+    }
+
+    /**
+     * Fills the Follow, Kept and Changed columns from the overview; "Changed" opens the per-user list.
+     * @param {Element} page The admin page.
+     */
+    async function showCounts(page) {
+        const status = page.querySelector('#jeUserSettingsPolicyCountsStatus');
+        if (status) {
+            status.hidden = false;
+            status.textContent = 'Counting users…';
+        }
+        const data = await loadOverview();
+        if (state.page !== page) return;
+        if (!data) {
+            if (status) status.textContent = 'The user counts could not be loaded.';
+            return;
+        }
+        const byKey = new Map(data.Settings.map(entry => [entry.Key, entry]));
+        state.byKey.forEach((item, key) => {
+            const counts = byKey.get(key);
+            const row = page.querySelector('#' + ROW_ID_PREFIX + key);
+            if (!row) return;
+            row.querySelectorAll('td[data-count]').forEach((cell) => {
+                cell.textContent = '';
+                const value = counts ? Number(counts[cell.dataset.count]) || 0 : 0;
+                if (cell.dataset.count === 'Changed' && value > 0) {
+                    const open = document.createElement('button');
+                    open.type = 'button';
+                    open.className = 'je-policy-users-toggle';
+                    open.textContent = value + ' ›';
+                    const listOpen = row.nextElementSibling && row.nextElementSibling.classList.contains('je-policy-users');
+                    open.setAttribute('aria-expanded', listOpen ? 'true' : 'false');
+                    open.setAttribute('aria-label', plural(value, 'user') + ' changed ' + item.name + ': show users');
+                    open.addEventListener('click', () => toggleUserList(page, item, open));
+                    cell.appendChild(open);
+                } else {
+                    cell.textContent = String(value);
+                }
+            });
+        });
+        const users = data.Users || {};
+        if (status) {
+            const parts = [plural(users.WithSettings || 0, 'user') + ' with settings'];
+            if (users.WithoutSettings) parts.push(plural(users.WithoutSettings, 'user') + (users.WithoutSettings === 1 ? ' hasn\'t' : ' haven\'t') + ' used Jellyfin Enhanced yet');
+            if (users.Orphans) parts.push(plural(users.Orphans, 'folder') + ' with no Jellyfin user');
+            const unreadable = (data.Corrupt || []).length + (data.Oversized || []).length + (data.Unavailable || []).length;
+            if (unreadable) parts.push(plural(unreadable, 'settings file') + ' could not be read');
+            status.textContent = 'Follow: uses your default and changes with it. Kept: a copy of your default. Changed: something else. ' + parts.join(' · ') + '.';
+        }
+    }
+
+    /**
+     * Who a user is, for lists: the name, or the folder id for a folder with no Jellyfin user.
+     * @param {object} user An overview or result entry ({ Name, Id|UserId }).
+     * @returns {string}
+     */
+    function userLabel(user) {
+        if (user && typeof user.Name === 'string' && user.Name) return user.Name;
+        return 'Folder with no Jellyfin user (' + String((user && (user.Id || user.UserId)) || '?') + ')';
+    }
+
+    /**
+     * Opens or closes the per-user list under a policy row.
+     * @param {Element} page The admin page.
+     * @param {object} item The row's state.
+     * @param {HTMLButtonElement} toggle The count button.
+     */
+    async function toggleUserList(page, item, toggle) {
+        const row = page.querySelector('#' + ROW_ID_PREFIX + item.entry.Key);
+        const existing = row && row.nextElementSibling && row.nextElementSibling.classList.contains('je-policy-users') ? row.nextElementSibling : null;
+        if (existing) {
+            existing.remove();
+            toggle.setAttribute('aria-expanded', 'false');
+            return;
+        }
+        const listRow = document.createElement('tr');
+        listRow.className = 'je-policy-users';
+        const cell = document.createElement('td');
+        cell.colSpan = COLUMNS;
+        cell.textContent = 'Loading users…';
+        listRow.appendChild(cell);
+        row.insertAdjacentElement('afterend', listRow);
+        toggle.setAttribute('aria-expanded', 'true');
+        const answer = await request('GET', OVERVIEW_PATH + '/' + encodeURIComponent(item.entry.Key));
+        if (!listRow.isConnected) return;
+        if (answer.status !== 200 || !answer.body || !Array.isArray(answer.body.Users)) {
+            cell.textContent = 'The users could not be loaded.';
+            return;
+        }
+        renderUserList(page, cell, item, answer.body);
+    }
+
+    /**
+     * Renders one setting's users: name, value and state, with "Make follow default" where the user
+     * has something else (values and names via textContent only).
+     * @param {Element} page The admin page.
+     * @param {Element} cell The list cell.
+     * @param {object} item The policy row's state.
+     * @param {object} data The overview/{key} answer.
+     */
+    function renderUserList(page, cell, item, data) {
+        cell.textContent = '';
+        const table = document.createElement('table');
+        table.className = 'je-policy-users-table';
+        const head = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        ['User', 'Value', 'State', ''].forEach((title) => {
+            const th = document.createElement('th');
+            th.scope = 'col';
+            th.textContent = title;
+            headRow.appendChild(th);
+        });
+        head.appendChild(headRow);
+        table.appendChild(head);
+        const body = document.createElement('tbody');
+        // Users with something else first, then copies of the default, then followers, then users without settings.
+        const rank = user => (['Existing', 'Chosen', 'ChangedByAdmin'].indexOf(user.State) >= 0 ? (user.SameAsDefault ? 1 : 0) : user.State === 'Following' ? 2 : 3);
+        const users = data.Users.slice().sort((a, b) => rank(a) - rank(b));
+        users.forEach((user) => {
+            const tr = document.createElement('tr');
+            const name = document.createElement('th');
+            name.scope = 'row';
+            name.textContent = userLabel(user);
+            const value = document.createElement('td');
+            const hasValue = ['Following', 'Existing', 'Chosen', 'ChangedByAdmin'].indexOf(user.State) >= 0;
+            value.textContent = !hasValue ? '–' : user.Invalid ? '(invalid value)' : describeValue(item.control, user.Value);
+            const stateCell = document.createElement('td');
+            let text = STATE_TEXT[user.State] || String(user.State || '');
+            if (user.State === 'Existing' && user.SameAsDefault) text = 'Copy of your default';
+            stateCell.textContent = text;
+            const action = document.createElement('td');
+            const canFollow = ['Existing', 'Chosen', 'ChangedByAdmin'].indexOf(user.State) >= 0;
+            if (canFollow) {
+                const follow = document.createElement('button');
+                follow.type = 'button';
+                follow.className = 'emby-button raised je-policy-follow-btn';
+                follow.textContent = 'Make follow default';
+                follow.addEventListener('click', () => followForUser(page, cell, item, user, follow));
+                action.appendChild(follow);
+            }
+            tr.append(name, value, stateCell, action);
+            body.appendChild(tr);
+        });
+        table.appendChild(body);
+        cell.appendChild(table);
+        const note = document.createElement('div');
+        note.className = 'je-policy-users-note';
+        note.setAttribute('role', 'status');
+        cell.appendChild(note);
+    }
+
+    /**
+     * "Make follow default" for one user and one setting (FollowAll for that pair), with undo.
+     * Refused while the page has unsaved changes.
+     * @param {Element} page The admin page.
+     * @param {Element} cell The list cell.
+     * @param {object} item The policy row's state.
+     * @param {object} user The user entry.
+     * @param {HTMLButtonElement} button The clicked button.
+     */
+    async function followForUser(page, cell, item, user, button) {
+        const note = cell.querySelector('.je-policy-users-note');
+        if (pageIsDirty(page)) {
+            note.textContent = 'Save your changes first: this uses your saved defaults.';
+            return;
+        }
+        button.disabled = true;
+        const overview = await loadOverview();
+        const answer = await request('POST', APPLY_PATH, {
+            Keys: [item.entry.Key], UserIds: [user.UserId], Mode: 'FollowAll', DryRun: false,
+            ConfigEpoch: overview && overview.ConfigEpoch
+        });
+        if (answer.status === 409) {
+            note.textContent = 'Your settings were saved since this list was loaded. Close the list and open it again.';
+            state.overview = null;
+            return;
+        }
+        if (answer.status !== 200 || !answer.body) {
+            button.disabled = false;
+            note.textContent = 'That did not work. Check the server log.';
+            return;
+        }
+        note.textContent = userLabel(user) + ' now follows your default for ' + item.name + '. ';
+        if (answer.body.UndoId) note.appendChild(undoButton(answer.body.UndoId, note));
+        button.closest('tr').querySelector('td:nth-of-type(2)').textContent = STATE_TEXT.Following;
+        button.remove();
+        overviewChanged();
+    }
+
+    /**
+     * An Undo button for a finished run; reports what was restored and kept.
+     * @param {string} undoId The run's UndoId.
+     * @param {Element} target Where the result is written.
+     * @returns {HTMLButtonElement}
+     */
+    function undoButton(undoId, target) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'emby-button raised je-apply-undo';
+        button.textContent = 'Undo';
+        button.addEventListener('click', async () => {
+            button.disabled = true;
+            const answer = await request('POST', UNDO_PATH + encodeURIComponent(undoId));
+            const line = document.createElement('div');
+            line.className = 'je-apply-undo-result';
+            if (answer.status === 200 && answer.body) {
+                const kept = Number(answer.body.Kept) || 0;
+                line.textContent = 'Undone: ' + (Number(answer.body.Restored) || 0) + ' restored'
+                    + (kept ? ', ' + kept + ' changed since and kept as they are' : '')
+                    + (answer.body.FailedUsers ? ', ' + plural(Number(answer.body.FailedUsers), 'user') + ' could not be restored (see the server log)' : '') + '.';
+                button.remove();
+                overviewChanged();
+            } else {
+                line.textContent = answer.status === 409 ? 'This was already undone.'
+                    : answer.status === 404 ? 'This can no longer be undone (only the last 20 runs are kept).'
+                        : 'The undo did not work. Check the server log.';
+                button.disabled = answer.status !== 0 && answer.status !== 500;
+            }
+            target.appendChild(line);
+        });
+        return button;
+    }
+
+    /**
+     * Shows the one-time upgrade card on the Overview and Admin tabs while it is not dismissed and
+     * some users still have copies of the defaults that could follow them.
+     * @param {Element} page The admin page.
+     */
+    async function showUpgradeCard(page) {
+        const cards = Array.from(page.querySelectorAll('.je-upgrade-card'));
+        if (!cards.length) return;
+        const card = await request('GET', CARD_PATH);
+        if (card.status !== 200 || !card.body || card.body.Dismissed !== false) {
+            cards.forEach((element) => { element.hidden = true; });
+            return;
+        }
+        const data = await loadOverview();
+        const count = data && data.Adoptable ? Number(data.Adoptable.Users) || 0 : 0;
+        cards.forEach((element) => {
+            element.textContent = '';
+            element.hidden = count === 0;
+            if (!count) return;
+            const icon = document.createElement('i');
+            icon.className = 'material-icons je-info-icon';
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = 'group';
+            const body = document.createElement('div');
+            const text = document.createElement('div');
+            text.textContent = (count === 1 ? '1 user still has' : count + ' users still have') + ' copies of your defaults from before user settings could follow them. Make them follow your defaults? Nothing changes for them now; later changes to your defaults will reach them.';
+            const actions = document.createElement('div');
+            actions.className = 'je-upgrade-card-actions';
+            const preview = document.createElement('button');
+            preview.type = 'button';
+            preview.className = 'emby-button raised button-submit';
+            preview.textContent = 'Preview';
+            preview.addEventListener('click', () => openApplyDialog({ mode: 'FollowIfUnchanged', preview: true }));
+            const dismiss = document.createElement('button');
+            dismiss.type = 'button';
+            dismiss.className = 'emby-button raised';
+            dismiss.textContent = 'Don\'t show again';
+            dismiss.addEventListener('click', async () => {
+                const answer = await request('POST', CARD_PATH + '/dismiss');
+                if (answer.status === 200) cards.forEach((other) => { other.hidden = true; });
+            });
+            actions.append(preview, dismiss);
+            body.append(text, actions);
+            element.append(icon, body);
+        });
+    }
+
+    /**
+     * The dialog's settings: every registry key with an admin default, grouped like the policy table.
+     * @param {Element} page The admin page.
+     * @returns {{name: string, items: {key: string, name: string}[]}[]}
+     */
+    function settingGroups(page) {
+        const groups = new Map();
+        state.registry.forEach((entry) => {
+            const control = findControl(page, entry);
+            const where = groupName(control) || 'Other';
+            if (!groups.has(where)) groups.set(where, []);
+            groups.get(where).push({ key: entry.Key, name: controlName(page, control, entry), control });
+        });
+        // In page order, like the policy table; settings without an admin control last.
+        const position = items => items.find(item => item.control);
+        return Array.from(groups, ([name, items]) => ({ name, items })).sort((a, b) => {
+            const first = position(a.items), second = position(b.items);
+            if (!first || !second) return (first ? 0 : 1) - (second ? 0 : 1);
+            return first.control.compareDocumentPosition(second.control) & 4 ? -1 : 1;
+        });
+    }
+
+    /**
+     * Builds a labelled checkbox or radio (static template, values set as properties).
+     * @param {string} type checkbox or radio.
+     * @param {string} text Label text.
+     * @param {string} [className] Label class.
+     * @returns {{label: HTMLLabelElement, input: HTMLInputElement}}
+     */
+    function choice(type, text, className) {
+        const label = document.createElement('label');
+        label.className = className || 'je-apply-choice';
+        label.innerHTML = type === 'radio' ? '<input type="radio"/><span></span>' : '<input type="checkbox"/><span></span>';
+        label.querySelector('span').textContent = text;
+        return { label, input: label.querySelector('input') };
+    }
+
+    /**
+     * Opens the "Apply defaults to users" dialog: settings groups and single settings, users
+     * (everyone or selected), mode, then Preview → Apply → Undo. Preview and Apply use the saved
+     * configuration and are disabled while the page has unsaved changes; Apply sends back the
+     * ConfigEpoch its preview used and is refused when the settings were saved since.
+     * @param {{mode?: string, preview?: boolean}} [options] Preselected mode; run the preview at once.
+     * @returns {boolean} False when the policy has not loaded.
+     */
+    function openApplyDialog(options) {
+        const page = state.page || document.querySelector('#JellyfinEnhancedPage');
+        options = options || {};
+        if (!page || !state.registry.length) {
+            if (page) setStatus(page, 'The user settings policy has not loaded, so defaults cannot be applied right now. Reload the page and try again.', true);
+            return false;
+        }
+        closeApplyDialog();
+        const opener = document.activeElement;
+        const backdrop = document.createElement('div');
+        backdrop.className = 'je-apply-backdrop';
+        const dialog = document.createElement('div');
+        dialog.className = 'je-apply-dialog';
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+        dialog.setAttribute('aria-labelledby', 'jeApplyDialogTitle');
+        backdrop.appendChild(dialog);
+
+        const title = document.createElement('h2');
+        title.id = 'jeApplyDialogTitle';
+        title.textContent = 'Apply defaults to users';
+        const intro = document.createElement('div');
+        intro.className = 'fieldDescription';
+        intro.textContent = 'Uses your saved settings. Preview first: nothing changes until you press Apply, and every run can be undone.';
+        const dirty = document.createElement('div');
+        dirty.className = 'je-policy-status je-policy-status-error';
+        dirty.textContent = 'Save your changes first: Preview and Apply use your saved settings.';
+        dirty.hidden = true;
+
+        // Settings
+        const settingsSet = document.createElement('fieldset');
+        settingsSet.className = 'je-apply-section';
+        const settingsLegend = document.createElement('legend');
+        settingsLegend.textContent = 'Settings';
+        settingsSet.appendChild(settingsLegend);
+        const keyBoxes = new Map();
+        const groupBoxes = [];
+        const groups = settingGroups(page);
+        const all = choice('checkbox', 'All settings with a server default (' + state.registry.length + ')', 'je-apply-choice je-apply-all');
+        all.input.checked = true;
+        settingsSet.appendChild(all.label);
+        const groupList = document.createElement('div');
+        groupList.className = 'je-apply-groups';
+        groups.forEach((group) => {
+            const details = document.createElement('details');
+            details.className = 'je-apply-group';
+            const summary = document.createElement('summary');
+            const box = choice('checkbox', group.name + ' (' + group.items.length + ')');
+            box.input.checked = true;
+            box.label.addEventListener('click', event => event.stopPropagation());
+            summary.appendChild(box.label);
+            details.appendChild(summary);
+            const list = document.createElement('div');
+            list.className = 'je-apply-keys';
+            const boxes = group.items.map((item) => {
+                const single = choice('checkbox', item.name);
+                single.input.checked = true;
+                single.input.dataset.key = item.key;
+                keyBoxes.set(item.key, single.input);
+                list.appendChild(single.label);
+                return single.input;
+            });
+            details.appendChild(list);
+            groupBoxes.push({ box: box.input, boxes });
+            box.input.addEventListener('change', () => {
+                boxes.forEach((input) => { input.checked = box.input.checked; });
+                selectionChanged();
+            });
+            boxes.forEach(input => input.addEventListener('change', selectionChanged));
+            groupList.appendChild(details);
+        });
+        all.input.addEventListener('change', () => {
+            keyBoxes.forEach((input) => { input.checked = all.input.checked; });
+            selectionChanged();
+        });
+        settingsSet.appendChild(groupList);
+
+        // Users
+        const usersSet = document.createElement('fieldset');
+        usersSet.className = 'je-apply-section';
+        const usersLegend = document.createElement('legend');
+        usersLegend.textContent = 'Users';
+        usersSet.appendChild(usersLegend);
+        const everyone = choice('radio', 'Everyone');
+        const selected = choice('radio', 'Selected…');
+        everyone.input.name = selected.input.name = 'jeApplyUsers';
+        everyone.input.checked = true;
+        const userList = document.createElement('div');
+        userList.className = 'je-apply-users';
+        userList.hidden = true;
+        const userBoxes = [];
+        usersSet.append(everyone.label, selected.label, userList);
+        [everyone.input, selected.input].forEach(input => input.addEventListener('change', () => {
+            userList.hidden = !selected.input.checked;
+            selectionChanged();
+        }));
+
+        // Mode
+        const modeSet = document.createElement('fieldset');
+        modeSet.className = 'je-apply-section';
+        const modeLegend = document.createElement('legend');
+        modeLegend.textContent = 'Mode';
+        modeSet.appendChild(modeLegend);
+        const modeInputs = MODES.map((mode) => {
+            const radio = choice('radio', mode.label, 'je-apply-choice je-apply-mode');
+            radio.input.name = 'jeApplyMode';
+            radio.input.value = mode.id;
+            radio.input.checked = mode.id === (options.mode || 'FollowIfUnchanged');
+            const note = document.createElement('div');
+            note.className = 'fieldDescription je-apply-mode-note';
+            note.textContent = mode.note;
+            modeSet.append(radio.label, note);
+            radio.input.addEventListener('change', selectionChanged);
+            return radio.input;
+        });
+
+        const summary = document.createElement('div');
+        summary.className = 'je-apply-summary';
+        summary.setAttribute('role', 'status');
+        summary.setAttribute('aria-live', 'polite');
+
+        const buttons = document.createElement('div');
+        buttons.className = 'je-apply-buttons';
+        const previewButton = document.createElement('button');
+        previewButton.type = 'button';
+        previewButton.className = 'emby-button raised';
+        previewButton.textContent = 'Preview';
+        const applyButton = document.createElement('button');
+        applyButton.type = 'button';
+        applyButton.className = 'emby-button raised button-submit';
+        applyButton.textContent = 'Apply';
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'emby-button raised';
+        closeButton.textContent = 'Close';
+        buttons.append(previewButton, applyButton, closeButton);
+
+        dialog.append(title, intro, dirty, settingsSet, usersSet, modeSet, summary, buttons);
+        page.appendChild(backdrop);
+
+        const dialogState = { backdrop, opener, preview: null, busy: false, timer: 0, signature: '' };
+        state.dialog = dialogState;
+
+        /** @returns {{Keys: string[], UserIds: (string[]|null), Mode: string}} The current selection. */
+        function selection() {
+            const keys = state.registry.map(entry => entry.Key).filter(key => keyBoxes.get(key) && keyBoxes.get(key).checked);
+            const userIds = selected.input.checked ? userBoxes.filter(box => box.checked).map(box => box.value) : null;
+            const mode = (modeInputs.find(input => input.checked) || modeInputs[0]).value;
+            return { Keys: keys, UserIds: userIds, Mode: mode };
+        }
+
+        /** Keeps group boxes in step and forgets a preview made for another selection. */
+        function selectionChanged() {
+            groupBoxes.forEach(({ box, boxes }) => {
+                const on = boxes.filter(input => input.checked).length;
+                box.checked = on === boxes.length;
+                box.indeterminate = on > 0 && on < boxes.length;
+            });
+            const on = Array.from(keyBoxes.values()).filter(input => input.checked).length;
+            all.input.checked = on === keyBoxes.size;
+            all.input.indeterminate = on > 0 && on < keyBoxes.size;
+            if (dialogState.preview && JSON.stringify(selection()) !== dialogState.signature) {
+                dialogState.preview = null;
+                summary.textContent = 'The selection changed: preview again.';
+            }
+            updateButtons();
+        }
+
+        /** Enables Preview and Apply only when they can run. */
+        function updateButtons() {
+            const isDirty = pageIsDirty(page);
+            dirty.hidden = !isDirty;
+            const current = selection();
+            const empty = current.Keys.length === 0 || (current.UserIds !== null && current.UserIds.length === 0);
+            previewButton.disabled = dialogState.busy || isDirty || empty;
+            applyButton.disabled = dialogState.busy || isDirty || empty || !dialogState.preview;
+        }
+
+        previewButton.addEventListener('click', runPreview);
+        applyButton.addEventListener('click', runApply);
+        closeButton.addEventListener('click', closeApplyDialog);
+        backdrop.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeApplyDialog();
+            } else if (event.key === 'Tab') {
+                const focusable = Array.from(dialog.querySelectorAll('button, input, summary')).filter(element => !element.disabled && element.offsetParent !== null);
+                if (!focusable.length) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                }
+            }
+        });
+        dialogState.timer = setInterval(updateButtons, 1000);
+
+        /** Runs the dry run for the current selection and shows what it would do. */
+        async function runPreview() {
+            if (pageIsDirty(page)) return updateButtons();
+            const current = selection();
+            dialogState.busy = true;
+            dialogState.preview = null;
+            summary.textContent = 'Previewing…';
+            updateButtons();
+            const answer = await request('POST', APPLY_PATH, Object.assign({ DryRun: true }, current));
+            dialogState.busy = false;
+            if (state.dialog !== dialogState) return;
+            if (answer.status !== 200 || !answer.body) {
+                summary.textContent = (answer.body && answer.body.message) || 'The preview did not work. Check the server log.';
+                return updateButtons();
+            }
+            dialogState.preview = answer.body;
+            dialogState.signature = JSON.stringify(current);
+            renderResult(summary, answer.body, true);
+            updateButtons();
+        }
+
+        /** Applies the previewed selection with the preview's ConfigEpoch, then offers Undo. */
+        async function runApply() {
+            const preview = dialogState.preview;
+            if (!preview || pageIsDirty(page)) return updateButtons();
+            dialogState.busy = true;
+            summary.textContent = 'Applying…';
+            updateButtons();
+            const answer = await request('POST', APPLY_PATH, Object.assign({ DryRun: false, ConfigEpoch: preview.ConfigEpoch }, JSON.parse(dialogState.signature)));
+            dialogState.busy = false;
+            dialogState.preview = null;
+            if (state.dialog !== dialogState) return;
+            if (answer.status === 409) {
+                summary.textContent = 'Your settings were saved since the preview. Preview again before applying.';
+                return updateButtons();
+            }
+            if (answer.status !== 200 || !answer.body) {
+                summary.textContent = (answer.body && answer.body.message) || 'Applying did not work. Check the server log.';
+                return updateButtons();
+            }
+            renderResult(summary, answer.body, false);
+            if (answer.body.UndoId) summary.appendChild(undoButton(answer.body.UndoId, summary));
+            updateButtons();
+            overviewChanged();
+        }
+
+        // Users for "Selected…": live users and folders, from the overview.
+        loadOverview().then((data) => {
+            if (state.dialog !== dialogState) return;
+            if (!data || !Array.isArray(data.UserList)) {
+                userList.textContent = 'The users could not be loaded; "Everyone" still works.';
+                return;
+            }
+            everyone.label.querySelector('span').textContent = 'Everyone (' + data.UserList.length + ')';
+            data.UserList.forEach((user) => {
+                const text = userLabel(user) + (user.Settings === 'none' ? ' (hasn\'t used Jellyfin Enhanced yet)' : '');
+                const box = choice('checkbox', text);
+                box.input.value = user.Id;
+                box.input.addEventListener('change', selectionChanged);
+                userBoxes.push(box.input);
+                userList.appendChild(box.label);
+            });
+        });
+
+        updateButtons();
+        (options.preview ? previewButton : all.input).focus();
+        if (options.preview) runPreview();
+        return true;
+    }
+
+    /**
+     * Writes a preview's or run's outcome: the headline counts, users skipped or failed by name,
+     * and a per-user breakdown (all text via textContent).
+     * @param {Element} target The summary element.
+     * @param {object} result The apply route's answer.
+     * @param {boolean} isPreview Whether it was a dry run.
+     */
+    function renderResult(target, result, isPreview) {
+        target.textContent = '';
+        const updated = Number(result.Updated) || 0;
+        const keys = Number(result.KeysChanged) || 0;
+        const visible = Number(result.VisibleChanges) || 0;
+        const kept = Number(result.KeptChoices) || 0;
+        const documents = (result.PerUser || []).filter(user => (user.Documents || []).length).length;
+        const head = document.createElement('strong');
+        let text;
+        if (result.Mode === 'Overwrite') {
+            text = plural(updated, 'user') + (isPreview ? ' would be' : '') + ' updated · ' + plural(keys, 'setting') + ' overwritten · ' + plural(visible, 'visible change')
+                + (documents ? ' · hidden-content or Spoiler Guard preferences reset for ' + plural(documents, 'user') : '');
+        } else {
+            text = plural(keys, 'setting') + ' ' + (isPreview ? 'start' : 'started') + ' following your defaults for ' + plural(updated, 'user') + ' · '
+                + plural(visible, 'visible change') + (kept ? ' · ' + plural(kept, 'user') + ' keep' + (kept === 1 ? 's' : '') + ' their own choice' : '');
+        }
+        if (!isPreview && !updated) text = 'Nothing needed changing.';
+        if (isPreview && !updated) text = 'Nothing to change: ' + text + '.';
+        head.textContent = text;
+        target.appendChild(head);
+
+        const notes = [];
+        const fresh = (result.Skipped || []).filter(item => item.Reason === 'no-settings').length;
+        if (fresh) notes.push(plural(fresh, 'user') + (fresh === 1 ? ' hasn\'t' : ' haven\'t') + ' used Jellyfin Enhanced yet (they will get your current defaults)');
+        (result.Skipped || []).filter(item => item.Reason !== 'no-settings').forEach((item) => {
+            notes.push(userLabel(item) + ': skipped, ' + (SKIP_TEXT[item.Reason] || String(item.Reason)));
+        });
+        (result.Failed || []).forEach((item) => {
+            notes.push(userLabel(item) + ': ' + (DOCUMENT_TEXT[item.Document] || String(item.Document)) + ' not changed (' + (FAIL_TEXT[item.Reason] || String(item.Reason)) + ')');
+        });
+        if (notes.length) {
+            const list = document.createElement('ul');
+            list.className = 'je-reset-result-list';
+            notes.forEach((note) => {
+                const item = document.createElement('li');
+                item.textContent = note;
+                list.appendChild(item);
+            });
+            target.appendChild(list);
+        }
+
+        const perUser = (result.PerUser || []).filter(user => (user.Changed || []).length || (user.Kept || []).length || (user.Documents || []).length);
+        if (perUser.length) {
+            const details = document.createElement('details');
+            details.className = 'je-apply-per-user';
+            const label = document.createElement('summary');
+            label.textContent = 'Show users (' + perUser.length + ')';
+            details.appendChild(label);
+            const list = document.createElement('ul');
+            perUser.forEach((user) => {
+                const item = document.createElement('li');
+                const parts = [];
+                if ((user.Changed || []).length) parts.push(plural(user.Changed.length, 'setting') + ' ' + (result.Mode === 'Overwrite' ? 'overwritten' : 'following') + ((user.Visible || []).length ? ' (' + user.Visible.length + ' visible)' : ''));
+                if ((user.Kept || []).length) parts.push(user.Kept.length + ' kept as their own');
+                if ((user.Documents || []).length) parts.push(user.Documents.map(name => DOCUMENT_TEXT[name] || name).join(' and ') + ' reset');
+                item.textContent = userLabel(user) + ': ' + parts.join(', ');
+                list.appendChild(item);
+            });
+            details.appendChild(list);
+            target.appendChild(details);
+        }
+    }
+
+    /** Closes the dialog (if open) and returns focus to what opened it. */
+    function closeApplyDialog() {
+        const dialogState = state.dialog;
+        if (!dialogState) return;
+        state.dialog = null;
+        clearInterval(dialogState.timer);
+        dialogState.backdrop.remove();
+        if (dialogState.opener && typeof dialogState.opener.focus === 'function' && dialogState.opener.isConnected) dialogState.opener.focus();
     }
 
     // Loaded after the page's loadConfig already ran: decorate now.
