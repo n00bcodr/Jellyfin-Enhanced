@@ -107,7 +107,7 @@ jobs:
             exit 1
           fi
       - run: python3 tests/run.py backend --target ${{ matrix.target }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: backend-${{ matrix.target }}
@@ -129,7 +129,7 @@ jobs:
       - run: npm ci
       - run: python3 -m unittest discover -s tests/runner/tests -v
       - run: python3 tests/run.py frontend
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: frontend-coverage
@@ -152,7 +152,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium firefox
       - run: python3 tests/run.py browser
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: browser-results
@@ -184,7 +184,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: python3 tests/run.py host --target ${{ matrix.target }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: host-${{ matrix.target }}
@@ -216,7 +216,7 @@ jobs:
         if: always()
       - run: python3 tests/run.py history --artifacts artifacts/regression/history-run
         if: always()
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: extended-results
