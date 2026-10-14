@@ -18,7 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <remarks>
     /// <para>
     /// The web's view of a user's settings is <c>GET user-settings/{id}/settings.json</c>: the file
-    /// deserialized into <see cref="UserSettings"/> (Newtonsoft, case-insensitive keys, JSON nulls
+    /// deserialized into <see cref="JellyfinEnhancedUserSettings"/> (Newtonsoft, case-insensitive keys, JSON nulls
     /// ignored, any error yields defaults) and serialized back, so every non-nullable property is
     /// always present (C# initializer value when the file lacks it). A missing file is first written
     /// from the plugin defaults. <c>JE.loadSettings</c> then takes the user value when it is not
@@ -199,10 +199,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>
         /// Builds the effective settings from the text of the user's settings.json, read exactly as
-        /// the server reads it for the web (<c>UserConfigurationManager.GetUserConfiguration&lt;UserSettings&gt;</c>:
+        /// the server reads it for the web (<c>UserConfigurationManager.GetUserConfiguration&lt;JellyfinEnhancedUserSettings&gt;</c>:
         /// Newtonsoft with its lenient syntax, case-insensitive keys, last duplicate key wins, JSON
         /// nulls skipped; empty, whitespace-only, <c>null</c>, non-object or unparseable content gives
-        /// the <see cref="UserSettings"/> defaults). Prefer this over <see cref="Create"/>, which can
+        /// the <see cref="JellyfinEnhancedUserSettings"/> defaults). Prefer this over <see cref="Create"/>, which can
         /// only see what a stricter JSON parser accepted.
         /// </summary>
         /// <param name="settingsJson">
@@ -228,7 +228,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <param name="userSettings">
         /// The parsed settings.json, or null when the user has no file yet (the web would first write
         /// one from the plugin defaults). Pass an empty object for a file that exists but is empty or
-        /// unreadable (the web then sees the <see cref="UserSettings"/> defaults). camelCase and
+        /// unreadable (the web then sees the <see cref="JellyfinEnhancedUserSettings"/> defaults). camelCase and
         /// PascalCase keys and JSON nulls are handled as the server reads them.
         /// </param>
         /// <param name="config">The plugin configuration.</param>
@@ -239,7 +239,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <returns>The effective settings.</returns>
         public static PosterTagSettings Create(JsonObject? userSettings, PluginConfiguration config, string? jellyfinAudioLanguagePreference = null)
         {
-            UserSettings? parsed = null;
+            JellyfinEnhancedUserSettings? parsed = null;
             if (userSettings is not null)
             {
                 string json;
@@ -258,30 +258,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             return FromUserSettings(parsed, config, jellyfinAudioLanguagePreference);
         }
 
-        /// <summary>UserConfigurationManager.GetUserConfiguration&lt;UserSettings&gt; for an existing file's text.</summary>
-        private static UserSettings ReadAsServer(string json)
+        /// <summary>UserConfigurationManager.GetUserConfiguration&lt;JellyfinEnhancedUserSettings&gt; for an existing file's text.</summary>
+        private static JellyfinEnhancedUserSettings ReadAsServer(string json)
         {
-            if (string.IsNullOrWhiteSpace(json)) return new UserSettings();
+            if (string.IsNullOrWhiteSpace(json)) return new JellyfinEnhancedUserSettings();
             try
             {
-                return JsonConvert.DeserializeObject<UserSettings>(json, LenientRead) ?? new UserSettings();
+                return JsonConvert.DeserializeObject<JellyfinEnhancedUserSettings>(json, LenientRead) ?? new JellyfinEnhancedUserSettings();
             }
             catch (Exception)
             {
                 // The server returns the defaults on any read error.
-                return new UserSettings();
+                return new JellyfinEnhancedUserSettings();
             }
         }
 
         /// <summary>
         /// Builds the effective settings from the user's settings as the server reads them
-        /// (<c>UserConfigurationManager.GetUserConfiguration&lt;UserSettings&gt;</c>).
+        /// (<c>UserConfigurationManager.GetUserConfiguration&lt;JellyfinEnhancedUserSettings&gt;</c>).
         /// </summary>
         /// <param name="userSettings">The user's settings, or null when the user has no settings.json yet.</param>
         /// <param name="config">The plugin configuration.</param>
         /// <param name="jellyfinAudioLanguagePreference">The user's Jellyfin audio language preference.</param>
         /// <returns>The effective settings.</returns>
-        public static PosterTagSettings FromUserSettings(UserSettings? userSettings, PluginConfiguration config, string? jellyfinAudioLanguagePreference = null)
+        public static PosterTagSettings FromUserSettings(JellyfinEnhancedUserSettings? userSettings, PluginConfiguration config, string? jellyfinAudioLanguagePreference = null)
         {
             ArgumentNullException.ThrowIfNull(config);
             var user = userSettings ?? DefaultsAsWritten(config);
@@ -417,9 +417,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// What the web sees for a user without settings.json: the controller writes the plugin
         /// defaults (only the keys it copies) and reads the file back (JSON nulls ignored).
         /// </summary>
-        private static UserSettings DefaultsAsWritten(PluginConfiguration config)
+        private static JellyfinEnhancedUserSettings DefaultsAsWritten(PluginConfiguration config)
         {
-            var defaults = new UserSettings
+            var defaults = new JellyfinEnhancedUserSettings
             {
                 UseNativePosterTags = null,
                 QualityTagsEnabled = config.QualityTagsEnabled,
@@ -454,8 +454,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             };
 
             // SaveUserConfiguration writes nulls; GetUserConfiguration skips them on the way back,
-            // so a null admin string comes back as the UserSettings initializer value.
-            return JsonConvert.DeserializeObject<UserSettings>(JToken.FromObject(defaults).ToString(Formatting.None), LenientRead) ?? defaults;
+            // so a null admin string comes back as the JellyfinEnhancedUserSettings initializer value.
+            return JsonConvert.DeserializeObject<JellyfinEnhancedUserSettings>(JToken.FromObject(defaults).ToString(Formatting.None), LenientRead) ?? defaults;
         }
 
         private string ComputeDigest()

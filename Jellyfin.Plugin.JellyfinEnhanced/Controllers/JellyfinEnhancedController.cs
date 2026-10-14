@@ -4924,7 +4924,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
                 if (defaultConfig != null)
                 {
-                    var defaultUserSettings = new UserSettings
+                    var defaultUserSettings = new JellyfinEnhancedUserSettings
                     {
                         AutoPauseEnabled = defaultConfig.AutoPauseEnabled,
                         AutoResumeEnabled = defaultConfig.AutoResumeEnabled,
@@ -4993,7 +4993,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
+            var userConfig = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
 
             // IsAdmin reflects the CALLER's admin status (not the target user's, in the
             // rare admin-viewing-another-user's-settings case allowed by
@@ -5043,7 +5043,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpPost("user-settings/{userId}/settings.json")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult SaveUserSettingsSettings(string userId, [FromBody] UserSettings userConfiguration)
+        public IActionResult SaveUserSettingsSettings(string userId, [FromBody] JellyfinEnhancedUserSettings userConfiguration)
         {
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
             if (authorizationResult != null)
@@ -5054,7 +5054,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 // Diff against the existing config so the log shows what actually changed
-                var existing = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
+                var existing = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
                 var changes = new System.Collections.Generic.List<string>();
                 var isIdentical = false;
                 if (existing != null)
@@ -7911,7 +7911,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(500, new { success = false, message = "Default plugin configuration not found." });
             }
 
-            var defaultUserSettings = new UserSettings
+            var defaultUserSettings = new JellyfinEnhancedUserSettings
             {
                 AutoPauseEnabled = defaultConfig.AutoPauseEnabled,
                 AutoResumeEnabled = defaultConfig.AutoResumeEnabled,

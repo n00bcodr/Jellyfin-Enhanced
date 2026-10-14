@@ -8,7 +8,7 @@ public class CoreConfigurationTests
     [Fact]
     public void DefaultUserSettingsPreserveOptInAndInheritedChoices()
     {
-        var settings = new UserSettings();
+        var settings = new JellyfinEnhancedUserSettings();
         Assert.False(settings.AutoPauseEnabled);
         Assert.False(settings.AutoResumeEnabled);
         Assert.False(settings.AutoSkipIntro);

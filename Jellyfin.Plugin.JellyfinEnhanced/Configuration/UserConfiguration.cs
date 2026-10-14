@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 {
-    public class UserSettings
+    public class JellyfinEnhancedUserSettings
     {
         public bool AutoPauseEnabled { get; set; }
         public bool AutoResumeEnabled { get; set; }

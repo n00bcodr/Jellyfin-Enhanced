@@ -13,9 +13,9 @@ public class PosterSettingsProviderTests
     {
         using var f=new ApiPluginFixture();var users=new Mock<IUserManager>();using var provider=new PosterTagSettingsProvider(f.Core.Manager,new PosterTagUserCache(users.Object));
         var alice=Guid.NewGuid();var bob=Guid.NewGuid();
-        f.Core.Manager.SaveUserConfiguration(alice.ToString("N"),"settings.json",new UserSettings{QualityTagsEnabled=true});
+        f.Core.Manager.SaveUserConfiguration(alice.ToString("N"),"settings.json",new JellyfinEnhancedUserSettings{QualityTagsEnabled=true});
         var a=provider.Get(alice);var b=provider.Get(bob);Assert.True(a.QualityTagsEnabled);Assert.False(b.QualityTagsEnabled);Assert.Same(a,provider.Get(alice));
-        f.Core.Manager.SaveUserConfiguration(alice.ToString("D").ToUpperInvariant(),"settings.json",new UserSettings{QualityTagsEnabled=false,GenreTagsEnabled=true});
+        f.Core.Manager.SaveUserConfiguration(alice.ToString("D").ToUpperInvariant(),"settings.json",new JellyfinEnhancedUserSettings{QualityTagsEnabled=false,GenreTagsEnabled=true});
         var changed=provider.Get(alice);Assert.NotSame(a,changed);Assert.False(changed.QualityTagsEnabled);Assert.True(changed.GenreTagsEnabled);Assert.NotEqual(a.Digest,changed.Digest);
         Assert.False(provider.Get(bob).GenreTagsEnabled);
     }
@@ -23,7 +23,7 @@ public class PosterSettingsProviderTests
     public void Unrelated_file_save_does_not_invalidate_snapshot_and_explicit_invalidation_reloads_hand_edit()
     {
         using var f=new ApiPluginFixture();using var provider=new PosterTagSettingsProvider(f.Core.Manager,new PosterTagUserCache(Mock.Of<IUserManager>()));var user=Guid.NewGuid();
-        f.Core.Manager.SaveUserConfiguration(user.ToString("N"),"settings.json",new UserSettings{QualityTagsEnabled=true});var before=provider.Get(user);
+        f.Core.Manager.SaveUserConfiguration(user.ToString("N"),"settings.json",new JellyfinEnhancedUserSettings{QualityTagsEnabled=true});var before=provider.Get(user);
         f.Core.Manager.SaveUserConfiguration(user.ToString("N"),"bookmarks.json",new {Bookmarks=new object[0]});Assert.Same(before,provider.Get(user));
         f.Core.Write(user.ToString("N"),"{\"QualityTagsEnabled\":false}");Assert.Same(before,provider.Get(user));provider.Invalidate(user);Assert.False(provider.Get(user).QualityTagsEnabled);
     }
@@ -38,7 +38,7 @@ public class PosterSettingsProviderTests
     public void Current_user_audio_preference_changes_invalidate_effective_settings()
     {
         using var f=new ApiPluginFixture();var id=Guid.NewGuid();var user=new User("test","default","default"){Id=id,AudioLanguagePreference="eng"};var users=new Mock<IUserManager>();users.Setup(u=>u.GetUserById(id)).Returns(user);
-        f.Core.Manager.SaveUserConfiguration(id.ToString("N"),"settings.json",new UserSettings{QualityTagsEnabled=true,QualityTagsPreferredAudioLanguage="auto"});using var provider=new PosterTagSettingsProvider(f.Core.Manager,new PosterTagUserCache(users.Object));
+        f.Core.Manager.SaveUserConfiguration(id.ToString("N"),"settings.json",new JellyfinEnhancedUserSettings{QualityTagsEnabled=true,QualityTagsPreferredAudioLanguage="auto"});using var provider=new PosterTagSettingsProvider(f.Core.Manager,new PosterTagUserCache(users.Object));
         var before=provider.Get(id);Assert.Equal("eng",before.PreferredAudioLanguage);user.AudioLanguagePreference="jpn";var after=provider.Get(id);Assert.Equal("jpn",after.PreferredAudioLanguage);Assert.NotEqual(before.Digest,after.Digest);
     }
     [Fact]
