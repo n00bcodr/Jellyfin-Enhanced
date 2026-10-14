@@ -3723,6 +3723,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrEnable4KTvRequests,
                 config.ShowCollectionsInSearch,
                 config.JellyseerrShowAdvanced,
+                config.JellyseerrSingleSeasonRequestOnly,
                 config.JellyseerrShowQuotaInfo,
                 config.ShowElsewhereOnJellyseerr,
                 config.JellyseerrUseMoreInfoModal,

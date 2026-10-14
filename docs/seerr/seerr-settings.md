@@ -126,6 +126,11 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
 - Shown only to users with **Advanced Requests** or **Manage Requests** in Seerr, and to admins
 - For other users the advanced fields are hidden and ignored if sent
 
+### Only Allow Requesting One Season at a Time
+- Removes **Select All** from the season modal and lets users tick only one season per request
+- Applies everywhere the season modal opens (search, more info, item details)
+- Needs **Partial requests** enabled in Seerr; otherwise Seerr requires all seasons and this setting has no effect
+
 ### Auto Import Jellyfin Users to Seerr
 
 - Just-in-time import when a user first accesses Seerr search and is not linked yet
