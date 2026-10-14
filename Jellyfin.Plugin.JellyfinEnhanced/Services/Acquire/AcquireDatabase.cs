@@ -175,8 +175,25 @@ CREATE TABLE request_notices (
     id TEXT PRIMARY KEY, want_id TEXT NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
     user_id TEXT NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE request_deleted_users (user_hash TEXT PRIMARY KEY);
+" + Phase3dTables + @"
 ",
         };
+
+        // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
+        // Part of the unreleased schema 2; an existing schema-2 database gets them idempotently at start-up.
+        private const string Phase3dTables = @"
+CREATE TABLE IF NOT EXISTS import_batches (
+    id TEXT PRIMARY KEY, origin_kind TEXT NOT NULL, origin_source_id TEXT NOT NULL, digest TEXT NOT NULL,
+    actor_id TEXT, previous_backend TEXT NOT NULL, imported INTEGER NOT NULL, skipped TEXT NOT NULL,
+    state TEXT NOT NULL, created_at INTEGER NOT NULL, rollback_until INTEGER NOT NULL,
+    rolled_back_at INTEGER, removed INTEGER NOT NULL DEFAULT 0, kept INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS wants_import_batch ON wants(import_batch_id);
+CREATE TABLE IF NOT EXISTS automation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, recipe TEXT NOT NULL, user_id TEXT, title_key TEXT,
+    outcome TEXT NOT NULL, reason TEXT NOT NULL, want_id TEXT, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS automation_log_at ON automation_log(created_at);
+CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
+";
 
         /// <summary>The database for a Jellyfin installation (DI).</summary>
         public AcquireDatabase(IApplicationPaths paths, Logger logger)
@@ -520,6 +537,20 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                         }
                         Requests.RequestLedger.ExtendSchemaTwo(connection, transaction, addTarget || repair, addJob, onlyEmptyTargets: !addTarget);
                         extend.CommandText = "INSERT OR REPLACE INTO meta(key,value) VALUES('request_target_repair_v3','1')";
+                        extend.ExecuteNonQuery();
+                        transaction.Commit();
+                    }
+                }
+                using (var tables = connection.CreateCommand())
+                {
+                    tables.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('import_batches','automation_log')";
+                    if (UserVersion(connection) >= 2 && Convert.ToInt32(tables.ExecuteScalar(), CultureInfo.InvariantCulture) < 2)
+                    {
+                        // Additive only (new empty tables), so no pre-migration copy is needed.
+                        using var transaction = connection.BeginTransaction(deferred: false);
+                        using var extend = connection.CreateCommand();
+                        extend.Transaction = transaction;
+                        extend.CommandText = Phase3dTables;
                         extend.ExecuteNonQuery();
                         transaction.Commit();
                     }

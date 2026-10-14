@@ -972,3 +972,82 @@ lookup on that instance) and `POST arr/admin/manage/add` (`instanceId`, `key`, o
 `seasons` for a series, and one `idempotencyKey` per sheet). The add is a request owned by the administrator and
 routed to that instance, so it shares the outgoing queue, read-back, change feed and audit. It is offered only in Jellyfin
 Enhanced mode; adding to a 4K instance needs the phase-3 4K switch for that kind of title.
+
+### Moving requests from Seerr
+
+When you switch **Request handling** from Seerr to Jellyfin Enhanced, Jellyfin Enhanced can take over the requests
+Seerr already holds. **Move requests from Seerr...** (under *Ask for it* on the configuration page) does it in two steps:
+
+1. **Check.** Jellyfin Enhanced reads every request Seerr holds (all pages, not just the newest few thousand) and
+   says what a move would do: how many are waiting for an OK, how many are in progress, and what is left out
+   (declined, completed or already available, people without a Jellyfin account, requests already moved). It also
+   checks that nobody can still ask in Seerr: no Seerr user and no default permission may hold a request permission.
+   The check changes nothing.
+2. **Move.** Jellyfin Enhanced reads Seerr again and refuses when anything changed since the check, when Seerr's list
+   couldn't be read completely, when the Seerr address was changed in the settings while it read, or while people can
+   still ask in Seerr (remove the request permissions there first).
+   When Seerr's permissions can't be read at all, you confirm that requesting is off (if any part of what could be
+   read shows that someone can still ask, the move is refused). Requests waiting for an OK then wait in Jellyfin
+   Enhanced's Approvals; requests already in progress are linked to their title, with nothing sent to Sonarr or
+   Radarr again. Someone who later asks for a title Seerr was already fetching joins that request, and approving a
+   moved ask for it sends nothing either. Moving costs nobody's allowance and sends no "new request" notices. Request
+   handling switches to Jellyfin Enhanced, and from then on Jellyfin Enhanced never writes a request to Seerr: Seerr
+   request and approval calls through Jellyfin Enhanced answer `requests_in_je`. Seerr can stay for discovery and
+   still gets its scans triggered.
+
+While a move runs, Jellyfin Enhanced's own request writes to Seerr wait: one already on its way finishes first, and
+new ones are refused with `migration_busy` until the move is over. Changes made in Seerr's own interface during the
+move make it refuse ("changed since the check") instead of being missed.
+
+Moving again is safe: requests already moved from the same Seerr are skipped (a new Seerr API key is still the same
+Seerr; another address is another Seerr), and an ask someone already has in Jellyfin Enhanced isn't duplicated. A
+request Seerr is already processing is still linked when that person's own ask in Jellyfin Enhanced is only waiting for
+an OK or was sent to Seerr, so approving that ask, or someone else asking, doesn't send the title again. The
+move is all or nothing: if it fails part-way, nothing of it is kept and Seerr stays in charge.
+
+A move can be **rolled back** for 14 days from the same panel. Rolling back removes the moved requests nobody changed
+since and returns request handling to what it was before that move (rolling back a later move, made while Jellyfin
+Enhanced already handled requests, keeps Jellyfin Enhanced); requests that were approved, cancelled or otherwise
+changed in Jellyfin Enhanced in the meantime are kept. Request handling is switched back first: if that can't be
+saved, nothing is rolled back, and if the requests can't be removed afterwards, rolling back again finishes it.
+
+### Automatic requests with "Ask for it"
+
+With phase 3 on, **Auto Season Request** and **Auto Movie Request** (Seerr settings) record what they decide as a
+request in Jellyfin Enhanced, under the same rules as a person's own ask, instead of sending it to Seerr directly:
+
+- A Member's automatic request waits for an OK in Jellyfin Enhanced mode (nobody approves their own request by
+  watching); Kids always wait; Managers and Admins go straight through. Watchers get nothing. In Seerr mode, Seerr's
+  own approval rules apply as before. Whether someone already asked is decided by Jellyfin Enhanced's requests, not
+  by Seerr's pending or processing status (only a title Seerr reports as available is skipped).
+- The request counts against the person's allowance like any other. The same automatic request is never recorded
+  twice, and one that was declined or cancelled isn't asked for again.
+- In Jellyfin Enhanced mode no Seerr is needed: the next season or the next movie of a collection is looked up on
+  TMDB (a TMDB API key is required) and checked against your library. The Seerr quality settings of Auto Movie
+  Request (original or custom server, profile and folder) apply only while requests go to Seerr.
+- A lookup that fails (TMDB or Seerr down) is retried after a couple of minutes instead of being taken as "nothing to
+  do"; a definite answer waits an hour before the same episode or movie is checked again, as before.
+
+Playback events only hand the work to a queue and return; the checks run in the background, one at a time. Every
+outcome (recorded, nothing to do and why, failed lookup) is kept for 90 days in the request database's automation log.
+
+**Add Requested Media to Watchlist** and the request part of **Sync Seerr Watchlist to Jellyfin** read who asked from
+Jellyfin Enhanced's own requests in Jellyfin Enhanced mode, and from Seerr's complete background read in Seerr mode.
+While that read is still loading or incomplete, a newly added title is checked again a few minutes later instead of
+being treated as unrequested. When Seerr holds more requests than that read keeps, the title's own request list is
+asked from Seerr, so people who asked long ago aren't missed.
+
+### Privacy and Seerr scans
+
+- **Download progress from Seerr.** Seerr's title answers include the download rows it copies from Sonarr/Radarr's
+  queue, release names included. People who aren't administrators now get only the status, size, time left and
+  episode numbers; the progress popover shows "Downloading" instead of the release name. The link Seerr keeps from a
+  title to its Sonarr/Radarr entry (the Sonarr/Radarr address and its ids) is removed for them too. Administrators
+  see Seerr's answer unchanged.
+- **Calendar "also in".** When two Sonarr/Radarr instances list the same release, the calendar row names the other
+  instance only if the viewer may see that instance's event.
+- **Seerr scan trigger.** With *Trigger Seerr recently-added scan* on, additions in a burst still trigger one scan after
+  the debounce, but never later than four times the debounce (at most an hour) after the first addition. If Seerr is
+  already running that scan, Jellyfin Enhanced waits for it and asks once more afterwards instead of interrupting it,
+  and it asks only the first of your Seerr addresses that answers. In Jellyfin Enhanced request mode, a title Jellyfin
+  Enhanced adds to Radarr or Sonarr also triggers Seerr's Radarr or Sonarr scan, so Seerr shows it as requested.

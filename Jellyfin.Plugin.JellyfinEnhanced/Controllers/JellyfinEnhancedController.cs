@@ -798,12 +798,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Response.Headers["Retry-After"] = "2";
                     return StatusCode(504, new { error = true, code = "parental_pending", message = "Parental rating lookups for this page are still running; retry shortly." });
                 }
-                return Content(result.Body, "application/json");
+                return ProjectDownloadsForCaller(result.Body);
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
                 return StatusCode(499); // browser went away (also reachable from the response-cache path)
             }
+        }
+
+        /// <summary>Refusal for a Seerr request write after requests moved to Jellyfin Enhanced (no Seerr call is made).</summary>
+        private IActionResult RequestsHandledByJe()
+            => StatusCode(409, new { error = true, code = "requests_in_je", message = "Requests are handled by Jellyfin Enhanced now." });
+
+        /// <summary>
+        /// Lets one Seerr request write through, or refuses it: while requests move from Seerr to Jellyfin
+        /// Enhanced (409 <c>migration_busy</c>) and once Jellyfin Enhanced handles requests (409
+        /// <c>requests_in_je</c>). The pass is held until the write is done, so a move starts only after the
+        /// writes already in flight finished; the handling is read live after entering.
+        /// </summary>
+        /// <param name="refusal">The refusal to return when no pass is given.</param>
+        /// <returns>The pass to dispose when the write is done (null when no fence is registered), or null with a refusal.</returns>
+        private IDisposable? EnterSeerrRequestWrite(out IActionResult? refusal)
+        {
+            refusal = null;
+            var fence = HttpContext?.RequestServices?.GetService(typeof(Services.Acquire.Requests.SeerrRequestWriteFence)) as Services.Acquire.Requests.SeerrRequestWriteFence;
+            var pass = fence?.TryEnterWrite();
+            if (fence != null && pass == null)
+            {
+                refusal = StatusCode(409, new { error = true, code = "migration_busy", message = "Requests are moving to Jellyfin Enhanced right now; try again in a moment." });
+                return null;
+            }
+            if (Services.Acquire.Requests.SharedRequestFacts.LedgerAuthority(JellyfinEnhanced.Instance?.Configuration))
+            {
+                pass?.Dispose();
+                refusal = RequestsHandledByJe();
+                return null;
+            }
+            return pass;
+        }
+
+        /// <summary>
+        /// Sends a Seerr body to the caller: administrators get it as Seerr sent it; everyone else gets the
+        /// download rows without release names, download ids or arr ids (status, size, ETA, episode and an
+        /// opaque group only). A body that can't be read is not passed on. The response cache keeps Seerr's
+        /// own body, so the projection runs per caller on every answer, cached or fresh.
+        /// </summary>
+        private IActionResult ProjectDownloadsForCaller(string body)
+        {
+            if (IsAdminUser()) return Content(body, "application/json");
+            if (!Helpers.Jellyseerr.SeerrDownloadStatusProjector.TryProject(body, DateTimeOffset.UtcNow, out var projected))
+                return StatusCode(502, new { error = true, code = "invalid_upstream", message = "Seerr sent an answer that couldn't be read." });
+            return Content(projected, "application/json");
         }
 
         private async Task<bool> IsRequestBodyParentalBlockedAsync(string body, string jellyfinUserId)
@@ -911,6 +956,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
+        {
+            if (method == HttpMethod.Get || !apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase))
+                return await ProxyJellyseerrRequestCore(apiPath, method, content);
+            // After the hand-over to Jellyfin Enhanced (phase 3, JE request handling) JE never writes a request
+            // to Seerr again: new asks, approvals and cancels go through JE's own request API. While a move runs
+            // the write waits outside (refused); one already running holds the move off until it is done.
+            using var write = EnterSeerrRequestWrite(out var refusal);
+            if (refusal != null) return refusal;
+            return await ProxyJellyseerrRequestCore(apiPath, method, content);
+        }
+
+        private async Task<IActionResult> ProxyJellyseerrRequestCore(string apiPath, HttpMethod method, string? content)
         {
             // Propagate client disconnects (superseded search queries, page
             // navigations) to the upstream Seerr/TMDB call so we stop doing
@@ -1200,7 +1257,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         }
                         return method == HttpMethod.Get
                             ? await ApplyParentalFilterAsync(json, apiPath, jellyfinUserId)
-                            : Content(json, "application/json");
+                            : ProjectDownloadsForCaller(json);
                     }
 
                     _logger.Warning($"Seerr request failed for user {ResolveUserDisplay(jellyfinUserId)} at {trimmedUrl}: code={error!.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
@@ -10938,6 +10995,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return ArrFeatureDisabled("The Requests page");
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
                 return StatusCode(503, new { error = true, message = "Seerr not configured." });
+            // Held until the POST below is done (a move waits for it); refused during a move and in JE mode.
+            using var write = EnterSeerrRequestWrite(out var refusal);
+            if (refusal != null)
+                return refusal;
 
             var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
             if (string.IsNullOrEmpty(jellyfinUserId))
@@ -11288,99 +11349,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Services.Acquire.ArrInstanceLibraries.CanOpen(calendarUser, target, _instanceLibraries.Libraries());
             }
 
-            // Deduplicate events across instances. Tie-break priority:
-            //   1. Accessible to the current user (prevents H4 hide-accessible-event bug).
-            //   2. HasFile=true (if one instance has the file downloaded, show that).
-            // The losing candidate's InstanceName is preserved in AlsoInInstances so the UI
-            // can show "also in: X, Y" context instead of silently erasing other instances.
-            // normalize ReleaseDate to a calendar-day
-            // bucket before using it in the dedup key. Different Sonarr/Radarr
-            // versions emit different precision (`...000Z` vs `Z`, airDate vs
-            // airDateUtc fallbacks with TZ drift); using the raw string fails
-            // dedup and surfaces duplicate events on a per-instance basis.
-            static string NormalizeDateForDedup(string? raw)
-            {
-                if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
-                if (DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
-                        System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
-                        out var dto))
-                {
-                    return dto.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-                }
-                // Fallback: strip everything after the first 10 chars when it
-                // already looks like an ISO date prefix.
-                return raw.Length >= 10 ? raw.Substring(0, 10) : raw;
-            }
-
-            var deduped = new Dictionary<string, ArrItem>();
-            foreach (var evt in events)
-            {
-                string dedupeKey;
-                var normalizedDate = NormalizeDateForDedup(evt.ReleaseDate);
-                if (evt.Source == nameof(ArrType.Sonarr))
-                {
-                    var seriesKey = evt.TvdbId?.ToString() ?? $"title:{evt.Title}";
-                    dedupeKey = $"sonarr|{seriesKey}|S{evt.SeasonNumber}E{evt.EpisodeNumber}|{normalizedDate}";
-                }
-                else if (evt.Source == nameof(ArrType.Shoko))
-                {
-                    // Never cross-matched against sonarr|/radarr| keys.
-                    dedupeKey = $"shoko|{evt.ShokoSeriesId}|{evt.ShokoEpisodeId}|{normalizedDate}";
-                }
-                else
-                {
-                    var movieKey = evt.TmdbId?.ToString() ?? $"title:{evt.Title}";
-                    dedupeKey = $"radarr|{movieKey}|{evt.ReleaseType}|{normalizedDate}";
-                }
-
-                if (!deduped.TryGetValue(dedupeKey, out var existing))
-                {
-                    deduped[dedupeKey] = evt;
-                    continue;
-                }
-
-                var existingAccess = IsAccessible(existing);
-                var newAccess = IsAccessible(evt);
-                ArrItem winner, loser;
-                if (newAccess && !existingAccess)
-                {
-                    winner = evt; loser = existing;
-                }
-                else if (newAccess == existingAccess && !existing.HasFile && evt.HasFile)
-                {
-                    winner = evt; loser = existing;
-                }
-                else
-                {
-                    winner = existing; loser = evt;
-                }
-
-                if (!ReferenceEquals(winner, existing))
-                {
-                    deduped[dedupeKey] = winner;
-                }
-
-                // Merge loser's instance name into winner's AlsoInInstances (dedup & skip self).
-                if (!string.IsNullOrEmpty(loser.InstanceName)
-                    && !string.Equals(loser.InstanceName, winner.InstanceName, StringComparison.Ordinal))
-                {
-                    winner.AlsoInInstances ??= new List<string>();
-                    if (!winner.AlsoInInstances.Contains(loser.InstanceName))
-                        winner.AlsoInInstances.Add(loser.InstanceName);
-                }
-                // Preserve loser's own AlsoInInstances entries too.
-                if (loser.AlsoInInstances != null)
-                {
-                    winner.AlsoInInstances ??= new List<string>();
-                    foreach (var name in loser.AlsoInInstances)
-                    {
-                        if (!string.Equals(name, winner.InstanceName, StringComparison.Ordinal)
-                            && !winner.AlsoInInstances.Contains(name))
-                            winner.AlsoInInstances.Add(name);
-                    }
-                }
-            }
-            events = deduped.Values.ToList();
+            // Deduplicate events across instances (CalendarDedup): an event the caller may see wins, then
+            // one with the file; "also in" lists only instances whose event the caller may see.
+            events = Services.Arr.CalendarDedup.Deduplicate(events, IsAccessible);
 
             // A lone candidate the caller may not see is hidden too (dedup only prefers visible ones).
             if (calendarUser != null)

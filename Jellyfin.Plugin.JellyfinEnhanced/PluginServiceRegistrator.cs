@@ -127,6 +127,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Requests.SeasonRowsService>();
             // Phase 3c: collection gaps (what the caller has of a collection, what is missing).
             serviceCollection.AddSingleton<Services.Acquire.Requests.CollectionGapsService>();
+            // Seerr to JE authority transfer (admin dry run, complete-or-nothing import, rollback by batch).
+            serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrMigrationReader>();
+            // Holds JE's own Seerr request writes (proxy, Requests page, outbox) off while a move runs.
+            serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrRequestWriteFence>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrMigration>();
+            // Who asked for what, for the watchlist features (ledger or Seerr read model, with completeness).
+            serviceCollection.AddSingleton<Services.Acquire.Requests.SharedRequestFacts>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.RequestOutboxEvents>();
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             serviceCollection.AddSingleton<Services.Acquire.AcquireDatabase>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.NotifyStore>();
@@ -147,6 +155,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // embedded configPage.html against a snapshot from the previous
             // startup -- see StartupService.
             serviceCollection.AddSingleton<WhatsNewService>();
+            // Auto season / auto movie record into the request ledger while "Ask for it" (phase 3) is on.
+            serviceCollection.AddSingleton<Services.AutoRequest.AutoRequestRecorder>();
             serviceCollection.AddSingleton<AutoSeasonRequestService>();
             serviceCollection.AddSingleton<AutoSeasonRequestMonitor>();
             serviceCollection.AddSingleton<AutoMovieRequestService>();

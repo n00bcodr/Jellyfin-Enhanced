@@ -97,14 +97,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly ArrAuditLog _audit;
         private readonly Func<DateTimeOffset> _now;
         private readonly RequestOutboxSignal _signal;
+        private readonly RequestOutboxEvents? _events;
+        private readonly SeerrRequestWriteFence? _seerrWrites;
         /// <summary>Creates the worker on its five-second timer only.</summary>
         public RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit)
             : this(ledger, policy, backend, locks, feed, audit, () => DateTimeOffset.UtcNow) { }
-        /// <summary>Creates the worker, woken early by <paramref name="signal"/> when work is queued (DI).</summary>
-        public RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, RequestOutboxSignal signal)
-            : this(ledger, policy, backend, locks, feed, audit, () => DateTimeOffset.UtcNow, signal) { }
-        internal RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, Func<DateTimeOffset> now, RequestOutboxSignal? signal = null)
-        { _ledger = ledger; _policy = policy; _backend = backend; _locks = locks; _feed = feed; _audit = audit; _now = now; _signal = signal ?? new RequestOutboxSignal(); }
+        /// <summary>
+        /// Creates the worker (DI), woken early by <paramref name="signal"/> when work is queued; <paramref name="events"/>
+        /// hears about confirmed jobs and <paramref name="seerrWrites"/> holds Seerr sends off while a move from Seerr runs.
+        /// </summary>
+        public RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, RequestOutboxSignal signal, RequestOutboxEvents? events = null, SeerrRequestWriteFence? seerrWrites = null)
+            : this(ledger, policy, backend, locks, feed, audit, () => DateTimeOffset.UtcNow, events, seerrWrites, signal) { }
+        internal RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, Func<DateTimeOffset> now, RequestOutboxEvents? events = null, SeerrRequestWriteFence? seerrWrites = null, RequestOutboxSignal? signal = null)
+        { _ledger = ledger; _policy = policy; _backend = backend; _locks = locks; _feed = feed; _audit = audit; _now = now; _events = events; _seerrWrites = seerrWrites; _signal = signal ?? new RequestOutboxSignal(); }
         /// <summary>Processes due work once; tests and diagnostics may drive this without a timer.</summary>
         public async Task TickAsync(CancellationToken ct)
         {
@@ -112,6 +117,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             foreach (var job in _ledger.Due(_now()))
             {
                 ct.ThrowIfCancellationRequested();
+                // A Seerr send waits while a move from Seerr runs (it stays due); a read-back is only a read.
+                using var seerrWrite = job.Authorization.Backend == "seerr" && job.State != "maybe_sent" ? _seerrWrites?.TryEnterWrite() : null;
+                if (_seerrWrites != null && job.Authorization.Backend == "seerr" && job.State != "maybe_sent" && seerrWrite == null) continue;
                 using var titleLock = await _locks.TakeAsync(job.Input, ct).ConfigureAwait(false);
                 var generation = _ledger.Database.Generation;
                 if (!_ledger.Claim(job, generation, _now())) continue;
@@ -198,6 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     result = result with { Outcome = result.Outcome with { Certainty = ArrActionStatus.Unknown }, VerifiedNotSent = false, Parked = result.Parked || !result.Retryable };
                 var completed = _ledger.Complete(job, generation, result, _now());
                 if (completed) _feed.Bump(new[] { job.Input.Key, ArrTitleKey.UserRequests(job.Authorization.Requester), ArrTitleKey.RequestsState });
+                if (completed && result.Confirmed) _events?.RaiseConfirmed(job);
                 if (!completed && !transportStarted && job.State != "maybe_sent") continue;
                 _audit.Append(new ArrAuditEntry { Id = job.Id, Time = _now(), UserId = _ledger.AuditActor(job.Authorization.Approver ?? job.Authorization.Requester), Action = "request.dispatch", Tier = 2,
                     InstanceId = job.Authorization.InstanceId, Target = job.Input.Key, Outcome = result.Outcome.Certainty.ToString().ToLowerInvariant(), Error = result.Outcome.Reason, Message = result.Outcome.Message });

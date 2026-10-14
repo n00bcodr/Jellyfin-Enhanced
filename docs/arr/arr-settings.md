@@ -420,6 +420,18 @@ longer lists are shown as "(not in Radarr now)" rather than swapped for somethin
 request for a title the instance doesn't have yet waits for an administrator until both a profile and a folder are
 set. Manage › Add to preselects these defaults.
 
+**Move requests from Seerr...** checks and then moves Seerr's pending and in-progress requests into Jellyfin Enhanced
+and switches `ArrRequestBackend` to `je` (see [Moving requests from Seerr](arr-features.md#moving-requests-from-seerr)).
+Turn off requesting in Seerr first. The page's Request handling field follows the switch, so saving afterwards keeps
+it. The administrator routes behind the panel (paths relative to `/JellyfinEnhanced`):
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `acquire/migration/seerr` | Request handling now and the newest moves with their rollback deadline |
+| POST | `acquire/migration/seerr/preview` | The check: counts by kind, what is left out, Seerr's requesting state and a digest |
+| POST | `acquire/migration/seerr/commit` | `{"digest": "…", "confirmRequestsDisabled": false}`; 409 when Seerr changed or its address was changed during the move (`seerr_changed`), the read was incomplete, requesting is still on or Jellyfin Enhanced's own Seerr writes didn't finish in time (`seerr_writes_in_flight`); 503 `switch_failed` when the switch couldn't be saved (nothing moved) |
+| POST | `acquire/migration/seerr/rollback` | `{"batchId": "…"}`; within 14 days; 503 `switch_failed` (nothing rolled back) or `rollback_failed` (switched back; roll back again) |
+
 `ArrRequestPreset` selects `ask_first`, `open_house`, or `approve_everything`. `ArrRequestDefaultRole` defaults to
 `Watcher`; accepted household roles are Watcher, Kid, Member and Manager. Administrator status always comes from
 Jellyfin, never from the JSON role settings. Kid suggestions are not automatically applied.

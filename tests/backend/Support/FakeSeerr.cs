@@ -51,6 +51,15 @@ internal sealed class FakeSeerr : IDisposable
 
     private int _nextRequest = 900;
 
+    /// <summary>Non-null: the body of <c>GET /api/v1/settings/main</c> (else 404).</summary>
+    public JsonObject? MainSettings { get; set; }
+
+    /// <summary>Non-null: the body of <c>GET /api/v1/settings/jobs</c> (else 404).</summary>
+    public JsonArray? Jobs { get; set; }
+
+    /// <summary>Every non-GET call: method and path.</summary>
+    public List<string> Writes { get; } = new();
+
     /// <summary>Non-null: awaited before every call is answered (a slow or hanging Seerr).</summary>
     public Func<Task>? Before { get => Hold; set => Hold = value; }
 
@@ -91,6 +100,12 @@ internal sealed class FakeSeerr : IDisposable
         if (FailWith != 0) return IntegrationTransport.Response("{\"message\":\"boom\"}", FailWith);
         var path = uri.AbsolutePath;
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        if (request.Method != HttpMethod.Get)
+        {
+            lock (Writes) Writes.Add(request.Method + " " + path);
+            if (path == "/api/v1/request" && request.Method == HttpMethod.Post) return Post(request);
+            return IntegrationTransport.Response("{}");
+        }
         if (path == "/api/v1/settings/public") return IntegrationTransport.Response(Settings.ToJsonString());
         if (path.StartsWith("/api/v1/user/", StringComparison.Ordinal))
         {
@@ -104,7 +119,8 @@ internal sealed class FakeSeerr : IDisposable
                 return user == null ? IntegrationTransport.Response("{\"message\":\"User not found.\"}", 404) : IntegrationTransport.Response(user.ToJsonString());
             }
         }
-        if (path == "/api/v1/request" && request.Method == HttpMethod.Post) return Post(request);
+        if (path == "/api/v1/settings/main") return MainSettings == null ? IntegrationTransport.Response("{}", 404) : IntegrationTransport.Response(MainSettings.ToJsonString());
+        if (path == "/api/v1/settings/jobs") return Jobs == null ? IntegrationTransport.Response("{}", 404) : IntegrationTransport.Response(Jobs.ToJsonString());
         if (path == "/api/v1/user")
         {
             var take = int.Parse(query["take"] ?? "10", CultureInfo.InvariantCulture);

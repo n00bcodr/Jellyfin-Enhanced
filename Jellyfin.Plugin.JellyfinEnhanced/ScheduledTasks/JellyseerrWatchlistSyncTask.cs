@@ -20,6 +20,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
     // Scheduled task that syncs Jellyseerr watchlist items to Jellyfin watchlist.
     public partial class JellyseerrWatchlistSyncTask : IScheduledTask
     {
+        private readonly Services.Acquire.Requests.SharedRequestFacts? _facts;
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataManager;
@@ -33,8 +34,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             IUserDataManager userDataManager,
             IHttpClientFactory httpClientFactory,
             Configuration.UserConfigurationManager userConfigurationManager,
-            Logger logger)
+            Logger logger,
+            Services.Acquire.Requests.SharedRequestFacts? facts = null)
         {
+            _facts = facts;
             _libraryManager = libraryManager;
             _userManager = userManager;
             _userDataManager = userDataManager;
@@ -196,7 +199,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId, config.GetJellyseerrApiKey()) ?? new List<WatchlistItem>();
 
                     var requestItems = new List<WatchlistItem>();
-                    if (config.AddRequestedMediaToWatchlist)
+                    if (config.AddRequestedMediaToWatchlist && _facts != null && Services.Acquire.Requests.SharedRequestFacts.Active(config))
+                    {
+                        // Phase 3: the person's requests come from the shared request facts (the ledger or
+                        // Seerr's complete read model), never a first page that may miss older ones.
+                        var asked = _facts.ForUser(config, jellyfinUser.Id);
+                        if (asked.Complete)
+                            requestItems = asked.Titles.Select(t => new WatchlistItem { TmdbId = t.TmdbId, MediaType = t.Movie ? "movie" : "tv" }).ToList();
+                        else
+                            _logger.Info($"[Seerr→Jellyfin Watchlist Sync] Request list not completely read yet; requests skipped this pass for user: {jellyfinUser.Username}");
+                    }
+                    else if (config.AddRequestedMediaToWatchlist)
                     {
                         requestItems = await GetJellyseerrRequests(httpClient, jellyseerrUrl, jellyseerrUserId, config.GetJellyseerrApiKey()) ?? new List<WatchlistItem>();
                     }

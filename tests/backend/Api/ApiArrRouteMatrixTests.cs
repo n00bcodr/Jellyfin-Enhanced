@@ -140,6 +140,7 @@ public class ApiArrRouteMatrixTests
                 new AcquireDiscoverController(IntegrationRequestDiscoverTests.Offline(new ServicesForRequests(N).Service)),
                 Household(new ServicesForRequests(N).Service),
                 new AcquireCollectionsController(new ServicesForRequests(N).Service, null),
+                new AcquireMigrationController(new ServicesForRequests(N).Migration, N.View),
                 new RequestsHubController(Hub, Manage),
                 new ArrAdminHubController(N.Hub, Queue, N.Bridge, Runner, N.Status, Manage),
                 new NotifyController(N.Service, N.Dispatcher, new NtfySender(N.Ntfy), new EmailSender(N.Mail), N.Users) { Config = () => N.Config, Now = () => N.Arr.Now },
@@ -166,12 +167,18 @@ public class ApiArrRouteMatrixTests
         private sealed class ServicesForRequests
         {
             public Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService Service { get; }
+            public Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.SeerrMigration Migration { get; }
             public ServicesForRequests(IntegrationNotificationsTests.Rig n)
             {
                 var policy = new IntegrationRequestLedgerTests.Policy();
                 foreach (var viewer in new[] { n.Admin, n.Emma })
                     policy.People[viewer.UserId] = new(viewer.UserId, viewer.IsAdmin ? "Admin" : "Member", true, viewer.IsAdmin, viewer.IsAdmin, true, "p", "je", "", "", 7, 7, 0, "null");
-                Service = new(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(n.Db), policy, n.View, n.Feed, () => n.Arr.Now);
+                var ledger = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(n.Db);
+                Service = new(ledger, policy, n.View, n.Feed, () => n.Arr.Now);
+                // Seerr reads go to an address that never answers; no route here may reach it for a non-admin.
+                var seerr = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404)));
+                Migration = new(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.SeerrMigrationReader(seerr), ledger, policy, n.View, null, n.Feed,
+                    () => n.Config, () => { }, () => n.Arr.Now);
             }
         }
 

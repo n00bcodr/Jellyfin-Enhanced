@@ -2590,6 +2590,11 @@
                             <div class="checkboxContainer"><label><input id="arrPhase3Enabled" is="emby-checkbox" type="checkbox"/><span>Ask for it (durable requests, phase 3)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase3Enabled"><div class="fieldDescription">Requires status on pages. Request transports arrive separately; requests remain safely queued meanwhile. Kids always need approval. Roles never override Jellyfin parental limits or library access.</div></div>
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestBackend">Request handling</label><select id="arrRequestBackend" is="emby-select"><option value="seerr">Seerr (default)</option><option value="je">Jellyfin Enhanced (opt in)</option><option value="status_only">Status only</option></select></div>
+                            <div class="inputContainer je-arr-migration">
+                                <button is="emby-button" type="button" id="arrSeerrMigrationBtn" class="raised emby-button">Move requests from Seerr...</button>
+                                <div class="fieldDescription">Hands requests over from Seerr to Jellyfin Enhanced. A check comes first and changes nothing. Turn off requesting in Seerr first (remove the request permissions from its users and from the default permissions), so nobody keeps asking there. Pending requests then wait in Approvals; requests already in progress are linked with nothing sent again. Moving costs nobody's allowance and sends no "new request" notices. Request handling switches to Jellyfin Enhanced, and a move can be rolled back for 14 days (anything changed in Jellyfin Enhanced since is kept). Save first if you changed anything above.</div>
+                                <div id="arrSeerrMigrationResult" class="je-arr-check-result" aria-live="polite"></div>
+                            </div>
                             <div class="checkboxContainer"><label><input id="arrRequest4kMoviesEnabled" is="emby-checkbox" type="checkbox"/><span>Allow 4K movie requests</span></label></div>
                             <div class="checkboxContainer"><label><input id="arrRequest4kSeriesEnabled" is="emby-checkbox" type="checkbox"/><span>Allow 4K series requests</span></label></div>
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestPreset">House rules</label><select id="arrRequestPreset" is="emby-select"><option value="ask_first">Ask first</option><option value="open_house">Open house</option><option value="approve_everything">Approve everything</option></select></div>
@@ -4376,6 +4381,7 @@
                     if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
                     if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
+                    if (el.closest('.je-arr-migration')) return; // the Seerr move panel's own confirmation, not a setting
                     // An instance's add defaults load when its card opens: loading them isn't a change, editing them is.
                     if (el.closest('.arr-instance-add') && el.dataset.jeInitial !== undefined
                         && String(el.type === 'checkbox' ? el.checked : el.value) === el.dataset.jeInitial) return;
@@ -4390,6 +4396,18 @@
             /** Call once the form reflects a known-saved state. */
             function jeMarkSaved() {
                 _jeSavedSnapshot = jeSnapshotFormState();
+                jeUpdateDirtyIndicator();
+            }
+
+            /**
+             * Takes a control's new value as saved when the server changed that setting itself (request
+             * handling after a Seerr move or rollback), so the page doesn't report it as unsaved.
+             * @param {HTMLElement} el - the control (with an id)
+             * @param {string} previous - its value before the change
+             */
+            function jeAcceptServerValue(el, previous) {
+                if (_jeSavedSnapshot === null || !el || !el.id) return;
+                _jeSavedSnapshot = _jeSavedSnapshot.replace(el.id + '=' + previous, el.id + '=' + el.value);
                 jeUpdateDirtyIndicator();
             }
 
@@ -6186,6 +6204,7 @@
         document.querySelector('#arrIntegrationEnabled').addEventListener('change', jeApplyArrIntegrationVisibility);
         document.querySelector('#arrIntegrationCheckBtn').addEventListener('click', jeCheckArrConnections);
         document.querySelector('#arrLiveCheckBtn').addEventListener('click', function() { jeArrLiveStatus(); });
+        document.querySelector('#arrSeerrMigrationBtn').addEventListener('click', function() { jeArrMigrationCheck(); });
         document.querySelector('#arrNotifyStatusBtn').addEventListener('click', function() { jeArrNotifyStatus(); });
         document.querySelector('#arrNtfyTestBtn').addEventListener('click', function() { jeArrNotifyTest('ntfy'); });
         document.querySelector('#arrEmailTestBtn').addEventListener('click', function() { jeArrNotifyTest('email'); });
@@ -6492,6 +6511,202 @@
                 row.appendChild(note);
                 out.appendChild(row);
             });
+        }
+
+        // ==================== Move requests from Seerr (Requests & downloads, phase 3) ====================
+        var JE_MIGRATION_SKIPPED = {
+            declined: 'declined',
+            completed: 'completed',
+            available: 'already available',
+            unmapped_user: 'by people without a Jellyfin account',
+            unreadable: 'unreadable',
+            already_imported: 'already moved',
+            already_in_je: 'already asked for in Jellyfin Enhanced'
+        };
+
+        /**
+         * The admin message of a refused migration call (the server's plain text when it sent one).
+         * @param {*} e - the rejected ajax call
+         * @returns {Promise<string>}
+         */
+        async function jeArrMigrationError(e) {
+            try {
+                if (e && typeof e.json === 'function') {
+                    var body = await e.json();
+                    if (body && body.message) return body.message;
+                }
+            } catch (ignored) { /* not JSON */ }
+            if (e && e.status === 403) return 'Only administrators can move requests, and "Ask for it" (phase 3) must be on and saved.';
+            if (e && e.status === 404) return 'Save with "Requests & downloads (new)" turned on, then check again.';
+            return 'The request failed (error ' + (e && e.status ? e.status : '?') + ').';
+        }
+
+        /**
+         * Keeps the page's request-handling choice in step with a server-side switch, so a later Save
+         * doesn't undo a move or a rollback.
+         * @param {string} backend - seerr, je or status_only
+         */
+        function jeArrMigrationSyncBackend(backend) {
+            var select = document.getElementById('arrRequestBackend');
+            if (!select || !backend || select.value === backend) return;
+            var previous = select.value;
+            select.value = backend;
+            if (typeof jeAcceptServerValue === 'function') jeAcceptServerValue(select, previous);
+        }
+
+        /**
+         * One line of the migration panel.
+         * @param {Element} out - the panel
+         * @param {string} text - plain text
+         * @param {string} [cls] - je-arr-check-ok / je-arr-check-bad
+         * @returns {Element}
+         */
+        function jeArrMigrationLine(out, text, cls) {
+            var line = createEl('div', { className: 'fieldDescription' + (cls ? ' ' + cls : ''), textContent: text });
+            out.appendChild(line);
+            return line;
+        }
+
+        /**
+         * Lists earlier moves with a Roll back button while their 14-day window is open.
+         * @param {Element} out - the panel
+         * @param {Array} batches - from the status route
+         */
+        function jeArrMigrationBatches(out, batches) {
+            (batches || []).forEach(function(b) {
+                var row = createEl('div', { className: 'je-arr-check-row je-arr-migration-batch' });
+                var when = new Date(b.createdAt).toLocaleString();
+                var text = b.state === 'rolled_back'
+                    ? 'Moved ' + b.imported + ' request(s) on ' + when + '; rolled back (' + b.removed + ' removed, ' + b.kept + ' kept).'
+                    : 'Moved ' + b.imported + ' request(s) on ' + when + '.';
+                row.appendChild(createEl('div', { className: 'fieldDescription', textContent: text }));
+                if (b.canRollBack) {
+                    var back = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Roll back (until ' + new Date(b.rollbackUntil).toLocaleDateString() + ')' });
+                    back.addEventListener('click', function() { jeArrMigrationRollback(b.id, row, b.returnsTo); });
+                    row.appendChild(back);
+                }
+                out.appendChild(row);
+            });
+        }
+
+        /**
+         * "Move requests from Seerr...": earlier moves, then a dry run of what a move would do now, with
+         * the move button when Seerr's request list was read completely and requesting there is off.
+         * @param {string} [flash] - an outcome line shown first (after a move or a rollback)
+         * @returns {Promise<void>}
+         */
+        async function jeArrMigrationCheck(flash) {
+            var out = document.getElementById('arrSeerrMigrationResult');
+            if (!out) return;
+            out.textContent = 'Checking Seerr...';
+            var showFlash = function() { if (typeof flash === 'string' && flash) jeArrMigrationLine(out, flash, 'je-arr-check-ok'); };
+            var status = null;
+            var preview;
+            try {
+                status = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/acquire/migration/seerr'), dataType: 'json' });
+            } catch (ignored) { /* shown with the check below */ }
+            try {
+                preview = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/acquire/migration/seerr/preview'), data: '{}', contentType: 'application/json', dataType: 'json' });
+            } catch (e) {
+                out.textContent = '';
+                showFlash();
+                if (status) jeArrMigrationBatches(out, status.batches);
+                jeArrMigrationLine(out, '✗ ' + await jeArrMigrationError(e), 'je-arr-check-bad');
+                return;
+            }
+            out.textContent = '';
+            showFlash();
+            if (status) jeArrMigrationBatches(out, status.batches);
+            if (preview.backend) jeArrMigrationSyncBackend(preview.backend);
+            if (!preview.complete) {
+                jeArrMigrationLine(out, '✗ Seerr\'s request list could not be read completely (' + (preview.incompleteReason || 'unknown') + '). Nothing can be moved yet; check again in a moment.', 'je-arr-check-bad');
+                return;
+            }
+            var movable = (preview.pending || 0) + (preview.processing || 0);
+            jeArrMigrationLine(out, 'Seerr holds ' + preview.total + ' request(s): ' + preview.pending + ' waiting for an OK and ' + preview.processing + ' in progress can be moved.');
+            var skipped = Object.keys(preview.skipped || {}).filter(function(k) { return preview.skipped[k] > 0; })
+                .map(function(k) { return preview.skipped[k] + ' ' + (JE_MIGRATION_SKIPPED[k] || k); });
+            if (skipped.length) jeArrMigrationLine(out, 'Left out: ' + skipped.join(', ') + '.');
+            if (preview.pendingWithoutRole) jeArrMigrationLine(out, preview.pendingWithoutRole + ' of the waiting requests are from people whose household role (Watcher) can\'t ask in Jellyfin Enhanced; give them a role (Per-user roles below) before approving those.');
+            var confirmBox = null;
+            if (preview.seerrRequesting === 'disabled') {
+                jeArrMigrationLine(out, '✓ Requesting is off in Seerr' + (preview.seerrAdmins ? ' (Seerr administrators can still ask there; please don\'t).' : '.'), 'je-arr-check-ok');
+            } else if (preview.seerrRequesting === 'enabled') {
+                var who = preview.requestingUsers ? preview.requestingUsers + ' Seerr user(s) can still ask' : 'Seerr can still give new users the request permission';
+                if (preview.requestingUsers && preview.defaultAllowsRequests) who += ', and new users would get the request permission';
+                jeArrMigrationLine(out, '✗ ' + who + '. Remove the request permissions in Seerr, then check again.', 'je-arr-check-bad');
+                return;
+            } else {
+                jeArrMigrationLine(out, 'Seerr\'s permissions could not be checked.', 'je-arr-check-bad');
+                var label = createEl('label', { className: 'je-arr-migration-confirm' });
+                confirmBox = createEl('input', { type: 'checkbox', id: 'arrSeerrMigrationConfirm' });
+                label.appendChild(confirmBox);
+                label.appendChild(createEl('span', { textContent: ' I have turned off requesting in Seerr.' }));
+                out.appendChild(label);
+            }
+            if (movable === 0 && preview.backend === 'je') {
+                jeArrMigrationLine(out, 'Nothing new to move; request handling is already Jellyfin Enhanced.');
+                return;
+            }
+            var move = createEl('button', { type: 'button', className: 'raised button-submit emby-button', id: 'arrSeerrMigrationMove',
+                textContent: movable === 0 ? 'Switch to Jellyfin Enhanced' : preview.backend === 'je' ? 'Move ' + movable + ' request(s)'
+                    : 'Move ' + movable + ' request(s) and switch to Jellyfin Enhanced' });
+            if (confirmBox) {
+                move.disabled = true;
+                confirmBox.addEventListener('change', function() { move.disabled = !confirmBox.checked; });
+            }
+            var note = createEl('div', { className: 'je-arr-migration-note', 'aria-live': 'polite' });
+            move.addEventListener('click', function() { jeArrMigrationCommit(preview.digest, !!(confirmBox && confirmBox.checked), move, note); });
+            out.appendChild(move);
+            out.appendChild(note);
+        }
+
+        /**
+         * Moves the requests (the server reads Seerr again and refuses when anything changed since the check).
+         * @param {string} digest - the dry run's digest
+         * @param {boolean} confirmed - the admin confirmed requesting is off in Seerr
+         * @param {Element} button - the move button
+         * @param {Element} note - where the outcome goes
+         * @returns {Promise<void>}
+         */
+        async function jeArrMigrationCommit(digest, confirmed, button, note) {
+            if (!window.confirm('Move these requests into Jellyfin Enhanced and switch request handling to Jellyfin Enhanced? You can roll this back for 14 days.')) return;
+            button.disabled = true;
+            note.textContent = 'Moving...';
+            try {
+                var result = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/acquire/migration/seerr/commit'),
+                    data: JSON.stringify({ digest: digest, confirmRequestsDisabled: confirmed }), contentType: 'application/json', dataType: 'json' });
+                jeArrMigrationSyncBackend(result.backend);
+                button.remove();
+                // Check again so the panel shows the state after the move (and the move's Roll back button).
+                await jeArrMigrationCheck('✓ ' + String(result.message || '').replace(/\.$/, '') + ' (' + result.imported + ' moved).');
+            } catch (e) {
+                note.textContent = '';
+                jeArrMigrationLine(note, '✗ ' + await jeArrMigrationError(e) + ' Nothing was moved.', 'je-arr-check-bad');
+                button.disabled = false;
+            }
+        }
+
+        /**
+         * Rolls one move back and returns request handling to what it was before.
+         * @param {string} batchId - the move
+         * @param {Element} where - the element the outcome is added to
+         * @param {string} [returnsTo] - the request handling before that move (je for a later move made in JE mode)
+         * @returns {Promise<void>}
+         */
+        async function jeArrMigrationRollback(batchId, where, returnsTo) {
+            var handling = returnsTo === 'je' ? 'request handling stays Jellyfin Enhanced'
+                : 'request handling goes back to ' + (returnsTo === 'status_only' ? 'Status only' : 'Seerr');
+            if (!window.confirm('Roll this move back? Moved requests nobody changed since are removed from Jellyfin Enhanced, and ' + handling + '.')) return;
+            try {
+                var result = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/acquire/migration/seerr/rollback'),
+                    data: JSON.stringify({ batchId: batchId }), contentType: 'application/json', dataType: 'json' });
+                jeArrMigrationSyncBackend(result.backend);
+                // Check again so the panel shows what can be moved now.
+                await jeArrMigrationCheck('✓ ' + String(result.message || '').replace(/\.$/, '') + ' (' + result.removed + ' removed, ' + result.kept + ' kept).');
+            } catch (e) {
+                jeArrMigrationLine(where, '✗ ' + await jeArrMigrationError(e), 'je-arr-check-bad');
+            }
         }
 
         /** Reconstructs a Sonarr/Radarr instance's own URL from Seerr's settings shape. */
@@ -9916,7 +10131,7 @@
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
             { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled', 'arrPhase3Enabled'] },
-            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch'] },
+            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrSeerrMigrationBtn', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },

@@ -414,5 +414,16 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   policy preparation and private list projections. `RequestOutbox.cs` provides local title locks, restart recovery,
   final-send authorization and a network-free placeholder transport. `LedgerRequestFacts.cs` selects ledger facts in JE
   mode and the existing Seerr read model otherwise. `AcquireRequestsController.cs` exposes the authenticated server API.
-* **`/Services/PlaybackWorkQueue.cs`**: Bounded handoff for the legacy movie/season playback monitors; recipes run on an
-  observed worker task rather than an asynchronous event callback.
+  `SeerrMigrationReader.cs` reads every Seerr request complete-or-nothing (with a digest and Seerr's requesting state) and
+  `SeerrMigration.cs` runs the admin dry run, the import into `RequestLedgerImport.cs` (import batches, rollback by batch,
+  the automation log) and the switch to JE request handling; `AcquireMigrationController.cs` exposes it to administrators.
+  `SharedRequestFacts.cs` answers "who asked" for the watchlist features with a completeness flag, and
+  `RequestOutboxEvents.cs` tells the Seerr scan nudge about confirmed adds.
+* **`/Services/AutoRequest/`**: The auto season / auto movie hand-off. `PlaybackTriggerChannel.cs` is the bounded,
+  coalescing queue the playback handlers write to in constant time; `PlaybackTriggerGate.cs` is the single-flight gate
+  (cooldown only after a definitive outcome, short backoff after a failed lookup); `AutoRequestOutcome.cs` holds the
+  typed outcomes; `AutoRequestRecorder.cs` records a recipe's decision as a request-ledger want while phase 3 is on.
+* **`/Services/Arr/CalendarDedup.cs`**: Merges calendar events several instances report for the same release; "also in"
+  names only instances whose event the caller may see.
+* **`/Helpers/Jellyseerr/SeerrDownloadStatusProjector.cs`**: Strips release names, download ids and arr ids from the
+  download rows in Seerr answers for anyone who isn't an administrator.

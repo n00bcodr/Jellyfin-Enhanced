@@ -8,6 +8,7 @@ using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Globalization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
 namespace JE.Tests;
@@ -349,4 +350,93 @@ public class ApiSeerrTests
         Assert.Single(f.Calls, c => c.Method == "POST");
     }
 
+
+    [Fact]
+    public async Task NonAdminsGetDownloadRowsWithoutReleaseNamesOnFreshAndCachedAnswersAndAdminsGetSeerrsOwn()
+    {
+        using var f = new SeerrFixture();
+        f.Reply = _ => IntegrationTransport.Response(PrivacySeerrDownloadStatusTests.Details());
+        var fresh = Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content!;
+        var cached = Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content!;
+        Assert.Single(f.Calls, c => c.Path == "/api/v1/movie/603");
+        foreach (var body in new[] { fresh, cached })
+        {
+            Assert.DoesNotContain("MOCKHD", body, StringComparison.Ordinal);
+            Assert.DoesNotContain("SABnzbd", body, StringComparison.Ordinal);
+            Assert.Contains("\"group\":\"g1\"", body, StringComparison.Ordinal);
+            Assert.DoesNotContain("radarr.lan", body, StringComparison.Ordinal);
+        }
+        f.SetUser(f.UserId, admin: true);
+        var admin = Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content!;
+        Assert.Contains("The.Matrix.1999.1080p.BluRay.x264-MOCKHD", admin, StringComparison.Ordinal);
+        Assert.Contains("radarr.lan", admin, StringComparison.Ordinal);
+        // The cache still holds Seerr's own body: the next non-admin answer is projected again.
+        f.SetUser(f.UserId);
+        Assert.DoesNotContain("MOCKHD", Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content!, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("je", true)]
+    [InlineData("seerr", false)]
+    public async Task AfterTheHandOverToJeNoRequestWriteReachesSeerr(string backend, bool refused)
+    {
+        using var f = new SeerrFixture();
+        var c = f.Plugin.Plugin.Configuration;
+        c.ArrIntegrationEnabled = true; c.ArrPhase1Enabled = true; c.ArrPhase3Enabled = true; c.ArrRequestBackend = backend; c.DownloadsPageEnabled = true;
+        var write = await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":603,\"is4k\":false}"));
+        var act = await f.Controller.ActOnRequest(12);
+        if (refused)
+        {
+            foreach (var result in new[] { write, act })
+            {
+                var conflict = Assert.IsType<ObjectResult>(result);
+                Assert.Equal(409, conflict.StatusCode);
+                Assert.Contains("requests_in_je", JsonSerializer.Serialize(conflict.Value), StringComparison.Ordinal);
+            }
+            Assert.Empty(f.Calls);                                   // not even a user lookup
+            Assert.IsType<ContentResult>(await f.Controller.GetMovie(603));   // reads still work
+        }
+        else
+        {
+            Assert.Contains(f.Calls, call => call.Method == "POST" && call.Path == "/api/v1/request");
+        }
+    }
+
+    [Fact]
+    public async Task AMoveFromSeerrWaitsForJesSeerrWritesInFlightAndRefusesNewOnesUntilItEnds()
+    {
+        using var f = new SeerrFixture();
+        var c = f.Plugin.Plugin.Configuration;
+        c.ArrIntegrationEnabled = true; c.ArrPhase1Enabled = true; c.ArrPhase3Enabled = true; c.ArrRequestBackend = "seerr"; c.DownloadsPageEnabled = true;
+        var fence = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.SeerrRequestWriteFence();
+        f.Controller.HttpContext.RequestServices = new ServiceCollection().AddSingleton(fence).BuildServiceProvider();
+        var posted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Reply = r =>
+        {
+            if (r.Method == HttpMethod.Post) { posted.TrySetResult(); release.Task.Wait(TimeSpan.FromSeconds(10)); }
+            return IntegrationTransport.Response("{\"id\":99}");
+        };
+        // A request write is on its way to Seerr when the move starts: the move waits for it.
+        var write = Task.Run(() => f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":603,\"is4k\":false}")));
+        await posted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var move = fence.BeginMoveAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+        await Task.Delay(150);
+        Assert.False(move.IsCompleted);
+        // New writes are refused at once, before any Seerr call, while the move waits and while it runs.
+        var calls = f.Calls.Count;
+        var busy = Assert.IsType<ObjectResult>(await f.Controller.ActOnRequest(12));
+        Assert.Equal(409, busy.StatusCode);
+        Assert.Contains("migration_busy", JsonSerializer.Serialize(busy.Value), StringComparison.Ordinal);
+        Assert.Equal(calls, f.Calls.Count);
+        release.SetResult();
+        Assert.IsType<ContentResult>(await write);
+        var pass = await move.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.NotNull(pass);
+        Assert.Contains("migration_busy", JsonSerializer.Serialize(Assert.IsType<ObjectResult>(await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":604,\"is4k\":false}"))).Value), StringComparison.Ordinal);
+        pass!.Dispose();
+        // The move ended without a switch (still Seerr mode): writes reach Seerr again.
+        Assert.IsType<ContentResult>(await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":605,\"is4k\":false}")));
+        Assert.Equal(2, f.Calls.Count(call => call.Method == "POST" && call.Path == "/api/v1/request"));
+    }
 }

@@ -281,31 +281,48 @@ public class IntegrationRequestReviewRound1Tests
         Assert.Equal(0, reads); Assert.Empty(r.Ledger.Due(r.Now));
     }
 
+    private static Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest.PlaybackTrigger R6Trigger(string key)
+        => new(key, Guid.NewGuid(), "user", new MediaBrowser.Controller.Entities.Movies.Movie());
+
     [Fact]
     public async Task R6PlaybackHandoffKeepsCompletionBehindMoreThan128Events()
     {
-        var logs = new List<string>(); using var queue = new PlaybackWorkQueue(logs.Add);
+        var logs = new List<string>();
+        var executed = 0; var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        queue.Enqueue(async () => { entered.SetResult(); await release.Task; });
+        using var queue = new Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest.PlaybackTriggerChannel(1024, async (t, _) =>
+        {
+            if (t.Key == "first") { entered.SetResult(); await release.Task; }
+            else if (t.Key == "stopped") completed.SetResult();
+            else Interlocked.Increment(ref executed);
+        }, logs.Add);
+        Assert.True(queue.TryWrite(R6Trigger("first")));
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var executed = 0; var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        for (var i = 0; i < 256; i++) queue.Enqueue(() => { Interlocked.Increment(ref executed); return Task.CompletedTask; });
-        queue.Enqueue(() => { completed.SetResult(); return Task.CompletedTask; });
+        for (var i = 0; i < 256; i++) Assert.True(queue.TryWrite(R6Trigger("progress-" + i)));
+        // Thousands of repeats of waiting progress triggers coalesce instead of filling the queue.
+        for (var i = 0; i < 5000; i++) Assert.True(queue.TryWrite(R6Trigger("progress-" + (i % 256))));
+        Assert.True(queue.TryWrite(R6Trigger("stopped")));
         release.SetResult(); await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(256, executed); Assert.Empty(logs);
+        Assert.Equal(5000, queue.Coalesced); Assert.Equal(0, queue.Dropped);
     }
 
     [Fact]
     public async Task R6PlaybackLogsClosedAdmissionAndWorkFailures()
     {
-        var logs = new List<string>(); using var queue = new PlaybackWorkQueue(logs.Add);
+        var logs = new List<string>();
         var complete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        queue.Enqueue(() => throw new InvalidOperationException());
-        queue.Enqueue(() => { complete.SetResult(); return Task.CompletedTask; });
+        var queue = new Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest.PlaybackTriggerChannel(16, (t, _) =>
+        {
+            if (t.Key == "boom") throw new InvalidOperationException();
+            complete.SetResult(); return Task.CompletedTask;
+        }, logs.Add);
+        queue.TryWrite(R6Trigger("boom"));
+        queue.TryWrite(R6Trigger("ok"));
         await complete.Task.WaitAsync(TimeSpan.FromSeconds(5));
         queue.Dispose(); Assert.Single(logs); Assert.Contains("work failed", logs[0], StringComparison.Ordinal);
-        queue.Enqueue(() => Task.CompletedTask); Assert.Equal(2, logs.Count); Assert.Contains("admission failed", logs[1], StringComparison.Ordinal);
+        Assert.False(queue.TryWrite(R6Trigger("late"))); Assert.Equal(2, logs.Count); Assert.Contains("admission failed", logs[1], StringComparison.Ordinal);
     }
 }
 

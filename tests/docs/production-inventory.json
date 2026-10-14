@@ -75,6 +75,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireMigrationController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
       "category": "Controllers"
     },
@@ -192,6 +196,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrCertificationExtractor.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrDownloadStatusProjector.cs",
       "category": "Helpers"
     },
     {
@@ -511,11 +519,19 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestLedgerImport.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestModels.cs",
       "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestOutbox.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestOutboxEvents.cs",
       "category": "Services"
     },
     {
@@ -536,6 +552,22 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/SeerrBackend.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/SeerrMigration.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/SeerrMigrationReader.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/SeerrRequestWriteFence.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/SharedRequestFacts.cs",
       "category": "Services"
     },
     {
@@ -671,6 +703,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/CalendarDedup.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrChangeDetector.cs",
       "category": "Services"
     },
@@ -720,6 +756,22 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoMovieRequestService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoRequest/AutoRequestOutcome.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoRequest/AutoRequestRecorder.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoRequest/PlaybackTriggerChannel.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoRequest/PlaybackTriggerGate.cs",
       "category": "Services"
     },
     {
@@ -780,10 +832,6 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MovieCollectionsBatch.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PlaybackWorkQueue.cs",
       "category": "Services"
     },
     {
@@ -2040,6 +2088,40 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHouseholdController.cs",
       "following_attributes": [
         "BodyLimit(MaxBodyBytes)"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/migration/seerr",
+      "method": "Status",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireMigrationController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/migration/seerr/preview",
+      "method": "Preview",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireMigrationController.cs",
+      "following_attributes": [
+        "BodyLimit"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/migration/seerr/commit",
+      "method": "Commit",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireMigrationController.cs",
+      "following_attributes": [
+        "BodyLimit"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/migration/seerr/rollback",
+      "method": "Rollback",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireMigrationController.cs",
+      "following_attributes": [
+        "BodyLimit"
       ]
     },
     {
@@ -9290,8 +9372,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 492,
-    "routes": 238,
+    "files": 504,
+    "routes": 242,
     "configuration_properties": 576,
     "storage_references": 81,
     "scheduled_tasks": 14,

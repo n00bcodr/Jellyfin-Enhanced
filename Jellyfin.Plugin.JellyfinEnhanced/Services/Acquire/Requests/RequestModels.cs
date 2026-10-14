@@ -64,6 +64,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return seasons.Length == 0 ? null : this with { Seasons = seasons };
         }
     }
+    /// <summary>Where a want came from: a person's ask (the default), a recipe, or an import from Seerr.</summary>
+    /// <param name="Kind">interactive, automation, or seerr_import.</param>
+    /// <param name="Source">The recipe name, or the JE-assigned Seerr source id for imports.</param>
+    public sealed record RequestOrigin(string Kind, string? Source = null)
+    {
+        /// <summary>A recipe acting on a person's behalf (auto season, auto movie).</summary>
+        public const string AutomationKind = "automation";
+        /// <summary>A request imported from Seerr during the authority transfer.</summary>
+        public const string SeerrImportKind = "seerr_import";
+        /// <summary>An automation origin for one recipe.</summary>
+        public static RequestOrigin Automation(string recipe) => new(AutomationKind, recipe);
+    }
     /// <summary>A single episode coordinate.</summary>
     public sealed record RequestEpisode(int Season, int Episode);
     /// <summary>Create payload; the id is scoped to the signed-in requester.</summary>
@@ -75,8 +87,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>Bulk approval is bounded and each row is independently authorized.</summary>
     public sealed record BulkApproveRequest(string[] Ids);
     /// <summary>A durable request and its private backend context. API responses project this record.</summary>
+    /// <remarks><c>OriginKind</c> is where the intent came from (interactive, automation or seerr_import).</remarks>
     public sealed record RequestWant(string Id, string AcquisitionId, Guid UserId, string ClientRequestId, string Fingerprint,
-        MutationInput Input, string Status, string Reason, int Cost, string ParentalSignature, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, bool Follower = false, MutationInput? OwnedInput = null, string TargetKey = "");
+        MutationInput Input, string Status, string Reason, int Cost, string ParentalSignature, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, bool Follower = false, MutationInput? OwnedInput = null, string TargetKey = "", string OriginKind = "interactive");
     /// <summary>
     /// Authorization facts captured at approval, never returned to a browser. <c>SeerrSeasons</c> (and <c>SeerrUser</c>
     /// when approval didn't know it) are bound right before a Seerr request is sent: the exact seasons and account it

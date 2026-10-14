@@ -45,6 +45,10 @@ test('durable request settings round trip through actual config-page wiring with
     const phase1 = h.window.requestParents.find(p => p.parent === 'arrPhase1Enabled');
     const phase3 = h.window.requestParents.find(p => p.parent === 'arrPhase3Enabled');
     assert.ok(phase1.children.includes('arrPhase3Enabled'));
-    assert.equal(phase3.children.length, Object.keys(config).length - 1);
+    // Every setting except the phase switch itself, plus the "Move requests from Seerr" button.
+    assert.equal(phase3.children.length, Object.keys(config).length);
+    assert.ok(phase3.children.includes('arrSeerrMigrationBtn'));
+    assert.ok(h.document.getElementById('arrSeerrMigrationBtn'));
+    assert.ok(h.document.getElementById('arrSeerrMigrationResult'));
     assert.equal(h.document.querySelector('#arrRequestLabEnabled'), null);
 });

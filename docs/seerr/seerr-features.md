@@ -399,3 +399,7 @@ Automatically request media based on viewing behavior.
 - Trigger on playback start
 - Trigger after X minutes watched
 - Check release date (only request if released)
+
+With **Requests & downloads** phase 3 ("Ask for it") on, both record their requests in Jellyfin Enhanced under the
+household rules instead of sending them to Seerr directly; see
+[Automatic requests with "Ask for it"](../arr/arr-features.md#automatic-requests-with-ask-for-it).

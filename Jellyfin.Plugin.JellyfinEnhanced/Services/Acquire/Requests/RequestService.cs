@@ -46,7 +46,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return normalized with { Key = _aliases?.Canonical(TitleKey.Parse(normalized.Key)!).ToString() ?? normalized.Key };
         }
         /// <summary>Creates one durable request after bounded prerequisite preparation.</summary>
-        public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct)
+        /// <param name="user">The requester.</param>
+        /// <param name="body">Client id and input.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <param name="origin">Automation origin; null for a person's own ask.</param>
+        public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null)
         {
             var input = Normalize(body?.Input);
             if (body == null || input == null) return RequestOutcome.Refused("invalid_input", 400);
@@ -59,7 +63,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var pending in _ledger.ForTitle(input.Key).Where(w => w.Status == "pending" && w.Input.Variant == input.Variant))
                     await _policy.PrepareAsync(pending.UserId, pending.Input, ct).ConfigureAwait(false);
             }
-            var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now());
+            var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin);
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(user), ArrTitleKey.RequestsState });
             if (outcome.Reason == "queued_outage") Signal?.Pulse();
             return outcome;

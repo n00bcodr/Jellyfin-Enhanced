@@ -10,7 +10,7 @@ using Microsoft.Data.Sqlite;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 {
     /// <summary>Transactional request, reservation, approval and outbox storage in acquire.db.</summary>
-    public sealed class RequestLedger
+    public sealed partial class RequestLedger
     {
         private readonly AcquireDatabase _db;
         internal Action<string>? Fault { get; set; }
@@ -30,12 +30,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
         private static List<RequestWant> Wants(SqliteConnection c, SqliteTransaction? t, string where = "1=1", params (string, object?)[] args)
         {
-            using var cmd = Cmd(c, t, "SELECT id,acquisition_id,user_id,client_request_id,fingerprint,mutation_input,status,reason,cost,parental_signature,created_at,updated_at,is_follower,owned_input,target_key FROM wants WHERE " + where + " ORDER BY created_at,id", args);
+            using var cmd = Cmd(c, t, "SELECT id,acquisition_id,user_id,client_request_id,fingerprint,mutation_input,status,reason,cost,parental_signature,created_at,updated_at,is_follower,owned_input,target_key,origin_kind FROM wants WHERE " + where + " ORDER BY created_at,id", args);
             using var r = cmd.ExecuteReader();
             var list = new List<RequestWant>();
             while (r.Read()) list.Add(new(r.GetString(0), r.GetString(1), Guid.Parse(r.GetString(2)), r.GetString(3), r.GetString(4),
                 JsonSerializer.Deserialize<MutationInput>(r.GetString(5))!, r.GetString(6), r.GetString(7), r.GetInt32(8), r.GetString(9),
-                DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(10)), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(11)), r.GetBoolean(12), r.IsDBNull(13) ? null : JsonSerializer.Deserialize<MutationInput>(r.GetString(13)), r.GetString(14)));
+                DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(10)), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(11)), r.GetBoolean(12), r.IsDBNull(13) ? null : JsonSerializer.Deserialize<MutationInput>(r.GetString(13)), r.GetString(14), r.GetString(15)));
             return list;
         }
         internal static void ExtendSchemaTwo(SqliteConnection c, SqliteTransaction t, bool targets, bool reservations, bool onlyEmptyTargets = false)
@@ -187,7 +187,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         /// <summary>Creates intent, quota reservation and (when approved) a job in one commit.</summary>
-        public RequestOutcome Create(Guid user, CreateRequest request, IRequestPolicy policy, DateTimeOffset now)
+        /// <param name="user">The requester.</param>
+        /// <param name="request">Client id and confirmed input.</param>
+        /// <param name="policy">Current policy.</param>
+        /// <param name="now">Commit time.</param>
+        /// <param name="origin">Where the intent came from; automation never self-approves a Member in JE mode.</param>
+        public RequestOutcome Create(Guid user, CreateRequest request, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin = null)
         {
             var normalized = request.Input?.Normalize();
             if (normalized == null || string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128 || request.ClientRequestId.Any(char.IsControl)) return RequestOutcome.Refused("invalid_input", 400);
@@ -195,14 +200,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 // Matching asks may approve existing wants; a later refusal must undo those approvals too.
                 Exec(c, t, "SAVEPOINT request_create");
-                var outcome = CreateCore(c, t, user, request, normalized, policy, now);
+                var outcome = CreateCore(c, t, user, request, normalized, policy, now, origin);
                 if (outcome.HttpStatus >= 400) Exec(c, t, "ROLLBACK TO request_create");
                 Exec(c, t, "RELEASE request_create");
                 return outcome;
             });
         }
-        private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now)
+        private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin)
         {
+            var automation = origin?.Kind == RequestOrigin.AutomationKind;
             if (Deleted(c, t, user)) return RequestOutcome.Refused("user_required");
             var priorHash = Scalar(c, t, "SELECT fingerprint FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId));
             if (priorHash != null && priorHash != normalized.Fingerprint) return RequestOutcome.Refused("idempotency_conflict", 409);
@@ -217,7 +223,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : "denied");
             if (facts.Role != "Admin" && (normalized.InstanceId != null || normalized.ProfileId != null || normalized.RootFolder != null)) return RequestOutcome.Refused("admin_required");
             // An approver's matching ask authorises the shared pending scope, without moving its charge.
-            if (facts.CanApprove && facts.Role is "Manager" or "Admin")
+            // Automation never approves someone else's pending ask on a person's behalf.
+            if (!automation && facts.CanApprove && facts.Role is "Manager" or "Admin")
             {
                 foreach (var pending in Wants(c, t, "title_key=$key AND variant=$v AND status='pending'", ("$key", normalized.Key), ("$v", normalized.Variant))
                     .Where(w => !w.Follower && w.TargetKey == TargetKey(facts) && w.Input.Extra(new[] { normalized }) == null))
@@ -238,7 +245,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 normalized.Extra(new[] { w.Input }) == null && w.UpdatedAt > now.AddDays(-Math.Clamp(policy.Configuration.ArrRequestDeclineCooldownDays, 0, 365)))) return RequestOutcome.Refused("decline_cooldown", outcome: "blocked");
             var covered = Wants(c, t, "title_key=$key AND variant=$v", ("$key", normalized.Key), ("$v", normalized.Variant)).Where(Active).ToArray();
             var authorizedExtra = normalized.Extra(Coverage(c, t, covered, TargetKey(facts)));
-            var auto = facts.Role is "Manager" or "Admin" || (facts.Role == "Member" && facts.Backend == "je" &&
+            var auto = facts.Role is "Manager" or "Admin" || (facts.Role == "Member" && facts.Backend == "je" && !automation &&
                 policy.Configuration.ArrRequestPreset != "approve_everything" &&
                 !OverQuota(facts, Charges(c, t, user), authorizedExtra == null ? 0 : Cost(c, t, authorizedExtra, user, now, facts.WindowDays), authorizedExtra == null ? 0 : EstimateGb(authorizedExtra), now) &&
                 !OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold));
@@ -250,7 +257,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var gb = extra == null ? 0 : EstimateGb(extra);
             if (OverGbCap(facts, Charges(c, t, user), gb, now)) return RequestOutcome.Refused("quota_exceeded", 429, "quota_exceeded");
             var over = OverQuota(facts, Charges(c, t, user, facts.Backend == "seerr"), cost, gb, now);
-            var needsApproval = extra != null && (facts.Role == "Kid" || (facts.Backend == "je" && facts.Role == "Member" && (policy.Configuration.ArrRequestPreset == "approve_everything" || over || OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold))));
+            var needsApproval = extra != null && (facts.Role == "Kid" || (facts.Backend == "je" && facts.Role == "Member" && (automation || policy.Configuration.ArrRequestPreset == "approve_everything" || over || OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold))));
             if (over && facts.Backend == "seerr") return RequestOutcome.Refused("over_quota", 429, "quota_exceeded");
             var confirmedScope = extra == null && ConfirmedScope(c, t, normalized, covered, facts);
             var waitingScope = extra == null && normalized.Extra(Coverage(c, t, covered, TargetKey(facts))) != null;
@@ -267,6 +274,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Exec(c, t, "INSERT INTO wants(id,acquisition_id,user_id,client_request_id,fingerprint,title_key,variant,mutation_input,owned_input,status,reason,cost,parental_signature,is_follower,created_at,updated_at) VALUES($id,$a,$u,$client,$f,$key,$v,$input,$owned,$status,$r,$cost,$p,$follower,$at,$at)",
                 ("$id", id), ("$a", acquisition), ("$u", Id(user)), ("$client", request.ClientRequestId), ("$f", normalized.Fingerprint), ("$key", stored.Key), ("$v", stored.Variant), ("$input", stored.Canonical), ("$owned", extra?.Canonical), ("$status", status), ("$r", reason), ("$cost", cost), ("$p", facts.ParentalSignature), ("$follower", extra == null), ("$at", Ms(now)));
             Exec(c, t, "UPDATE wants SET target_key=$target WHERE id=$id", ("$target", TargetKey(facts)), ("$id", id));
+            if (origin != null)
+                Exec(c, t, "UPDATE wants SET origin_kind=$kind,origin_source_id=$source WHERE id=$id", ("$kind", origin.Kind), ("$source", origin.Source), ("$id", id));
             RememberInput(c, t, user, request.ClientRequestId, normalized.Fingerprint, id);
             Fault?.Invoke("want");
             Reserve(c, t, id, user, cost, gb, status == "pending" ? "held" : "charged", now, "initial");
@@ -287,15 +296,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var jobs = Jobs(c, t, "want_id=$id AND (state IN ('queued','retry','sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown')", ("$id", want.Id));
                 foreach (var job in jobs.Where(j => TargetKey(j.Authorization) == target)) yield return job.Input;
                 if (includePending && want.Status == "pending" && jobs.Count == 0 && want.OwnedInput != null) yield return want.OwnedInput;
+                if (LinkedScope(c, t, want) is { } linked) yield return linked;
+            }
+        }
+        // Scope already sent to the target: succeeded jobs, and requests that were already processing in Seerr
+        // when they moved (Seerr sent them; JE never sends them again).
+        private static IEnumerable<MutationInput> Confirmed(SqliteConnection c, SqliteTransaction t, IEnumerable<RequestWant> wants, string target)
+        {
+            foreach (var want in wants)
+            {
+                foreach (var job in Jobs(c, t, "want_id=$id AND state='succeeded'", ("$id", want.Id)).Where(j => TargetKey(j.Authorization) == target)) yield return job.Input;
+                if (want.TargetKey == target && LinkedScope(c, t, want) is { } linked) yield return linked;
             }
         }
         private static bool ConfirmedScope(SqliteConnection c, SqliteTransaction t, MutationInput input, RequestWant[] covered, RequestPolicyFacts facts)
-        {
-            var confirmed = covered.SelectMany(w => Jobs(c, t, "want_id=$id AND state='succeeded'", ("$id", w.Id))).Where(j =>
-                j.Authorization.Backend == facts.Backend && j.Authorization.InstanceId == facts.InstanceId &&
-                j.Authorization.ConnectionGeneration == facts.ConnectionGeneration && j.Authorization.SeerrSource == facts.SeerrSource).Select(j => j.Input);
-            return input.Extra(confirmed) == null;
-        }
+            => input.Extra(Confirmed(c, t, covered, TargetKey(facts))) == null;
+        /// <summary>
+        /// The scope of a request that was already processing in Seerr when it moved to JE: linked to its title
+        /// as sent (cost 0, no job) so later asks merge with it instead of sending a second add. Null for any
+        /// other want, and for a moved request that has since been approved into a job of its own.
+        /// </summary>
+        private static MutationInput? LinkedScope(SqliteConnection c, SqliteTransaction? t, RequestWant want)
+            => want.OriginKind == RequestOrigin.SeerrImportKind && want.Status is "sent" or "stale" && want.OwnedInput != null &&
+                Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w LIMIT 1", ("$w", want.Id)) == null ? want.OwnedInput : null;
         private static void RememberInput(SqliteConnection c, SqliteTransaction t, Guid user, string client, string fingerprint, string wantId)
             => Exec(c, t, "INSERT INTO request_inputs VALUES($u,$client,$f,$w)", ("$u", Id(user)), ("$client", client), ("$f", fingerprint), ("$w", wantId));
         private static void Reserve(SqliteConnection c, SqliteTransaction t, string id, Guid user, int cost, double gb, string state, DateTimeOffset now, string scope)
@@ -437,9 +460,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (follower.Input.Extra(Coverage(c, t, wants, follower.TargetKey)) != null) continue;
                 if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id LIMIT 1", ("$id", follower.Id)) != null) continue;
                 if (RequestPolicy.Check(policy.Evaluate(follower.UserId, follower.Input), approving ? policy.Evaluate(actor, follower.Input) : null, follower.Input, approving) != null) continue;
-                Exec(c, t, "UPDATE wants SET status='queued',reason='queued_outage',owned_input=NULL,is_follower=1,cost=0,updated_at=$at WHERE id=$id", ("$at", Ms(now)), ("$id", follower.Id));
+                // Scope that is already sent has no job left to complete, so the follower is sent now too.
+                var sent = follower.Input.Extra(Confirmed(c, t, wants, follower.TargetKey)) == null;
+                Exec(c, t, "UPDATE wants SET status=$s,reason=$r,owned_input=NULL,is_follower=1,cost=0,updated_at=$at WHERE id=$id",
+                    ("$s", sent ? "sent" : "queued"), ("$r", sent ? "looking" : "queued_outage"), ("$at", Ms(now)), ("$id", follower.Id));
                 Exec(c, t, "UPDATE reservations SET state='charged',cost=0,estimated_gb=0,episode_count=0,charged_at=$at WHERE want_id=$id AND scope='initial' AND state='held'", ("$at", Ms(now)), ("$id", follower.Id));
-                Record(c, t, follower.Id, null, actor, "merged", "accepted", "queued_outage", follower.Input.Key, now);
+                Record(c, t, follower.Id, null, actor, "merged", "accepted", sent ? "looking" : "queued_outage", follower.Input.Key, now);
             }
         }
         /// <summary>Cancel or decline; uncertain/in-flight writes cannot be refunded or deleted.</summary>
@@ -453,7 +479,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (declineReason == null ? actor != want.UserId && facts.Role != "Admin" : !facts.CanApprove) return RequestOutcome.Refused("requests_approve_required");
                 if (declineReason != null && (string.IsNullOrWhiteSpace(declineReason) || declineReason.Length > 500 || declineReason.Any(ch => char.IsControl(ch) && ch != '\n'))) return RequestOutcome.Refused("invalid_reason", 400);
                 if (!Active(want) || (declineReason != null && want.Status != "pending")) return RequestOutcome.Refused("request_changed", 409);
-                if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$id", id)) != null) return RequestOutcome.Refused("request_in_flight", 409);
+                if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$id", id)) != null ||
+                    LinkedScope(c, t, want) != null) return RequestOutcome.Refused("request_in_flight", 409);
                 var state = declineReason == null ? "cancelled" : "declined";
                 Exec(c, t, "UPDATE wants SET status=$s,reason=$s,updated_at=$at WHERE id=$id", ("$s", state), ("$at", Ms(now)), ("$id", id));
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE want_id=$id", ("$id", id));
@@ -571,8 +598,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     var acquisition = Scalar(c, t, "SELECT acquisition_id FROM wants WHERE id=$id", ("$id", job.WantId));
                     var shared = Wants(c, t, "acquisition_id=$a", ("$a", acquisition));
-                    var confirmed = shared.SelectMany(w => Jobs(c, t, "want_id=$id AND state='succeeded'", ("$id", w.Id)))
-                        .Where(j => TargetKey(j.Authorization) == TargetKey(job.Authorization)).Select(j => j.Input).ToArray();
+                    // Succeeded jobs and scope Seerr was already processing when it moved (linked imports).
+                    var confirmed = Confirmed(c, t, shared, TargetKey(job.Authorization)).ToArray();
                     // A mixed intent is sent only after every part, including shared scope, is confirmed.
                     var activeCoverage = Coverage(c, t, shared, TargetKey(job.Authorization)).ToArray();
                     shared = shared.Where(w => w.TargetKey == TargetKey(job.Authorization)).ToList();
@@ -607,6 +634,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Exec(c, t, "INSERT OR IGNORE INTO request_deleted_users VALUES($u)", ("$u", MutationInput.Hash("deleted:" + id)));
             Exec(c, t, "UPDATE approvals SET actor_id=NULL WHERE actor_id=$u", ("$u", id));
             Exec(c, t, "UPDATE request_audit SET actor_id=NULL WHERE actor_id=$u", ("$u", id));
+            Exec(c, t, "UPDATE import_batches SET actor_id=NULL WHERE actor_id=$u", ("$u", id));
+            Exec(c, t, "DELETE FROM automation_log WHERE user_id=$u", ("$u", id));
             // Revoke only known-unsent approvals. Preserve send certainty and anonymise every retained context.
             const string unsent = "json_extract(authorization_context,'$.Approver')=$guid AND state IN ('queued','retry') AND COALESCE(json_extract(outcome,'$.certainty'),'Rejected')<>'Unknown'";
             Exec(c, t, "UPDATE wants SET status='pending',reason='identity_changed' WHERE id IN (SELECT want_id FROM jobs WHERE " + unsent + ")", ("$guid", user.ToString()));
@@ -618,12 +647,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var anonymous = MutationInput.Hash("deleted:" + id)[..32].ToLowerInvariant();
             var retained = Wants(c, t, "user_id=$u", ("$u", id)).Where(w =>
                 Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$w", w.Id)) != null ||
+                LinkedScope(c, t, w) != null ||
                 Wants(c, t, "acquisition_id=$a AND id<>$w", ("$a", w.AcquisitionId), ("$w", w.Id)).Any(f => Active(f) && f.TargetKey == w.TargetKey && f.Input.Extra(new[] { w.Input })?.Fingerprint != f.Input.Fingerprint)).ToArray();
             foreach (var want in retained)
             {
+                var linked = LinkedScope(c, t, want) != null;
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$w AND state IN ('queued','retry') AND COALESCE(json_extract(outcome,'$.certainty'),'Rejected')<>'Unknown')", ("$w", want.Id));
                 Exec(c, t, "UPDATE jobs SET state='cancelled',reason='identity_changed' WHERE want_id=$w AND state IN ('queued','retry') AND COALESCE(json_extract(outcome,'$.certainty'),'Rejected')<>'Unknown'", ("$w", want.Id));
-                if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$w", want.Id)) == null)
+                if (!linked && Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$w", want.Id)) == null)
                     Exec(c, t, "UPDATE wants SET status='cancelled',reason='identity_changed' WHERE id=$w", ("$w", want.Id));
                 Exec(c, t, "UPDATE wants SET user_id=$anon,client_request_id=id,fingerprint='',parental_signature='null',cost=(SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=wants.id AND state='charged') WHERE id=$w", ("$anon", anonymous), ("$w", want.Id));
                 Exec(c, t, "UPDATE jobs SET authorization_context=json_set(authorization_context,'$.Requester',$anon,'$.SeerrPermissions',0) WHERE want_id=$w", ("$anon", Guid.Parse(anonymous).ToString()), ("$w", want.Id));
@@ -641,6 +672,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Exec(c, t, "DELETE FROM request_events WHERE created_at<$at", ("$at", Ms(now.AddHours(-48))));
             Exec(c, t, "DELETE FROM request_notices WHERE created_at<$at", ("$at", Ms(now.AddDays(-90))));
             Exec(c, t, "DELETE FROM request_audit WHERE created_at<$at", ("$at", Ms(now.AddDays(-180))));
+            Exec(c, t, "DELETE FROM automation_log WHERE created_at<$at", ("$at", Ms(now.AddDays(-90))));
             Exec(c, t, "DELETE FROM wants WHERE status IN ('fulfilled','cancelled','declined') AND updated_at<$at", ("$at", Ms(now.AddYears(-1))));
             return Exec(c, t, "UPDATE wants SET status='stale',reason='stale' WHERE status='sent' AND created_at<$at", ("$at", Ms(now.AddDays(-Math.Clamp(staleDays, 1, 365)))));
         });
