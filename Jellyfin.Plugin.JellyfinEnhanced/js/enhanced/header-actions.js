@@ -309,6 +309,11 @@
             header.classList.add('je-header-actions-host');
             row.classList.add('je-header-actions-row');
             header.prepend(tray);
+            // Drop stand-ins that helpers.js created while the native tray was missing,
+            // including one left empty by a user switch.
+            document.querySelectorAll('[data-je-header-fallback]').forEach(stale => {
+                if (stale !== header && !stale.children.length) stale.remove();
+            });
             schedule();
         }
     }
