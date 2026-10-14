@@ -1,0 +1,346 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
+namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
+{
+    /// <summary>A user's settings as the server serves them, with the per-key state they were resolved from.</summary>
+    public sealed class ResolvedUserSettings
+    {
+        internal ResolvedUserSettings(UserSettings values, UserSettings? defaults, UserSettingsMeta meta, IReadOnlyList<string> locked)
+        {
+            Values = values;
+            Defaults = defaults;
+            Meta = meta;
+            Locked = locked;
+        }
+
+        /// <summary>Gets the effective values (no provenance block).</summary>
+        public UserSettings Values { get; }
+
+        /// <summary>Gets what each inheritable key resolves to while it follows the admin default; null without a plugin configuration.</summary>
+        public UserSettings? Defaults { get; }
+
+        /// <summary>Gets the stored provenance, normalised to registry keys (empty lists for a legacy file).</summary>
+        public UserSettingsMeta Meta { get; }
+
+        /// <summary>Gets the keys an admin lock forces to the admin value.</summary>
+        public IReadOnlyList<string> Locked { get; }
+
+        /// <summary>Whether the key follows the admin default.</summary>
+        /// <param name="key">A canonical registry key.</param>
+        /// <returns>True when the key is Following.</returns>
+        public bool IsFollowing(string key) => Meta.Following.Contains(key, StringComparer.Ordinal);
+
+        /// <summary>Whether an admin lock forces the key to the admin value.</summary>
+        /// <param name="key">A canonical registry key.</param>
+        /// <returns>True when the key is locked.</returns>
+        public bool IsLocked(string key) => Locked.Contains(key, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// The one place that turns a stored settings.json into the values the server serves (the GET,
+    /// bootstrap and the native poster path), first match winning:
+    /// 1. Locked: the admin value (PluginConfiguration.LockedUserSettings, read through LockedKeys).
+    /// 2. Following: the current admin default, as the seed would write it.
+    /// 3. Chosen or Existing: the stored value, sentinels included (null *TagOrder, "" positions).
+    /// 4. A key missing from the file already holds its C# initializer from the typed read.
+    /// A legacy file (no "_je" block) is all-Existing, so it resolves to exactly what it stores.
+    /// </summary>
+    public static class UserSettingsResolver
+    {
+        /// <summary>The colours (text, background) of the subtitle style presets, as JE.subtitlePresets in js/enhanced/player/subtitles.js.</summary>
+        private static readonly (string Text, string Background)[] SubtitleStyleColours =
+        {
+            ("#FFFFFFFF", "transparent"),
+            ("#FFFFFFFF", "#000000FF"),
+            ("#FFFFFFFF", "#000000B2"),
+            ("#FFFF00FF", "#000000B2"),
+            ("#FFFFFFFF", "#444444B2"),
+            ("#000000FF", "#FFFFFFFF"),
+        };
+
+        /// <summary>Resolves a stored document against the current plugin configuration.</summary>
+        /// <param name="stored">The document as read from disk.</param>
+        /// <param name="config">The plugin configuration, or null when it is not loaded (Following keys then keep their cached values).</param>
+        /// <returns>The effective values and their state.</returns>
+        public static ResolvedUserSettings Resolve(UserSettings stored, PluginConfiguration? config)
+        {
+            ArgumentNullException.ThrowIfNull(stored);
+            var meta = Normalize(stored.Meta);
+            var values = stored.CloneValues();
+            var defaults = config == null ? null : UserSettingsRegistry.BuildDefaults(config);
+            var locked = LockedKeys(config);
+            if (defaults != null)
+            {
+                foreach (var descriptor in UserSettingsRegistry.All)
+                {
+                    if (locked.Contains(descriptor.Key, StringComparer.Ordinal) || meta.Following.Contains(descriptor.Key, StringComparer.Ordinal))
+                    {
+                        descriptor.Property.SetValue(values, descriptor.Property.GetValue(defaults));
+                    }
+                }
+            }
+
+            return new ResolvedUserSettings(values, defaults, meta, locked);
+        }
+
+        /// <summary>
+        /// The Meta sibling of a served settings document (GET ?meta=true, bootstrap SettingsMeta and the
+        /// /patch answer), with every setting name in PascalCase: Schema, Revision, ConfigEpoch; the
+        /// Following, Chosen, ChangedByAdmin and Locked keys; Saved (the stored value of each locked
+        /// key); Defaults (what each key with an admin default resolves to while it follows it); Reach
+        /// (the effective reach of every key that is not web-only); Unavailable (keys whose admin gate
+        /// is off, with the gate's name); Differs (the keys that can follow a default, are neither
+        /// locked nor Following, and would look different if they followed it, see
+        /// <see cref="FollowingChangesNothing"/>).
+        /// </summary>
+        /// <param name="resolved">The resolved document.</param>
+        /// <param name="stored">The stored document it was resolved from.</param>
+        /// <param name="revision">The stored document's revision.</param>
+        /// <param name="configEpoch">The plugin's current config epoch.</param>
+        /// <param name="config">The plugin configuration, or null when it is not loaded.</param>
+        /// <returns>The Meta object.</returns>
+        public static JsonObject DescribeMeta(ResolvedUserSettings resolved, UserSettings stored, string revision, string configEpoch, PluginConfiguration? config)
+        {
+            ArgumentNullException.ThrowIfNull(resolved);
+            ArgumentNullException.ThrowIfNull(stored);
+            var saved = new JsonObject();
+            var defaults = new JsonObject();
+            var reach = new JsonObject();
+            var unavailable = new JsonObject();
+            var differs = new List<string>();
+            foreach (var descriptor in UserSettingsRegistry.All)
+            {
+                var type = descriptor.Property.PropertyType;
+                if (resolved.Defaults != null && UserSettingsRegistry.CanFollow(descriptor)
+                    && !resolved.IsLocked(descriptor.Key) && !resolved.IsFollowing(descriptor.Key)
+                    && !FollowingChangesNothing(descriptor, resolved.Values, resolved.Defaults))
+                {
+                    differs.Add(descriptor.Key);
+                }
+
+                if (resolved.IsLocked(descriptor.Key))
+                {
+                    saved[descriptor.Key] = JsonSerializer.SerializeToNode(descriptor.Property.GetValue(stored), type);
+                }
+
+                if (resolved.Defaults != null && descriptor.AdminProperty != null)
+                {
+                    defaults[descriptor.Key] = JsonSerializer.SerializeToNode(descriptor.Property.GetValue(resolved.Defaults), type);
+                }
+
+                if (config == null)
+                {
+                    continue;
+                }
+
+                if (descriptor.Setting.Reach != SettingReach.Web)
+                {
+                    reach[descriptor.Key] = UserSettingsRegistry.EffectiveReach(descriptor, config).ToString();
+                }
+
+                if (descriptor.Setting.GateBy != null
+                    && typeof(PluginConfiguration).GetProperty(descriptor.Setting.GateBy)?.GetValue(config) is false)
+                {
+                    unavailable[descriptor.Key] = descriptor.Setting.GateBy;
+                }
+            }
+
+            return new JsonObject
+            {
+                ["Schema"] = UserSettingsMeta.CurrentSchema,
+                ["Revision"] = revision,
+                ["ConfigEpoch"] = configEpoch,
+                ["Following"] = Names(resolved.Meta.Following),
+                ["Chosen"] = Names(resolved.Meta.Chosen),
+                ["ChangedByAdmin"] = Names(resolved.Meta.ChangedByAdmin),
+                ["Locked"] = Names(resolved.Locked),
+                ["Saved"] = saved,
+                ["Defaults"] = defaults,
+                ["Reach"] = reach,
+                ["Unavailable"] = unavailable,
+                ["Differs"] = Names(differs),
+            };
+        }
+
+        /// <summary>
+        /// Whether a stored value is what the key shows while it follows the admin default: equal to
+        /// the default, or a legacy sentinel that already means "use the admin value" (a null
+        /// *TagOrder, an empty position or audio language).
+        /// </summary>
+        /// <param name="descriptor">The registry entry.</param>
+        /// <param name="value">The stored (or posted) value.</param>
+        /// <param name="defaults">What every key resolves to while it follows the default (<see cref="UserSettingsRegistry.BuildDefaults"/>).</param>
+        /// <returns>True when following the default would change nothing the user sees.</returns>
+        public static bool EqualsDefault(UserSettingDescriptor descriptor, object? value, UserSettings defaults)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+            ArgumentNullException.ThrowIfNull(defaults);
+            return Equals(value, descriptor.Property.GetValue(defaults))
+                || (descriptor.Setting.NullInheritsAdmin && value == null)
+                || (descriptor.Setting.EmptyInheritsAdmin && value is string text && text.Length == 0);
+        }
+
+        /// <summary>
+        /// Whether a key of a stored document would look the same to the user if it followed the
+        /// admin default: <see cref="EqualsDefault"/>, and for the subtitle style also its colours
+        /// (see <see cref="ShowsStyleColours"/>).
+        /// </summary>
+        /// <param name="descriptor">The registry entry.</param>
+        /// <param name="stored">The stored document (its own values, not resolved).</param>
+        /// <param name="defaults">What every key resolves to while it follows the admin default.</param>
+        /// <returns>True when following the default would change nothing the user sees.</returns>
+        public static bool FollowingChangesNothing(UserSettingDescriptor descriptor, UserSettings stored, UserSettings defaults)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+            ArgumentNullException.ThrowIfNull(stored);
+            ArgumentNullException.ThrowIfNull(defaults);
+            return EqualsDefault(descriptor, descriptor.Property.GetValue(stored), defaults)
+                && (descriptor.Key != nameof(UserSettings.SelectedStylePresetIndex) || ShowsStyleColours(stored, defaults.SelectedStylePresetIndex));
+        }
+
+        /// <summary>
+        /// Whether a document's subtitle colours look like those of a style preset. The client
+        /// (JE.getSubtitleColors in js/enhanced/player/subtitles.js) shows the saved colours, but
+        /// the preset's colours while the style is locked or follows the default, unless the user
+        /// picked custom colours. The saved colours can be other than the style's preset's: the
+        /// old seed wrote the admin's style without its colours.
+        /// </summary>
+        /// <param name="stored">The stored document.</param>
+        /// <param name="presetIndex">The style preset.</param>
+        /// <returns>True when a locked or followed style shows the colours the user sees now.</returns>
+        public static bool ShowsStyleColours(UserSettings stored, int presetIndex)
+        {
+            ArgumentNullException.ThrowIfNull(stored);
+            if (stored.UsingCustomColors || presetIndex < 0 || presetIndex >= SubtitleStyleColours.Length)
+            {
+                return true;
+            }
+
+            var (text, background) = SubtitleStyleColours[presetIndex];
+            return CanonicalColour(stored.CustomSubtitleTextColor, "#FFFFFFFF") == CanonicalColour(text, text)
+                && CanonicalColour(stored.CustomSubtitleBgColor, "#00000000") == CanonicalColour(background, background);
+        }
+
+        /// <summary>
+        /// The subtitle colours (text, background) the client shows for a document
+        /// (JE.getSubtitleColors in js/enhanced/player/subtitles.js): the style preset's while
+        /// <paramref name="presetApplies"/> (the style is locked or follows the default) and the user
+        /// did not pick custom colours, else the saved ones; both as #RRGGBBAA in upper case.
+        /// </summary>
+        /// <param name="values">The effective values (the style index as resolved).</param>
+        /// <param name="presetApplies">Whether the style is locked or follows the default.</param>
+        /// <returns>The colours shown.</returns>
+        public static (string Text, string Background) ShownStyleColours(UserSettings values, bool presetApplies)
+        {
+            ArgumentNullException.ThrowIfNull(values);
+            var index = values.SelectedStylePresetIndex;
+            if (presetApplies && !values.UsingCustomColors && index >= 0 && index < SubtitleStyleColours.Length)
+            {
+                var (text, background) = SubtitleStyleColours[index];
+                return (CanonicalColour(text, text), CanonicalColour(background, background));
+            }
+
+            return (CanonicalColour(values.CustomSubtitleTextColor, "#FFFFFFFF"), CanonicalColour(values.CustomSubtitleBgColor, "#00000000"));
+        }
+
+        /// <summary>A stored colour as #RRGGBBAA in upper case ("transparent" is #00000000, #RRGGBB opaque); empty uses the client's fallback.</summary>
+        private static string CanonicalColour(string? colour, string fallback)
+        {
+            var text = string.IsNullOrWhiteSpace(colour) ? fallback : colour.Trim();
+            if (string.Equals(text, "transparent", StringComparison.OrdinalIgnoreCase))
+            {
+                return "#00000000";
+            }
+
+            text = text.ToUpperInvariant();
+            return text.Length == 7 && text[0] == '#' ? text + "FF" : text;
+        }
+
+        /// <summary>
+        /// A clean copy of a stored "_je" block: entries matched to registry keys ignoring case and
+        /// written in their canonical spelling, unknown or renamed keys dropped, Following limited to
+        /// keys with an admin default, a key Following or Chosen but never both (Following wins), and
+        /// ChangedByAdmin limited to Chosen keys. Always returns a new object.
+        /// </summary>
+        /// <param name="meta">The stored block, or null for a legacy file.</param>
+        /// <returns>The normalised block.</returns>
+        public static UserSettingsMeta Normalize(UserSettingsMeta? meta)
+        {
+            var following = Keys(meta?.Following);
+            var chosen = Keys(meta?.Chosen);
+            var changedByAdmin = Keys(meta?.ChangedByAdmin);
+            var result = new UserSettingsMeta
+            {
+                Schema = meta?.Schema ?? UserSettingsMeta.CurrentSchema,
+                Ops = meta?.Ops == null
+                    ? new Dictionary<string, string>()
+                    : new Dictionary<string, string>(meta.Ops.Where(op => op.Key != null && op.Value != null), StringComparer.Ordinal),
+                Updated = meta?.Updated,
+            };
+            foreach (var descriptor in UserSettingsRegistry.All)
+            {
+                var key = descriptor.Key;
+                if (following.Contains(key) && UserSettingsRegistry.CanFollow(descriptor))
+                {
+                    result.Following.Add(key);
+                }
+                else if (chosen.Contains(key))
+                {
+                    result.Chosen.Add(key);
+                    if (changedByAdmin.Contains(key))
+                    {
+                        result.ChangedByAdmin.Add(key);
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// The keys an admin lock forces to the admin value: the one reader of
+        /// <see cref="PluginConfiguration.LockedUserSettings"/>. Null-safe (a JSON null or a missing
+        /// element reads as no locks); entries are matched to registry keys ignoring case and
+        /// returned once each, in registry order, in their canonical spelling; anything that is not a
+        /// Lockable registry key (unknown, renamed or user-only) is ignored. Every read and write path
+        /// (GET, bootstrap, the legacy POST, /patch and the native poster path) goes through this.
+        /// </summary>
+        /// <param name="config">The plugin configuration, or null when it is not loaded (no locks).</param>
+        /// <returns>The locked registry keys.</returns>
+        public static IReadOnlyList<string> LockedKeys(PluginConfiguration? config)
+        {
+            var entries = config?.LockedUserSettings;
+            if (entries == null || entries.Length == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            var wanted = Keys(entries);
+            return UserSettingsRegistry.All
+                .Where(descriptor => descriptor.Setting.Lockable && wanted.Contains(descriptor.Key))
+                .Select(descriptor => descriptor.Key)
+                .ToArray();
+        }
+
+        /// <summary>
+        /// The entries of <see cref="PluginConfiguration.LockedUserSettings"/> that
+        /// <see cref="LockedKeys"/> ignores (not a Lockable registry key), for the log.
+        /// </summary>
+        /// <param name="config">The plugin configuration.</param>
+        /// <returns>The ignored entries, as stored.</returns>
+        public static IReadOnlyList<string> IgnoredLockEntries(PluginConfiguration? config)
+            => (config?.LockedUserSettings ?? Array.Empty<string>())
+                .Where(entry => !(entry != null && UserSettingsRegistry.TryGet(entry, out var descriptor) && descriptor.Setting.Lockable))
+                .Select(entry => entry ?? "(null)")
+                .ToArray();
+
+        private static JsonArray Names(IEnumerable<string> keys) => new(keys.Select(key => (JsonNode?)key).ToArray());
+
+        private static HashSet<string> Keys(IEnumerable<string>? entries)
+            => new HashSet<string>((entries ?? Enumerable.Empty<string>()).Where(entry => entry != null), StringComparer.OrdinalIgnoreCase);
+    }
+}

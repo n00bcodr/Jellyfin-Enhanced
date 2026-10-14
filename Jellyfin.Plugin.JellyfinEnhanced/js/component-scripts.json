@@ -107,6 +107,7 @@
     "enhanced/settingspanel/ui-panel-template.js",
     "enhanced/settingspanel/ui-panel-shortcut-editor.js",
     "enhanced/settingspanel/ui-panel-settings.js",
+    "enhanced/settingspanel/ui-panel-provenance.js",
     "enhanced/settingspanel/ui-panel-hidden-content.js",
     "enhanced/settingspanel/ui-panel-language.js",
     "enhanced/settingspanel/ui-panel.js",

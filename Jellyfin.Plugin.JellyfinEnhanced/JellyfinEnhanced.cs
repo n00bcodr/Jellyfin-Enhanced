@@ -152,6 +152,71 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public override Guid Id => Guid.Parse("f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b");
         public static JellyfinEnhanced? Instance { get; private set; }
 
+        /// <summary>A saved configuration and the <see cref="ConfigEpoch"/> that belongs to it.</summary>
+        /// <param name="Configuration">The configuration object.</param>
+        /// <param name="Epoch">The epoch issued when it became the configuration.</param>
+        /// <param name="Unlocked">What <see cref="RecentlyUnlockedSettings"/> recorded once the same save took effect.</param>
+        public sealed record ConfigurationSnapshot(PluginConfiguration Configuration, string Epoch, RecentlyUnlockedSettings.Snapshot Unlocked);
+
+        private volatile ConfigurationSnapshot? _configurationSnapshot;
+
+        /// <summary>
+        /// Gets the configuration together with its epoch, read as one: a caller that computes from
+        /// the configuration and echoes or checks the epoch uses this, so a save in between cannot
+        /// pair one configuration with the other's epoch. Replaced (under the configuration lock)
+        /// after every admin save.
+        /// </summary>
+        public ConfigurationSnapshot CurrentConfiguration
+        {
+            get
+            {
+                var snapshot = _configurationSnapshot;
+                if (snapshot != null) return snapshot;
+                lock (AnalyticsCredentialLock)
+                {
+                    return _configurationSnapshot ??= new ConfigurationSnapshot(Configuration, NewConfigEpoch(), RecentlyUnlockedSettings.Capture());
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets a random token that changes on plugin load and on every admin config save, so a client
+        /// can tell that the configuration (defaults, master switches, gates) may have changed.
+        /// </summary>
+        public string ConfigEpoch => CurrentConfiguration.Epoch;
+
+        /// <summary>
+        /// Remembers the keys an admin save unlocked (for the legacy POST's stale-tab guard) and logs
+        /// the lock changes, plus any LockedUserSettings entry that is not a lockable setting (ignored).
+        /// </summary>
+        private void RecordLockChanges(PluginConfiguration? previous, PluginConfiguration? current)
+        {
+            try
+            {
+                RecentlyUnlockedSettings.Record(previous, current);
+                var before = UserSettingsResolver.LockedKeys(previous);
+                var after = UserSettingsResolver.LockedKeys(current);
+                var locked = after.Except(before, StringComparer.Ordinal).ToArray();
+                var unlocked = before.Except(after, StringComparer.Ordinal).ToArray();
+                if (locked.Length > 0 || unlocked.Length > 0)
+                {
+                    _logger.Info($"User settings locks changed: locked [{string.Join(", ", locked)}], unlocked [{string.Join(", ", unlocked)}]; {after.Count} locked in total.");
+                }
+
+                var ignored = UserSettingsResolver.IgnoredLockEntries(current);
+                if (ignored.Count > 0)
+                {
+                    _logger.Warning($"LockedUserSettings has entries that are not lockable settings and are ignored: {string.Join(", ", ignored)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not record user settings lock changes: {ex.Message}");
+            }
+        }
+
+        private static string NewConfigEpoch() =>Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
+
         private string IndexHtmlPath => Path.Combine(_applicationPaths.WebPath, "index.html");
 
         public static string BrandingDirectory
@@ -274,7 +339,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     }
                 }
 
-                base.UpdateConfiguration(configuration);
+                if (configuration is PluginConfiguration saved)
+                {
+                    // Admin saves arrive through Jellyfin's JSON plugin-config endpoint, where
+                    // "LockedUserSettings": null is possible; keep the property non-null.
+                    saved.LockedUserSettings ??= Array.Empty<string>();
+                }
+
+                var previous = Configuration;
+                try
+                {
+                    base.UpdateConfiguration(configuration);
+                    RecordLockChanges(previous, Configuration);
+                }
+                finally
+                {
+                    // The new epoch is issued with the configuration it belongs to, in one step.
+                    _configurationSnapshot = new ConfigurationSnapshot(Configuration!, NewConfigEpoch(), RecentlyUnlockedSettings.Capture());
+                }
             }
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
 

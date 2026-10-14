@@ -219,7 +219,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public static PosterTagSettings FromSettingsJson(string? settingsJson, PluginConfiguration config, string? jellyfinAudioLanguagePreference = null)
         {
             if (settingsJson is null) return FromUserSettings(null, config, jellyfinAudioLanguagePreference);
-            return FromUserSettings(ReadAsServer(settingsJson), config, jellyfinAudioLanguagePreference);
+            return FromUserSettings(ResolveAsServer(ReadAsServer(settingsJson), config), config, jellyfinAudioLanguagePreference);
         }
 
         /// <summary>
@@ -255,7 +255,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 parsed = ReadAsServer(json);
             }
 
-            return FromUserSettings(parsed, config, jellyfinAudioLanguagePreference);
+            return FromUserSettings(parsed == null ? null : ResolveAsServer(parsed, config), config, jellyfinAudioLanguagePreference);
+        }
+
+        /// <summary>
+        /// The values the server serves the web for the stored document (UserSettingsResolver), so native
+        /// posters and web overlays always agree. A legacy file (no "_je" block) resolves to itself.
+        /// </summary>
+        private static UserSettings ResolveAsServer(UserSettings stored, PluginConfiguration config)
+        {
+            ArgumentNullException.ThrowIfNull(config);
+            return UserSettingsResolver.Resolve(stored, config).Values;
         }
 
         /// <summary>UserConfigurationManager.GetUserConfiguration&lt;UserSettings&gt; for an existing file's text.</summary>
@@ -414,44 +424,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         }
 
         /// <summary>
-        /// What the web sees for a user without settings.json: the controller writes the plugin
-        /// defaults (only the keys it copies) and reads the file back (JSON nulls ignored).
+        /// What the web sees for a user without settings.json: the controller writes the registry's
+        /// admin defaults and reads the file back (JSON nulls ignored).
         /// </summary>
         private static UserSettings DefaultsAsWritten(PluginConfiguration config)
         {
-            var defaults = new UserSettings
-            {
-                UseNativePosterTags = null,
-                QualityTagsEnabled = config.QualityTagsEnabled,
-                ShowResolutionTag = config.ShowResolutionTag,
-                ShowSourceTag = config.ShowSourceTag,
-                ShowDynamicRangeTag = config.ShowDynamicRangeTag,
-                ShowSpecialFormatTag = config.ShowSpecialFormatTag,
-                ShowVideoCodecTag = config.ShowVideoCodecTag,
-                ShowAudioInfoTag = config.ShowAudioInfoTag,
-                ResolutionTagOrder = config.ResolutionTagOrder,
-                SourceTagOrder = config.SourceTagOrder,
-                DynamicRangeTagOrder = config.DynamicRangeTagOrder,
-                SpecialFormatTagOrder = config.SpecialFormatTagOrder,
-                VideoCodecTagOrder = config.VideoCodecTagOrder,
-                AudioInfoTagOrder = config.AudioInfoTagOrder,
-                GenreTagsEnabled = config.GenreTagsEnabled,
-                LanguageTagsEnabled = config.LanguageTagsEnabled,
-                RatingTagsEnabled = config.RatingTagsEnabled,
-                AgeRatingTagsEnabled = config.AgeRatingTagsEnabled,
-                PeopleTagsEnabled = config.PeopleTagsEnabled,
-                QualityTagsPosition = config.QualityTagsPosition,
-                GenreTagsPosition = config.GenreTagsPosition,
-                LanguageTagsPosition = config.LanguageTagsPosition,
-                RatingTagsPosition = config.RatingTagsPosition,
-                RatingTagsOnMovies = config.RatingTagsOnMovies,
-                RatingTagsOnSeries = config.RatingTagsOnSeries,
-                RatingTagsOnSeasons = config.RatingTagsOnSeasons,
-                RatingTagsOnEpisodes = config.RatingTagsOnEpisodes,
-                RatingTagsOnContinueWatching = config.RatingTagsOnContinueWatching,
-                RatingTagsOnNextUp = config.RatingTagsOnNextUp,
-                AgeRatingTagsPosition = config.AgeRatingTagsPosition,
-            };
+            var defaults = UserSettingsRegistry.BuildDefaults(config);
 
             // SaveUserConfiguration writes nulls; GetUserConfiguration skips them on the way back,
             // so a null admin string comes back as the UserSettings initializer value.

@@ -11,6 +11,9 @@
 
     const { showReleaseNotesNotification } = internal;
 
+    // Panel saves report a failed request with a visible toast instead of only logging it.
+    const PANEL_SAVE_OPTIONS = { notifyOnError: true };
+
     // Position-tab preview text ("AaBbCcDd") mirrors the real font family, and
     // its size scaled relative to "Normal" so it stays legible in the small
     // preview box instead of rendering at the real on-video vw-based size.
@@ -51,7 +54,7 @@
         const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
             document.getElementById(id).addEventListener('change', (e) => {
                 JE.currentSettings[settingKey] = e.target.checked;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 let toastMessage = createToast(featureKey, e.target.checked);
 
                 // Handle tag features with dynamic re-initialization
@@ -147,14 +150,14 @@
                 if (modeSel) {
                     modeSel.addEventListener('change', (e) => {
                         JE.currentSettings.watchProgressMode = e.target.value;
-                        JE.saveUserSettings('settings.json', JE.currentSettings);
+                        JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                         resetAutoCloseTimer();
                     });
                 }
                 if (fmtSel) {
                     fmtSel.addEventListener('change', (e) => {
                         JE.currentSettings.watchProgressTimeFormat = e.target.value;
-                        JE.saveUserSettings('settings.json', JE.currentSettings);
+                        JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                         resetAutoCloseTimer();
                     });
                 }
@@ -169,7 +172,7 @@
             JE.userConfig.settings = JE.userConfig.settings || {};
             JE.userConfig.settings.useNativePosterTags = enabled;
             JE.currentSettings.useNativePosterTags = enabled;
-            JE.saveUserSettings('settings.json', JE.currentSettings);
+            JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
             JE.toast(JE.t('toast_native_poster_tags_saved'));
             resetAutoCloseTimer();
         });
@@ -180,7 +183,7 @@
         const qualitySubGroup = document.getElementById('qualityTagsSubToggles');
         const qualitySubExpander = document.getElementById('qualityTagsSubToggleExpander');
         if (qualityMasterToggle && qualitySubWrap) {
-            qualityMasterToggle.addEventListener('change', () => {
+            const showQualitySubWrap = () => {
                 qualitySubWrap.style.display = qualityMasterToggle.checked ? 'block' : 'none';
                 // Collapse the category list when the feature is turned off so it
                 // returns collapsed the next time the user enables it
@@ -188,7 +191,10 @@
                     qualitySubGroup.style.display = 'none';
                     qualitySubExpander.setAttribute('aria-expanded', 'false');
                 }
-            });
+            };
+            qualityMasterToggle.addEventListener('change', showQualitySubWrap);
+            // A value shown without a change event (a lock, another device): see ui-panel-provenance.js.
+            qualityMasterToggle.closest('[data-setting-key]')?.addEventListener('je:setting-sync', showQualitySubWrap);
         }
         // Expand or collapse the 6 category rows when the user clicks the chevron.
         // The chevron rotation is driven by CSS via the aria-expanded attribute.
@@ -210,7 +216,7 @@
                 const settingKey = row.dataset.catKey;
                 if (!settingKey) return;
                 JE.currentSettings[settingKey] = target.checked;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
                     JE.reinitializeQualityTags();
                 }
@@ -241,13 +247,18 @@
                     const orderKey = r.dataset.orderKey;
                     if (orderKey) JE.currentSettings[orderKey] = idx + 1;
                 });
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
 
                 refreshQualityCatArrowStates(qualitySubGroup);
                 if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
                     JE.reinitializeQualityTags();
                 }
                 resetAutoCloseTimer();
+            });
+            // The provenance pass asks for this when a lock or unlock changes the orders in force
+            // (see ui-panel-provenance.js), so a later reorder starts from the orders shown.
+            qualitySubGroup.querySelectorAll('.je-cat-btn').forEach((btn) => {
+                btn.addEventListener('je:setting-sync', () => syncQualityCatOrder(qualitySubGroup));
             });
         }
 
@@ -293,7 +304,7 @@
             })();
             audioLangSelect.addEventListener('change', (e) => {
                 JE.currentSettings.qualityTagsPreferredAudioLanguage = e.target.value;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
                     JE.reinitializeQualityTags();
                 }
@@ -302,7 +313,31 @@
         }
 
         /**
-         * Updates ↑/↓ button enabled state to reflect each row's position in the list
+         * Re-sorts the category rows from the current orders the way the template does
+         * (user order, else admin order, else the built-in one; ties keep the built-in order),
+         * then refreshes the ↑/↓ buttons.
+         * @param {HTMLElement} group - The container holding the category rows
+         */
+        function syncQualityCatOrder(group) {
+            const rows = Array.from(group.querySelectorAll('.je-quality-cat-row'));
+            if (!rows.length) return;
+            const defaultOrder = row => Number(row.dataset.defaultOrder);
+            const effOrder = (row) => {
+                const u = JE.currentSettings[row.dataset.orderKey];
+                if (Number.isFinite(u)) return u;
+                const a = JE.pluginConfig?.[row.dataset.orderPluginKey];
+                return Number.isFinite(a) ? a : defaultOrder(row);
+            };
+            const anchor = rows[rows.length - 1].nextSibling;
+            rows.slice()
+                .sort((a, b) => (effOrder(a) - effOrder(b)) || (defaultOrder(a) - defaultOrder(b)))
+                .forEach(row => row.parentNode.insertBefore(row, anchor));
+            refreshQualityCatArrowStates(group);
+        }
+
+        /**
+         * Updates ↑/↓ button enabled state to reflect each row's position in the list;
+         * a button the provenance pass holds (locked order) stays disabled.
          * @param {HTMLElement} group - The container holding the category rows
          */
         function refreshQualityCatArrowStates(group) {
@@ -310,17 +345,17 @@
             rows.forEach((row, idx) => {
                 const upBtn = row.querySelector('.je-cat-up');
                 const downBtn = row.querySelector('.je-cat-down');
-                const isFirst = idx === 0;
-                const isLast = idx === rows.length - 1;
+                const upOff = idx === 0 || !!upBtn?.hasAttribute('data-je-provenance');
+                const downOff = idx === rows.length - 1 || !!downBtn?.hasAttribute('data-je-provenance');
                 if (upBtn) {
-                    upBtn.disabled = isFirst;
-                    upBtn.style.cursor = isFirst ? 'not-allowed' : 'pointer';
-                    upBtn.style.opacity = isFirst ? '0.4' : '1';
+                    upBtn.disabled = upOff;
+                    upBtn.style.cursor = upOff ? 'not-allowed' : 'pointer';
+                    upBtn.style.opacity = upOff ? '0.4' : '1';
                 }
                 if (downBtn) {
-                    downBtn.disabled = isLast;
-                    downBtn.style.cursor = isLast ? 'not-allowed' : 'pointer';
-                    downBtn.style.opacity = isLast ? '0.4' : '1';
+                    downBtn.disabled = downOff;
+                    downBtn.style.cursor = downOff ? 'not-allowed' : 'pointer';
+                    downBtn.style.opacity = downOff ? '0.4' : '1';
                 }
             });
         }
@@ -337,7 +372,7 @@
                 const val = Math.max(1, Math.min(60, parseInt(pauseScreenDelayInput.value, 10) || 5));
                 pauseScreenDelayInput.value = val;
                 JE.currentSettings.pauseScreenDelaySeconds = val;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 // Push the new delay into the already-running pause-screen
                 // instance so it takes effect immediately, without a page reload.
                 if (JE.pauseScreenInstance) {
@@ -364,13 +399,15 @@
         const ratingSubGroup = document.getElementById('ratingTagsSubToggles');
         const ratingSubExpander = document.getElementById('ratingTagsSubToggleExpander');
         if (ratingMasterToggle && ratingSubWrap) {
-            ratingMasterToggle.addEventListener('change', () => {
+            const showRatingSubWrap = () => {
                 ratingSubWrap.style.display = ratingMasterToggle.checked ? 'block' : 'none';
                 if (!ratingMasterToggle.checked && ratingSubGroup && ratingSubExpander) {
                     ratingSubGroup.style.display = 'none';
                     ratingSubExpander.setAttribute('aria-expanded', 'false');
                 }
-            });
+            };
+            ratingMasterToggle.addEventListener('change', showRatingSubWrap);
+            ratingMasterToggle.closest('[data-setting-key]')?.addEventListener('je:setting-sync', showRatingSubWrap);
         }
         if (ratingSubExpander && ratingSubGroup) {
             ratingSubExpander.addEventListener('click', () => {
@@ -386,7 +423,7 @@
                 const settingKey = target.closest('.je-quality-cat-row')?.dataset.catKey;
                 if (!settingKey) return;
                 JE.currentSettings[settingKey] = target.checked;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 if (typeof JE.reinitializeRatingTags === 'function' && JE.currentSettings.ratingTagsEnabled) {
                     JE.reinitializeRatingTags();
                 }
@@ -495,6 +532,7 @@
             if (styleContainer) {
                 styleContainer.querySelectorAll('.preset-box').forEach(box => {
                     box.style.setProperty('border', '2px solid transparent', 'important');
+                    box.setAttribute('aria-pressed', 'false');
                 });
             }
 
@@ -511,15 +549,85 @@
             }
             syncPreviewTextShadow(bgColor);
 
-            JE.saveUserSettings('settings.json', JE.currentSettings);
             JE.applySavedStylesWhenReady();
+            scheduleColourSave();
             resetAutoCloseTimer();
         };
 
-        if (customTextColorPicker) customTextColorPicker.addEventListener('input', updateCustomSubtitleColors);
-        if (customTextAlpha) customTextAlpha.addEventListener('input', updateCustomSubtitleColors);
-        if (customBgColorPicker) customBgColorPicker.addEventListener('input', updateCustomSubtitleColors);
-        if (customBgAlpha) customBgAlpha.addEventListener('input', updateCustomSubtitleColors);
+        // The pickers and alpha sliders preview live on every 'input' but save once: on release
+        // ('change') or after COLOUR_SAVE_DELAY_MS without movement, and on panel close or when
+        // the page is hidden or unloaded. A save scheduled before a user switch is dropped: by
+        // then JE.currentSettings belongs to the incoming user.
+        const COLOUR_SAVE_DELAY_MS = 300;
+        let colourSaveTimer = null;
+        let colourSaveEpoch = 0;
+        /**
+         * Saves the colours now if a save is pending for the user who made the change.
+         * @param {boolean} [sendNow] Also send the save at once instead of after the settings
+         *   merge window (the page is being hidden or unloaded and its timers may never run).
+         */
+        const flushColourSave = (sendNow) => {
+            if (!colourSaveTimer) return;
+            clearTimeout(colourSaveTimer);
+            colourSaveTimer = null;
+            if (JE.session && !JE.session.isCurrent(colourSaveEpoch)) return;
+            JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
+            if (sendNow === true) JE.internals.settingsSync?.flush?.();
+        };
+        /** (Re)starts the delay before the pending colour save. */
+        const scheduleColourSave = () => {
+            if (colourSaveTimer) clearTimeout(colourSaveTimer);
+            colourSaveEpoch = JE.session ? JE.session.getEpoch() : 0;
+            colourSaveTimer = setTimeout(flushColourSave, COLOUR_SAVE_DELAY_MS);
+        };
+        /** Flushes and sends at once when the page is unloaded. */
+        const flushColourSaveOnPagehide = () => flushColourSave(true);
+        /** Flushes and sends at once when the tab is hidden (navigation, reload, app switch). */
+        const flushColourSaveWhenHidden = () => {
+            if (document.visibilityState === 'hidden') flushColourSave(true);
+        };
+        if (typeof ctx.onPanelClose === 'function') {
+            window.addEventListener('pagehide', flushColourSaveOnPagehide);
+            document.addEventListener('visibilitychange', flushColourSaveWhenHidden);
+            ctx.onPanelClose(() => {
+                window.removeEventListener('pagehide', flushColourSaveOnPagehide);
+                document.removeEventListener('visibilitychange', flushColourSaveWhenHidden);
+                flushColourSave();
+            });
+        }
+
+        [customTextColorPicker, customTextAlpha, customBgColorPicker, customBgAlpha].forEach((control) => {
+            if (!control) return;
+            control.addEventListener('input', updateCustomSubtitleColors);
+            control.addEventListener('change', () => flushColourSave());
+        });
+
+        // A style shown without a click (a lock, a followed server default, another device) can
+        // bring other colours (JE.getSubtitleColors): show them in the pickers and previews and on
+        // a playing video, without saving them.
+        const showEffectiveSubtitleColors = () => {
+            if (colourSaveTimer) return; // a colour edit not saved yet stays on screen
+            const { text, bg } = JE.getSubtitleColors();
+            if (customTextColorPicker && customTextAlpha) {
+                const decoded = JE.decodeSubtitleColor(text, { fallbackSwatch: '#FFFFFF', fallbackAlphaValue: 255 });
+                customTextColorPicker.value = decoded.swatch;
+                customTextAlpha.value = decoded.alphaValue;
+            }
+            if (customBgColorPicker && customBgAlpha) {
+                const decoded = JE.decodeSubtitleColor(bg, { fallbackSwatch: '#000000', fallbackAlphaValue: 0 });
+                customBgColorPicker.value = decoded.swatch;
+                customBgAlpha.value = decoded.alphaValue;
+            }
+            ['subtitleColorPreview', 'subtitlePositionPreview'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.style.color = text;
+                el.style.backgroundColor = bg;
+            });
+            syncPreviewTextShadow(bg);
+            JE.applySavedStylesWhenReady();
+        };
+        document.getElementById('subtitle-style-presets-container')?.closest('[data-setting-key]')?.addEventListener('je:setting-sync', showEffectiveSubtitleColors);
 
         // --- Subtitle position drag grid ---
         const posGrid = document.getElementById('subtitlePositionGrid');
@@ -569,7 +677,7 @@
             document.addEventListener('mouseup', () => {
                 if (!dragging) return;
                 dragging = false;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
             });
 
             posGrid.addEventListener('touchstart', (e) => {
@@ -589,7 +697,7 @@
             document.addEventListener('touchend', () => {
                 if (!dragging) return;
                 dragging = false;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
             });
         }
 
@@ -599,7 +707,7 @@
                 JE.currentSettings.subtitleVerticalPosition = 95;
                 if (posPreview) { posPreview.style.left = '50%'; posPreview.style.top = 'auto'; posPreview.style.bottom = '5%'; }
                 if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 resetAutoCloseTimer();
             });
         }
@@ -613,8 +721,8 @@
     internal.wireMiscSettingsControls = function(ctx) {
         const { help, primaryAccentColor, resetAutoCloseTimer } = ctx;
 
-        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
-        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
 
         // Random source picker: lists the user's playlists and collections; '' = whole library.
         const sourceSelect = document.getElementById('randomSourceSelect');
@@ -648,7 +756,7 @@
                 .catch(err => console.warn('🪼 Jellyfin Enhanced: Could not list playlists for the random source picker', err));
             sourceSelect.addEventListener('change', (e) => {
                 JE.currentSettings.randomSourceId = e.target.value;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 JE.toast(JE.t('toast_random_source_set', { name: JE.escapeHtml(e.target.selectedOptions[0]?.textContent || '') }));
                 resetAutoCloseTimer();
             });
@@ -671,9 +779,12 @@
                     } else {
                         cell.style.background = 'rgba(255,255,255,0.1)';
                     }
+                    cell.setAttribute('aria-pressed', String(cell.dataset.pos === currentPos));
                 });
             };
             updateHighlight();
+            // The provenance pass asks for this when a lock changes the value shown (see ui-panel-provenance.js).
+            selector.addEventListener('je:setting-sync', updateHighlight);
 
             // Click handler
             selector.addEventListener('click', (e) => {
@@ -684,7 +795,7 @@
 
                 const newPos = cell.dataset.pos;
                 JE.currentSettings[settingKey] = newPos;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 updateHighlight();
 
                 // Reinitialize tags dynamically based on which position changed
@@ -773,9 +884,8 @@
                         const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
 
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+                        // The colours in effect
+                        const { text: textColor, bg: bgColor } = JE.getSubtitleColors();
                         const textShadow = JE.getSubtitleTextShadow(bgColor);
 
                         updatePositionPreviewFont(selectedPreset, JE.fontFamilyPresets[fontFamilyIndex]);
@@ -786,9 +896,8 @@
                         const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
 
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+                        // The colours in effect
+                        const { text: textColor, bg: bgColor } = JE.getSubtitleColors();
                         const textShadow = JE.getSubtitleTextShadow(bgColor);
 
                         updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], selectedPreset);
@@ -801,55 +910,54 @@
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
 
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+                        // The colours in effect
+                        const { text: textColor, bg: bgColor } = JE.getSubtitleColors();
 
                         internal.syncSubtitlePreviewTextShadow?.(bgColor);
                         JE.applySubtitleStyles(textColor, bgColor, fontSize, fontFamily, JE.getSubtitleTextShadow(bgColor, presetIndex));
                         JE.toast(JE.t('toast_subtitle_text_effect', { effect: selectedPreset.name }));
                     }
 
-                    JE.saveUserSettings('settings.json', JE.currentSettings);
+                    JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                     container.querySelectorAll('.preset-box').forEach(box => {
                         box.style.setProperty('border', '2px solid transparent', 'important');
+                        box.setAttribute('aria-pressed', 'false');
                     });
                     presetBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
+                    presetBox.setAttribute('aria-pressed', 'true');
                     resetAutoCloseTimer();
                 }
             });
 
-            let currentIndex;
-            if (type === 'style') {
-                currentIndex = JE.currentSettings.selectedStylePresetIndex ?? 0;
-                // Only highlight if not using custom colors
-                if (!JE.currentSettings.usingCustomColors) {
-                    const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
-                    if (activeBox) {
-                        activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
-                    }
+            // Highlights the preset JE.currentSettings holds; also run by the provenance pass when a
+            // lock changes the value shown (see ui-panel-provenance.js).
+            const highlightCurrent = () => {
+                container.querySelectorAll('.preset-box').forEach(box => {
+                    box.style.setProperty('border', '2px solid transparent', 'important');
+                    box.setAttribute('aria-pressed', 'false');
+                });
+                let currentIndex;
+                if (type === 'style') {
+                    currentIndex = JE.currentSettings.selectedStylePresetIndex ?? 0;
+                    // Only highlight if not using custom colors
+                    if (JE.currentSettings.usingCustomColors) return;
+                } else if (type === 'font-size') {
+                    currentIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
+                } else if (type === 'font-family') {
+                    currentIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
+                } else if (type === 'text-effect') {
+                    currentIndex = JE.currentSettings.selectedTextEffectPresetIndex;
+                    // An unknown index renders as Auto (see JE.getSubtitleTextShadow), so highlight that.
+                    if (!Number.isInteger(currentIndex) || !JE.subtitleTextEffectPresets[currentIndex]) currentIndex = 0;
                 }
-            } else if (type === 'font-size') {
-                currentIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
                 const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
                 if (activeBox) {
                     activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
+                    activeBox.setAttribute('aria-pressed', 'true');
                 }
-            } else if (type === 'font-family') {
-                currentIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
-                const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
-                if (activeBox) {
-                    activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
-                }
-            } else if (type === 'text-effect') {
-                currentIndex = JE.currentSettings.selectedTextEffectPresetIndex;
-                // An unknown index renders as Auto (see JE.getSubtitleTextShadow), so highlight that.
-                if (!Number.isInteger(currentIndex) || !JE.subtitleTextEffectPresets[currentIndex]) currentIndex = 0;
-                const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
-                if (activeBox) {
-                    activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
-                }
-            }
+            };
+            highlightCurrent();
+            container.closest('[data-setting-key]')?.addEventListener('je:setting-sync', highlightCurrent);
         };
 
         setupPresetHandlers('subtitle-style-presets-container', JE.subtitlePresets, 'style');

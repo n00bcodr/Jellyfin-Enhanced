@@ -12,6 +12,7 @@ What this lets a client build, using only these HTTP endpoints:
 
 - A "bookmark this moment" button on the video player, and a bookmarks list/library screen (see [Bookmarks API](#bookmarks-api))
 - Star ratings and written reviews on a movie/show/season/episode details page, shared across every user on the server (see [Reviews API](#reviews-api))
+- A settings screen for the user's Jellyfin Enhanced panel settings that respects the server defaults and administrator locks (see [Settings API](settings-api.md), experimental)
 
 !!! danger "Jellyfin 10.11 vs 12: the auth header that works is not the same"
 
@@ -624,6 +625,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 
 | Method | Path | Purpose |
 |---|---|---|
+| GET | `bootstrap` | Everything the web client needs at start for the signed-in user in one request: version, configs, the user's documents, `Capabilities` and the settings `SettingsMeta` (see [Settings API](settings-api.md#check-what-the-server-supports)) |
 | GET | `script` | The injected client `<script>` bundle |
 | GET | `js/{**path}` | Individual JS module files |
 | GET | `Configuration/configPage.css` | Admin config page stylesheet |
@@ -639,7 +641,10 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET / POST | `user-settings/{userId}/settings.json` | Enhanced panel settings |
+| GET | `user-settings/{userId}/settings.json` | Jellyfin Enhanced panel settings (the values in effect, plus `IsAdmin`). `?meta=true` adds where each value comes from; see [Settings API](settings-api.md#read-settings) |
+| POST | `user-settings/{userId}/settings.json` | Whole-document save, kept for older clients: only the keys present count, and refused keys are listed in `Rejected`; see [Settings API](settings-api.md#whole-document-save-older-clients) |
+| POST | `user-settings/{userId}/settings.json/patch` | Experimental key-level save (`Set`, `Follow`, `IfRevision`); see [Settings API](settings-api.md#change-settings) |
+| GET | `user-settings/{userId}/revision` | Experimental change check: the settings file's revision and the plugin configuration's epoch; see [Settings API](settings-api.md#check-for-changes) |
 | GET / POST | `user-settings/{userId}/shortcuts.json` | Keyboard shortcut overrides |
 | GET / POST | `user-settings/{userId}/elsewhere.json` | Elsewhere (streaming provider) preferences |
 | GET / POST | `user-settings/{userId}/hidden-content.json` | Hidden Content list |
@@ -741,5 +746,11 @@ The anonymous `public-config` payload carries `MaintenanceModeEnabled`, `Mainten
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `reset-all-users-settings` | Admin: overwrite every user's settings with the current defaults |
+| GET | `admin/user-settings/registry` | Admin: every per-user setting with a server default, its admin value, reach and lock; see [Settings API](settings-api.md#registry) |
+| GET | `admin/user-settings/overview` | Admin: Follow / Kept / Changed counts per setting and the user list, read without changing any file; see [Settings API](settings-api.md#overview) |
+| GET | `admin/user-settings/overview/{key}` | Admin: one setting's value and state for every user; see [Settings API](settings-api.md#overview) |
+| POST | `admin/user-settings/apply` | Admin: "Apply defaults to users" (`FollowIfUnchanged`, `FollowAll` or `Overwrite`), preview first, with undo; see [Settings API](settings-api.md#apply-defaults-to-users) |
+| POST | `admin/user-settings/undo/{undoId}` | Admin: undoes an apply or reset-all run where nothing changed since; see [Settings API](settings-api.md#undo) |
+| GET / POST | `admin/user-settings/upgrade-card`, `admin/user-settings/upgrade-card/dismiss` | Admin: the one-time "users still have copies of your defaults" card; see [Settings API](settings-api.md#upgrade-card) |
+| POST | `reset-all-users-settings` | Admin: overwrite every user's settings (plus their hidden-content settings and Spoiler Guard preferences) with the current defaults; the same as `admin/user-settings/apply` with `Overwrite`, every setting and every user folder, without a preview. Returns `status` (`complete`, `partial` or `failed`), `userCount`, `totalUsers`, `failedUserCount`, the skipped id lists (`skippedSettingsUserIds`, `skippedHcUserIds`, `skippedSpoilerUserIds`), `users`: one entry per user folder with `userId`, `name` (null for a folder with no Jellyfin user), the outcome of each document (`settings`, `hiddenContent`, `spoilerGuard`: `reset` or `failed`; `settings` and `spoilerGuard` are `none` when the user has no such file, and a folder without settings gets the defaults when the user first uses Jellyfin Enhanced; a missing hidden-content file is reported as `reset`: it is written only when your hidden-content defaults differ from a new file's, otherwise the user's first use creates it from the defaults current then) and `failures` (`document`, `reason`: `corrupt` (a corrupt settings file is left untouched), `oversized`, `unavailable` or `error`), and `UndoId` for `admin/user-settings/undo` (null when nothing changed). When the user folders cannot be listed at all, nothing is reset and it returns `success: false`, `status: failed` and `error: user-folders-unreadable` |
 | GET | `{viewName}` | Catch-all: serves a Plugin Pages HTML view by name |

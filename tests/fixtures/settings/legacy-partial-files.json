@@ -1,0 +1,127 @@
+{
+  "Initializers": {
+    "AutoPauseEnabled": false,
+    "AutoResumeEnabled": false,
+    "AutoPipEnabled": false,
+    "LongPress2xEnabled": false,
+    "PauseScreenEnabled": false,
+    "PauseScreenDelaySeconds": 5,
+    "AutoSkipIntro": false,
+    "AutoSkipOutro": false,
+    "DisableCustomSubtitleStyles": false,
+    "SelectedStylePresetIndex": 0,
+    "SelectedFontSizePresetIndex": 0,
+    "SelectedFontFamilyPresetIndex": 0,
+    "SelectedTextEffectPresetIndex": 0,
+    "CustomSubtitleTextColor": "#FFFFFFFF",
+    "CustomSubtitleBgColor": "#00000000",
+    "UsingCustomColors": false,
+    "SubtitleVerticalPosition": 85,
+    "SubtitleHorizontalPosition": 50,
+    "RandomButtonEnabled": false,
+    "RandomUnwatchedOnly": false,
+    "RandomIncludeMovies": false,
+    "RandomIncludeShows": false,
+    "RandomScopeCurrentContainer": false,
+    "RandomSourceId": "",
+    "ShowWatchProgress": false,
+    "WatchProgressMode": "percentage",
+    "WatchProgressTimeFormat": "hours",
+    "ShowFileSizes": false,
+    "ShowAudioLanguages": false,
+    "UseNativePosterTags": null,
+    "QualityTagsEnabled": false,
+    "ShowResolutionTag": true,
+    "ShowSourceTag": true,
+    "ShowDynamicRangeTag": true,
+    "ShowSpecialFormatTag": true,
+    "ShowVideoCodecTag": true,
+    "ShowAudioInfoTag": true,
+    "ResolutionTagOrder": null,
+    "SourceTagOrder": null,
+    "DynamicRangeTagOrder": null,
+    "SpecialFormatTagOrder": null,
+    "VideoCodecTagOrder": null,
+    "AudioInfoTagOrder": null,
+    "GenreTagsEnabled": false,
+    "LanguageTagsEnabled": false,
+    "RatingTagsEnabled": false,
+    "AgeRatingTagsEnabled": false,
+    "PeopleTagsEnabled": false,
+    "TagsHideOnHover": false,
+    "QualityTagsPosition": "top-left",
+    "QualityTagsPreferredAudioLanguage": "",
+    "GenreTagsPosition": "top-right",
+    "LanguageTagsPosition": "bottom-left",
+    "RatingTagsPosition": "bottom-right",
+    "RatingTagsOnMovies": true,
+    "RatingTagsOnSeries": true,
+    "RatingTagsOnSeasons": true,
+    "RatingTagsOnEpisodes": true,
+    "RatingTagsOnContinueWatching": true,
+    "RatingTagsOnNextUp": true,
+    "AgeRatingTagsPosition": "bottom-right",
+    "ShowRatingInPlayer": true,
+    "RemoveContinueWatchingEnabled": false,
+    "LastOpenedTab": "",
+    "ReviewsExpandedByDefault": false,
+    "DisplayLanguage": "",
+    "CalendarDisplayMode": "list",
+    "CalendarDefaultViewMode": "agenda"
+  },
+  "Cases": {
+    "empty object": {
+      "Stored": "{}",
+      "DiffersFromInitializers": {}
+    },
+    "JSON nulls from the bool? era (#611) keep the initializers": {
+      "Stored": "{\"AutoPauseEnabled\":null,\"ShowResolutionTag\":null,\"QualityTagsEnabled\":null,\"ResolutionTagOrder\":null,\"UseNativePosterTags\":null,\"DisplayLanguage\":\"fr\"}",
+      "DiffersFromInitializers": {
+        "DisplayLanguage": "fr"
+      }
+    },
+    "older plugin version without the newer keys": {
+      "Stored": "{\"AutoPauseEnabled\":true,\"AutoResumeEnabled\":false,\"AutoSkipIntro\":true,\"SelectedStylePresetIndex\":1,\"SelectedFontSizePresetIndex\":2,\"SubtitleVerticalPosition\":90,\"RandomButtonEnabled\":true,\"RandomIncludeMovies\":true,\"RandomIncludeShows\":true,\"ShowAudioLanguages\":true,\"QualityTagsEnabled\":true,\"QualityTagsPosition\":\"top-right\",\"GenreTagsEnabled\":true,\"LastOpenedTab\":\"settings\",\"DisplayLanguage\":\"de\"}",
+      "DiffersFromInitializers": {
+        "AutoPauseEnabled": true,
+        "AutoSkipIntro": true,
+        "SelectedStylePresetIndex": 1,
+        "SelectedFontSizePresetIndex": 2,
+        "SubtitleVerticalPosition": 90,
+        "RandomButtonEnabled": true,
+        "RandomIncludeMovies": true,
+        "RandomIncludeShows": true,
+        "ShowAudioLanguages": true,
+        "QualityTagsEnabled": true,
+        "GenreTagsEnabled": true,
+        "QualityTagsPosition": "top-right",
+        "LastOpenedTab": "settings",
+        "DisplayLanguage": "de"
+      }
+    },
+    "empty position strings stay empty (the admin position applies)": {
+      "Stored": "{\"QualityTagsPosition\":\"\",\"GenreTagsPosition\":\"\",\"LanguageTagsPosition\":\"\",\"RatingTagsPosition\":\"\",\"AgeRatingTagsPosition\":\"\",\"QualityTagsPreferredAudioLanguage\":\"\"}",
+      "DiffersFromInitializers": {
+        "QualityTagsPosition": "",
+        "GenreTagsPosition": "",
+        "LanguageTagsPosition": "",
+        "RatingTagsPosition": "",
+        "AgeRatingTagsPosition": ""
+      }
+    },
+    "camelCase keys are read case-insensitively": {
+      "Stored": "{\"autoPauseEnabled\":true,\"subtitleVerticalPosition\":70,\"watchProgressMode\":\"time\"}",
+      "DiffersFromInitializers": {
+        "AutoPauseEnabled": true,
+        "SubtitleVerticalPosition": 70,
+        "WatchProgressMode": "time"
+      }
+    },
+    "unknown, client-only and future keys are ignored": {
+      "Stored": "{\"IsAdmin\":true,\"DisableAllShortcuts\":true,\"FutureSetting\":1,\"JeMeta\":{\"Following\":[\"AutoPipEnabled\"]},\"SettingsMeta\":{\"Locked\":[\"PauseScreenEnabled\"]},\"PauseScreenEnabled\":true}",
+      "DiffersFromInitializers": {
+        "PauseScreenEnabled": true
+      }
+    }
+  }
+}

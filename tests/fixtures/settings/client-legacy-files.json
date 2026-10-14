@@ -1,0 +1,203 @@
+{
+  "shipped": {
+    "empty object": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": false
+    },
+    "JSON nulls from the bool? era (#611) keep the initializers": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": false
+    },
+    "older plugin version without the newer keys": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "disableAllShortcuts": false
+    },
+    "empty position strings stay empty (the admin position applies)": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": false
+    },
+    "camelCase keys are read case-insensitively": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": false
+    },
+    "unknown, client-only and future keys are ignored": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": false
+    }
+  },
+  "customised": {
+    "empty object": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 6,
+      "sourceTagOrder": 5,
+      "dynamicRangeTagOrder": 4,
+      "specialFormatTagOrder": 3,
+      "videoCodecTagOrder": 2,
+      "audioInfoTagOrder": 1,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": true
+    },
+    "JSON nulls from the bool? era (#611) keep the initializers": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 6,
+      "sourceTagOrder": 5,
+      "dynamicRangeTagOrder": 4,
+      "specialFormatTagOrder": 3,
+      "videoCodecTagOrder": 2,
+      "audioInfoTagOrder": 1,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": true
+    },
+    "older plugin version without the newer keys": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 6,
+      "sourceTagOrder": 5,
+      "dynamicRangeTagOrder": 4,
+      "specialFormatTagOrder": 3,
+      "videoCodecTagOrder": 2,
+      "audioInfoTagOrder": 1,
+      "disableAllShortcuts": true
+    },
+    "empty position strings stay empty (the admin position applies)": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 6,
+      "sourceTagOrder": 5,
+      "dynamicRangeTagOrder": 4,
+      "specialFormatTagOrder": 3,
+      "videoCodecTagOrder": 2,
+      "audioInfoTagOrder": 1,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": true
+    },
+    "camelCase keys are read case-insensitively": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 6,
+      "sourceTagOrder": 5,
+      "dynamicRangeTagOrder": 4,
+      "specialFormatTagOrder": 3,
+      "videoCodecTagOrder": 2,
+      "audioInfoTagOrder": 1,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": true
+    },
+    "unknown, client-only and future keys are ignored": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 6,
+      "sourceTagOrder": 5,
+      "dynamicRangeTagOrder": 4,
+      "specialFormatTagOrder": 3,
+      "videoCodecTagOrder": 2,
+      "audioInfoTagOrder": 1,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": true
+    }
+  },
+  "blank": {
+    "empty object": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": false
+    },
+    "JSON nulls from the bool? era (#611) keep the initializers": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": false
+    },
+    "older plugin version without the newer keys": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "disableAllShortcuts": false
+    },
+    "empty position strings stay empty (the admin position applies)": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": false
+    },
+    "camelCase keys are read case-insensitively": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": false
+    },
+    "unknown, client-only and future keys are ignored": {
+      "useNativePosterTags": true,
+      "resolutionTagOrder": 1,
+      "sourceTagOrder": 2,
+      "dynamicRangeTagOrder": 3,
+      "specialFormatTagOrder": 4,
+      "videoCodecTagOrder": 5,
+      "audioInfoTagOrder": 6,
+      "lastOpenedTab": "shortcuts",
+      "disableAllShortcuts": false
+    }
+  }
+}

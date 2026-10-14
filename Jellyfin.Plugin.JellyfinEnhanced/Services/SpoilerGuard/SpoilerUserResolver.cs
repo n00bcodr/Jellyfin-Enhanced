@@ -20,7 +20,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // Shares a single HttpContext.Items cache key so a request that triggers
     // BOTH filters (e.g. an /Items batch that ALSO loads images) performs ONE
     // file-read for the per-user spoiler state, not two.
-    public sealed class SpoilerUserResolver
+    public sealed class SpoilerUserResolver : IDisposable
     {
         public const string ContextKeyUserState = "__JE_SpoilerBlur_UserState_Shared";
 
@@ -31,8 +31,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // by userId (N-format). An anonymous image burst on a shared IP probes
         // every candidate's state on every image request; without this each
         // probe re-reads + re-parses spoilerblur.json from disk. Invalidated by
-        // every controller/pending/promoter write path via InvalidateUser, and
-        // per-request the HttpContext.Items layer still short-circuits repeats.
+        // every write (controller, pending, promoter, auto-enable) through
+        // UserConfigurationManager.UserConfigurationSaved, and per-request the
+        // HttpContext.Items layer still short-circuits repeats.
         private static readonly TimeSpan UserStateCacheTtl = TimeSpan.FromSeconds(30);
         private static readonly ConcurrentDictionary<string, (UserSpoilerBlur State, DateTime CachedAt)> _userStateCache
             = new(StringComparer.OrdinalIgnoreCase);
@@ -50,9 +51,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Drops the cross-request caches for a user so the next request re-reads
-        /// spoilerblur.json from disk. MUST be called immediately after any write
-        /// to that user's spoiler state (add/remove/promote), or the image filter
-        /// would serve stale (possibly UN-blurred) bytes for up to the cache TTL.
+        /// spoilerblur.json from disk. Runs for every write through
+        /// <see cref="UserConfigurationManager.SaveUserConfiguration"/> via
+        /// <see cref="UserConfigurationManager.UserConfigurationSaved"/>; without it the
+        /// image filter would serve stale (possibly UN-blurred) bytes for up to the cache TTL.
         /// </summary>
         public static void InvalidateUser(string userIdN)
         {
@@ -89,6 +91,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _libraryManager = libraryManager;
             _identity = identity;
             _logger = logger;
+            _userConfigManager.UserConfigurationSaved += OnUserConfigurationSaved;
+        }
+
+        public void Dispose()
+        {
+            _userConfigManager.UserConfigurationSaved -= OnUserConfigurationSaved;
+        }
+
+        private static void OnUserConfigurationSaved(string userIdN, string fileName)
+        {
+            if (string.Equals(fileName, SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase)) InvalidateUser(userIdN);
         }
 
         // Returns the id of an opted-in collection (BoxSet) that contains the

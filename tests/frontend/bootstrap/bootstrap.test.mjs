@@ -136,6 +136,159 @@ for (const saved of [null, 'fr']) test(`default display language respects existi
   const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: 'pt-br' } }), storage: saved ? { 'user-a-language': saved } : {} });
   await until(() => h.plugin.initialized);
   assert.equal(h.window.localStorage.getItem('user-a-language'), saved || 'pt-BR');
+  // A seeded language is recorded as the settings' one; a language set elsewhere is not.
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), saved ? null : 'pt-BR');
+});
+
+// A locked display language is the user's language: it replaces the stored one and the
+// translations are loaded again in it. A followed one replaces only a stored language the settings
+// put there (JE_seededLanguage_*), never one picked in jellyfin-web, which shares the key. A
+// language the user chose (or "Auto") never replaces it.
+for (const [label, meta, settings, seeded, expected, loads] of [
+  ['locked', { Locked: ['DisplayLanguage'] }, { DisplayLanguage: 'de' }, null, 'de', 2],
+  ['following', { Following: ['DisplayLanguage'] }, { DisplayLanguage: 'de-de' }, 'fr', 'de-DE', 2],
+  ['following (language from jellyfin-web)', { Following: ['DisplayLanguage'] }, { DisplayLanguage: 'de' }, null, 'fr', 1],
+  ['following (language from jellyfin-web, seeded earlier)', { Following: ['DisplayLanguage'] }, { DisplayLanguage: 'de' }, 'de', 'fr', 1],
+  ['chosen', { Chosen: ['DisplayLanguage'] }, { DisplayLanguage: 'de' }, 'fr', 'fr', 1],
+  ['locked to Auto', { Locked: ['DisplayLanguage'] }, { DisplayLanguage: '' }, null, 'fr', 1]
+]) test(`a ${label} display language ${expected === 'fr' ? 'keeps' : 'replaces'} the stored language`, async t => {
+  const data = payload({ UserSettings: { Settings: settings, SettingsMeta: { Schema: 2, ...meta }, SettingsStatus: 'ok' } });
+  const storage = { 'user-a-language': 'fr' };
+  if (seeded !== null) storage['JE_seededLanguage_user-a'] = seeded;
+  const h = setup(t, { data, storage });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), expected);
+  assert.equal(h.translationLoads, loads);
+  if (expected !== 'fr') assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), expected);
+
+  // A lock arriving later (focus check, save answer) applies from the next page load.
+  if (label !== 'chosen') return;
+  h.plugin.userConfig.settingsMeta = { locked: ['displayLanguage'] };
+  h.plugin.currentSettings.displayLanguage = 'it';
+  h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: [], rejected: [], meta: true } }));
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'it');
+});
+
+test('a followed display language replaces the stored one only while it is the settings\' language', async t => {
+  // "Follow my defaults where nothing changes" made an old seed's value follow: the stored
+  // language equals it, so it is recorded as the settings' one, and a new default replaces it.
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'de' }, SettingsMeta: { Schema: 2, Following: ['DisplayLanguage'] }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: { 'user-a-language': 'de' } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), 'de');
+  const changeDefault = (language) => {
+    h.plugin.currentSettings.displayLanguage = language;
+    h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: ['displayLanguage'], rejected: [] } }));
+  };
+  changeDefault('es');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'es');
+  // The user then picks French in jellyfin-web's own display settings: the next default keeps it.
+  h.window.localStorage.setItem('user-a-language', 'fr');
+  changeDefault('it');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), 'es');
+});
+
+// A lock writes its language over the user's; once it is gone, the user's own language comes
+// back while the lock's language is still the stored one (JE_lockedLanguage_* records it).
+for (const [label, chosen, before, restored] of [
+  ['a chosen language', 'de', 'de', 'de'],
+  ['"Auto" with a language picked earlier', '', 'it', 'it'],
+  ['"Auto" without a stored language', '', null, null]
+]) test(`after an unlock ${label} comes back`, async t => {
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'fr' }, SettingsMeta: { Schema: 2, Locked: ['DisplayLanguage'], Chosen: ['DisplayLanguage'] }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: before === null ? {} : { 'user-a-language': before } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+  assert.equal(h.translationLoads, before === null ? 1 : 2);
+  const unlock = () => {
+    h.plugin.userConfig.settingsMeta = { chosen: ['displayLanguage'] };
+    h.plugin.currentSettings.displayLanguage = chosen;
+    h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: ['displayLanguage'], rejected: [], meta: true } }));
+  };
+  unlock();
+  assert.equal(h.window.localStorage.getItem('user-a-language'), restored);
+  assert.equal(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null);
+  // Nothing more happens on later loads.
+  unlock();
+  assert.equal(h.window.localStorage.getItem('user-a-language'), restored);
+});
+
+// An unlock puts back the stored language and the settings' record from before the lock, then
+// decides as if there had been no lock: a language picked in jellyfin-web comes back for a followed
+// or chosen setting, and a followed default replaces only a language the settings had put there.
+for (const [label, meta, before, seeded, unlockedTo, restored] of [
+  ['a followed default keeps a language picked in jellyfin-web', ['Following'], 'it', 'es', 'es', 'it'],
+  ['a chosen language keeps a language picked in jellyfin-web', ['Chosen'], 'it', 'de', 'de', 'it'],
+  ['a new followed default replaces the settings\' language', ['Following'], 'es', 'es', 'de', 'de']
+]) test(`after an unlock ${label}`, async t => {
+  const key = meta[0];
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'fr' }, SettingsMeta: { Schema: 2, Locked: ['DisplayLanguage'], [key]: ['DisplayLanguage'] }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: { 'user-a-language': before, 'JE_seededLanguage_user-a': seeded } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('JE_lockedLanguage_user-a')), { language: 'fr', previous: before, previousSeeded: seeded });
+  h.plugin.userConfig.settingsMeta = { [key.toLowerCase()]: ['displayLanguage'] };
+  h.plugin.currentSettings.displayLanguage = unlockedTo;
+  h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: ['displayLanguage'], rejected: [], meta: true } }));
+  assert.equal(h.window.localStorage.getItem('user-a-language'), restored);
+  assert.equal(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null);
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), restored === before ? seeded : restored);
+});
+
+test('an unlock keeps a language picked in jellyfin-web after the lock, and a relock keeps the first record', async t => {
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'fr' }, SettingsMeta: { Schema: 2, Locked: ['DisplayLanguage'] }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: { 'user-a-language': 'de' } });
+  await until(() => h.plugin.initialized);
+  const announce = (meta, language) => {
+    h.plugin.userConfig.settingsMeta = meta;
+    h.plugin.currentSettings.displayLanguage = language;
+    h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: [], rejected: [], meta: true } }));
+  };
+  // Relocked to Spanish: the user's German is still what an unlock gives back.
+  announce({ locked: ['displayLanguage'] }, 'es');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'es');
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('JE_lockedLanguage_user-a')), { language: 'es', previous: 'de', previousSeeded: null });
+  // Settings that did not load say nothing about the lock: the record stays.
+  h.plugin.userConfig.settingsStatus = 'unavailable';
+  announce({}, '');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'es');
+  h.plugin.userConfig.settingsStatus = 'ok';
+  // A language picked in jellyfin-web after the lock stays.
+  h.window.localStorage.setItem('user-a-language', 'it');
+  announce({}, '');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'it');
+  assert.equal(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null);
+});
+
+test('a lock on the language the user picked in jellyfin-web does not make it the settings\' language', async t => {
+  // Following Spanish, French picked in jellyfin-web; the admin locks French. The lock replaces
+  // nothing, so after the unlock French stays, as it would without the lock.
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'fr' }, SettingsMeta: { Schema: 2, Locked: ['DisplayLanguage'], Following: ['DisplayLanguage'] }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: { 'user-a-language': 'fr', 'JE_seededLanguage_user-a': 'es' } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), 'es');
+  assert.equal(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null);
+  h.plugin.userConfig.settingsMeta = { following: ['displayLanguage'] };
+  h.plugin.currentSettings.displayLanguage = 'es';
+  h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: ['displayLanguage'], rejected: [], meta: true } }));
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+});
+
+test('a full localStorage does not stop the boot when the language record cannot be written', async t => {
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'de' }, SettingsMeta: { Schema: 2 }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: { 'user-a-language': 'de' } });
+  const setItem = h.window.Storage.prototype.setItem;
+  h.window.Storage.prototype.setItem = function (key, value) {
+    if (String(key).startsWith('JE_seededLanguage_')) throw new h.window.DOMException('full', 'QuotaExceededError');
+    return setItem.call(this, key, value);
+  };
+  t.after(() => { h.window.Storage.prototype.setItem = setItem; });
+  await until(() => h.plugin.initialized);
+  assert.ok(h.initialized.includes('hideSplash'));
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'de');
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), null);
 });
 
 test('translation cache clear removes stale locales but preserves newer entries and unrelated storage', async t => {
@@ -235,4 +388,208 @@ for (const late of ['private-config', 'settings']) test(`per-endpoint fallback d
   for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
   assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-c': { name: 'user-c' } });
+});
+
+// Settings that failed to load are fallback defaults: saving them would overwrite the stored
+// file, so settings.json saves are refused until a load succeeds (other documents still save).
+test('settings the bootstrap reports unavailable are never saved back; a user whose settings load saves normally', async t => {
+  const posts = [];
+  let current = 'user-a';
+  const h = setup(t, { ajax: async (path, request) => {
+    if (request.type === 'POST') { posts.push(path); return {}; }
+    if (path.endsWith('/bootstrap')) {
+      const user = current;
+      return user === 'user-a'
+        ? payload({ UserSettings: { Settings: null, SettingsStatus: 'unavailable', Shortcuts: { Shortcuts: [] } } })
+        : payload({ UserId: user, UserSettings: { Settings: { AutoPauseEnabled: false }, SettingsStatus: 'ok' } });
+    }
+    throw new Error(`Unexpected endpoint ${path}`);
+  } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.plugin.userConfig.settingsStatus, 'unavailable');
+  assert.equal(h.plugin.currentSettings.autoPauseEnabled, true, 'fallback defaults are in memory');
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings);
+  await assert.rejects(h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings, { throwOnError: true }), /could not be loaded/);
+  await h.plugin.saveUserSettings('shortcuts.json', { Shortcuts: [] });
+  assert.deepEqual(posts, ['/JellyfinEnhanced/user-settings/user-a/shortcuts.json']);
+
+  const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
+  current = 'user-b'; h.switchUser('user-b');
+  await loaded;
+  assert.equal(h.plugin.userConfig.settingsStatus, 'ok');
+  assert.equal(h.plugin.currentSettings.autoPauseEnabled, false);
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings, { throwOnError: true });
+  assert.deepEqual(posts.slice(1), ['/JellyfinEnhanced/user-settings/user-b/settings.json']);
+});
+
+for (const [label, userSettings, expected] of [
+  ['a loaded document', { Settings: { AutoPauseEnabled: false }, SettingsStatus: 'ok' }, 'ok'],
+  ['a document from a server that predates the status', { Settings: { AutoPauseEnabled: false } }, 'ok'],
+  ['no document', { Settings: null }, 'unavailable'],
+]) test(`bootstrap with ${label} marks settings ${expected}`, async t => {
+  const h = setup(t, { data: payload({ UserSettings: userSettings }) });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.plugin.userConfig.settingsStatus, expected);
+});
+
+for (const settingsFails of [true, false]) test(`per-endpoint fallback marks settings ${settingsFails ? 'unavailable when its GET fails' : 'ok when its GET succeeds'}`, async t => {
+  const posts = [];
+  const h = setup(t, { expectedConsoleErrors: ['Failed to fetch public config', 'Failed to fetch version'], ajax: async (path, request) => {
+    if (request.type === 'POST') { posts.push(path); return {}; }
+    if (path.endsWith('/component-scripts.json')) return modules;
+    if (path === '/Plugins') return [];
+    if (path === '/JellyfinEnhanced/user-settings/user-a/settings.json') {
+      if (settingsFails) throw new Error('503 Service Unavailable');
+      return { AutoPauseEnabled: false };
+    }
+    if (path.startsWith('/JellyfinEnhanced/user-settings/user-a/')) return {};
+    throw new Error('offline');
+  } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.plugin.userConfig.settingsStatus, settingsFails ? 'unavailable' : 'ok');
+  // Without a bootstrap the capabilities are unknown, so the key-level route is tried.
+  assert.equal(h.plugin.serverCapabilities, null);
+  await h.plugin.saveUserSettings('settings.json', { ...h.plugin.currentSettings, autoPauseEnabled: true });
+  assert.deepEqual(posts, settingsFails ? [] : ['/JellyfinEnhanced/user-settings/user-a/settings.json/patch']);
+});
+
+// Design item C3 (review): a failed bootstrap must not strand settings that follow the server
+// default on the whole-document route (which refuses them): /patch is tried, and a server without
+// it (404/405) gets the whole document as before, from then on.
+for (const patchRoute of [true, false]) test(`after a failed bootstrap, settings saves try /patch ${patchRoute ? 'and use it' : 'and fall back on a 404'}`, async t => {
+  const posts = [];
+  const h = setup(t, { expectedConsoleErrors: ['Failed to fetch public config', 'Failed to fetch version'], ajax: async (path, request) => {
+    if (request.type === 'POST') {
+      posts.push({ path, body: JSON.parse(request.data) });
+      if (path.endsWith('/patch')) {
+        if (!patchRoute) throw Object.assign(new Error('Not Found'), { status: 404 });
+        return { success: true, Rejected: [], Settings: { AutoPauseEnabled: false, AutoPipEnabled: true }, Meta: { Following: [] } };
+      }
+      return {};
+    }
+    if (path.endsWith('/component-scripts.json')) return modules;
+    if (path === '/Plugins') return [];
+    if (path === '/JellyfinEnhanced/user-settings/user-a/settings.json') return { AutoPauseEnabled: false, AutoPipEnabled: false };
+    if (path.startsWith('/JellyfinEnhanced/user-settings/user-a/')) return {};
+    throw new Error('offline');
+  } });
+  await until(() => h.plugin.initialized);
+  h.plugin.currentSettings.autoPipEnabled = true;
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings);
+  h.plugin.currentSettings.autoPauseEnabled = true;
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings);
+  const patch = '/JellyfinEnhanced/user-settings/user-a/settings.json/patch', whole = '/JellyfinEnhanced/user-settings/user-a/settings.json';
+  if (patchRoute) {
+    assert.deepEqual(posts, [{ path: patch, body: { Set: { AutoPipEnabled: true } } }, { path: patch, body: { Set: { AutoPauseEnabled: true } } }]);
+  } else {
+    assert.deepEqual(posts.map(p => p.path), [patch, whole, whole]);
+    assert.equal(posts[2].body.AutoPauseEnabled, true);
+  }
+});
+
+// Between a user switch and the incoming user's settings arriving, JE.currentSettings is the
+// reset {}: a settings.json save in that gap would write it over that user's stored file.
+test('no settings.json save goes out while the incoming user\'s settings are still loading', async t => {
+  const posts = [];
+  const pending = deferred();
+  let bRequested = false, current = 'user-a';
+  const h = setup(t, { ajax: async (path, request) => {
+    if (request.type === 'POST') { posts.push(path); return {}; }
+    if (path.endsWith('/bootstrap')) {
+      if (current !== 'user-b') return payload({ UserSettings: { Settings: { AutoPauseEnabled: false }, SettingsStatus: 'ok' } });
+      bRequested = true;
+      return pending.promise;
+    }
+    throw new Error(`Unexpected endpoint ${path}`);
+  } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.plugin.userConfig.settingsStatus, 'ok');
+
+  current = 'user-b'; h.switchUser('user-b');
+  assert.equal(h.plugin.userConfig.settingsStatus, 'loading');
+  await until(() => bRequested);
+  await h.plugin.saveUserSettings('settings.json', { ...h.plugin.currentSettings, autoPipEnabled: true });
+  await assert.rejects(h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings, { throwOnError: true }), /still loading/);
+  await h.plugin.saveUserSettings('shortcuts.json', { Shortcuts: [] });
+  assert.deepEqual(posts, ['/JellyfinEnhanced/user-settings/user-b/shortcuts.json']);
+
+  const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
+  pending.resolve(payload({ UserId: 'user-b', UserSettings: { Settings: { AutoPauseEnabled: false, AutoPipEnabled: true }, SettingsStatus: 'ok' } }));
+  await loaded;
+  assert.equal(h.plugin.userConfig.settingsStatus, 'ok');
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings, { throwOnError: true });
+  assert.deepEqual(posts.slice(1), ['/JellyfinEnhanced/user-settings/user-b/settings.json']);
+});
+
+// The panel-open refresh of settings.json can still be in flight when the identity changes: its
+// answer (or its 503) is the previous user's and must not lift the incoming user's 'loading'.
+for (const [label, answer] of [
+  ['answers', () => ({ AutoPauseEnabled: false, AutoPipEnabled: true })],
+  ['fails unavailable', () => { throw new Response(JSON.stringify({ success: false, status: 'unavailable' }), { status: 503 }); }],
+]) test(`a panel refresh for the previous user that ${label} after a switch is dropped`, async t => {
+  const posts = [];
+  const panelGet = deferred(), bBootstrap = deferred();
+  let panelRequested = false, bRequested = false, current = 'user-a';
+  const h = setup(t, { ajax: async (path, request) => {
+    if (request.type === 'POST') { posts.push(path); return {}; }
+    if (path === '/JellyfinEnhanced/user-settings/user-a/settings.json') { panelRequested = true; return panelGet.promise.then(answer); }
+    if (path.endsWith('/bootstrap')) {
+      if (current !== 'user-b') return payload({ UserSettings: { Settings: { AutoPauseEnabled: true }, SettingsStatus: 'ok' } });
+      bRequested = true;
+      return bBootstrap.promise;
+    }
+    throw new Error(`Unexpected endpoint ${path}`);
+  } });
+  await until(() => h.plugin.initialized);
+  h.window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  Object.assign(h.plugin, { t: key => key, keyListener() {}, themer: { getThemeVariables: () => ({}) } });
+  h.plugin.internals = { enhancedUi: { buildPanelHtml: () => '<div class="je-panel-main"></div>', wireShortcutEditor() {},
+    wireSettingsListeners() {}, wireHiddenContentListeners() {}, wireMiscSettingsControls() {}, wireLanguageControls() {} } };
+  h.load('enhanced/settingspanel/ui-panel.js');
+
+  const opening = h.plugin.showEnhancedPanel();
+  await until(() => panelRequested);
+  current = 'user-b'; h.switchUser('user-b');
+  await until(() => bRequested);
+  panelGet.resolve();
+  await opening;
+  assert.equal(h.plugin.userConfig.settingsStatus, 'loading');
+  assert.deepEqual(plain(h.plugin.currentSettings), {}, 'user-a\'s settings are not installed for user-b');
+  assert.equal(h.document.getElementById('jellyfin-enhanced-panel'), null, 'no panel is built from the stale answer');
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings);
+  assert.deepEqual(posts, []);
+
+  const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
+  bBootstrap.resolve(payload({ UserId: 'user-b', UserSettings: { Settings: { AutoPauseEnabled: true }, SettingsStatus: 'ok' } }));
+  await loaded;
+  assert.equal(h.plugin.userConfig.settingsStatus, 'ok');
+  assert.equal(h.plugin.currentSettings.autoPipEnabled, false);
+});
+
+// Design item C1: the bootstrap advertises the key-level save route and carries the settings Meta.
+for (const advertised of [true, false]) test(`settings saves use ${advertised ? 'the patch route' : 'the whole-document route'} when Capabilities ${advertised ? 'has' : 'lacks'} settingsPatch`, async t => {
+  const posts = [];
+  const meta = { Schema: 2, Following: ['AutoPipEnabled'], Chosen: ['QualityTagsEnabled'], Defaults: { AutoPipEnabled: false }, Unavailable: { UseNativePosterTags: 'NativePosterTagsEnabled' } };
+  const settings = { AutoPipEnabled: false, QualityTagsEnabled: true, IsAdmin: false };
+  const data = payload({ UserSettings: { Settings: settings, SettingsMeta: meta, SettingsStatus: 'ok' }, ...(advertised ? { Capabilities: ['settingsPatch'] } : {}) });
+  const h = setup(t, { ajax: async (path, request) => {
+    if (path.endsWith('/bootstrap')) return data;
+    posts.push({ path, body: JSON.parse(request.data) });
+    return path.endsWith('/patch') ? { success: true, Rejected: [], Settings: { ...settings, ...JSON.parse(request.data).Set }, Meta: meta } : undefined;
+  } });
+  await until(() => h.plugin.initialized);
+  assert.deepEqual(plain(h.plugin.serverCapabilities), advertised ? ['settingsPatch'] : []);
+  assert.deepEqual(plain(h.plugin.settingsMeta), { schema: 2, following: ['autoPipEnabled'], chosen: ['qualityTagsEnabled'],
+    defaults: { autoPipEnabled: false }, unavailable: { useNativePosterTags: 'NativePosterTagsEnabled' } });
+  h.plugin.currentSettings.autoPipEnabled = true;
+  const saved = h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings);
+  h.window.dispatchEvent(new h.window.Event('pagehide')); // send the merge window now
+  await saved;
+  if (advertised) {
+    assert.deepEqual(posts, [{ path: '/JellyfinEnhanced/user-settings/user-a/settings.json/patch', body: { Set: { AutoPipEnabled: true } } }]);
+  } else {
+    assert.deepEqual(posts.map(p => p.path), ['/JellyfinEnhanced/user-settings/user-a/settings.json']);
+    assert.equal(posts[0].body.AutoPipEnabled, true);
+    assert.equal(posts[0].body.QualityTagsEnabled, true);
+  }
 });

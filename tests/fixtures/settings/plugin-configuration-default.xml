@@ -1,0 +1,477 @@
+<?xml version="1.0" encoding="utf-16"?>
+<PluginConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <MaintenanceModeEnabled>false</MaintenanceModeEnabled>
+  <MaintenanceModeMessage>This server is currently undergoing maintenance. Please try again.</MaintenanceModeMessage>
+  <MaintenanceModeNotificationMessage>Server undergoing maintenance.</MaintenanceModeNotificationMessage>
+  <MaintenanceModeAction>disable_accounts</MaintenanceModeAction>
+  <MaintenanceModeAffectedUsers>all</MaintenanceModeAffectedUsers>
+  <MaintenanceModeDurationMinutes>0</MaintenanceModeDurationMinutes>
+  <MaintenanceModeRemindOnPlayback>false</MaintenanceModeRemindOnPlayback>
+  <MaintenanceScheduleEnabled>false</MaintenanceScheduleEnabled>
+  <MaintenanceScheduleStart>00:00</MaintenanceScheduleStart>
+  <MaintenanceScheduleEnd>08:00</MaintenanceScheduleEnd>
+  <MaintenanceScheduleMessage>The library is updating; slowdowns are normal. Time remaining: {countdown}</MaintenanceScheduleMessage>
+  <MaintenanceScheduleNotificationMessage>The library is updating; slowdowns are normal.</MaintenanceScheduleNotificationMessage>
+  <MaintenanceScheduleAction>none</MaintenanceScheduleAction>
+  <ToastDuration>1500</ToastDuration>
+  <HelpPanelAutocloseDelay>15000</HelpPanelAutocloseDelay>
+  <EnableCustomSplashScreen>false</EnableCustomSplashScreen>
+  <SplashScreenImageUrl>/web/assets/img/banner-light.png</SplashScreenImageUrl>
+  <DevMode>false</DevMode>
+  <DisableScriptInjectionMiddleware>false</DisableScriptInjectionMiddleware>
+  <DisableBrandingMiddleware>false</DisableBrandingMiddleware>
+  <ElsewhereEnabled>true</ElsewhereEnabled>
+  <TMDB_API_KEY />
+  <DEFAULT_REGION>US</DEFAULT_REGION>
+  <DEFAULT_PROVIDERS />
+  <IGNORE_PROVIDERS />
+  <ElsewhereSeasonProviders>true</ElsewhereSeasonProviders>
+  <ElsewhereCustomBrandingText />
+  <ElsewhereCustomBrandingImageUrl />
+  <ClearLocalStorageTimestamp>0</ClearLocalStorageTimestamp>
+  <ClearTranslationCacheTimestamp>0</ClearTranslationCacheTimestamp>
+  <LockedUserSettings />
+  <NewUsersFollowDefaults>false</NewUsersFollowDefaults>
+  <AutoPauseEnabled>true</AutoPauseEnabled>
+  <AutoResumeEnabled>false</AutoResumeEnabled>
+  <AutoPipEnabled>false</AutoPipEnabled>
+  <AutoSkipIntro>false</AutoSkipIntro>
+  <AutoSkipOutro>false</AutoSkipOutro>
+  <LongPress2xEnabled>false</LongPress2xEnabled>
+  <RandomButtonEnabled>true</RandomButtonEnabled>
+  <RandomIncludeMovies>true</RandomIncludeMovies>
+  <RandomIncludeShows>true</RandomIncludeShows>
+  <RandomUnwatchedOnly>false</RandomUnwatchedOnly>
+  <RandomScopeCurrentContainer>false</RandomScopeCurrentContainer>
+  <ShowWatchProgress>false</ShowWatchProgress>
+  <WatchProgressDefaultMode>percentage</WatchProgressDefaultMode>
+  <WatchProgressTimeFormat>hours</WatchProgressTimeFormat>
+  <ShowFileSizes>false</ShowFileSizes>
+  <RemoveContinueWatchingEnabled>false</RemoveContinueWatchingEnabled>
+  <ShowAudioLanguages>true</ShowAudioLanguages>
+  <ShowReviews>false</ShowReviews>
+  <ShowUserReviews>false</ShowUserReviews>
+  <ReviewsExpandedByDefault>false</ReviewsExpandedByDefault>
+  <HideReviewsFromHiddenUsers>true</HideReviewsFromHiddenUsers>
+  <HideReviewsFromDisabledUsers>true</HideReviewsFromDisabledUsers>
+  <MirrorReviewRatingsToJellyfin>false</MirrorReviewRatingsToJellyfin>
+  <ShowAwards>false</ShowAwards>
+  <MdblistApiKey />
+  <MdblistRatingsEnabled>false</MdblistRatingsEnabled>
+  <MdblistRatingsShowOnItemDetails>true</MdblistRatingsShowOnItemDetails>
+  <MdblistRatingsFetchEnabled>false</MdblistRatingsFetchEnabled>
+  <MdblistRatingsAutoSyncEnabled>false</MdblistRatingsAutoSyncEnabled>
+  <MdblistRatingsOverwriteExisting>false</MdblistRatingsOverwriteExisting>
+  <MdblistCommunityRatingSource>tmdb</MdblistCommunityRatingSource>
+  <MdblistCriticRatingSource>tomatoes</MdblistCriticRatingSource>
+  <MdblistCommunityRatingFallbackSource />
+  <MdblistCriticRatingFallbackSource />
+  <MdblistFetchReserve>400</MdblistFetchReserve>
+  <MdblistRatingsSources />
+  <MdblistRatingsShowPercentSymbol>false</MdblistRatingsShowPercentSymbol>
+  <ShowReleaseDates>false</ShowReleaseDates>
+  <ShowUserRatingOnPosters>false</ShowUserRatingOnPosters>
+  <ShowUserRatingDash>true</ShowUserRatingDash>
+  <Shortcuts>
+    <Shortcut>
+      <Name>OpenSearch</Name>
+      <Key>/</Key>
+      <Label>Open Search</Label>
+      <Category>Global</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>GoToHome</Name>
+      <Key>Shift+H</Key>
+      <Label>Go to Home</Label>
+      <Category>Global</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>GoToDashboard</Name>
+      <Key>D</Key>
+      <Label>Go to Dashboard</Label>
+      <Category>Global</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>QuickConnect</Name>
+      <Key>Q</Key>
+      <Label>Quick Connect</Label>
+      <Category>Global</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>PlayRandomItem</Name>
+      <Key>R</Key>
+      <Label>Play Random Item</Label>
+      <Category>Global</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>CycleAspectRatio</Name>
+      <Key>A</Key>
+      <Label>Cycle Aspect Ratio</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>ShowPlaybackInfo</Name>
+      <Key>I</Key>
+      <Label>Show Playback Info</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>SubtitleMenu</Name>
+      <Key>S</Key>
+      <Label>Subtitle Menu</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>CycleSubtitleTracks</Name>
+      <Key>C</Key>
+      <Label>Cycle Subtitle Tracks</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>CycleAudioTracks</Name>
+      <Key>V</Key>
+      <Label>Cycle Audio Tracks</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>IncreasePlaybackSpeed</Name>
+      <Key>+</Key>
+      <Label>Increase Playback Speed</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>DecreasePlaybackSpeed</Name>
+      <Key>-</Key>
+      <Label>Decrease Playback Speed</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>ResetPlaybackSpeed</Name>
+      <Key>R</Key>
+      <Label>Reset Playback Speed</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>BookmarkCurrentTime</Name>
+      <Key>B</Key>
+      <Label>Bookmark Current Time</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>OpenEpisodePreview</Name>
+      <Key>P</Key>
+      <Label>Open Episode Preview</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>SkipIntroOutro</Name>
+      <Key>O</Key>
+      <Label>Skip Intro/Outro</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>FrameStepBack</Name>
+      <Key>,</Key>
+      <Label>Step Back One Frame</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>FrameStepForward</Name>
+      <Key>.</Key>
+      <Label>Step Forward One Frame</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>JumpToLastPosition</Name>
+      <Key>Z</Key>
+      <Label>Jump to Last Position</Label>
+      <Category>Player</Category>
+    </Shortcut>
+    <Shortcut>
+      <Name>JumpToPercentage</Name>
+      <Key>0-9</Key>
+      <Label>Jump to % of video</Label>
+      <Category>Player</Category>
+    </Shortcut>
+  </Shortcuts>
+  <PauseScreenEnabled>true</PauseScreenEnabled>
+  <ShowPlaybackRatingBadge>false</ShowPlaybackRatingBadge>
+  <PauseScreenDelaySeconds>5</PauseScreenDelaySeconds>
+  <QualityTagsEnabled>false</QualityTagsEnabled>
+  <ShowResolutionTag>true</ShowResolutionTag>
+  <ShowSourceTag>true</ShowSourceTag>
+  <ShowDynamicRangeTag>true</ShowDynamicRangeTag>
+  <ShowSpecialFormatTag>true</ShowSpecialFormatTag>
+  <ShowVideoCodecTag>true</ShowVideoCodecTag>
+  <ShowAudioInfoTag>true</ShowAudioInfoTag>
+  <ResolutionTagOrder>1</ResolutionTagOrder>
+  <SourceTagOrder>2</SourceTagOrder>
+  <DynamicRangeTagOrder>3</DynamicRangeTagOrder>
+  <SpecialFormatTagOrder>4</SpecialFormatTagOrder>
+  <VideoCodecTagOrder>5</VideoCodecTagOrder>
+  <AudioInfoTagOrder>6</AudioInfoTagOrder>
+  <LanguageTagsEnabled>false</LanguageTagsEnabled>
+  <RatingTagsEnabled>false</RatingTagsEnabled>
+  <AgeRatingTagsEnabled>false</AgeRatingTagsEnabled>
+  <PeopleTagsEnabled>false</PeopleTagsEnabled>
+  <NativePosterTagsEnabled>false</NativePosterTagsEnabled>
+  <NativePosterTagsWebClientNames />
+  <TagStylesEnabled>false</TagStylesEnabled>
+  <TagStyleOverrides />
+  <TagStyleTarget>both</TagStyleTarget>
+  <TagStylePreset>default</TagStylePreset>
+  <TagStyleApplyScope>all</TagStyleApplyScope>
+  <TagsCacheTtlDays>30</TagsCacheTtlDays>
+  <DisableTagsOnSearchPage>false</DisableTagsOnSearchPage>
+  <TagsHideOnHover>false</TagsHideOnHover>
+  <TagCacheServerMode>true</TagCacheServerMode>
+  <TagCacheExcludeLibraries>false</TagCacheExcludeLibraries>
+  <TagCacheExcludedLibraryIds />
+  <EnableTagsLocalStorageFallback>false</EnableTagsLocalStorageFallback>
+  <DisableAllShortcuts>false</DisableAllShortcuts>
+  <DefaultSubtitleStyle>0</DefaultSubtitleStyle>
+  <DefaultSubtitleSize>2</DefaultSubtitleSize>
+  <DefaultSubtitleFont>0</DefaultSubtitleFont>
+  <DefaultSubtitleTextEffect>0</DefaultSubtitleTextEffect>
+  <DisableCustomSubtitleStyles>false</DisableCustomSubtitleStyles>
+  <QualityTagsPosition>top-left</QualityTagsPosition>
+  <GenreTagsPosition>top-right</GenreTagsPosition>
+  <LanguageTagsPosition>bottom-left</LanguageTagsPosition>
+  <LanguageTagsPriority />
+  <LanguageTagsPriorityStrict>false</LanguageTagsPriorityStrict>
+  <QualityTagsPreferredAudioLanguage />
+  <QualityTagsAudioLanguageFromUser>false</QualityTagsAudioLanguageFromUser>
+  <RatingTagsPosition>bottom-right</RatingTagsPosition>
+  <RatingTagsOnMovies>true</RatingTagsOnMovies>
+  <RatingTagsOnSeries>true</RatingTagsOnSeries>
+  <RatingTagsOnSeasons>true</RatingTagsOnSeasons>
+  <RatingTagsOnEpisodes>true</RatingTagsOnEpisodes>
+  <RatingTagsOnContinueWatching>true</RatingTagsOnContinueWatching>
+  <RatingTagsOnNextUp>true</RatingTagsOnNextUp>
+  <AgeRatingTagsPosition>bottom-right</AgeRatingTagsPosition>
+  <ShowRatingInPlayer>true</ShowRatingInPlayer>
+  <GenreTagsEnabled>false</GenreTagsEnabled>
+  <DefaultLanguage />
+  <JellyseerrEnabled>false</JellyseerrEnabled>
+  <JellyseerrShowSearchResults>true</JellyseerrShowSearchResults>
+  <JellyseerrSearchExcludeLibraryItems>false</JellyseerrSearchExcludeLibraryItems>
+  <JellyseerrShowReportButton>false</JellyseerrShowReportButton>
+  <JellyseerrShowIssueIndicator>false</JellyseerrShowIssueIndicator>
+  <JellyseerrEnable4KRequests>false</JellyseerrEnable4KRequests>
+  <JellyseerrEnable4KTvRequests>false</JellyseerrEnable4KTvRequests>
+  <JellyseerrShowAdvanced>false</JellyseerrShowAdvanced>
+  <JellyseerrShowQuotaInfo>true</JellyseerrShowQuotaInfo>
+  <JellyseerrShowSimilar>true</JellyseerrShowSimilar>
+  <JellyseerrShowRecommended>true</JellyseerrShowRecommended>
+  <JellyseerrShowRequestMoreOnSeries>true</JellyseerrShowRequestMoreOnSeries>
+  <JellyseerrShowNetworkDiscovery>true</JellyseerrShowNetworkDiscovery>
+  <JellyseerrShowGenreDiscovery>true</JellyseerrShowGenreDiscovery>
+  <JellyseerrShowTagDiscovery>true</JellyseerrShowTagDiscovery>
+  <JellyseerrShowPersonDiscovery>true</JellyseerrShowPersonDiscovery>
+  <JellyseerrShowCollectionDiscovery>true</JellyseerrShowCollectionDiscovery>
+  <JellyseerrShowDetailPageLink>true</JellyseerrShowDetailPageLink>
+  <JellyseerrShowDetailPageLinkAsText>false</JellyseerrShowDetailPageLinkAsText>
+  <JellyseerrExcludeLibraryItems>true</JellyseerrExcludeLibraryItems>
+  <JellyseerrExcludeBlocklistedItems>false</JellyseerrExcludeBlocklistedItems>
+  <ShowElsewhereOnJellyseerr>false</ShowElsewhereOnJellyseerr>
+  <JellyseerrUseMoreInfoModal>true</JellyseerrUseMoreInfoModal>
+  <JellyseerrAvailablePosterLinksToJellyfin>false</JellyseerrAvailablePosterLinksToJellyfin>
+  <JellyseerrUrls />
+  <JellyseerrApiKey />
+  <JellyseerrUrlMappings />
+  <TriggerSeerrScanOnItemAdded>false</TriggerSeerrScanOnItemAdded>
+  <SeerrScanDebounceSeconds>60</SeerrScanDebounceSeconds>
+  <ShowCollectionsInSearch>true</ShowCollectionsInSearch>
+  <JellyseerrDisableCache>false</JellyseerrDisableCache>
+  <JellyseerrResponseCacheTtlMinutes>10</JellyseerrResponseCacheTtlMinutes>
+  <JellyseerrUserIdCacheTtlMinutes>30</JellyseerrUserIdCacheTtlMinutes>
+  <ArrLinksEnabled>false</ArrLinksEnabled>
+  <SonarrUrl />
+  <RadarrUrl />
+  <BazarrUrl />
+  <ShowArrLinksAsText>false</ShowArrLinksAsText>
+  <ArrLinksShowStatusSingle>false</ArrLinksShowStatusSingle>
+  <SonarrUrlMappings />
+  <RadarrUrlMappings />
+  <BazarrUrlMappings />
+  <SonarrInstances>[]</SonarrInstances>
+  <RadarrInstances>[]</RadarrInstances>
+  <ShokoUrl />
+  <ShokoApiKey />
+  <ShokoUrlMappings />
+  <ShokoShowEpisodes>true</ShokoShowEpisodes>
+  <ShokoShowSpecials>false</ShokoShowSpecials>
+  <ShokoShowCredits>false</ShokoShowCredits>
+  <ShokoShowTrailers>false</ShokoShowTrailers>
+  <ShokoShowParodies>false</ShokoShowParodies>
+  <ShokoShowOther>false</ShokoShowOther>
+  <ArrTagsSyncEnabled>false</ArrTagsSyncEnabled>
+  <SonarrApiKey />
+  <RadarrApiKey />
+  <ArrTagsPrefix>JE Arr Tag: </ArrTagsPrefix>
+  <ArrTagsClearOldTags>true</ArrTagsClearOldTags>
+  <ArrTagsShowAsLinks>true</ArrTagsShowAsLinks>
+  <ArrTagsLinksFilter />
+  <ArrTagsLinksHideFilter />
+  <ArrTagsSyncFilter />
+  <AudioLanguageTagSyncEnabled>false</AudioLanguageTagSyncEnabled>
+  <AudioLanguageTagPrefix>JE Language: </AudioLanguageTagPrefix>
+  <AudioLanguageTagShowAsLinks>true</AudioLanguageTagShowAsLinks>
+  <LetterboxdEnabled>false</LetterboxdEnabled>
+  <ShowLetterboxdLinkAsText>false</ShowLetterboxdLinkAsText>
+  <MetadataIconsEnabled>false</MetadataIconsEnabled>
+  <AutoSeasonRequestEnabled>false</AutoSeasonRequestEnabled>
+  <AutoSeasonRequestThresholdValue>2</AutoSeasonRequestThresholdValue>
+  <AutoSeasonRequestRequireAllWatched>false</AutoSeasonRequestRequireAllWatched>
+  <AutoMovieRequestEnabled>false</AutoMovieRequestEnabled>
+  <AutoMovieRequestTriggerType>OnMinutesWatched</AutoMovieRequestTriggerType>
+  <AutoMovieRequestMinutesWatched>20</AutoMovieRequestMinutesWatched>
+  <AutoMovieRequestCheckReleaseDate>true</AutoMovieRequestCheckReleaseDate>
+  <AutoMovieRequestQualityMode>default</AutoMovieRequestQualityMode>
+  <AutoMovieRequestCustomServerId>-1</AutoMovieRequestCustomServerId>
+  <AutoMovieRequestCustomProfileId>0</AutoMovieRequestCustomProfileId>
+  <AutoMovieRequestCustomRootFolder />
+  <AutoMovieRequestFallbackOn4k>true</AutoMovieRequestFallbackOn4k>
+  <AddRequestedMediaToWatchlist>false</AddRequestedMediaToWatchlist>
+  <SyncJellyseerrWatchlist>false</SyncJellyseerrWatchlist>
+  <SyncJellyfinWatchlistToSeerr>false</SyncJellyfinWatchlistToSeerr>
+  <PreventWatchlistReAddition>true</PreventWatchlistReAddition>
+  <WatchlistMemoryRetentionDays>365</WatchlistMemoryRetentionDays>
+  <JellyseerrAutoImportUsers>false</JellyseerrAutoImportUsers>
+  <JellyseerrImportBlockedUsers />
+  <BookmarksEnabled>true</BookmarksEnabled>
+  <BookmarksUsePluginPages>false</BookmarksUsePluginPages>
+  <BookmarksUseCustomTabs>false</BookmarksUseCustomTabs>
+  <BookmarksUseNativeTab>false</BookmarksUseNativeTab>
+  <BookmarksAutoCreateCustomTab>false</BookmarksAutoCreateCustomTab>
+  <BookmarksCustomTabJeOwned>false</BookmarksCustomTabJeOwned>
+  <UseIcons>true</UseIcons>
+  <IconStyle>emoji</IconStyle>
+  <ColoredRatingsEnabled>false</ColoredRatingsEnabled>
+  <ThemeSelectorEnabled>false</ThemeSelectorEnabled>
+  <ColoredActivityIconsEnabled>false</ColoredActivityIconsEnabled>
+  <PluginIconsEnabled>false</PluginIconsEnabled>
+  <EnableLoginImage>false</EnableLoginImage>
+  <CustomPluginLinks />
+  <ActiveStreamsEnabled>false</ActiveStreamsEnabled>
+  <ActiveStreamsAllUsers>false</ActiveStreamsAllUsers>
+  <ActivityFeedEnabled>false</ActivityFeedEnabled>
+  <ActivityFeedShowWatched>true</ActivityFeedShowWatched>
+  <ActivityFeedShowFavorited>true</ActivityFeedShowFavorited>
+  <ActivityFeedShowReviewed>true</ActivityFeedShowReviewed>
+  <ActivityFeedShowActiveStreams>true</ActivityFeedShowActiveStreams>
+  <ActivityFeedUsePluginPages>false</ActivityFeedUsePluginPages>
+  <ActivityFeedUseCustomTabs>false</ActivityFeedUseCustomTabs>
+  <ActivityFeedUseNativeTab>false</ActivityFeedUseNativeTab>
+  <ActivityFeedAutoCreateCustomTab>false</ActivityFeedAutoCreateCustomTab>
+  <ActivityFeedCustomTabJeOwned>false</ActivityFeedCustomTabJeOwned>
+  <DownloadsPageEnabled>false</DownloadsPageEnabled>
+  <DownloadsUsePluginPages>false</DownloadsUsePluginPages>
+  <DownloadsUseCustomTabs>false</DownloadsUseCustomTabs>
+  <DownloadsUseNativeTab>false</DownloadsUseNativeTab>
+  <DownloadsAutoCreateCustomTab>false</DownloadsAutoCreateCustomTab>
+  <DownloadsCustomTabJeOwned>false</DownloadsCustomTabJeOwned>
+  <DownloadsPagePollingEnabled>true</DownloadsPagePollingEnabled>
+  <DownloadsPollIntervalSeconds>30</DownloadsPollIntervalSeconds>
+  <DownloadsPageShowIssues>false</DownloadsPageShowIssues>
+  <ShowDownloadsInRequests>true</ShowDownloadsInRequests>
+  <DownloadsFilterByUserRequests>true</DownloadsFilterByUserRequests>
+  <DownloadsShowHistory>true</DownloadsShowHistory>
+  <DownloadsHistoryAdminOnly>false</DownloadsHistoryAdminOnly>
+  <CalendarPageEnabled>false</CalendarPageEnabled>
+  <CalendarUseCustomTabs>false</CalendarUseCustomTabs>
+  <CalendarUsePluginPages>false</CalendarUsePluginPages>
+  <CalendarUseNativeTab>false</CalendarUseNativeTab>
+  <CalendarAutoCreateCustomTab>false</CalendarAutoCreateCustomTab>
+  <CalendarCustomTabJeOwned>false</CalendarCustomTabJeOwned>
+  <CalendarFirstDayOfWeek>Monday</CalendarFirstDayOfWeek>
+  <CalendarTimeFormat>5pm/5:30pm</CalendarTimeFormat>
+  <CalendarHighlightFavorites>false</CalendarHighlightFavorites>
+  <CalendarHighlightWatchedSeries>false</CalendarHighlightWatchedSeries>
+  <CalendarFilterByLibraryAccess>true</CalendarFilterByLibraryAccess>
+  <CalendarShowOnlyRequested>false</CalendarShowOnlyRequested>
+  <CalendarForceOnlyRequested>false</CalendarForceOnlyRequested>
+  <RecommendationsPageEnabled>false</RecommendationsPageEnabled>
+  <RecommendationsUsePluginPages>false</RecommendationsUsePluginPages>
+  <RecommendationsUseCustomTabs>false</RecommendationsUseCustomTabs>
+  <RecommendationsUseNativeTab>false</RecommendationsUseNativeTab>
+  <RecommendationsAutoCreateCustomTab>false</RecommendationsAutoCreateCustomTab>
+  <RecommendationsCustomTabJeOwned>false</RecommendationsCustomTabJeOwned>
+  <HiddenContentEnabled>false</HiddenContentEnabled>
+  <HiddenContentUsePluginPages>false</HiddenContentUsePluginPages>
+  <HiddenContentUseCustomTabs>false</HiddenContentUseCustomTabs>
+  <HiddenContentUseNativeTab>false</HiddenContentUseNativeTab>
+  <HiddenContentAutoCreateCustomTab>false</HiddenContentAutoCreateCustomTab>
+  <HiddenContentCustomTabJeOwned>false</HiddenContentCustomTabJeOwned>
+  <HiddenContentAdmin>true</HiddenContentAdmin>
+  <CatchUpEnabled>false</CatchUpEnabled>
+  <CatchUpUsePluginPages>false</CatchUpUsePluginPages>
+  <CatchUpUseNativeTab>false</CatchUpUseNativeTab>
+  <CatchUpUseCustomTabs>false</CatchUpUseCustomTabs>
+  <CatchUpAutoCreateCustomTab>false</CatchUpAutoCreateCustomTab>
+  <CatchUpCustomTabJeOwned>false</CatchUpCustomTabJeOwned>
+  <CatchUpLogEnabled>true</CatchUpLogEnabled>
+  <HiddenContentDefaultEnabled>true</HiddenContentDefaultEnabled>
+  <HiddenContentDefaultShowHideButtons>true</HiddenContentDefaultShowHideButtons>
+  <HiddenContentDefaultShowHideConfirmation>true</HiddenContentDefaultShowHideConfirmation>
+  <HiddenContentDefaultShowButtonJellyseerr>true</HiddenContentDefaultShowButtonJellyseerr>
+  <HiddenContentDefaultShowButtonLibrary>false</HiddenContentDefaultShowButtonLibrary>
+  <HiddenContentDefaultShowButtonDetails>true</HiddenContentDefaultShowButtonDetails>
+  <HiddenContentDefaultShowButtonCast>false</HiddenContentDefaultShowButtonCast>
+  <HiddenContentDefaultFilterLibrary>true</HiddenContentDefaultFilterLibrary>
+  <HiddenContentDefaultFilterDiscovery>true</HiddenContentDefaultFilterDiscovery>
+  <HiddenContentDefaultFilterSearch>false</HiddenContentDefaultFilterSearch>
+  <HiddenContentDefaultFilterCalendar>true</HiddenContentDefaultFilterCalendar>
+  <HiddenContentDefaultFilterUpcoming>true</HiddenContentDefaultFilterUpcoming>
+  <HiddenContentDefaultFilterRecommendations>true</HiddenContentDefaultFilterRecommendations>
+  <HiddenContentDefaultFilterRequests>true</HiddenContentDefaultFilterRequests>
+  <HiddenContentDefaultFilterNextUp>true</HiddenContentDefaultFilterNextUp>
+  <HiddenContentDefaultFilterContinueWatching>true</HiddenContentDefaultFilterContinueWatching>
+  <HiddenContentDefaultExperimentalHideCollections>false</HiddenContentDefaultExperimentalHideCollections>
+  <SpoilerBlurEnabled>false</SpoilerBlurEnabled>
+  <SpoilerBlurIntensity>40</SpoilerBlurIntensity>
+  <SpoilerStripSeriesOverview xsi:nil="true" />
+  <SpoilerStripOverview>true</SpoilerStripOverview>
+  <SpoilerStripTags>true</SpoilerStripTags>
+  <SpoilerStripChapters>true</SpoilerStripChapters>
+  <SpoilerStripTaglines>true</SpoilerStripTaglines>
+  <SpoilerStripRatings>true</SpoilerStripRatings>
+  <SpoilerStripPremiereDate>true</SpoilerStripPremiereDate>
+  <SpoilerReplaceTitle>true</SpoilerReplaceTitle>
+  <SpoilerStripCast>true</SpoilerStripCast>
+  <SpoilerStripCastMode>GuestStars</SpoilerStripCastMode>
+  <SpoilerStripReviews>true</SpoilerStripReviews>
+  <SpoilerBlurMode>hide</SpoilerBlurMode>
+  <SpoilerBlurArtwork>false</SpoilerBlurArtwork>
+  <SpoilerAutoEnableOnFirstPlay>false</SpoilerAutoEnableOnFirstPlay>
+  <SpoilerAutoEnableOnSeerrRequest>false</SpoilerAutoEnableOnSeerrRequest>
+  <SpoilerAutoEnableOnLibraryAdd>false</SpoilerAutoEnableOnLibraryAdd>
+  <SpoilerAutoEnableSeries>true</SpoilerAutoEnableSeries>
+  <SpoilerAutoEnableMovies>true</SpoilerAutoEnableMovies>
+  <SpoilerAutoEnableLibraryIds />
+  <SpoilerBlurStrictRefresh>false</SpoilerBlurStrictRefresh>
+  <SpoilerKeepMoviePosters>true</SpoilerKeepMoviePosters>
+  <SpoilerAdvancedMode>false</SpoilerAdvancedMode>
+  <SpoilerNextEpisodeStripTitle>false</SpoilerNextEpisodeStripTitle>
+  <SpoilerNextEpisodeStripOverview>true</SpoilerNextEpisodeStripOverview>
+  <SpoilerNextEpisodeStripRatings>true</SpoilerNextEpisodeStripRatings>
+  <SpoilerNextEpisodeStripImage>true</SpoilerNextEpisodeStripImage>
+  <SpoilerCurrentSeasonStripTitle>true</SpoilerCurrentSeasonStripTitle>
+  <SpoilerCurrentSeasonStripOverview>true</SpoilerCurrentSeasonStripOverview>
+  <SpoilerCurrentSeasonStripRatings>true</SpoilerCurrentSeasonStripRatings>
+  <SpoilerOverviewPlaceholder>Spoiler Guard activated</SpoilerOverviewPlaceholder>
+  <AnalyticsEnabled>false</AnalyticsEnabled>
+  <AnalyticsShareFeatureFlags>true</AnalyticsShareFeatureFlags>
+  <AnalyticsShareUsageCounts>true</AnalyticsShareUsageCounts>
+  <AnalyticsShareDataSizes>true</AnalyticsShareDataSizes>
+  <AnalyticsHasBeenConfigured>false</AnalyticsHasBeenConfigured>
+  <AnalyticsInstallId />
+  <AnalyticsInstallSecret />
+  <AnalyticsReportIntervalDays>15</AnalyticsReportIntervalDays>
+  <AnalyticsLastReportedAt>0</AnalyticsLastReportedAt>
+  <AnalyticsLastPayloadJson />
+  <AnalyticsLastReportedPluginVersion />
+  <AnalyticsLastReportedJellyfinTarget />
+  <AnalyticsLastReportedJellyfinVersion />
+  <AnalyticsForbiddenSinceLastSuccess>0</AnalyticsForbiddenSinceLastSuccess>
+</PluginConfiguration>

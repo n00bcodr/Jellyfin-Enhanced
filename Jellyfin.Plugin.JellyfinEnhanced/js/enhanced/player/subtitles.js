@@ -111,6 +111,23 @@
     ];
 
     /**
+     * The subtitle colours in effect. Normally the saved colours (a preset's, copied when it was
+     * picked, or the user's custom ones). While an administrator locks the subtitle style, or it
+     * follows the server default, the style can differ from the preset the colours were copied
+     * from, so its preset's colours apply instead, unless the user picked custom colours.
+     * @returns {{text: string, bg: string}} The text and background colours.
+     */
+    JE.getSubtitleColors = () => {
+        const settings = JE.currentSettings || {};
+        const following = JE.settingsMeta?.following;
+        const fromServer = JE.settings?.isLocked?.('selectedStylePresetIndex') === true
+            || (Array.isArray(following) && following.includes('selectedStylePresetIndex'));
+        const preset = fromServer && !settings.usingCustomColors ? JE.subtitlePresets[settings.selectedStylePresetIndex] : null;
+        if (preset) return { text: preset.textColor, bg: preset.bgColor };
+        return { text: settings.customSubtitleTextColor || '#FFFFFFFF', bg: settings.customSubtitleBgColor || '#00000000' };
+    };
+
+    /**
      * Resolves the text-shadow for the user's selected text effect preset.
      * @param {string} bgColor The subtitle background color in effect; only the
      *   "Auto" preset looks at it (shadow when transparent, none otherwise).
@@ -343,8 +360,7 @@
             return;
         }
 
-        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+        const { text: textColor, bg: bgColor } = JE.getSubtitleColors();
         const textShadow = JE.getSubtitleTextShadow(bgColor);
 
         const fontSizePreset = JE.fontSizePresets[JE.currentSettings.selectedFontSizePresetIndex ?? 2];

@@ -4,9 +4,14 @@ using System.Text.Json;
 using Jellyfin.Database.Implementations;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Locking;
+using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Configuration;
+using MediaBrowser.Model.Globalization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -197,5 +202,230 @@ public class IntegrationCalendarTests
         Assert.Empty(result.Events);
         Assert.Equal(1, result.Errors.GetArrayLength());
         Assert.Equal(0, transport.Calls);
+    }
+
+    // CalendarForceOnlyRequested (design A6): enforced by GET arr/calendar for every caller,
+    // from the caller's own Seerr requests, whatever the query string says.
+    private sealed class RequestedOnly : IDisposable
+    {
+        public ApiPluginFixture Plugin { get; } = new();
+        public Guid ViewerId { get; } = Guid.NewGuid();
+        public Guid AdminId { get; } = Guid.NewGuid();
+        public Guid UnlinkedId { get; } = Guid.NewGuid();
+        public System.Collections.Concurrent.ConcurrentQueue<string> SeerrCalls { get; } = new();
+        // Seerr /api/v1/request reply by host + query (requestedBy/skip); null = default lists below.
+        public Func<string, string, HttpResponseMessage?> RequestReply { get; set; } = (_, _) => null;
+        public IntegrationTransport Transport { get; }
+        public Mock<IUserManager> Users { get; } = new();
+        public SeerrParentalFilter ParentalFilter { get; }
+        public RequestedOnly()
+        {
+            JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
+            Configure(Plugin);
+            var c = Plugin.Plugin.Configuration;
+            c.SonarrUrl = "http://127.0.0.1/sonarr"; c.SonarrApiKey = "arr-secret";
+            c.RadarrUrl = "http://127.0.0.1/radarr"; c.RadarrApiKey = "arr-secret";
+            c.JellyseerrEnabled = true;
+            c.JellyseerrAutoImportUsers = false;
+            c.JellyseerrUrls = "http://seerr.invalid";
+            c.JellyseerrApiKey = "seerr-secret";
+            c.CalendarForceOnlyRequested = true;
+            Transport = new IntegrationTransport((request, _) =>
+            {
+                var uri = request.RequestUri!;
+                if (uri.AbsolutePath.StartsWith("/api/v1/"))
+                {
+                    SeerrCalls.Enqueue(uri.Host + uri.PathAndQuery);
+                    Assert.Equal("seerr-secret", Assert.Single(request.Headers.GetValues("X-Api-Key")));
+                }
+                if (uri.AbsolutePath == "/api/v1/user") return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] {
+                    new { id = 27, jellyfinUserId = ViewerId.ToString("N"), permissions = 32 },
+                    new { id = 38, jellyfinUserId = AdminId.ToString("N"), permissions = 2 } } })));
+                if (uri.AbsolutePath == "/api/v1/request")
+                {
+                    var custom = RequestReply(uri.Host, uri.Query);
+                    if (custom != null) return Task.FromResult(custom);
+                    var mine = uri.Query.Contains("requestedBy=27") ? new[] { ("movie", 100), ("tv", 200) }
+                        : uri.Query.Contains("requestedBy=38") ? new[] { ("movie", 101) } : [];
+                    return Task.FromResult(IntegrationTransport.Response(SeerrRequests(mine, mine.Length)));
+                }
+                // Title details for the parental filter: no certification, i.e. unrated.
+                if (uri.AbsolutePath.StartsWith("/api/v1/movie/") || uri.AbsolutePath.StartsWith("/api/v1/tv/")) return Task.FromResult(IntegrationTransport.Response("{}"));
+                if (uri.AbsolutePath.Contains("/shoko/")) return Task.FromResult(IntegrationTransport.Response("[" + Episode("Episode", 1, 42) + "]"));
+                if (uri.AbsolutePath.Contains("/radarr/")) return Task.FromResult(IntegrationTransport.Response(
+                    "[" + string.Join(",", new[] { 100, 101, 300 }.Select(id => $"{{\"id\":{id},\"title\":\"Movie {id}\",\"tmdbId\":{id},\"digitalRelease\":\"2026-10-10\"}}")) + "]"));
+                // Series 100 shares a TMDB id with the requested movie 100: a type mismatch, never a match.
+                return Task.FromResult(IntegrationTransport.Response(
+                    "[" + string.Join(",", new[] { 200, 201, 100 }.Select(id => $"{{\"id\":{id},\"airDateUtc\":\"2026-10-10\",\"title\":\"Episode\",\"series\":{{\"title\":\"Series {id}\",\"tmdbId\":{id}}}}}")) + "]"));
+            });
+            var server = new Mock<IServerConfigurationManager>();
+            server.SetupGet(s => s.Configuration).Returns(new ServerConfiguration());
+            ParentalFilter = new SeerrParentalFilter(Transport, Users.Object, Mock.Of<ILocalizationManager>(), server.Object, Plugin.Core.Logger);
+        }
+        public static string SeerrRequests(IEnumerable<(string Type, int TmdbId)> rows, int total) => JsonSerializer.Serialize(new
+        {
+            pageInfo = new { pages = 1, pageSize = 500, results = total, page = 1 },
+            results = rows.Select(r => new { type = r.Type, media = new { tmdbId = r.TmdbId } }),
+        });
+        public async Task<(List<ArrItem> Events, JsonElement Errors)> Get(Guid? user, bool admin = false, string query = "?start=2026-10-01&end=2026-11-01")
+        {
+            var controller = ApiAssetTests.Controller(Plugin.Core, Transport, new CalendarDatabase(), Users.Object, ParentalFilter);
+            controller.Request.QueryString = new QueryString(query);
+            controller.HttpContext.User = user == null ? new ClaimsPrincipal(new ClaimsIdentity()) : new ClaimsPrincipal(new ClaimsIdentity([
+                new Claim("Jellyfin-UserId", user.Value.ToString()), new Claim(ClaimTypes.Role, admin ? "Administrator" : "User")], "test"));
+            return Unpack(await controller.GetCalendarEvents());
+        }
+        public void Dispose() { Transport.Dispose(); JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange(); Plugin.Dispose(); }
+    }
+    private static string[] Keys(List<ArrItem> events) => events.Select(e => e.Source + ":" + (e.TmdbId?.ToString(CultureInfo.InvariantCulture) ?? "-")).OrderBy(k => k, StringComparer.Ordinal).ToArray();
+
+    [Theory]
+    [InlineData("?start=2026-10-01&end=2026-11-01")]
+    [InlineData("?start=2026-10-01&end=2026-11-01&forceOnlyRequested=false&onlyRequested=false&requestedBy=38&userOnly=false")]
+    public async Task ForceOnlyRequestedReturnsOnlyTheNonAdminCallersRequestsWhateverTheQuery(string query)
+    {
+        using var f = new RequestedOnly();
+        var result = await f.Get(f.ViewerId, query: query);
+        Assert.Equal(new[] { "Radarr:100", "Sonarr:200" }, Keys(result.Events));
+        Assert.Equal("Series", Assert.Single(result.Events, e => e.Source == "Sonarr").Type);
+        Assert.Equal(0, result.Errors.GetArrayLength());
+        var requestCall = Assert.Single(f.SeerrCalls, c => c.Contains("/api/v1/request?"));
+        Assert.Contains("requestedBy=27", requestCall);
+        Assert.DoesNotContain("requestedBy=38", requestCall);
+    }
+
+    [Fact]
+    public async Task ForceOnlyRequestedOffReturnsEveryEventWithoutAskingSeerr()
+    {
+        using var f = new RequestedOnly();
+        f.Plugin.Plugin.Configuration.CalendarForceOnlyRequested = false;
+        var result = await f.Get(f.ViewerId);
+        Assert.Equal(new[] { "Radarr:100", "Radarr:101", "Radarr:300", "Shoko:-", "Sonarr:100", "Sonarr:200", "Sonarr:201" }, Keys(result.Events));
+        Assert.Empty(f.SeerrCalls);
+    }
+
+    [Fact]
+    public async Task ForceOnlyRequestedAppliesToAdminsWithTheirOwnRequests()
+    {
+        using var f = new RequestedOnly();
+        var result = await f.Get(f.AdminId, admin: true);
+        Assert.Equal(new[] { "Radarr:101" }, Keys(result.Events));
+        Assert.Contains(f.SeerrCalls, c => c.Contains("/api/v1/request?") && c.Contains("requestedBy=38"));
+    }
+
+    [Theory]
+    [InlineData("seerr-disabled")]
+    [InlineData("seerr-unconfigured")]
+    [InlineData("unlinked-user")]
+    [InlineData("no-identity")]
+    [InlineData("seerr-error")]
+    [InlineData("seerr-html")]
+    public async Task ForceOnlyRequestedFailsClosedWhenMembershipCannotBeRead(string scenario)
+    {
+        using var f = new RequestedOnly();
+        var c = f.Plugin.Plugin.Configuration;
+        Guid? user = f.ViewerId;
+        switch (scenario)
+        {
+            case "seerr-disabled": c.JellyseerrEnabled = false; break;
+            case "seerr-unconfigured": c.JellyseerrApiKey = ""; break;
+            case "unlinked-user": user = f.UnlinkedId; break;
+            case "no-identity": user = null; break;
+            case "seerr-error": f.RequestReply = (_, _) => IntegrationTransport.Response("{\"message\":\"boom\"}", 500); break;
+            case "seerr-html": f.RequestReply = (_, _) => IntegrationTransport.Response("<html></html>", 200, "text/html"); break;
+        }
+        var result = await f.Get(user);
+        Assert.Empty(result.Events);
+        // Arr errors are reported as before; a Seerr problem adds none (the page never toasted it).
+        Assert.Equal(0, result.Errors.GetArrayLength());
+        if (scenario is "seerr-disabled" or "seerr-unconfigured" or "no-identity")
+            Assert.Empty(f.SeerrCalls);
+    }
+
+    [Fact]
+    public async Task ForceOnlyRequestedReadsEveryPageOfTheCallersRequests()
+    {
+        using var f = new RequestedOnly();
+        f.RequestReply = (_, query) => query.Contains("skip=0")
+            ? IntegrationTransport.Response(RequestedOnly.SeerrRequests(Enumerable.Range(1000, 500).Select(id => ("movie", id)), 501))
+            : query.Contains("skip=500") ? IntegrationTransport.Response(RequestedOnly.SeerrRequests(new[] { ("tv", 200) }, 501))
+            : IntegrationTransport.Response("{}", 500);
+        var result = await f.Get(f.ViewerId);
+        Assert.Equal(new[] { "Sonarr:200" }, Keys(result.Events));
+        Assert.Equal(2, f.SeerrCalls.Count(c => c.Contains("/api/v1/request?")));
+    }
+
+    [Fact]
+    public async Task ForceOnlyRequestedFallsBackToTheNextSeerrUrl()
+    {
+        using var f = new RequestedOnly();
+        f.Plugin.Plugin.Configuration.JellyseerrUrls = "http://seerr-a.invalid\nhttp://seerr-b.invalid";
+        f.RequestReply = (host, _) => host == "seerr-a.invalid" ? IntegrationTransport.Response("{}", 502) : null;
+        var result = await f.Get(f.ViewerId);
+        Assert.Equal(new[] { "Radarr:100", "Sonarr:200" }, Keys(result.Events));
+        Assert.Contains(f.SeerrCalls, c => c.StartsWith("seerr-b.invalid/api/v1/request?"));
+    }
+
+    [Theory]
+    [InlineData("dns")]
+    [InlineData("timeout")]
+    public async Task ForceOnlyRequestedFallsBackToTheNextSeerrUrlWhenTheFirstThrows(string failure)
+    {
+        using var f = new RequestedOnly();
+        f.Plugin.Plugin.Configuration.JellyseerrUrls = "http://seerr-a.invalid\nhttp://seerr-b.invalid";
+        f.RequestReply = (host, _) => host != "seerr-a.invalid" ? null
+            : failure == "dns" ? throw new HttpRequestException("Name or service not known")
+            : throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout");
+        var result = await f.Get(f.ViewerId);
+        Assert.Equal(new[] { "Radarr:100", "Sonarr:200" }, Keys(result.Events));
+        Assert.Contains(f.SeerrCalls, c => c.StartsWith("seerr-b.invalid/api/v1/request?"));
+    }
+
+    [Theory]
+    [InlineData("throws")]
+    [InlineData("malformed")]
+    public async Task ForceOnlyRequestedKeepsTheEarlierPagesWhenALaterPageFails(string failure)
+    {
+        using var f = new RequestedOnly();
+        f.RequestReply = (_, query) => query.Contains("skip=0")
+            ? IntegrationTransport.Response(RequestedOnly.SeerrRequests(new[] { ("tv", 200) }.Concat(Enumerable.Range(1000, 499).Select(id => ("movie", id))), 501))
+            : failure == "throws" ? throw new HttpRequestException("Connection reset")
+            : IntegrationTransport.Response("{\"results\":", 200);
+        var result = await f.Get(f.ViewerId);
+        Assert.Equal(new[] { "Sonarr:200" }, Keys(result.Events));
+    }
+
+    [Fact]
+    public async Task ForceOnlyRequestedSkipsMalformedRequestRows()
+    {
+        using var f = new RequestedOnly();
+        f.RequestReply = (_, _) => IntegrationTransport.Response(
+            "{\"pageInfo\":{\"results\":4},\"results\":[{\"type\":\"movie\",\"media\":null},{\"type\":{\"x\":1},\"media\":{\"tmdbId\":101}},{\"type\":\"movie\",\"media\":{\"tmdbId\":\"abc\"}},{\"type\":\"tv\",\"media\":{\"tmdbId\":200}}]}");
+        var result = await f.Get(f.ViewerId);
+        Assert.Equal(new[] { "Sonarr:200" }, Keys(result.Events));
+    }
+
+    [Fact]
+    public async Task ForceOnlyRequestedAppliesTheCallersParentalLimitLikeThePage()
+    {
+        using var f = new RequestedOnly();
+        // A rating-limited viewer: the page's arr/requests drops rows the parental filter refuses.
+        f.Users.Setup(u => u.GetUserById(f.ViewerId)).Returns(new User("viewer", "default", "default") { Id = f.ViewerId, MaxParentalRatingScore = 10 });
+        f.RequestReply = (_, _) => IntegrationTransport.Response(
+            "{\"pageInfo\":{\"results\":2},\"results\":[{\"type\":\"movie\",\"media\":{\"tmdbId\":100,\"mediaType\":\"movie\",\"adult\":true}},{\"type\":\"tv\",\"media\":{\"tmdbId\":200,\"mediaType\":\"tv\"}}]}");
+        var result = await f.Get(f.ViewerId);
+        // Movie 100 is refused (adult); series 200 has no rating and unrated titles are allowed.
+        Assert.Equal(new[] { "Sonarr:200" }, Keys(result.Events));
+        Assert.Contains(f.SeerrCalls, c => c.StartsWith("seerr.invalid/api/v1/tv/200"));
+    }
+
+    [Theory]
+    [InlineData("Movie", 5, "movie:5")]
+    [InlineData("Series", 5, "tv:5")]
+    [InlineData("Series", 0, null)]
+    [InlineData("Series", null, null)]
+    public void CalendarRequestKeyMatchesTheCalendarPage(string type, int? tmdbId, string? expected)
+    {
+        Assert.Equal(expected, JellyfinEnhancedController.CalendarRequestKey(new ArrItem { Type = type, TmdbId = tmdbId }));
     }
 }

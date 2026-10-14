@@ -20,7 +20,7 @@ The More menu uses labeled buttons. On short screens, previous/next buttons show
 
 ![Random button picking a title](../images/readme/random.webp)
 
-The dice button (or `R`) opens a random movie or show from your library. In the Enhanced panel's **Random Button** tab you can limit it to unwatched items, choose whether movies and/or shows are eligible, and narrow the pool under **Random Source**:
+The dice button (or `R`) opens a random movie or show from your library. In the Jellyfin Enhanced panel's **Random Button** tab you can limit it to unwatched items, choose whether movies and/or shows are eligible, and narrow the pool under **Random Source**:
 
 - **Use the playlist or collection I'm viewing** - on a playlist or collection page, the pick comes from that container's items (movies, shows or episodes) instead of the whole library.
 - **Everywhere else, pick from** - pin one of your playlists or collections so every press draws from it, whatever page you are on.
@@ -72,7 +72,7 @@ Per-user content hiding with server-side storage and granular filtering controls
 **Management Panel:**
 
 Access via:
-- Enhanced panel → Settings → Hidden Content
+- Jellyfin Enhanced panel → Settings → Hidden Content
 - Sidebar navigation (if enabled; Jellyfin 12: user profile menu instead)
 - Custom tab (if configured)
 
@@ -87,7 +87,7 @@ Access via:
 
 **Configuration:**
 
-1. Open Enhanced panel (press `?`)
+1. Open the Jellyfin Enhanced panel (press `?`)
 2. Go to Settings tab
 3. Find Hidden Content section
 4. Enable/disable the feature
@@ -133,7 +133,7 @@ A lightweight, **non-destructive** way to tidy the home screen. It adds a **Remo
 
 **Enable it:**
 
-- Open the Enhanced panel (press `?`) → **Settings** → **Add Remove from Continue Watching & Next Up Buttons**
+- Open the Jellyfin Enhanced panel (press `?`) → **Settings** → **Add Remove from Continue Watching & Next Up Buttons**
 
 ---
 
@@ -192,7 +192,7 @@ Comprehensive hotkeys for navigation, playback control, and more.
 
 **Customization:**
 
-1. Press `?` to open the Enhanced panel
+1. Press `?` to open the Jellyfin Enhanced panel
 2. Go to **Shortcuts** tab
 3. Click on any key to set a custom shortcut
 4. Changes save automatically per user
@@ -259,7 +259,7 @@ Intelligent playback features for better viewing experience.
 - **Auto Picture-in-Picture** - Enter PiP mode when switching tabs and leave it when you come back. Browsers that open their own automatic PiP on tab switch (such as Edge and Chrome) keep control of that window; JE only closes a PiP window it opened itself
 
 **Configuration:**
-Enable/disable in Enhanced panel → Settings tab
+Enable/disable in the Jellyfin Enhanced panel → Settings tab
 
 **How auto-skip works:**
 
@@ -312,7 +312,7 @@ Fine-tune subtitle appearance with presets and custom colors.
 
 **Usage:**
 
-1. Open Enhanced panel → Settings
+1. Open the Jellyfin Enhanced panel → Settings
 2. Find Subtitle Presets section
 3. Select your preferred preset options
 4. Or use Custom Colors section:
@@ -333,7 +333,7 @@ Jellyfin draws text subtitles in one of two ways, decided by its **Subtitle styl
 | **Native** | The browser's built-in captions | Text color, background, size, font and text effect. Position is not available |
 | **Auto** | Custom on Firefox, Safari (including the iOS app), Edge and TV platforms (Tizen 5+, webOS, PS4). Native on Chrome | The same as whichever mode Auto picks |
 
-- The position grid only takes effect in **Custom** mode, because the browser's native captions cannot be repositioned. The Enhanced panel shows a note when **Subtitle styling** is not set to Custom.
+- The position grid only takes effect in **Custom** mode, because the browser's native captions cannot be repositioned. The Jellyfin Enhanced panel shows a note when **Subtitle styling** is not set to Custom.
 - A **secondary subtitle** track is styled the same way as the primary one. Both share one position and stay stacked without overlapping. Near the top of the screen, two lines take more height, so keep the position below the top edge.
 - Styling behaves the same on Jellyfin 10.11 and 12. The only difference is how VobSub subtitles are handled, described below.
 
@@ -348,12 +348,12 @@ Jellyfin Enhanced can only style subtitles that Jellyfin draws as text. These fo
 | **VobSub / DVD subtitles** | Bitmap images. Jellyfin 12 draws them in the browser; Jellyfin 10.11 has the server burn them into the video |
 | **Burned-in subtitles** | Drawn into the video by the server (for example when a transcode is needed), so they cannot be changed in the browser |
 
-If styling does not apply, check which subtitle track is playing. Choosing a text-based track (for example SRT) restores full styling. The Enhanced panel shows a warning when the current video uses one of these formats.
+If styling does not apply, check which subtitle track is playing. Choosing a text-based track (for example SRT) restores full styling. The Jellyfin Enhanced panel shows a warning when the current video uses one of these formats.
 
 **Turning it off**
 
-- **For yourself:** in the Enhanced panel → Settings, enable **Disable Custom Subtitle Styles**, then reload the page. Jellyfin Enhanced then leaves subtitles alone and your Jellyfin **User Preferences** → **Subtitles** settings apply unchanged. Jellyfin Enhanced never changes those saved settings. It only styles the subtitles while a video plays.
-- **For all users:** in the plugin settings, enable **Disable Custom Subtitle Styles by default**, save, then use **Overwrite everyone's personal settings** in Quick Actions. The default only applies when a user's settings are first created, so users who already have saved settings keep their own value until you overwrite them.
+- **For yourself:** in the Jellyfin Enhanced panel → Settings, enable **Disable Custom Subtitle Styles**, then reload the page. Jellyfin Enhanced then leaves subtitles alone and your Jellyfin **User Preferences** → **Subtitles** settings apply unchanged. Jellyfin Enhanced never changes those saved settings. It only styles the subtitles while a video plays.
+- **For all users:** in the plugin settings, enable **Disable Custom Subtitle Styles by default**, save, then use **Apply defaults to users…** in Quick Actions: select **Disable Custom Subtitle Styles** and choose **Follow my defaults for everyone selected** or **Overwrite with my current values** (preview first, with undo). Or [lock it](enhanced-settings.md#user-settings-policy) for everyone. A changed default reaches new users and existing users whose setting follows your default; other users keep their saved value until you apply defaults to them or lock the setting.
 
 ---
 
@@ -462,7 +462,7 @@ See where else your media is available to stream.
 
 **Usage:**
 
-1. Enable in Enhanced panel → Settings
+1. Enable in the Jellyfin Enhanced panel → Settings
 2. Select your region
 3. View providers on item detail pages
 
@@ -501,7 +501,7 @@ Jellyfin users can write their own reviews for movies, series, seasons, and epis
 7. Click **Save**
 
 !!! note
-    The poster tag requires the user to also have **Rating Tags** enabled in the Enhanced panel (Settings tab).
+    The poster tag requires the user to also have **Rating Tags** enabled in the Jellyfin Enhanced panel (Settings tab).
 
 **Admin moderation:**
 
@@ -698,7 +698,7 @@ Show TMDB and Rotten Tomatoes ratings on posters and in player.
 - Stacked vertically on posters
 - Optional OSD display during playback
 - Color-coded by rating value
-- Choose where they appear, per item type (movies, series, seasons, episodes) and per home row (Continue Watching, Next Up). Untick **Episodes** to keep ratings off every episode card, including Next Up and Continue Watching; untick a row to hide them only in that row (on the home screen, and the Next Up shelf on a series page). Rating chips and your own review chip are hidden together on an excluded card. Admins set the defaults; each user can change them under *Show Rating Tags* in the Enhanced panel.
+- Choose where they appear, per item type (movies, series, seasons, episodes) and per home row (Continue Watching, Next Up). Untick **Episodes** to keep ratings off every episode card, including Next Up and Continue Watching; untick a row to hide them only in that row (on the home screen, and the Next Up shelf on a series page). Rating chips and your own review chip are hidden together on an excluded card. Admins set the defaults; each user can change them under *Show Rating Tags* in the Jellyfin Enhanced panel.
 
 ### Age Rating Tags
 
@@ -710,7 +710,7 @@ Show the item's parental / age rating (PG-13, R, TV-MA, FSK 12, BBFC 15, ...) as
 - Episodes and seasons fall back to their series' rating
 - Colour-coded per rating board, using the same colour table as [Colored Ratings](#colored-ratings)
 - Customizable position; defaults to the bottom-right corner and stacks with Rating Tags when both share a corner
-- Off by default — enable it per user in the Enhanced panel (Settings tab), or set the admin default under Display → Media Tags
+- Off by default — enable it per user in the Jellyfin Enhanced panel (Settings tab), or set the admin default under Display → Media Tags
 
 !!! note
     Spoiler Guard keeps the badge: a series' or movie's age rating reveals nothing about the plot, and the details page shows it regardless. While Spoiler Guard is hiding ratings, unwatched episodes (and unstarted seasons) of a guarded series show the series' rating rather than their own, since an episode rated higher than its show can hint at what happens in it.
@@ -741,7 +741,7 @@ Show your Media Tags in native Jellyfin apps that can't run Jellyfin Enhanced's 
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Display** → **Media Tags**
 2. Turn on **Enable Native Poster Tags (Experimental)** at the bottom
 3. Click **Save**
-4. Every user now gets their tags in native apps; anyone who doesn't want them can turn off *Show Tags in Native Clients* in the Enhanced panel's UI Settings
+4. Every user now gets their tags in native apps; anyone who doesn't want them can turn off *Show Tags in Native Clients* in the Jellyfin Enhanced panel's UI Settings
 5. Reopen the library, or restart the app, on the TV or phone
 
 See [Enhanced Settings - Native Poster Tags](enhanced-settings.md#native-poster-tags-experimental) for every setting.
@@ -879,7 +879,7 @@ Replace default activity icons with Material Design icons.
 
 **Configuration:**
 
-Enable in Enhanced panel → Settings → Extras
+Enable in the Jellyfin Enhanced panel → Settings → Extras
 
 ### 🎪 Colored Ratings
 
@@ -894,7 +894,7 @@ Color-coded backgrounds for ratings on detail pages.
 - Supports TMDB, IMDb, Rotten Tomatoes
 
 **Configuration:**
-Enable in Enhanced panel → Settings → Extras
+Enable in the Jellyfin Enhanced panel → Settings → Extras
 
 ### 🖼️ Login Image Display
 
@@ -910,7 +910,7 @@ Show user profile images on manual login page.
 
 **Configuration:**
 
-Enable in Enhanced panel → Settings → Extras
+Enable in the Jellyfin Enhanced panel → Settings → Extras
 
 ### 🧩 Plugin Icons
 
@@ -925,7 +925,7 @@ Replace default plugin icons with Material Design icons.
 - Improved dashboard aesthetics
 
 **Configuration:**
-Enable in Enhanced panel → Settings → Extras
+Enable in the Jellyfin Enhanced panel → Settings → Extras
 
 ### 🎭 Theme Selector
 
@@ -941,7 +941,7 @@ Choose from multiple Jellyfin theme color variants.
 
 **Configuration:**
 
-1. Enable in Enhanced panel → Settings → Extras
+1. Enable in the Jellyfin Enhanced panel → Settings → Extras
 2. Select theme from dropdown
 3. Optional: Enable "Randomize Daily"
 
@@ -963,7 +963,7 @@ Extensive CSS customization options. See [CSS Customization Guide](../advanced/c
 - Rating Tag OSD CSS
 - People Tags CSS
 - ARR Tag Links CSS
-- Enhanced Panel CSS
+- Jellyfin Enhanced panel CSS
 
 
 ### 🖼️ Custom Branding
@@ -1027,7 +1027,7 @@ Multi-language support with community translations and automatic caching.
 
 **Manual Cache Refresh:**
 
-1. Open Enhanced panel (press `?`)
+1. Open the Jellyfin Enhanced panel (press `?`)
 2. Go to Settings tab
 3. Find translation settings
 4. Click "Refresh Translation Cache" button

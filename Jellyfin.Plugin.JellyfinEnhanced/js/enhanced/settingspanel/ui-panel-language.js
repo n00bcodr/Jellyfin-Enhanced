@@ -26,6 +26,8 @@
             // Get saved language from localStorage as well
             const localStorageLang = localStorage.getItem(languageKey);
             const savedLanguage = JE.currentSettings.displayLanguage || localStorageLang || '';
+            // The value shown for the language in use; a refused change goes back to it.
+            let appliedLanguage = displayLanguageSelect.value;
 
             console.log('🪼 Jellyfin Enhanced: Current language setting:', {
                 fromSettings: JE.currentSettings.displayLanguage,
@@ -116,6 +118,7 @@
                 if (normalizedLanguage) {
                     displayLanguageSelect.value = normalizedLanguage;
                 }
+                appliedLanguage = displayLanguageSelect.value;
                 console.log('🪼 Jellyfin Enhanced: Set language dropdown to:', savedLanguage || 'Auto', 'Normalized to:', normalizedLanguage, 'Select element value is now:', displayLanguageSelect.value);
             })();
 
@@ -138,8 +141,61 @@
                 const translationExists = true;
 
                 // Save to settings.json (use base language code)
+                const previousLang = JE.currentSettings.displayLanguage;
                 JE.currentSettings.displayLanguage = newLang;
-                await JE.saveUserSettings('settings.json', JE.currentSettings);
+                // A failed request still switches this device (the language is also kept in
+                // localStorage below), but says it was not saved instead of "Language changed".
+                let saveFailed = false;
+                // The server refused the pick because an administrator locks the language.
+                let lockRefused = false;
+                try {
+                    await JE.saveUserSettings('settings.json', JE.currentSettings, { throwOnError: true, notifyOnError: true });
+                } catch (err) {
+                    // The stored settings did not load, so the save was refused: change nothing
+                    // rather than switch the language here and report it as saved.
+                    const status = JE.userConfig?.settingsStatus;
+                    if (status === 'unavailable' || status === 'loading') {
+                        JE.currentSettings.displayLanguage = previousLang;
+                        displayLanguageSelect.value = appliedLanguage;
+                        JE.toast(JE.settings.unavailableText('panel_settings_unavailable'));
+                        return;
+                    }
+                    lockRefused = Array.isArray(err?.rejected) && err.rejected.some(r => r?.key === 'displayLanguage' && r.reason === 'locked');
+                    // A refusal because of a lock that arrived meanwhile is handled below (config.js warns).
+                    if (!lockRefused && JE.settings?.isLocked?.('displayLanguage') !== true) {
+                        console.error('🪼 Jellyfin Enhanced: Failed to save settings.json:', err);
+                    }
+                    saveFailed = true;
+                }
+
+                // Locked while the change was saved: the server refused it and the lock already
+                // put its language on this device (plugin.js). Keep that and the record of what the
+                // lock replaced; storing the refused pick would bring it back after the unlock.
+                if (JE.settings?.isLocked?.('displayLanguage') === true) {
+                    const lockedLanguage = normalizeLangCode(JE.currentSettings.displayLanguage || '');
+                    const shown = Array.from(displayLanguageSelect.options).find(option => option.value.toLowerCase() === lockedLanguage.toLowerCase());
+                    displayLanguageSelect.value = shown ? shown.value : appliedLanguage;
+                    return;
+                }
+                // Refused for a lock whose Meta the answer did not bring (a fresh document was taken
+                // while it was in flight; the next focus check brings it): nothing changed, so keep
+                // the language in use and do not store or seed the refused pick. A document with the
+                // key already put its language back (config.js), which may be this one picked on
+                // another device: keep it. Only a document without the key leaves the pick to undo.
+                if (lockRefused) {
+                    const storedHasLanguage = Object.prototype.hasOwnProperty.call(JE.userConfig?.settings || {}, 'displayLanguage');
+                    if (!storedHasLanguage && JE.currentSettings.displayLanguage === newLang) JE.currentSettings.displayLanguage = previousLang;
+                    displayLanguageSelect.value = appliedLanguage;
+                    return;
+                }
+
+                // The menu is usable only while the language is unlocked, so a lock is over: drop
+                // what it replaced, or the next load would put that back over this pick.
+                try {
+                    localStorage.removeItem(`JE_lockedLanguage_${userId}`);
+                } catch (e) {
+                    console.warn('🪼 Jellyfin Enhanced: Could not clear the display language lock record:', e);
+                }
 
                 // Save to localStorage (use the same code)
                 if (fullCultureCode) {
@@ -148,7 +204,19 @@
                     // Set empty value instead of removing key
                     localStorage.setItem(languageKey, '');
                 }
+                // The language is the settings' one: a server default it follows later may replace it
+                // (a language picked in jellyfin-web may not; see seedDisplayLanguage in plugin.js).
+                try {
+                    localStorage.setItem(`JE_seededLanguage_${userId}`, fullCultureCode || '');
+                } catch (e) {
+                    console.warn('🪼 Jellyfin Enhanced: Could not record the display language:', e);
+                }
 
+                if (saveFailed) {
+                    // The "couldn't save" message is already up; leave time to read it.
+                    setTimeout(() => window.location.reload(), 4000);
+                    return;
+                }
                 if (newLang && !translationExists) {
                     JE.toast(`${JE.icon(JE.IconName.WARNING)} Translation file not available for selected language. Falling back to English.`);
                 } else {

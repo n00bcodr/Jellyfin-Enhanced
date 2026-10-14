@@ -1,0 +1,74 @@
+{
+  "shipped, native off": {
+    "(no file)": "c7be7ab64e09daac",
+    "(unreadable)": "c7be7ab64e09daac",
+    "empty object": "c7be7ab64e09daac",
+    "JSON nulls from the bool? era (#611) keep the initializers": "c7be7ab64e09daac",
+    "older plugin version without the newer keys": "4925bd69149e31fd",
+    "empty position strings stay empty (the admin position applies)": "c7be7ab64e09daac",
+    "camelCase keys are read case-insensitively": "c7be7ab64e09daac",
+    "unknown, client-only and future keys are ignored": "c7be7ab64e09daac",
+    "every group on, custom order and positions": "4c0a8ae4a3968c7d",
+    "every group on, native tags switched off": "3f86197468d27cd7"
+  },
+  "shipped, native on": {
+    "(no file)": "c7be7ab64e09daac",
+    "(unreadable)": "c7be7ab64e09daac",
+    "empty object": "c7be7ab64e09daac",
+    "JSON nulls from the bool? era (#611) keep the initializers": "c7be7ab64e09daac",
+    "older plugin version without the newer keys": "4925bd69149e31fd",
+    "empty position strings stay empty (the admin position applies)": "c7be7ab64e09daac",
+    "camelCase keys are read case-insensitively": "c7be7ab64e09daac",
+    "unknown, client-only and future keys are ignored": "c7be7ab64e09daac",
+    "every group on, custom order and positions": "4c0a8ae4a3968c7d",
+    "every group on, native tags switched off": "3f86197468d27cd7"
+  },
+  "customised, native off": {
+    "(no file)": "b213c09222a53e19",
+    "(unreadable)": "c7be7ab64e09daac",
+    "empty object": "c7be7ab64e09daac",
+    "JSON nulls from the bool? era (#611) keep the initializers": "c7be7ab64e09daac",
+    "older plugin version without the newer keys": "02075070315b8e37",
+    "empty position strings stay empty (the admin position applies)": "c7be7ab64e09daac",
+    "camelCase keys are read case-insensitively": "c7be7ab64e09daac",
+    "unknown, client-only and future keys are ignored": "c7be7ab64e09daac",
+    "every group on, custom order and positions": "4ce0cef5baaa5e62",
+    "every group on, native tags switched off": "a80ef3dd0cdd27a7"
+  },
+  "customised, native on": {
+    "(no file)": "b213c09222a53e19",
+    "(unreadable)": "c7be7ab64e09daac",
+    "empty object": "c7be7ab64e09daac",
+    "JSON nulls from the bool? era (#611) keep the initializers": "c7be7ab64e09daac",
+    "older plugin version without the newer keys": "02075070315b8e37",
+    "empty position strings stay empty (the admin position applies)": "c7be7ab64e09daac",
+    "camelCase keys are read case-insensitively": "c7be7ab64e09daac",
+    "unknown, client-only and future keys are ignored": "c7be7ab64e09daac",
+    "every group on, custom order and positions": "4ce0cef5baaa5e62",
+    "every group on, native tags switched off": "a80ef3dd0cdd27a7"
+  },
+  "blank, native off": {
+    "(no file)": "c7be7ab64e09daac",
+    "(unreadable)": "c7be7ab64e09daac",
+    "empty object": "c7be7ab64e09daac",
+    "JSON nulls from the bool? era (#611) keep the initializers": "c7be7ab64e09daac",
+    "older plugin version without the newer keys": "4925bd69149e31fd",
+    "empty position strings stay empty (the admin position applies)": "c7be7ab64e09daac",
+    "camelCase keys are read case-insensitively": "c7be7ab64e09daac",
+    "unknown, client-only and future keys are ignored": "c7be7ab64e09daac",
+    "every group on, custom order and positions": "4c0a8ae4a3968c7d",
+    "every group on, native tags switched off": "3f86197468d27cd7"
+  },
+  "blank, native on": {
+    "(no file)": "c7be7ab64e09daac",
+    "(unreadable)": "c7be7ab64e09daac",
+    "empty object": "c7be7ab64e09daac",
+    "JSON nulls from the bool? era (#611) keep the initializers": "c7be7ab64e09daac",
+    "older plugin version without the newer keys": "4925bd69149e31fd",
+    "empty position strings stay empty (the admin position applies)": "c7be7ab64e09daac",
+    "camelCase keys are read case-insensitively": "c7be7ab64e09daac",
+    "unknown, client-only and future keys are ignored": "c7be7ab64e09daac",
+    "every group on, custom order and positions": "4c0a8ae4a3968c7d",
+    "every group on, native tags switched off": "3f86197468d27cd7"
+  }
+}

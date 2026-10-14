@@ -516,6 +516,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public long ClearLocalStorageTimestamp { get; set; }
         public long ClearTranslationCacheTimestamp { get; set; }
 
+        /// <summary>
+        /// Per-user settings (UserSettings keys) the administrator locks to the admin default above:
+        /// every user is served the admin value and cannot change it; their own saved value is kept
+        /// and comes back when the lock is lifted. An array, not a List, so XmlSerializer never
+        /// appends to an initialised collection. Read only through
+        /// <see cref="UserSettingsResolver.LockedKeys"/>, which is null-safe and drops anything that
+        /// is not a lockable registry key; UpdateConfiguration turns a JSON null into an empty array.
+        /// </summary>
+        public string[] LockedUserSettings { get; set; } = System.Array.Empty<string>();
+
+        /// <summary>
+        /// Whether a new user's first settings.json follows the admin defaults (every key that has one
+        /// is Following, so it changes when the default changes) instead of keeping a copy of today's
+        /// defaults. Off by default: new users are seeded as before.
+        /// </summary>
+        public bool NewUsersFollowDefaults { get; set; }
+
         // Default User Settings
         public bool AutoPauseEnabled { get; set; }
         public bool AutoResumeEnabled { get; set; }

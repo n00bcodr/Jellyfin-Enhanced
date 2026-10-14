@@ -22,9 +22,15 @@ Jellyfin.Plugin.JellyfinEnhanced/
 ├── PluginServiceRegistrator.cs       # DI registration
 ├── Configuration/                    # PluginConfiguration.cs, UserConfiguration*.cs,
 │                                     # configPage.html + configPage.css — the admin
-│                                     # settings page
+│                                     # settings page; UserSetting*.cs +
+│                                     # RecentlyUnlockedSettings.cs — per-user settings
+│                                     # registry, resolver, writes, locks and bulk
+│                                     # operations (see Per-user settings below)
 ├── Controllers/                      # JellyfinEnhancedController.cs — every
-│                                     # /JellyfinEnhanced/* endpoint the client calls
+│                                     # /JellyfinEnhanced/* endpoint the client calls;
+│                                     # PublicConfigPayload.cs (signed-in public-config
+│                                     # + UserSettingDefaults), RejectOversizedBodyAttribute.cs
+│                                     # (413 JSON for bodies over a route's size limit)
 ├── PluginPages/                      # HTML wrappers for the sidebar/plugin pages
 ├── Assets/
 │   └── PosterTags/                   # Embedded fonts, icon paths, flags, age-rating
@@ -88,6 +94,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │                                 # private .je-msym-* classes), plus the full fonts under the
     │                                 # public names for themes/custom CSS
     ├── locales/                      # 26 translation files (en.json, de.json, …)
+    ├── admin/
+    │   └── user-settings-policy.js   # admin-page add-on, not bundled (see below)
     ├── core/
     │   ├── api-client.js
     │   ├── dom-observer.js
@@ -138,6 +146,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   │   ├── ui-panel.js
     │   │   ├── ui-panel-hidden-content.js
     │   │   ├── ui-panel-language.js
+    │   │   ├── ui-panel-provenance.js
     │   │   ├── ui-panel-settings.js
     │   │   ├── ui-panel-shortcut-editor.js
     │   │   ├── ui-panel-template.js
@@ -203,6 +212,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
         └── splashscreen.js
 ```
 
+Tests live in `tests/` (see `tests/README.md`): backend xUnit tests, frontend tests that load the real modules in jsdom, and `tests/fixtures/settings/`, the golden per-user settings fixtures (defaults, seed, reset-all, registry, lockable keys, legacy files and poster digests, the default plugin XML) that the backend and frontend suites both read.
+
 Outside the plugin project, `scripts/` holds maintenance tooling: `generate_config_flag_groups.py` (regenerates `docs/advanced/config-flag-groups.json`, run by the docs CI), `validate-translations.js` (locale file checks) and `build_poster_assets.py` (downloads the pinned upstream fonts, icons and flags, verifies their checksums and writes `Assets/PosterTags/`; `--check` verifies the committed assets are up to date).
 
 ### How modules are organised
@@ -248,7 +259,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`ui-kit.js`**: `escapeHtml`, `toast`, deduped CSS injection, and scroll-friendly tap detection (`addTouchTapListener`, and `addDelegatedTouchTapListener` for one set of listeners on a container of cards).
 
 * **`/enhanced/`**: Core "Jellyfin Enhanced" functionality.
-    * **`config.js`**: Manages all settings, both from the plugin backend and the user's local storage.
+    * **`config.js`**: Loads the user's settings and saves changes. With the server's `settingsPatch` capability, `JE.saveUserSettings('settings.json', …)` sends only the changed keys as a patch (merged over 250 ms), falling back to the whole-document save on an older server. Exposes `JE.settingsMeta` (where each value comes from) and `JE.settings` (`isLocked`, `follow`, `onChange`; changes from patch answers and refreshes are announced as `je:settings-changed`).
     * **`events.js`**: Listens for user input, browser events and DOM changes to trigger the appropriate functions from other components.
     * **`features-random-button.js`**: The random item button.
     * **`helpers.js`**: Utility functions shared across the enhanced components.
@@ -262,8 +273,10 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`/homeremoval/`**: "Remove from Continue Watching / Next Up", including multi-select.
     * **`/itemdetails/`**: Detail-page enhancements — media info, file size, audio languages and release dates.
     * **`/player/`**: Everything that touches the video player — `playback.js` (speed, seeking, track cycling), `auto-skip.js` (media-segment driven intro/outro skipping), `subtitles.js` (styling and presets), `pausescreen.js` (custom pause overlay), `osd-rating.js` (TMDB/Rotten Tomatoes in the OSD), `playback-rating-badge.js` (age rating and genres card when playback starts).
-    * **`/settingspanel/`**: The user settings panel — entry points, the HTML template, the section navigation shell, and per-section wiring (settings, language, hidden content, shortcut editor, release notes).
+    * **`/settingspanel/`**: The user settings panel — entry points, the HTML template, the section navigation shell, and per-section wiring (settings, language, hidden content, shortcut editor, release notes). `ui-panel-provenance.js` (after `ui-panel-settings.js`) decorates every row carrying `data-setting-key` from `JE.settingsMeta`: the "Server default" / "Your choice" / "Differs" / "Set by your administrator" lines, the **Use server default** buttons, locked rows and **Use server defaults for everything**.
     * **`/spoilerguard/`**: Client-side companion for Spoiler Guard — the per-show/movie/collection toggle, in-memory opt-in and override state, the settings pane, and the soft image refresh after toggles and watched-state changes. The actual blur/strip happens server-side. `index.js` publishes the public `JE.spoilerBlur` surface once every implementation module has loaded.
+
+* **`/admin/`**: Scripts for the admin configuration page only. They are not in `component-scripts.json`, so never bundled. `configPage.html` loads `user-settings-policy.js` with a versioned URL and calls it after every config load: the "User default" badges under the controls, the User settings policy table (locks, counts, per-user list), the upgrade card and the **Apply defaults to users** dialog. It reads and writes only through the `admin/user-settings/*` routes and renders user values with `textContent`. Until it reports ready, saving the page leaves `LockedUserSettings` as it was.
 
 * **`/jellyseerr/`**: Seerr integration.
     * **`api.js`**: Communication with the Seerr proxy endpoints on the Jellyfin server.
@@ -326,6 +339,18 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`SpoilerExistingTitlesApplier.cs`**: Applies the saved auto-enable scope to titles already in the library on demand (dry-run preview for the config page, skips titles a user already has or has fully watched). Run by `ScheduledTasks/SpoilerApplyExistingTitlesTask.cs` ("Spoiler Guard: apply to existing titles", no default triggers).
     * **`SpoilerSeerrPendingPromoter.cs`**: Promotes pending pre-acquisition entries (registered from the Seerr More Info modal or auto-enable on request) into real per-item protection when the content lands in the library.
     * **`SpoilerUserResolver.cs`**: Loads per-user Spoiler Guard state for the requesting user identified by `RequestIdentityService`.
+
+* **Per-user settings** (`Configuration/`): one registry drives defaults, locks, following and validation for every `settings.json` key. See the [Settings API](settings-api.md) for the routes.
+    * **`UserSettingAttribute.cs`**: `[UserSetting]` on each `UserSettings` property in `UserConfiguration.cs`: its admin default (`nameof(PluginConfiguration.X)`), `Lockable`, `Reach` (`Web`, `Server`, `Both`), `Incidental`, the legacy null/empty sentinels, `GateBy`, and the validation rules (`Min`/`Max`, `Choices`, `Pattern`, `MaxLength`).
+    * **`UserSettingsRegistry.cs`**: Builds the descriptors once by reflection; new-user seed and admin defaults (`BuildDefaults`, `BuildSeed`), the authenticated `UserSettingDefaults`, effective reach and value validation.
+    * **`UserSettingsMeta.cs`**: The optional `_je` block of `settings.json` (`Following`, `Chosen`, `ChangedByAdmin`, operation stamps). A file without it reads as "existing" values, exactly as before.
+    * **`UserSettingsResolver.cs`**: What a user actually gets (lock, then following, then the stored value), used by the settings routes, the bootstrap and Native Poster Tags alike, and the `Meta` description of it.
+    * **`UserSettingsWriter.cs`**: The patch route's `Set`/`Follow` and the legacy whole-document save, with per-key rejections.
+    * **`RecentlyUnlockedSettings.cs`**: Remembers, for the process lifetime, the values a lock enforced, so a page loaded while a key was locked cannot overwrite the user's own choice after the unlock.
+    * **`UserSettingsBulk.cs`** / **`UserSettingsOperations.cs`**: **Apply defaults to users** and reset-all: the three modes on one document, the run over every user under the per-file locks, dry runs that never write, and compare-and-swap undo records in `<plugin config>/_operations/` (last 20).
+    * **`UserConfigurationManager.cs`**: Per-user JSON files: per-file locks, the file `Revision`, read-only peeks for the admin overview, and quarantine of a malformed `settings.json`.
+
+  Adding a per-user setting: add the admin default to `PluginConfiguration.cs` and the property with `[UserSetting(nameof(PluginConfiguration.X), Lockable = true)]` to `UserConfiguration.cs` (its initializer must equal the admin default), add the admin control to `configPage.html` with the id `camelCase(X)` and its assignments in `loadConfig()` and `buildConfigFromForm()` (each control is wired by hand), a panel row with `data-setting-key` and its change handler in `ui-panel-settings.js` (plus `JE.settings.onChange` in the feature module if a change arriving from another device or the administrator should apply without a reload), and the strings to `en.json`. Seeding, apply-defaults, the public defaults, locks, following, the policy row, the badge and the panel's provenance lines then come with it. The tests catch a missing registration, an initializer that differs from the admin default, a lockable key without exactly one admin control id, and a lockable key without a panel row; they do not check the `loadConfig()`/`buildConfigFromForm()` wiring, so check that the control loads and saves.
 
 * **`/Services/ClientScriptBundle.cs`**: Builds and caches the component bundle (`/JellyfinEnhanced/bundle.js`) and its index source map from the embedded `js/component-scripts.json` manifest; also the source of the ordered list returned by `/bootstrap`.
 

@@ -976,15 +976,19 @@
      * keeps its default; settings, bookmark and hidden-content are converted
      * from PascalCase to camelCase. Shared by the per-endpoint loader and the
      * bootstrap payload so both build the object identically.
+     * `settingsStatus` is 'unavailable' when the settings document did not load:
+     * the settings are then fallback defaults that JE.saveUserSettings must not
+     * write over the stored file (and the panel shows read-only), else 'ok'.
      * @param {object} documents - Map of document name (settings, shortcuts,
      *   bookmark, elsewhere, hiddenContent) to its parsed JSON, or null.
      * @returns {object} A freshly-built userConfig object.
      */
     function buildUserConfig(documents) {
-        const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+        const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} }, settingsStatus: 'unavailable' };
         for (const name of Object.keys(USER_CONFIG_DOCUMENTS)) {
             const value = documents ? documents[name] : null;
             if (!value || typeof value !== 'object') continue; // keep the default
+            if (name === 'settings') userConfig.settingsStatus = 'ok';
             // *** CONVERT PASCALCASE TO CAMELCASE ***
             if (name === 'settings' || name === 'bookmark' || name === 'hiddenContent') {
                 userConfig[name] = toCamelCase(value);
@@ -996,20 +1000,63 @@
     }
 
     /**
+     * Converts the server's settings Meta (setting names in PascalCase, as map
+     * keys and as array entries) to the client's camelCase names. Values are
+     * left as they are (Unavailable names admin config fields, which stay
+     * PascalCase like JE.pluginConfig).
+     * @param {object} meta - `SettingsMeta` / `Meta` from the server.
+     * @returns {object|null} The converted Meta, or null when there is none.
+     */
+    function camelCaseSettingsMeta(meta) {
+        if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
+        const camel = (name) => typeof name === 'string' ? name.charAt(0).toLowerCase() + name.slice(1) : name;
+        const converted = {};
+        for (const [name, value] of Object.entries(meta)) {
+            if (Array.isArray(value)) converted[camel(name)] = value.map(camel);
+            else if (value && typeof value === 'object') converted[camel(name)] = Object.fromEntries(Object.entries(value).map(([key, entry]) => [camel(key), entry]));
+            else converted[camel(name)] = value;
+        }
+        return converted;
+    }
+    JE.camelCaseSettingsMeta = camelCaseSettingsMeta;
+
+    /**
+     * Records what the server supports beyond the original endpoints
+     * (bootstrap `Capabilities`, e.g. 'settingsPatch'). A server without the
+     * field (an older or rolled-back one) supports none of them. Without a
+     * bootstrap (the request failed) they are unknown: null, and settings saves
+     * try the key-level route, falling back on a 404/405.
+     * @param {object|null} bootstrap - The bootstrap payload, or null when it failed.
+     */
+    function applyCapabilities(bootstrap) {
+        if (!bootstrap) {
+            JE.serverCapabilities = null;
+            return;
+        }
+        JE.serverCapabilities = Array.isArray(bootstrap.Capabilities) ? bootstrap.Capabilities.slice() : [];
+    }
+
+    /**
      * Builds the userConfig object from the bootstrap payload's UserSettings
-     * block (the same five documents the standalone endpoints return).
+     * block (the same five documents the standalone endpoints return), plus
+     * `settingsMeta`: the per-key state of the settings (camelCase names), when
+     * the server sends it.
      * @param {object} userSettings - `UserSettings` from the bootstrap payload.
      * @returns {object} A freshly-built userConfig object.
      */
     function buildUserConfigFromBootstrap(userSettings) {
         const docs = userSettings && typeof userSettings === 'object' ? userSettings : {};
-        return buildUserConfig({
-            settings: docs.Settings,
+        const userConfig = buildUserConfig({
+            // A server that reports the stored settings unavailable sends no document.
+            settings: docs.SettingsStatus === 'unavailable' ? null : docs.Settings,
             shortcuts: docs.Shortcuts,
             bookmark: docs.Bookmark,
             elsewhere: docs.Elsewhere,
             hiddenContent: docs.HiddenContent
         });
+        const meta = userConfig.settingsStatus === 'ok' ? camelCaseSettingsMeta(docs.SettingsMeta) : null;
+        if (meta) userConfig.settingsMeta = meta;
+        return userConfig;
     }
 
     /**
@@ -1048,6 +1095,7 @@
         });
         if (!isCurrent()) return false;
         if (bootstrap && bootstrapMatchesUser(bootstrap, userId)) {
+            applyCapabilities(bootstrap);
             JE.userConfig = buildUserConfigFromBootstrap(bootstrap.UserSettings);
             applyPrivateConfig(bootstrap.PrivateConfig);
             return true;
@@ -1059,29 +1107,305 @@
         return isCurrent();
     }
 
+    // ---- Revision check on focus (design 6.3) ----
+    // When the page becomes visible or the window gets focus, at most once a minute and never
+    // while hidden or on a timer, one small request asks whether the user's settings file or the
+    // admin configuration changed since this page last loaded them (another device or tab, an
+    // administrator). Only then is the bootstrap fetched again (one request) and applied:
+    // JE.pluginConfig in place, the settings beneath edits not yet saved (config.js), announced
+    // with `je:settings-changed`.
+    const REVISION_CHECK_MIN_INTERVAL_MS = 60000;
+    let lastRevisionCheckAt = 0;
+    let revisionCheckInFlight = false;
+    // Set once the route answered 404/405 (the server was rolled back under this page).
+    let revisionRouteMissing = false;
+    // The ConfigEpoch of the admin configuration JE.pluginConfig was last built from (patch answers
+    // and the panel's refresh bring a newer Meta.ConfigEpoch without the configuration itself).
+    let appliedConfigEpoch = null;
+    // The settings revision the last check saw, for a page with no settings Meta to compare with.
+    let lastSeenSettingsRevision = null;
+
     /**
-     * Seeds the admin's default display language into the per-user
-     * `${userId}-language` key — only when the user has no language set yet,
-     * so a user's own choice is never overwritten.
+     * Copies a fresh public config into JE.pluginConfig in place (modules may hold the object),
+     * dropping fields the server no longer sends.
+     * @param {object} publicConfig `PublicConfig` from the bootstrap.
+     */
+    function replacePublicConfig(publicConfig) {
+        for (const key of Object.keys(JE.pluginConfig)) {
+            if (!Object.prototype.hasOwnProperty.call(publicConfig, key)) delete JE.pluginConfig[key];
+        }
+        Object.assign(JE.pluginConfig, publicConfig);
+    }
+
+    /**
+     * The config fields whose value differs between two plugin config objects.
+     * @param {object} before The config as it was.
+     * @param {object} after The config as it is now.
+     * @returns {string[]} Field names (PascalCase, as the server sends them).
+     */
+    function changedConfigKeys(before, after) {
+        const keys = new Set(Object.keys(before).concat(Object.keys(after)));
+        return Array.from(keys).filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+    }
+
+    /**
+     * Fetches the bootstrap again for the signed-in user and applies what an administrator or
+     * another device may have changed: capabilities, the public and private config (in place) and
+     * the settings document with its Meta (config.js lands it beneath pending and unsaved edits
+     * and announces the changed keys). The other per-user documents are left as they are.
+     * @param {string} userId The user the check was made for.
+     * @param {() => boolean} isCurrent False once the user changed meanwhile.
+     * When a save answer arrived while the bootstrap was in flight, the bootstrap may be older
+     * than it: its settings are dropped, its config epoch is not recorded, and the next focus
+     * checks again (and so fetches again).
+     * @param {string|null} answeredConfigEpoch The ConfigEpoch the revision check answered.
+     * @returns {Promise<boolean>} Whether the refresh was applied.
+     */
+    async function refreshFromServer(userId, isCurrent, answeredConfigEpoch) {
+        const since = JE.internals?.settingsSync?.refreshMark?.() || null;
+        const bootstrap = await fetchBootstrap().catch((e) => {
+            console.warn('🪼 Jellyfin Enhanced: Could not refresh settings after a change on the server.', e);
+            return null;
+        });
+        if (!bootstrap || !isCurrent() || !bootstrapMatchesUser(bootstrap, userId)) return false;
+        if (JE.userConfig?.settingsStatus === 'loading') return false;
+        const previousConfig = { ...JE.pluginConfig };
+        applyCapabilities(bootstrap);
+        replacePublicConfig(bootstrap.PublicConfig);
+        applyPrivateConfig(bootstrap.PrivateConfig);
+        applyDeliveryPluginFlags(bootstrap.HasCustomTabs === true, bootstrap.HasPluginPages === true);
+        const fresh = buildUserConfigFromBootstrap(bootstrap.UserSettings);
+        const result = JE.internals?.settingsSync?.applyRefresh(fresh, { previousConfig, configKeys: changedConfigKeys(previousConfig, JE.pluginConfig), since });
+        if (result?.stale) {
+            lastRevisionCheckAt = 0;
+            return false;
+        }
+        // The answer that triggered the refresh is no newer than this bootstrap, so at worst a
+        // later check fetches once more.
+        appliedConfigEpoch = bootstrap.UserSettings?.SettingsMeta?.ConfigEpoch || answeredConfigEpoch || null;
+        return true;
+    }
+
+    /**
+     * The focus/visibility handler: asks GET user-settings/{userId}/revision whether the settings
+     * file or the admin configuration changed, and refreshes from the bootstrap when either did
+     * or a save failed (the refresh puts the server's value back).
+     * Does nothing while the page is hidden, before boot completed, while the user's settings are
+     * loading after a switch, within a minute of the last check, while one is in flight, or on a
+     * server that does not advertise the route. An answer that arrives after a user switch is dropped.
+     * @returns {Promise<void>}
+     */
+    async function checkSettingsRevision() {
+        if (document.visibilityState === 'hidden' || revisionCheckInFlight || revisionRouteMissing || !JE.initialized) return;
+        if (!Array.isArray(JE.serverCapabilities) || !JE.serverCapabilities.includes('settingsRevision')) return;
+        const userId = typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null;
+        if (!userId || JE.userConfig?.settingsStatus === 'loading') return;
+        const now = Date.now();
+        if (now - lastRevisionCheckAt < REVISION_CHECK_MIN_INTERVAL_MS) return;
+        lastRevisionCheckAt = now;
+        const epoch = JE.session ? JE.session.getEpoch() : 0;
+        const isCurrent = () => (!JE.session || JE.session.isCurrent(epoch)) && ApiClient.getCurrentUserId?.() === userId;
+        revisionCheckInFlight = true;
+        try {
+            let answer;
+            try {
+                answer = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/revision?_=${now}`),
+                    dataType: 'json'
+                });
+            } catch (e) {
+                if (e?.status === 404 || e?.status === 405) revisionRouteMissing = true;
+                return; // a failed check is retried on a later focus
+            }
+            if (!isCurrent() || !answer || typeof answer !== 'object') return;
+            const meta = JE.settingsMeta;
+            const knownSettings = meta ? meta.revision : lastSeenSettingsRevision;
+            if (answer.Settings === knownSettings && answer.Config === appliedConfigEpoch
+                && !JE.internals?.settingsSync?.hasFailedEdits?.()) return;
+            if (document.visibilityState === 'hidden') {
+                lastRevisionCheckAt = 0; // hidden again meanwhile: refresh on the next return instead
+                return;
+            }
+            if (await refreshFromServer(userId, isCurrent, answer.Config)) lastSeenSettingsRevision = answer.Settings;
+        } finally {
+            revisionCheckInFlight = false;
+        }
+    }
+
+    /**
+     * Starts the revision check: on visibilitychange to visible and on window focus. Called once,
+     * when boot has completed.
+     * @param {object|null} bootstrap The boot bootstrap (its Meta's ConfigEpoch is the applied config's).
+     */
+    function registerSettingsRevisionCheck(bootstrap) {
+        appliedConfigEpoch = bootstrap?.UserSettings?.SettingsMeta?.ConfigEpoch || null;
+        lastRevisionCheckAt = Date.now(); // boot just loaded everything
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') checkSettingsRevision();
+        });
+        window.addEventListener('focus', () => { checkSettingsRevision(); });
+    }
+
+    /**
+     * Puts the display language into the per-user `${userId}-language` key the
+     * translations read. That key is also jellyfin-web's own language setting.
+     * The admin's default is seeded only when the user has no language set yet,
+     * so a user's own choice is never overwritten; but while an administrator
+     * locks the language the resolved setting replaces the stored one. A language
+     * that follows the server default replaces it only while the stored language
+     * is the last one the settings put there (recorded in `JE_seededLanguage_${userId}`
+     * here and by the panel's language menu): a language picked in jellyfin-web
+     * stays. "Auto" (empty) never replaces a stored language. What a lock replaced
+     * (the stored language and the settings' record) is kept in
+     * `JE_lockedLanguage_${userId}`: once the lock is gone, while the lock's language
+     * is still the stored one, both are put back and the language is decided as if
+     * there had been no lock (a pick in the panel's language menu drops the record).
+     * Storage errors (e.g. a full localStorage) are logged and never stop the boot.
      * @param {string} userId
+     * @returns {boolean} True when the stored language was replaced (the
+     *   translations already loaded are then in another language).
      */
     function seedDisplayLanguage(userId) {
-        if (!userId) return;
+        if (!userId) return false;
+        try {
+            return storeDisplayLanguage(userId);
+        } catch (e) {
+            console.warn('🪼 Jellyfin Enhanced: Could not store the display language:', e);
+            return false;
+        }
+    }
+
+    /**
+     * The body of seedDisplayLanguage, which catches what it throws.
+     * @param {string} userId
+     * @returns {boolean} True when the stored language was replaced.
+     */
+    function storeDisplayLanguage(userId) {
         const languageKey = `${userId}-language`;
-        // Only seed the admin's default language if the user has no language set yet.
-        // This prevents overwriting the user's own language choice on every page load.
-        if (localStorage.getItem(languageKey) === null) {
-            const desiredLanguage = (JE.currentSettings?.displayLanguage || '').trim();
-            if (desiredLanguage) {
-                const normalizeLangCode = (code) => {
-                    if (!code) return '';
-                    const parts = code.split('-');
-                    if (parts.length === 1) return parts[0].toLowerCase();
-                    if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
-                    return code;
-                };
-                localStorage.setItem(languageKey, normalizeLangCode(desiredLanguage));
+        const seededKey = `JE_seededLanguage_${userId}`;
+        const lockedKey = `JE_lockedLanguage_${userId}`;
+        const desiredLanguage = normalizeLangCode((JE.currentSettings?.displayLanguage || '').trim());
+        const stored = localStorage.getItem(languageKey);
+        const storedLanguage = stored === null ? null : normalizeLangCode(stored.trim());
+        const locked = JE.settings?.isLocked?.('displayLanguage') === true;
+        const record = readLockedLanguage(lockedKey);
+
+        if (record && !locked && JE.userConfig?.settingsStatus === 'ok') {
+            // The lock is gone: while its language is still the stored one, put back what the
+            // lock replaced (the language and whether it was the settings' one) and decide as if
+            // there had been no lock, so a language picked in jellyfin-web comes back too.
+            localStorage.removeItem(lockedKey);
+            if (storedLanguage === record.language) {
+                if (record.previous === null) localStorage.removeItem(languageKey);
+                else localStorage.setItem(languageKey, record.previous);
+                if (record.previousSeeded === null) localStorage.removeItem(seededKey);
+                else trySetItem(seededKey, record.previousSeeded);
+                applyDisplayLanguage(userId, desiredLanguage, false, null);
+                return localStorage.getItem(languageKey) !== stored;
             }
+        }
+        return applyDisplayLanguage(userId, desiredLanguage, locked, record);
+    }
+
+    /**
+     * Stores the display language for the lock state, with the stored language as it is now
+     * (see seedDisplayLanguage).
+     * @param {string} userId
+     * @param {string} desiredLanguage The resolved display language, normalized ('' for "Auto").
+     * @param {boolean} locked Whether an administrator locks the language.
+     * @param {{language: string, previous: (string|null), previousSeeded: (string|null)}|null} record
+     *   The current lock record, if any.
+     * @returns {boolean} True when the stored language was replaced.
+     */
+    function applyDisplayLanguage(userId, desiredLanguage, locked, record) {
+        const languageKey = `${userId}-language`;
+        const seededKey = `JE_seededLanguage_${userId}`;
+        const lockedKey = `JE_lockedLanguage_${userId}`;
+        const stored = localStorage.getItem(languageKey);
+        const storedLanguage = stored === null ? null : normalizeLangCode(stored.trim());
+        // Only the language key must be written; the records are best-effort.
+        const write = () => {
+            localStorage.setItem(languageKey, desiredLanguage);
+            trySetItem(seededKey, desiredLanguage);
+        };
+
+        if (!desiredLanguage) return false;
+        if (locked && storedLanguage !== desiredLanguage) {
+            // What the first lock replaced, kept across a relock to another language.
+            const lockRecord = record
+                ? { language: desiredLanguage, previous: record.previous, previousSeeded: record.previousSeeded }
+                : { language: desiredLanguage, previous: stored, previousSeeded: localStorage.getItem(seededKey) };
+            write();
+            trySetItem(lockedKey, JSON.stringify(lockRecord));
+            return stored !== null;
+        }
+        if (stored === null) {
+            write();
+            return false;
+        }
+        if (storedLanguage === desiredLanguage) {
+            // The language in use is the settings' one: a later followed default may replace it.
+            // Not while locked: the lock did not put it there (the user picked the lock's
+            // language), so after the unlock it stays as without the lock.
+            if (!locked) trySetItem(seededKey, desiredLanguage);
+            return false;
+        }
+        const following = JE.settingsMeta?.following;
+        if (!Array.isArray(following) || !following.includes('displayLanguage')) return false;
+        const seeded = localStorage.getItem(seededKey);
+        if (seeded === null || normalizeLangCode(seeded.trim()) !== storedLanguage) return false;
+        write();
+        return true;
+    }
+
+    /**
+     * Normalizes a language code to jellyfin-web's form (`pt-BR`, `de`).
+     * @param {string} code
+     * @returns {string} The normalized code ('' for none).
+     */
+    function normalizeLangCode(code) {
+        if (!code) return '';
+        const parts = code.split('-');
+        if (parts.length === 1) return parts[0].toLowerCase();
+        if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
+        return code;
+    }
+
+    /**
+     * Reads the record of what a display-language lock replaced.
+     * @param {string} key The `JE_lockedLanguage_${userId}` key.
+     * @returns {{language: string, previous: (string|null), previousSeeded: (string|null)}|null}
+     *   The lock's language, the stored language it replaced and the settings' language recorded
+     *   then (`JE_seededLanguage_*`; null: none), or null without a readable record.
+     */
+    function readLockedLanguage(key) {
+        try {
+            const record = JSON.parse(localStorage.getItem(key) || 'null');
+            if (record && typeof record.language === 'string') {
+                return {
+                    language: record.language,
+                    previous: typeof record.previous === 'string' ? record.previous : null,
+                    previousSeeded: typeof record.previousSeeded === 'string' ? record.previousSeeded : null
+                };
+            }
+        } catch (e) { /* unreadable: treated as none */ }
+        return null;
+    }
+
+    /**
+     * localStorage.setItem that logs instead of throwing (e.g. QuotaExceededError).
+     * @param {string} key
+     * @param {string} value
+     * @returns {boolean} True when the value was stored.
+     */
+    function trySetItem(key, value) {
+        try {
+            localStorage.setItem(key, value);
+            return true;
+        } catch (e) {
+            console.warn(`🪼 Jellyfin Enhanced: Could not store ${key}:`, e);
+            return false;
         }
     }
 
@@ -1103,7 +1427,10 @@
         // Synchronous reset: wipe every boot-time global the moment the
         // identity changes, so nothing can read user A's data under user B.
         JE.session.onUserChange('plugin-globals', () => {
-            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+            // 'loading' until the incoming user's settings arrive: until then
+            // JE.saveUserSettings refuses settings.json, so a save in the gap
+            // cannot write this empty object over that user's stored file.
+            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} }, settingsStatus: 'loading' };
             JE.currentSettings = {};
             // Cleared (not merged over) so user A's extra shortcuts don't
             // survive into user B's session — initializeShortcuts() merges.
@@ -1114,6 +1441,9 @@
             privateConfigKeys = [];
             // Untaken startup answers belong to the previous user.
             prefetched = null;
+            // The revision check starts over for the incoming user, whose data loads now.
+            lastSeenSettingsRevision = null;
+            lastRevisionCheckAt = Date.now();
         });
 
         // Async re-bootstrap: after a switch to a signed-in user, reload that
@@ -1272,6 +1602,7 @@
             }
 
             // User-specific settings (from the bootstrap, else fetched per file)
+            applyCapabilities(bootstrap);
             JE.userConfig = bootstrap
                 ? buildUserConfigFromBootstrap(bootstrap.UserSettings)
                 : await fetchUserScopedConfig(userId);
@@ -1327,7 +1658,18 @@
                  return;
             }
 
-            seedDisplayLanguage(userId);
+            if (seedDisplayLanguage(userId)) {
+                // The administrator's (locked or followed) language replaced the one the translations were loaded for.
+                JE.translations = await loadTranslations() || {};
+                JE.t = window.JellyfinEnhanced.t;
+            }
+            // A lock or a new server default that arrives later applies from the next page load.
+            document.addEventListener('je:settings-changed', (event) => {
+                const detail = /** @type {CustomEvent} */ (event).detail || {};
+                if (detail.meta || (Array.isArray(detail.keys) && detail.keys.includes('displayLanguage'))) {
+                    seedDisplayLanguage(ApiClient.getCurrentUserId());
+                }
+            });
 
             // Stage 5: Initialize theme system first
             if (typeof JE.themer?.init === 'function') {
@@ -1403,6 +1745,10 @@
             // and every enabled initializeX() has run. Automation (E2E) waits on this
             // instead of racing individual JE.* properties that appear mid-boot.
             JE.initialized = true;
+
+            // Changes made elsewhere (another device, an administrator) arrive when the user
+            // comes back to this page.
+            registerSettingsRevisionCheck(bootstrap);
 
             // Final Stage: Hide splash screen
             if (typeof JE.hideSplashScreen === 'function') {

@@ -21,6 +21,7 @@ tests/
 │   ├── requests/
 │   ├── regressions/       # Historical cases spanning several features
 │   └── helpers/           # Shared realm, recursive discovery and coverage
+├── fixtures/              # Golden fixtures read by both the backend and frontend suites
 ├── browser/               # Playwright config, fixtures, fonts and visual baselines
 ├── host/                  # Real disposable Jellyfin servers and browser smoke tests
 ├── poster/
@@ -49,7 +50,7 @@ See [all commands and prerequisites](docs/README.md), the [coverage matrix](docs
 
 - Put a new test beside the behavior it exercises. Use `*Tests.cs` for backend tests and `*.test.mjs` for frontend tests. .NET includes nested C# files automatically; both frontend commands use the same recursive discovery and reject an empty suite.
 - Keep one authoritative behavioral assertion where practical. Historical issue IDs belong in comments or fault manifests; avoid copying whole test implementations into audit-specific suites. Cross-feature historical fixtures already grouped in `frontend/regressions/` remain discoverable.
-- Reuse `backend/Support/` and `frontend/helpers/`; keep fixtures used by only one feature next to that feature. Only extract a shared helper when multiple tests need it. Preserve the singleton collection for tests changing JE's plugin singleton.
+- Reuse `backend/Support/` and `frontend/helpers/`; keep fixtures used by only one feature next to that feature. Fixtures that both the backend and frontend suites read live in `fixtures/`. `fixtures/settings/` holds the golden per-user settings defaults (legacy partial files on the server and through config.js, new-user seed, reset-all, the client fallback) and the C#/JS parity allowlist; after a deliberate behaviour change, regenerate the goldens with `JE_UPDATE_GOLDENS=1` on the backend run first, then the frontend run, and review the diff. Remove an allowlist entry in the change that fixes its drift. Only extract a shared helper when multiple tests need it. Preserve the singleton collection for tests changing JE's plugin singleton.
 - Test production code through observable contracts. Prefer controlled promises, time and isolated storage. Do not duplicate production algorithms, add order dependencies, or accept unexpected console/network failures.
 - Put browser fixture assets and reviewed snapshots in `browser/`; put real-host setup in `host/`. Do not add test code or fixtures to production resource directories.
 - Keep new runner code in `runner/`, with meaningful failure-handling tests in `runner/tests/`. CI, documentation and npm scripts should use the shared entry points rather than duplicating suite lists.

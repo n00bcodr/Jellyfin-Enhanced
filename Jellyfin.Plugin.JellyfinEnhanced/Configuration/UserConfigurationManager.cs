@@ -36,7 +36,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>
         /// Raised after a per-user file was written by <see cref="SaveUserConfiguration"/>, with the
         /// normalized (N-format, lowercase) user id and the file name. Handlers must be cheap and must not
-        /// throw; they run on the saving thread.
+        /// throw; they run on the saving thread. This is the one invalidation path for the per-user read
+        /// caches (hidden content, Spoiler Guard state, poster tag settings): every subscriber runs even
+        /// if an earlier one throws.
         /// </summary>
         public event Action<string, string>? UserConfigurationSaved;
 
@@ -50,6 +52,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return _userFileLocks.GetOrAdd(key, _ => new object());
         }
 
+        // Pure path resolution: never creates the directory, so reads for an unknown user leave no
+        // "phantom" user dir behind (reset-all walks directories). SaveUserConfiguration creates it.
         private string GetUserConfigDir(string userId)
         {
             var normalizedUserId = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
@@ -64,7 +68,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     $"Refusing user-config path outside base directory: '{userId}'");
             }
 
-            Directory.CreateDirectory(userDir);
             return userDir;
         }
 
@@ -200,6 +203,226 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        /// <summary>
+        /// Read for a document that must never be served or saved as fallback defaults (the settings.json
+        /// GET and bootstrap). Unlike <see cref="GetUserConfigurationStrict{T}"/> it tells storage problems
+        /// from bad content and never deletes: a read error (I/O, permission) leaves the file in place and
+        /// returns <see cref="UserDocumentReadStatus.Unavailable"/>; malformed content (empty, literal
+        /// null, unparseable) is moved aside to <c>.corrupt-{ts}</c> and returns
+        /// <see cref="UserDocumentReadStatus.Quarantined"/>, or <see cref="UserDocumentReadStatus.Unavailable"/>
+        /// when the move fails. With <paramref name="quarantine"/> false (the caller has nothing to re-seed
+        /// from) malformed content is left in place and reported unavailable too. Callers that seed must
+        /// hold <see cref="GetUserFileLock"/>.
+        /// </summary>
+        public UserDocumentReadStatus ReadUserConfigurationChecked<T>(string userId, string fileName, out T? value, bool quarantine = true) where T : class
+            => ReadUserConfigurationChecked(userId, fileName, out value, out _, quarantine);
+
+        /// <summary>
+        /// <see cref="ReadUserConfigurationChecked{T}(string, string, out T, bool)"/>, also returning the
+        /// <see cref="ComputeRevision">revision</see> of the bytes that were read (null unless Loaded).
+        /// </summary>
+        public UserDocumentReadStatus ReadUserConfigurationChecked<T>(string userId, string fileName, out T? value, out string? revision, bool quarantine = true) where T : class
+        {
+            value = null;
+            revision = null;
+            var configPath = ResolveUserFile(userId, fileName);
+
+            string json;
+            byte[] bytes;
+            try
+            {
+                if (!File.Exists(configPath)) return UserDocumentReadStatus.Missing;
+                bytes = File.ReadAllBytes(configPath);
+                json = DecodeText(bytes);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+            {
+                return UserDocumentReadStatus.Missing;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Could not read '{fileName}' for user '{userId}'; left in place and reported unavailable: {ex.Message}");
+                return UserDocumentReadStatus.Unavailable;
+            }
+
+            string problem;
+            if (string.IsNullOrWhiteSpace(json)
+                || string.Equals(json.Trim(), "null", StringComparison.Ordinal))
+            {
+                problem = "is empty or literal null";
+            }
+            else
+            {
+                try
+                {
+                    // Same null-skipping policy as the other readers: a stored JSON null for a field that
+                    // has since become non-nullable is schema drift, not corruption.
+                    value = JsonConvert.DeserializeObject<T>(json, new JsonSerializerSettings
+                    {
+                        NullValueHandling = NullValueHandling.Ignore
+                    });
+                    if (value != null)
+                    {
+                        revision = ComputeRevision(bytes);
+                        return UserDocumentReadStatus.Loaded;
+                    }
+
+                    problem = "deserialized to null";
+                }
+                catch (JsonException ex)
+                {
+                    value = null;
+                    problem = $"could not be parsed ({ex.Message})";
+                }
+            }
+
+            if (!quarantine)
+            {
+                _logger.Error($"'{fileName}' for user '{userId}' {problem}; left in place and reported unavailable (nothing to re-seed it from).");
+                return UserDocumentReadStatus.Unavailable;
+            }
+
+            if (TryQuarantineFile(configPath, out var backupPath))
+            {
+                _logger.Warning($"'{fileName}' for user '{userId}' {problem}; quarantined to {backupPath}.");
+                return UserDocumentReadStatus.Quarantined;
+            }
+
+            _logger.Error($"'{fileName}' for user '{userId}' {problem} and could not be moved aside; left in place and reported unavailable.");
+            return UserDocumentReadStatus.Unavailable;
+        }
+
+        /// <summary>
+        /// Read-only look at a per-user document for previews and admin overviews: never quarantines,
+        /// moves, deletes or writes anything, and never logs the file as corrupt (the caller reports
+        /// it). Files over <paramref name="maxBytes"/> are not read (<see cref="UserDocumentPeekStatus.Oversized"/>);
+        /// 0 means no limit. A path that exists but is not a file, or that cannot be looked up, is
+        /// <see cref="UserDocumentPeekStatus.Unavailable"/>; only a file that is not there is Missing.
+        /// </summary>
+        /// <param name="userId">The user id (any spelling).</param>
+        /// <param name="fileName">The per-user file name.</param>
+        /// <param name="maxBytes">Largest file to read, or 0 for no limit.</param>
+        /// <param name="value">The parsed document when Loaded.</param>
+        /// <param name="revision">The <see cref="ComputeRevision">revision</see> of the bytes read when Loaded.</param>
+        /// <returns>What was found.</returns>
+        public UserDocumentPeekStatus PeekUserConfiguration<T>(string userId, string fileName, long maxBytes, out T? value, out string? revision) where T : class
+        {
+            value = null;
+            revision = null;
+            var configPath = ResolveUserFile(userId, fileName);
+            byte[] bytes;
+            try
+            {
+                var info = new FileInfo(configPath);
+                if (!info.Exists)
+                {
+                    if (Directory.Exists(configPath))
+                    {
+                        return UserDocumentPeekStatus.Unavailable;
+                    }
+
+                    // FileInfo also says "no file" when the path cannot be looked up (a directory on the
+                    // way without search permission, an I/O error): only "not found" from opening it is
+                    // Missing (caught below); anything else is Unavailable.
+                    File.OpenHandle(configPath, FileMode.Open, FileAccess.Read).Dispose();
+                    info.Refresh();
+                }
+
+                if (maxBytes > 0 && info.Length > maxBytes)
+                {
+                    return UserDocumentPeekStatus.Oversized;
+                }
+
+                bytes = File.ReadAllBytes(configPath);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+            {
+                return UserDocumentPeekStatus.Missing;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not read '{fileName}' for user '{userId}' (read-only check): {ex.Message}");
+                return UserDocumentPeekStatus.Unavailable;
+            }
+
+            if (maxBytes > 0 && bytes.Length > maxBytes)
+            {
+                return UserDocumentPeekStatus.Oversized;
+            }
+
+            var json = DecodeText(bytes);
+            if (string.IsNullOrWhiteSpace(json) || string.Equals(json.Trim(), "null", StringComparison.Ordinal))
+            {
+                return UserDocumentPeekStatus.Corrupt;
+            }
+
+            try
+            {
+                // Same null-skipping policy as the other readers.
+                value = JsonConvert.DeserializeObject<T>(json, new JsonSerializerSettings
+                {
+                    NullValueHandling = NullValueHandling.Ignore
+                });
+            }
+            catch (JsonException)
+            {
+                value = null;
+            }
+
+            if (value == null)
+            {
+                return UserDocumentPeekStatus.Corrupt;
+            }
+
+            revision = ComputeRevision(bytes);
+            return UserDocumentPeekStatus.Loaded;
+        }
+
+        /// <summary>
+        /// The revision of a stored document: the first 12 lowercase hex digits of the SHA-256 of its
+        /// bytes, so it changes with every content change and needs no state of its own.
+        /// </summary>
+        public static string ComputeRevision(byte[] bytes)
+            => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).Substring(0, 12).ToLowerInvariant();
+
+        /// <summary>The <see cref="ComputeRevision">revision</see> of a per-user file as stored now; null when it does not exist.</summary>
+        public string? GetUserConfigurationRevision(string userId, string fileName)
+        {
+            var configPath = ResolveUserFile(userId, fileName);
+            try
+            {
+                return File.Exists(configPath) ? ComputeRevision(File.ReadAllBytes(configPath)) : null;
+            }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// A cheap change marker for a per-user file, without reading it: its length and last write
+        /// time (every save replaces the file); null when there is no such file.
+        /// </summary>
+        public string? GetUserFileStamp(string userId, string fileName)
+        {
+            try
+            {
+                var info = new FileInfo(ResolveUserFile(userId, fileName));
+                return info.Exists ? info.Length.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + info.LastWriteTimeUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                return "unavailable";
+            }
+        }
+
+        // File.ReadAllText's decoding (byte-order mark detection, UTF-8 otherwise) for bytes already read.
+        private static string DecodeText(byte[] bytes)
+        {
+            using var reader = new StreamReader(new MemoryStream(bytes), System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            return reader.ReadToEnd();
+        }
+
         // Locked read-modify-write: holds GetUserFileLock, strict-reads, mutates, and saves when the mutator returns > 0.
         public int RmwUserConfiguration<T>(string userId, string fileName, Func<T, int> mutate) where T : class, new()
         {
@@ -225,6 +448,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 configPath = ResolveUserFile(userId, fileName);
                 // Per-call random suffix avoids collisions between concurrent non-RMW writers on a shared .tmp.
                 tempPath = configPath + ".tmp." + Guid.NewGuid().ToString("N");
+                // The only place a user dir is created (path resolution is pure); covers first saves,
+                // seeds and background writers that never read first.
+                Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
 
                 JToken token;
                 if (config is System.Text.Json.JsonElement jsonElement)
@@ -241,11 +467,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 File.WriteAllText(tempPath, jsonToSave);
                 File.Move(tempPath, configPath, overwrite: true);
-                if (string.Equals(fileName, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase))
-                {
-                    Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(userId);
-                }
-
                 RaiseUserConfigurationSaved(userId, fileName);
             }
             catch (Exception ex)
@@ -258,18 +479,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         }
 
         // Swallows subscriber exceptions so a misbehaving handler can never turn
-        // a successful save into a reported (and rethrown) save failure.
+        // a successful save into a reported (and rethrown) save failure. Each
+        // subscriber gets its own try: a multicast call stops at the first
+        // throw, which would leave every later subscriber's cache stale.
         private void RaiseUserConfigurationSaved(string userId, string fileName)
         {
             var handler = UserConfigurationSaved;
             if (handler == null) return;
-            try
+            var normalizedUserId = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
+            foreach (var subscriber in handler.GetInvocationList())
             {
-                handler((userId ?? string.Empty).Replace("-", "").ToLowerInvariant(), fileName);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"User configuration save hook failed for '{fileName}': {ex.Message}");
+                try
+                {
+                    ((Action<string, string>)subscriber)(normalizedUserId, fileName);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"User configuration save hook failed for '{fileName}': {ex.Message}");
+                }
             }
         }
 
@@ -316,6 +543,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 _logger.Warning($"Could not read '{fileName}' for user '{userId}': {ex.Message}");
                 return string.Empty;
+            }
+        }
+
+        // Test seam: runs just before a quarantine move, so a test can make the move fail portably
+        // (permission tricks do not stop root or Windows).
+        internal Action<string>? BeforeQuarantineMoveForTest { get; set; }
+
+        /// <summary>
+        /// Moves a malformed file aside to a unique <c>.corrupt-{ts}</c> name. Never deletes: false (logged)
+        /// when the move fails, and the file is then still in place.
+        /// </summary>
+        private bool TryQuarantineFile(string filePath, out string backupPath)
+        {
+            backupPath = filePath + ".corrupt-" + MigrationSuffix();
+            try
+            {
+                BeforeQuarantineMoveForTest?.Invoke(filePath);
+                File.Move(filePath, backupPath);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to quarantine corrupt config '{filePath}': {ex.Message}");
+                return false;
             }
         }
 
@@ -511,15 +762,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public string[] GetAllUserIds()
         {
+            TryGetAllUserIds(out var userIds);
+            return userIds;
+        }
+
+        /// <summary>
+        /// Like <see cref="GetAllUserIds"/>, but tells a listing failure (logged, empty
+        /// <paramref name="userIds"/>) apart from a root with no user directories.
+        /// </summary>
+        /// <returns>False when the configuration root exists but could not be listed.</returns>
+        public bool TryGetAllUserIds(out string[] userIds)
+        {
             try
             {
                 if (!Directory.Exists(_configBaseDir))
                 {
-                    return Array.Empty<string>();
+                    userIds = Array.Empty<string>();
+                    return true;
                 }
 
                 var userDirs = Directory.GetDirectories(_configBaseDir);
-                var userIds = new System.Collections.Generic.List<string>(userDirs.Length);
+                var found = new System.Collections.Generic.List<string>(userDirs.Length);
 
                 foreach (var dir in userDirs)
                 {
@@ -530,16 +793,120 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     // dirs) is filtered out so callers like the Reset-to-defaults
                     // admin endpoint don't iterate it and re-create stale layout.
                     if (!CanonicalGuidRe.IsMatch(name)) continue;
-                    userIds.Add(name);
+                    found.Add(name);
                 }
 
-                return userIds.ToArray();
+                userIds = found.ToArray();
+                return true;
             }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to get all user IDs: {ex.Message}");
-                return Array.Empty<string>();
+                userIds = Array.Empty<string>();
+                return false;
             }
+        }
+
+        // ─── Admin bulk-operation records ────────────────────────────────────────
+        // "Apply defaults to users" keeps an undo record per run in <config>/_operations/<id>.json.
+        // The directory name is not a canonical user id, so every user-directory walker skips it.
+
+        /// <summary>The shape of an operation id: a UTC millisecond timestamp and 8 random hex digits.</summary>
+        public static readonly Regex OperationIdPattern = new Regex("^[0-9]{17}-[0-9a-f]{8}$", RegexOptions.Compiled);
+
+        private string OperationsDir => Path.Combine(_configBaseDir, "_operations");
+
+        /// <summary>A new operation id (<see cref="OperationIdPattern"/>); sorts by creation time.</summary>
+        public static string NewOperationId() => MigrationSuffix();
+
+        /// <summary>
+        /// The path of an operation record, refusing anything that is not an operation id or that
+        /// would resolve outside the operations directory.
+        /// </summary>
+        private string ResolveOperationFile(string operationId)
+        {
+            if (operationId == null || !OperationIdPattern.IsMatch(operationId))
+            {
+                throw new ArgumentException("Invalid operation id.", nameof(operationId));
+            }
+
+            var fullBase = Path.GetFullPath(OperationsDir + Path.DirectorySeparatorChar);
+            var full = Path.GetFullPath(Path.Combine(OperationsDir, operationId + ".json"));
+            if (!full.StartsWith(fullBase, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"Refusing operation path outside the operations directory: '{operationId}'");
+            }
+
+            return full;
+        }
+
+        /// <summary>
+        /// Saves an operation record (atomically), then deletes the oldest records beyond
+        /// <paramref name="keep"/>. Only files named like an operation id are counted or deleted.
+        /// </summary>
+        public void SaveOperationRecord(string operationId, object record, int keep)
+        {
+            var path = ResolveOperationFile(operationId);
+            Directory.CreateDirectory(OperationsDir);
+            var tempPath = path + ".tmp." + Guid.NewGuid().ToString("N");
+            try
+            {
+                File.WriteAllText(tempPath, JsonConvert.SerializeObject(record, Formatting.Indented));
+                File.Move(tempPath, path, overwrite: true);
+            }
+            catch
+            {
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); }
+                catch (Exception cleanupEx) { _logger.Warning($"Failed to clean up a temporary operation record: {cleanupEx.Message}"); }
+                throw;
+            }
+
+            if (keep <= 0) return;
+            try
+            {
+                var stale = Directory.GetFiles(OperationsDir, "*.json")
+                    .Select(file => Path.GetFileNameWithoutExtension(file))
+                    .Where(name => OperationIdPattern.IsMatch(name))
+                    .OrderByDescending(name => name, StringComparer.Ordinal)
+                    .Skip(keep)
+                    .ToList();
+                foreach (var name in stale)
+                {
+                    File.Delete(ResolveOperationFile(name));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not prune old operation records: {ex.Message}");
+            }
+        }
+
+        /// <summary>The text of an operation record; null when there is none with that id.</summary>
+        public string? ReadOperationRecord(string operationId)
+        {
+            var path = ResolveOperationFile(operationId);
+            return File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+
+        /// <summary>Whether a named marker file exists in the operations directory (admin page state).</summary>
+        public bool OperationMarkerExists(string name) => File.Exists(ResolveOperationMarker(name));
+
+        /// <summary>Creates a named marker file in the operations directory.</summary>
+        public void SetOperationMarker(string name)
+        {
+            var path = ResolveOperationMarker(name);
+            Directory.CreateDirectory(OperationsDir);
+            File.WriteAllText(path, DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        private string ResolveOperationMarker(string name)
+        {
+            if (string.IsNullOrEmpty(name) || !Regex.IsMatch(name, "^[a-z][a-z-]{0,40}$"))
+            {
+                throw new ArgumentException("Invalid marker name.", nameof(name));
+            }
+
+            return Path.Combine(OperationsDir, name);
         }
 
         // ─── Shared reviews file ─────────────────────────────────────────────────
@@ -967,5 +1334,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 _logger.Error($"Error cleaning up processed watchlist items for user {userId}: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>Outcome of <see cref="UserConfigurationManager.PeekUserConfiguration{T}"/> (a read-only look).</summary>
+    public enum UserDocumentPeekStatus
+    {
+        /// <summary>No file.</summary>
+        Missing,
+
+        /// <summary>Read and parsed.</summary>
+        Loaded,
+
+        /// <summary>Empty, literal null or unparseable; left exactly as it is.</summary>
+        Corrupt,
+
+        /// <summary>Larger than the caller's limit; not read.</summary>
+        Oversized,
+
+        /// <summary>Could not be read (I/O, permission, not a file).</summary>
+        Unavailable,
+    }
+
+    /// <summary>Outcome of <see cref="UserConfigurationManager.ReadUserConfigurationChecked{T}"/>.</summary>
+    public enum UserDocumentReadStatus
+    {
+        /// <summary>No file yet; the caller may seed one.</summary>
+        Missing,
+
+        /// <summary>Read and parsed.</summary>
+        Loaded,
+
+        /// <summary>Malformed content was moved aside to a <c>.corrupt-{ts}</c> backup; the file is gone and the caller may re-seed it.</summary>
+        Quarantined,
+
+        /// <summary>The file could not be read, or its malformed content could not be moved aside. Nothing was moved or deleted; the caller must not seed or save over it.</summary>
+        Unavailable,
     }
 }

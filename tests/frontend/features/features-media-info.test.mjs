@@ -17,6 +17,19 @@ test('watch progress cycles percentage/time/remaining and persists preference',a
  const h=setup(t);h.api.displayWatchProgress('item',h.container);await h.settle();const chip=h.container.firstChild;
  chip.click();assert.equal(h.JE.currentSettings.watchProgressMode,'time');assert.match(chip.textContent,/1m.*2m/);chip.click();assert.equal(h.JE.currentSettings.watchProgressMode,'remaining');assert.match(chip.textContent,/-1m/);chip.click();assert.equal(h.JE.currentSettings.watchProgressMode,'percentage');assert.equal(h.saved.length,3);
 });
+test('a lock that arrives or goes while the watch-progress chip is shown is followed on the next click (design item C2)',async t=>{
+ const h=setup(t);let locked=false;h.JE.settings={isLocked:key=>locked&&key==='watchProgressMode'};
+ h.api.displayWatchProgress('item',h.container);await h.settle();const chip=h.container.firstChild;
+ assert.equal(chip.style.cursor,'pointer');assert.equal(chip.title,'watch_progress_tooltip');
+ // Locked to "time" after the chip was drawn (the patch answer brought the enforced value and Meta).
+ locked=true;h.JE.currentSettings.watchProgressMode='time';
+ chip.click();chip.click();
+ assert.equal(h.saved.length,0);assert.equal(h.JE.currentSettings.watchProgressMode,'time');assert.match(chip.textContent,/1m.*2m/);
+ assert.equal(chip.title,'panel_provenance_locked');assert.equal(chip.style.cursor,'default');
+ // Unlocked again: the chip cycles and saves.
+ locked=false;chip.click();
+ assert.equal(h.JE.currentSettings.watchProgressMode,'remaining');assert.equal(h.saved.length,1);assert.equal(chip.style.cursor,'pointer');assert.equal(chip.title,'watch_progress_tooltip');
+});
 test('file-size cache distinguishes media source and failure keeps unavailable chip',async t=>{
  let fail=false;const h=setup(t,async()=>{if(fail)throw new Error('offline');return {size:100};});h.api.displayItemSize('item',h.container,'first');await h.settle();h.api.displayItemSize('item',h.container,'second');await h.settle();assert.equal(h.calls.length,2);assert.match(h.calls[1][0],/mediaSourceId=second/);
  fail=true;h.expectConsoleError(/Error fetching item size/);h.api.displayItemSize('other',h.container);await h.settle();assert.match(h.container.textContent,/-/);
@@ -104,4 +117,11 @@ test('a prefetch the chips took over lets go of its visit, which holds the view 
  // Its visit ending changes nothing: the answer stays for the next chip, as before.
  h.api.discardItemStatsPrefetch(visit);h.container.replaceChildren();h.api.displayItemSize('item',h.container,null);await h.settle();
  assert.equal(h.calls.length,1);assert.match(h.container.textContent,/1 GB/);
+});
+test('a watch-progress mode locked by the administrator shows read-only and is never saved (design item C2)',async t=>{
+ const h=setup(t);h.JE.currentSettings.watchProgressMode='time';h.JE.settings={isLocked:key=>key==='watchProgressMode'};
+ h.api.displayWatchProgress('item',h.container);await h.settle();const chip=h.container.firstChild;
+ assert.match(chip.textContent,/1m.*2m/);assert.equal(chip.title,'panel_provenance_locked');assert.equal(chip.style.cursor,'default');
+ chip.click();chip.click();
+ assert.equal(h.JE.currentSettings.watchProgressMode,'time');assert.match(chip.textContent,/1m.*2m/);assert.equal(h.saved.length,0);
 });

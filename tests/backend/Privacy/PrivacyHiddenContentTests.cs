@@ -157,4 +157,43 @@ public class PrivacyHiddenContentTests
         // ...and the very next request sees it, without waiting for the cache to expire.
         Assert.Single(Assert.IsType<QueryResult<BaseItemDto>>(await Run(f, user, "Items", "GetResumeItems", Rows(new BaseItemDto { Id = movie.Id }))).Items);
     }
+
+    /// <summary>
+    /// Design item A5: the Continue Watching orphan prune (an item removed from the library) drops the
+    /// response filter's cached hidden content, so an item re-added with the same id inside the 30 s
+    /// cache window is not still hidden by the pruned entry.
+    /// </summary>
+    [Fact]
+    public async Task OrphanPruneInvalidatesTheHiddenContentCache()
+    {
+        using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.HiddenContentEnabled = true;
+        var user = new Jellyfin.Database.Implementations.Entities.User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var movie = new Movie { Id = Guid.NewGuid() }; var other = Guid.NewGuid();
+        var hidden = Hide(movie.Id); hidden.Items["other"] = new HiddenContentItem { ItemId = other.ToString(), Type = "Movie", HideScope = "global" };
+        Save(f, user.Id, hidden);
+        var users = new Mock<IUserManager>();
+#if NET9_0
+        users.SetupGet(x => x.Users).Returns(new[] { user });
+#else
+        users.Setup(x => x.GetUsers()).Returns(new[] { user });
+#endif
+        var library = new Mock<ILibraryManager>();
+        var hook = new ContinueWatchingLibraryHook(library.Object, f.Core.Manager, users.Object, f.Core.Logger);
+        await hook.StartAsync(CancellationToken.None);
+        // The first request caches the user's hidden content with both entries present.
+        Assert.Empty(Assert.IsType<QueryResult<BaseItemDto>>(await Run(f, user.Id, "Items", "GetItems", Rows(new BaseItemDto { Id = movie.Id }, new BaseItemDto { Id = other }))).Items);
+        Assert.True(HiddenContentResponseFilter.IsCachedForTest(user.Id.ToString("N")));
+
+        library.Raise(l => l.ItemRemoved += null, library.Object, new ItemChangeEventArgs { Item = movie });
+
+        // The prune runs off-thread; wait for it to land, well inside the 30 s cache TTL.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (HiddenContentResponseFilter.IsCachedForTest(user.Id.ToString("N")) && DateTime.UtcNow < deadline) await Task.Delay(20);
+        Assert.False(HiddenContentResponseFilter.IsCachedForTest(user.Id.ToString("N")));
+        Assert.Equal("other", Assert.Single(f.Core.Manager.GetUserConfiguration<UserHiddenContent>(user.Id.ToString("N"), "hidden-content.json").Items).Key);
+        // The same id comes back (re-added) and is shown; the other hide still applies.
+        var result = Assert.IsType<QueryResult<BaseItemDto>>(await Run(f, user.Id, "Items", "GetItems", Rows(new BaseItemDto { Id = movie.Id }, new BaseItemDto { Id = other })));
+        Assert.Equal(movie.Id, Assert.Single(result.Items).Id);
+        await hook.StopAsync(CancellationToken.None);
+    }
 }
