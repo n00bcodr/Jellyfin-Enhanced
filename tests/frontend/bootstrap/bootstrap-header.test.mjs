@@ -70,6 +70,27 @@ test('identity reset discards previous user actions and signed-out tray access',
   assert.deepEqual([...next.children].map(child => child.id), ['je-header-launcher']);
 });
 
+test('MUI header moves the fallback tray before native buttons when the user menu mounts late', async t => {
+  const h = createHarness({ html: '<div class="MuiAppBar-root"><div class="MuiToolbar-root"><button aria-label="Open Menu"></button><div class="MuiBox-root" id="native"><button>SyncPlay</button><a>Search</a></div></div></div>',
+    JE: { t: key => key, session: { getUserId: () => 'user', onUserChange() {} } },
+    globals: { ResizeObserver: class { observe() {} unobserve() {} disconnect() {} } } });
+  t.after(() => h.close());
+  Object.defineProperty(h.window.HTMLElement.prototype, 'offsetParent', { configurable: true, get() { return this.parentElement; } });
+  for (const file of ['core/dom-observer.js', 'core/ui-kit.js', 'enhanced/helpers.js', 'enhanced/header-actions.js']) h.load(file);
+  const tray = h.JE.headerActions.getTray();
+  const toolbar = h.document.querySelector('.MuiToolbar-root');
+  const fallback = toolbar.querySelector('.headerRight');
+  assert.ok(tray); assert.ok(fallback);
+  assert.equal(tray.parentElement, fallback);
+  assert.equal(toolbar.lastElementChild, fallback);
+  const flush = () => new Promise(resolve => h.JE.core.dom.afterNextPaint(() => h.JE.core.dom.afterNextPaint(resolve)));
+  await flush();
+  toolbar.insertAdjacentHTML('beforeend', '<div><button aria-controls="app-user-menu"></button></div>');
+  await flush();
+  assert.equal(h.document.getElementById('native').firstElementChild, tray);
+  assert.equal(h.document.querySelector('[data-je-header-fallback]'), null);
+});
+
 test('injected icon stylesheet keeps public full fonts distinct from JE subsets and respects theme classes', t => {
   const h = createHarness({ html: '<i id="foreign" class="material-symbols-rounded">public_icon</i><div class="mediaInfoItem-fileSize"><i id="own" class="material-icons">storage</i></div>',
     JE: { cdn: { font: name => `/JellyfinEnhanced/fonts/${name}` } } });
