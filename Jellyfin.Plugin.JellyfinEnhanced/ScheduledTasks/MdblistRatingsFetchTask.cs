@@ -66,7 +66,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(config.MdblistApiKey))
+            if (string.IsNullOrWhiteSpace(config.GetMdblistApiKey()))
             {
                 _logger.Warning("MDBList Ratings Fetch is enabled but no MDBList API key is configured.");
                 progress?.Report(100);

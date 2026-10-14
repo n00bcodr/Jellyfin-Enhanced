@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string Label { get; set; } = string.Empty;
         public string Category { get; set; } = string.Empty;
     }
-    public class PluginConfiguration : BasePluginConfiguration
+    public partial class PluginConfiguration : BasePluginConfiguration
     {
         public PluginConfiguration()
         {
@@ -219,6 +219,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SonarrInstances = "[]";
             RadarrInstances = "[]";
 
+            // Requests & downloads (new): master switch for the arr integration, off by default.
+            ArrIntegrationEnabled = false;
+            // Requests & downloads, phase 1 (status on pages + live updates): off by default.
+            ArrPhase1Enabled = false;
+            ArrStatusPosterBadges = true;
+            ArrStatusLookingHours = 24;
+            ArrHouseholdContactName = "";
+            ArrWebhookJellyfinUrl = string.Empty;
+            ArrRequestsHubEnabled = true;
+            ArrManageDrawerEnabled = true;
+            ArrSeerrModalStatus = true;
+            ArrSeerrRefreshMinutes = 5;
+
             // Shoko Settings (single-instance, like Jellyseerr — Shoko is one server per household)
             ShokoUrl = "";
             ShokoApiKey = "";
@@ -234,7 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArrTagsSyncEnabled = false;
             SonarrApiKey = "";
             RadarrApiKey = "";
-            ArrTagsPrefix = "JE Arr Tag: ";
+            ArrTagsPrefix = DefaultArrTagsPrefix;
             ArrTagsClearOldTags = true;
             ArrTagsShowAsLinks = true;
             ArrTagsLinksFilter = "";
@@ -779,6 +792,166 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string SonarrInstances { get; set; } = "[]";
         public string RadarrInstances { get; set; } = "[]";
 
+        /// <summary>
+        /// Master switch for "Requests &amp; downloads (new)", the reworked Sonarr/Radarr integration.
+        /// Off by default; while off, every existing *arr feature behaves exactly as before. Each
+        /// later phase adds its own switch under this one.
+        /// </summary>
+        public bool ArrIntegrationEnabled { get; set; }
+
+        // ---- Requests & downloads, phase 1: status on pages and live updates ----
+
+        /// <summary>
+        /// Phase 1 of "Requests &amp; downloads (new)": where each title has got to (status pill and
+        /// journey on details pages, poster badges, episode chips and the missing-episodes banner),
+        /// kept current by live updates from Sonarr/Radarr (SignalR, webhooks, the change feed).
+        /// Only takes effect while <see cref="ArrIntegrationEnabled"/> is on. Off by default.
+        /// </summary>
+        public bool ArrPhase1Enabled { get; set; }
+
+        /// <summary>Show status badges (download ring, "almost ready", "taking longer") on poster cards. On by default (when phase 1 is on).</summary>
+        public bool ArrStatusPosterBadges { get; set; } = true;
+
+        /// <summary>Hours a monitored title may be "Looking for it" before it reads "Still looking". 1-720, default 24.</summary>
+        public int ArrStatusLookingHours { get; set; } = 24;
+
+        /// <summary>What the household calls the person who runs the server ("Dad"); empty uses a neutral word. Shown in family status texts.</summary>
+        public string ArrHouseholdContactName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Jellyfin's address as Sonarr/Radarr see it (for example <c>http://jellyfin:8096</c>), used
+        /// when setting up their webhooks. Empty: the administrator types it when setting one up.
+        /// </summary>
+        public string ArrWebhookJellyfinUrl { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The "Requests" page (<c>#/requests</c>, sidebar link): everyone's own requests (My requests,
+        /// Coming soon, Ready); administrators also get the Downloads and Calendar pages as tabs. Needs
+        /// phase 1. On by default (when phase 1 is on).
+        /// </summary>
+        public bool ArrRequestsHubEnabled { get; set; } = true;
+
+        /// <summary>
+        /// The administrator's "Manage" drawer on details pages (and in the Seerr more-info modal):
+        /// why a title is where it is, its timeline and copies across instances, Search now and
+        /// Open in Sonarr/Radarr. Needs phase 1. On by default (when phase 1 is on).
+        /// </summary>
+        public bool ArrManageDrawerEnabled { get; set; } = true;
+
+        /// <summary>Show the status pill in the Seerr more-info modal (titles not in the library yet). Needs phase 1. On by default.</summary>
+        public bool ArrSeerrModalStatus { get; set; } = true;
+
+        /// <summary>
+        /// How often Seerr's request list is read again for the status and the Requests page (minutes,
+        /// 1-60, default 5; every 30 seconds while someone has the Requests page open). Requests made
+        /// or answered through Jellyfin Enhanced are picked up at once.
+        /// </summary>
+        public int ArrSeerrRefreshMinutes { get; set; } = 5;
+
+        // ---- Requests & downloads, phase 2: "Tell me" (notifications) and admin essentials (hub
+        // Overview / Activity / System / Audit, queue actions, Needs attention, Jellyfin bridge,
+        // activity log mirror) ----
+
+        /// <summary>
+        /// Phase 2 of "Requests &amp; downloads (new)". Needs <see cref="ArrIntegrationEnabled"/> and
+        /// <see cref="ArrPhase1Enabled"/>. Off by default. It brings notifications (when
+        /// <see cref="ArrNotificationsEnabled"/> is on) and gives administrators the Overview, Activity,
+        /// System and Audit tabs on the Requests page.
+        /// </summary>
+        public bool ArrPhase2Enabled { get; set; }
+
+        /// <summary>
+        /// After Sonarr/Radarr import a file, refresh only the nearest existing Jellyfin folder
+        /// (never a TV library's root) so the item appears within seconds instead of waiting for a
+        /// library scan. Needs phase 2. On by default (when phase 2 is on).
+        /// </summary>
+        public bool ArrTargetedRefreshEnabled { get; set; } = true;
+
+        /// <summary>Minutes after an import before a file Jellyfin still doesn't have is listed under Needs attention ("In Sonarr, not in Jellyfin"). 1-1440, default 10.</summary>
+        public int ArrLibraryPendingMinutes { get; set; } = 10;
+
+        /// <summary>A Sonarr/Radarr root folder whose disk has less than this share free (percent) is listed under Needs attention. 1-50, default 10.</summary>
+        public int ArrLowDiskPercent { get; set; } = 10;
+
+        /// <summary>
+        /// Minutes after Seerr OK'd a request before administrators are told no Sonarr/Radarr has it
+        /// (Seerr's own Sonarr/Radarr settings are the usual cause). 1-1440, default 15. Family
+        /// members see "Taking longer than usual" only after <see cref="ArrStatusLookingHours"/>.
+        /// </summary>
+        public int ArrSeerrHandoffGraceMinutes { get; set; } = 15;
+
+        /// <summary>Copy every audited arr action (who, what, outcome) into Jellyfin's own activity log. Needs phase 2. On by default.</summary>
+        public bool ArrActivityLogMirror { get; set; } = true;
+
+        /// <summary>
+        /// Notifications: "Notify me" on titles, a bell with the inbox, toasts, phone (ntfy) and e-mail
+        /// alerts, admin alerts and "Remind". Needs phase 2. On by default (when phase 2 is on).
+        /// </summary>
+        public bool ArrNotificationsEnabled { get; set; } = true;
+
+        /// <summary>The household's Jellyfin address for links in phone alerts and e-mails (e.g. https://jellyfin.example.com). Empty: no links.</summary>
+        public string ArrNotifyHouseholdUrl { get; set; } = string.Empty;
+
+        /// <summary>New episodes of one series are gathered into one message for this many minutes (1-60, default 10).</summary>
+        public int ArrNotifyBatchMinutes { get; set; } = 10;
+
+        /// <summary>Administrators are told when an instance has not answered for this many minutes (1-1440, default 10).</summary>
+        public int ArrNotifyAdminDownMinutes { get; set; } = 10;
+
+        /// <summary>The daily digest lists downloads that have needed attention for at least this many hours (1-168, default 6).</summary>
+        public int ArrNotifyAdminStuckHours { get; set; } = 6;
+
+        /// <summary>Hour of the day (server time, 0-23) the stuck-downloads digest goes out. Default 9.</summary>
+        public int ArrNotifyDigestHour { get; set; } = 9;
+
+        /// <summary>Phone alerts through ntfy (the administrator's ntfy server; each user picks a topic).</summary>
+        public bool ArrNtfyEnabled { get; set; }
+
+        /// <summary>The ntfy server (e.g. https://ntfy.sh or a self-hosted one). Users can't change it.</summary>
+        public string ArrNtfyServerUrl { get; set; } = string.Empty;
+
+        /// <summary>Optional ntfy access token (for servers that require one to publish). Stored outside the configuration; only ever shown masked.</summary>
+        public string ArrNtfyToken { get; set; } = string.Empty;
+
+        /// <summary>E-mail alerts through the administrator's SMTP server (users verify their own address).</summary>
+        public bool ArrEmailEnabled { get; set; }
+
+        /// <summary>SMTP server host name or address.</summary>
+        public string ArrSmtpHost { get; set; } = string.Empty;
+
+        /// <summary>SMTP port (default 587).</summary>
+        public int ArrSmtpPort { get; set; } = 587;
+
+        /// <summary>Use STARTTLS (recommended; port 587). Implicit TLS on port 465 is not supported.</summary>
+        public bool ArrSmtpStartTls { get; set; } = true;
+
+        /// <summary>SMTP user name (empty: no authentication).</summary>
+        public string ArrSmtpUsername { get; set; } = string.Empty;
+
+        /// <summary>SMTP password. Stored outside the configuration; only ever shown masked.</summary>
+        public string ArrSmtpPassword { get; set; } = string.Empty;
+
+        /// <summary>The sender address of notification e-mails.</summary>
+        public string ArrSmtpFrom { get; set; } = string.Empty;
+
+        /// <summary>The sender name of notification e-mails (default "Jellyfin").</summary>
+        public string ArrSmtpFromName { get; set; } = "Jellyfin";
+
+        /// <summary>
+        /// Folder the scheduled "Back up Jellyfin Enhanced data" task writes to. Empty: the
+        /// <c>backups</c> folder inside JE's data folder.
+        /// </summary>
+        public string BackupFolder { get; set; } = string.Empty;
+
+        /// <summary>Scheduled backups kept in <see cref="BackupFolder"/> (older ones are removed). 1-100.</summary>
+        public int BackupCopiesToKeep { get; set; } = 7;
+
+        /// <summary>Scheduled backups include the stored credentials, encrypted with <see cref="BackupPassphrase"/>. Off by default.</summary>
+        public bool BackupIncludeSecrets { get; set; }
+
+        /// <summary>Passphrase for credentials in scheduled backups (a stored credential: placeholder only).</summary>
+        public string BackupPassphrase { get; set; } = string.Empty;
+
         // Shoko Settings — single-instance (URL + API key), like Jellyseerr, not the
         // Sonarr/Radarr instance-list pattern: Shoko is one server per household.
         public string ShokoUrl { get; set; }
@@ -793,6 +966,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShokoShowTrailers { get; set; }
         public bool ShokoShowParodies { get; set; }
         public bool ShokoShowOther { get; set; }
+
+        /// <summary>The arr tag prefix used when none is configured (also the configuration page's fallback).</summary>
+        public const string DefaultArrTagsPrefix = "JE Arr Tag: ";
 
         // Arr Tags Sync Settings
         public bool ArrTagsSyncEnabled { get; set; }
@@ -1208,9 +1384,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             if (parsed.Count > 0)
                 return parsed;
 
+            var legacyKey = GetSecret(nameof(SonarrApiKey));
             if (parseResult == InstanceParseResult.ExplicitlyEmpty
                 && !string.IsNullOrWhiteSpace(SonarrUrl)
-                && !string.IsNullOrWhiteSpace(SonarrApiKey))
+                && !string.IsNullOrWhiteSpace(legacyKey))
             {
                 return new List<ArrInstance>
                 {
@@ -1218,7 +1395,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     {
                         Name = "Sonarr",
                         Url = SonarrUrl,
-                        ApiKey = SonarrApiKey,
+                        ApiKey = legacyKey,
                         UrlMappings = SonarrUrlMappings ?? ""
                     }
                 };
@@ -1237,9 +1414,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             if (parsed.Count > 0)
                 return parsed;
 
+            var legacyKey = GetSecret(nameof(RadarrApiKey));
             if (parseResult == InstanceParseResult.ExplicitlyEmpty
                 && !string.IsNullOrWhiteSpace(RadarrUrl)
-                && !string.IsNullOrWhiteSpace(RadarrApiKey))
+                && !string.IsNullOrWhiteSpace(legacyKey))
             {
                 return new List<ArrInstance>
                 {
@@ -1247,7 +1425,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     {
                         Name = "Radarr",
                         Url = RadarrUrl,
-                        ApiKey = RadarrApiKey,
+                        ApiKey = legacyKey,
                         UrlMappings = RadarrUrlMappings ?? ""
                     }
                 };
@@ -1287,9 +1465,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// Sonarr/Radarr, there is no JSON instance list to corrupt — Shoko is two flat fields.
         /// </summary>
         public bool IsShokoConfigured()
-            => !string.IsNullOrWhiteSpace(ShokoUrl) && !string.IsNullOrWhiteSpace(ShokoApiKey);
+            => !string.IsNullOrWhiteSpace(ShokoUrl) && !string.IsNullOrWhiteSpace(GetShokoApiKey());
 
-        private enum InstanceParseResult { ExplicitlyEmpty, Parsed, Corrupt }
+        internal enum InstanceParseResult { ExplicitlyEmpty, Parsed, Corrupt }
 
         private static List<ArrInstance> TryDeserializeInstances(string? json, out InstanceParseResult result)
         {
@@ -1314,10 +1492,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 // array was itself empty OR every entry got dropped, treat as ExplicitlyEmpty so
                 // the legacy SonarrUrl/SonarrApiKey fallback still runs — otherwise an admin with
                 // only an invalid row would silently lose the migration path.
+                // Keys are stored as placeholders; resolve each row's real key from the secrets
+                // store (a raw key in a not-yet-migrated row passes through unchanged) BEFORE the
+                // empty-key filter, so a row whose stored key went missing counts as incomplete.
                 var filtered = instances
-                    .Where(i => i != null
-                        && !string.IsNullOrWhiteSpace(i.Url)
-                        && !string.IsNullOrWhiteSpace(i.ApiKey))
+                    .Where(i => i != null && !string.IsNullOrWhiteSpace(i.Url))
+                    .Select(i =>
+                    {
+                        i.ApiKey = ResolveStoredValue(i.ApiKey, string.IsNullOrEmpty(i.Id) ? null : Services.Secrets.SecretsStore.ArrKeyName(i.Id));
+                        return i;
+                    })
+                    .Where(i => !string.IsNullOrWhiteSpace(i.ApiKey))
                     .ToList();
                 result = filtered.Count == 0 ? InstanceParseResult.ExplicitlyEmpty : InstanceParseResult.Parsed;
                 return filtered;

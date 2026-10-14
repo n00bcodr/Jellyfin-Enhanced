@@ -221,9 +221,13 @@ public class ApiSeerrTests
         f.SetUser(f.UserId, admin: true);
         Assert.IsType<BadRequestObjectResult>(await f.Controller.GetJellyseerrArrSettings("../users"));
         Assert.Empty(f.Calls);
-        f.Reply = _ => IntegrationTransport.Response("[{\"apiKey\":\"expected-admin-secret\"}]");
+        f.Reply = _ => IntegrationTransport.Response("[{\"hostname\":\"sonarr.lan\",\"port\":8989,\"useSsl\":false,\"apiKey\":\"expected-admin-secret\"}]");
         var result = Assert.IsType<ContentResult>(await f.Controller.GetJellyseerrArrSettings("sonarr"));
-        Assert.Contains("expected-admin-secret", result.Content!);
+        // Even for admins the real key stays on the server: the browser gets a handle that only
+        // the save (or a Test of that same server) can resolve.
+        Assert.DoesNotContain("expected-admin-secret", result.Content!);
+        var handle = JsonSerializer.Deserialize<JsonElement>(result.Content!)[0].GetProperty("apiKey").GetString();
+        Assert.Equal("expected-admin-secret", f.Plugin.Plugin.Secrets.ResolvePending(handle, "http://sonarr.lan:8989"));
         Assert.Single(f.Calls, c => c.Path == "/api/v1/settings/sonarr");
     }
 

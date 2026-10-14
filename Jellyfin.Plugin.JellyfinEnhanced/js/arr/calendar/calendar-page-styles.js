@@ -764,6 +764,24 @@
       opacity: 0.7;
     }
 
+    .je-calendar-error {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 0.8em;
+      text-align: center;
+      padding: 2em;
+    }
+
+    .je-calendar-error .je-calendar-retry {
+      min-height: 44px;
+      padding: 0 1.2em;
+      border-radius: 999px;
+      font: inherit;
+      cursor: pointer;
+    }
+
     .je-calendar-agenda {
       display: flex;
       flex-direction: column;

@@ -137,6 +137,20 @@ class RegressionToolingTests(unittest.TestCase):
         # Base stale, and the change commits a different (still wrong) inventory.
         self.assertFalse(generator.inherited_drift('new', 'edited', 'new', 'old'))
 
+    def test_no_production_source_is_git_ignored(self):
+        # An ignored source file never reaches a commit, so a clean checkout would not build
+        # (the Visual Studio template's Backup*/ rule once hid Services/Backup/).
+        if not (ROOT / '.git').exists():
+            self.skipTest('not a git checkout')
+        listed = subprocess.run(['git', '-C', str(ROOT), 'ls-files', '--others', '--ignored', '--exclude-standard',
+                                 '--', 'Jellyfin.Plugin.JellyfinEnhanced'], capture_output=True, text=True)
+        if listed.returncode != 0:
+            self.skipTest('git is not usable here: ' + listed.stderr.strip())
+        ignored = [path for path in listed.stdout.splitlines()
+                   if Path(path).suffix in ('.cs', '.js', '.html', '.css', '.json', '.csproj')
+                   and not {'bin', 'obj'} & set(Path(path).parts)]
+        self.assertEqual([], ignored)
+
     def test_host_network_scan_tolerates_a_network_removed_after_listing(self):
         import importlib.util
         from types import SimpleNamespace

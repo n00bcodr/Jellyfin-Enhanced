@@ -162,7 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 // Query Jellyseerr for ALL requests in a single API call
                 var jellyseerrUrl = config.JellyseerrUrls?.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim().TrimEnd('/');
-                if (string.IsNullOrEmpty(jellyseerrUrl) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+                if (string.IsNullOrEmpty(jellyseerrUrl) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
                 {
                     _logger.Warning("[Watchlist] Jellyseerr URL or API key not configured");
                     return;
@@ -171,7 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
                 // Fetch all requests at once (no X-Api-User header = all requests)
-                var allRequests = await GetAllJellyseerrRequests(httpClient, jellyseerrUrl, config.JellyseerrApiKey);
+                var allRequests = await GetAllJellyseerrRequests(httpClient, jellyseerrUrl, config.GetJellyseerrApiKey());
                 if (allRequests == null || allRequests.Count == 0)
                 {
                     return;

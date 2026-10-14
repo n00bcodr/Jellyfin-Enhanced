@@ -26,6 +26,15 @@
     <PackageReference Include="coverlet.collector" Version="6.0.4" PrivateAssets="all" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.11" Condition="'$(JellyfinTarget)' == 'jf12'" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.10" Condition="'$(JellyfinTarget)' == 'jf10'" />
+    <!-- The plugin compiles against the host's Microsoft.Data.Sqlite; tests run without a host, so they bring it (with its native library). -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" Condition="'$(JellyfinTarget)' == 'jf12'" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" Condition="'$(JellyfinTarget)' == 'jf10'" />
+    <!-- The native SQLite build Jellyfin 12.2 ships (newer than the one Microsoft.Data.Sqlite 10.0.0 pulls in). -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The route table shared with tests/host/run.py. -->
+    <None Include="Api/ArrRoutes.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

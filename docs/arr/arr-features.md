@@ -27,6 +27,222 @@ The ARR integration provides convenient links to your Sonarr, Radarr, and Bazarr
 - **Calendar View** - Upcoming releases from Sonarr/Radarr
 - **Requests Page** - Monitor download queue and status
 - **Admin Only** - Links only visible to administrators
+- **Requests & downloads (new, experimental)** - Where every title has got to, on its own page, kept current live; see [below](#requests-downloads-new)
+
+## Requests & downloads (new)
+
+**Experimental and off by default** (*arr Settings tab → Requests & downloads (new) → Show where things have got
+to). Seerr stays in charge of requests: Jellyfin Enhanced reads Seerr's request list and Sonarr/Radarr, and shows
+everyone where the things they care about have got to, in plain words. Settings: [*arr Settings](arr-settings.md#requests-downloads-new).
+
+**One status language.** *Waiting for Dad to OK it → OK'd! Getting started → Not out yet → Looking for it →
+Downloading · 42% · about 12 min → Almost ready → Ready to watch*. "Ready" means a Jellyfin item *you* can open.
+Family members see these sentences only; administrators also see which Sonarr/Radarr holds each copy, the app's
+own message ("Manual Import required") and what would fix it.
+
+**Where it shows**
+
+- **Details pages**: a pill under the title (tap it for the journey: asked, OK'd, downloading, … with dates);
+  series and season pages get a summary ("Season 1 ready · 1 downloading"); seasons get episode chips and a
+  "Missing: E5, E6" line. Episodes whose downloads can't be checked count as "taking longer than usual"
+  in the series or season summary.
+- **Posters**: a small badge while something downloads, is almost ready or takes longer than usual.
+- **Seerr's more-info window**: the same pill and journey for titles that aren't in the library yet, e.g.
+  "Downloading · 42%" with "Asked by someone in your household → OK'd → Downloading".
+- **Requests page** (`#/requests`, "Requests" in the sidebar): your own requests, grouped into *Waiting for an
+  OK*, *On the way*, *Not out yet* and *Said no*; **Coming soon** (dates in the next two months, by day) and
+  **Ready** (what arrived in the last two weeks, with Play). Each request follows what it asked for: a request
+  for Season 3 of a show you already have waits for Season 3, and a 4K request for the 4K copy (with no 4K
+  Sonarr/Radarr set up in Jellyfin Enhanced, for Seerr to say the 4K copy is available); **Play** on a 4K
+  request only ever opens the 4K copy, never the standard one (a copy counts as the 4K one only when the 4K
+  Sonarr/Radarr's linked libraries, path mappings or folder name say so, or Seerr names it). Nobody sees anyone else's requests here, and
+  someone else's request for the same title doesn't change how yours shows. Titles you hid with
+  **Hidden Content** (when it filters requests) don't show here either. Release dates are calendar days: a
+  movie out "on the 20th" (or an episode with an air day but no time) is on the 20th wherever you are, and
+  stays in Coming soon through that day, even after midnight UTC. Open
+  requests always show; with more than 200 titles the page lists your open ones and the newest and says so.
+  Administrators also get the **Downloads** and **Calendar** pages as tabs (when those pages are on); the old
+  pages stay where they are.
+
+Everything updates on open pages within seconds, without a reload: Jellyfin Enhanced keeps a live connection to
+each Sonarr/Radarr and reads Seerr's request list in the background; browsers only ever ask Jellyfin. When a
+Sonarr/Radarr stops answering, what it was downloading is no longer shown as if it were live: after 10 minutes
+(30 for its history) its titles read "Taking longer than usual" (administrators: "Can't be read") until it answers
+again (a series whose missing episodes all depend on it too), and the Requests page says download details can't
+be checked right now. A failed read that isn't that old yet drops the time left at once. A persistently incomplete queue
+read retains omitted downloads for status and Needs attention, without ETA or actions, until ten minutes
+from the last read that actually saw them; then their status becomes unknown. Incomplete reads never
+prove that a download departed. The legacy Downloads list omits rows from an expired queue and keeps
+the instance's error toast; its history still shows past events. When a page can't refresh, it
+keeps what it showed with "Couldn't refresh · showing what we had at 14:05 · Retry" and tries again on its own.
+
+Copies are matched to Sonarr/Radarr by every id the title is known by (a series Jellyfin knows only by its TMDB
+id, a movie only by its IMDb id). Status and notifications share the same ids, following links between the
+arr libraries and the last complete Seerr request list. Copies are matched to the right instance by its linked
+libraries, its path mappings (the longest that applies) or its folder names; two instances whose folders end the same way (both rooted at
+/movies on different hosts) are never guessed between, so a 4K copy is never mistaken for the standard one.
+
+**Manage (administrators).** A **Manage** button on details pages, in Seerr's more-info window and on the Requests
+page opens a panel (on the right on a computer, from the bottom on a phone) with:
+
+- *Where it has got to*: the status with every copy's reason and fix;
+- **Search now** (per Sonarr/Radarr; recorded in the arr action audit log) and **Open in Sonarr/Radarr**;
+- *Versions across instances*: the title in each Sonarr/Radarr of its kind (e.g. Radarr and Radarr 4K), with
+  monitoring, profile, size and its Jellyfin library, or "Not in Radarr 4K" with an **Add in Radarr 4K** link to
+  that app's add page;
+- a *timeline* per instance: added, grabbed, imported, failed, searches run from Jellyfin Enhanced, the download in
+  progress and when Jellyfin got it (when that app's queue is out of date it says "queue as of 14:05"; when it
+  can't be read at all, "queue can't be read; last read 14:05" and no download or download action is offered);
+- *Requests in Seerr*: who asked, when, and the answer;
+- with **admin tools (phase 2)** on, the title's downloads with **Retry import**, **Search again** and
+  **Remove…** (keeps the download's data; the same "blocklist / search again" questions and season-pack warning
+  as the Activity tab). Removing the data as well stays on the Activity tab.
+
+**Admin tools (phase 2).** With **Tell me, and admin essentials (phase 2)** on, administrators get four more tabs on
+the Requests page (everyone else never receives them):
+
+- **Overview**: a card per Sonarr/Radarr (live or not, downloads in the queue, health, a disk bar per root
+  folder); **Needs attention**, built only from what the apps and Jellyfin report themselves, each row with a fix:
+
+    | Row | Fix offered |
+    |---|---|
+    | Import blocked (the app says it needs a manual import) | **Open in Sonarr/Radarr** (its queue), **Remove & search again** |
+    | Waiting to import, with the app's warning ("Sample") | **Retry import** (the app's own "check finished downloads" command), Open in…, Remove & search again |
+    | Download warning ("no peers") / stalled (the download client reports no time left with data still missing) | **Remove & search again** (keeps the partial download; "delete it too?" asks separately, with the same blocklist and search choices) |
+    | Download client unavailable (the app can't reach it; no progress is known) | **Open System**, Open in… |
+    | Download failed and nothing new since | **Search now** |
+    | Low disk / root folder missing / the app's health checks | **Open System**, Open in… |
+    | In Sonarr/Radarr, not in Jellyfin (an import Jellyfin still doesn't list after 10 minutes) | **Scan now**, or the path doctor when Jellyfin can't see the file |
+    | OK'd in Seerr, but none of the Sonarr/Radarr Jellyfin Enhanced watches has it (a 4K request: none of the 4K ones; tagged [4K]) | **Open Seerr's settings** (usually Seerr's own Sonarr/Radarr settings) |
+    | An app that can't be read, a live connection down for 10 minutes, a webhook silent for a day | **Open System** |
+
+  Three or more rows with the same reason (and app) whose only fix is a page link (Open Seerr's settings, Open
+  System) share one row with that fix, what they have in common (why Jellyfin can't list them, or which app
+  lacks them) and a **Show all** list; rows with a fix of their own stay apart. The count
+  still counts every row. Then the next 24 hours (episodes airing, movies coming out) and two weeks of grabs and
+  imports.
+  A download's "for 3 h" counts from when Jellyfin Enhanced first saw the problem (not from the grab), so a
+  restart may make it read late, never early (a stalled download too: from when it stalled); the daily digest
+  lists what has been stuck that long. A finished
+  download the app can't import is "Waiting to import", never "downloading". When an app's queue is out of
+  date, its card and the Activity tab say "queue as of 14:05"; when it can't be read at all, "queue can't be
+  read; last read 14:05", and the downloads last read are listed without any action (a click on one already
+  open is refused and nothing is sent to the app).
+- **Activity**: every download (a season pack is one download), with the app's own words, progress and
+  **Remove…** (keeps the download client's data; optionally blocklist the release and search for another
+  copy), **Search again** and **Retry import** (where the app retries imports itself). Deleting the download's
+  data too is offered only inside the Remove dialog ("Delete the download's data too…", where the download
+  allows it): it keeps that dialog's blocklist and search choices, shows what it covers ("This download covers
+  S02E01–E08; removing it affects all 8 episodes") and needs the word DELETE typed and a one-time confirmation
+  from the server. Every action covers all of the download's rows: when the queue is read over more than
+  one page (more than 500 queue rows; Sonarr lists each episode of a season pack as its own row), or could
+  not be read whole, the download's rows are read again in one read before the action or the confirmation,
+  and if that fails the action says "The queue is changing; try again in a moment." Below, the recent history.
+  Sonarr and Radarr have no way to change a download's priority, so neither does this tab.
+- **System**: per app its version, health checks, disks, scheduled tasks, live connection and webhook; Seerr's
+  request list; and the **Jellyfin bridge**: recent imports Jellyfin doesn't list yet (with why: not scanned
+  yet, Jellyfin can't see the file there, outside every library), titles with files Jellyfin doesn't list at
+  all, and the **path doctor**, which shows each app's root folders as Jellyfin sees them, compares a few titles
+  both sides have and suggests the path mapping that would fix a mismatch ("/data/media → /media").
+- **Audit**: every action taken from Jellyfin Enhanced (who, what, where, the outcome and what the app
+  answered), including refusals, and attempts by someone who isn't an administrator to use these actions
+  ("denied", at most once a minute per person and action). Each one is also copied into Jellyfin's own
+  activity log (Dashboard → Activity) unless that setting is off.
+
+The tabs update when something changes (an app was read again, an action was recorded), with a fallback
+re-read every minute.
+
+With phase 2 the Downloads tab folds into Activity (the old Downloads page itself stays).
+
+**Imports show up in Jellyfin right away.** When Sonarr/Radarr import a file, Jellyfin Enhanced refreshes only
+the folder it landed in (the season; the series and then the new season folder for a new season; or the movie
+library's folder for a new movie), looking only at the new files, so the episode or movie appears within seconds
+and open pages switch to "Ready" without a library scan. A whole TV library is never refreshed this way: a
+brand-new series folder is handed to Jellyfin's own library monitor when that library has real-time monitoring
+on, and otherwise waits for Jellyfin's next library scan (it is listed under "In Sonarr/Radarr, not in
+Jellyfin" with **Scan now** meanwhile). It uses each app's path mappings (see the path doctor) and
+waits while Jellyfin's own library scan runs. A folder is never refreshed twice at once: imports that arrive while
+it runs are gathered into the next refresh of that folder, and a file whose refresh is still waiting its turn
+is carried the rest of the way once that refresh has run (unless the setting was switched off meanwhile).
+Imports of the last 30 minutes are looked at again when Jellyfin starts, so one made while it was restarting
+still shows up. On Windows, folders that differ only in upper/lower case are the same folder.
+
+**OK'd in Seerr, but nothing happens.** When Seerr has OK'd a request and, after 15 minutes, no Sonarr/Radarr
+has the title, administrators see "OK'd in Seerr 20 min ago, but none of the Sonarr/Radarr Jellyfin Enhanced
+watches has it" on the title and under Needs attention. The family keeps seeing "OK'd! Getting started" until the
+"still looking" hours, then "Taking longer than usual". Each quality is judged on its own instances: a 4K request
+on the 4K Radarr or Sonarr alone ("4K request OK'd in Seerr … but none of the 4K Radarr Jellyfin Enhanced watches
+has it", even when the standard Radarr has the movie; likewise for series and the 4K Sonarr), a standard request
+on the others, so a finished standard request never hides a stuck 4K one. A request Seerr counts as done
+(completed, or its media available) is never flagged, even when no Sonarr/Radarr holds the title any more.
+Nothing is flagged for a kind of title no Sonarr/Radarr is set up for in Jellyfin Enhanced, nor for a 4K request
+with no 4K instance set up (Seerr may send it to an app Jellyfin Enhanced doesn't know).
+
+Privacy: family members only ever hear about titles they can open in Jellyfin (library access, parental rating and
+tags) or that they asked for themselves while Jellyfin doesn't have them yet (once Jellyfin has a title and their
+limits hide it, their own request no longer shows it); nothing they receive names a server, path, download client,
+release or another person.
+
+### Notifications (phase 2)
+
+**Off by default** (*arr Settings tab → Requests & downloads (new) → Tell me, and admin essentials → Notifications).
+Settings: [*arr Settings](arr-settings.md#notifications-phase-2).
+
+- **Notify me.** A bell button in the action row of movie, series and season pages ("Notify me about new
+  episodes" on a series), a **Notify me** button in Seerr's more-info window (titles that aren't in the library yet
+  too) and a **Following** button on each Requests page row. Your own requests are followed automatically (turn it
+  off per title with the same button, or for all in your settings).
+- **What you hear about:** a title you asked for or follow is **ready to watch** (for you: a 4K request waits for
+  the 4K copy, and a title in a library you can't open never counts); **new episodes** of series you follow or
+  asked for, gathered per series for 10 minutes from the first one ("Severance: 3 new episodes ready"; a whole season
+  at once reads "Season 2 is ready" when Sonarr says that is all of it; only numbers, never an episode's name, so
+  nothing is spoiled; a 4K request hears about the 4K copy's episodes only, and with no 4K Sonarr set up in
+  Jellyfin Enhanced only about the copy Seerr matched it to, never the standard copy); a request of yours **declined**. Following
+  something that is already there tells you nothing; each thing is told once (once per Jellyfin item, whichever id it
+  is known by), even across restarts, and told again if you ask for it again after it was removed; a title you can
+  no longer open by the time a batch goes out is left out (a series followed under two ids, even for different
+  seasons, is still one batch).
+  Phone alerts and e-mails held back by quiet hours or retries are checked again as they go out (nothing about a
+  title you can no longer open, nothing of a kind you switched off meanwhile, nothing on a channel switched off
+  meanwhile; the bell then shows such an entry without its title), and a disabled account is told nothing. When a
+  Jellyfin user is deleted, their follows, settings and inbox go with them.
+- **Where:** the **bell** in the header (unread count; the inbox with posters, "5 min ago", **Play** for what is
+  ready, Mark all read, older items on demand); a **pop-up** on open pages within a couple of seconds (never while a
+  video plays: you get one "N more notifications arrived" when it ends); and, if the administrator sets them up,
+  **phone alerts** through [ntfy](https://ntfy.sh) and **e-mail**, both with a link straight to the title.
+- **Requests & alerts** (Jellyfin Enhanced panel, per person): what to hear about, pop-ups on or off, follow what I
+  request, phone alerts (make up a private topic, or type your own, then subscribe to it in the ntfy app), e-mail
+  (confirmed with a 6-digit code sent to the address), **quiet hours** (phone and e-mail wait until they end, in your
+  device's time zone; the bell still fills), "hide titles on the lock screen" (no title in any phone or e-mail
+  text, administrators' alerts included) and **Send me a test**. Every e-mail's
+  unsubscribe link opens this section.
+- **Administrators** also hear about a new request waiting for an OK, and straight away about what the admin tools'
+  **Needs attention** list shows that needs someone: a download Sonarr/Radarr can't import without a manual import,
+  a request Seerr OK'd that no Sonarr/Radarr has after the grace, an instance that stops answering for a while (and
+  when it is back) and a root folder low on disk space (at the same threshold as the Overview, once a day per
+  folder); each once, linked to the Overview or System tab (rows already listed when the alerts are switched on,
+  or switched back on, stay on the Overview only, so turning them on doesn't send one alert per old row; a row
+  that started while Jellyfin was restarting is still told). A daily list gathers the downloads Needs attention has
+  shown for hours. And **reminders**: family members get **Remind Dad** next to a status that is taking longer than usual
+  (at most once a day per title, whichever episode or season page it is sent from). These alerts stay with
+  administrators: someone who is no longer one, or who switched administrators' alerts off, doesn't get them on
+  the phone (and someone who is no longer one doesn't see them in the bell).
+
+Notifications are driven by the same live updates as the status (Sonarr/Radarr, Seerr's request list and Jellyfin's
+library), never by extra calls to the arrs. With **Show imports in Jellyfin right away** (the admin tools' targeted
+refresh) "ready to watch" goes out within seconds of the import: the moment the refresh finds the file, the title is
+looked at again, without waiting for a library scan or for Jellyfin to finish reading its metadata. Follows, the inbox and delivery state are kept in a small database
+(`acquire.db`) in Jellyfin Enhanced's data folder, included in JE backups. Failed phone or e-mail deliveries are
+retried (30 s, 2 min, 10 min, 30 min, 2 h, 6 h) and then shown to administrators under **Notification status**; an
+e-mail server that doesn't answer is given up on after 30 seconds for that try, so other alerts aren't held up.
+Switching notifications off holds what is queued until they are back on; switching phone alerts or e-mail off (or a
+person switching theirs off) drops what was queued for that channel. Pointing Jellyfin Enhanced at another Seerr
+server starts its request list afresh: the requests already on it are not announced as new, approved or declined.
+
+Episode batches also recheck every stored episode file when a quiet-hours or retry hold ends:
+no visible episodes suppresses the delivery without retries; a partially visible batch announces only
+the remaining count and seasons, never a whole season that is no longer all visible. Deliveries saved
+before episode files were recorded continue using the parent item's visibility check.
 
 ## ARR Links
 
@@ -138,7 +354,7 @@ Display synced *arr tags as clickable links on item detail pages.
 
 **Tag Prefix:**
 
-- Default: `JE Arr Tag: `
+- Default: `JE Arr Tag: ` (also used when the prefix is left empty)
 - Prefix added to synced tags
 - Helps identify plugin-managed tags
 
@@ -184,6 +400,8 @@ internal-tag,do-not-show
 - Comma-separated list of tag names to sync
 - Only matching tags synced from *arr
 - Leave empty to sync all tags
+
+**How titles are matched:** movies by their TMDB id, or by their IMDb id when no Radarr movie has that TMDB id and exactly one Radarr movie has that IMDb id (an IMDb id several Radarr movies share matches none of them, and the IMDb fallback is skipped for a run in which a Radarr instance can't be read); series by TVDB, TMDB or IMDb id (whichever the Jellyfin item has). **Clear Old Tags** only removes tags from a title whose place in Sonarr/Radarr is certain: a movie with a TMDB id (unless no Radarr movie has it and its IMDb id is one several Radarr movies share), a series with a TVDB id, or a title whose other id matches a Sonarr/Radarr entry. A title with no usable id, or only ids no entry has, keeps its tags. If a Sonarr or Radarr instance can't be read during a run, **Clear Old Tags** skips the titles of that kind for that run, so a temporary outage never strips their tags.
 
 ### Custom Styling
 
@@ -265,6 +483,23 @@ View upcoming releases from Sonarr and Radarr in a calendar interface.
 - Helps track upcoming releases you've requested
 - Toggle on/off as needed
 
+**Filter by Library Access:**
+
+- Users who aren't administrators see an episode or movie Jellyfin already has only if they can open it
+  (an episode Jellyfin hides from them, by its own rating or tags, stays hidden even when they can open its series).
+  A title in two libraries (say "TV" and "TV 4K") shows when they can open either copy
+- An upcoming title that isn't in Jellyfin yet shows only to users who can open the library it will land in:
+  the libraries its Sonarr/Radarr instance is linked to, or else the library whose folder holds the title's
+  folder (through the instance's path mappings; a mapping for a folder inside a root folder counts too)
+- When that can't be told (no Jellyfin library holds the folder; two instances have the same root folder
+  and neither maps it; or, with no mapping for the title, an instance's root folders can't be read yet)
+  the title is hidden from everyone but administrators; the path doctor on the
+  Requests page's System tab points out such roots while the Calendar and this setting are on. Set a path mapping or link the instance's libraries to fix it
+  (the setting's own description says so too, for installs without the System tab)
+- The calendar never waits for root folders: when a title needs them and they haven't been read yet (or were
+  read over an hour ago), it answers with what it knows and reads them in the background for the next load
+- If the calendar can't be loaded, it says so with a **Try again** button instead of showing "No upcoming releases"
+
 ### Usage
 
 **Access Calendar:**
@@ -329,3 +564,26 @@ Direct URL: `/web/index.html#!/jellyfinenhanced/downloads`
 
 !!! note
     This page shows only *arr download queue entries. Seerr media requests and issues are shown on a separate Requests page configured in the **Seerr Settings** tab.
+
+**Who sees which downloads:** administrators see the whole queue and history. Everyone else sees a
+download only for a title they could open in Jellyfin (their library access and parental limits apply,
+down to single episodes of a season pack). A title that isn't in Jellyfin yet shows when they can open a
+destination library resolved from its title folder through path mappings (the longest mapping and
+deepest library win, constrained to the instance's linked libraries when configured), falling back to
+those linked libraries if the folder cannot resolve. An unresolved destination requires access to every
+library; an unlinked instance does not grant access by itself. Blocked folders take precedence over
+all-library or enabled-folder permissions. Status-by-key, follows, the change feed, Downloads and the
+Calendar use this destination rule. For a title the viewer can already open in Jellyfin, status keeps
+copies whose destination is unresolved, and omits copies resolved into libraries they cannot open,
+including another quality variant. A requester's own absent title remains accessible through their Seerr
+request; once Jellyfin has the title, its visibility decision applies. For status and downloads, viewers
+with parental limits see absent titles only when they asked for them in Seerr (this also works with "Requests &
+downloads (new)" off: their Seerr requests are then read only when such a title is in the queue or
+history, at most about twice a minute, and a slow Seerr never holds up the page; saving the Seerr settings
+drops what was read). Calendar retains its existing treatment of parental limits for upcoming titles,
+whose rating Jellyfin cannot yet judge. With **Filter Downloads by User Requests** on, they additionally see only what they
+requested in Seerr. That filter runs before the newest 200 history items are selected, so newer imports
+of other people's titles cannot crowd out their own. A short hourly history read is retried once;
+if still short it merges into the existing ring and leaves the full read due for the next poll.
+A cold short read keeps a real timestamp and a separate retry flag. Episode file ids used to recheck
+delayed notifications remain on the server; inbox rows and browser toasts receive only display parameters.

@@ -1423,7 +1423,7 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="downloadsFilterByUserRequests" is="emby-checkbox" type="checkbox"/><span>Filter Downloads by User Requests</span></label></div>
                             <div class="je-setting-description" data-desc-for="downloadsFilterByUserRequests">
-                                <div class="fieldDescription je-field-desc-xl">When enabled, non-admin users only see downloads for content they requested. When disabled, all authenticated users can see every item in the download queue, including content requested by other users.</div>
+                                <div class="fieldDescription je-field-desc-xl">Non-admin users only ever see downloads and history of titles they can open in Jellyfin (library access and parental limits apply, down to single episodes). A title not in Jellyfin yet shows when they can open a library its Sonarr/Radarr instance is linked to (any instance without linked libraries counts as open), or, for users with parental limits, only when they asked for it. When enabled, non-admin users additionally see only content they requested in Seerr. Administrators always see the whole queue.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="downloadsPageShowIssues" is="emby-checkbox" type="checkbox"/><span>Show Seerr Issues Section</span></label></div>
                             <div class="je-setting-description" data-desc-for="downloadsPageShowIssues">
@@ -1618,7 +1618,7 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="calendarFilterByLibraryAccess" is="emby-checkbox" type="checkbox"/><span>Filter by Library Access</span></label></div>
                             <div class="je-setting-description" data-desc-for="calendarFilterByLibraryAccess">
-                                <div class="fieldDescription">When enabled, the calendar only shows items from libraries the user has access to. Upcoming items not yet in Jellyfin are filtered based on their Sonarr/Radarr root folder.</div>
+                                <div class="fieldDescription">When enabled, users who aren't administrators see an item Jellyfin already has only if Jellyfin lets them open it. An upcoming item not yet in Jellyfin shows only when the library it will land in can be told (the libraries linked to its Sonarr/Radarr instance, or else its folder through the instance's path mappings) and the user can open that library. Otherwise it is hidden from them: set a path mapping or link libraries on the instance.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="calendarShowOnlyRequested" is="emby-checkbox" type="checkbox"/><span>Show Requested Only (Default)</span></label></div>
                             <div class="je-setting-description" data-desc-for="calendarShowOnlyRequested">
@@ -2513,6 +2513,241 @@
                         </div>
                     </fieldset>
 
+                    <fieldset id="arrIntegrationSection">
+                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">download_for_offline</i>Requests &amp; downloads (new)</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="arrIntegrationEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Requests &amp; downloads (new)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrIntegrationEnabled">
+                                <div class="fieldDescription je-field-desc-xl">A reworked Sonarr/Radarr integration that is being built in stages. <strong>Experimental, off by default.</strong> For now, turning it on adds per-instance settings to each Sonarr/Radarr box above (role, default instance, linked libraries, path mappings) and the connection check below, and lets you turn on the stages below (each one stays off until you tick it). Everything else on this tab works the same whether it is on or off.<br/>API keys for every service are stored outside the plugin configuration either way and only ever shown masked.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <button is="emby-button" type="button" id="arrIntegrationCheckBtn" class="raised emby-button">Check connections</button>
+                                <div class="fieldDescription">Tests every saved Sonarr/Radarr instance: checks the URL really is that app, the API key works and the version is supported, and lists the instance's own health warnings. Save first if you changed anything.</div>
+                                <div id="arrIntegrationCheckResult" class="je-arr-check-result" aria-live="polite"></div>
+                            </div>
+
+                            <!-- Requests & downloads, phase 1: status on pages, kept current by live updates -->
+                            <div class="checkboxContainer"><label><input id="arrPhase1Enabled" is="emby-checkbox" type="checkbox"/><span>Show where things have got to (status on pages)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrPhase1Enabled">
+                                <div class="fieldDescription je-field-desc-xl">Adds a status pill to movie, series, season and episode pages ("Downloading · 42% · about 12 min", "Almost ready", "Not out yet, expected 14 Nov"), with a tap-to-open journey, badges on posters, chips on episodes and a "Not in the library yet" line on season pages. Everyone sees plain words; administrators also see the instance, the arr's own message and what would fix it. Status is read from Sonarr/Radarr in the background, never while a page loads, and updates on open pages within seconds without a reload: Jellyfin Enhanced keeps one connection open to each Sonarr/Radarr above (nothing to set up there); browsers only ever ask Jellyfin.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="arrStatusPosterBadges" is="emby-checkbox" type="checkbox"/><span>Show status badges on posters</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrStatusPosterBadges">
+                                <div class="fieldDescription">A small corner badge on poster cards while something is downloading, almost ready or taking longer than usual, and seasons' "4/10" progress on series pages.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="arrStatusLookingHours">"Still looking" after (hours)</label>
+                                <input id="arrStatusLookingHours" is="emby-input" type="number" min="1" max="720"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="arrStatusLookingHours">
+                                <div class="fieldDescription">How long a wanted title reads "Looking for it" before it reads "Still looking, we'll keep trying". 1-720, default 24.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="arrHouseholdContactName">What the family calls you</label>
+                                <input id="arrHouseholdContactName" is="emby-input" type="text" maxlength="40" placeholder="Dad"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="arrHouseholdContactName">
+                                <div class="fieldDescription">Used in family status texts, e.g. "Waiting for Dad to OK it". Leave empty for a neutral wording.</div>
+                            </div>
+                            <!-- Phase 1: Requests page, Manage drawer, Seerr modal status, Seerr request list -->
+                            <div class="checkboxContainer"><label><input id="arrRequestsHubEnabled" is="emby-checkbox" type="checkbox"/><span>Requests page</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrRequestsHubEnabled">
+                                <div class="fieldDescription">A "Requests" page in the sidebar (<code>#/requests</code>) where everyone sees their own requests and where each has got to: waiting for an OK, on the way, not out yet, said no; what is coming soon; and what arrived in the last two weeks. Requests are read from Seerr (Seerr tab), so this shows nothing until Seerr is set up. Administrators also get the Downloads and Calendar pages as tabs there (when those pages are on); the old pages stay where they are, and the Downloads page's own sidebar link is then called "Downloads".</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="arrManageDrawerEnabled" is="emby-checkbox" type="checkbox"/><span>Manage button for administrators</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrManageDrawerEnabled">
+                                <div class="fieldDescription">Adds a Manage button on details pages, in Seerr's more-info window and on the Requests page (administrators only). It opens a panel that explains where the title has got to, lists its copies in every Sonarr/Radarr, shows a timeline (added, grabbed, imported, in Jellyfin, and searches run from here), and offers <strong>Search now</strong> (recorded in the arr action audit log) and <strong>Open in Sonarr/Radarr</strong>.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="arrSeerrModalStatus" is="emby-checkbox" type="checkbox"/><span>Show the status in Seerr's more-info window</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrSeerrModalStatus">
+                                <div class="fieldDescription">Titles that aren't in the library yet get the same status pill and journey in Seerr's more-info window ("Waiting for Dad to OK it", "Downloading · 42%"). Needs "Use the more-info window" on the Seerr tab.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="arrSeerrRefreshMinutes">Read Seerr's requests every (minutes)</label>
+                                <input id="arrSeerrRefreshMinutes" is="emby-input" type="number" min="1" max="60"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="arrSeerrRefreshMinutes">
+                                <div class="fieldDescription">How often Seerr's request list is read in the background for the status and the Requests page. Every 30 seconds while someone has the Requests page open; requests made or answered through Jellyfin Enhanced show within seconds. 1-60, default 5.</div>
+                            </div>
+                            <!-- Phase 1 live updates: webhooks and per-instance live status (the phase 1 switch above covers both). -->
+                            <div id="arrLiveSettings" class="je-arr-live-settings">
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrWebhookJellyfinUrl">Jellyfin's address as Sonarr/Radarr see it</label>
+                                    <input id="arrWebhookJellyfinUrl" is="emby-input" type="text" autocomplete="off" placeholder="e.g. http://jellyfin:8096 or http://192.168.1.10:8096"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrWebhookJellyfinUrl">
+                                    <div class="fieldDescription">Only for the optional webhooks below, which add a second, instant path for downloads and imports. Use the address Sonarr/Radarr can reach Jellyfin at (often the container name or LAN address, not the public URL).</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <button is="emby-button" type="button" id="arrLiveCheckBtn" class="raised emby-button">Live updates status</button>
+                                    <div class="fieldDescription">Shows each instance's live connection and webhook, and lets you set up or remove the webhook. Save first if you changed anything above.</div>
+                                    <div id="arrLiveResult" class="je-arr-check-result" aria-live="polite"></div>
+                                </div>
+                            </div>
+                            <!-- /Requests & downloads, phase 1 -->
+
+                            <!-- Requests & downloads, phase 2: one switch for "Tell me" (notifications) and the admin essentials -->
+                            <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
+                                <div class="fieldDescription je-field-desc-xl">The second stage: people get told when what they asked for (or follow) is ready, and administrators get alerts and day-to-day tools. Administrators get <strong>Overview</strong>, <strong>Activity</strong>, <strong>System</strong> and <strong>Audit</strong> tabs on the Requests page: every Sonarr/Radarr with its live state, queue, health and disk space; a <strong>Needs attention</strong> list built from what the apps themselves report (import blocked, download warnings and failures, low disk, health checks, imports Jellyfin hasn't picked up, requests Seerr OK'd that no Sonarr/Radarr has) with a fix next to each; the queue with remove (keeping the download's data, optionally blocklisting it and searching again), search again and retry import; removing a download <em>with</em> its data needs a typed confirmation. Every action is recorded in the audit log and in Jellyfin's activity log. Needs "Show where things have got to". Notifications have their own switch below.</div>
+                            </div>
+                            <!-- Phase 2: admin essentials (hub Overview / Activity / System / Audit, queue actions, Needs attention,
+                                 Jellyfin bridge, activity log mirror) -->
+                            <div id="arrAdminToolsSettings" class="je-arr-admin-settings">
+                                <div class="checkboxContainer"><label><input id="arrTargetedRefreshEnabled" is="emby-checkbox" type="checkbox"/><span>Show imports in Jellyfin right away</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrTargetedRefreshEnabled">
+                                    <div class="fieldDescription">After Sonarr/Radarr import a file, Jellyfin Enhanced refreshes only the folder it landed in, so the movie or episode appears within seconds instead of waiting for a library scan. A brand-new series folder is left to Jellyfin's own library monitor (a whole TV library is never refreshed this way). Uses the path mappings of each Sonarr/Radarr above; the System tab's path doctor shows whether they fit.</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrLibraryPendingMinutes">"In Sonarr/Radarr, not in Jellyfin" after (minutes)</label>
+                                    <input id="arrLibraryPendingMinutes" is="emby-input" type="number" min="1" max="1440"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrLibraryPendingMinutes">
+                                    <div class="fieldDescription">How long after an import a file Jellyfin still doesn't have is listed under Needs attention, with a Scan now button. 1-1440, default 10.</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrLowDiskPercent">Low disk warning below (% free)</label>
+                                    <input id="arrLowDiskPercent" is="emby-input" type="number" min="1" max="50"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrLowDiskPercent">
+                                    <div class="fieldDescription">A Sonarr/Radarr root folder whose disk has less free space than this is listed under Needs attention and, with notifications on, administrators are alerted (at most once a day per folder). 1-50, default 10.</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrSeerrHandoffGraceMinutes">Tell me when Seerr's OK reaches no Sonarr/Radarr after (minutes)</label>
+                                    <input id="arrSeerrHandoffGraceMinutes" is="emby-input" type="number" min="1" max="1440"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrSeerrHandoffGraceMinutes">
+                                    <div class="fieldDescription">When Seerr has OK'd a request but no Sonarr/Radarr has the title after this long, administrators see "OK'd in Seerr … ago, but no Sonarr/Radarr has it" (usually Seerr's own Sonarr/Radarr settings). The family keeps seeing "OK'd! Getting started" until the "Still looking" hours above, then "Taking longer than usual". 1-1440, default 15.</div>
+                                </div>
+                                <div class="checkboxContainer"><label><input id="arrActivityLogMirror" is="emby-checkbox" type="checkbox"/><span>Copy actions into Jellyfin's activity log</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrActivityLogMirror">
+                                    <div class="fieldDescription">Every Sonarr/Radarr action taken through Jellyfin Enhanced (Search now, queue actions, Scan now, webhook set-up) also appears in Dashboard → Activity, with who did it and how it ended.</div>
+                                </div>
+                            </div>
+                            <!-- /Phase 2: admin essentials -->
+
+                            <!-- Phase 2: notifications -->
+                            <div id="arrNotifySettings" class="je-arr-notify-settings">
+                                <div class="checkboxContainer"><label><input id="arrNotificationsEnabled" is="emby-checkbox" type="checkbox"/><span>Notifications</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrNotificationsEnabled">
+                                    <div class="fieldDescription je-field-desc-xl">A <strong>Notify me</strong> button on movie, series and season pages, in Seerr's more-info window and on the Requests page (everyone's own requests are followed automatically), a bell with an inbox, toasts on open pages (never during playback) and, if you set them up below, phone alerts (ntfy) and e-mail. People hear when a request or a followed title is ready to watch, about new episodes (gathered per series; a whole season reads "Season 2 is ready"; episode names are never sent) and when a request is declined, and only about titles they can open. Administrators also hear about new requests waiting for an OK, an instance that stops answering, low disk space, a daily list of downloads stuck for hours, and household reminders ("Remind Dad" on titles taking longer than usual, at most once a day per title). Everyone chooses what they hear about, their phone topic, their e-mail address and quiet hours in the Jellyfin Enhanced panel ("Requests &amp; alerts"). Follows and notifications are kept in a small database in Jellyfin Enhanced's data folder (included in JE backups).</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrNotifyHouseholdUrl">Your household's Jellyfin address (for links in alerts)</label>
+                                    <input id="arrNotifyHouseholdUrl" is="emby-input" type="text" autocomplete="off" placeholder="e.g. https://jellyfin.example.com"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrNotifyHouseholdUrl">
+                                    <div class="fieldDescription">The address people open Jellyfin with on their phones. Phone alerts and e-mails link to the title's page there (and e-mails to the "Requests &amp; alerts" settings to unsubscribe). Empty: alerts carry no links.</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrNotifyBatchMinutes">Gather new episodes for (minutes)</label>
+                                    <input id="arrNotifyBatchMinutes" is="emby-input" type="number" min="1" max="60"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrNotifyBatchMinutes">
+                                    <div class="fieldDescription">Episodes of one series that arrive within this time after the first one go out as one message ("Severance: 3 new episodes ready"). 1-60, default 10.</div>
+                                </div>
+
+                                <details class="je-details-section">
+                                    <summary>Phone alerts (ntfy)</summary>
+                                    <div class="je-details-body">
+                                        <div class="checkboxContainer"><label><input id="arrNtfyEnabled" is="emby-checkbox" type="checkbox"/><span>Send phone alerts through ntfy</span></label></div>
+                                        <div class="je-setting-description" data-desc-for="arrNtfyEnabled">
+                                            <div class="fieldDescription je-field-desc-xl">Uses <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a> (the public server or your own). Each person picks a private topic in "Requests &amp; alerts" (or makes up a random one) and subscribes to it in the ntfy app; you can also assign topics below. Alerts only ever go to this server: nobody can make Jellyfin contact another address. Works with the Jellyfin app closed.</div>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNtfyServerUrl">ntfy server</label>
+                                            <input id="arrNtfyServerUrl" is="emby-input" type="text" autocomplete="off" placeholder="https://ntfy.sh"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNtfyToken">Access token (optional)</label>
+                                            <input id="arrNtfyToken" is="emby-input" type="password" autocomplete="new-password" class="je-api-input"/>
+                                            <div class="fieldDescription">Only for servers that need one to publish. Stored like the API keys and only ever shown masked.</div>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNtfyTestTopic">Send a test to topic</label>
+                                            <input id="arrNtfyTestTopic" is="emby-input" type="text" autocomplete="off" placeholder="your own topic (from Requests &amp; alerts)"/>
+                                            <button is="emby-button" type="button" id="arrNtfyTestBtn" class="raised emby-button">Send test</button>
+                                            <div class="fieldDescription">Uses the saved settings: save first.</div>
+                                            <div id="arrNtfyTestResult" class="je-arr-check-result" aria-live="polite"></div>
+                                        </div>
+                                    </div>
+                                </details>
+
+                                <details class="je-details-section">
+                                    <summary>E-mail</summary>
+                                    <div class="je-details-body">
+                                        <div class="checkboxContainer"><label><input id="arrEmailEnabled" is="emby-checkbox" type="checkbox"/><span>Send e-mail alerts</span></label></div>
+                                        <div class="je-setting-description" data-desc-for="arrEmailEnabled">
+                                            <div class="fieldDescription je-field-desc-xl">Through your SMTP server. Each person enters their address in "Requests &amp; alerts" and confirms it with a code sent there; alerts only go to confirmed addresses. Every e-mail has plain and HTML parts and an unsubscribe link.</div>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpHost">SMTP server</label>
+                                            <input id="arrSmtpHost" is="emby-input" type="text" autocomplete="off" placeholder="smtp.example.com"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpPort">Port</label>
+                                            <input id="arrSmtpPort" is="emby-input" type="number" min="1" max="65535"/>
+                                        </div>
+                                        <div class="checkboxContainer"><label><input id="arrSmtpStartTls" is="emby-checkbox" type="checkbox"/><span>Use STARTTLS (port 587)</span></label></div>
+                                        <div class="je-setting-description" data-desc-for="arrSmtpStartTls">
+                                            <div class="fieldDescription">Encrypts the connection (recommended). Servers that only offer TLS on port 465 are not supported; use their port 587.</div>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpUsername">User name (empty: no sign-in)</label>
+                                            <input id="arrSmtpUsername" is="emby-input" type="text" autocomplete="off"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpPassword">Password</label>
+                                            <input id="arrSmtpPassword" is="emby-input" type="password" autocomplete="new-password" class="je-api-input"/>
+                                            <div class="fieldDescription">Stored like the API keys and only ever shown masked.</div>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpFrom">Sender address</label>
+                                            <input id="arrSmtpFrom" is="emby-input" type="text" autocomplete="off" placeholder="jellyfin@example.com"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrSmtpFromName">Sender name</label>
+                                            <input id="arrSmtpFromName" is="emby-input" type="text" maxlength="60" placeholder="Jellyfin"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrEmailTestAddress">Send a test to</label>
+                                            <input id="arrEmailTestAddress" is="emby-input" type="text" autocomplete="off" placeholder="you@example.com"/>
+                                            <button is="emby-button" type="button" id="arrEmailTestBtn" class="raised emby-button">Send test</button>
+                                            <div class="fieldDescription">Uses the saved settings: save first.</div>
+                                            <div id="arrEmailTestResult" class="je-arr-check-result" aria-live="polite"></div>
+                                        </div>
+                                    </div>
+                                </details>
+
+                                <details class="je-details-section">
+                                    <summary>Administrator alerts</summary>
+                                    <div class="je-details-body">
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNotifyAdminDownMinutes">Tell me when an instance hasn't answered for (minutes)</label>
+                                            <input id="arrNotifyAdminDownMinutes" is="emby-input" type="number" min="1" max="1440"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNotifyAdminStuckHours">Daily digest: downloads needing attention for at least (hours)</label>
+                                            <input id="arrNotifyAdminStuckHours" is="emby-input" type="number" min="1" max="168"/>
+                                        </div>
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="arrNotifyDigestHour">Send the digest at (hour, server time)</label>
+                                            <input id="arrNotifyDigestHour" is="emby-input" type="number" min="0" max="23"/>
+                                        </div>
+                                        <div class="fieldDescription">New requests waiting for an OK, household reminders and what Needs attention lists as a manual import or a request Seerr OK'd that no Sonarr/Radarr has are sent straight away (once per item). Low disk uses the "Low disk warning below" threshold above (at most one alert per folder a day). Administrators choose in "Requests &amp; alerts" whether these also go to their phone and e-mail.</div>
+                                    </div>
+                                </details>
+
+                                <div class="inputContainer">
+                                    <button is="emby-button" type="button" id="arrNotifyStatusBtn" class="raised emby-button">Notification status</button>
+                                    <div class="fieldDescription">Deliveries (sent, waiting, failed and why), the database, and everyone's phone and e-mail state; assign a phone topic to someone from here.</div>
+                                    <div id="arrNotifyStatusResult" class="je-arr-check-result" aria-live="polite"></div>
+                                </div>
+                            </div>
+                            <!-- /Requests & downloads, phase 2: notifications -->
+                        </div>
+                    </fieldset>
+
                     <fieldset>
                         <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">link</i>*arr UI Links</legend>
                         <div class="configSection">
@@ -3180,6 +3415,63 @@
                                     <span>Rebuild Server Tag Cache</span>
                                 </button>
                                 <div class="fieldDescription">Forces a full rebuild of every item's cached tag data (quality, genre, language, ratings). Use this after a plugin update changes how tags are computed (or when instructed). Scans the whole library, so it may take a few minutes on large libraries.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle">Backup &amp; Restore</legend>
+                        <div class="configSection">
+                            <div class="fieldDescription">Jellyfin's own backups don't include plugin data. These save Jellyfin Enhanced's settings, every user's Jellyfin Enhanced settings (shortcuts, hidden content, bookmarks, reviews, …), custom branding and its other stores in one file. Caches are left out; they rebuild by themselves.</div>
+
+                            <h3 class="je-backup-heading">Download a backup</h3>
+                            <div class="selectContainer">
+                                <label class="selectLabel" for="backupExportSecrets">API keys and passwords</label>
+                                <select is="emby-select" id="backupExportSecrets" class="emby-select-withcolor emby-select">
+                                    <option value="exclude">Leave them out (enter them again after restoring on a new server)</option>
+                                    <option value="encrypt">Include them, encrypted with a passphrase</option>
+                                </select>
+                            </div>
+                            <div class="inputContainer" id="backupExportPassphraseRow">
+                                <label class="inputLabel" for="backupExportPassphrase">Passphrase</label>
+                                <input id="backupExportPassphrase" is="emby-input" type="password" autocomplete="new-password"/>
+                                <div class="fieldDescription">At least 12 characters. Without it the keys in the file can't be read, so keep it somewhere safe.</div>
+                            </div>
+                            <button id="backupExportBtn" is="emby-button" type="button" class="raised button-submit emby-button"><span>Download backup</span></button>
+                            <div id="backupExportStatus" class="fieldDescription" role="status"></div>
+
+                            <h3 class="je-backup-heading">Restore a backup</h3>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="backupRestoreFile">Backup file</label>
+                                <input id="backupRestoreFile" type="file" accept=".zip,application/zip"/>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="backupRestorePassphrase">Passphrase (only if the backup includes API keys)</label>
+                                <input id="backupRestorePassphrase" is="emby-input" type="password" autocomplete="off"/>
+                            </div>
+                            <div class="je-backup-actions">
+                                <button id="backupInspectBtn" is="emby-button" type="button" class="raised emby-button"><span>Check file</span></button>
+                                <button id="backupRestoreBtn" is="emby-button" type="button" class="raised button-submit emby-button"><span>Restore</span></button>
+                            </div>
+                            <div id="backupRestoreStatus" class="fieldDescription" role="status"></div>
+                            <div class="fieldDescription">Restoring replaces Jellyfin Enhanced's settings and the files in the backup; other files are kept. A copy of the current data is saved to the backup folder first. Restart Jellyfin afterwards so every part reads the restored data.</div>
+
+                            <h3 class="je-backup-heading">Scheduled backups</h3>
+                            <div class="fieldDescription">The task <strong>Back up Jellyfin Enhanced data</strong> writes a backup to this folder. Give it a trigger under Dashboard → Scheduled Tasks; it doesn't run on its own.</div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="backupFolder">Backup folder</label>
+                                <input id="backupFolder" is="emby-input" type="text" autocomplete="off"/>
+                                <div class="fieldDescription">A folder on the Jellyfin server. Empty: the <code>backups</code> folder inside the plugin's data folder (pick a folder on another disk to survive a disk failure).</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="backupCopiesToKeep">Backups to keep</label>
+                                <input id="backupCopiesToKeep" is="emby-input" type="number" min="1" max="100" step="1"/>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="backupIncludeSecrets" is="emby-checkbox" type="checkbox"/><span>Include API keys and passwords, encrypted</span></label></div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="backupPassphrase">Passphrase for scheduled backups</label>
+                                <input id="backupPassphrase" is="emby-input" type="password" autocomplete="new-password" class="je-api-input"/>
+                                <div class="fieldDescription">At least 12 characters. Stored like the API keys (never shown again); needed to restore the keys from these backups.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -4225,7 +4517,7 @@
 
         async function testJellyseerrConnection() {
             const urls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean);
-            const apiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
+            const apiKey = jeSecretWireValue(document.querySelector('#JellyseerrApiKey'));
 
             if (!urls.length || !apiKey) {
                 Dashboard.alert({ title: 'Missing Information', message: 'Please provide at least one Seerr URL and an API key to test the connection.' });
@@ -4282,7 +4574,7 @@
         }
 
         async function testTmdbConnection(event) {
-            const apiKey = (document.querySelector('#TMDB_API_KEY').value || '').trim();
+            const apiKey = jeSecretWireValue(document.querySelector('#TMDB_API_KEY'));
 
             if (!apiKey) {
                 Dashboard.alert({ title: 'Missing Information', message: 'Please provide a TMDB API key to test the connection.' });
@@ -4896,6 +5188,392 @@
             return el;
         }
 
+        // ==================== Stored credentials (masked) ====================
+        // Saved API keys never reach this page: the server sends a placeholder instead
+        // ("••••••••" + the key's last four characters, or "••••••••seerr-…" for a key
+        // imported from Seerr that is not saved yet). A field holding one is read-only with
+        // Replace / Clear buttons. Posting the placeholder back (or leaving it blank) keeps
+        // the saved key, Clear posts JE_SECRET_CLEAR, a typed value replaces the key. Test
+        // buttons send an ASCII stand-in for the placeholder (header values must be Latin-1) and
+        // the server tests the saved key. A saved key belongs to the server it was saved for: when
+        // the address changes, the field asks for the key again (the server would not keep it).
+        var JE_SECRET_PREFIX = '••••••••';
+        var JE_SECRET_CLEAR = '__je_clear_secret__';
+        var JE_SECRET_SAVED_WIRE = '__je_saved_secret__';
+        var JE_SECRET_HANDLE_WIRE = '__je_handle__:';
+        var JE_SECRET_HANDLE_MARKER = 'seerr-';
+
+        /**
+         * True for a server placeholder (a saved key or an unsaved import handle).
+         * @param {*} v - Any value
+         * @returns {boolean}
+         */
+        function jeIsSecretPlaceholder(v) {
+            return typeof v === 'string' && v.indexOf(JE_SECRET_PREFIX) === 0;
+        }
+
+        /**
+         * Puts a credential input into its masked (saved) or plain (empty) state and adds the
+         * Replace / Clear buttons once. Inputs in `peers` mirror the same credential (the two
+         * TMDB fields) and always share its state.
+         * @param {HTMLInputElement} input - The credential input
+         * @param {string} value - The value from the server configuration
+         * @param {HTMLInputElement[]} [peers] - Other inputs bound to the same credential
+         */
+        function jeSecretInit(input, value, peers) {
+            if (!input) return;
+            var group = [input].concat((peers || []).filter(Boolean));
+            group.forEach(function(el) {
+                el._jeSecretGroup = group;
+                if (!el._jeSecretActions) {
+                    var replaceBtn = createEl('button', { type: 'button', className: 'emby-button raised je-secret-replace', textContent: 'Replace' });
+                    var clearBtn = createEl('button', { type: 'button', className: 'emby-button raised je-secret-clear', textContent: 'Clear' });
+                    var actions = createEl('span', { className: 'je-secret-actions' }, [replaceBtn, clearBtn]);
+                    el.insertAdjacentElement('afterend', actions);
+                    el._jeSecretActions = { wrap: actions, replace: replaceBtn, clear: clearBtn };
+                    replaceBtn.addEventListener('click', function() {
+                        var state = el.dataset.jeSecretState;
+                        jeSecretSetState(el, state === 'set' ? 'editing' : 'set');
+                        if (el.dataset.jeSecretState === 'editing') el.focus();
+                    });
+                    clearBtn.addEventListener('click', function() {
+                        jeSecretSetState(el, el.dataset.jeSecretState === 'cleared' ? 'set' : 'cleared');
+                    });
+                }
+                el.dataset.jeSecretToken = jeIsSecretPlaceholder(value) ? value : '';
+                delete el.dataset.jeSecretMoved;
+            });
+            if (jeIsSecretPlaceholder(value)) {
+                jeSecretSetState(input, 'set', true);
+            } else {
+                // Nothing saved (or a value from a server without the secrets store): a normal input.
+                group.forEach(function(el) { el.value = value || ''; });
+                jeSecretSetState(input, 'empty', true);
+            }
+        }
+
+        /**
+         * Switches a credential input (and its peers) between 'set', 'editing', 'cleared' and 'empty'.
+         * @param {HTMLInputElement} input - Any input of the group
+         * @param {string} state - The new state
+         * @param {boolean} [silent] - Skip the input event (initial load)
+         */
+        function jeSecretSetState(input, state, silent) {
+            var group = input._jeSecretGroup || [input];
+            group.forEach(function(el) {
+                var token = el.dataset.jeSecretToken || '';
+                if (!token && state !== 'empty') state = 'empty';
+                el.dataset.jeSecretState = state;
+                var actions = el._jeSecretActions;
+                if (state === 'set') {
+                    el.value = token;
+                    el.readOnly = true;
+                    el.placeholder = '';
+                    el.title = 'Saved. Click Replace to enter a new key.';
+                } else if (state === 'editing') {
+                    el.value = '';
+                    el.readOnly = false;
+                    el.placeholder = el.dataset.jeSecretMoved === '1'
+                        ? 'Re-enter the API key for this address'
+                        : 'New key (leave empty to keep the saved one)';
+                    el.title = el.dataset.jeSecretMoved === '1' ? 'The saved key is only used with the address it was saved for.' : '';
+                } else if (state === 'cleared') {
+                    el.value = '';
+                    el.readOnly = true;
+                    el.placeholder = 'Removed when you save';
+                    el.title = '';
+                } else {
+                    el.readOnly = false;
+                    el.title = '';
+                }
+                if (actions) {
+                    actions.wrap.style.display = token ? '' : 'none';
+                    actions.replace.textContent = state === 'editing' ? 'Keep saved' : 'Replace';
+                    actions.replace.disabled = state === 'cleared' || el.dataset.jeSecretMoved === '1';
+                    actions.clear.textContent = state === 'cleared' ? 'Undo' : 'Clear';
+                }
+            });
+            if (!silent) {
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+
+        /**
+         * The value to save for a credential input: the placeholder (keep), JE_SECRET_CLEAR
+         * (remove) or the newly typed key with whitespace removed.
+         * @param {HTMLInputElement} input - The credential input
+         * @returns {string}
+         */
+        function jeSecretRead(input) {
+            if (!input) return '';
+            var state = input.dataset.jeSecretState;
+            if (state === 'cleared') return JE_SECRET_CLEAR;
+            var typed = (input.value || '').replace(/\s/g, '');
+            if (input.dataset.jeSecretMoved === '1') return jeIsSecretPlaceholder(typed) ? '' : typed;
+            if (state === 'editing' && !typed) return input.dataset.jeSecretToken || '';
+            return typed;
+        }
+
+        /**
+         * The value a Test button sends for a credential input: a typed key as is, otherwise an
+         * ASCII stand-in for the saved key or import handle ('' when there is none, the field is
+         * cleared, or the address moved). Never the bullet placeholder, which fetch refuses in a header.
+         * @param {HTMLInputElement} input - The credential input
+         * @returns {string}
+         */
+        function jeSecretWireValue(input) {
+            var v = jeSecretRead(input);
+            if (v === JE_SECRET_CLEAR || !jeIsSecretPlaceholder(v)) return v === JE_SECRET_CLEAR ? '' : v;
+            var rest = v.slice(JE_SECRET_PREFIX.length);
+            return rest.indexOf(JE_SECRET_HANDLE_MARKER) === 0
+                ? JE_SECRET_HANDLE_WIRE + rest.slice(JE_SECRET_HANDLE_MARKER.length)
+                : JE_SECRET_SAVED_WIRE;
+        }
+
+        /**
+         * Scheme, host and port of a URL, the unit a saved key is bound to ('' when not a URL).
+         * @param {string} url - Any URL text
+         * @returns {string}
+         */
+        function jeServerOf(url) {
+            try {
+                var u = new URL(String(url || '').trim());
+                if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+                return u.protocol + '//' + u.hostname.toLowerCase() + ':' + (u.port || (u.protocol === 'https:' ? '443' : '80'));
+            } catch (e) {
+                return '';
+            }
+        }
+
+        /**
+         * Records the address(es) a credential input's saved key (or import handle) belongs to.
+         * @param {HTMLInputElement} input - The credential input
+         * @param {string[]} urls - Saved address(es)
+         */
+        function jeSecretBindServers(input, urls) {
+            if (!input) return;
+            input._jeSecretServers = (urls || []).map(function(u) { return String(u || '').trim(); }).filter(Boolean);
+        }
+
+        /**
+         * Asks for the key again when an address field no longer matches the server the saved key
+         * belongs to (the server would not keep it there); going back to that server restores it.
+         * @param {HTMLInputElement} input - The credential input
+         * @param {string[]} urls - The address(es) now in the form
+         */
+        function jeSecretCheckServers(input, urls) {
+            if (!input || !input.dataset.jeSecretToken) return;
+            var saved = (input._jeSecretServers || []).map(jeServerOf);
+            var savedRaw = (input._jeSecretServers || []).map(function(u) { return u.replace(/\/+$/, '').toLowerCase(); });
+            var moved = (urls || []).map(function(u) { return String(u || '').trim(); }).filter(Boolean).some(function(u) {
+                var server = jeServerOf(u);
+                return savedRaw.indexOf(u.replace(/\/+$/, '').toLowerCase()) < 0 && (!server || saved.indexOf(server) < 0);
+            });
+            var was = input.dataset.jeSecretMoved === '1';
+            if (moved === was) return;
+            if (moved) {
+                input.dataset.jeSecretMoved = '1';
+                if (input.dataset.jeSecretState !== 'cleared') jeSecretSetState(input, 'editing');
+                else jeSecretSetState(input, 'cleared');
+            } else {
+                delete input.dataset.jeSecretMoved;
+                jeSecretSetState(input, input.dataset.jeSecretState === 'editing' && !input.value ? 'set' : input.dataset.jeSecretState);
+            }
+        }
+
+        /**
+         * Names of instances that were saved with an import handle but came back without a key
+         * (the import expired or did not match the address), so the admin can enter it.
+         * @param {Object<string, string>} sentHandles - Instance id -> name, for rows saved with a handle
+         * @param {Object} fresh - The configuration read back after the save
+         * @returns {string[]}
+         */
+        function jeImportedKeysLost(sentHandles, fresh) {
+            var lost = [];
+            ['SonarrInstances', 'RadarrInstances'].forEach(function(prop) {
+                var rows;
+                try { rows = JSON.parse((fresh && fresh[prop]) || '[]'); } catch (e) { return; }
+                (Array.isArray(rows) ? rows : []).forEach(function(row) {
+                    if (row && sentHandles[row.Id] && !jeIsSecretPlaceholder(row.ApiKey)) lost.push(sentHandles[row.Id]);
+                });
+            });
+            return lost;
+        }
+
+        /**
+         * A random RFC 4122 v4 id for a new arr instance (crypto.randomUUID needs a secure
+         * context; getRandomValues works on plain-http dashboards too).
+         * @returns {string}
+         */
+        function jeNewGuid() {
+            var b = new Uint8Array(16);
+            crypto.getRandomValues(b);
+            b[6] = (b[6] & 0x0f) | 0x40;
+            b[8] = (b[8] & 0x3f) | 0x80;
+            var h = Array.prototype.map.call(b, function(x) { return (x + 0x100).toString(16).slice(1); }).join('');
+            return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+        }
+
+        /**
+         * Re-reads the saved configuration after a save so credential fields show their new
+         * placeholders (a just-typed key is never left on screen) and new instances get their ids.
+         * @returns {Promise<void>}
+         */
+        async function jeRefreshSecretFields() {
+            var fresh = await ApiClient.getPluginConfiguration(pluginId);
+            jeSecretInit(document.querySelector('#TMDB_API_KEY'), fresh.TMDB_API_KEY, [document.querySelector('#jellyseerr_TMDB_API_KEY')]);
+            jeSecretInit(document.querySelector('#JellyseerrApiKey'), fresh.JellyseerrApiKey);
+            jeSecretBindServers(document.querySelector('#JellyseerrApiKey'), (fresh.JellyseerrUrls || '').split(/[\r\n,]+/));
+            jeSecretInit(document.querySelector('#mdblistApiKey'), fresh.MdblistApiKey || '');
+            jeSecretInit(document.querySelector('#shokoApiKey'), fresh.ShokoApiKey || '');
+            jeSecretInit(document.querySelector('#backupPassphrase'), fresh.BackupPassphrase || '');
+            jeSecretInit(document.querySelector('#arrNtfyToken'), fresh.ArrNtfyToken || '');
+            jeSecretInit(document.querySelector('#arrSmtpPassword'), fresh.ArrSmtpPassword || '');
+            jeSecretBindServers(document.querySelector('#shokoApiKey'), [fresh.ShokoUrl || '']);
+            loadArrInstances(fresh);
+            updateAllDependencies();
+            var lost = jeImportedKeysLost(_jeSentImportHandles, fresh);
+            _jeSentImportHandles = {};
+            if (lost.length) {
+                Dashboard.alert({
+                    title: 'API key not saved',
+                    message: 'The key imported from Seerr could not be used for: ' + lost.join(', ') + '. The import expired or the address no longer matches the server it was imported for. Enter the API key and save again.'
+                });
+            }
+        }
+
+        // Instance id -> name of rows the last save sent with an import handle (see jeImportedKeysLost).
+        var _jeSentImportHandles = {};
+
+        // ==================== Arr instance registry fields (Requests & downloads) ====================
+
+        var _jeLibrariesPromise = null;
+
+        /**
+         * The server's libraries (name + id) for the "Linked libraries" checkboxes, fetched once.
+         * @returns {Promise<Array<{Name: string, ItemId: string}>>}
+         */
+        function jeGetLibraries() {
+            if (!_jeLibrariesPromise) {
+                _jeLibrariesPromise = ApiClient.getVirtualFolders()
+                    .then(function(folders) { return Array.isArray(folders) ? folders : []; })
+                    .catch(function() { _jeLibrariesPromise = null; return []; });
+            }
+            return _jeLibrariesPromise;
+        }
+
+        /**
+         * Builds the registry fields of an instance card (role, default, linked libraries, path
+         * mappings). Shown only while "Requests & downloads (new)" is on; always round-tripped.
+         * @param {string} type - 'sonarr' or 'radarr'
+         * @param {Object} instance - The stored row
+         * @returns {HTMLElement}
+         */
+        function jeBuildInstanceRegistryFields(type, instance) {
+            var label = type === 'sonarr' ? 'Sonarr' : 'Radarr';
+            var roleSelect = createEl('select', { className: 'arr-instance-role emby-select-withcolor emby-select' });
+            [['standard', 'Standard'], ['4k', '4K (UHD)'], ['anime', 'Anime'], ['custom', 'Other']].forEach(function(r) {
+                var opt = createEl('option', { value: r[0], textContent: r[1] });
+                roleSelect.appendChild(opt);
+            });
+            roleSelect.value = ['standard', '4k', 'anime', 'custom'].indexOf(String(instance.Role || '').toLowerCase()) !== -1 ? String(instance.Role).toLowerCase() : 'standard';
+            var roleContainer = createEl('div', { className: 'selectContainer', style: 'margin-top: 0.5em;' }, [
+                createEl('label', { className: 'selectLabel', textContent: 'Role' }),
+                roleSelect,
+                createEl('div', { className: 'fieldDescription', textContent: 'What this ' + label + ' is for. Later features send each request to the default instance of the matching role: 4K requests only ever go to a 4K instance, never to the standard one.' })
+            ]);
+
+            var defaultCb = createEl('input', { type: 'checkbox', className: 'arr-instance-default' });
+            defaultCb.checked = instance.IsDefault === true;
+            var defaultRow = createEl('label', { className: 'je-arr-v2-check', style: 'display:flex;align-items:center;gap:0.5em;margin-top:0.5em;' }, [
+                defaultCb, createEl('span', { textContent: 'Default ' + label + ' for this role' })
+            ]);
+
+            var libsWrap = createEl('div', { className: 'arr-instance-libraries', style: 'display:flex;flex-wrap:wrap;gap:0.25em 1em;margin-top:0.25em;' });
+            var linked = (instance.LinkedLibraryIds || []).map(function(x) { return String(x).toLowerCase().replace(/-/g, ''); });
+            libsWrap.appendChild(createEl('span', { className: 'fieldDescription', textContent: 'Loading libraries...' }));
+            jeGetLibraries().then(function(folders) {
+                libsWrap.textContent = '';
+                if (!folders.length) {
+                    libsWrap.appendChild(createEl('span', { className: 'fieldDescription', textContent: 'No libraries found.' }));
+                }
+                folders.forEach(function(f) {
+                    if (!f || !f.ItemId) return;
+                    var id = String(f.ItemId).toLowerCase().replace(/-/g, '');
+                    var cb = createEl('input', { type: 'checkbox', className: 'arr-instance-library', 'data-library-id': id });
+                    cb.checked = linked.indexOf(id) !== -1;
+                    if (libsWrap.closest('.arr-instance-card') && libsWrap.closest('.arr-instance-card').classList.contains('arr-instance-disabled')) cb.disabled = true;
+                    libsWrap.appendChild(createEl('label', { style: 'display:flex;align-items:center;gap:0.35em;' }, [cb, createEl('span', { textContent: f.Name || id })]));
+                });
+                // Keep links to libraries that no longer exist (or were not listed) instead of dropping them silently.
+                libsWrap.dataset.unlisted = JSON.stringify(linked.filter(function(l) {
+                    return !folders.some(function(f) { return f && String(f.ItemId).toLowerCase().replace(/-/g, '') === l; });
+                }));
+            });
+            var libsContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.75em;' }, [
+                createEl('label', { className: 'inputLabel inputLabelUnfocused', textContent: 'Linked libraries' }),
+                libsWrap,
+                createEl('div', { className: 'fieldDescription', textContent: 'The Jellyfin libraries whose files this ' + label + ' manages. Used to tell which copy of a title (for example the 4K one) came from this instance.' })
+            ]);
+
+            var pathsArea = createEl('textarea', { className: 'arr-instance-pathmappings emby-textarea emby-input', style: 'display:block; height: 6vh !important; margin-top: 0.25em;', placeholder: '/movies|/media/movies' });
+            pathsArea.value = (instance.PathMappings || []).map(function(m) { return (m.ArrPath || '') + '|' + (m.JellyfinPath || ''); }).join('\n');
+            var pathsContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.75em;' }, [
+                createEl('label', { className: 'inputLabel inputLabelUnfocused', textContent: 'Path mappings (optional)' }),
+                pathsArea,
+                createEl('div', { className: 'fieldDescription', textContent: 'Only needed when ' + label + ' and Jellyfin see the same folders under different paths. One per line: ' + label.toLowerCase() + '_path|jellyfin_path, for example /movies|/media/movies.' })
+            ]);
+
+            // Live updates (phase 1): this instance's SignalR connection; on unless switched off here.
+            var liveCb = createEl('input', { type: 'checkbox', className: 'arr-instance-live' });
+            liveCb.checked = String(instance.LiveUpdates || 'auto').toLowerCase() !== 'off';
+            var liveRow = createEl('div', { style: 'margin-top: 0.75em;' }, [
+                createEl('label', { className: 'je-arr-v2-check', style: 'display:flex;align-items:center;gap:0.5em;' }, [
+                    liveCb, createEl('span', { textContent: 'Live updates from this ' + label })
+                ]),
+                createEl('div', { className: 'fieldDescription', textContent: 'With download status (phase 1) on, Jellyfin Enhanced keeps one connection open to ' + label + ' so changes show within seconds. Turn off only if ' + label + ' is behind something that drops long-lived connections; status then refreshes every 30 seconds.' })
+            ]);
+
+            return createEl('div', { className: 'je-arr-v2' }, [
+                createEl('div', { className: 'je-arr-v2-heading', textContent: 'Requests & downloads' }),
+                roleContainer, defaultRow, libsContainer, pathsContainer, liveRow
+            ]);
+        }
+
+        /**
+         * Reads an instance card's registry fields back into the stored row shape.
+         * @param {HTMLElement} card - The instance card
+         * @returns {Object}
+         */
+        function jeReadInstanceRegistryFields(card) {
+            var base = card._jeRow || {};
+            var out = {};
+            var role = card.querySelector('.arr-instance-role');
+            out.Role = role ? role.value : (base.Role || 'standard');
+            var def = card.querySelector('.arr-instance-default');
+            out.IsDefault = def ? def.checked : base.IsDefault === true;
+            var libsWrap = card.querySelector('.arr-instance-libraries');
+            var boxes = libsWrap ? libsWrap.querySelectorAll('.arr-instance-library') : [];
+            if (libsWrap && (boxes.length || libsWrap.dataset.unlisted)) {
+                var ids = [];
+                boxes.forEach(function(cb) { if (cb.checked) ids.push(cb.getAttribute('data-library-id')); });
+                try { ids = ids.concat(JSON.parse(libsWrap.dataset.unlisted || '[]')); } catch (e) { /* keep checked ones */ }
+                out.LinkedLibraryIds = ids;
+            } else {
+                // Libraries not loaded yet: keep what was stored.
+                out.LinkedLibraryIds = base.LinkedLibraryIds || [];
+            }
+            var live = card.querySelector('.arr-instance-live');
+            out.LiveUpdates = live ? (live.checked ? 'auto' : 'off') : (base.LiveUpdates || 'auto');
+            var paths = card.querySelector('.arr-instance-pathmappings');
+            out.PathMappings = paths ? paths.value.split(/\r?\n/).map(function(line) {
+                var i = line.indexOf('|');
+                return i > 0 ? { ArrPath: line.slice(0, i).trim(), JellyfinPath: line.slice(i + 1).trim() } : null;
+            }).filter(function(m) { return m && m.ArrPath && m.JellyfinPath; }) : (base.PathMappings || []);
+            return out;
+        }
+
         function createInstanceCard(type, instance, startOpen) {
             var defaultName = type === 'sonarr' ? 'Sonarr' : 'Radarr';
             var namePlaceholder = type === 'sonarr' ? 'e.g., TV Shows, Anime' : 'e.g., Movies, 4K Movies';
@@ -4952,11 +5630,13 @@
             var urlContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.5em;' }, [urlLabel, urlInput, urlDesc]);
 
             var apiLabel = createEl('label', { className: 'inputLabel inputLabelUnfocused', textContent: 'API Key' });
-            var apiInput = createEl('input', { className: 'arr-instance-apikey emby-input', type: 'text', autocomplete: 'off', placeholder: 'API key (find in Settings > General > Security)', value: instance.ApiKey || '' });
+            var apiInput = createEl('input', { className: 'arr-instance-apikey emby-input', type: 'text', autocomplete: 'off', placeholder: 'API key (find in Settings > General > Security)' });
             var statusIcon = createEl('span', { className: 'material-icons arr-instance-status', style: 'transition: color 0.3s ease;' });
             var testBtn = createEl('button', { className: 'emby-button raised arr-instance-test', type: 'button' });
             testBtn.appendChild(createEl('span', { textContent: 'Test' }));
             var apiRow = createEl('div', { style: 'display: flex; align-items: center; gap: 1em;' }, [apiInput, statusIcon, testBtn]);
+            jeSecretInit(apiInput, instance.ApiKey || '');
+            jeSecretBindServers(apiInput, [instance.Url || '']);
             var apiDesc = createEl('div', { className: 'fieldDescription', textContent: 'Find this in ' + (type === 'sonarr' ? 'Sonarr' : 'Radarr') + ' under Settings > General > Security > API Key' });
             var apiContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.5em;' }, [apiLabel, apiRow, apiDesc]);
 
@@ -4969,13 +5649,19 @@
             var mappingsDesc = createEl('div', { className: 'fieldDescription', textContent: 'Map Jellyfin access URLs to this instance\'s URL. Format: jellyfin_url|arr_url (one per line). Useful for reverse-proxy setups.' });
             var mappingsContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.5em;' }, [mappingsLabel, mappingsTextarea, mappingsDesc]);
 
-            var body = createEl('div', { className: 'arr-instance-card-body' }, [header, urlContainer, apiContainer, mappingsContainer]);
+            var registryFields = jeBuildInstanceRegistryFields(type, instance);
+            var body = createEl('div', { className: 'arr-instance-card-body' }, [header, urlContainer, apiContainer, mappingsContainer, registryFields]);
 
             // The card is a <details> element
             var card = document.createElement('details');
             card.className = 'arr-instance-card';
             if (!initiallyEnabled) card.classList.add('arr-instance-disabled');
             card.dataset.type = type;
+            // Stable instance id (registry v2): kept for existing rows, minted here for new ones so a
+            // second save before a reload doesn't create another id. The whole stored row is kept so
+            // fields this page doesn't edit survive the round trip.
+            card.dataset.instanceId = instance.Id || jeNewGuid();
+            card._jeRow = instance;
             if (startOpen) card.open = true;
             card.appendChild(summaryEl);
             card.appendChild(body);
@@ -4988,6 +5674,7 @@
             });
             urlInput.addEventListener('input', function() {
                 summaryUrlSpan.textContent = urlInput.value.trim();
+                jeSecretCheckServers(apiInput, [urlInput.value]);
             });
 
             // Toggle visual dim state + summary "(disabled)" chip when the Enabled checkbox
@@ -5191,10 +5878,17 @@
             var incomplete = [];
             document.querySelectorAll(selector).forEach(function(card) {
                 var url = card.querySelector('.arr-instance-url').value.trim();
-                var apiKey = card.querySelector('.arr-instance-apikey').value.trim();
+                var apiKey = jeSecretRead(card.querySelector('.arr-instance-apikey'));
+                if (apiKey === JE_SECRET_CLEAR) apiKey = '';
                 if (url && apiKey) {
+                    if (apiKey.indexOf(JE_SECRET_PREFIX + JE_SECRET_HANDLE_MARKER) === 0) {
+                        _jeSentImportHandles[card.dataset.instanceId] = card.querySelector('.arr-instance-name').value.trim() || defaultName;
+                    }
                     var enabledCb = card.querySelector('.arr-instance-enabled');
-                    out.push({
+                    // Start from the stored row so every field survives (registry v2 adds several
+                    // this page doesn't show), then apply what the card edits.
+                    out.push(Object.assign({}, card._jeRow || {}, {
+                        Id: card.dataset.instanceId,
                         Name: card.querySelector('.arr-instance-name').value.trim() || defaultName,
                         Url: url,
                         ApiKey: apiKey,
@@ -5202,7 +5896,7 @@
                         // Default to true when the checkbox is missing (shouldn't happen, but
                         // guards against DOM surgery from another script).
                         Enabled: enabledCb ? enabledCb.checked : true
-                    });
+                    }, jeReadInstanceRegistryFields(card)));
                 } else if (url && !apiKey) {
                     // Card has a URL but no API key — it would be silently dropped. Collect the
                     // name so we can warn the admin before the save commits.
@@ -5269,6 +5963,356 @@
             );
             updateAllDependencies();
         });
+
+
+        /**
+         * Shows the per-instance "Requests & downloads" fields while the master switch is ticked.
+         */
+        function jeApplyArrIntegrationVisibility() {
+            var on = !!(document.querySelector('#arrIntegrationEnabled') || {}).checked;
+            var tab = document.getElementById('arr');
+            if (tab) tab.classList.toggle('je-arr-v2-on', on);
+        }
+
+        /**
+         * "Check connections": tests every saved Sonarr/Radarr instance through the admin
+         * diagnostics route and lists app, version, support and the instance's health warnings.
+         * @returns {Promise<void>}
+         */
+        async function jeCheckArrConnections() {
+            var out = document.getElementById('arrIntegrationCheckResult');
+            var btn = document.getElementById('arrIntegrationCheckBtn');
+            if (!out) return;
+            out.textContent = 'Checking...';
+            if (btn) btn.disabled = true;
+            try {
+                var list;
+                try {
+                    list = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances'), dataType: 'json' });
+                } catch (e) {
+                    out.textContent = e && e.status === 404
+                        ? 'Save with "Requests & downloads (new)" turned on, then check again.'
+                        : 'Could not load the saved instances.';
+                    return;
+                }
+                var instances = (list && list.instances) || [];
+                out.textContent = '';
+                if (!instances.length) {
+                    out.textContent = 'No Sonarr or Radarr instances are saved yet.';
+                    return;
+                }
+                for (var i = 0; i < instances.length; i++) {
+                    var inst = instances[i];
+                    var row = createEl('div', { className: 'je-arr-check-row' });
+                    var title = createEl('div', { className: 'je-arr-check-title', textContent: (inst.name || inst.kind) + ' (' + inst.kind + (inst.role && inst.role !== 'standard' ? ', ' + inst.role : '') + (inst.enabled === false ? ', disabled' : '') + ')' });
+                    var detail = createEl('div', { className: 'fieldDescription', textContent: 'Checking...' });
+                    row.appendChild(title);
+                    row.appendChild(detail);
+                    out.appendChild(row);
+                    var r;
+                    try {
+                        r = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances/' + encodeURIComponent(inst.id) + '/test'), dataType: 'json' });
+                    } catch (e) {
+                        detail.textContent = 'Check failed (error ' + (e && e.status ? e.status : '?') + ').';
+                        row.classList.add('je-arr-check-bad');
+                        continue;
+                    }
+                    if (r && r.ok) {
+                        row.classList.add('je-arr-check-ok');
+                        detail.textContent = '✓ ' + r.appName + ' ' + r.version + (r.instanceName ? ' · "' + r.instanceName + '"' : '') + ' · ' + r.latencyMs + ' ms';
+                    } else {
+                        row.classList.add('je-arr-check-bad');
+                        detail.textContent = '✗ ' + ((r && r.error && r.error.message) || 'Not working.');
+                    }
+                    var notes = [].concat((r && r.warnings) || []);
+                    ((r && r.health) || []).forEach(function(h) {
+                        if (h && h.type && h.type !== 'ok') notes.push(inst.kind + ' health (' + h.type + '): ' + h.message);
+                    });
+                    notes.forEach(function(n) {
+                        row.appendChild(createEl('div', { className: 'fieldDescription je-arr-check-note', textContent: n }));
+                    });
+                }
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        document.querySelector('#arrIntegrationEnabled').addEventListener('change', jeApplyArrIntegrationVisibility);
+        document.querySelector('#arrIntegrationCheckBtn').addEventListener('click', jeCheckArrConnections);
+        document.querySelector('#arrLiveCheckBtn').addEventListener('click', function() { jeArrLiveStatus(); });
+        document.querySelector('#arrNotifyStatusBtn').addEventListener('click', function() { jeArrNotifyStatus(); });
+        document.querySelector('#arrNtfyTestBtn').addEventListener('click', function() { jeArrNotifyTest('ntfy'); });
+        document.querySelector('#arrEmailTestBtn').addEventListener('click', function() { jeArrNotifyTest('email'); });
+
+        /**
+         * Fills the phase-2 notification settings from the saved configuration.
+         * @param {Object} config - Plugin configuration
+         * @returns {void}
+         */
+        function jeLoadArrNotifySettings(config) {
+            var num = function(v, d) { return (v !== undefined && v !== null) ? v : d; };
+            document.querySelector('#arrPhase2Enabled').checked = config.ArrPhase2Enabled === true;
+            document.querySelector('#arrNotificationsEnabled').checked = config.ArrNotificationsEnabled !== false;
+            document.querySelector('#arrNotifyHouseholdUrl').value = config.ArrNotifyHouseholdUrl || '';
+            document.querySelector('#arrNotifyBatchMinutes').value = num(config.ArrNotifyBatchMinutes, 10);
+            document.querySelector('#arrNotifyAdminDownMinutes').value = num(config.ArrNotifyAdminDownMinutes, 10);
+            document.querySelector('#arrNotifyAdminStuckHours').value = num(config.ArrNotifyAdminStuckHours, 6);
+            document.querySelector('#arrNotifyDigestHour').value = num(config.ArrNotifyDigestHour, 9);
+            document.querySelector('#arrNtfyEnabled').checked = config.ArrNtfyEnabled === true;
+            document.querySelector('#arrNtfyServerUrl').value = config.ArrNtfyServerUrl || '';
+            jeSecretInit(document.querySelector('#arrNtfyToken'), config.ArrNtfyToken || '');
+            document.querySelector('#arrEmailEnabled').checked = config.ArrEmailEnabled === true;
+            document.querySelector('#arrSmtpHost').value = config.ArrSmtpHost || '';
+            document.querySelector('#arrSmtpPort').value = num(config.ArrSmtpPort, 587);
+            document.querySelector('#arrSmtpStartTls').checked = config.ArrSmtpStartTls !== false;
+            document.querySelector('#arrSmtpUsername').value = config.ArrSmtpUsername || '';
+            jeSecretInit(document.querySelector('#arrSmtpPassword'), config.ArrSmtpPassword || '');
+            document.querySelector('#arrSmtpFrom').value = config.ArrSmtpFrom || '';
+            document.querySelector('#arrSmtpFromName').value = config.ArrSmtpFromName || 'Jellyfin';
+        }
+
+        /**
+         * Copies the phase-2 notification settings into the configuration being saved (numbers clamped).
+         * @param {Object} config - Plugin configuration
+         * @returns {void}
+         */
+        function jeSaveArrNotifySettings(config) {
+            var clamp = function(id, lo, hi, d) { var n = parseInt(document.querySelector(id).value, 10); return isNaN(n) ? d : Math.min(hi, Math.max(lo, n)); };
+            config.ArrPhase2Enabled = document.querySelector('#arrPhase2Enabled').checked;
+            config.ArrNotificationsEnabled = document.querySelector('#arrNotificationsEnabled').checked;
+            config.ArrNotifyHouseholdUrl = (document.querySelector('#arrNotifyHouseholdUrl').value || '').trim();
+            config.ArrNotifyBatchMinutes = clamp('#arrNotifyBatchMinutes', 1, 60, 10);
+            config.ArrNotifyAdminDownMinutes = clamp('#arrNotifyAdminDownMinutes', 1, 1440, 10);
+            config.ArrNotifyAdminStuckHours = clamp('#arrNotifyAdminStuckHours', 1, 168, 6);
+            config.ArrNotifyDigestHour = clamp('#arrNotifyDigestHour', 0, 23, 9);
+            config.ArrNtfyEnabled = document.querySelector('#arrNtfyEnabled').checked;
+            config.ArrNtfyServerUrl = (document.querySelector('#arrNtfyServerUrl').value || '').trim();
+            config.ArrNtfyToken = jeSecretRead(document.querySelector('#arrNtfyToken'));
+            config.ArrEmailEnabled = document.querySelector('#arrEmailEnabled').checked;
+            config.ArrSmtpHost = (document.querySelector('#arrSmtpHost').value || '').trim();
+            config.ArrSmtpPort = clamp('#arrSmtpPort', 1, 65535, 587);
+            config.ArrSmtpStartTls = document.querySelector('#arrSmtpStartTls').checked;
+            config.ArrSmtpUsername = (document.querySelector('#arrSmtpUsername').value || '').trim();
+            config.ArrSmtpPassword = jeSecretRead(document.querySelector('#arrSmtpPassword'));
+            config.ArrSmtpFrom = (document.querySelector('#arrSmtpFrom').value || '').trim();
+            config.ArrSmtpFromName = (document.querySelector('#arrSmtpFromName').value || '').trim().slice(0, 60);
+        }
+
+        /**
+         * "Send test": one message straight through ntfy or e-mail with the saved settings.
+         * @param {string} channel - 'ntfy' or 'email'
+         * @returns {Promise<void>}
+         */
+        async function jeArrNotifyTest(channel) {
+            var out = document.getElementById(channel === 'ntfy' ? 'arrNtfyTestResult' : 'arrEmailTestResult');
+            var body = channel === 'ntfy'
+                ? { channel: 'ntfy', topic: (document.querySelector('#arrNtfyTestTopic').value || '').trim() }
+                : { channel: 'email', address: (document.querySelector('#arrEmailTestAddress').value || '').trim() };
+            out.textContent = 'Sending...';
+            try {
+                var res = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/notify/test'), data: JSON.stringify(body), contentType: 'application/json', dataType: 'json' });
+                out.textContent = res && res.ok ? 'Sent.' : ('Not sent: ' + ((res && res.error) || 'unknown error'));
+            } catch (e) {
+                var code = '';
+                try { code = (await e.json()).code || ''; } catch (_) { /* no body */ }
+                var texts = { invalid_topic: 'Enter a topic (8-64 letters, digits, - or _).', invalid_server: 'Save a valid ntfy server address first.', invalid_address: 'Enter a valid e-mail address.', email_not_set_up: 'Save the SMTP server and sender address first.' };
+                out.textContent = texts[code] || 'Could not send the test.';
+            }
+        }
+
+        /**
+         * "Notification status": deliveries, problems, the database and every user's channels,
+         * with a button per user to give them a random phone topic.
+         * @returns {Promise<void>}
+         */
+        async function jeArrNotifyStatus() {
+            var out = document.getElementById('arrNotifyStatusResult');
+            if (!out) return;
+            out.textContent = 'Loading...';
+            var data;
+            try {
+                data = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/notify'), dataType: 'json' });
+            } catch (e) {
+                out.textContent = 'Could not load the notification status.';
+                return;
+            }
+            out.textContent = '';
+            var line = function(text, cls) { out.appendChild(createEl('div', { className: 'fieldDescription' + (cls ? ' ' + cls : ''), textContent: text })); };
+            if (!data.enabled) line('Notifications are off: turn on phase 2 and Notifications, then save.');
+            if (!data.database || !data.database.available) {
+                line('Database: not available. ' + ((data.database && data.database.reason) || ''), 'je-arr-check-bad');
+                return;
+            }
+            line('Database: schema ' + data.database.version + (data.database.sizeBytes ? ', ' + Math.round(data.database.sizeBytes / 1024) + ' KB' : '') + '.');
+            var ch = data.channels || {};
+            line('Phone alerts (ntfy): ' + (ch.ntfy && ch.ntfy.ready ? 'ready (' + ch.ntfy.server + (ch.ntfy.tokenSet ? ', token set' : '') + ')' : 'off'));
+            line('E-mail: ' + (ch.email && ch.email.ready ? 'ready (' + ch.email.host + ':' + ch.email.port + (ch.email.startTls ? ', STARTTLS' : '') + ')' : 'off'));
+            line('Links in alerts: ' + (ch.householdUrl || 'none (set your household address)'));
+            var d = data.deliveries || {};
+            line('Last 24 h: ' + (d.sent24h || 0) + ' sent, ' + (d.failed24h || 0) + ' failed; ' + (d.pending || 0) + ' waiting (retries and quiet hours).');
+            (d.problems || []).forEach(function(p) {
+                line((p.final ? 'Gave up: ' : 'Retrying: ') + (p.user || p.userId) + ' · ' + p.channel + ' · ' + p.kind + ' · ' + p.attempts + ' attempt(s) · ' + (p.error || ''), p.final ? 'je-arr-check-bad' : '');
+            });
+            var users = data.users || [];
+            if (users.length) out.appendChild(createEl('div', { className: 'je-arr-check-title', textContent: 'People who set up alerts' }));
+            users.forEach(function(u) {
+                var row = createEl('div', { className: 'je-arr-check-row' });
+                row.appendChild(createEl('div', { className: 'fieldDescription', textContent: (u.name || u.id) + ' · phone: ' + (u.ntfy ? 'on (' + (u.topic || '') + (u.topicByAdmin ? ', set by you' : '') + ')' : 'off') + ' · e-mail: ' + (u.email ? 'on' : (u.emailVerified ? 'off' : 'not set up')) + (u.quietHours ? ' · quiet ' + u.quietHours : '') }));
+                var give = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Give a new random phone topic' });
+                give.addEventListener('click', async function() {
+                    try {
+                        await ApiClient.ajax({ type: 'PUT', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/notify/users/' + encodeURIComponent(u.id)), data: JSON.stringify({ generate: true }), contentType: 'application/json', dataType: 'json' });
+                        jeArrNotifyStatus();
+                    } catch (e) { give.textContent = 'Could not set it'; }
+                });
+                row.appendChild(give);
+                out.appendChild(row);
+            });
+        }
+
+        /**
+         * Describes an instance's live connection for the admin ("Connected since 14:02 · v6.0.4").
+         * @param {Object} s - signalR status from arr/admin/live
+         * @returns {string}
+         */
+        function jeArrLiveConnectionText(s) {
+            s = s || {};
+            var when = s.since ? new Date(s.since).toLocaleTimeString() : '';
+            switch (s.state) {
+                case 'Connected': return 'Live connection: connected' + (when ? ' since ' + when : '') + (s.version ? ' · v' + s.version : '') + (s.reconnects ? ' · ' + s.reconnects + ' reconnect(s)' : '');
+                case 'Connecting': return 'Live connection: connecting...';
+                case 'Waiting': return 'Live connection: reconnecting' + (s.lastError ? ' (' + s.lastError + ')' : '') + '. Status refreshes every 30 seconds meanwhile.';
+                default: return 'Live connection: off';
+            }
+        }
+
+        /**
+         * Describes an instance's webhook for the admin.
+         * @param {Object} w - webhook part of arr/admin/live
+         * @returns {string}
+         */
+        function jeArrLiveWebhookText(w) {
+            w = w || {};
+            if (!w.secretSet) return 'Webhook: not set up (optional).';
+            var last = w.lastEventAt ? new Date(w.lastEventAt).toLocaleString() + (w.lastEventType ? ' (' + w.lastEventType + ')' : '') : 'none since Jellyfin started';
+            return 'Webhook: set up · last event ' + last + (w.refused ? ' · ' + w.refused + ' refused' : '') + (w.silent ? ' · no events for a day although things were imported: check the address with Repair.' : '');
+        }
+
+        /**
+         * Asks the server to set up, repair or remove an instance's webhook, after the admin agreed.
+         * @param {Object} inst - instance row from arr/admin/live
+         * @param {'provision'|'remove'} what
+         * @param {HTMLElement} out - where the outcome is written
+         * @returns {Promise<void>}
+         */
+        async function jeArrLiveWebhookAction(inst, what, out) {
+            var url = (document.getElementById('arrWebhookJellyfinUrl').value || '').trim();
+            var message = what === 'provision'
+                ? 'Jellyfin Enhanced will add (or update) a webhook named "Jellyfin Enhanced" in ' + inst.name + ' (Settings > Connect) that sends download, import, delete and health events to ' + (url || '(address not set)') + '/JellyfinEnhanced/arr/hook/... with a secret header. ' + inst.name + ' sends a test event first, so this also proves it can reach Jellyfin. Continue?'
+                : 'Remove Jellyfin Enhanced\'s webhook from ' + inst.name + ' and forget its secret? Live updates keep working through the live connection.';
+            if (!window.confirm(message)) return;
+            out.textContent = what === 'provision' ? 'Setting up...' : 'Removing...';
+            try {
+                var r = await ApiClient.ajax({
+                    type: what === 'provision' ? 'POST' : 'DELETE',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances/' + encodeURIComponent(inst.id) + '/webhook'),
+                    data: JSON.stringify({ consent: true, jellyfinUrl: url || null, idempotencyKey: jeNewGuid() }),
+                    contentType: 'application/json',
+                    dataType: 'json'
+                });
+                var ok = r && r.status === 'Succeeded';
+                out.textContent = (ok ? '✓ ' : '✗ ') + ((r && (r.readBack || r.message)) || 'Done.') + (r && r.error && r.error.message && !ok ? ' ' + r.error.message : '');
+            } catch (e) {
+                var code = e && e.status;
+                out.textContent = code === 400 ? '✗ Enter Jellyfin\'s address as ' + inst.name + ' sees it, save, and try again.' : '✗ Failed (error ' + (code || '?') + ').';
+            }
+            jeArrLiveStatus(true);
+        }
+
+        /**
+         * Shows the copy-paste webhook set-up (address, header and secret) for doing it by hand.
+         * @param {Object} inst - instance row from arr/admin/live
+         * @param {HTMLElement} out - where the instructions are written
+         * @returns {Promise<void>}
+         */
+        async function jeArrLiveManual(inst, out) {
+            var url = (document.getElementById('arrWebhookJellyfinUrl').value || '').trim();
+            out.textContent = 'Loading...';
+            try {
+                var m = await ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances/' + encodeURIComponent(inst.id) + '/webhook/manual'),
+                    data: JSON.stringify({ jellyfinUrl: url || null }),
+                    contentType: 'application/json',
+                    dataType: 'json'
+                });
+                out.textContent = '';
+                var lines = [
+                    'In ' + inst.name + ': Settings > Connect > + > Webhook.',
+                    'Name: Jellyfin Enhanced',
+                    'Notification Triggers: ' + (m.triggers || []).join(', '),
+                    'Webhook URL: ' + m.url,
+                    'Method: ' + m.method,
+                    'Headers (advanced settings): ' + m.headerName + ' = ' + m.headerValue,
+                    'Then Test and Save. Keep the header value private; removing the webhook here makes a new one.'
+                ];
+                lines.forEach(function(line) { out.appendChild(createEl('div', { className: 'fieldDescription je-arr-check-note', textContent: line })); });
+            } catch (e) {
+                out.textContent = e && e.status === 400 ? '✗ Enter Jellyfin\'s address as ' + inst.name + ' sees it first.' : '✗ Failed (error ' + (e && e.status ? e.status : '?') + ').';
+            }
+        }
+
+        /**
+         * "Live updates status": per instance, the live connection and the webhook, with Set up /
+         * Repair, Remove and Copy-paste set-up buttons.
+         * @param {boolean} [quiet] - keep the current list while reloading
+         * @returns {Promise<void>}
+         */
+        async function jeArrLiveStatus(quiet) {
+            var out = document.getElementById('arrLiveResult');
+            if (!out) return;
+            if (!quiet) out.textContent = 'Loading...';
+            var data;
+            try {
+                data = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/live'), dataType: 'json' });
+            } catch (e) {
+                out.textContent = e && e.status === 404 ? 'Save with "Requests & downloads (new)" turned on, then check again.' : 'Could not load the live-updates status.';
+                return;
+            }
+            out.textContent = '';
+            if (!data.enabled) {
+                out.appendChild(createEl('div', { className: 'fieldDescription', textContent: 'Phase 1 is off: no live connections are open. Turn it on and save to start them.' }));
+            }
+            (data.instances || []).forEach(function(inst) {
+                var row = createEl('div', { className: 'je-arr-check-row' });
+                row.appendChild(createEl('div', { className: 'je-arr-check-title', textContent: (inst.name || inst.kind) + ' (' + inst.kind + (inst.usable ? '' : ', disabled') + (inst.liveUpdates === 'off' ? ', live updates off' : '') + ')' }));
+                row.appendChild(createEl('div', { className: 'fieldDescription', textContent: jeArrLiveConnectionText(inst.signalR) }));
+                row.appendChild(createEl('div', { className: 'fieldDescription', textContent: jeArrLiveWebhookText(inst.webhook) }));
+                row.classList.add(inst.signalR && inst.signalR.state === 'Connected' ? 'je-arr-check-ok' : (data.enabled && inst.usable && inst.liveUpdates !== 'off' ? 'je-arr-check-bad' : 'je-arr-check-off'));
+                var note = createEl('div', { className: 'je-arr-live-note' });
+                if (data.enabled && inst.usable) {
+                    var actions = createEl('div', { style: 'display:flex;flex-wrap:wrap;gap:0.5em;margin-top:0.35em;' });
+                    var setup = createEl('button', { type: 'button', className: 'raised emby-button', textContent: inst.webhook && inst.webhook.secretSet ? 'Repair webhook' : 'Set up instant updates' });
+                    setup.addEventListener('click', function() { jeArrLiveWebhookAction(inst, 'provision', note); });
+                    actions.appendChild(setup);
+                    var manual = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Copy-paste set-up' });
+                    manual.addEventListener('click', function() { jeArrLiveManual(inst, note); });
+                    actions.appendChild(manual);
+                    if (inst.webhook && inst.webhook.secretSet) {
+                        var remove = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Remove webhook' });
+                        remove.addEventListener('click', function() { jeArrLiveWebhookAction(inst, 'remove', note); });
+                        actions.appendChild(remove);
+                    }
+                    row.appendChild(actions);
+                } else if (inst.webhook && inst.webhook.secretSet) {
+                    var removeOnly = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Remove webhook' });
+                    removeOnly.addEventListener('click', function() { jeArrLiveWebhookAction(inst, 'remove', note); });
+                    row.appendChild(removeOnly);
+                }
+                row.appendChild(note);
+                out.appendChild(row);
+            });
+        }
 
         /** Reconstructs a Sonarr/Radarr instance's own URL from Seerr's settings shape. */
         function buildArrUrlFromSeerrInstance(inst) {
@@ -5431,8 +6475,12 @@
                             list.appendChild(createInstanceCard(type, {
                                 Name: row.inst.name || label,
                                 Url: row.url,
+                                // A server-side handle, not the key: the save (or Test) resolves it.
                                 ApiKey: row.inst.apiKey || '',
-                                UrlMappings: urlMappings
+                                UrlMappings: urlMappings,
+                                Role: row.inst.is4k ? '4k' : 'standard',
+                                IsDefault: row.inst.isDefault === true,
+                                SeerrServerId: typeof row.inst.id === 'number' ? row.inst.id : null
                             }, false));
                             imported++;
                         });
@@ -6407,14 +7455,13 @@
                 document.querySelector('#ToastDuration').value = config.ToastDuration;
                 document.querySelector('#HelpPanelAutocloseDelay').value = config.HelpPanelAutocloseDelay;
                 document.querySelector('#elsewhereEnabled').checked = config.ElsewhereEnabled;
-                document.querySelector('#TMDB_API_KEY').value = config.TMDB_API_KEY;
+                jeSecretInit(document.querySelector('#TMDB_API_KEY'), config.TMDB_API_KEY, [document.querySelector('#jellyseerr_TMDB_API_KEY')]);
                 populateRegionSelect(config.DEFAULT_REGION);
                 document.querySelector('#DEFAULT_PROVIDERS').value = config.DEFAULT_PROVIDERS;
                 document.querySelector('#IGNORE_PROVIDERS').value = config.IGNORE_PROVIDERS;
                 document.querySelector('#ElsewhereSeasonProviders').checked = config.ElsewhereSeasonProviders !== false;
                 document.querySelector('#ElsewhereCustomBrandingText').value = config.ElsewhereCustomBrandingText || '';
                 document.querySelector('#ElsewhereCustomBrandingImageUrl').value = config.ElsewhereCustomBrandingImageUrl || '';
-                document.querySelector('#jellyseerr_TMDB_API_KEY').value = config.TMDB_API_KEY;
 
                 // Set up bidirectional sync between TMDB API key fields
                 const tmdbKeyField = document.querySelector('#TMDB_API_KEY');
@@ -6518,7 +7565,7 @@
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#showAwards').checked = !!config.ShowAwards;
                 document.querySelector('#mdblistRatingsEnabled').checked = !!config.MdblistRatingsEnabled;
-                document.querySelector('#mdblistApiKey').value = config.MdblistApiKey || '';
+                jeSecretInit(document.querySelector('#mdblistApiKey'), config.MdblistApiKey || '');
                 document.querySelector('#mdblistRatingsShowOnItemDetails').checked = config.MdblistRatingsShowOnItemDetails !== false;
                 document.querySelector('#mdblistRatingsFetchEnabled').checked = !!config.MdblistRatingsFetchEnabled;
                 document.querySelector('#mdblistFetchReserve').value = config.MdblistFetchReserve || 400;
@@ -6568,9 +7615,9 @@
                 document.querySelector('#jellyseerrUserIdCacheTtlMinutes').value = config.JellyseerrUserIdCacheTtlMinutes || 30;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
-                document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
+                jeSecretInit(document.querySelector('#JellyseerrApiKey'), config.JellyseerrApiKey);
+                jeSecretBindServers(document.querySelector('#JellyseerrApiKey'), (config.JellyseerrUrls || '').split(/[\r\n,]+/));
                 document.querySelector('#jellyseerrUrlMappings').value = config.JellyseerrUrlMappings || '';
-                document.querySelector('#jellyseerr_TMDB_API_KEY').value = config.TMDB_API_KEY;
                 document.querySelector('#autoSeasonRequestEnabled').checked = config.AutoSeasonRequestEnabled || false;
                 document.querySelector('#autoSeasonRequestRequireAllWatched').checked = config.AutoSeasonRequestRequireAllWatched || false;
                 document.querySelector('#autoSeasonRequestThresholdValue').value = config.AutoSeasonRequestThresholdValue || 2;
@@ -6605,11 +7652,33 @@
                 document.querySelector('#useIcons').checked = config.UseIcons !== false;
                 document.querySelector('#iconStyle').value = config.IconStyle || 'emoji';
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
+                document.querySelector('#arrIntegrationEnabled').checked = config.ArrIntegrationEnabled === true;
+                document.querySelector('#arrPhase1Enabled').checked = config.ArrPhase1Enabled === true;
+                document.querySelector('#arrStatusPosterBadges').checked = config.ArrStatusPosterBadges !== false;
+                document.querySelector('#arrStatusLookingHours').value = (config.ArrStatusLookingHours !== undefined && config.ArrStatusLookingHours !== null) ? config.ArrStatusLookingHours : 24;
+                document.querySelector('#arrHouseholdContactName').value = config.ArrHouseholdContactName || '';
+                document.querySelector('#arrWebhookJellyfinUrl').value = config.ArrWebhookJellyfinUrl || '';
+                document.querySelector('#arrRequestsHubEnabled').checked = config.ArrRequestsHubEnabled !== false;
+                document.querySelector('#arrManageDrawerEnabled').checked = config.ArrManageDrawerEnabled !== false;
+                document.querySelector('#arrSeerrModalStatus').checked = config.ArrSeerrModalStatus !== false;
+                document.querySelector('#arrSeerrRefreshMinutes').value = (config.ArrSeerrRefreshMinutes !== undefined && config.ArrSeerrRefreshMinutes !== null) ? config.ArrSeerrRefreshMinutes : 5;
+                jeLoadArrNotifySettings(config);
+                document.querySelector('#arrTargetedRefreshEnabled').checked = config.ArrTargetedRefreshEnabled !== false;
+                document.querySelector('#arrLibraryPendingMinutes').value = (config.ArrLibraryPendingMinutes !== undefined && config.ArrLibraryPendingMinutes !== null) ? config.ArrLibraryPendingMinutes : 10;
+                document.querySelector('#arrLowDiskPercent').value = (config.ArrLowDiskPercent !== undefined && config.ArrLowDiskPercent !== null) ? config.ArrLowDiskPercent : 10;
+                document.querySelector('#arrSeerrHandoffGraceMinutes').value = (config.ArrSeerrHandoffGraceMinutes !== undefined && config.ArrSeerrHandoffGraceMinutes !== null) ? config.ArrSeerrHandoffGraceMinutes : 15;
+                document.querySelector('#arrActivityLogMirror').checked = config.ArrActivityLogMirror !== false;
+                jeApplyArrIntegrationVisibility();
                 document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
                 document.querySelector('#shokoUrlMappings').value = config.ShokoUrlMappings || '';
                 document.querySelector('#shokoUrl').value = config.ShokoUrl;
-                document.querySelector('#shokoApiKey').value = config.ShokoApiKey;
+                jeSecretInit(document.querySelector('#shokoApiKey'), config.ShokoApiKey);
+                jeSecretBindServers(document.querySelector('#shokoApiKey'), [config.ShokoUrl || '']);
+                document.querySelector('#backupFolder').value = config.BackupFolder || '';
+                document.querySelector('#backupCopiesToKeep').value = config.BackupCopiesToKeep || 7;
+                document.querySelector('#backupIncludeSecrets').checked = config.BackupIncludeSecrets === true;
+                jeSecretInit(document.querySelector('#backupPassphrase'), config.BackupPassphrase || '');
                 document.querySelector('#shokoShowEpisodes').checked = config.ShokoShowEpisodes !== false;
                 document.querySelector('#shokoShowSpecials').checked = config.ShokoShowSpecials === true;
                 document.querySelector('#shokoShowCredits').checked = config.ShokoShowCredits === true;
@@ -6622,7 +7691,7 @@
 
                 // Load multi-instance Sonarr/Radarr
                 loadArrInstances(config);
-                document.querySelector('#arrTagsPrefix').value = config.ArrTagsPrefix || 'Requested by: ';
+                document.querySelector('#arrTagsPrefix').value = config.ArrTagsPrefix || 'JE Arr Tag: ';
                 document.querySelector('#arrTagsClearOldTags').checked = config.ArrTagsClearOldTags !== false;
                 document.querySelector('#arrTagsShowAsLinks').checked = config.ArrTagsShowAsLinks !== false;
                 document.querySelector('#arrTagsSyncFilter').value = config.ArrTagsSyncFilter || '';
@@ -7003,7 +8072,7 @@
             config.ToastDuration = parseInt(document.querySelector('#ToastDuration').value, 10);
             config.HelpPanelAutocloseDelay = parseInt(document.querySelector('#HelpPanelAutocloseDelay').value, 10);
             config.ElsewhereEnabled = document.querySelector('#elsewhereEnabled').checked;
-            config.TMDB_API_KEY = document.querySelector('#TMDB_API_KEY').value;
+            config.TMDB_API_KEY = jeSecretRead(document.querySelector('#TMDB_API_KEY'));
             config.DEFAULT_REGION = document.querySelector('#DEFAULT_REGION').value;
             config.DEFAULT_PROVIDERS = document.querySelector('#DEFAULT_PROVIDERS').value;
             config.IGNORE_PROVIDERS = document.querySelector('#IGNORE_PROVIDERS').value;
@@ -7087,7 +8156,7 @@
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ShowAwards = document.querySelector('#showAwards').checked;
             config.MdblistRatingsEnabled = document.querySelector('#mdblistRatingsEnabled').checked;
-            config.MdblistApiKey = document.querySelector('#mdblistApiKey').value.trim();
+            config.MdblistApiKey = jeSecretRead(document.querySelector('#mdblistApiKey'));
             config.MdblistRatingsShowOnItemDetails = document.querySelector('#mdblistRatingsShowOnItemDetails').checked;
             config.MdblistRatingsFetchEnabled = document.querySelector('#mdblistRatingsFetchEnabled').checked;
             config.MdblistFetchReserve = parseInt(document.querySelector('#mdblistFetchReserve').value, 10) || 400;
@@ -7167,9 +8236,9 @@
                 }
                 config.JellyseerrUrls = valid.join('\n');
             })();
-            config.JellyseerrApiKey = (document.querySelector('#JellyseerrApiKey').value || '').replace(/\s/g, '');
+            config.JellyseerrApiKey = jeSecretRead(document.querySelector('#JellyseerrApiKey'));
             config.JellyseerrUrlMappings = (document.querySelector('#jellyseerrUrlMappings').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
-            config.TMDB_API_KEY = document.querySelector('#jellyseerr_TMDB_API_KEY').value;
+            config.TMDB_API_KEY = jeSecretRead(document.querySelector('#jellyseerr_TMDB_API_KEY'));
             config.AutoSeasonRequestEnabled = document.querySelector('#autoSeasonRequestEnabled').checked;
             config.AutoSeasonRequestRequireAllWatched = document.querySelector('#autoSeasonRequestRequireAllWatched').checked;
             config.AutoSeasonRequestThresholdValue = parseInt(document.querySelector('#autoSeasonRequestThresholdValue').value, 10) || 2;
@@ -7218,11 +8287,36 @@
             config.IconStyle = document.querySelector('#iconStyle').value;
 
             config.ArrLinksEnabled = document.querySelector('#arrLinksEnabled').checked;
+            config.ArrIntegrationEnabled = document.querySelector('#arrIntegrationEnabled').checked;
+            config.ArrPhase1Enabled = document.querySelector('#arrPhase1Enabled').checked;
+            config.ArrStatusPosterBadges = document.querySelector('#arrStatusPosterBadges').checked;
+            var __lookingHours = parseInt(document.querySelector('#arrStatusLookingHours').value, 10);
+            config.ArrStatusLookingHours = isNaN(__lookingHours) ? 24 : Math.min(720, Math.max(1, __lookingHours));
+            config.ArrHouseholdContactName = (document.querySelector('#arrHouseholdContactName').value || '').trim().slice(0, 40);
+            config.ArrWebhookJellyfinUrl = document.querySelector('#arrWebhookJellyfinUrl').value.trim();
+            config.ArrRequestsHubEnabled = document.querySelector('#arrRequestsHubEnabled').checked;
+            config.ArrManageDrawerEnabled = document.querySelector('#arrManageDrawerEnabled').checked;
+            config.ArrSeerrModalStatus = document.querySelector('#arrSeerrModalStatus').checked;
+            var __seerrMinutes = parseInt(document.querySelector('#arrSeerrRefreshMinutes').value, 10);
+            config.ArrSeerrRefreshMinutes = isNaN(__seerrMinutes) ? 5 : Math.min(60, Math.max(1, __seerrMinutes));
+            jeSaveArrNotifySettings(config);
+            config.ArrTargetedRefreshEnabled = document.querySelector('#arrTargetedRefreshEnabled').checked;
+            var __pendingMinutes = parseInt(document.querySelector('#arrLibraryPendingMinutes').value, 10);
+            config.ArrLibraryPendingMinutes = isNaN(__pendingMinutes) ? 10 : Math.min(1440, Math.max(1, __pendingMinutes));
+            var __lowDisk = parseInt(document.querySelector('#arrLowDiskPercent').value, 10);
+            config.ArrLowDiskPercent = isNaN(__lowDisk) ? 10 : Math.min(50, Math.max(1, __lowDisk));
+            var __handoffMinutes = parseInt(document.querySelector('#arrSeerrHandoffGraceMinutes').value, 10);
+            config.ArrSeerrHandoffGraceMinutes = isNaN(__handoffMinutes) ? 15 : Math.min(1440, Math.max(1, __handoffMinutes));
+            config.ArrActivityLogMirror = document.querySelector('#arrActivityLogMirror').checked;
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
             config.ShokoUrl = document.querySelector('#shokoUrl').value;
-            config.ShokoApiKey = (document.querySelector('#shokoApiKey').value || '').replace(/\s/g, '');
+            config.ShokoApiKey = jeSecretRead(document.querySelector('#shokoApiKey'));
+            config.BackupFolder = (document.querySelector('#backupFolder').value || '').trim();
+            config.BackupCopiesToKeep = Math.min(100, Math.max(1, parseInt(document.querySelector('#backupCopiesToKeep').value, 10) || 7));
+            config.BackupIncludeSecrets = document.querySelector('#backupIncludeSecrets').checked;
+            config.BackupPassphrase = jeSecretRead(document.querySelector('#backupPassphrase'));
             config.ShokoShowEpisodes = document.querySelector('#shokoShowEpisodes').checked;
             config.ShokoShowSpecials = document.querySelector('#shokoShowSpecials').checked;
             config.ShokoShowCredits = document.querySelector('#shokoShowCredits').checked;
@@ -7241,7 +8335,7 @@
                     Dashboard.alert({ title: '⚠ Incomplete *arr instance', message: msg });
                 });
             }
-            config.ArrTagsPrefix = document.querySelector('#arrTagsPrefix').value || 'Requested by: ';
+            config.ArrTagsPrefix = document.querySelector('#arrTagsPrefix').value || 'JE Arr Tag: ';
             config.ArrTagsClearOldTags = document.querySelector('#arrTagsClearOldTags').checked;
             config.ArrTagsShowAsLinks = document.querySelector('#arrTagsShowAsLinks').checked;
             config.ArrTagsSyncFilter = document.querySelector('#arrTagsSyncFilter').value || '';
@@ -7601,6 +8695,8 @@
                 }
 
                 Dashboard.processPluginConfigurationUpdateResult(result);
+                // Show the saved credentials as placeholders again (never leave a typed key on screen).
+                try { await jeRefreshSecretFields(); } catch (refreshErr) { console.warn('[JE] Could not refresh saved credentials:', refreshErr); }
                 // The form now is the just-saved state, so re-snapshot immediately.
                 jeMarkSaved();
                 if (syncResult && syncResult.ok === false) {
@@ -8638,6 +9734,11 @@
             { parent: 'showDownloadsInRequests', label: 'Show Downloads in Requests Page', children: ['downloadsFilterByUserRequests'] },
             { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
+            { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
+            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled'] },
+            { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
+            { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
+            { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
             { parent: 'arrTagsShowAsLinks', label: 'Show synced tags as links', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
@@ -9993,7 +11094,7 @@
         async function testInstanceConnection(card) {
             var type = card.dataset.type;
             var urlVal = (card.querySelector('.arr-instance-url').value || '').trim();
-            var apiKeyVal = (card.querySelector('.arr-instance-apikey').value || '').trim();
+            var apiKeyVal = jeSecretWireValue(card.querySelector('.arr-instance-apikey'));
             var nameVal = card.querySelector('.arr-instance-name').value.trim() || (type === 'sonarr' ? 'Sonarr' : 'Radarr');
             var btn = card.querySelector('.arr-instance-test');
             var indicator = card.querySelector('.arr-instance-status');
@@ -10016,7 +11117,7 @@
             var arrCacheKey = type + ':' + _jeNormalizeArrUrl(urlVal);
             try {
                 var endpoint = type === 'sonarr' ? 'sonarr' : 'radarr';
-                var validationUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/validate/' + endpoint, { url: urlVal });
+                var validationUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/validate/' + endpoint, { url: urlVal, instanceId: card.dataset.instanceId || '' });
                 await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json', headers: { 'X-Arr-ApiKey': apiKeyVal } });
 
                 indicator.textContent = 'check_circle';
@@ -10029,6 +11130,9 @@
                 indicator.textContent = 'error';
                 indicator.style.color = '#dc3545';
 
+                if (e && typeof e.json === 'function') {
+                    try { e.responseJSON = await e.clone().json(); } catch (_) { /* not JSON */ }
+                }
                 var msg = connectionErrorMessage(e, nameVal, urlVal);
                 try {
                     var shortArrDetail = e && e.status === 401 ? 'API key rejected'
@@ -10367,6 +11471,161 @@
                 }
             }
         });
+        /**
+         * Reads the "Download a backup" choices: whether credentials go in (encrypted) and the passphrase.
+         * @param {Document} doc - The page document
+         * @returns {{secrets: string, passphrase: string, error: (string|null)}}
+         */
+        function jeBackupExportOptions(doc) {
+            var secrets = (doc.querySelector('#backupExportSecrets') || {}).value === 'encrypt' ? 'encrypt' : 'exclude';
+            var passphrase = secrets === 'encrypt' ? ((doc.querySelector('#backupExportPassphrase') || {}).value || '') : '';
+            var error = secrets === 'encrypt' && passphrase.length < 12 ? 'Enter a passphrase of at least 12 characters to include API keys and passwords.' : null;
+            return { secrets: secrets, passphrase: passphrase, error: error };
+        }
+
+        /**
+         * Headers for JE's admin routes called with fetch (needed for file download and upload).
+         * @returns {Object<string, string>}
+         */
+        function jeBackupAuthHeaders() {
+            var token = ApiClient.accessToken ? ApiClient.accessToken() : '';
+            return { 'Authorization': 'MediaBrowser Token="' + token + '"' };
+        }
+
+        /**
+         * One line describing a checked backup file.
+         * @param {Object} summary - Response of admin/backup/inspect
+         * @returns {string}
+         */
+        function jeBackupSummaryText(summary) {
+            var m = (summary && summary.manifest) || {};
+            var when = m.createdAt ? new Date(m.createdAt).toLocaleString() : 'an unknown date';
+            var parts = ['Backup from ' + when + (m.pluginVersion ? ' (Jellyfin Enhanced ' + m.pluginVersion + ')' : '') + ':'];
+            parts.push(summary.hasConfiguration ? 'plugin settings,' : 'no plugin settings,');
+            parts.push((summary.userFolders || 0) + ' user(s) with their settings,');
+            parts.push((summary.dataFiles || 0) + ' file(s) in total;');
+            if (summary.hasSecrets) {
+                parts.push(summary.passphraseOk === true ? 'API keys included (passphrase OK).'
+                    : summary.passphraseOk === false ? 'API keys included, but the passphrase is wrong.'
+                    : 'API keys included (enter the passphrase to restore them).');
+            } else {
+                parts.push('API keys not included.');
+            }
+            return parts.join(' ');
+        }
+
+        /**
+         * Downloads a backup through the admin export route.
+         * @param {Document} doc - The page document
+         * @returns {Promise<string>} The status message shown to the admin
+         */
+        async function jeBackupExport(doc) {
+            var opts = jeBackupExportOptions(doc);
+            if (opts.error) return opts.error;
+            var headers = jeBackupAuthHeaders();
+            headers['Content-Type'] = 'application/json';
+            var res = await fetch(ApiClient.getUrl('/JellyfinEnhanced/admin/backup/export'), {
+                method: 'POST', headers: headers, body: JSON.stringify({ secrets: opts.secrets, passphrase: opts.passphrase })
+            });
+            if (!res.ok) {
+                var err = await res.json().catch(function() { return {}; });
+                return err.message || ('Backup failed (HTTP ' + res.status + ').');
+            }
+            var blob = await res.blob();
+            var name = 'jellyfin-enhanced-backup.zip';
+            var disposition = res.headers.get('Content-Disposition') || '';
+            var match = /filename="?([^";]+)"?/i.exec(disposition);
+            if (match) name = match[1];
+            var url = URL.createObjectURL(blob);
+            var a = doc.createElement('a');
+            a.href = url;
+            a.download = name;
+            doc.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+            return 'Saved ' + name + (opts.secrets === 'encrypt' ? ' (API keys included, encrypted).' : ' (API keys left out).');
+        }
+
+        /**
+         * Uploads the chosen backup to the inspect or restore route.
+         * @param {Document} doc - The page document
+         * @param {'inspect'|'restore'} action - Which route
+         * @returns {Promise<{ok: boolean, body: Object}>}
+         */
+        async function jeBackupUpload(doc, action) {
+            var input = doc.querySelector('#backupRestoreFile');
+            var file = input && input.files && input.files[0];
+            if (!file) return { ok: false, body: { message: 'Choose a backup file first.' } };
+            var form = new FormData();
+            form.append('file', file, file.name);
+            form.append('passphrase', (doc.querySelector('#backupRestorePassphrase') || {}).value || '');
+            if (action === 'restore') form.append('confirm', 'restore');
+            var res = await fetch(ApiClient.getUrl('/JellyfinEnhanced/admin/backup/' + action), { method: 'POST', headers: jeBackupAuthHeaders(), body: form });
+            var body = await res.json().catch(function() { return {}; });
+            return { ok: res.ok, body: body };
+        }
+
+        /**
+         * The message shown after a restore.
+         * @param {Object} result - Response of admin/backup/restore
+         * @returns {string}
+         */
+        function jeBackupRestoreText(result) {
+            var text = 'Restored ' + (result.filesRestored || 0) + ' file(s)'
+                + (result.configurationRestored ? ', the plugin settings' : '')
+                + (result.secretsRestored ? ' and ' + result.secretsRestored + ' API key(s)' : '') + '.';
+            if (result.missingCredentials && result.missingCredentials.length) {
+                text += ' Enter these again: ' + result.missingCredentials.join(', ') + '.';
+            }
+            if (result.safetyBackup) text += ' The previous data was saved as ' + result.safetyBackup + '.';
+            return text + ' Restart Jellyfin, then reload this page.';
+        }
+
+        /** Wires the Backup & Restore section's buttons. */
+        function jeBackupInit() {
+            var exportBtn = document.querySelector('#backupExportBtn');
+            var exportStatus = document.querySelector('#backupExportStatus');
+            var restoreStatus = document.querySelector('#backupRestoreStatus');
+            var secretsSelect = document.querySelector('#backupExportSecrets');
+            var passRow = document.querySelector('#backupExportPassphraseRow');
+            if (!exportBtn || !secretsSelect) return;
+            var syncPassRow = function() { passRow.style.display = secretsSelect.value === 'encrypt' ? '' : 'none'; };
+            secretsSelect.addEventListener('change', syncPassRow);
+            syncPassRow();
+            exportBtn.addEventListener('click', async function() {
+                exportBtn.disabled = true;
+                exportStatus.textContent = 'Preparing the backup…';
+                try {
+                    exportStatus.textContent = await jeBackupExport(document);
+                } catch (e) {
+                    exportStatus.textContent = 'Backup failed: ' + (e && e.message ? e.message : e);
+                } finally {
+                    exportBtn.disabled = false;
+                }
+            });
+            document.querySelector('#backupInspectBtn').addEventListener('click', async function() {
+                restoreStatus.textContent = 'Checking…';
+                try {
+                    var r = await jeBackupUpload(document, 'inspect');
+                    restoreStatus.textContent = r.ok ? jeBackupSummaryText(r.body) : (r.body.message || 'This file can\'t be used.');
+                } catch (e) {
+                    restoreStatus.textContent = 'Check failed: ' + (e && e.message ? e.message : e);
+                }
+            });
+            document.querySelector('#backupRestoreBtn').addEventListener('click', async function() {
+                if (!confirm('Restore this backup?\n\nJellyfin Enhanced\'s settings and the files in the backup replace the current ones. A copy of the current data is saved first.')) return;
+                restoreStatus.textContent = 'Restoring…';
+                try {
+                    var r = await jeBackupUpload(document, 'restore');
+                    restoreStatus.textContent = r.ok ? jeBackupRestoreText(r.body) : (r.body.message || 'Restore failed.');
+                } catch (e) {
+                    restoreStatus.textContent = 'Restore failed: ' + (e && e.message ? e.message : e);
+                }
+            });
+        }
+        jeBackupInit();
+
         var rebuildTagCacheBtn = document.querySelector('#rebuildTagCacheBtn');
         if (rebuildTagCacheBtn) {
             rebuildTagCacheBtn.addEventListener('click', async () => {
@@ -10397,10 +11656,17 @@
         }
 
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
+        // A saved key only goes to the server it was saved for: re-check when an address changes.
+        document.querySelector('#jellyseerrUrls').addEventListener('input', function(e) {
+            jeSecretCheckServers(document.querySelector('#JellyseerrApiKey'), e.target.value.split(/[\r\n,]+/));
+        });
+        document.querySelector('#shokoUrl').addEventListener('input', function(e) {
+            jeSecretCheckServers(document.querySelector('#shokoApiKey'), [e.target.value]);
+        });
 
         async function triggerSeerrScanNow() {
             const urls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean);
-            const apiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
+            const apiKey = jeSecretWireValue(document.querySelector('#JellyseerrApiKey'));
             const btn = document.querySelector('#triggerSeerrScanNowBtn');
             const status = document.querySelector('#triggerSeerrScanNowStatus');
 
@@ -11408,7 +12674,7 @@
         async function checkMdblistStatus() {
             const statusLine = document.getElementById('mdblistStatusLine');
             const statusIndicator = document.getElementById('mdblistStatusIndicator');
-            const apiKey = (document.querySelector('#mdblistApiKey')?.value || '').trim();
+            const apiKey = jeSecretWireValue(document.querySelector('#mdblistApiKey'));
 
             if (statusIndicator) {
                 statusIndicator.textContent = 'sync';

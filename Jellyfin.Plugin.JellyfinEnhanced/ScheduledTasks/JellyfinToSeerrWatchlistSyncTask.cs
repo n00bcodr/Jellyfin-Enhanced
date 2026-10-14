@@ -73,7 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 return;
             }
 
-            if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Jellyfin→Seerr Watchlist Sync] Jellyseerr URL or API key not configured.");
                 progress?.Report(100);
@@ -95,7 +95,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
             var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
-            var jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, jellyseerrUrl, config.JellyseerrApiKey);
+            var jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, jellyseerrUrl, config.GetJellyseerrApiKey());
             if (jellyseerrUserMap.Count == 0)
             {
                 _logger.Warning("[Jellyfin→Seerr Watchlist Sync] Unable to build Jellyseerr user map.");
@@ -168,7 +168,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     }
 
                     // Get this user's current Seerr watchlist to avoid duplicates
-                    var seerrWatchlist = await GetSeerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey);
+                    var seerrWatchlist = await GetSeerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId, config.GetJellyseerrApiKey());
                     var seerrWatchlistKeys = new HashSet<string>(
                         seerrWatchlist.Select(i => $"{i.MediaType}:{i.TmdbId}"),
                         StringComparer.OrdinalIgnoreCase);
@@ -197,7 +197,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                         }
 
                         var result = await AddToSeerrWatchlist(
-                            httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey,
+                            httpClient, jellyseerrUrl, jellyseerrUserId, config.GetJellyseerrApiKey(),
                             tmdbId, mediaType, item.Name ?? "");
 
                         if (result == 1)

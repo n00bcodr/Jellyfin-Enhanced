@@ -11,6 +11,7 @@ using MediaBrowser.Controller.Plugins;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using MediaBrowser.Controller;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced
@@ -46,6 +47,77 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 {
                     AllowAutoRedirect = false
                 });
+            // Sonarr/Radarr transport: no redirects, no proxy, target address checked and pinned
+            // at connect time (see ArrHttp). Per-call budgets live in ArrClient, so no HttpClient timeout.
+            serviceCollection.AddHttpClient(Services.Arr.ArrHttp.ClientName)
+                .ConfigureHttpClient(c => c.Timeout = System.Threading.Timeout.InfiniteTimeSpan)
+                .ConfigurePrimaryHttpMessageHandler(Services.Arr.ArrHttp.CreateHandler);
+            // "Requests & downloads (new)" foundations: the instance registry (v2), one client per
+            // instance, and the audited action runner for direct arr writes.
+            serviceCollection.AddSingleton<Services.Arr.ArrInstanceRegistry>();
+            serviceCollection.AddSingleton<Services.Arr.ArrClientFactory>();
+            serviceCollection.AddSingleton<Services.Arr.ArrAuditLog>();
+            serviceCollection.AddSingleton<Services.Arr.ArrConfirmationTokens>();
+            serviceCollection.AddSingleton<Services.Arr.ArrActionRunner>();
+            // In-memory arr snapshots (library index, queue, history, calendar, system) behind the
+            // Downloads/Calendar/link routes, and the loop that keeps the ones in use fresh.
+            serviceCollection.AddSingleton<Services.Arr.ArrStateStore>();
+            serviceCollection.AddHostedService<Services.Arr.ArrStateReconciler>();
+            // Phase 1 status on pages: the Jellyfin side of the status composer, the request facts
+            // (Seerr's requests, read in the background by the read model) and the per-user status service.
+            serviceCollection.AddSingleton<Services.Acquire.IArrJellyfinView, Services.Acquire.ArrJellyfinView>();
+            serviceCollection.AddSingleton<Services.Acquire.SeerrRequestReadModel>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.SeerrRequestReadModel>());
+            serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts>(sp => sp.GetRequiredService<Services.Acquire.SeerrRequestReadModel>());
+            serviceCollection.AddSingleton<Services.Acquire.TitleAliases>();
+            serviceCollection.AddSingleton<Services.Acquire.ArrStatusService>();
+            // The Requests page (everyone's own requests) and the administrator's Manage drawer.
+            serviceCollection.AddSingleton<Services.Acquire.RequestsHubService>();
+            serviceCollection.AddSingleton<Services.Acquire.ArrManageService>();
+            // Phase 2 (admin essentials): the hub's admin tabs, queue actions, the Jellyfin bridge
+            // (targeted refresh after imports, not-in-Jellyfin list, path doctor) and the activity log mirror.
+            serviceCollection.AddSingleton<Services.Acquire.IJellyfinLibraryAccess, Services.Acquire.JellyfinLibraryAccess>();
+            serviceCollection.AddSingleton<Services.Acquire.ArrInstanceLibraries>();
+            serviceCollection.AddSingleton<Services.Acquire.JellyfinBridge>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.JellyfinBridge>());
+            serviceCollection.AddSingleton<Services.Acquire.ArrAdminHubService>();
+            serviceCollection.AddSingleton<Services.Acquire.ArrQueueActionService>();
+            serviceCollection.AddSingleton<Services.Arr.ArrActivityMirror>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Arr.ArrActivityMirror>());
+            serviceCollection.AddSingleton<Services.Acquire.ArrAdminOpsFeed>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.ArrAdminOpsFeed>());
+            // Live updates (phase 1, inert while off): the change feed browsers long-poll, what feeds
+            // it (snapshot diffs, Jellyfin library adds/removes), one SignalR connection per arr,
+            // the webhook receiver + one-click set-up, and the re-reads live hints trigger.
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrChangeFeed>();
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrFeedLimits>();
+            serviceCollection.AddSingleton<Services.Arr.Live.IArrFeedAudience, Services.Arr.Live.ArrFeedAudience>();
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrLiveRouter>();
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrChangeTracker>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Arr.Live.ArrChangeTracker>());
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrLiveService>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Arr.Live.ArrLiveService>());
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrWebhookReceiver>();
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrWebhookProvisioner>();
+            // Requests & downloads, phase 2 (inert while off): the SQLite database (follows, inbox,
+            // deliveries), notifications driven by the change feed, and their delivery to ntfy and
+            // e-mail (admin-configured endpoints only; ntfy over the guarded, no-redirect transport).
+            serviceCollection.AddHttpClient(Services.Acquire.Notify.NotifyEndpoints.ClientName)
+                .ConfigureHttpClient(c => c.Timeout = System.Threading.Timeout.InfiniteTimeSpan)
+                .ConfigurePrimaryHttpMessageHandler(Services.Arr.ArrHttp.CreateHandler);
+            serviceCollection.AddSingleton<Services.Acquire.AcquireDatabase>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.NotifyStore>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.INotifyUsers, Services.Acquire.Notify.JellyfinNotifyUsers>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.NtfySender>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.IMailTransport, Services.Acquire.Notify.SmtpMailTransport>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.EmailSender>();
+            serviceCollection.AddSingleton<Services.Acquire.Notify.NotifyDispatcher>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Notify.NotifyDispatcher>());
+            serviceCollection.AddSingleton<Services.Acquire.Notify.NotificationService>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Notify.NotificationService>());
+            // JE backup/export/restore (Jellyfin's own backups don't include plugin data).
+            serviceCollection.AddSingleton<Services.Backup.JeBackupService>();
+            serviceCollection.AddTransient<JeBackupTask>();
             serviceCollection.AddSingleton<Logger>();
             serviceCollection.AddSingleton<UserConfigurationManager>();
             // Auto-detects newly added config-page settings by diffing the
@@ -144,6 +216,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserLockedOutEventArgs>, ReviewAuthorCacheInvalidator>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserUpdatedEventArgs>, TagCacheAccessInvalidator>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, TagCacheAccessInvalidator>();
+            // Requests & downloads: a deleted user's follows, alert settings and inbox go with them
+            // (also while notifications are off; never creates the database).
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Notify.NotifyUserPurge>();
 
             // Promotes pending pre-acquisition Spoiler Guard entries (PendingTmdb)
             // into real Series/Movies entries when matching library items land.
