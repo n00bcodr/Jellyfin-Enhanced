@@ -63,6 +63,18 @@
 7. Clear browser cache ++ctrl+f5++
 
 
+## Wrong Plugin Build or Restart Required
+
+If the configuration page shows **Wrong plugin build for this Jellyfin version** or the logs contain `BUILD/HOST MISMATCH:`, the running plugin build targets a different Jellyfin version. If the warning names a zip to install, install it from the plugin repository, then stop and start the Jellyfin service or container.
+
+Both builds share the same plugin version number and installation path. Jellyfin's **Dashboard** → **Restart** restarts the server inside the same process and keeps the previous build loaded in memory, even after the correct file is installed. If the warning says the plugin file on disk was replaced after Jellyfin loaded it, or shows **Plugin restart required** (`STALE PLUGIN BUILD:` in the logs), start with a full process restart:
+
+- Linux service: `sudo systemctl restart jellyfin`
+- Docker: `docker restart <container>`
+- Windows: stop and start the Jellyfin service
+
+Refresh the configuration page after Jellyfin starts again. If the wrong-build warning is still there, the file on disk is the wrong build too: install the zip it names, then restart the process again.
+
 ## Permission Issues
 
 If you see errors like this in a log file:

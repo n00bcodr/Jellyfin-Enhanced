@@ -1748,6 +1748,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Forbid();
             }
 
+            var isStale = _hostCompatibility.IsStale;
             return new JsonResult(new
             {
                 builtFor = Services.HostCompatibilityService.BuiltFor,
@@ -1755,9 +1756,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 hostVersion = _hostCompatibility.HostVersionString,
                 pluginVersion = JellyfinEnhanced.Instance?.Version.ToString(),
                 mismatch = _hostCompatibility.IsMismatch,
+                stale = isStale,
                 expectedAsset = _hostCompatibility.ExpectedAssetName,
                 manifestUrl = Services.HostCompatibilityService.ManifestUrl,
-                message = _hostCompatibility.MismatchMessage
+                message = _hostCompatibility.GetCompatibilityMessage(isStale)
             });
         }
 
