@@ -1,7 +1,7 @@
 /**
  * @file Requests & downloads, phase 1: styles of the administrator's Manage drawer: a drawer on the
  * right on desktop, a bottom sheet on phones (≤ 600 px), a full panel on TV; explanation card,
- * versions, timelines and requests. Colour is never the only signal.
+ * versions (with phase 3's "Add to {instance}" sheet), timelines and requests. Colour is never the only signal.
  */
 (function (JE) {
     'use strict';
@@ -61,11 +61,27 @@
 .je-manage-request { font-size: 0.85em; padding: 0.25em 0; }
 .je-manage-empty { opacity: 0.7; font-size: 0.9em; padding: 0.5em 0; }
 .je-manage-open .material-icons { font-size: 1.6em; }
+.je-manage-add { margin-top: 0.4em; padding: 0.8em; border-radius: 10px; border: 1px solid rgba(139,92,246,0.55); background: rgba(139,92,246,0.08); display: flex; flex-direction: column; gap: 0.6em; }
+.je-manage-add-title { margin: 0; font-size: 0.95em; font-weight: 700; }
+.je-manage-add-field { display: flex; flex-direction: column; gap: 0.25em; font-size: 0.85em; }
+.je-manage-add-field > span { font-weight: 600; opacity: 0.85; }
+.je-manage-add select { font: inherit; font-size: 0.95em; min-height: 2.6em; padding: 0.3em 0.5em; border-radius: 8px; border: 1px solid rgba(255,255,255,0.25); background: #23262d; color: inherit; max-width: 100%; }
+.je-manage-add select:focus-visible, .je-manage-add input:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.je-manage-add-seasons { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3em 0.9em; font-size: 0.85em; }
+.je-manage-add-seasons legend { font-weight: 600; opacity: 0.85; padding: 0; margin-bottom: 0.25em; width: 100%; }
+.je-manage-add-season { display: inline-flex; align-items: center; gap: 0.35em; min-height: 2.2em; cursor: pointer; }
+.je-manage-add-note { font-size: 0.85em; opacity: 0.9; }
+.je-manage-add-warn { color: #fbbf24; }
+.je-manage-add-message { font-size: 0.85em; color: #8ec5ff; }
+.je-manage-add-message:empty { display: none; }
+.je-manage-add-failed { color: #fca5a5; }
+.je-manage-add .je-manage-actions { margin-top: 0.2em; }
 @media (max-width: 600px) {
   .je-manage-overlay { align-items: flex-end; }
   .je-manage { width: 100vw; height: auto; max-height: 88vh; border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,0.5); }
   .je-manage-btn, .je-manage-close { min-height: 44px; min-width: 44px; }
   .je-manage-tab { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+  .je-manage-add select, .je-manage-add-season { min-height: 44px; }
 }
 .layout-tv .je-manage { width: 100vw; font-size: 1.1em; padding: 2em 6vw; }
 @media (prefers-reduced-motion: reduce) { .je-manage { transition: none; } }

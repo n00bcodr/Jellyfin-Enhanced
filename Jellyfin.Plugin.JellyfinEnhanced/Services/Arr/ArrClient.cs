@@ -132,11 +132,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>GET a v3 resource (<paramref name="path"/> relative to <c>/api/v3/</c>, or absolute from the base URL when it starts with '/').</summary>
         public Task<ArrResult<T>> GetAsync<T>(string path, IEnumerable<KeyValuePair<string, string?>>? query = null, ArrCallClass callClass = ArrCallClass.Read, CancellationToken cancellationToken = default)
-            => SendCoreAsync<T>(HttpMethod.Get, path, query, null, callClass, cancellationToken);
+            => SendCoreAsync<T>(HttpMethod.Get, path, query, null, callClass, null, cancellationToken);
 
         /// <summary>POST/PUT/DELETE with an optional JSON body. Not retried.</summary>
         public Task<ArrResult<T>> SendAsync<T>(HttpMethod method, string path, object? body, IEnumerable<KeyValuePair<string, string?>>? query = null, CancellationToken cancellationToken = default)
-            => SendCoreAsync<T>(method, path, query, body, ArrCallClass.Write, cancellationToken);
+            => SendCoreAsync<T>(method, path, query, body, ArrCallClass.Write, null, cancellationToken);
+
+        /// <summary>
+        /// A write like <see cref="SendAsync{T}"/> that asks <paramref name="proceed"/> once more right before it leaves,
+        /// after waiting for a free connection slot (which can take a while when slow calls hold them all). False: nothing
+        /// is sent and the call fails as not sent.
+        /// </summary>
+        internal Task<ArrResult<T>> SendCheckedAsync<T>(HttpMethod method, string path, object? body, Func<bool> proceed, CancellationToken cancellationToken)
+            => SendCoreAsync<T>(method, path, null, body, ArrCallClass.Write, proceed, cancellationToken);
 
         /// <summary>
         /// Reads every record of a paged list (<c>{page, pageSize, totalRecords, records}</c>) with an
@@ -204,7 +212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             return sb.ToString();
         }
 
-        private async Task<ArrResult<T>> SendCoreAsync<T>(HttpMethod method, string path, IEnumerable<KeyValuePair<string, string?>>? query, object? body, ArrCallClass callClass, CancellationToken cancellationToken)
+        private async Task<ArrResult<T>> SendCoreAsync<T>(HttpMethod method, string path, IEnumerable<KeyValuePair<string, string?>>? query, object? body, ArrCallClass callClass, Func<bool>? proceed, CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(_apiKey))
                 return ArrResult<T>.Failure(ArrErrorKind.NotConfigured, "No API key is stored for this instance.");
@@ -219,6 +227,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (proceed != null && !proceed())
+                    return ArrResult<T>.Failure(ArrErrorKind.NotConfigured, "The write was stopped before it was sent.");
                 for (var attempt = 1; ; attempt++)
                 {
                     var outcome = await SendOnceAsync<T>(method, url, bodyBytes, timeout, cap, cancellationToken).ConfigureAwait(false);

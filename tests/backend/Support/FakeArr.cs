@@ -57,6 +57,23 @@ internal sealed class FakeArr : IDisposable
         public List<JsonObject> DiskSpace { get; } = new();
         /// <summary><c>/rootfolder</c> rows (path, freeSpace, accessible).</summary>
         public List<JsonObject> RootFolders { get; } = new();
+        /// <summary><c>/qualityprofile</c> rows (id, name).</summary>
+        public List<JsonObject> Profiles { get; } = new();
+        /// <summary>
+        /// Metadata the arr's lookup knows (<c>movie/lookup</c>, <c>series/lookup</c>): rows matched by the
+        /// term's provider id. A title already in the library is answered with its library id, like the arrs.
+        /// </summary>
+        public List<JsonObject> Lookup { get; } = new();
+        /// <summary>True: the lookup answers every <see cref="Lookup"/> row whatever the term (a fuzzy metadata search).</summary>
+        public bool LookupIgnoresTerm { get; set; }
+        /// <summary>Episodes a series gets when it is added, by TVDB id: (season, episode) pairs.</summary>
+        public Dictionary<int, (int Season, int Episode)[]> EpisodeList { get; } = new();
+        /// <summary>Non-null: runs after a write was applied (under the host's lock); throw to lose the answer.</summary>
+        public Action<string, string>? AfterWrite { get; set; }
+        /// <summary>Non-null: answers a write (method, path, body) before it is applied (null: apply it).</summary>
+        public Func<string, string, string, HttpResponseMessage?>? OnWrite { get; set; }
+        /// <summary>Gives each new library title and episode an id.</summary>
+        public int NextId { get; set; } = 500;
     }
 
     public ApiPluginFixture Plugin { get; } = new();
@@ -204,6 +221,7 @@ internal sealed class FakeArr : IDisposable
             if (path.StartsWith("/api/v3/command/", StringComparison.Ordinal) && int.TryParse(path["/api/v3/command/".Length..], out var commandId))
                 return IntegrationTransport.Response(new JsonObject { ["id"] = commandId, ["status"] = host.CommandStatus, ["message"] = host.CommandMessage }.ToJsonString());
             if (request.Method == HttpMethod.Get && TitleById(host, path) is { } title) return title;
+            if (Library(host, request, path, query) is { } library) return library;
             // Queue removal (DELETE /queue/{id} and /queue/bulk {ids}): recorded with the query, rows dropped.
             if (request.Method == HttpMethod.Delete && path.StartsWith("/api/v3/queue", StringComparison.Ordinal))
             {
@@ -258,11 +276,110 @@ internal sealed class FakeArr : IDisposable
                 case "/api/v3/rootfolder":
                     return IntegrationTransport.Response(new JsonArray(host.RootFolders.Select(r => r.DeepClone()).ToArray()).ToJsonString());
                 case "/api/v3/qualityprofile":
-                    return IntegrationTransport.Response("[]");
+                    return IntegrationTransport.Response(new JsonArray(host.Profiles.Select(r => r.DeepClone()).ToArray()).ToJsonString());
                 default:
                     return IntegrationTransport.Response("{}", 404);
             }
         }
+    }
+
+    // Lookup, filtered library reads and the add / monitoring writes the request executor uses
+    // (POST movie|series, PUT movie/editor|series/editor|episode/monitor, POST seasonpass), applied
+    // to the host's lists like the arrs do. Null for every other call.
+    private static HttpResponseMessage? Library(Host host, HttpRequestMessage request, string path, System.Collections.Specialized.NameValueCollection query)
+    {
+        var method = request.Method.Method;
+        if (method == "GET" && path is "/api/v3/movie/lookup" or "/api/v3/series/lookup")
+        {
+            var term = query["term"] ?? string.Empty;
+            var colon = term.IndexOf(':');
+            if (colon <= 0) return IntegrationTransport.Response("[]");
+            var field = term[..colon] + "Id";
+            var value = term[(colon + 1)..];
+            var library = path == "/api/v3/movie/lookup" ? host.Movies : host.Series;
+            var rows = host.Lookup.Where(r => host.LookupIgnoresTerm || string.Equals(r[field]?.ToString(), value, StringComparison.OrdinalIgnoreCase)).Select(r =>
+            {
+                var row = r.DeepClone().AsObject();
+                var held = library.FirstOrDefault(m => m[field]?.ToString() == r[field]?.ToString());
+                row["id"] = held == null ? 0 : (int)held["id"]!;
+                return (JsonNode)row;
+            });
+            return IntegrationTransport.Response(new JsonArray(rows.ToArray()).ToJsonString());
+        }
+        if (method == "GET" && path == "/api/v3/movie" && query["tmdbId"] is { } tmdb)
+            return IntegrationTransport.Response(new JsonArray(host.Movies.Where(m => m["tmdbId"]?.ToString() == tmdb).Select(m => m.DeepClone()).ToArray()).ToJsonString());
+        if (method == "GET" && path == "/api/v3/series" && query["tvdbId"] is { } tvdb)
+            return IntegrationTransport.Response(new JsonArray(host.Series.Where(m => m["tvdbId"]?.ToString() == tvdb).Select(m => m.DeepClone()).ToArray()).ToJsonString());
+        var writes = new[] { ("POST", "/api/v3/movie"), ("POST", "/api/v3/series"), ("PUT", "/api/v3/movie/editor"), ("PUT", "/api/v3/series/editor"), ("POST", "/api/v3/seasonpass"), ("PUT", "/api/v3/episode/monitor") };
+        if (!writes.Contains((method, path))) return null;
+        var text = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+        host.Writes.Add((method, path, text));
+        if (host.OnWrite?.Invoke(method, path, text) is { } answer) return answer;
+        var body = JsonNode.Parse(text)!.AsObject();
+        HttpResponseMessage reply;
+        switch (path)
+        {
+            case "/api/v3/movie":
+            {
+                if (host.Movies.Any(m => m["tmdbId"]?.ToString() == body["tmdbId"]?.ToString()))
+                    return IntegrationTransport.Response(new JsonArray(new JsonObject { ["propertyName"] = "TmdbId", ["errorMessage"] = "This movie has already been added", ["errorCode"] = "MovieExistsValidator" }).ToJsonString(), 400);
+                body["id"] = ++host.NextId;
+                body["hasFile"] = false;
+                body.Remove("addOptions");
+                host.Movies.Add(body);
+                reply = IntegrationTransport.Response(body.ToJsonString(), 201);
+                break;
+            }
+            case "/api/v3/series":
+            {
+                if (host.Series.Any(m => m["tvdbId"]?.ToString() == body["tvdbId"]?.ToString()))
+                    return IntegrationTransport.Response(new JsonArray(new JsonObject { ["propertyName"] = "TvdbId", ["errorMessage"] = "This series has already been added", ["errorCode"] = "SeriesExistsValidator" }).ToJsonString(), 400);
+                var id = ++host.NextId;
+                body["id"] = id;
+                body.Remove("addOptions");
+                host.Series.Add(body);
+                // Like Sonarr with addOptions.monitor "skip": new episodes take their season's flag.
+                var flags = body["seasons"]!.AsArray().ToDictionary(x => (int)x!["seasonNumber"]!, x => (bool)x!["monitored"]!);
+                foreach (var (season, episode) in host.EpisodeList.GetValueOrDefault((int)body["tvdbId"]!, Array.Empty<(int, int)>()))
+                    host.Episodes.Add(new JsonObject { ["id"] = ++host.NextId, ["seriesId"] = id, ["seasonNumber"] = season, ["episodeNumber"] = episode, ["monitored"] = flags.GetValueOrDefault(season), ["hasFile"] = false });
+                reply = IntegrationTransport.Response(body.ToJsonString(), 201);
+                break;
+            }
+            case "/api/v3/movie/editor":
+                foreach (var m in host.Movies.Where(m => body["movieIds"]!.AsArray().Any(i => (int)i! == (int)m["id"]!)))
+                    if (body["monitored"] is { } flag) m["monitored"] = (bool)flag;
+                reply = IntegrationTransport.Response("[]", 202);
+                break;
+            case "/api/v3/series/editor":
+                foreach (var m in host.Series.Where(m => body["seriesIds"]!.AsArray().Any(i => (int)i! == (int)m["id"]!)))
+                {
+                    if (body["monitored"] is { } flag) m["monitored"] = (bool)flag;
+                    if (body["monitorNewItems"] is { } items) m["monitorNewItems"] = (string)items!;
+                }
+                reply = IntegrationTransport.Response("[]", 202);
+                break;
+            case "/api/v3/seasonpass":
+                // Sonarr: the listed seasons' flags (and the series flag) only; episodes stay as they are.
+                foreach (var item in body["series"]!.AsArray())
+                {
+                    var series = host.Series.First(m => (int)m["id"]! == (int)item!["id"]!);
+                    if (item!["monitored"] is { } flag) series["monitored"] = (bool)flag;
+                    foreach (var season in item["seasons"]?.AsArray() ?? new JsonArray())
+                    {
+                        var stored = series["seasons"]!.AsArray().FirstOrDefault(x => (int)x!["seasonNumber"]! == (int)season!["seasonNumber"]!);
+                        if (stored != null) stored["monitored"] = (bool)season!["monitored"]!;
+                    }
+                }
+                reply = IntegrationTransport.Response("{}", 202);
+                break;
+            default:
+                foreach (var e in host.Episodes.Where(e => body["episodeIds"]!.AsArray().Any(i => (int)i! == (int)e["id"]!)))
+                    e["monitored"] = (bool)body["monitored"]!;
+                reply = IntegrationTransport.Response("[]", 202);
+                break;
+        }
+        host.AfterWrite?.Invoke(method, path);
+        return reply;
     }
 
     // GET /api/v3/movie/{id} and /api/v3/series/{id}: one title, or 404.

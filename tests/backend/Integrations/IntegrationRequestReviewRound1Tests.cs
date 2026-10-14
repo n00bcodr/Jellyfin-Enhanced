@@ -30,8 +30,15 @@ public class IntegrationRequestReviewRound1Tests
         Assert.Equal(job.Id, retained.Id); Assert.Equal(state, retained.State); Assert.Null(retained.Authorization.Approver);
         Assert.Equal(previous.Status, r.Ledger.Find(want.RequestId!)!.Status);
         Assert.Equal(409, r.Service.Close(want.RequestId!, r.Kid, null).HttpStatus);
-        Assert.Equal(409, (await r.Service.ApproveAsync(want.RequestId!, r.Admin, null, default)).HttpStatus);
+        // Work held after part of it was written resumes on an explicit approval: the same job and charge, still uncertain.
+        Assert.Equal(state == "parked" ? 200 : 409, (await r.Service.ApproveAsync(want.RequestId!, r.Admin, null, default)).HttpStatus);
         Assert.Equal(1, r.Service.Quota(r.Kid).Used);
+        if (state == "parked")
+        {
+            var resumed = Assert.Single(r.Ledger.ForWant(want.RequestId!));
+            Assert.Equal((job.Id, "maybe_sent", true, (Guid?)r.Admin), (resumed.Id, resumed.State, resumed.Uncertain, resumed.Authorization.Approver));
+            Assert.Equal(409, r.Service.Close(want.RequestId!, r.Kid, null).HttpStatus);
+        }
         if (state == "sending")
         {
             Assert.True(r.Ledger.Complete(job, r.Db.Generation, new(RequestOutcome.Accepted(want.RequestId!, "looking"), Confirmed: true), r.Now));

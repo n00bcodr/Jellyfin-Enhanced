@@ -22,6 +22,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Creates request orchestration.</summary>
         public RequestService(RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, ArrChangeFeed feed, TitleAliases aliases)
             : this(ledger, policy, view, feed, () => DateTimeOffset.UtcNow, aliases) { }
+        /// <summary>Creates request orchestration that wakes the outbox when work is queued (DI).</summary>
+        public RequestService(RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, ArrChangeFeed feed, TitleAliases aliases, RequestOutboxSignal signal)
+            : this(ledger, policy, view, feed, () => DateTimeOffset.UtcNow, aliases) { Signal = signal; }
+        /// <summary>Wakes the outbox when an outcome queues work (absent in tests that drive the outbox themselves).</summary>
+        internal RequestOutboxSignal? Signal { get; set; }
         internal RequestService(RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, ArrChangeFeed feed, Func<DateTimeOffset> now, TitleAliases? aliases = null)
         { _ledger = ledger; _policy = policy; View = view; _feed = feed; _now = now; _aliases = aliases; }
         /// <summary>Human caller resolver.</summary>
@@ -56,6 +61,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now());
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(user), ArrTitleKey.RequestsState });
+            if (outcome.Reason == "queued_outage") Signal?.Pulse();
             return outcome;
         }
         /// <summary>Approves with fresh requester and approver prerequisites.</summary>
@@ -76,6 +82,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             var outcome = _ledger.Approve(id, actor, body?.Input == null ? null : input, _policy, _now());
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(want.UserId), ArrTitleKey.RequestsState });
+            if (outcome.Reason == "queued_outage") Signal?.Pulse();
             return outcome;
         }
         /// <summary>Cancel or decline after policy recheck.</summary>

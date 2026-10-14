@@ -4369,11 +4369,15 @@
 
             function jeSnapshotFormState() {
                 const parts = [];
-                form.querySelectorAll('input, select, textarea').forEach((el, i) => {
+                let i = 0;
+                form.querySelectorAll('input, select, textarea').forEach((el) => {
                     if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
                     if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
-                    const key = el.id || el.name || ('#' + i);
+                    // An instance's add defaults load when its card opens: loading them isn't a change, editing them is.
+                    if (el.closest('.arr-instance-add') && el.dataset.jeInitial !== undefined
+                        && String(el.type === 'checkbox' ? el.checked : el.value) === el.dataset.jeInitial) return;
+                    const key = el.id || el.name || ('#' + i++);
                     parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
                 });
                 // shortcutOverrides is JS state, not bound to persistent <input> elements.
@@ -5480,6 +5484,127 @@
             return _jeLibrariesPromise;
         }
 
+        // ==================== Arr instance add defaults (Requests & downloads, phase 3) ====================
+
+        /**
+         * The "When Jellyfin Enhanced adds a title" block of an instance card: quality profile, root
+         * folder, tags and (Radarr) minimum availability or (Sonarr) series type. The choices are the
+         * instance's own, read from GET arr/admin/manage/add-options (a current snapshot of the saved
+         * instance); nothing is preselected that isn't the saved value. Until they load (or for an
+         * instance not saved yet) the stored defaults are kept as they are.
+         * @param {string} type - 'sonarr' or 'radarr'
+         * @param {Object} instance - The stored row
+         * @returns {HTMLElement}
+         */
+        function jeBuildInstanceAddDefaults(type, instance) {
+            var label = type === 'sonarr' ? 'Sonarr' : 'Radarr';
+            var stored = instance.Defaults || {};
+            var wrap = createEl('div', { className: 'arr-instance-add', style: 'margin-top: 0.75em;' });
+            wrap.appendChild(createEl('label', { className: 'inputLabel inputLabelUnfocused', textContent: 'When Jellyfin Enhanced adds a title' }));
+            var status = createEl('div', { className: 'fieldDescription arr-instance-add-status', textContent: 'Loading ' + label + '\'s profiles and folders...' });
+            var fields = createEl('div', { className: 'arr-instance-add-fields', style: 'display:none;' });
+            wrap.appendChild(status);
+            wrap.appendChild(fields);
+            wrap.appendChild(createEl('div', { className: 'fieldDescription', textContent: 'Used when Jellyfin Enhanced handles requests (Requests & downloads, phase 3) and by "Add to" in the Manage drawer. Only what this ' + label + ' lists can be chosen; requests wait for an administrator while these are missing or no longer valid.' }));
+
+            function select(cls, title, choices, value) {
+                var sel = createEl('select', { className: cls + ' emby-select-withcolor emby-select', 'aria-label': title });
+                sel.appendChild(createEl('option', { value: '', textContent: 'Not set' }));
+                choices.forEach(function(c) { sel.appendChild(createEl('option', { value: String(c.value), textContent: c.label })); });
+                if (value != null && value !== '' && !choices.some(function(c) { return String(c.value) === String(value); })) {
+                    sel.appendChild(createEl('option', { value: String(value), textContent: value + ' (not in ' + label + ' now)' }));
+                }
+                sel.value = value == null ? '' : String(value);
+                sel.dataset.jeInitial = sel.value;
+                return createEl('div', { className: 'selectContainer', style: 'margin-top: 0.5em;' }, [createEl('label', { className: 'selectLabel', textContent: title }), sel]);
+            }
+
+            if (!instance.Id) {
+                status.textContent = 'Save this instance first; then its quality profiles and root folders can be chosen here.';
+                return wrap;
+            }
+            // Read only once the card is opened, so a page load doesn't ask every instance for its folders.
+            var started = false;
+            function start() {
+                if (started) return;
+                started = true;
+                load();
+            }
+            setTimeout(function() {
+                var details = wrap.closest('details');
+                if (!details || details.open) start();
+                else details.addEventListener('toggle', function() { if (details.open) start(); });
+            }, 0);
+            return wrap;
+
+            function load() {
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/manage/add-options?instanceId=' + encodeURIComponent(instance.Id)), dataType: 'json' })
+                    .then(function(options) {
+                        options = options || {};
+                        var profiles = (options.profiles || []).map(function(p) { return { value: p.id, label: p.name }; });
+                        var folders = (options.rootFolders || []).map(function(f) { return { value: f.path, label: f.path + (f.accessible === false ? ' (not accessible)' : '') }; });
+                        if (!profiles.length && !folders.length) {
+                            status.textContent = label + '\'s profiles and folders couldn\'t be read right now. The saved add defaults are kept.';
+                            return;
+                        }
+                        fields.appendChild(select('arr-instance-add-profile', 'Quality profile', profiles, stored.QualityProfileId));
+                        fields.appendChild(select('arr-instance-add-root', 'Root folder', folders, stored.RootFolderPath));
+                        if (type === 'radarr') {
+                            fields.appendChild(select('arr-instance-add-availability', 'Minimum availability', [
+                                { value: 'announced', label: 'Announced' }, { value: 'inCinemas', label: 'In cinemas' }, { value: 'released', label: 'Released' }
+                            ], stored.MinimumAvailability || ''));
+                        } else {
+                            fields.appendChild(select('arr-instance-add-seriestype', 'Series type', [
+                                { value: 'standard', label: 'Standard' }, { value: 'daily', label: 'Daily' }, { value: 'anime', label: 'Anime' }
+                            ], stored.SeriesType || ''));
+                        }
+                        var tags = options.tags || [];
+                        if (tags.length) {
+                            var tagWrap = createEl('div', { className: 'arr-instance-add-tags', style: 'display:flex;flex-wrap:wrap;gap:0.25em 1em;margin-top:0.5em;' });
+                            var have = (stored.Tags || []).map(Number);
+                            tags.forEach(function(tag) {
+                                var cb = createEl('input', { type: 'checkbox', className: 'arr-instance-add-tag', 'data-tag-id': String(tag.id) });
+                                cb.checked = have.indexOf(Number(tag.id)) !== -1;
+                                cb.dataset.jeInitial = String(cb.checked);
+                                tagWrap.appendChild(createEl('label', { style: 'display:flex;align-items:center;gap:0.35em;' }, [cb, createEl('span', { textContent: tag.name })]));
+                            });
+                            fields.appendChild(createEl('div', { style: 'margin-top:0.5em;' }, [createEl('div', { className: 'fieldDescription', textContent: 'Tags' }), tagWrap]));
+                        }
+                        status.textContent = options.defaultsValid ? '' : (options.defaultsMessage || '');
+                        fields.style.display = '';
+                        wrap.dataset.loaded = '1';
+                    })
+                    .catch(function() {
+                        status.textContent = 'This instance\'s profiles and folders can be chosen once "Requests & downloads (new)" with download status is on and the instance is saved. The saved add defaults are kept.';
+                    });
+            }
+        }
+
+        /**
+         * Reads an instance card's add defaults back into the stored shape: undefined (keep what was
+         * stored) until the choices loaded, null when nothing is set.
+         * @param {HTMLElement} card - The instance card
+         * @returns {Object|null|undefined}
+         */
+        function jeReadInstanceAddDefaults(card) {
+            var wrap = card.querySelector('.arr-instance-add');
+            if (!wrap || wrap.dataset.loaded !== '1') return undefined;
+            var base = (card._jeRow && card._jeRow.Defaults) || {};
+            var value = function(cls) { var el = wrap.querySelector('.' + cls); return el ? el.value : ''; };
+            var profile = parseInt(value('arr-instance-add-profile'), 10);
+            var tagBoxes = wrap.querySelectorAll('.arr-instance-add-tag');
+            var tags = tagBoxes.length ? Array.prototype.filter.call(tagBoxes, function(cb) { return cb.checked; }).map(function(cb) { return Number(cb.getAttribute('data-tag-id')); }) : (base.Tags || []);
+            var out = {
+                QualityProfileId: profile > 0 ? profile : null,
+                RootFolderPath: value('arr-instance-add-root') || null,
+                Tags: tags,
+                MinimumAvailability: wrap.querySelector('.arr-instance-add-availability') ? (value('arr-instance-add-availability') || null) : (base.MinimumAvailability || null),
+                SeriesType: wrap.querySelector('.arr-instance-add-seriestype') ? (value('arr-instance-add-seriestype') || null) : (base.SeriesType || null)
+            };
+            Object.keys(out).forEach(function(k) { if (out[k] === null) delete out[k]; });
+            return (out.QualityProfileId || out.RootFolderPath || out.Tags.length || out.MinimumAvailability || out.SeriesType) ? out : null;
+        }
+
         /**
          * Builds the registry fields of an instance card (role, default, linked libraries, path
          * mappings). Shown only while "Requests & downloads (new)" is on; always round-tripped.
@@ -5554,7 +5679,7 @@
 
             return createEl('div', { className: 'je-arr-v2' }, [
                 createEl('div', { className: 'je-arr-v2-heading', textContent: 'Requests & downloads' }),
-                roleContainer, defaultRow, libsContainer, pathsContainer, liveRow
+                roleContainer, defaultRow, libsContainer, pathsContainer, liveRow, jeBuildInstanceAddDefaults(type, instance)
             ]);
         }
 
@@ -5583,6 +5708,8 @@
             }
             var live = card.querySelector('.arr-instance-live');
             out.LiveUpdates = live ? (live.checked ? 'auto' : 'off') : (base.LiveUpdates || 'auto');
+            var addDefaults = jeReadInstanceAddDefaults(card);
+            if (addDefaults !== undefined) out.Defaults = addDefaults;
             var paths = card.querySelector('.arr-instance-pathmappings');
             out.PathMappings = paths ? paths.value.split(/\r?\n/).map(function(line) {
                 var i = line.indexOf('|');

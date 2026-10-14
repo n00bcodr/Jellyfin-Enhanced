@@ -406,14 +406,22 @@ Direct URL: `/web/index.html#!/jellyfinenhanced/downloads`
 ### Ask for it (phase 3)
 
 `ArrPhase3Enabled` is off by default; enable the integration and phase 1 switches first. `ArrRequestBackend` accepts
-`seerr` (default), `je` (explicit opt in), or `status_only`. Only the durable server API is available here; outgoing
-transports and the request/household UI follow separately. Approved jobs remain retryable with the placeholder backend.
+`seerr` (default), `je` (explicit opt in), or `status_only`. In `je` mode approved requests go straight to Sonarr and
+Radarr; in `seerr` mode they go to Seerr as the person who asked. How each is sent is described in
+[Sending requests](arr-features.md#sending-requests-phase-3). The request/household UI follows separately.
+
+**Add defaults per instance.** With the master switch on, each Sonarr/Radarr card has *When Jellyfin Enhanced adds a
+title*: the quality profile, root folder and tags new titles get, plus Radarr's minimum availability or Sonarr's
+series type. Open the card of a saved instance to load its own profiles, folders and tags; values the instance no
+longer lists are shown as "(not in Radarr now)" rather than swapped for something else. In Jellyfin Enhanced mode a
+request for a title the instance doesn't have yet waits for an administrator until both a profile and a folder are
+set. Manage › Add to preselects these defaults.
 
 `ArrRequestPreset` selects `ask_first`, `open_house`, or `approve_everything`. `ArrRequestDefaultRole` defaults to
 `Watcher`; accepted household roles are Watcher, Kid, Member and Manager. Administrator status always comes from
 Jellyfin, never from the JSON role settings. Kid suggestions are not automatically applied.
 
-The advanced fields are server-owned. Quota and preset settings govern JE mode; Seerr mode uses its own quota facts and reports allowance as unavailable until a complete backend read is supplied:
+The advanced fields are server-owned. Quota and preset settings govern JE mode; Seerr mode uses the person's quota as Seerr reports it (allowance shows as unavailable while Seerr can't be read):
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -432,5 +440,5 @@ The advanced fields are server-owned. Quota and preset settings govern JE mode; 
 For example, the roles JSON can be `{"Manager":{"FourKInstances":["your-4k-instance-id"]}}`; the users JSON is keyed by
 Jellyfin user id. A missing per-user quota inherits the role quota, then the global/preset quota. An empty per-user 4K
 instance list removes that user's inherited grant. Phase 3 has its own movie/TV 4K switches under Ask for it; the older Seerr switches remain in use while phase 3 is off. Seerr mode additionally
-requires Seerr's edition setting and the user's corresponding permission. Optional GB accounting currently uses coarse
-scope estimates; transport metadata enrichment is part of the next server phase.
+requires Seerr's edition setting and the user's corresponding permission. Optional GB accounting uses coarse scope
+estimates (it is not the arr's actual file size).

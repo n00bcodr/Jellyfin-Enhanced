@@ -77,13 +77,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>A durable request and its private backend context. API responses project this record.</summary>
     public sealed record RequestWant(string Id, string AcquisitionId, Guid UserId, string ClientRequestId, string Fingerprint,
         MutationInput Input, string Status, string Reason, int Cost, string ParentalSignature, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, bool Follower = false, MutationInput? OwnedInput = null, string TargetKey = "");
-    /// <summary>Authorization facts captured at approval, never returned to a browser.</summary>
+    /// <summary>
+    /// Authorization facts captured at approval, never returned to a browser. <c>SeerrSeasons</c> (and <c>SeerrUser</c>
+    /// when approval didn't know it) are bound right before a Seerr request is sent: the exact seasons and account it
+    /// went out with, so a later read-back looks for exactly that.
+    /// </summary>
     public sealed record RequestAuthorization(Guid Requester, Guid? Approver, string Action, string Scope, string Variant,
         string Backend, string InstanceId, string ConnectionGeneration, string PolicyRevision, string? SeerrSource = null,
-        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false);
-    /// <summary>One durable upstream action.</summary>
+        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null);
+    /// <summary>One durable upstream action. <c>Uncertain</c>: its last outcome left the upstream state unknown (maybe or partly sent).</summary>
     public sealed record RequestJob(string Id, string WantId, MutationInput Input, RequestAuthorization Authorization,
-        string State, int Attempts, DateTimeOffset NextAttempt, string Reason, string IdempotencyKey, string Fingerprint);
+        string State, int Attempts, DateTimeOffset NextAttempt, string Reason, string IdempotencyKey, string Fingerprint, bool Uncertain = false);
     /// <summary>The request API outcome contract; messages are safe household wording.</summary>
     public sealed record RequestOutcome
     {

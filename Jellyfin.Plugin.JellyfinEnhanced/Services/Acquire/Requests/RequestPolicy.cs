@@ -119,9 +119,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var role = viewer?.IsAdmin == true ? "Admin" : NormalizeRole(settings.Role ?? config.ArrRequestDefaultRole);
             var defaults = RoleSettings(config, role);
             var key = TitleKey.Parse(input.Key)!;
+            // The default instance of the edition's role: 4K only ever goes to a 4K instance, standard to a
+            // standard one (never an anime or "other" instance picked by accident).
             var instance = input.InstanceId != null ? _store.Registry.Get(input.InstanceId) :
-                _store.Registry.All().Where(i => i.Usable && i.Kind == (key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr) &&
-                    (i.Role == ArrInstanceRole.FourK) == (input.Variant == "4k")).OrderByDescending(i => i.IsDefault).ThenBy(i => i.Id, StringComparer.Ordinal).FirstOrDefault();
+                _store.Registry.DefaultFor(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr, input.Variant == "4k" ? ArrInstanceRole.FourK : ArrInstanceRole.Standard);
             var instanceId = instance?.Id ?? string.Empty;
             var generation = instance == null ? string.Empty : _clients.ConnectionGeneration(instance.Id) ?? string.Empty;
             var binding = _backend.Binding(userId, input);
@@ -167,10 +168,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (disk?.TotalSpace > 0 && disk.FreeSpace.HasValue && 100.0 * disk.FreeSpace.Value / disk.TotalSpace.Value < config.ArrLowDiskPercent) refusal = "low_disk";
             }
             var revision = MutationInput.Hash(JsonSerializer.Serialize(config) + "|" + viewer?.PolicyRevision + "|" + _view.Revision + "|" + _libraries.Revision + "|" + role + "|" + binding);
+            // Seerr picks its own server: a Seerr-mode request is bound to the Seerr identity, never to an arr connection,
+            // so an arr's address or key changing doesn't hold it (the instance above still decides where it lands for visibility).
+            var seerrMode = config.ArrRequestBackend == "seerr";
             var configuredLimit = settings.QuotaLimit ?? defaults.QuotaLimit ?? config.ArrRequestQuotaLimit;
             int? limit = configuredLimit < 0 || config.ArrRequestPreset == "approve_everything" ? null : configuredLimit == 0 ? (config.ArrRequestPreset == "open_house" ? 15 : 7) : Math.Clamp(configuredLimit, 1, 10000);
             if (config.ArrRequestBackend == "seerr") limit = binding.Quota?.Limit;
-            return new(userId, role, role != "Watcher" && (config.ArrRequestBackend != "seerr" || binding.UserId == null || binding.CanRequest), canApprove, can4k, visible, revision, config.ArrRequestBackend, instanceId, generation,
+            return new(userId, role, role != "Watcher" && (config.ArrRequestBackend != "seerr" || binding.UserId == null || binding.CanRequest), canApprove, can4k, visible, revision, config.ArrRequestBackend,
+                seerrMode ? string.Empty : instanceId, seerrMode ? string.Empty : generation,
                 limit, config.ArrRequestBackend == "seerr" ? Math.Clamp(binding.QuotaWindowDays, 1, 365) : Math.Clamp(config.ArrRequestQuotaWindowDays, 1, 365),
                 Math.Max(0, settings.QuotaGb ?? defaults.QuotaGb ?? config.ArrRequestQuotaGb), JsonSerializer.Serialize(signature),
                 refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota);

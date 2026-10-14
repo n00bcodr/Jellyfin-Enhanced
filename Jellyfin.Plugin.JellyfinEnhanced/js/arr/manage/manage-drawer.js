@@ -6,13 +6,18 @@
  * requests. Reads GET /JellyfinEnhanced/arr/admin/manage; Search now posts to
  * /arr/admin/manage/search (audited on the server). With phase 2 the title's downloads get their
  * non-destructive queue actions (Retry import, Search again, Remove… keeping the data) through
- * POST /arr/admin/queue/action, with the hub's consequences dialog for Remove. Follows the change feed while open. A drawer on
- * the right on desktop, a bottom sheet on phones, a full panel on TV. Exposes JE.arrManage.
+ * POST /arr/admin/queue/action, with the hub's consequences dialog for Remove. With phase 3 and Jellyfin Enhanced handling
+ * requests, "Add to {instance}" opens a sheet (GET /arr/admin/manage/add-options: the instance's quality profiles, root
+ * folders and the title's seasons) and adds through the request outbox (POST /arr/admin/manage/add), the arr link kept as a
+ * fallback. Follows the change feed while open. A drawer on the right on desktop, a bottom sheet on phones, a full panel on
+ * TV. Exposes JE.arrManage.
  */
 (function (JE) {
     'use strict';
 
     const RELOAD_DELAY_MS = 300;
+    const ADD_POLL_MS = 1500;
+    const ADD_POLL_TRIES = 20;
     const logPrefix = '🪼 Jellyfin Enhanced: Manage:';
     const EVENT_LABELS = {
         added: 'arr_manage_event_added',
@@ -172,7 +177,7 @@
         root.addEventListener('keydown', onKey);
         document.body.appendChild(overlay);
         document.addEventListener('focusin', keepFocus, true);
-        current = { target, overlay, root, opener, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
+        current = { target, overlay, root, opener, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
         JE.internals.arrManage.injectStyles?.();
         renderShell(root, null);
         root.focus();
@@ -192,7 +197,7 @@
             return;
         }
         if (e.key !== 'Tab' || !current) return;
-        const focusable = [...current.root.querySelectorAll('button, a[href], [tabindex="0"]')].filter(n => !n.disabled);
+        const focusable = [...current.root.querySelectorAll('button, a[href], select, input, [tabindex="0"]')].filter(n => !n.disabled);
         if (!focusable.length) return;
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
@@ -513,6 +518,302 @@
     }
 
     /**
+     * The movie or series key without a season or episode part (what an instance adds).
+     * @param {string} key Title key.
+     * @returns {string} Title key.
+     */
+    function titleKey(key) {
+        return String(key || '').split(':').slice(0, 3).join(':');
+    }
+
+    /**
+     * A fresh idempotency key for one add sheet (a repeated tap is the same add).
+     * @returns {string} Key.
+     */
+    function sheetKey() {
+        return (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    /**
+     * Opens the "Add to {instance}" sheet and reads the instance's choices (profiles, folders, seasons).
+     * @param {Object} instance Instance from the overview.
+     * @param {Object} data Overview.
+     * @returns {Promise<void>}
+     */
+    async function openAdd(instance, data) {
+        const state = current;
+        if (!state || state.adding[instance.id]) return;
+        const sheet = { phase: 'loading', key: sheetKey(), options: null, profileId: '', rootFolder: '', seasons: [], message: '', failed: false };
+        state.adding[instance.id] = sheet;
+        renderShell(state.root, state.data || data);
+        focusOn(`add-cancel-${instance.id}`);
+        try {
+            const options = await JE.core.api.plugin(`/arr/admin/manage/add-options?instanceId=${encodeURIComponent(instance.id)}&key=${encodeURIComponent(titleKey(data.key))}`, { skipRetry: true });
+            if (current !== state || state.adding[instance.id] !== sheet) return;
+            sheet.options = options || {};
+            if (!options?.direct) {
+                sheet.phase = 'unavailable';
+                sheet.message = options?.message || '';
+            } else {
+                // Only the instance's saved defaults are preselected; nothing is guessed.
+                const defaults = options.defaults || {};
+                sheet.profileId = (options.profiles || []).some(p => p.id === defaults.qualityProfileId) ? String(defaults.qualityProfileId) : '';
+                sheet.rootFolder = (options.rootFolders || []).some(f => f.path === defaults.rootFolderPath) ? defaults.rootFolderPath : '';
+                sheet.seasons = (options.title?.seasons || []).filter(x => x.seasonNumber > 0).map(x => x.seasonNumber);
+                sheet.phase = 'form';
+            }
+        } catch (err) {
+            if (current !== state || state.adding[instance.id] !== sheet) return;
+            sheet.phase = 'unavailable';
+            sheet.message = tr('arr_manage_add_failed', { message: err?.responseJSON?.message || err?.message || String(err) });
+        }
+        renderShell(state.root, state.data || data);
+        focusOn(sheet.phase === 'form' ? `add-profile-${instance.id}` : `add-cancel-${instance.id}`);
+    }
+
+    /**
+     * Moves focus to a drawer control by its focus id (after a re-render).
+     * @param {string} id Focus id.
+     * @returns {void}
+     */
+    function focusOn(id) {
+        const target = current ? [...current.root.querySelectorAll('[data-je-focus]')].find(n => n.dataset.jeFocus === id) : null;
+        target?.focus?.();
+    }
+
+    /**
+     * The add sheet for one instance: loading, why a direct add isn't offered (with the arr link), the
+     * choices, sending, and the outcome.
+     * @param {Object} instance Instance.
+     * @param {Object} data Overview.
+     * @returns {HTMLElement} Sheet.
+     */
+    function addSheet(instance, data) {
+        const sheet = current.adding[instance.id];
+        const box = el('div', 'je-manage-add');
+        box.setAttribute('role', 'group');
+        const heading = el('h4', 'je-manage-add-title', tr('arr_manage_add_heading', { instance: instance.name }));
+        heading.id = `je-manage-add-h-${instance.id}`;
+        box.setAttribute('aria-labelledby', heading.id);
+        box.appendChild(heading);
+        const href = arrLink(instance, data);
+        const actions = el('div', 'je-manage-actions');
+        const closeSheet = (label) => {
+            const b = el('button', 'je-manage-btn', label);
+            b.type = 'button';
+            b.dataset.jeFocus = `add-cancel-${instance.id}`;
+            b.addEventListener('click', () => {
+                if (!current || sheet.phase === 'sending') return;
+                delete current.adding[instance.id];
+                renderShell(current.root, current.data || data);
+                focusOn(`add-${instance.id}`);
+            });
+            return b;
+        };
+        if (sheet.phase === 'loading') {
+            box.appendChild(el('div', 'je-manage-add-note', tr('arr_manage_add_loading', { instance: instance.name })));
+            actions.appendChild(closeSheet(tr('arr_manage_add_cancel')));
+        } else if (sheet.phase === 'unavailable') {
+            box.appendChild(el('div', 'je-manage-add-note je-manage-add-warn', sheet.message || tr('arr_manage_add_unavailable', { instance: instance.name })));
+            actions.appendChild(closeSheet(tr('arr_manage_add_cancel')));
+            if (href) actions.appendChild(linkButton(href, tr('arr_manage_add_in', { instance: instance.name }), `add-sheetlink-${instance.id}`));
+        } else if (sheet.phase === 'done') {
+            const done = el('div', `je-manage-add-message${sheet.failed ? ' je-manage-add-failed' : ''}`, sheet.message);
+            done.setAttribute('role', 'status');
+            box.appendChild(done);
+            actions.appendChild(closeSheet(tr('arr_manage_add_close')));
+            if (sheet.failed && href) actions.appendChild(linkButton(href, tr('arr_manage_add_in', { instance: instance.name }), `add-sheetlink-${instance.id}`));
+        } else {
+            const options = sheet.options || {};
+            const sending = sheet.phase === 'sending';
+            if (!options.defaultsValid && options.defaultsMessage) {
+                box.appendChild(el('div', 'je-manage-add-note je-manage-add-warn', tr('arr_manage_add_defaults_invalid', { message: options.defaultsMessage })));
+            }
+            box.appendChild(addSelect(instance, 'profile', tr('arr_manage_add_profile'), sheet.profileId,
+                (options.profiles || []).map(p => ({ value: String(p.id), label: p.name })), v => { sheet.profileId = v; }, sending));
+            box.appendChild(addSelect(instance, 'folder', tr('arr_manage_add_folder'), sheet.rootFolder,
+                (options.rootFolders || []).map(f => ({
+                    value: f.path,
+                    label: f.freeSpace > 0 ? tr('arr_manage_add_folder_free', { path: f.path, free: size(f.freeSpace) }) : f.path,
+                    disabled: f.accessible === false
+                })), v => { sheet.rootFolder = v; }, sending));
+            const seasons = options.title?.seasons;
+            if (Array.isArray(seasons) && seasons.length) {
+                const set = el('fieldset', 'je-manage-add-seasons');
+                set.appendChild(el('legend', '', tr('arr_manage_add_seasons')));
+                for (const season of seasons) {
+                    const label = el('label', 'je-manage-add-season');
+                    const box2 = document.createElement('input');
+                    box2.type = 'checkbox';
+                    box2.dataset.jeFocus = `add-season-${instance.id}-${season.seasonNumber}`;
+                    box2.checked = sheet.seasons.includes(season.seasonNumber);
+                    box2.disabled = sending;
+                    box2.addEventListener('change', () => {
+                        sheet.seasons = box2.checked
+                            ? [...new Set([...sheet.seasons, season.seasonNumber])].sort((a, b) => a - b)
+                            : sheet.seasons.filter(n => n !== season.seasonNumber);
+                    });
+                    label.appendChild(box2);
+                    label.appendChild(document.createTextNode(season.seasonNumber === 0 ? tr('arr_manage_add_specials') : tr('arr_manage_add_season', { n: season.seasonNumber })));
+                    set.appendChild(label);
+                }
+                box.appendChild(set);
+            }
+            const message = el('div', `je-manage-add-message${sheet.failed ? ' je-manage-add-failed' : ''}`, sheet.message || '');
+            message.setAttribute('aria-live', 'polite');
+            box.appendChild(message);
+            const submit = el('button', 'je-manage-btn je-manage-btn-primary');
+            submit.type = 'button';
+            submit.dataset.jeFocus = `add-submit-${instance.id}`;
+            if (sending) submit.setAttribute('aria-disabled', 'true');
+            submit.appendChild(JE.arrStatus.icon(sending ? 'hourglass_top' : 'add_circle_outline'));
+            submit.appendChild(document.createTextNode(sending ? tr('arr_manage_add_sending', { instance: instance.name }) : tr('arr_manage_add_submit')));
+            submit.addEventListener('click', () => submitAdd(instance, data));
+            actions.appendChild(submit);
+            if (!sending) actions.appendChild(closeSheet(tr('arr_manage_add_cancel')));
+            if (href) actions.appendChild(linkButton(href, tr('arr_manage_add_in', { instance: instance.name }), `add-sheetlink-${instance.id}`));
+        }
+        box.appendChild(actions);
+        return box;
+    }
+
+    /**
+     * One labelled select of the add sheet (with an empty "Choose…" entry when nothing is chosen).
+     * @param {Object} instance Instance.
+     * @param {string} name Field name (focus id part).
+     * @param {string} label Label.
+     * @param {string} value Chosen value.
+     * @param {Array<{value: string, label: string, disabled?: boolean}>} choices Choices.
+     * @param {function(string): void} onChange Stores the choice.
+     * @param {boolean} disabled While sending.
+     * @returns {HTMLElement} Field.
+     */
+    function addSelect(instance, name, label, value, choices, onChange, disabled) {
+        const field = el('label', 'je-manage-add-field');
+        field.appendChild(el('span', '', label));
+        const select = document.createElement('select');
+        select.dataset.jeFocus = `add-${name}-${instance.id}`;
+        select.disabled = disabled;
+        const empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = tr('arr_manage_add_choose');
+        select.appendChild(empty);
+        for (const choice of choices) {
+            const option = document.createElement('option');
+            option.value = choice.value;
+            option.textContent = choice.label;
+            option.disabled = !!choice.disabled;
+            select.appendChild(option);
+        }
+        select.value = value || '';
+        select.addEventListener('change', () => onChange(select.value));
+        field.appendChild(select);
+        return field;
+    }
+
+    /**
+     * Sends the add (one idempotency key per sheet), then follows the request until the instance
+     * confirms it, it's held for a reason, or the wait ends.
+     * @param {Object} instance Instance.
+     * @param {Object} data Overview.
+     * @returns {Promise<void>}
+     */
+    async function submitAdd(instance, data) {
+        const state = current;
+        const sheet = state?.adding?.[instance.id];
+        if (!sheet || sheet.phase !== 'form') return;
+        const series = data.kind !== 'movie';
+        if (!sheet.profileId || !sheet.rootFolder || (series && !sheet.seasons.length)) {
+            sheet.failed = true;
+            sheet.message = tr(series && !sheet.seasons.length ? 'arr_manage_add_pick_season' : 'arr_manage_add_pick');
+            renderShell(state.root, state.data || data);
+            focusOn(`add-submit-${instance.id}`);
+            return;
+        }
+        sheet.phase = 'sending';
+        sheet.failed = false;
+        sheet.message = tr('arr_manage_add_sending', { instance: instance.name });
+        renderShell(state.root, state.data || data);
+        focusOn(`add-submit-${instance.id}`);
+        let outcome;
+        try {
+            outcome = await JE.core.api.plugin('/arr/admin/manage/add', {
+                method: 'POST',
+                body: {
+                    instanceId: instance.id,
+                    key: titleKey(data.key),
+                    profileId: Number(sheet.profileId),
+                    rootFolder: sheet.rootFolder,
+                    seasons: series ? sheet.seasons : undefined,
+                    idempotencyKey: sheet.key
+                },
+                skipRetry: true
+            });
+        } catch (err) {
+            if (current !== state || state.adding[instance.id] !== sheet) return;
+            sheet.phase = 'form';
+            sheet.failed = true;
+            sheet.message = tr('arr_manage_add_failed', { message: addReason(err?.responseJSON?.reason, err?.responseJSON?.message || err?.message, instance) });
+            renderShell(state.root, state.data || data);
+            focusOn(`add-submit-${instance.id}`);
+            return;
+        }
+        if (current !== state || state.adding[instance.id] !== sheet) return;
+        await followAdd(state, sheet, instance, data, outcome?.requestId);
+    }
+
+    /**
+     * Polls the administrator's own requests for the add until it settles (sent: done; held or
+     * refused: why), at most ADD_POLL_TRIES times; then re-reads the drawer.
+     * @param {Object} state Drawer state.
+     * @param {Object} sheet Sheet state.
+     * @param {Object} instance Instance.
+     * @param {Object} data Overview.
+     * @param {string|undefined} requestId The request recorded for the add.
+     * @returns {Promise<void>}
+     */
+    async function followAdd(state, sheet, instance, data, requestId) {
+        let settled = null;
+        for (let i = 0; requestId && i < ADD_POLL_TRIES && !settled; i++) {
+            await new Promise(r => setTimeout(r, i === 0 ? 300 : ADD_POLL_MS));
+            if (current !== state || state.adding[instance.id] !== sheet) return;
+            try {
+                const mine = await JE.core.api.plugin('/acquire/requests?view=mine', { skipRetry: true });
+                const item = (mine?.items || []).find(x => x.id === requestId);
+                const job = (item?.jobs || []).slice(-1)[0];
+                if (!item) continue;
+                if (['sent', 'stale', 'fulfilled'].includes(item.status)) settled = { failed: false, message: tr('arr_manage_add_done', { instance: instance.name }) };
+                else if (item.status === 'pending' || job?.state === 'failed' || job?.state === 'parked') settled = { failed: true, message: tr('arr_manage_add_failed', { message: addReason(job?.reason || item.reason, '', instance) }) };
+                else if (['cancelled', 'declined'].includes(item.status)) settled = { failed: true, message: tr('arr_manage_add_failed', { message: addReason(item.reason, '', instance) }) };
+                else if (job?.state === 'retry') sheet.message = tr('arr_manage_add_retrying', { instance: instance.name });
+                if (!settled) renderShell(state.root, state.data || data);
+            } catch (err) {
+                // The next poll tries again; the outcome is also on the Requests page.
+            }
+        }
+        if (current !== state || state.adding[instance.id] !== sheet) return;
+        sheet.phase = 'done';
+        sheet.failed = settled?.failed === true;
+        sheet.message = settled?.message || tr('arr_manage_add_waiting', { instance: instance.name });
+        renderShell(state.root, state.data || data);
+        focusOn(`add-cancel-${instance.id}`);
+        load(state.generation);
+    }
+
+    /**
+     * Administrator wording for why an add didn't go through.
+     * @param {string|undefined} reason Reason code.
+     * @param {string|undefined} fallback Server message.
+     * @param {Object} instance Instance.
+     * @returns {string} Text.
+     */
+    function addReason(reason, fallback, instance) {
+        const known = ['invalid_defaults', 'defaults_unverified', 'backend_unavailable', 'instance_changed', 'not_aired', 'title_not_found', 'service_down', 'instance_rejected', 'requests_4k_required', 'direct_add_unavailable', 'maybe_sent'];
+        if (reason && known.includes(reason)) return tr(`arr_manage_add_reason_${reason}`, { instance: instance.name });
+        return fallback || reason || '';
+    }
+
+    /**
      * An external link styled as a button (opens in a new tab).
      * @param {string} href URL.
      * @param {string} label Text.
@@ -549,7 +850,21 @@
             } else if (!instance.inArr) {
                 row.appendChild(el('div', 'je-manage-version-state', tr('arr_manage_not_in', { instance: instance.name })));
                 const href = arrLink(instance, data);
-                if (href) row.appendChild(linkButton(href, tr('arr_manage_add_in', { instance: instance.name }), `add-${instance.id}`));
+                if (data.addDirect && !current?.adding?.[instance.id]) {
+                    // Phase 3: a direct add through the request outbox, the arr's own add page kept as a fallback.
+                    const actions = el('div', 'je-manage-actions');
+                    const add = el('button', 'je-manage-btn je-manage-btn-primary');
+                    add.type = 'button';
+                    add.dataset.jeFocus = `add-${instance.id}`;
+                    add.appendChild(JE.arrStatus.icon('add_circle_outline'));
+                    add.appendChild(document.createTextNode(tr('arr_manage_add_to', { instance: instance.name })));
+                    add.addEventListener('click', () => openAdd(instance, data));
+                    actions.appendChild(add);
+                    if (href) actions.appendChild(linkButton(href, tr('arr_manage_add_in', { instance: instance.name }), `addlink-${instance.id}`));
+                    row.appendChild(actions);
+                } else if (!data.addDirect && href) {
+                    row.appendChild(linkButton(href, tr('arr_manage_add_in', { instance: instance.name }), `add-${instance.id}`));
+                }
             } else {
                 const variant = variants.find(v => v.instanceId === instance.id && !v.scope);
                 if (variant) row.appendChild(el('div', `je-manage-version-state${variant.attention ? ' je-manage-attention-text' : ''}`, JE.arrStatus.adminReasonText({ ...variant, library: variant.library || instance.library })));
@@ -564,6 +879,8 @@
                 row.appendChild(el('div', 'je-manage-version-facts', facts.join(' · ')));
                 if (instance.path) row.appendChild(el('div', 'je-manage-path', instance.path));
             }
+            // The add sheet stays (with its outcome) after the title reaches the instance.
+            if (current?.adding?.[instance.id]) row.appendChild(addSheet(instance, data));
             section.appendChild(row);
         }
         return section;

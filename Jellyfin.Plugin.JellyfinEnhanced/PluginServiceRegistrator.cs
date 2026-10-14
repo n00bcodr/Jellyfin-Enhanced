@@ -106,7 +106,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 .ConfigureHttpClient(c => c.Timeout = System.Threading.Timeout.InfiniteTimeSpan)
                 .ConfigurePrimaryHttpMessageHandler(Services.Arr.ArrHttp.CreateHandler);
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestLedger>();
-            serviceCollection.AddSingleton<Services.Acquire.Requests.IRequestBackend, Services.Acquire.Requests.UnavailableRequestBackend>();
+            // Request executors (phase 3): Jellyfin Enhanced's own Sonarr/Radarr writes and Seerr, picked
+            // per job by the mode it was authorised in; the signal wakes the outbox when work is queued.
+            serviceCollection.AddSingleton<Services.Acquire.Requests.DirectArrBackend>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.SeerrBackend>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.IRequestBackend, Services.Acquire.Requests.RequestBackendRouter>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.RequestOutboxSignal>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.ArrAddService>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.IRequestPolicy, Services.Acquire.Requests.RequestPolicy>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestTitleLocks>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestService>();

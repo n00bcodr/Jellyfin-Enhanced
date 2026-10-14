@@ -44,6 +44,8 @@
     {"method": "POST", "route": "arr/admin/instances/{id}/webhook/manual", "access": "admin", "sample": "arr/admin/instances/x/webhook/manual", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
     {"method": "GET", "route": "arr/admin/manage", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
     {"method": "POST", "route": "arr/admin/manage/search", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
+    {"method": "GET", "route": "arr/admin/manage/add-options", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
+    {"method": "POST", "route": "arr/admin/manage/add", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "a 4K instance needs the phase-3 4K switch", "capability": "Jellyfin administrator; phase 3 with Jellyfin Enhanced handling requests"},
     {"method": "GET", "route": "arr/admin/hub/overview", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
     {"method": "GET", "route": "arr/admin/hub/activity", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
     {"method": "GET", "route": "arr/admin/hub/system", "access": "admin", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},

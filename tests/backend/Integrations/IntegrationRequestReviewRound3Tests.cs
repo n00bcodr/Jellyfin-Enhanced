@@ -219,11 +219,13 @@ public class IntegrationRequestReviewRound3Tests
         Assert.Equal(1, Charged(r, succeeded.Id));
         Assert.Equal(edited ? 3 : 2, r.Service.Quota(user).Used); Assert.Equal(edited ? 30 : 20, r.Service.Quota(user).UsedGb);
         Assert.Equal(edited ? 3 : 2, r.Ledger.Find(id)!.Cost);
-        // The same reconciliation must never replace parked Unknown work or its charge.
+        // The same reconciliation must never replace parked Unknown work or its charge: approving resumes that same work.
         var uncertain = await r.Create(r.Kid, Movie(900)); await r.Service.ApproveAsync(uncertain.RequestId!, r.Admin, null, default);
-        Finish(r, Assert.Single(r.Ledger.ForWant(uncertain.RequestId!)), RequestBackendResult.Uncertain(uncertain.RequestId!) with { Parked = true });
-        Assert.Equal(409, (await r.Service.ApproveAsync(uncertain.RequestId!, r.Admin, null, default)).HttpStatus);
-        Assert.Equal(1, r.Service.Quota(r.Kid).Used); Assert.Equal("parked", Assert.Single(r.Ledger.ForWant(uncertain.RequestId!)).State);
+        var held = Assert.Single(r.Ledger.ForWant(uncertain.RequestId!));
+        Finish(r, held, RequestBackendResult.Uncertain(uncertain.RequestId!) with { Parked = true });
+        Assert.Equal(200, (await r.Service.ApproveAsync(uncertain.RequestId!, r.Admin, null, default)).HttpStatus);
+        var resumed = Assert.Single(r.Ledger.ForWant(uncertain.RequestId!));
+        Assert.Equal(1, r.Service.Quota(r.Kid).Used); Assert.Equal((held.Id, "maybe_sent", true), (resumed.Id, resumed.State, resumed.Uncertain));
     }
 
     [Fact]

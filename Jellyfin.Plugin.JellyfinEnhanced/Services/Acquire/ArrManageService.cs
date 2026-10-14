@@ -234,6 +234,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Seerr requests for the title.</summary>
         public IReadOnlyList<ManageRequest> Requests { get; init; } = Array.Empty<ManageRequest>();
+
+        /// <summary>
+        /// Phase 3 with Jellyfin Enhanced handling requests: "Add to {instance}" adds the title directly
+        /// (a sheet with the instance's add defaults) instead of linking to the arr.
+        /// </summary>
+        public bool AddDirect { get; init; }
     }
 
     /// <summary>What Search now did.</summary>
@@ -462,6 +468,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Title = name,
                 Status = status,
                 Instances = instances,
+                AddDirect = Requests.ArrAddService.DirectOn(_config()),
                 Copies = jfCopies.Select(c => new ManageCopy { ItemId = c.ItemId.ToString("N", CultureInfo.InvariantCulture), Library = c.LibraryName, Added = c.DateCreated }).ToList(),
                 Requests = requests.Select(r => new ManageRequest
                 {

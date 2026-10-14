@@ -34,6 +34,23 @@ internal sealed class FakeSeerr : IDisposable
 
     public IntegrationTransport Transport { get; }
 
+    /// <summary><c>/api/v1/settings/public</c> (lab Seerr shape: partial requests on, specials off, no 4K).</summary>
+    public JsonObject Settings { get; set; } = new() { ["partialRequestsEnabled"] = true, ["enableSpecialEpisodes"] = false, ["movie4kEnabled"] = false, ["series4kEnabled"] = false };
+
+    /// <summary><c>/api/v1/user/{id}/quota</c> by Seerr user id (default: no limits, nothing used).</summary>
+    public Dictionary<int, JsonObject> Quotas { get; } = new();
+
+    /// <summary>Request POSTs: the address's host, the <c>X-Api-User</c> header and the body.</summary>
+    public List<(string Host, string? ApiUser, JsonObject Body)> Posts { get; } = new();
+
+    /// <summary>Non-null: answers a request POST instead of the default (create, 409 duplicate, 202 no seasons).</summary>
+    public Func<JsonObject, HttpResponseMessage?>? OnPost { get; set; }
+
+    /// <summary>Non-null: runs after a request POST was applied; throw to lose the answer.</summary>
+    public Action? AfterPost { get; set; }
+
+    private int _nextRequest = 900;
+
     /// <summary>Non-null: awaited before every call is answered (a slow or hanging Seerr).</summary>
     public Func<Task>? Before { get => Hold; set => Hold = value; }
 
@@ -74,6 +91,20 @@ internal sealed class FakeSeerr : IDisposable
         if (FailWith != 0) return IntegrationTransport.Response("{\"message\":\"boom\"}", FailWith);
         var path = uri.AbsolutePath;
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        if (path == "/api/v1/settings/public") return IntegrationTransport.Response(Settings.ToJsonString());
+        if (path.StartsWith("/api/v1/user/", StringComparison.Ordinal))
+        {
+            var rest = path["/api/v1/user/".Length..];
+            var quota = rest.EndsWith("/quota", StringComparison.Ordinal);
+            if (!int.TryParse(quota ? rest[..^"/quota".Length] : rest, out var userId)) return IntegrationTransport.Response("{}", 404);
+            if (quota) return IntegrationTransport.Response((Quotas.GetValueOrDefault(userId) ?? new JsonObject { ["movie"] = new JsonObject { ["used"] = 0, ["restricted"] = false }, ["tv"] = new JsonObject { ["used"] = 0, ["restricted"] = false } }).ToJsonString());
+            lock (Users)
+            {
+                var user = Users.FirstOrDefault(u => (int?)u["id"] == userId);
+                return user == null ? IntegrationTransport.Response("{\"message\":\"User not found.\"}", 404) : IntegrationTransport.Response(user.ToJsonString());
+            }
+        }
+        if (path == "/api/v1/request" && request.Method == HttpMethod.Post) return Post(request);
         if (path == "/api/v1/user")
         {
             var take = int.Parse(query["take"] ?? "10", CultureInfo.InvariantCulture);
@@ -114,6 +145,42 @@ internal sealed class FakeSeerr : IDisposable
                 return map.TryGetValue(id, out var details) ? IntegrationTransport.Response(details.ToJsonString()) : IntegrationTransport.Response("{\"message\":\"Unable to retrieve\"}", 404);
         }
         return IntegrationTransport.Response("{}", 404);
+    }
+
+    // Like Seerr's POST /api/v1/request: a duplicate movie request is a 409 with a JSON message, a series
+    // request whose seasons are all requested already is a 202 "No seasons available to request", and
+    // otherwise only the seasons not yet requested go into the new request (lab spike, 2026-10-14).
+    private HttpResponseMessage Post(HttpRequestMessage request)
+    {
+        var body = JsonNode.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult())!.AsObject();
+        var user = request.Headers.TryGetValues("X-Api-User", out var values) ? values.First() : null;
+        lock (Posts) Posts.Add((request.RequestUri!.Host, user, body));
+        if (OnPost?.Invoke(body) is { } answer) return answer;
+        var movie = (string?)body["mediaType"] == "movie";
+        var tmdb = (int)body["mediaId"]!;
+        var is4k = (bool)body["is4k"]!;
+        var map = movie ? Movies : Shows;
+        if (!map.TryGetValue(tmdb, out var details)) map[tmdb] = details = new JsonObject { ["id"] = tmdb };
+        if (details["mediaInfo"] is not JsonObject media) details["mediaInfo"] = media = new JsonObject { ["status"] = 2, ["status4k"] = 1, ["requests"] = new JsonArray(), ["seasons"] = new JsonArray() };
+        var existing = media["requests"]!.AsArray().Where(r => (bool)r!["is4k"]! == is4k && (int)r["status"]! != 3).ToList();
+        int[] seasons = Array.Empty<int>();
+        if (movie && existing.Count > 0) return IntegrationTransport.Response("{\"message\":\"Request for this media already exists.\"}", 409);
+        if (!movie)
+        {
+            var taken = existing.SelectMany(r => r!["seasons"]!.AsArray().Select(x => (int)x!["seasonNumber"]!)).ToHashSet();
+            seasons = body["seasons"]!.AsArray().Select(x => (int)x!).Where(n => !taken.Contains(n)).ToArray();
+            if (seasons.Length == 0) return IntegrationTransport.Response("{\"message\":\"No seasons available to request\"}", 202);
+        }
+        var id = Interlocked.Increment(ref _nextRequest);
+        var row = new JsonObject
+        {
+            ["id"] = id, ["status"] = 1, ["type"] = movie ? "movie" : "tv", ["is4k"] = is4k,
+            ["requestedBy"] = new JsonObject { ["id"] = int.TryParse(user, out var u) ? u : 1 },
+            ["seasons"] = new JsonArray(seasons.Select(n => (JsonNode)new JsonObject { ["seasonNumber"] = n, ["status"] = 1 }).ToArray()),
+        };
+        media["requests"]!.AsArray().Add(row);
+        AfterPost?.Invoke();
+        return IntegrationTransport.Response(row.ToJsonString(), 201);
     }
 
     public void Dispose() => Transport.Dispose();

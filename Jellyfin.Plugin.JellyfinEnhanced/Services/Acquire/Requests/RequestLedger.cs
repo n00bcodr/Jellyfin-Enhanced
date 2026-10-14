@@ -308,12 +308,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => _db.Write((c, t) =>
             {
                 Exec(c, t, "SAVEPOINT request_approve");
-                var outcome = ApproveCore(c, t, id, actor, edits, policy, now);
+                var outcome = ApproveCore(c, t, id, actor, edits, policy, now, resumeHeld: true);
                 if (outcome.HttpStatus >= 400) Exec(c, t, "ROLLBACK TO request_approve");
                 Exec(c, t, "RELEASE request_approve");
                 return outcome;
             });
-        private RequestOutcome ApproveCore(SqliteConnection c, SqliteTransaction t, string id, Guid actor, MutationInput? edits, IRequestPolicy policy, DateTimeOffset now)
+        // resumeHeld: an explicit approval may resume work held after part of it was written; an approver's matching ask
+        // (an implicit approval) leaves such work alone.
+        private RequestOutcome ApproveCore(SqliteConnection c, SqliteTransaction t, string id, Guid actor, MutationInput? edits, IRequestPolicy policy, DateTimeOffset now, bool resumeHeld = false)
         {
             var want = Wants(c, t, "id=$id", ("$id", id)).SingleOrDefault();
             if (want == null) return RequestOutcome.Refused("not_found", 404);
@@ -326,8 +328,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (RequestPolicy.Check(requester, approver, input, true) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: "blocked");
             if (approver.Role != "Admin" && (input.InstanceId != want.Input.InstanceId || input.ProfileId != want.Input.ProfileId || input.RootFolder != want.Input.RootFolder)) return RequestOutcome.Refused("admin_required");
             if (want.Status != "pending") return RequestOutcome.Refused("request_changed", 409);
-            if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$id", id)) != null) return RequestOutcome.Refused("request_in_flight", 409);
+            // A job held after part of it was written (parked, certainty unknown) isn't in flight: approving resumes it.
+            if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent') OR (state<>'parked' AND json_extract(outcome,'$.certainty')='Unknown')) LIMIT 1", ("$id", id)) != null) return RequestOutcome.Refused("request_in_flight", 409);
+            var held = Jobs(c, t, "want_id=$id AND state='parked' AND json_extract(outcome,'$.certainty')='Unknown'", ("$id", id));
             var targetChanged = TargetKey(requester) != want.TargetKey;
+            // The written part stays where it went: such a request resumes as it was, never edited or moved elsewhere.
+            if (held.Count > 0 && (!resumeHeld || targetChanged || held.Any(j => TargetKey(j.Authorization) != TargetKey(requester)) || (edits != null && input.Fingerprint != want.Input.Fingerprint)))
+                return RequestOutcome.Refused("request_in_flight", 409);
             if (targetChanged)
                 foreach (var old in Jobs(c, t, "want_id=$id AND state IN ('queued','retry') AND " + KnownUnsent, ("$id", id)).Where(j => TargetKey(j.Authorization) != TargetKey(requester)))
                     Supersede(c, t, old.Id, "instance_changed");
@@ -341,9 +348,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             foreach (var parked in Jobs(c, t, "want_id=$id AND state='parked' AND " + KnownUnsent, ("$id", id)))
                 Supersede(c, t, parked.Id, "request_changed");
+            // The same job goes on with the approval's authority: same scope and reservation, certainty still unknown (no
+            // cancel or refund meanwhile). As after a restart, a fresh read of what is there comes first; then a guarded
+            // send writes only what is missing.
+            foreach (var resume in held)
+                Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at,authorization_context=$auth,updated_at=$at WHERE id=$j",
+                    ("$auth", JsonSerializer.Serialize(Authorize(requester, approver, resume.Input, edits != null) with { SeerrUser = resume.Authorization.SeerrUser ?? requester.SeerrUser, SeerrSeasons = resume.Authorization.SeerrSeasons })), ("$at", Ms(now)), ("$j", resume.Id));
             var own = Wants(c, t, "user_id=$u AND id<>$id", ("$u", Id(want.UserId)), ("$id", id));
             var covered = Wants(c, t, "title_key=$key AND variant=$v AND id<>$id", ("$key", input.Key), ("$v", input.Variant), ("$id", id)).Where(w => Active(w) && w.Status != "pending").ToArray();
-            var existingJobs = Jobs(c, t, "want_id=$id AND state IN ('queued','retry','succeeded')", ("$id", id));
+            // (maybe_sent here: only the held jobs resumed above.)
+            var existingJobs = Jobs(c, t, "want_id=$id AND state IN ('queued','retry','succeeded','maybe_sent')", ("$id", id));
             var extra = input.Extra(Coverage(c, t, covered, TargetKey(requester)).Concat(existingJobs.Where(j => TargetKey(j.Authorization) == TargetKey(requester)).Select(j => j.Input)));
             var cost = extra == null ? 0 : Cost(c, t, extra, want.UserId, now, requester.WindowDays, existingJobs.Count == 0 ? id : null);
             var gb = extra == null ? 0 : EstimateGb(extra);
@@ -503,13 +517,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
         private static List<RequestJob> Jobs(SqliteConnection c, SqliteTransaction? t, string where, params (string, object?)[] args)
         {
-            using var cmd = Cmd(c, t, "SELECT id,want_id,mutation_input,authorization_context,state,attempts,next_attempt,reason,idempotency_key,fingerprint FROM jobs WHERE " + where + " ORDER BY next_attempt,id LIMIT 100", args);
+            using var cmd = Cmd(c, t, "SELECT id,want_id,mutation_input,authorization_context,state,attempts,next_attempt,reason,idempotency_key,fingerprint,COALESCE(json_extract(outcome,'$.certainty')='Unknown',0) FROM jobs WHERE " + where + " ORDER BY next_attempt,id LIMIT 100", args);
             using var r = cmd.ExecuteReader();
             var list = new List<RequestJob>();
             while (r.Read()) list.Add(new(r.GetString(0), r.GetString(1), JsonSerializer.Deserialize<MutationInput>(r.GetString(2))!, JsonSerializer.Deserialize<RequestAuthorization>(r.GetString(3))!,
-                r.GetString(4), r.GetInt32(5), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(6)), r.GetString(7), r.GetString(8), r.GetString(9)));
+                r.GetString(4), r.GetInt32(5), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(6)), r.GetString(7), r.GetString(8), r.GetString(9), r.GetInt64(10) == 1));
             return list;
         }
+        /// <summary>One job by id, or null.</summary>
+        public RequestJob? Job(string id) => _db.Read(c => Jobs(c, null, "id=$id", ("$id", id)).SingleOrDefault());
+        /// <summary>
+        /// Binds a job that is being sent to Seerr to the account it goes out as and the exact seasons it carries, before
+        /// the request leaves: a read-back (also after a restart) then looks for exactly that. False: not bound (the job
+        /// is no longer being sent), so nothing may be sent.
+        /// </summary>
+        public bool BindSeerrSend(string jobId, int seerrUser, int[] seasons) => _db.Write((c, t) =>
+            Exec(c, t, "UPDATE jobs SET authorization_context=json_set(authorization_context,'$.SeerrUser',$u,'$.SeerrSeasons',json($s)) WHERE id=$id AND state='sending'",
+                ("$u", seerrUser), ("$s", JsonSerializer.Serialize(seasons)), ("$id", jobId)) == 1);
         /// <summary>Due jobs. A previous sending row becomes maybe_sent during recovery.</summary>
         public IReadOnlyList<RequestJob> Due(DateTimeOffset now) => _db.Read(c => Jobs(c, null, "state IN ('queued','retry','maybe_sent') AND next_attempt<=$at", ("$at", Ms(now))));
         /// <summary>Jobs of a want, for administrative diagnostics and tests.</summary>
@@ -527,7 +551,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var storedWant = Wants(c, t, "id=$id", ("$id", job.WantId)).SingleOrDefault();
                 if (storedWant == null) return false;
                 var deletedNotSent = Anonymous(c, t, storedWant.UserId) && result.VerifiedNotSent && !result.Confirmed && result.Outcome.Certainty is not (ArrActionStatus.Unknown or ArrActionStatus.Succeeded);
-                var state = result.Confirmed ? "succeeded" : result.Parked ? "parked" : result.Outcome.Certainty == ArrActionStatus.Unknown ? "maybe_sent" : result.Retryable ? "retry" : "failed";
+                // An uncertain result the backend can resume (part of the change is upstream) is retried through a fresh
+                // send that reads before it writes; its Unknown certainty keeps it from being cancelled or refunded meanwhile.
+                var state = result.Confirmed ? "succeeded" : result.Parked ? "parked" : result.Outcome.Certainty == ArrActionStatus.Unknown ? result.Retryable ? "retry" : "maybe_sent" : result.Retryable ? "retry" : "failed";
                 if (deletedNotSent) state = "cancelled";
                 var next = now.AddSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(job.Attempts, 6))));
                 if (Exec(c, t, "UPDATE jobs SET state=$state,reason=$reason,outcome=$outcome,next_attempt=$next,updated_at=$at WHERE id=$id AND state='sending'", ("$state", state), ("$reason", result.Outcome.Reason), ("$outcome", JsonSerializer.Serialize(result.Outcome)), ("$next", Ms(next)), ("$at", Ms(now)), ("$id", job.Id)) == 0) return false;

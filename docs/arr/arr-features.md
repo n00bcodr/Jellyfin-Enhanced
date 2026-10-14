@@ -89,7 +89,12 @@ page opens a panel (on the right on a computer, from the bottom on a phone) with
 - **Search now** (per Sonarr/Radarr; recorded in the arr action audit log) and **Open in Sonarr/Radarr**;
 - *Versions across instances*: the title in each Sonarr/Radarr of its kind (e.g. Radarr and Radarr 4K), with
   monitoring, profile, size and its Jellyfin library, or "Not in Radarr 4K" with an **Add in Radarr 4K** link to
-  that app's add page;
+  that app's add page. With phase 3 on and Jellyfin Enhanced handling requests, it becomes an **Add to Radarr 4K**
+  button (the link stays next to it): a small sheet with that instance's quality profiles, root folders (with free
+  space) and, for a series, the seasons to monitor. Only the instance's saved add defaults are preselected; nothing
+  else is picked for you. **Add** records the add as your request routed to that instance, so it goes through the
+  same outgoing queue as every request (one key per sheet, re-check, read-back, audit), and the sheet follows it until
+  the instance confirms it ("Added to Radarr 4K…") or says why it is held;
 - a *timeline* per instance: added, grabbed, imported, failed, searches run from Jellyfin Enhanced, the download in
   progress and when Jellyfin got it (when that app's queue is out of date it says "queue as of 14:05"; when it
   can't be read at all, "queue can't be read; last read 14:05" and no download or download action is offered);
@@ -591,10 +596,11 @@ delayed notifications remain on the server; inbox rows and browser toasts receiv
 ## Durable requests (phase 3, server API)
 
 **Ask for it** is off by default and requires both the integration and status switches. Request handling defaults
-to Seerr; selecting Jellyfin Enhanced is an explicit administrator choice. The server now stores requests, approvals,
+to Seerr; selecting Jellyfin Enhanced is an explicit administrator choice. The server stores requests, approvals,
 quota reservations and outgoing jobs in the same SQLite database as notifications. JE backup and restore include this
-database. Request transports will be added separately: this release queues approved requests safely and reports
-`backend_unavailable` while retrying. It makes no request-backend network calls.
+database. Approved requests are sent by the request backend they were approved for: Jellyfin Enhanced's own
+Sonarr/Radarr sender in Jellyfin Enhanced mode, Seerr in Seerr mode (see [Sending requests](#sending-requests-phase-3)).
+A request approved in one mode is never sent through the other after a switch.
 
 Household roles are Watcher (status only), Kid (always approval), Member, Manager and Jellyfin Admin. The default role
 is Watcher. Members in JE mode follow the selected house rules; Managers approve only visible titles. Seerr-mode Managers can read pending cards, but approving or declining additionally requires a fresh Seerr management permission check. Roles never loosen Jellyfin's
@@ -621,7 +627,9 @@ every part is confirmed. When approval changes the resolved target, it replaces 
 rechecks free followers against their current policy. Eligible followers move with the new target; others return to
 review. A send-time hold also returns dependants to review when their scope has no live job. Old-target completions
 cannot change the current target's request state. Reapproval refunds the linked charge of known-unsent parked work
-before charging its replacement; uncertain or succeeded work keeps its charge. Approval edits replace known-unsent jobs and their charges together; an edit conflicting with
+before charging its replacement; uncertain or succeeded work keeps its charge. Approving a request whose work was held
+after part of it was written resumes that same work with the approval's authority (same scope and charge, still
+uncertain); it can't be edited or moved to another target meanwhile (409). Approval edits replace known-unsent jobs and their charges together; an edit conflicting with
 sent or uncertain scope returns 409. Future-season owners pay once per observed
 new season, including an overdraft; followers do not. Declines have a configurable cooldown. Cancel before sending or
 decline refunds the reservation. An uncertain outgoing action keeps its reservation until a fresh read of the original
@@ -681,3 +689,100 @@ The outgoing worker rechecks identity, roles, visibility, edition, flags, author
 A changed permission parks work for review. Restarted `sending` rows become `maybe_sent` and require read-back before
 any resend. List validators include user, role and policy revision, with private cache headers. Family responses contain
 no backend connection, folder, profile, credential or other person's identity.
+
+### Sending requests (phase 3)
+
+**Jellyfin Enhanced mode** sends straight to Sonarr and Radarr:
+
+- **Which instance.** The default instance of the request's edition: the default (else first) *standard* Sonarr or
+  Radarr for standard requests, the default (else first) *4K* one for 4K requests. A 4K request never goes to a
+  standard instance; with no usable 4K instance it can't be asked for. An instance set to Anime or Other is never
+  picked for a request (it can still be chosen by an administrator when approving with edits or in Manage › Add to).
+- **Add defaults.** A title the instance doesn't have yet is added with the instance's saved quality profile, root
+  folder and tags (and Radarr's minimum availability or Sonarr's series type), set per instance on the settings page
+  (*When Jellyfin Enhanced adds a title*). They are checked against the instance's current profile and folder list
+  right before sending: if they are missing or no longer valid the request waits for an administrator (`invalid_defaults`);
+  if the list can't be read just now it is tried again later. Nothing is guessed (for example "the first profile").
+- **Read before write.** The title is looked up in the instance first; only a lookup result carrying the requested
+  TMDB/TVDB/IMDb id counts. A title the instance already has is a merge: only the monitoring the request needs is
+  switched on, with field-scoped edits (`movie/editor`, `series/editor`, `seasonpass`, `episode/monitor`), never a
+  full update of the title, so the rest of its monitoring, profile and folder stay as they are. "This movie/series has
+  already been added" (someone else added it meanwhile) also counts as a merge.
+- **What each scope does** (new series are added with every season unmonitored except the requested ones and no
+  monitoring preset, so Sonarr doesn't monitor anything else after its first refresh):
+
+  | Request | Sonarr / Radarr change | Search |
+  |---|---|---|
+  | Movie | added monitored (or monitoring switched on) | added: Radarr's own search on add; existing without a file: *Movies search* |
+  | Seasons | the series and those seasons monitored, with all their episodes | Sonarr's search on add, or *Season search* per season |
+  | Single episodes | the series monitored and exactly those episodes | *Episode search* for those episodes |
+  | Keep getting new episodes | the current season as above, plus new seasons monitored (`monitorNewItems`) | as for a season |
+  | Next season | that season as above; it must be listed by Sonarr already, otherwise the request waits (`not_aired`) | as for a season |
+- **Confirmed by a fresh read.** The request counts as sent only when a fresh read shows exactly what was asked for
+  (title present and monitored; the seasons flagged and their episodes monitored; the episodes monitored; new-season
+  monitoring on) and its search was accepted. If an answer is lost (a timeout or a dropped connection after sending)
+  the request is *maybe sent*: it is not sent again until a fresh read of the same instance, at the same address and
+  key, shows whether the change is there. If the title isn't there, sending again is safe because every step reads
+  before it writes. If it is there (all of the change or only part of it), the request is finished by sending again,
+  which writes only what is missing and searches; until then it can't be cancelled or refunded as if nothing had been
+  sent. A search may run twice; an add or a monitoring change can't be duplicated. Authority is checked again before
+  every write and search (the last time right before the call leaves, after any wait for a free connection to the
+  instance), so a request cancelled or no longer allowed part-way stops there and waits for an administrator. Once it
+  is allowed again, approving it resumes the same request, which writes only what is still missing.
+- **Changed connection.** Each request remembers the instance's connection identity (its kind, address and API key
+  fingerprint; renaming doesn't count). If the address or key changes before the request is sent, the request waits
+  for an administrator (`instance_changed`); a maybe-sent request can't be confirmed through the new connection.
+
+After a change the title's entry and the queue are re-read, so the status pill follows within moments.
+
+**Seerr mode** sends each request to Seerr *as the person who asked* (Seerr's per-user header with Jellyfin
+Enhanced's key), so Seerr's own permissions, quotas, approval rules and override rules apply:
+
+- `is4k` is always sent. Who may ask for 4K comes from Seerr: its 4K server setting and the person's own Seerr 4K
+  permission (Seerr's Admin permission includes it). Jellyfin administrator status doesn't bypass it.
+- Seerr's partial-request setting is read at send time and treated as on, off or *unknown* (anything that isn't a
+  real true/false). Only *on* sends some seasons; with *off* or *unknown*, only a request covering every season is
+  sent, and a request for some seasons waits (`seerr_whole_series_only`). Specials are sent only when Seerr's specials
+  setting is on (a missing setting counts as off). The seasons sent are always among those confirmed. Single episodes
+  can't be sent to Seerr (`seerr_whole_season_only`); "Keep getting new episodes" sends the current season.
+- Requests go to the first Seerr address only, and the account check before the POST and the reads that confirm it are
+  made at that same address. A POST whose answer is lost is maybe sent and is never repeated against another Seerr
+  address; a fresh read of the title in Seerr (not the cached request list) settles it: every season sent must be
+  requested (by anyone) or on its way, and the person's own request for the same edition must be among them. Seerr
+  leaves out seasons someone else already asked for and creates the rest, so the same rule confirms its 201 answer.
+  The account and the exact seasons a request goes out with are recorded before the POST, so that read looks for
+  exactly them (also after a restart), whatever Seerr's specials setting or account links say by then. If the person's
+  request is there but a season it was sent with is no longer covered (someone else's request for it was declined
+  meanwhile), the request is sent again as the same account and Seerr takes only the seasons nobody has requested. Seerr's duplicate answer (409 "Request for this media already exists.") and its 202
+  "No seasons available to request" count as success only with a JSON body and a fresh read showing the scope already
+  requested or available (the asker then follows that request); otherwise the request waits for an administrator.
+  Seerr refusing for quota, 4K permission or its blocklist holds the request with that reason.
+- The person's Seerr quota (used, limit, remaining, window) is read from Seerr; the next free slot is worked out from
+  the request list only when it holds exactly the requests Seerr counts. When Seerr doesn't say who the person is,
+  the request waits and is retried, and once it does, the request goes out as that account after every check is made
+  again with its permissions. Right before each request is sent, a fresh read confirms that the Seerr account is still
+  linked to the person who asked; if Seerr can't confirm it, nothing is sent and the request is retried. An account
+  linked to someone else or deleted, a different Seerr account than the one it was approved for, or a changed Seerr
+  address or key holds it (`identity_changed`). Changing a Sonarr or Radarr connection doesn't affect requests sent
+  through Seerr.
+
+Reasons a sent request can wait with (shown to administrators; family members see "Waiting for {contact} to take
+another look" or "Taking longer than usual"):
+
+| Reason | Meaning | Fix |
+|---|---|---|
+| `invalid_defaults` | The instance's add defaults are missing or no longer valid | Set them on the settings page, then approve again |
+| `instance_changed` | The instance was disabled, changed role, or its address/key changed | Approve again (with edits) |
+| `not_aired` | Sonarr doesn't list the season or episode yet | Approve again later |
+| `title_not_found` | The instance (or Seerr) doesn't know the title by its id | Check the title; add it in the app |
+| `service_down` | The instance or Seerr rejected Jellyfin Enhanced's key, or the URL base is wrong | Fix the connection |
+| `instance_rejected` | Sonarr/Radarr refused the add (its own validation message is in the job's details) | Fix it in the app, then approve again |
+| `seerr_whole_series_only` / `seerr_whole_season_only` / `seerr_specials_off` | Seerr can't take this scope | Ask for the whole series or season, or change Seerr's setting |
+| `seerr_conflict` / `seerr_refused` / `seerr_rejected` | Seerr refused in a way a read couldn't confirm | Check the request in Seerr |
+
+Administrators' **Manage › Add to {instance}** uses `GET arr/admin/manage/add-options?instanceId=…&key=…` (the instance's
+profiles, root folders, tags and saved defaults from a current snapshot; with a key, the title and its seasons from one
+lookup on that instance) and `POST arr/admin/manage/add` (`instanceId`, `key`, optional `profileId`/`rootFolder`,
+`seasons` for a series, and one `idempotencyKey` per sheet). The add is a request owned by the administrator and
+routed to that instance, so it shares the outgoing queue, read-back, change feed and audit. It is offered only in Jellyfin
+Enhanced mode; adding to a 4K instance needs the phase-3 4K switch for that kind of title.

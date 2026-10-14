@@ -142,6 +142,7 @@ public class ApiArrRouteMatrixTests
                 new NotifyController(N.Service, N.Dispatcher, new NtfySender(N.Ntfy), new EmailSender(N.Mail), N.Users) { Config = () => N.Config, Now = () => N.Arr.Now },
                 new ArrLiveController(N.Feed, new ArrFeedLimits(), new ApiArrRoutesTests.KeyAudience(), Receiver, Provisioner, Live, Router, N.Store, Audit, users, logger, N.Requests) { Config = () => N.Config },
                 new JeBackupController(Backup, users, logger),
+                new ArrAddController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.ArrAddService(N.Store, N.Arr.Factory, new ServicesForRequests(N).Service, () => N.Config)),
             };
             foreach (var controller in all)
             {

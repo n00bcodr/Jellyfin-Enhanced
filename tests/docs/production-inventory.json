@@ -67,6 +67,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAddController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminController.cs",
       "category": "Controllers"
     },
@@ -451,7 +455,23 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/ArrAddRules.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/ArrAddService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/DirectArrBackend.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/LedgerRequestFacts.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestBackends.cs",
       "category": "Services"
     },
     {
@@ -472,6 +492,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/SeerrBackend.cs",
       "category": "Services"
     },
     {
@@ -1930,6 +1954,27 @@
       "method": "LabDelete",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
       "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/manage/add-options",
+      "method": "Options",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAddController.cs",
+      "following_attributes": [
+        "Authorize",
+        "PrivateResponse"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/manage/add",
+      "method": "Add",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAddController.cs",
+      "following_attributes": [
+        "Authorize",
+        "PrivateResponse",
+        "BodyLimit"
+      ]
     },
     {
       "verb": "GET",
@@ -9057,8 +9102,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 460,
-    "routes": 226,
+    "files": 466,
+    "routes": 228,
     "configuration_properties": 575,
     "storage_references": 80,
     "scheduled_tasks": 14,

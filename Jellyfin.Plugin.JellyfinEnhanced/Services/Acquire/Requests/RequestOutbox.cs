@@ -18,6 +18,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public static RequestBackendResult Hold(string reason) => new(reason == "quota_exceeded" ? RequestOutcome.Refused(reason, 429, "quota_exceeded") : RequestOutcome.Refused(reason, 409), Parked: true, VerifiedNotSent: true);
         /// <summary>An uncertain send; the reservation remains until a scoped fresh read resolves it.</summary>
         public static RequestBackendResult Uncertain(string id) => new(new RequestOutcome { Outcome = "maybe_sent", Reason = "maybe_sent", Certainty = ArrActionStatus.Unknown, HttpStatus = 202, RequestId = id, Message = "Asked! We'll confirm shortly." });
+        /// <summary>
+        /// Part of the change is (or may be) upstream and the rest can be completed safely: the certainty stays
+        /// Unknown (no cancel or refund) and the next attempt sends again, reading before it writes.
+        /// </summary>
+        public static RequestBackendResult Resume(string id) => Uncertain(id) with { Retryable = true };
+        /// <summary>True for a <see cref="Resume"/> result: uncertain, retried through a fresh send rather than read back.</summary>
+        public bool Resumes => !Confirmed && !Parked && Retryable && Outcome.Certainty == ArrActionStatus.Unknown;
     }
     /// <summary>Request transport contract. Implementations run the guard after their own transport gate, immediately before I/O.</summary>
     public interface IRequestBackend
@@ -89,11 +96,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly ArrChangeFeed _feed;
         private readonly ArrAuditLog _audit;
         private readonly Func<DateTimeOffset> _now;
-        /// <summary>Creates the worker.</summary>
+        private readonly RequestOutboxSignal _signal;
+        /// <summary>Creates the worker on its five-second timer only.</summary>
         public RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit)
             : this(ledger, policy, backend, locks, feed, audit, () => DateTimeOffset.UtcNow) { }
-        internal RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, Func<DateTimeOffset> now)
-        { _ledger = ledger; _policy = policy; _backend = backend; _locks = locks; _feed = feed; _audit = audit; _now = now; }
+        /// <summary>Creates the worker, woken early by <paramref name="signal"/> when work is queued (DI).</summary>
+        public RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, RequestOutboxSignal signal)
+            : this(ledger, policy, backend, locks, feed, audit, () => DateTimeOffset.UtcNow, signal) { }
+        internal RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, Func<DateTimeOffset> now, RequestOutboxSignal? signal = null)
+        { _ledger = ledger; _policy = policy; _backend = backend; _locks = locks; _feed = feed; _audit = audit; _now = now; _signal = signal ?? new RequestOutboxSignal(); }
         /// <summary>Processes due work once; tests and diagnostics may drive this without a timer.</summary>
         public async Task TickAsync(CancellationToken ct)
         {
@@ -106,6 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (!_ledger.Claim(job, generation, _now())) continue;
                 RequestBackendResult result;
                 var transportStarted = false;
+                var settledByRead = false;
                 try
                 {
                     if (job.State != "maybe_sent")
@@ -133,8 +145,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         if (!stable || requester == null) return "authorization_changed";
                         if (requester.Refusal == "user_required" || approver?.Refusal == "user_required") return "identity_changed";
                         if (requester.Backend != job.Authorization.Backend || requester.Refusal == "feature_disabled") return "configuration_changed";
-                        if (requester.ConnectionGeneration != job.Authorization.ConnectionGeneration || requester.InstanceId != job.Authorization.InstanceId) return "instance_changed";
-                        if (requester.SeerrSource != job.Authorization.SeerrSource || requester.SeerrUser != job.Authorization.SeerrUser) return "identity_changed";
+                        // Seerr picks its own server: a Seerr-mode job is bound to the Seerr identity below, not to an arr connection.
+                        if (job.Authorization.Backend != "seerr" && (requester.ConnectionGeneration != job.Authorization.ConnectionGeneration || requester.InstanceId != job.Authorization.InstanceId)) return "instance_changed";
+                        // An unknown current Seerr account (Seerr not answering) waits below; only a known different one is a change.
+                        // A job approved while the person's Seerr account wasn't known is sent as the account Seerr links to them
+                        // now, after every check here has been made again with that account's permissions.
+                        if (requester.SeerrSource != job.Authorization.SeerrSource || (job.Authorization.SeerrUser != null && requester.SeerrUser != null && requester.SeerrUser != job.Authorization.SeerrUser)) return "identity_changed";
                         if (_ledger.ExceedsGbCapAtSend(requester, _now())) return "quota_exceeded";
                         if (RequestPolicy.Check(requester, approver, job.Input, approver != null) != null || _ledger.NeedsApprovalAtSend(job, requester, _policy, _now())) return "authorization_changed";
                         if (job.Authorization.Edited && approver?.Role != "Admin" && (job.Input.ProfileId != null || job.Input.RootFolder != null || job.Input.InstanceId != null)) return "authorization_changed";
@@ -147,7 +163,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     if (job.State == "maybe_sent")
                     {
                         result = await _backend.ReadBackAsync(job, ct).ConfigureAwait(false);
-                        if (!result.Confirmed && !result.VerifiedNotSent) result = RequestBackendResult.Uncertain(job.WantId);
+                        settledByRead = true;
+                        if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes) result = RequestBackendResult.Uncertain(job.WantId);
                         else if (result.VerifiedNotSent && !result.Confirmed)
                             result = result with { Retryable = true, Parked = false };
                     }
@@ -158,10 +175,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     {
                         transportStarted = true;
                         result = await _backend.SendAsync(job, Guard, ct).ConfigureAwait(false);
-                        if (!result.Confirmed && result.Outcome.Certainty is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
+                        // A hold after a partial write and a resume are already settled by the backend: no read-back.
+                        if (!result.Confirmed && !result.Parked && !result.Resumes && result.Outcome.Certainty is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
                         {
-                            result = await _backend.ReadBackAsync(job, ct).ConfigureAwait(false);
-                            if (!result.Confirmed && !result.VerifiedNotSent) result = RequestBackendResult.Uncertain(job.WantId);
+                            // As stored now: the send may have bound what it went out with (Seerr's account and seasons).
+                            result = await _backend.ReadBackAsync(_ledger.Job(job.Id) ?? job, ct).ConfigureAwait(false);
+                            settledByRead = true;
+                            if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes) result = RequestBackendResult.Uncertain(job.WantId);
                         }
                     }
                 }
@@ -170,8 +190,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     result = transportStarted || job.State == "maybe_sent" ? RequestBackendResult.Uncertain(job.WantId) :
                         new RequestBackendResult(RequestOutcome.Refused("backend_unavailable", 503, "unavailable"), Retryable: true, VerifiedNotSent: true);
                 }
-                if (job.State == "maybe_sent" && !result.Confirmed && !result.VerifiedNotSent)
+                if (job.State == "maybe_sent" && !result.Confirmed && !result.VerifiedNotSent && !result.Resumes)
                     result = result with { Outcome = RequestBackendResult.Uncertain(job.WantId).Outcome with { Reason = result.Outcome.Reason }, Retryable = false };
+                // A job whose last outcome left upstream state unknown stays uncertain until a fresh read settles it: a
+                // later attempt that is refused or fails before writing proves nothing about what the earlier one wrote.
+                if (job.Uncertain && !settledByRead && !result.Confirmed && result.Outcome.Certainty != ArrActionStatus.Unknown)
+                    result = result with { Outcome = result.Outcome with { Certainty = ArrActionStatus.Unknown }, VerifiedNotSent = false, Parked = result.Parked || !result.Retryable };
                 var completed = _ledger.Complete(job, generation, result, _now());
                 if (completed) _feed.Bump(new[] { job.Input.Key, ArrTitleKey.UserRequests(job.Authorization.Requester), ArrTitleKey.RequestsState });
                 if (!completed && !transportStarted && job.State != "maybe_sent") continue;
@@ -199,7 +223,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         _ledger.Retain(_now(), c.ArrRequestStaleDays);
                         await TickAsync(stoppingToken).ConfigureAwait(false);
                     }
-                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).ConfigureAwait(false);
+                    // Every five seconds, or at once when new work is queued.
+                    await _signal.WaitAsync(TimeSpan.FromSeconds(5), stoppingToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
                 catch (Exception) { await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).ConfigureAwait(false); }
