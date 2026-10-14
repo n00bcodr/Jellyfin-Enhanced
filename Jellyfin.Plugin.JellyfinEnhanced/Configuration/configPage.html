@@ -102,9 +102,9 @@
             <div id="je-host-mismatch-warning" class="je-note-banner" style="display: none;" role="alert">
                 <i class="material-icons je-note-icon">warning_amber</i>
                 <div>
-                    <strong>Wrong plugin build for this Jellyfin version</strong>
+                    <strong id="je-host-mismatch-title">Wrong plugin build for this Jellyfin version</strong>
                     <span id="je-host-mismatch-msg"></span>
-                    <div style="margin-top:8px;">
+                    <div id="je-host-mismatch-install" style="margin-top:8px;">
                         Install <code id="je-host-mismatch-asset"></code> instead, from the plugin repository
                         <a id="je-host-mismatch-link" target="_blank" rel="noopener noreferrer"></a>.
                     </div>
@@ -8946,7 +8946,7 @@
             return spaced.charAt(0).toUpperCase() + spaced.slice(1);
         }
 
-        // Warns when this build targets a different Jellyfin line than the server (GET host-compat).
+        // Warns when this build targets a different Jellyfin line or the file was replaced (GET host-compat).
         function checkHostCompat() {
             ApiClient.ajax({
                 type: 'GET',
@@ -8955,11 +8955,15 @@
             }).then(function(data) {
                 var banner = document.getElementById('je-host-mismatch-warning');
                 if (!banner) return;
-                if (!data || !data.mismatch) {
+                if (!data || (!data.mismatch && !data.stale)) {
                     banner.style.display = 'none';
                     return;
                 }
+                document.getElementById('je-host-mismatch-title').textContent = data.stale
+                    ? 'Plugin restart required'
+                    : 'Wrong plugin build for this Jellyfin version';
                 document.getElementById('je-host-mismatch-msg').textContent = ' ' + (data.message || '');
+                document.getElementById('je-host-mismatch-install').style.display = data.stale ? 'none' : '';
                 document.getElementById('je-host-mismatch-asset').textContent = data.expectedAsset || '';
                 var link = document.getElementById('je-host-mismatch-link');
                 link.textContent = data.manifestUrl || '';
