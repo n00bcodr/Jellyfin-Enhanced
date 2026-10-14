@@ -271,8 +271,11 @@ public class IntegrationAutoRequestLedgerTests
         var calls = a.Urls.Count;
         now = now.AddMinutes(59);
         sessions.Raise(s => s.PlaybackProgress += null, Progress(movie, member, TimeSpan.FromMinutes(27)));
-        await Task.Delay(100);
-        Assert.Equal(calls, a.Urls.Count);                    // cooling down: the handler doesn't even queue it
+        // Barrier, not a sleep: disposing the monitor closes the queue and waits for its worker to finish every
+        // trigger it admitted, so a trigger the cooldown let through would have been looked up and logged by now.
+        monitor.Dispose();
+        Assert.Equal(calls, a.Urls.Count);                    // cooling down: nothing was looked up again
+        Assert.Equal(2, a.R.Ledger.AutomationLog().Count);    // ...nor processed at all
 
         // The person is deleted: their automation log goes with them.
         a.R.Ledger.PurgeUser(member);

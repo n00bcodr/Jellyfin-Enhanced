@@ -111,6 +111,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var covered = Wants(c, null, "title_key=$key AND variant=$v", ("$key", input.Key), ("$v", input.Variant)).Where(Active).ToArray();
             return covered.Length > 0 && input.Extra(Confirmed(c, null, covered, TargetKey(facts))) == null;
         });
+        /// <summary>
+        /// What actually went out for a title, per target: each succeeded job's scope at the time its send was
+        /// confirmed, and each request that was already processing in Seerr when it moved (a job-less link) at the
+        /// time it was asked for there. A want's own last change (a join, an approval of scope already sent, a
+        /// target move) is not a send, so the "still looking" clock counts from these only.
+        /// </summary>
+        /// <param name="titleKey">Canonical title key.</param>
+        public IReadOnlyList<RequestDispatch> Dispatches(string titleKey) => !_db.Available ? Array.Empty<RequestDispatch>() : _db.Read(c =>
+        {
+            var list = new List<RequestDispatch>();
+            using (var cmd = Cmd(c, null, "SELECT j.mutation_input,j.authorization_context,j.updated_at FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w.title_key=$key AND j.state='succeeded'", ("$key", titleKey)))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                    list.Add(new(TargetKey(JsonSerializer.Deserialize<RequestAuthorization>(r.GetString(1))!), JsonSerializer.Deserialize<MutationInput>(r.GetString(0))!, DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(2))));
+            }
+            foreach (var want in Wants(c, null, "title_key=$key AND origin_kind=$kind", ("$key", titleKey), ("$kind", RequestOrigin.SeerrImportKind)))
+            {
+                if (LinkedScope(c, null, want) is { } linked) list.Add(new(want.TargetKey, linked, want.CreatedAt));
+            }
+            return (IReadOnlyList<RequestDispatch>)list;
+        });
         /// <summary>Persistent policy/cache invalidation stamp, fenced by restore generation.</summary>
         public long Revision => !_db.Available ? 0 : _db.Read(c => long.Parse(Scalar(c, null, "SELECT COALESCE((SELECT value FROM meta WHERE key='request_revision'),'0')")!, CultureInfo.InvariantCulture)) + _db.Generation * 1000000000;
         private static void Changed(SqliteConnection c, SqliteTransaction t) => Exec(c, t, "INSERT INTO meta VALUES('request_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1");
@@ -119,7 +141,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => input.InstanceId != original.InstanceId || input.ProfileId != original.ProfileId || input.RootFolder != original.RootFolder;
         internal static string TargetKey(RequestAuthorization auth)
             => JsonSerializer.Serialize(new[] { auth.Backend, auth.InstanceId, auth.ConnectionGeneration, auth.SeerrSource });
-        private static string TargetKey(RequestPolicyFacts facts) => TargetKey(Authorize(facts, null, new MutationInput(), false));
+        /// <summary>The backend target an ask with these facts goes to (its backend, instance, connection and Seerr source).</summary>
+        internal static string TargetKey(RequestPolicyFacts facts) => TargetKey(Authorize(facts, null, new MutationInput(), false));
         private static bool Active(RequestWant w) => w.Status is "pending" or "queued" or "sent" or "stale";
         private static bool Deleted(SqliteConnection c, SqliteTransaction t, Guid user)
             => Scalar(c, t, "SELECT user_hash FROM request_deleted_users WHERE user_hash=$u", ("$u", MutationInput.Hash("deleted:" + Id(user)))) != null;
@@ -544,6 +567,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var owner = Scalar(c, t, "SELECT user_id FROM wants WHERE id=$id", ("$id", wantId));
             if (owner != null && Scalar(c, t, "SELECT user_hash FROM request_deleted_users WHERE lower(substr(user_hash,1,32))=$u", ("$u", owner)) == null) Exec(c, t, "INSERT INTO request_notices VALUES($id,$w,$u,$kind,$at)", ("$id", NewId()), ("$w", wantId), ("$u", owner), ("$kind", action), ("$at", Ms(now)));
         }
+        /// <summary>Owned "keep getting new episodes" requests that went out to <paramref name="targetKey"/> (sent or stale, not followers).</summary>
+        /// <param name="targetKey">The backend target (see <see cref="TargetKey(RequestAuthorization)"/>).</param>
+        public IReadOnlyList<RequestWant> FutureWants(string targetKey) => !_db.Available ? Array.Empty<RequestWant>() : _db.Read(c =>
+            (IReadOnlyList<RequestWant>)Wants(c, null, "target_key=$t AND status IN ('sent','stale') AND cost>0 AND json_extract(mutation_input,'$.Scope')='future'", ("$t", targetKey)));
         /// <summary>Charges a newly observed future season exactly once; overdrafts remain visible.</summary>
         public bool ChargeFutureSeason(string wantId, int season, IRequestPolicy policy, DateTimeOffset now)
         {

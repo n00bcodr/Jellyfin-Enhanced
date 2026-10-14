@@ -82,8 +82,9 @@
     }
 
     /**
-     * The caller's own request capabilities ({role, canRequest, canApprove, asksFirst, can4kMovies,
-     * can4kSeries, backend, contact, freeEpisodes}), cached for a minute per user; null when the
+     * The caller's own request capabilities ({role, canRequest, canRequestMovies, canRequestSeries,
+     * canApprove, asksFirst, can4kMovies, can4kSeries, backend, contact, freeEpisodes}), cached for a
+     * minute per user (see canAsk for one kind); null when the
      * feature is off or the server can't say.
      * @param {boolean} [force] Ask the server again.
      * @returns {Promise<Object|null>} Capabilities.
@@ -318,8 +319,38 @@
         }
     }
 
+    /** @type {HTMLElement|null} the one visually hidden live region request outcomes are read out from */
+    let liveRegion = null;
+
     /**
-     * Shows a short toast (plain text; escaped before it reaches JE.toast).
+     * Reads a line out to screen readers through one persistent, visually hidden live region (made on
+     * first use; it outlives the sheet or button the outcome came from). The text is set a moment after
+     * clearing it, so the same words twice are read out twice.
+     * @param {string} text Plain text.
+     * @returns {void}
+     */
+    function announce(text) {
+        if (!text || !document.body) return;
+        if (!liveRegion || !liveRegion.isConnected) {
+            liveRegion = document.createElement('div');
+            liveRegion.className = 'je-ask-live';
+            liveRegion.setAttribute('role', 'status');
+            liveRegion.setAttribute('aria-live', 'polite');
+            liveRegion.setAttribute('aria-atomic', 'true');
+            Object.assign(liveRegion.style, {
+                position: 'absolute', width: '1px', height: '1px', margin: '-1px', padding: '0', border: '0',
+                overflow: 'hidden', clip: 'rect(0 0 0 0)', clipPath: 'inset(50%)', whiteSpace: 'nowrap'
+            });
+            document.body.appendChild(liveRegion);
+        }
+        const region = liveRegion;
+        region.textContent = '';
+        setTimeout(() => { region.textContent = String(text); }, 50);
+    }
+
+    /**
+     * Shows a short toast (plain text; escaped before it reaches JE.toast) and reads it out to screen
+     * readers (the toast itself isn't a live region).
      * @param {string} text Text.
      * @param {number} [ms] Duration.
      * @returns {void}
@@ -328,6 +359,21 @@
         if (!text) return;
         const safe = typeof JE.escapeHtml === 'function' ? JE.escapeHtml(text) : String(text).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
         if (typeof JE.toast === 'function') JE.toast(safe, ms || 3500);
+        announce(text);
+    }
+
+    /**
+     * True when the caller may ask for this kind of title. Movies and series can differ (in Seerr mode
+     * Seerr's per-kind request permissions decide); an older answer without the per-kind flags falls
+     * back to canRequest.
+     * @param {Object|null} caps Capabilities (see me).
+     * @param {string} kind 'movie', or anything else for a series.
+     * @returns {boolean} May ask.
+     */
+    function canAsk(caps, kind) {
+        if (!caps?.canRequest) return false;
+        const flag = kind === 'movie' ? caps.canRequestMovies : caps.canRequestSeries;
+        return typeof flag === 'boolean' ? flag : true;
     }
 
     /**
@@ -499,6 +545,8 @@
         describe,
         interpret,
         toast,
+        announce,
+        canAsk,
         onChange,
         fingerprint,
         newClientId,

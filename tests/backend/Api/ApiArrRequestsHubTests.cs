@@ -1261,6 +1261,7 @@ public class ApiArrRequestsHubTests
     {
         // Firefly S1E4 is monitored in Sonarr with nothing grabbed; Seerr's OK of season 1 was two days ago.
         using var rig = await Ready();
+        rig.Arr.Plugin.Plugin.Configuration.ArrPhase3Enabled = true;   // family Search is phase 3's (the request clock too)
         rig.Sonarr.CommandStarted = rig.Arr.Now.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
         var policy = new IntegrationRequestLedgerTests.Policy();
         foreach (var (viewer, role) in new[] { (rig.Emma, "Member"), (rig.Kid, "Kid"), (rig.Sam, "Watcher") })
@@ -1328,6 +1329,94 @@ public class ApiArrRequestsHubTests
         Assert.Equal(200, later.Status);
         Assert.Equal(2, Searches());
         Assert.Empty(ledger.List(rig.Kid.UserId, false));
+    }
+
+    [Fact]
+    public async Task FamilySearchSearchesOnlyTheStandardCopyOnTheRequestTargetAndOnlyWhatSeerrOkd()
+    {
+        // Dune: the standard copy is downloading; an admin's separate 4K copy has been missing for a month.
+        // Firefly S1E4: Seerr holds the household's season 1 request but hasn't OK'd it.
+        using var rig = await Ready(r =>
+        {
+            var dune4k = FakeArr.Movie(2, 693134, "Dune Part Two", hasFile: false, path: "/data/movies4k/Dune Part Two (2024)");
+            dune4k["added"] = r.Arr.Now.UtcDateTime.AddDays(-30).ToString("o", CultureInfo.InvariantCulture);
+            dune4k["isAvailable"] = true;
+            r.Radarr4k.Movies.Add(dune4k);
+            var firefly = r.Seerr.Requests.Single(q => (int)q["id"]! == 8);
+            firefly["status"] = 1;
+        });
+        rig.Arr.Plugin.Plugin.Configuration.ArrPhase3Enabled = true;
+        rig.Sonarr.CommandStarted = rig.Arr.Now.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
+        rig.Radarr4k.CommandStarted = rig.Sonarr.CommandStarted;
+        var policy = new IntegrationRequestLedgerTests.Policy();
+        policy.People[rig.Emma.UserId] = new(rig.Emma.UserId, "Member", true, false, false, true, "r1", "je", "", "", 7, 7, 0, "null");
+        // In Seerr mode the request goes out as Emma's Seerr account.
+        policy.Adjust = (_, _, facts) => facts.Backend == "seerr" ? facts with { SeerrSource = "seerr-src", SeerrUser = 7, BackendQuota = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.QuotaProjection(0, null, null, null, 0) } : facts;
+        using var db = new AcquireDatabase(Path.Combine(rig.Arr.Plugin.Core.Root, "family-search-target.db"));
+        var ledger = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(db);
+        var requests = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService(ledger, policy, rig.View, rig.Feed, () => rig.Arr.Now);
+        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, rig.Manage, () => rig.Arr.Now);
+        async Task<JsonElement> Press(string key, string idem)
+        {
+            var c = new AcquireRequestsController(requests, null, search) { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
+            c.HttpContext.User = TestCallers.Principal(rig.Emma.UserId, false);
+            return Root(await Send(c, () => c.Search(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchBody(key, idem), default)));
+        }
+        async Task Sent(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput input, string client)
+        {
+            Assert.Equal(201, (await requests.CreateAsync(rig.Emma.UserId, new(client, input), default)).HttpStatus);
+            await new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestOutbox(ledger, policy, new IntegrationRequestLedgerTests.Backend(),
+                new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestTitleLocks(), rig.Feed, rig.Audit, () => rig.Arr.Now).TickAsync(default);
+        }
+        int Commands(FakeArr.Host host) => host.Writes.Count(w => w.Path == "/api/v3/command");
+
+        // Emma's standard Dune request went out. Her Search never reaches the 4K copy she asked nothing of.
+        await Sent(new() { Key = "movie:tmdb:693134" }, "dune");
+        var dune = await Press("movie:tmdb:693134", "d1");
+        Assert.Equal(("skipped", "not_searchable"), (dune.GetProperty("outcome").GetString(), dune.GetProperty("reason").GetString()));
+        Assert.Equal(0, Commands(rig.Radarr4k));
+        Assert.Equal(0, Commands(rig.Radarr));
+
+        // Seerr mode: Seerr accepted her season 1 ask but it waits for an OK there. Search doesn't go around that.
+        policy.Configuration.ArrRequestBackend = "seerr";
+        await Sent(new() { Key = "tv:tvdb:78874", Scope = "seasons", Seasons = new[] { 1 } }, "s1");
+        Assert.Equal("sent", ledger.List(rig.Emma.UserId, false).Single(w => w.Input.Key == "tv:tvdb:78874").Status);
+        var waiting = await Press("tv:tvdb:78874:s1:e4", "e1");
+        Assert.Equal(("skipped", "not_requested"), (waiting.GetProperty("outcome").GetString(), waiting.GetProperty("reason").GetString()));
+        Assert.Equal(0, Commands(rig.Sonarr));
+        // Once Seerr OKs it (and it has been missing for a long while since), Search runs Sonarr's search.
+        var ok = rig.Seerr.Requests.Single(q => (int)q["id"]! == 8);
+        ok["status"] = 2;
+        ok["updatedAt"] = rig.Arr.Now.UtcDateTime.AddHours(-30).ToString("o", CultureInfo.InvariantCulture);
+        Assert.True(await rig.Requests.RefreshAsync(default));
+        var searched = await Press("tv:tvdb:78874:s1:e4", "e2");
+        Assert.Equal(("accepted", "searched"), (searched.GetProperty("outcome").GetString(), searched.GetProperty("reason").GetString()));
+        Assert.Equal(1, Commands(rig.Sonarr));
+    }
+
+    [Fact]
+    public async Task TheRequestClockIsPhaseThreesOnlyAnOkInSeerrLeavesTheStatusAsBeforeWithItOff()
+    {
+        // A movie Radarr has listed for a month with nothing grabbed; Seerr OK'd a request for it an hour ago.
+        using var rig = await Ready(r =>
+        {
+            var old = FakeArr.Movie(9, 9001, "Old Film", hasFile: false);
+            old["added"] = r.Arr.Now.UtcDateTime.AddDays(-30).ToString("o", CultureInfo.InvariantCulture);
+            old["isAvailable"] = true;
+            r.Radarr.Movies.Add(old);
+            r.Seerr.Requests.Add(FakeSeerr.Request(31, "movie", 9001, 2, r.Emma.UserId, r.Arr.Now.UtcDateTime.AddHours(-2), r.Arr.Now.UtcDateTime.AddHours(-1)));
+        });
+        Assert.True(await rig.Requests.RefreshAsync(default));
+        async Task<string> Reason()
+        {
+            var c = rig.StatusController(rig.Emma);
+            return Root(await Send(c, () => c.GetStatuses(null, "movie:tmdb:9001", default))).GetProperty("items")[0].GetProperty("reason").GetProperty("code").GetString()!;
+        }
+        // Phase 3 off: missing for a long while, as before (the clock counts from Radarr's own dates).
+        Assert.Equal(StatusReasonCode.NoReleaseYet, await Reason());
+        // Phase 3 on: the OK an hour ago restarted it.
+        rig.Arr.Plugin.Plugin.Configuration.ArrPhase3Enabled = true;
+        Assert.Equal(StatusReasonCode.Looking, await Reason());
     }
 
     [Fact]

@@ -441,4 +441,32 @@ public class IntegrationRequestHouseholdTests
         Refused(r.Admin, "{\"users\":{\"" + r.Member.ToString("N") + "\":{\"role\":\"Kid\"}}}", "configuration_unreadable", 409);
         Assert.Equal("{broken", config.ArrRequestUsers);
     }
+
+    [Fact]
+    public async Task AHouseholdSaveWaitsForAConfigurationSwapAndNeverReportsAnEditThatDidNotLandAsSaved()
+    {
+        using var hub = new Hub();
+        var admin = hub.R.View.Users[hub.R.Admin];
+        var config = hub.R.Policy.Configuration;
+        using var saved = new ManualResetEventSlim();
+        var household = new HouseholdService(hub.Projection, hub.R.Feed, _ => saved.Set());
+        Task<RequestOutcome> pending;
+        // A config-page save swapping the configuration object holds this lock: the household edit waits for it.
+        lock (Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.AnalyticsCredentialLock)
+        {
+            pending = Task.Run(() => household.Save(admin, new HouseholdSave { Preset = "open_house" }));
+            Assert.False(saved.Wait(300));
+            Assert.False(pending.IsCompleted);
+        }
+        Assert.Equal(200, (await pending).HttpStatus);
+        Assert.True(saved.IsSet);
+        Assert.Equal("open_house", config.ArrRequestPreset);
+
+        // The edit didn't land in what was saved (the configuration was replaced meanwhile): an error, not "saved".
+        var replaced = new HouseholdService(hub.Projection, hub.R.Feed, c => c.ArrRequestPreset = "ask_first");
+        var lost = replaced.Save(admin, new HouseholdSave { Preset = "approve_everything" });
+        Assert.Equal((500, "save_failed"), (lost.HttpStatus, lost.Reason));
+        var failing = new HouseholdService(hub.Projection, hub.R.Feed, _ => throw new IOException("disk full"));
+        Assert.Equal((500, "save_failed"), failing.Save(admin, new HouseholdSave { DefaultRole = "Kid" }) is var f ? (f.HttpStatus, f.Reason) : default);
+    }
 }

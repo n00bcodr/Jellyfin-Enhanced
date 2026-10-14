@@ -100,6 +100,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     public sealed record RequestAuthorization(Guid Requester, Guid? Approver, string Action, string Scope, string Variant,
         string Backend, string InstanceId, string ConnectionGeneration, string PolicyRevision, string? SeerrSource = null,
         int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null);
+    /// <summary>One scope that went out to a target (see <see cref="RequestLedger.Dispatches"/>).</summary>
+    /// <param name="TargetKey">The backend target it went to.</param>
+    /// <param name="Input">The scope that went out.</param>
+    /// <param name="At">When it went out: the send was confirmed, or (a request moved from Seerr) it was asked for there.</param>
+    public sealed record RequestDispatch(string TargetKey, MutationInput Input, DateTimeOffset At);
     /// <summary>One durable upstream action. <c>Uncertain</c>: its last outcome left the upstream state unknown (maybe or partly sent).</summary>
     public sealed record RequestJob(string Id, string WantId, MutationInput Input, RequestAuthorization Authorization,
         string State, int Attempts, DateTimeOffset NextAttempt, string Reason, string IdempotencyKey, string Fingerprint, bool Uncertain = false);
@@ -136,8 +141,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     {
         /// <summary>The caller's household role: watcher, kid, member, manager or admin.</summary>
         [JsonPropertyName("role")] public string Role { get; init; } = "watcher";
-        /// <summary>The caller may ask for titles at all (role and request backend).</summary>
+        /// <summary>The caller may ask for titles at all (role and request backend): movies, series or both.</summary>
         [JsonPropertyName("canRequest")] public bool CanRequest { get; init; }
+        /// <summary>The caller may ask for movies (in Seerr mode Seerr's per-kind request permissions decide).</summary>
+        [JsonPropertyName("canRequestMovies")] public bool CanRequestMovies { get; init; }
+        /// <summary>The caller may ask for series (in Seerr mode Seerr's per-kind request permissions decide).</summary>
+        [JsonPropertyName("canRequestSeries")] public bool CanRequestSeries { get; init; }
         /// <summary>The caller may approve other people's asks.</summary>
         [JsonPropertyName("canApprove")] public bool CanApprove { get; init; }
         /// <summary>The caller's asks always wait for an OK (Kid, or the Approve everything preset).</summary>

@@ -2193,7 +2193,8 @@
                                             <div class="fieldDescription je-field-desc-mt-sm">
                                             <strong>Default:</strong> Seerr uses its default Radarr server and quality profile.<br/>
                                             <strong>Original:</strong> Uses the same quality profile as the movie being watched (falls back to default if not found).<br/>
-                                            <strong>Custom:</strong> Always uses the specific Radarr server, quality profile, and root folder selected below.
+                                            <strong>Custom:</strong> Always uses the specific Radarr server, quality profile, and root folder selected below.<br/>
+                                            With Requests &amp; downloads "Ask for it" (phase 3) on, the next movie is recorded as a plain request instead and these quality settings aren't used.
                                             </div>
                                         </div>
 
@@ -2592,7 +2593,7 @@
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestBackend">Request handling</label><select id="arrRequestBackend" is="emby-select"><option value="seerr">Seerr (default)</option><option value="je">Jellyfin Enhanced (opt in)</option><option value="status_only">Status only</option></select></div>
                             <div class="inputContainer je-arr-migration">
                                 <button is="emby-button" type="button" id="arrSeerrMigrationBtn" class="raised emby-button">Move requests from Seerr...</button>
-                                <div class="fieldDescription">Hands requests over from Seerr to Jellyfin Enhanced. A check comes first and changes nothing. Turn off requesting in Seerr first (remove the request permissions from its users and from the default permissions), so nobody keeps asking there. Pending requests then wait in Approvals; requests already in progress are linked with nothing sent again. Moving costs nobody's allowance and sends no "new request" notices. Request handling switches to Jellyfin Enhanced, and a move can be rolled back for 14 days (anything changed in Jellyfin Enhanced since is kept). Save first if you changed anything above.</div>
+                                <div class="fieldDescription">Hands requests over from Seerr to Jellyfin Enhanced. A check comes first and changes nothing. Turn off requesting in Seerr first (remove the request permissions from its non-admin users and from the default permissions; Seerr administrators aren't counted), so nobody keeps asking there. Pending requests then wait in Approvals; requests already in progress are linked with nothing sent again. Moving costs nobody's allowance and sends no "new request" notices. Request handling switches to Jellyfin Enhanced, and a move can be rolled back for 14 days (anything changed in Jellyfin Enhanced since is kept). Save first if you changed anything above.</div>
                                 <div id="arrSeerrMigrationResult" class="je-arr-check-result" aria-live="polite"></div>
                             </div>
                             <div class="checkboxContainer"><label><input id="arrRequest4kMoviesEnabled" is="emby-checkbox" type="checkbox"/><span>Allow 4K movie requests</span></label></div>
@@ -6225,6 +6226,7 @@
             document.querySelector('#arrRequestRoles').value = config.ArrRequestRoles;
             document.querySelector('#arrRequestUsers').value = config.ArrRequestUsers;
             document.querySelector('#arrRequestQuotaLimit').value = config.ArrRequestQuotaLimit;
+            jeArrServerOwnedIds.forEach(function(id) { var el = document.querySelector(id); el.dataset.jeLoaded = String(el.value); });
             document.querySelector('#arrRequestQuotaWindowDays').value = config.ArrRequestQuotaWindowDays;
             document.querySelector('#arrRequestSeriesThreshold').value = config.ArrRequestSeriesThreshold;
             document.querySelector('#arrRequestDeclineCooldownDays').value = config.ArrRequestDeclineCooldownDays;
@@ -6254,6 +6256,35 @@
         }
 
         /**
+         * Settings the server changes by itself too: the Household tab (roles, quotas, house rules,
+         * default role) and a move from Seerr or its rollback (request handling).
+         */
+        var jeArrServerOwnedIds = ['#arrRequestBackend', '#arrRequestPreset', '#arrRequestDefaultRole', '#arrRequestRoles', '#arrRequestUsers', '#arrRequestQuotaLimit'];
+
+        /**
+         * The value to save for a setting the server also changes: the page's value when it was changed
+         * on this page, else the server's current one (config holds a fresh read), which the page then
+         * shows. A save from a page opened before a Household edit or a Seerr move never puts back the
+         * older household or request handling.
+         * @param {Object} config - Plugin configuration being saved (read from the server just now)
+         * @param {string} id - The control's selector
+         * @param {string} field - The configuration field
+         * @param {Function} [read] - Turns the control's value into the field's value (default: as is)
+         * @returns {*} The value to save
+         */
+        function jeArrServerOwned(config, id, field, read) {
+            var el = document.querySelector(id);
+            var server = config[field];
+            if (el.dataset.jeLoaded !== undefined && String(el.value) === el.dataset.jeLoaded && server !== undefined && server !== null) {
+                el.value = server;
+                el.dataset.jeLoaded = String(el.value);
+                return server;
+            }
+            el.dataset.jeLoaded = String(el.value);
+            return read ? read(el.value) : el.value;
+        }
+
+        /**
          * Copies the phase-2 notification settings into the configuration being saved (numbers clamped).
          * @param {Object} config - Plugin configuration
          * @returns {void}
@@ -6261,14 +6292,14 @@
         function jeSaveArrNotifySettings(config) {
             var clamp = function(id, lo, hi, d) { var n = parseInt(document.querySelector(id).value, 10); return isNaN(n) ? d : Math.min(hi, Math.max(lo, n)); };
             config.ArrPhase3Enabled = document.querySelector('#arrPhase3Enabled').checked;
-            config.ArrRequestBackend = document.querySelector('#arrRequestBackend').value;
+            config.ArrRequestBackend = jeArrServerOwned(config, '#arrRequestBackend', 'ArrRequestBackend');
             config.ArrRequest4kMoviesEnabled = document.querySelector('#arrRequest4kMoviesEnabled').checked;
             config.ArrRequest4kSeriesEnabled = document.querySelector('#arrRequest4kSeriesEnabled').checked;
-            config.ArrRequestPreset = document.querySelector('#arrRequestPreset').value;
-            config.ArrRequestDefaultRole = document.querySelector('#arrRequestDefaultRole').value;
-            config.ArrRequestRoles = document.querySelector('#arrRequestRoles').value;
-            config.ArrRequestUsers = document.querySelector('#arrRequestUsers').value;
-            config.ArrRequestQuotaLimit = Number(document.querySelector('#arrRequestQuotaLimit').value);
+            config.ArrRequestPreset = jeArrServerOwned(config, '#arrRequestPreset', 'ArrRequestPreset');
+            config.ArrRequestDefaultRole = jeArrServerOwned(config, '#arrRequestDefaultRole', 'ArrRequestDefaultRole');
+            config.ArrRequestRoles = jeArrServerOwned(config, '#arrRequestRoles', 'ArrRequestRoles');
+            config.ArrRequestUsers = jeArrServerOwned(config, '#arrRequestUsers', 'ArrRequestUsers');
+            config.ArrRequestQuotaLimit = jeArrServerOwned(config, '#arrRequestQuotaLimit', 'ArrRequestQuotaLimit', Number);
             config.ArrRequestQuotaWindowDays = Number(document.querySelector('#arrRequestQuotaWindowDays').value);
             config.ArrRequestSeriesThreshold = Number(document.querySelector('#arrRequestSeriesThreshold').value);
             config.ArrRequestDeclineCooldownDays = Number(document.querySelector('#arrRequestDeclineCooldownDays').value);
@@ -6551,6 +6582,7 @@
             if (!select || !backend || select.value === backend) return;
             var previous = select.value;
             select.value = backend;
+            select.dataset.jeLoaded = backend;
             if (typeof jeAcceptServerValue === 'function') jeAcceptServerValue(select, previous);
         }
 

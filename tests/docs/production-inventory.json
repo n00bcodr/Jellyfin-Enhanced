@@ -495,6 +495,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/FutureSeasonCharges.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/HouseholdDirectory.cs",
       "category": "Services"
     },
@@ -9385,7 +9389,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 505,
+    "files": 506,
     "routes": 243,
     "configuration_properties": 576,
     "storage_references": 81,

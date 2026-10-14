@@ -422,20 +422,28 @@ public class IntegrationArrStatusTests
         var seasonStatus = StatusComposer.Season(show, seasonItem, Array.Empty<JfEpisode>(), Ctx(), detail: true);
         Assert.DoesNotContain(seasonStatus.Episodes!, e => e.Reason.Code == StatusReasonCode.NoReleaseYet);
 
-        // Where the times come from: a sent want's parts (JE mode), Seerr's OK'd requests (Seerr mode).
+        // Where the times come from: a sent want's parts (JE mode) at the time something covering each went out to
+        // the want's target; Seerr's OK'd requests (Seerr mode).
         var at = new DateTimeOffset(2026, 10, 12, 11, 0, 0, TimeSpan.Zero);
+        const string Target = "[\"je\",\"sonarr\",\"g1\",null]";
         Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestWant Want(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput input)
-            => new("w", "a", Guid.NewGuid(), "c", "f", input, "sent", "looking", 0, "null", at.AddHours(-1), at);
-        Assert.Equal(new[] { new RequestSentPart(false, 1, 4, at.UtcDateTime), new RequestSentPart(false, 2, 1, at.UtcDateTime) },
-            Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(new() { Key = "tv:tvdb:279121", Scope = "episodes", Episodes = new[] { new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestEpisode(1, 4), new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestEpisode(2, 1) } })).ToArray());
+            => new("w", "a", Guid.NewGuid(), "c", "f", input, "sent", "looking", 0, "null", at.AddHours(-1), at.AddHours(5), TargetKey: Target);
+        Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestDispatch Went(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput input, DateTimeOffset when, string target = Target)
+            => new(target, input, when);
+        var episodes = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput { Key = "tv:tvdb:279121", Scope = "episodes", Episodes = new[] { new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestEpisode(1, 4), new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestEpisode(2, 1) } };
+        var seasonTwo = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput { Key = "tv:tvdb:279121", Scope = "seasons", Seasons = new[] { 2 } };
+        // Each part from what covered it (S1E4 by the episode ask, S2E1 by a later season ask), never the want's last change;
+        // a send to another target, or of another edition, doesn't count.
+        Assert.Equal(new[] { new RequestSentPart(false, 1, 4, at.UtcDateTime), new RequestSentPart(false, 2, 1, at.AddHours(2).UtcDateTime) },
+            Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(episodes), new[] { Went(episodes, at), Went(seasonTwo, at.AddHours(2)), Went(episodes, at.AddHours(9), "[\"seerr\",\"\",\"\",\"s\"]"), Went(episodes with { Variant = "4k" }, at.AddHours(9)) }).ToArray());
+        var future = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput { Key = "tv:tvdb:279121", Scope = "future", Variant = "4k", Seasons = new[] { 3 } };
         Assert.Equal(new[] { new RequestSentPart(true, 3, null, at.UtcDateTime) },
-            Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(new() { Key = "tv:tvdb:279121", Scope = "future", Variant = "4k", Seasons = new[] { 3 } })).ToArray());
+            Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(future), new[] { Went(future, at) }).ToArray());
+        var film = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput { Key = "movie:tmdb:693134" };
         Assert.Equal(new[] { new RequestSentPart(false, null, null, at.UtcDateTime) },
-            Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(new() { Key = "movie:tmdb:693134" })).ToArray());
-        // A request moved from Seerr went out there long before the move (its want changed at the move): asked-for time.
-        var moved = Want(new() { Key = "tv:tvdb:279121", Scope = "seasons", Seasons = new[] { 1 } }) with { OriginKind = "seerr_import", CreatedAt = at.AddDays(-20) };
-        Assert.Equal(new[] { new RequestSentPart(false, 1, null, at.AddDays(-20).UtcDateTime) },
-            Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(moved).ToArray());
+            Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(film), new[] { Went(film, at) }).ToArray());
+        // Nothing went out for it (yet): no time, whatever the want's own times say.
+        Assert.Empty(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(film), Array.Empty<Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestDispatch>()));
         var seerr = SeerrRequestReadModel.FactsOf(new[]
         {
             new SeerrRequestRecord { Id = 1, IsMovie = false, TvdbId = 279121, Status = SeerrRequestStatus.Approved, Seasons = new[] { 1 }, CreatedAt = Now.AddHours(-3), UpdatedAt = Now.AddHours(-2) },

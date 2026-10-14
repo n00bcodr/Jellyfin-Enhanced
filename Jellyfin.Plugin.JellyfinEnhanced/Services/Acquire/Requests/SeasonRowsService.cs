@@ -126,8 +126,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var episode in ParseSeason(json)) meta[episode.Episode] = episode;
             }
 
+            var facts = _policy.Evaluate(viewer.UserId, new MutationInput { Key = canonical.ToString(), Scope = "episodes", Episodes = new[] { new RequestEpisode(season, 1) } });
             var (perEpisode, seasonState) = _ledger.Database.Available
-                ? RequestStates(_ledger.ForTitle(canonical.ToString()), viewer.UserId, season, _now(), _policy.Configuration.ArrRequestDeclineCooldownDays)
+                ? RequestStates(_ledger.ForTitle(canonical.ToString()), viewer.UserId, season, _now(), _policy.Configuration.ArrRequestDeclineCooldownDays, RequestLedger.TargetKey(facts))
                 : (new Dictionary<int, string>(), null);
 
             var numbers = new SortedSet<int>(meta.Keys);
@@ -151,7 +152,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 });
             }
 
-            var facts = _policy.Evaluate(viewer.UserId, new MutationInput { Key = canonical.ToString(), Scope = "episodes", Episodes = new[] { new RequestEpisode(season, 1) } });
             return new SeasonRows
             {
                 Key = key.ToString(),
@@ -168,28 +168,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>
         /// The viewer's request state per episode of a season and of the season as a whole, from the
         /// standard-edition wants on the series (the controls ask for that one; a 4K ask leaves them
-        /// alone): the viewer's own asks win over other people's (shown only as "household").
+        /// alone): the viewer's own asks win over other people's (shown only as "household"), and asks on
+        /// <paramref name="currentTarget"/> (where an ask goes now) over asks left on another target, such as an
+        /// ask sent to Seerr before requests moved to Jellyfin Enhanced, whose request now waits for an OK here.
         /// </summary>
-        internal static (Dictionary<int, string> Episodes, string? Season) RequestStates(IEnumerable<RequestWant> wants, Guid viewer, int season, DateTimeOffset now, int declineCooldownDays)
+        internal static (Dictionary<int, string> Episodes, string? Season) RequestStates(IEnumerable<RequestWant> wants, Guid viewer, int season, DateTimeOffset now, int declineCooldownDays, string? currentTarget = null)
         {
             var episodes = new Dictionary<int, string>();
+            var elsewhere = new Dictionary<int, string>();
             string? whole = null;
+            string? wholeElsewhere = null;
             foreach (var want in wants)
             {
                 if (want.Input.Variant != "standard") continue;
                 var state = StateOf(want, viewer, now, declineCooldownDays);
                 if (state == null) continue;
+                var here = currentTarget == null || want.TargetKey == currentTarget;
+                var states = here ? episodes : elsewhere;
                 var input = want.Input;
                 if (input.Scope == "episodes")
                 {
-                    foreach (var e in input.Episodes.Where(e => e.Season == season)) episodes[e.Episode] = Stronger(episodes.GetValueOrDefault(e.Episode), state);
+                    foreach (var e in input.Episodes.Where(e => e.Season == season)) states[e.Episode] = Stronger(states.GetValueOrDefault(e.Episode), state);
                 }
                 else if (input.Scope is "seasons" or "future" or "next_season" && input.Seasons.Contains(season))
                 {
-                    whole = Stronger(whole, state);
+                    if (here) whole = Stronger(whole, state);
+                    else wholeElsewhere = Stronger(wholeElsewhere, state);
                 }
             }
-            return (episodes, whole);
+            // A whole-season ask on the current target covers every episode, so asks left elsewhere don't show then.
+            if (whole == null)
+                foreach (var (episode, state) in elsewhere) episodes.TryAdd(episode, state);
+            return (episodes, whole ?? wholeElsewhere);
         }
 
         /// <summary>

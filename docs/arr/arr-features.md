@@ -215,10 +215,11 @@ no longer says "Still looking, we'll keep trying" with a journey: it says plainl
 episode's own page, and on a series page when the whole series has nothing; Kids see "Ask Dad to search"). This also
 holds when someone already asked for it and the ask was sent: once nothing turns up for that long, it reads **Missing**
 with **Search** again (an ask still waiting for an OK keeps *Waiting for OK*). Those hours count from the latest of
-when it aired or came out, when Sonarr/Radarr first listed it, and when a request for it last went out (to Sonarr/Radarr
-in Jellyfin Enhanced mode, or OK'd in Seerr in Seerr mode): an episode asked for today in a series Sonarr has had for
-years reads "Looking for it", not **Missing**. Fresh ones keep "Looking for it"; ones Sonarr/Radarr isn't fetching keep
-"Not being fetched".
+when it aired or came out, when Sonarr/Radarr first listed it, and (with *Ask for it*, phase 3, on) when a request for it
+last went out: sent to Sonarr/Radarr in Jellyfin Enhanced mode (joining a request that was already sent restarts
+nothing; a request moved from Seerr while Seerr was already fetching it counts from when it was asked for there), or
+OK'd in Seerr in Seerr mode. An episode asked for today in a series Sonarr has had for years reads "Looking for it",
+not **Missing**. Fresh ones keep "Looking for it"; ones Sonarr/Radarr isn't fetching keep "Not being fetched".
 
 - **Administrators** (with the Manage drawer on): **Search** runs Sonarr's or Radarr's own search for exactly that
   episode (from the *Missing* line: the season; a series with nothing at all: the series) right away, shows
@@ -227,7 +228,9 @@ years reads "Looking for it", not **Missing**. Fresh ones keep "Looking for it";
   searched ("Sonarr · Monitored; still nothing grabbed · since 2 Jan · last searched 3 h ago").
 - **Everyone else who may ask**: when a request already went out for that episode or movie (theirs or someone
   else's in the household), **Search** runs Sonarr's or Radarr's search for it again, with no new request: nothing is
-  charged and no OK is needed, since the request already was. It says what happened the same way (*Found a copy —
+  charged and no OK is needed, since the request already was. Only the standard copy the request went to is searched
+  (never a 4K copy), and with Seerr handling requests only once Seerr has OK'd the request (a request still waiting
+  for an OK in Seerr is asked for as usual instead). It says what happened the same way (*Found a copy —
   downloading*, *Nothing found yet · searched just now*). The household gets one such search per episode or movie per
   "still looking" period; pressing it again sooner says "Searched for it a little while ago. We'll keep looking." From
   the *Missing* line, each episode a request sent is searched (at most ten), and the others are asked for. For
@@ -707,7 +710,9 @@ before charging its replacement; uncertain or succeeded work keeps its charge. A
 after part of it was written resumes that same work with the approval's authority (same scope and charge, still
 uncertain); it can't be edited or moved to another target meanwhile (409). Approval edits replace known-unsent jobs and their charges together; an edit conflicting with
 sent or uncertain scope returns 409. Future-season owners pay once per observed
-new season, including an overdraft; followers do not. Declines have a configurable cooldown. Cancel before sending or
+new season, including an overdraft; followers do not. A season counts once Sonarr monitors it and it has started
+(an aired episode or a file), seen in a Sonarr library read of the instance and connection the request went to; a
+season someone else asked for themselves is theirs to pay for. *Charge future seasons when they start* turns it off. Declines have a configurable cooldown. Cancel before sending or
 decline refunds the reservation. An uncertain outgoing action keeps its reservation until a fresh read of the original
 connection resolves it, even after authority changes. Deleting an approver anonymizes retained job contexts and preserves
 send certainty; only known-unsent queued approvals return to review, refunding just their own scope's charges. Charges
@@ -779,7 +784,8 @@ profiles, folders or tags.
   when the weekly allowance is nearly used, when the person's asks wait for an OK, or when they may choose 4K.
 - **The request sheet** is a bottom sheet on phones, a dialog on desktop and a full-screen panel on TV (Back closes
   it). For a series it offers large cards: *Everything*, *Just the latest season*, *Next season only*, *Pick
-  seasons…*, *Pick episodes…* and *Just new episodes from now on*. Each card shows what it costs ("Uses 2 of your 4
+  seasons…*, *Pick episodes…* and *Just new episodes from now on* (Jellyfin Enhanced mode only: Seerr can't keep
+  getting new seasons, so with Seerr handling requests the card isn't offered). Each card shows what it costs ("Uses 2 of your 4
   this week"); with no weekly limit there is no cost line. A Standard / 4K choice appears only for people who may
   ask for 4K. Seasons already in Jellyfin (in any quality) or already asked for are not offered again for the
   standard copy; for 4K every season stays offered, since Jellyfin's count doesn't say which copies are 4K.
@@ -945,7 +951,10 @@ Enhanced's key), so Seerr's own permissions, quotas, approval rules and override
   real true/false). Only *on* sends some seasons; with *off* or *unknown*, only a request covering every season is
   sent, and a request for some seasons waits (`seerr_whole_series_only`). Specials are sent only when Seerr's specials
   setting is on (a missing setting counts as off). The seasons sent are always among those confirmed. Single episodes
-  can't be sent to Seerr (`seerr_whole_season_only`); "Keep getting new episodes" sends the current season.
+  can't be sent to Seerr (`seerr_whole_season_only`); "Keep getting new episodes" sends the current season (the
+  request sheet doesn't offer it in Seerr mode).
+- Seerr's request permissions are per kind: someone who may ask only for series (or only for movies) in Seerr gets the
+  request controls for that kind only.
 - Requests go to the first Seerr address only, and the account check before the POST and the reads that confirm it are
   made at that same address. A POST whose answer is lost is maybe sent and is never repeated against another Seerr
   address; a fresh read of the title in Seerr (not the cached request list) settles it: every season sent must be
@@ -996,7 +1005,8 @@ Seerr already holds. **Move requests from Seerr...** (under *Ask for it* on the 
 1. **Check.** Jellyfin Enhanced reads every request Seerr holds (all pages, not just the newest few thousand) and
    says what a move would do: how many are waiting for an OK, how many are in progress, and what is left out
    (declined, completed or already available, people without a Jellyfin account, requests already moved). It also
-   checks that nobody can still ask in Seerr: no Seerr user and no default permission may hold a request permission.
+   checks that nobody can still ask in Seerr: no non-admin Seerr user and no default permission may hold a request
+   permission (Seerr administrators aren't counted; they always hold every permission and can still ask in Seerr itself).
    The check changes nothing.
 2. **Move.** Jellyfin Enhanced reads Seerr again and refuses when anything changed since the check, when Seerr's list
    couldn't be read completely, when the Seerr address was changed in the settings while it read, or while people can
@@ -1038,8 +1048,10 @@ request in Jellyfin Enhanced, under the same rules as a person's own ask, instea
 - The request counts against the person's allowance like any other. The same automatic request is never recorded
   twice, and one that was declined or cancelled isn't asked for again.
 - In Jellyfin Enhanced mode no Seerr is needed: the next season or the next movie of a collection is looked up on
-  TMDB (a TMDB API key is required) and checked against your library. The Seerr quality settings of Auto Movie
-  Request (original or custom server, profile and folder) apply only while requests go to Seerr.
+  TMDB (a TMDB API key is required) and checked against your library. The quality settings of Auto Movie Request
+  (original or custom server, quality profile and root folder) apply only with phase 3 off: with it on, in either
+  mode, the next movie is recorded as a plain request and goes out with the defaults (the instance's add defaults in
+  Jellyfin Enhanced mode, Seerr's default server and profile in Seerr mode).
 - A lookup that fails (TMDB or Seerr down) is retried after a couple of minutes instead of being taken as "nothing to
   do"; a definite answer waits an hour before the same episode or movie is checked again, as before.
 

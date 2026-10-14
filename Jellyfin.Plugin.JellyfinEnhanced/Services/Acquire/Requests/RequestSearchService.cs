@@ -61,7 +61,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // Not this route's to do (nothing searched, not an error): the caller asks for it instead.
             if (!_requests.Ledger.SentCovers(input, facts))
                 return (Skipped("not_requested", "Nothing was asked for here yet."), null);
-            var instanceId = await _manage.Status.SearchableInstanceAsync(viewer, scope, ct).ConfigureAwait(false);
+            // Only the standard copy on the request target (JE mode: the instance the sent request went to).
+            var (instanceId, sent) = await _manage.Status.SearchableInstanceAsync(viewer, scope, facts.Backend == "je" ? facts.InstanceId : null, ct).ConfigureAwait(false);
+            // Seerr accepts a request that still waits for an OK there: until Seerr OKs it, nothing went out, so
+            // the caller asks (and waits) instead of searching around the approval.
+            if (facts.Backend == "seerr" && !sent)
+                return (Skipped("not_requested", "Nothing was asked for here yet."), null);
             if (instanceId == null)
                 return (Skipped("not_searchable", "Still looking for it; nothing to search for yet."), null);
 

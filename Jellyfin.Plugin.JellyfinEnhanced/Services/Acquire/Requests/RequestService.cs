@@ -136,13 +136,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var config = _policy.Configuration;
             var movie = Identity(user, true);
+            var series = Identity(user, false);
             var movie4k = _policy.Evaluate(user, new MutationInput { Key = "movie:tmdb:1", Variant = "4k" });
             var series4k = _policy.Evaluate(user, new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 }, Variant = "4k" });
             var backend = config.ArrRequestBackend is "je" or "seerr" ? config.ArrRequestBackend : "status_only";
+            bool Can(RequestPolicyFacts facts) => facts.CanCreate && facts.Role != "Watcher" && backend != "status_only";
             return new RequestCapabilities
             {
                 Role = movie.Role.ToLowerInvariant(),
-                CanRequest = movie.CanCreate && movie.Role != "Watcher" && backend != "status_only",
+                CanRequest = Can(movie) || Can(series),
+                CanRequestMovies = Can(movie),
+                CanRequestSeries = Can(series),
                 CanApprove = movie.CanApprove,
                 AsksFirst = movie.Role == "Kid" || (movie.Role == "Member" && backend == "je" && config.ArrRequestPreset == "approve_everything"),
                 Can4kMovies = movie4k.Can4k,

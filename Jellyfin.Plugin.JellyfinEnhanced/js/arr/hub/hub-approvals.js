@@ -408,6 +408,8 @@
         const focus = X.focusedId(panel);
         panel.textContent = '';
         const box = X.el('div', 'je-approvals');
+        // Darker greens and ambers on a light theme (readable at 4.5:1).
+        if (JE.internals?.arrAskSheetStyles?.isLight?.()) box.classList.add('je-approvals-light');
         panel.appendChild(box);
         if (state.banner) {
             const banner = X.el('div', `je-hub-note je-approvals-banner je-approvals-tone-${state.banner.tone}`, state.banner.text);

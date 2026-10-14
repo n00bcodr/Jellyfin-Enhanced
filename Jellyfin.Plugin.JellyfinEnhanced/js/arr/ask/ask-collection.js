@@ -115,7 +115,7 @@
         }
         if (!isCurrent(token)) return;
         const caps = await JE.arrAsk.me();
-        const allowance = caps?.canRequest ? await JE.arrAsk.quota('movie') : null;
+        const allowance = JE.arrAsk.canAsk(caps, 'movie') ? await JE.arrAsk.quota('movie') : null;
         if (!isCurrent(token)) return;
         render(page, token, gaps, caps, allowance);
     }
@@ -177,7 +177,7 @@
         have.appendChild(S.el('span', null, tr('arr_collection_have', { have: gaps.have, total: gaps.total })));
         head.appendChild(have);
         const parts = gettable(gaps);
-        if (caps?.canRequest && parts.length) {
+        if (JE.arrAsk.canAsk(caps, 'movie') && parts.length) {
             const n = parts.length;
             const label = caps.asksFirst
                 ? (n === 1 ? tr('arr_collection_ask_one', { contact }) : tr('arr_collection_ask', { contact, n }))

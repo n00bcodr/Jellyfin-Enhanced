@@ -2,8 +2,9 @@
  * @file Requests & downloads, phase 3: styles of the Approvals and Household tabs, the Cancel button
  * of My requests and the home chip bar. Phone-first cards (no wide tables), targets of at least
  * 44 px on phones (≤ 600 px) and TV, visible focus rings, nothing hover-only, colours readable on
- * the dark and the light theme (borders and tints follow the text colour), and colour never the
- * only signal (every chip has an icon and words).
+ * the dark and the light theme (borders and tints follow the text colour; the green and amber words
+ * of the Approvals tab take darker shades on a light theme, .je-approvals-light, for 4.5:1), and
+ * colour never the only signal (every chip has an icon and words).
  */
 (function (JE) {
     'use strict';
@@ -66,6 +67,10 @@
 .je-approvals-tone-attention { color: #d97706; }
 .je-approvals-banner.je-approvals-tone-done { border-left: 3px solid #2e9d4f; }
 .je-approvals-banner.je-approvals-tone-attention { border-left: 3px solid #d97706; }
+.je-approvals-light .je-approval-rating-ok, .je-approvals-light .je-approvals-tone-done { color: #1a7431; }
+.je-approvals-light .je-approval-rating-warn, .je-approvals-light .je-approvals-tone-attention { color: #9a4d00; }
+.je-approvals-light .je-approvals-banner.je-approvals-tone-done { border-left-color: #1a7431; }
+.je-approvals-light .je-approvals-banner.je-approvals-tone-attention { border-left-color: #9a4d00; }
 .je-approval-readonly { font-size: 0.9em; opacity: 0.85; font-style: italic; }
 .je-approvals-hint { display: flex; align-items: center; justify-content: center; gap: 0.4em; font-size: 0.9em; opacity: 0.75; }
 .je-household-rules { display: flex; flex-direction: column; gap: 0.6em; padding: 0.9em; border-radius: 12px;

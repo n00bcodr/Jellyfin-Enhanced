@@ -68,7 +68,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Most open requests listed per person.</summary>
         public const int MaxRequestsPerPerson = 5;
 
-        private static readonly object SaveLock = new();
         private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
         private static readonly JsonSerializerOptions Stored = new() { PropertyNameCaseInsensitive = true };
         private readonly RequestHubProjection _hub;
@@ -215,7 +214,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     users[id] = value;
                 }
             }
-            lock (SaveLock)
+            // Under the lock a config-page save takes to swap the configuration object, so the edit lands on the
+            // live configuration and neither save can overwrite the other; the saved values are read back.
+            lock (JellyfinEnhanced.AnalyticsCredentialLock)
             {
                 var config = Service.Policy.Configuration;
                 Dictionary<string, RequestUserSettings> storedUsers;
@@ -255,7 +256,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (body.Preset != null) config.ArrRequestPreset = body.Preset;
                 if (body.DefaultRole != null) config.ArrRequestDefaultRole = Canonical(body.DefaultRole);
                 if (body.QuotaLimit.HasValue) config.ArrRequestQuotaLimit = body.QuotaLimit.Value;
-                _save(config);
+                var written = (config.ArrRequestUsers, config.ArrRequestRoles, config.ArrRequestPreset, config.ArrRequestDefaultRole, config.ArrRequestQuotaLimit);
+                try
+                {
+                    _save(config);
+                }
+                catch (Exception)
+                {
+                    return RequestOutcome.Refused("save_failed", 500, "unavailable") with { Message = "The household couldn't be saved. Try again." };
+                }
+                var live = Service.Policy.Configuration;
+                if ((live.ArrRequestUsers, live.ArrRequestRoles, live.ArrRequestPreset, live.ArrRequestDefaultRole, live.ArrRequestQuotaLimit) != written)
+                    return RequestOutcome.Refused("save_failed", 500, "unavailable") with { Message = "The household couldn't be saved. Try again." };
             }
             _feed.Bump(new[] { ArrTitleKey.RequestsState });
             return RequestOutcome.Accepted(caller.UserId.ToString("N", CultureInfo.InvariantCulture), "saved", 200) with { Message = "Household saved." };

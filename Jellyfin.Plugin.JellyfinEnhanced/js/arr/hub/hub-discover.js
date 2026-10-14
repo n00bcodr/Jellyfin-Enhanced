@@ -246,7 +246,7 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
      */
     function requestButton(card, ctx, node) {
         const caps = ctx.caps;
-        if (!caps?.canRequest || card.inLibrary) return null;
+        if (!(JE.arrAsk?.canAsk ? JE.arrAsk.canAsk(caps, card.kind === 'tv' ? 'series' : 'movie') : caps?.canRequest) || card.inLibrary) return null;
         const left = moreToAsk(card, caps);
         if (!left.more) return null;
         const series = card.kind === 'tv';
@@ -375,8 +375,10 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
     function buildCard(card, ctx) {
         injectStyles();
         const node = el('div', 'je-discover-card');
-        // Focus can rest on the card itself when the button that had it goes (after asking).
+        // Focus can rest on the card itself when the button that had it goes (after asking), and finds
+        // the same card again when the row or the page is redrawn (its focus id).
         node.tabIndex = -1;
+        node.dataset.jeFocus = `${ctx.surface}:card:${card.key}`;
         node.dataset.key = card.key;
         node.dataset.jeArrKey = card.key;
         const year = card.year ? String(card.year) : '';

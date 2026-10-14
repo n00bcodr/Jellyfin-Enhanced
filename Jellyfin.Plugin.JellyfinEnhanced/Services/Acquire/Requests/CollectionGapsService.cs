@@ -81,6 +81,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<int, Guid, CancellationToken, Task<bool>> _maySee;
         private readonly Func<DateTimeOffset> _now;
         private readonly Func<int> _declineCooldownDays;
+        private readonly Func<Guid, string?>? _currentTarget;
 
         /// <summary>Creates the service over the library, the shared TMDB cache and the parental filter.</summary>
         public CollectionGapsService(IArrJellyfinView view, ILibraryManager libraryManager, RequestLedger ledger, TitleAliases aliases, TmdbResponseCache tmdb, SeerrParentalFilter parental, IRequestPolicy policy)
@@ -92,7 +93,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 (id, language, ct) => TmdbCollectionAsync(tmdb, id, language, ct),
                 (tmdbId, user, ct) => parental.MaySeeAbsentAsync("movie", tmdbId, user.ToString("N", CultureInfo.InvariantCulture), ct),
                 () => DateTimeOffset.UtcNow,
-                () => policy.Configuration.ArrRequestDeclineCooldownDays)
+                () => policy.Configuration.ArrRequestDeclineCooldownDays,
+                user => RequestLedger.TargetKey(policy.Evaluate(user, new MutationInput { Key = "movie:tmdb:1" })))
         {
         }
 
@@ -105,7 +107,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Func<int, string?, CancellationToken, Task<string?>> tmdbCollection,
             Func<int, Guid, CancellationToken, Task<bool>> maySee,
             Func<DateTimeOffset> now,
-            Func<int>? declineCooldownDays = null)
+            Func<int>? declineCooldownDays = null,
+            Func<Guid, string?>? currentTarget = null)
         {
             _view = view;
             _boxSet = boxSet;
@@ -115,6 +118,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _maySee = maySee;
             _now = now;
             _declineCooldownDays = declineCooldownDays ?? (() => 7);
+            _currentTarget = currentTarget;
         }
 
         /// <summary>
@@ -148,7 +152,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var visible = missing.Where((_, i) => allowed[i]).ToList();
 
             var wants = _ledger?.Database.Available == true;
-            var listed = visible.Select(p => wants ? p with { Request = RequestState(p.Key, viewer.UserId) } : p).ToList();
+            var target = wants ? _currentTarget?.Invoke(viewer.UserId) : null;
+            var listed = visible.Select(p => wants ? p with { Request = RequestState(p.Key, viewer.UserId, target) } : p).ToList();
             return (new CollectionGaps { Have = have, Total = have + listed.Count, Missing = listed }, null);
         }
 
@@ -170,20 +175,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
         }
 
-        /// <summary>The viewer's request state of a movie (standard edition), from the ledger.</summary>
-        private string? RequestState(string key, Guid viewer)
+        /// <summary>
+        /// The viewer's request state of a movie (standard edition), from the ledger: asks on
+        /// <paramref name="target"/> (where an ask goes now) win over asks left on another target.
+        /// </summary>
+        private string? RequestState(string key, Guid viewer, string? target)
         {
             var parsed = TitleKey.Parse(key)!;
             var canonical = (_aliases?.Canonical(parsed) ?? parsed).ToString();
             string? state = null;
+            string? elsewhere = null;
             foreach (var want in _ledger!.ForTitle(canonical))
             {
                 if (want.Input.Scope != "movie" || want.Input.Variant != "standard") continue;
                 var next = SeasonRowsService.StateOf(want, viewer, _now(), _declineCooldownDays());
                 if (next == null) continue;
-                state = SeasonRowsService.Stronger(state, next);
+                if (target == null || want.TargetKey == target) state = SeasonRowsService.Stronger(state, next);
+                else elsewhere = SeasonRowsService.Stronger(elsewhere, next);
             }
-            return state;
+            return state ?? elsewhere;
         }
 
         /// <summary>

@@ -447,7 +447,7 @@ The advanced fields are server-owned. Quota and preset settings govern JE mode; 
 | `ArrRequestDeclineCooldownDays` | 7 | Wait before repeating a declined scope |
 | `ArrRequestPendingLimit` | 10 | Pending requests per person |
 | `ArrRequestQuotaGb` | 0 | Optional estimated GB cap; zero disables it |
-| `ArrRequestChargeFutureSeasons` | true | Charge the owner once when a new season starts |
+| `ArrRequestChargeFutureSeasons` | true | Charge the owner of a "Keep getting new episodes" request once for each new season Sonarr monitors, once it starts (an aired episode or a file) |
 | `ArrRequestStaleDays` | 30 | Flag a sent but unfulfilled request for review; no automatic refund |
 | `ArrRequestRoles` | `{}` | Optional per-role `QuotaLimit`, `QuotaGb` and `FourKInstances` defaults |
 | `ArrRequestUsers` | `{}` | Per-user `Role`, `QuotaLimit`, `QuotaGb` and `FourKInstances` overrides |
@@ -474,4 +474,6 @@ Admins can edit `ArrRequestPreset`, `ArrRequestDefaultRole`, `ArrRequestQuotaLim
 page instead of the JSON fields. A save changes only those values; 4K grants and GB caps in the same JSON are kept.
 Limits offer the inherited value, **No limit** (−1) or a fixed number of requests per window. Jellyfin administrators
 are always Admin and have no role picker. People with a Jellyfin parental limit get a hint that Kid may suit them; it is
-never applied automatically. Managers can read the tab but not change it.
+never applied automatically. Managers can read the tab but not change it. The configuration page keeps these fields (and
+*Request handling*, which a move from Seerr switches) as the server has them when it is saved, unless they were changed
+on that page: a page left open before a Household edit or a move doesn't put the older values back.

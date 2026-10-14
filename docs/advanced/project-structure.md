@@ -418,6 +418,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   is the administrators' Manage › Add to. `LedgerRequestFacts.cs` selects ledger facts in JE
   mode and the existing Seerr read model otherwise (including when requests went out, which restarts the "still looking"
   clock). `RequestSearchService.cs` runs the arr's search again for what requests already sent (family Search).
+  `FutureSeasonCharges.cs` charges the owner of a "Keep getting new episodes" request once per new season a Sonarr
+  library read shows started.
   `AcquireRequestsController.cs` exposes the authenticated server API.
   `SeerrMigrationReader.cs` reads every Seerr request complete-or-nothing (with a digest and Seerr's requesting state) and
   `SeerrMigration.cs` runs the admin dry run, the import into `RequestLedgerImport.cs` (import batches, rollback by batch,

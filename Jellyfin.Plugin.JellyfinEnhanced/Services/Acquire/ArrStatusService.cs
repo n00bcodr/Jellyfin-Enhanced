@@ -270,39 +270,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
-        /// For a family Search: the instance whose copy of the movie or episode in <paramref name="key"/>
-        /// has been missing for a long while (monitored, out, nothing grabbed for longer than the
-        /// "still looking" hours, a request going out restarting that clock), standard copies first;
-        /// null when no copy is, the viewer can't see the series or Jellyfin hides that episode from them.
+        /// For a family Search: the instance whose standard copy of the movie or episode in <paramref name="key"/>
+        /// has been missing for a long while (monitored, out, nothing grabbed for longer than the "still looking"
+        /// hours, a request going out restarting that clock); null when none is, the viewer can't see the series or
+        /// Jellyfin hides that episode from them. Only the standard edition is searched (the one a family Search
+        /// checked a sent request for): never a 4K copy, and only <paramref name="instanceId"/>'s copy when one is
+        /// named (the request target). <c>Sent</c>: the request facts say a request covering that part went out
+        /// (in Seerr mode: an OK'd Seerr request, not one still waiting there).
         /// </summary>
-        internal async Task<string?> SearchableInstanceAsync(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
+        internal async Task<(string? InstanceId, bool Sent)> SearchableInstanceAsync(StatusViewer viewer, TitleKey key, string? instanceId, CancellationToken cancellationToken)
         {
-            if (!key.IsMovie && (key.Season == null || key.Episode == null)) return null;
+            if (!key.IsMovie && (key.Season == null || key.Episode == null)) return (null, false);
             var title = key.Title;
             var gather = await GatherAsync(viewer, new[] { title }, loadEpisodes: key.IsMovie ? null : new[] { title }, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
             ApplyRequests(gather, viewer);
-            if (!gather.Facts.TryGetValue(title, out var facts)) return null;
+            if (!gather.Facts.TryGetValue(title, out var facts)) return (null, false);
+            var sent = facts.Request?.SentFor(false, key.Season, key.Episode) != null;
             var c = Context(viewer);
             if (key.IsMovie)
             {
                 // A copy the viewer can already open is not missing.
-                if (CopiesOf(title, viewer).Any(x => x.Visible)) return null;
+                if (CopiesOf(title, viewer).Any(x => x.Visible)) return (null, sent);
             }
             else
             {
-                if (CopiesOf(title, viewer).FirstOrDefault(x => x.Visible) is not { } series) return null;
-                if (HiddenFromViewer(facts, series.ItemId, viewer)?.Hides(key.Season!.Value, key.Episode!.Value) == true) return null;
+                if (CopiesOf(title, viewer).FirstOrDefault(x => x.Visible) is not { } series) return (null, sent);
+                if (HiddenFromViewer(facts, series.ItemId, viewer)?.Hides(key.Season!.Value, key.Episode!.Value) == true) return (null, sent);
                 if (_view.Episodes(series.ItemId, key.Season!.Value, viewer, includeVirtual: false)
-                    .Any(e => !e.Hidden && new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(key.Episode!.Value))) return null;
+                    .Any(e => !e.Hidden && new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(key.Episode!.Value))) return (null, sent);
             }
-            foreach (var copy in facts.Copies.OrderBy(x => x.Instance.Role == "4k" ? 1 : 0))
+            foreach (var copy in facts.Copies.Where(x => x.Instance.Role != "4k" && (string.IsNullOrEmpty(instanceId) || x.Instance.Id == instanceId)))
             {
                 StatusComposer.CopyState? state = key.IsMovie
                     ? copy.Movie != null && !copy.Movie.HasFile ? StatusComposer.MovieFromArr(copy, c, facts.Request) : null
                     : copy.Series != null ? StatusComposer.EpisodeFromArr(copy, key.Season!.Value, key.Episode!.Value, copy.Episodes?.Find(key.Season!.Value, key.Episode!.Value), c, facts.Request) : null;
-                if (state?.Reason == StatusReasonCode.NoReleaseYet) return copy.Instance.Id;
+                if (state?.Reason == StatusReasonCode.NoReleaseYet) return (copy.Instance.Id, sent);
             }
-            return null;
+            return (null, sent);
         }
 
         /// <summary>
@@ -590,7 +594,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private ComposeContext Context(StatusViewer viewer)
         {
             var config = _config();
-            return new(viewer, _now().UtcDateTime, config?.ArrStatusLookingHours ?? 24) { HandoffGrace = HandoffGrace(config) };
+            return new(viewer, _now().UtcDateTime, config?.ArrStatusLookingHours ?? 24)
+            {
+                HandoffGrace = HandoffGrace(config),
+                RequestClock = config is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true },
+            };
         }
 
         /// <summary>

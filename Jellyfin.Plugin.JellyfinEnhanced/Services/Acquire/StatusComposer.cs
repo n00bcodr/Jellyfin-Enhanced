@@ -155,6 +155,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// Family members are told only after <see cref="LookingHours"/>.
         /// </summary>
         public TimeSpan? HandoffGrace { get; init; }
+
+        /// <summary>
+        /// A request that went out restarts the "still looking" clock of the parts it covers (Requests &amp;
+        /// downloads phase 3 only; with it off the clock counts from the arr's own dates, as before).
+        /// </summary>
+        public bool RequestClock { get; init; } = true;
     }
 
     /// <summary>
@@ -328,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 return new CopyState(StatusStage.NotOut, StatusReasonCode.NotReleased, Date: date, DateIsDay: true);
             }
             if (copy.QueueUnknown) return Unknown();
-            var since = Latest(Latest(Valid(movie.Added), Valid(movie.DigitalRelease) is DateTime d && d <= c.Now ? d : null), SentFor(request, copy, null, null));
+            var since = Latest(Latest(Valid(movie.Added), Valid(movie.DigitalRelease) is DateTime d && d <= c.Now ? d : null), SentFor(request, copy, null, null, c));
             return Looking(since, c, movie.LastSearchTime);
         }
 
@@ -812,7 +818,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (series.EpisodeCount == 0 && series.NextAiring is DateTime next && next > c.Now)
                 return new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: next);
             if (copy.QueueUnknown) return Unknown();
-            return Looking(Latest(Valid(series.Added), SentFor(request, copy, null, null)), c);
+            return Looking(Latest(Valid(series.Added), SentFor(request, copy, null, null, c)), c);
         }
 
         /// <summary>
@@ -876,7 +882,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (air == null || NotYet(air.Value, arr.AirDateIsDay, c.Now)) return new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: air, DateIsDay: arr.AirDateIsDay);
             if (!arr.Monitored || copy.Series?.Monitored == false) return new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored);
             if (copy.QueueUnknown) return Unknown();
-            return Looking(Latest(Latest(air, Valid(copy.Series?.Added)), SentFor(request, copy, season, episode)), c, arr.LastSearchTime);
+            return Looking(Latest(Latest(air, Valid(copy.Series?.Added)), SentFor(request, copy, season, episode, c)), c, arr.LastSearchTime);
         }
 
         // ------------------------------------------------------------------ queue
@@ -1618,7 +1624,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static DateTime? Latest(DateTime? a, DateTime? b) => a == null ? b : b == null ? a : (a > b ? a : b);
 
         /// <summary>When a request covering this part of the copy's edition (4K instance or not) last went out, or null.</summary>
-        private static DateTime? SentFor(RequestFacts? request, ArrCopyFacts copy, int? season, int? episode)
-            => Valid(request?.SentFor(copy.Instance.Role == "4k", season, episode));
+        private static DateTime? SentFor(RequestFacts? request, ArrCopyFacts copy, int? season, int? episode, ComposeContext c)
+            => c.RequestClock ? Valid(request?.SentFor(copy.Instance.Role == "4k", season, episode)) : null;
     }
 }

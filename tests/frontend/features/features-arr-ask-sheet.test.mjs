@@ -1032,3 +1032,99 @@ test('seasons the caller already asked for are not offered again for the standar
   h.Sheet.close();
   await pending;
 });
+
+// ------------------------------------------------------------------ combined review (phase 3)
+
+test('Seerr mode: "Just new episodes from now on" is not offered (Seerr would get the current season once)', async t => {
+  const h = setup(t, { me: { ...MEMBER, backend: 'seerr' } });
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  const cards = [...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice);
+  assert.deepEqual(cards, ['everything', 'latest', 'next', 'pick', 'episodes']);
+  key(h, 'Escape');
+  assert.equal(await pending, null);
+  // Jellyfin Enhanced mode keeps it.
+  h.state.me = MEMBER;
+  h.JE.arrAsk.me(true);
+  await settle();
+  const again = h.Sheet.open(SERIES);
+  await settle();
+  assert.ok(card(h, 'future'));
+  key(h, 'Escape');
+  await again;
+});
+
+test('per-kind capabilities: a TV-only Seerr account gets the series sheet and controls but no movie asks', async t => {
+  const h = setup(t, { me: { ...MEMBER, backend: 'seerr', canRequestMovies: false, canRequestSeries: true }, html: '<div id="m"></div><div id="s"></div>' });
+  assert.equal(await h.Sheet.openOrAsk(MOVIE), null);
+  assert.equal(h.posts.length, 0);
+  assert.deepEqual(h.toasts, ["You can't ask for this one."]);
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  assert.ok(sheetEl(h), 'the series sheet opens');
+  key(h, 'Escape');
+  await pending;
+  const movie = h.Sheet.mount(h.document.getElementById('m'), MOVIE);
+  const series = h.Sheet.mount(h.document.getElementById('s'), SERIES);
+  await settle();
+  assert.equal(h.document.querySelector('#m .je-ask-mount-request'), null);
+  assert.ok(h.document.querySelector('#s .je-ask-mount-request'));
+  movie.destroy();
+  series.destroy();
+  // A movies-only account: the other way round.
+  h.state.me = { ...MEMBER, backend: 'seerr', canRequestMovies: true, canRequestSeries: false };
+  h.JE.arrAsk.me(true);
+  await settle();
+  assert.equal(await h.Sheet.open(SERIES), null);
+  assert.equal((await h.Sheet.openOrAsk(MOVIE)).state, 'asked');
+});
+
+test('after an ask redraws the control that opened the sheet, focus goes to its replacement, else to its card', async t => {
+  const h = setup(t, { html: '<div class="card" tabindex="-1" id="card"><div class="actions"><button id="opener" data-je-focus="discover:request:tv:tvdb:393199">Request</button></div></div>' });
+  const actions = h.document.querySelector('.actions');
+  // The page redraws its buttons while the ask is out (as Discover cards do on the ask event).
+  let replace = true;
+  h.state.answer = () => {
+    actions.replaceChildren();
+    if (replace) {
+      const again = h.document.createElement('button');
+      again.id = 'again';
+      again.dataset.jeFocus = 'discover:request:tv:tvdb:393199';
+      actions.appendChild(again);
+    }
+    return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } };
+  };
+  let opener = h.document.getElementById('opener');
+  opener.focus();
+  let pending = h.Sheet.open(SERIES, { opener });
+  await settle();
+  click(h, primary(h));
+  await pending;
+  assert.equal(h.document.activeElement.id, 'again', 'the redrawn control with the same focus id');
+
+  // Nothing like it is drawn again: the card it was on keeps the focus.
+  replace = false;
+  opener = h.document.getElementById('again');
+  opener.focus();
+  pending = h.Sheet.open(SERIES, { opener });
+  await settle();
+  click(h, primary(h));
+  await pending;
+  assert.equal(h.document.activeElement.id, 'card');
+});
+
+test('request outcomes are read out through one persistent live region that outlives the sheet', async t => {
+  const h = setup(t);
+  await h.Sheet.openOrAsk(MOVIE);
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  click(h, primary(h));
+  await pending;
+  assert.equal(sheetEl(h), null);
+  const live = h.document.querySelectorAll('.je-ask-live');
+  assert.equal(live.length, 1, 'one region for every outcome');
+  assert.equal(live[0].getAttribute('role'), 'status');
+  assert.equal(live[0].getAttribute('aria-live'), 'polite');
+  await new Promise(r => setTimeout(r, 80));
+  assert.equal(live[0].textContent, "Asked! We'll let you know.");
+});

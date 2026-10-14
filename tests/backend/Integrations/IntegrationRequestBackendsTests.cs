@@ -512,6 +512,76 @@ public class IntegrationRequestBackendsTests
     }
 
     [Fact]
+    public async Task KeepGettingNewEpisodesChargesItsOwnerOnceForEachNewSeasonSonarrStarts()
+    {
+        using var lab = new Lab();
+        var (r, _) = Ledger(lab);
+        using var rig = r;
+        lab.Sonarr.Lookup.Add(Lab.SeriesLookup(75565));
+        lab.Sonarr.EpisodeList[75565] = new[] { (4, 1), (4, 2) };
+        // A member asks to keep getting new episodes from season 4 (1 now); Jellyfin Enhanced sends it to Sonarr.
+        var ask = await rig.Create(rig.Member, Series("future", new[] { 4 }));
+        Assert.Equal("queued_outage", ask.Reason);
+        await rig.Runner(lab.Direct).TickAsync(default);
+        Assert.Equal("sent", rig.Ledger.Find(ask.RequestId!)!.Status);
+        var series = lab.Sonarr.Series.Single();
+        Assert.Equal("all", (string)series["monitorNewItems"]!);
+        // Someone else asking for the same follows for free.
+        var follower = rig.Add("Member");
+        Assert.Equal("merged", (await rig.Create(follower, Series("future", new[] { 4 }))).Outcome);
+        int Used(Guid who) => rig.Service.Quota(who).Used;
+        Assert.Equal((1, 0), (Used(rig.Member), Used(follower)));
+
+        // The charger follows the store's library reads (what the reconciler's refreshes and live patches raise).
+        var charges = new FutureSeasonCharges(lab.Store, rig.Ledger, rig.Policy, lab.Arr.Factory, rig.Feed, null, null, () => rig.Now);
+        var started = new List<Task>();
+        charges.Started = started.Add;
+        charges.Subscribe();
+        async Task Read()
+        {
+            started.Clear();
+            Assert.True((await lab.Store.RefreshLibraryNowAsync(lab.Instance("Sonarr"), default)).Ok);
+            Assert.NotEmpty(started);
+            await Task.WhenAll(started.ToArray());
+        }
+        JsonObject Season(int number, int aired) => new() { ["seasonNumber"] = number, ["monitored"] = true, ["statistics"] = new JsonObject { ["episodeCount"] = aired, ["episodeFileCount"] = 0, ["totalEpisodeCount"] = 8 } };
+        await Read();
+        Assert.Equal(1, Used(rig.Member));
+
+        // Sonarr picks season 5 up (monitorNewItems): announced only, nothing yet; once it starts, 1 for its owner, once.
+        series["seasons"]!.AsArray().Add(Season(5, 0));
+        await Read();
+        Assert.Equal(1, Used(rig.Member));
+        series["seasons"]!.AsArray()[^1] = Season(5, 1);
+        await Read();
+        await Read();
+        Assert.Equal((2, 0), (Used(rig.Member), Used(follower)));
+        Assert.Contains(rig.Ledger.ForTitle("tv:tvdb:75565"), w => w.Id == ask.RequestId && w.Status == "sent");
+
+        // A season someone else asked for themselves is theirs to pay for (here a request Seerr was already fetching
+        // when it moved), not the Keep-getting owner's.
+        var target = rig.Ledger.Find(ask.RequestId!)!.TargetKey;
+        Assert.Equal(1, rig.Ledger.ImportSeerr("src", "digest", new[] { new ImportCandidate(follower, 7, Series("seasons", new[] { 6 }), false, rig.Now.AddDays(-1)) },
+            new Dictionary<string, int>(), rig.Admin, "seerr", _ => target, rig.Now, TimeSpan.FromDays(14)).Imported);
+        series["seasons"]!.AsArray().Add(Season(6, 2));
+        await Read();
+        Assert.Equal(2, Used(rig.Member));
+
+        // Switched off: nothing more is charged.
+        rig.Policy.Configuration.ArrRequestChargeFutureSeasons = false;
+        series["seasons"]!.AsArray().Add(Season(7, 1));
+        started.Clear();
+        Assert.True((await lab.Store.RefreshLibraryNowAsync(lab.Instance("Sonarr"), default)).Ok);
+        await Task.WhenAll(started.ToArray());
+        Assert.Equal(2, Used(rig.Member));
+        rig.Policy.Configuration.ArrRequestChargeFutureSeasons = true;
+        // A new connection (address or key changed) isn't where the request went: nothing is charged there.
+        lab.Edit("Sonarr", row => row["Url"] = "http://sonarr.test:8989");
+        Assert.Equal(0, charges.Charge(lab.Instance("Sonarr"), lab.Store.PeekLibrary(lab.Instance("Sonarr").Id)!));
+        Assert.Equal(2, Used(rig.Member));
+    }
+
+    [Fact]
     public async Task AJobLeftSendingByARestartIsReadBackFirstAndNotSentAgain()
     {
         using var lab = new Lab();

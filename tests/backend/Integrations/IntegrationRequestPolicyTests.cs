@@ -236,4 +236,50 @@ public class IntegrationLedgerSentFactsTests
         config.ArrRequestBackend = "seerr";
         Assert.Null(new LedgerRequestFacts(rig.Ledger, seerr, new TitleAliases(store, null)).For(TitleKey.Parse("tv:tvdb:78874")!, rig.View.Users[rig.Member]));
     }
+
+    [Fact]
+    public async Task TheClockCountsFromWhatWentOutNotFromJoinsOrFromWhenAMovedRequestWasAskedForInSeerr()
+    {
+        using var arr = new FakeArr();
+        var config = arr.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true; config.ArrRequestBackend = "je";
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        using var store = arr.Store();
+        using var seerr = new SeerrRequestReadModel(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
+        RequestFacts Facts() => new LedgerRequestFacts(rig.Ledger, seerr, new TitleAliases(store, null)).For(TitleKey.Parse("tv:tvdb:78874")!, rig.View.Users[rig.Member])!;
+        var sentAt = rig.Now;
+
+        // Monday: the member's season 1 goes out.
+        Assert.Equal(201, (await rig.Create(rig.Member, IntegrationRequestLedgerTests.Seasons(1))).HttpStatus);
+        await rig.Runner().TickAsync(CancellationToken.None);
+        Assert.Equal(sentAt.UtcDateTime, Facts().SentFor(false, 1, 4));
+
+        // Wednesday: someone else asks for the same season. Nothing is sent (they follow), so the clock stays.
+        rig.Now = sentAt.AddHours(30);
+        var other = rig.Add("Member");
+        var joined = await rig.Create(other, IntegrationRequestLedgerTests.Seasons(1));
+        Assert.Equal(("merged", "sent"), (joined.Outcome, rig.Ledger.Find(joined.RequestId!)!.Status));
+        Assert.Empty(rig.Ledger.Due(rig.Now));
+        Assert.Equal(sentAt.UtcDateTime, Facts().SentFor(false, 1, 4));
+
+        // A request moved from Seerr while still waiting there (asked 20 days ago), approved in JE now: it counts from
+        // the send JE makes, not from the Seerr ask. One already processing in Seerr counts from when it was asked there.
+        var target = RequestLedger.TargetKey(new RequestAuthorization(rig.Admin, null, "request", "seasons", "standard", "je", "r1", "g1", string.Empty));
+        var asked = sentAt.AddDays(-20);
+        var moved = rig.Ledger.ImportSeerr("src", "digest", new[]
+        {
+            new ImportCandidate(rig.Member, 41, IntegrationRequestLedgerTests.Seasons(2), true, asked),
+            new ImportCandidate(rig.Member, 42, IntegrationRequestLedgerTests.Seasons(3), false, asked),
+        }, new Dictionary<string, int>(), rig.Admin, "seerr", _ => target, rig.Now, TimeSpan.FromDays(14));
+        Assert.Equal(2, moved.Imported);
+        Assert.Null(Facts().SentFor(false, 2, 1));                    // still waiting for an OK: nothing went out
+        Assert.Equal(asked.UtcDateTime, Facts().SentFor(false, 3, 1));
+        var pending = rig.Ledger.ForTitle("tv:tvdb:78874").Single(w => w.Status == "pending");
+        rig.Now = sentAt.AddHours(31);
+        Assert.Equal(200, (await rig.Service.ApproveAsync(pending.Id, rig.Admin, null, CancellationToken.None)).HttpStatus);
+        await rig.Runner().TickAsync(CancellationToken.None);
+        Assert.Equal("sent", rig.Ledger.Find(pending.Id)!.Status);
+        Assert.Equal(rig.Now.UtcDateTime, Facts().SentFor(false, 2, 1));
+        Assert.Equal(sentAt.UtcDateTime, Facts().SentFor(false, 1, 4));
+    }
 }

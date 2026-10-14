@@ -222,6 +222,11 @@ test('Request on a movie asks once with the movie input, toasts the honest outco
     assert.equal(c.querySelector('.je-discover-request'), null);
   }
   assert.ok(cards4[0].contains(h.document.activeElement));    // focus stays on the card
+  // The page redraws after an ask (a feed change): focus comes back to the same title's card, not the tab strip.
+  h.JE.internals.arrHub.selectTab('discover');
+  await until(() => h.document.activeElement?.dataset?.jeFocus === 'discover:card:movie:tmdb:4');
+  assert.equal(h.document.activeElement.dataset.jeFocus, 'discover:card:movie:tmdb:4');
+  assert.notEqual(h.document.activeElement, cards4[0]);       // a new card (the old one was replaced)
 
   // A refusal says so and leaves the button.
   const h2 = setup(t, {

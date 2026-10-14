@@ -265,12 +265,14 @@
 
     /**
      * The series cards: each with its id, icon, label and the mutation input it asks for (null for
-     * the pickers until something is picked), for one copy.
+     * the pickers until something is picked), for one copy. "Just new episodes from now on" only where
+     * it is honoured: Seerr can't keep getting new seasons (it would get the whole current season once).
      * @param {Object} title Title.
      * @param {string} [variant] 'standard' (default) or '4k'.
+     * @param {Object|null} [caps] Capabilities (backend).
      * @returns {Array<{id: string, icon: string, label: string, input: Function}>} Cards.
      */
-    function seriesCards(title, variant) {
+    function seriesCards(title, variant, caps) {
         const seasons = seasonsOf(title, variant);
         const wanted = seasons.filter(s => !settled(s)).map(s => s.season);
         const latest = Number.isInteger(title.latestSeason) ? title.latestSeason : (seasons.length ? seasons[seasons.length - 1].season : null);
@@ -291,7 +293,7 @@
         }
         if (seasons.length > 1) cards.push({ id: 'pick', icon: 'checklist', label: tr('arr_sheet_card_pick'), input: null });
         if (seasons.some(s => s.episodes > 0)) cards.push({ id: 'episodes', icon: 'format_list_numbered', label: tr('arr_sheet_card_episodes'), input: null });
-        if (latest != null) {
+        if (latest != null && caps?.backend !== 'seerr') {
             cards.push({ id: 'future', icon: 'update', label: tr('arr_sheet_card_future'), input: (variant) => ({ ...JE.arrAsk.seasonsInput(title.key, [latest], variant), scope: 'future' }) });
         }
         return cards;
@@ -331,7 +333,7 @@
         const kind = title.kind === 'movie' ? 'movie' : 'series';
         const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
         const caps = options?.caps || await JE.arrAsk.me();
-        if (!caps?.canRequest) {
+        if (!JE.arrAsk.canAsk(caps, kind)) {
             JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
             return null;
         }
@@ -366,7 +368,7 @@
         const contact = JE.arrAsk.contact(caps);
         const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
         const state = {
-            title, kind, caps, quota, opener, resolve, busy: false, done: false,
+            title, kind, caps, quota, opener, resolve, busy: false, done: false, ...returnPoints(opener),
             variant: can4k && options?.variant === '4k' ? '4k' : 'standard',
             choice: null, picked: new Set(), episodeSeason: null, episodes: new Set(), cards: [], key: title.key
         };
@@ -448,7 +450,7 @@
      */
     function fillCards(state) {
         state.group.replaceChildren();
-        state.cards = seriesCards(state.title, state.variant).map(card => ({ ...card, el: null, cost: null, panel: null }));
+        state.cards = seriesCards(state.title, state.variant, state.caps).map(card => ({ ...card, el: null, cost: null, panel: null }));
         const open = new Set(seasonsOf(state.title, state.variant).filter(s => !settled(s)).map(s => s.season));
         for (const n of [...state.picked]) if (!open.has(n)) state.picked.delete(n);
         for (const card of state.cards) {
@@ -800,6 +802,41 @@
     }
 
     /**
+     * Where focus can return to when the sheet closes, noted when it opens: the opener's focus id
+     * (data-je-focus) and its ancestors. An ask redraws the page's controls while the sheet is open
+     * (Discover cards, actions), so the opener itself may be gone by then.
+     * @param {Element|null} opener Opener.
+     * @returns {{focusId: string|null, openerPath: Element[]}} Return points.
+     */
+    function returnPoints(opener) {
+        const path = [];
+        for (let n = opener?.parentElement; n && n !== document.body; n = n.parentElement) path.push(n);
+        return { focusId: opener?.closest?.('[data-je-focus]')?.dataset?.jeFocus || null, openerPath: path };
+    }
+
+    /**
+     * Returns focus after the sheet closes: to the opener, else (it was redrawn) the control with its
+     * focus id, else the nearest focusable ancestor still on the page (a Discover card), else the
+     * page's main region, so keyboard, remote and screen-reader users keep their place.
+     * @param {Object} state Sheet state.
+     * @returns {void}
+     */
+    function restoreFocus(state) {
+        const opener = state.opener;
+        if (opener && document.contains(opener) && typeof opener.focus === 'function') {
+            opener.focus();
+            return;
+        }
+        const same = state.focusId ? [...document.querySelectorAll('[data-je-focus]')].find(n => n.dataset.jeFocus === state.focusId) : null;
+        const holder = (state.openerPath || []).find(n => document.contains(n) && (n.tabIndex >= 0 || n.hasAttribute('tabindex')));
+        const main = document.querySelector('.mainAnimatedPage:not(.hide)') || document.querySelector('main, [role="main"]');
+        const target = same || holder || main;
+        if (!target) return;
+        if (target === main && !main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
+        target.focus({ preventScroll: true });
+    }
+
+    /**
      * Closes a sheet, resolves its promise and returns focus to what opened it.
      * @param {Object} state Sheet state.
      * @param {Object|null} result Result.
@@ -811,8 +848,7 @@
         document.removeEventListener('keydown', state.onKey, true);
         state.backdrop?.remove();
         if (current === state) current = null;
-        const opener = state.opener;
-        if (opener && document.contains(opener) && typeof opener.focus === 'function') opener.focus();
+        restoreFocus(state);
         state.resolve(result);
     }
 
@@ -843,7 +879,7 @@
         const run = (async () => {
             const caps = await JE.arrAsk.me();
             if (!sameSession()) return null;
-            if (!caps?.canRequest) {
+            if (!JE.arrAsk.canAsk(caps, 'movie')) {
                 JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
                 return null;
             }
@@ -912,12 +948,12 @@
             const search = !!status && !!JE.arrStatus?.searchable?.(status);
             if (local && (requestable() || search)) {
                 row.appendChild(el('span', `je-arr-chip je-arr-tone-${local.tone}`, local.chip));
-            } else if (search && caps?.canRequest) {
+            } else if (search && JE.arrAsk.canAsk(caps, kind)) {
                 row.appendChild(searchButton());
             } else if (!requestable()) {
                 const chip = el('span', `je-arr-chip je-arr-tone-${status.attention ? 'attention' : status.stage}`, JE.arrStatus.familyText(status, { contact: caps?.contact || '' }));
                 row.appendChild(chip);
-            } else if (caps?.canRequest) {
+            } else if (JE.arrAsk.canAsk(caps, kind)) {
                 const contact = JE.arrAsk.contact(caps);
                 const b = button('je-ask-action je-ask-mount-request');
                 b.appendChild(icon(caps.asksFirst ? 'front_hand' : 'add', 'je-ask-action-icon'));

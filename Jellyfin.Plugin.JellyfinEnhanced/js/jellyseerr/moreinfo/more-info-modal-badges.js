@@ -221,10 +221,11 @@ function buildDownloadBars(downloads = [], downloads4k = []) {
     const all = [...downloads, ...downloads4k];
     if (!all.length) return null;
 
-    // Group downloads by downloadId
+    // Group the rows of one download (a season pack): Seerr's downloadId for administrators, the
+    // opaque per-answer group token everyone else gets instead (Requests & downloads privacy).
     const grouped = {};
     all.forEach(dl => {
-        const downloadId = dl.downloadId || 'unknown';
+        const downloadId = dl.group || dl.downloadId || 'unknown';
         if (!grouped[downloadId]) {
             grouped[downloadId] = dl;
         }

@@ -156,7 +156,7 @@
         }
         JE.arrAsk.me().then(async (caps) => {
             if (gen !== generation) return;
-            if (!caps?.canRequest) {
+            if (!JE.arrAsk.canAsk(caps, status.kind === 'movie' ? 'movie' : 'series')) {
                 clear(page);
                 return;
             }

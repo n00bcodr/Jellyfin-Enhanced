@@ -500,3 +500,26 @@ test('an approve, decline or bulk answer that arrives after someone else signed 
   assert.equal(S.busy.size, 0);
   assert.ok(!page.textContent.includes('Adult film'), 'the old title is not shown');
 });
+
+test('on a light theme the green and amber words of the cards take the darker shades (4.5:1 on white)', async t => {
+  const h = setupHub(t, {
+    hash: '#/requests?tab=approvals',
+    routes: async (method, path) => (path === '/acquire/requests/approvals' ? approvals([card(1, { rating: { label: 'G', within: true } })]) : null)
+  });
+  h.load('arr/ask/ask-sheet-styles.js');
+  h.document.body.style.color = 'rgb(20, 20, 20)';   // a light theme writes dark text
+  h.JE.initializeArrStatus();
+  await until(() => h.page()?.querySelectorAll('.je-approval').length === 1);
+  const box = h.page().querySelector('.je-approvals');
+  assert.ok(box.classList.contains('je-approvals-light'));
+  assert.ok(box.querySelector('.je-approval-rating-ok'));
+  const css = [...h.document.querySelectorAll('style')].map(s => s.textContent).join('\n');
+  assert.match(css, /\.je-approvals-light \.je-approval-rating-ok, \.je-approvals-light \.je-approvals-tone-done \{ color: #1a7431; \}/);
+  assert.match(css, /\.je-approvals-light \.je-approval-rating-warn, \.je-approvals-light \.je-approvals-tone-attention \{ color: #9a4d00; \}/);
+  // The dark theme keeps the brighter ones.
+  h.document.body.style.color = 'rgb(240, 240, 240)';
+  h.bump('req:state');
+  await wait(30);
+  await until(() => h.page()?.querySelector('.je-approvals') && !h.page().querySelector('.je-approvals').classList.contains('je-approvals-light'));
+  assert.equal(h.page().querySelector('.je-approvals').classList.contains('je-approvals-light'), false);
+});

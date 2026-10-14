@@ -307,6 +307,52 @@ public class IntegrationRequestSeasonRowsTests
         Assert.Equal(403, Assert.IsType<ObjectResult>(apiKey).StatusCode);
         r.Policy.Configuration.ArrRequestBackend = "status_only";
         Assert.False(Me(r.Member).CanRequest);
+
+        // Seerr mode: Seerr's request permissions are per kind (REQUEST_TV without REQUEST or REQUEST_MOVIE).
+        r.Policy.Configuration.ArrRequestBackend = "seerr";
+        r.Policy.Adjust = (_, input, facts) => TitleKey.Parse(input.Key)!.IsMovie ? facts with { CanCreate = false } : facts;
+        var tvOnly = Me(r.Member);
+        Assert.Equal((true, false, true), (tvOnly.CanRequest, tvOnly.CanRequestMovies, tvOnly.CanRequestSeries));
+        r.Policy.Adjust = (_, input, facts) => facts with { CanCreate = TitleKey.Parse(input.Key)!.IsMovie };
+        var moviesOnly = Me(r.Member);
+        Assert.Equal((true, true, false), (moviesOnly.CanRequest, moviesOnly.CanRequestMovies, moviesOnly.CanRequestSeries));
+        r.Policy.Adjust = (_, _, facts) => facts with { CanCreate = false };
+        Assert.Equal((false, false, false), (Me(r.Member).CanRequest, Me(r.Member).CanRequestMovies, Me(r.Member).CanRequestSeries));
+    }
+
+    [Fact]
+    public async Task AfterAMoveFromSeerrTheRowsShowTheRequestWaitingHereNotTheAskLeftOnSeerr()
+    {
+        // Seerr mode: the member's season 1 went out to Seerr, where it still waits for an OK.
+        using var s = new Setup();
+        var r = s.R;
+        r.Policy.Configuration.ArrRequestBackend = "seerr";
+        r.Policy.Adjust = (_, _, facts) => facts.Backend == "seerr" ? facts with { SeerrSource = "seerr-src", SeerrUser = 7, BackendQuota = new QuotaProjection(0, null, null, null, 0) } : facts;
+        Assert.Equal(201, (await r.Create(r.Member, IntegrationRequestLedgerTests.Seasons(1))).HttpStatus);
+        await r.Runner().TickAsync(CancellationToken.None);
+        Assert.Equal("sent", r.Ledger.ForTitle("tv:tvdb:78874").Single().Status);
+        Assert.Equal("asked", (await s.Rows.ForSeasonAsync(s.Viewer(r.Member), s.SeasonId, null, CancellationToken.None))!.SeasonRequest);
+
+        // The move to Jellyfin Enhanced brings that Seerr request in, waiting for an OK on the JE target.
+        r.Policy.Configuration.ArrRequestBackend = "je";
+        var target = RequestLedger.TargetKey(r.Policy.Evaluate(r.Member, IntegrationRequestLedgerTests.Seasons(1)));
+        Assert.Equal(1, r.Ledger.ImportSeerr("src", "digest", new[] { new ImportCandidate(r.Member, 11, IntegrationRequestLedgerTests.Seasons(1), true, r.Now.AddDays(-2)) },
+            new Dictionary<string, int>(), r.Admin, "seerr", _ => target, r.Now, TimeSpan.FromDays(14)).Imported);
+        Assert.Equal(new[] { "pending", "sent" }, r.Ledger.ForTitle("tv:tvdb:78874").Select(w => w.Status).OrderBy(x => x));
+
+        // Nothing goes out until someone OKs it here: the rows say so (the ask left on Seerr doesn't hide it).
+        var rows = await s.Rows.ForSeasonAsync(s.Viewer(r.Member), s.SeasonId, null, CancellationToken.None);
+        Assert.Equal("waiting", rows!.SeasonRequest);
+        // A household member's view: one household ask, not two.
+        Assert.Equal("household", (await s.Rows.ForSeasonAsync(s.Viewer(r.Manager), s.SeasonId, null, CancellationToken.None))!.SeasonRequest);
+        // An episode ask left on Seerr shows only where nothing here covers that episode.
+        var (episodes, season) = SeasonRowsService.RequestStates(new[]
+        {
+            new RequestWant("a", "q", r.Member, "c1", "f", Episodes(3, 4), "sent", "looking", 0, "null", r.Now, r.Now, TargetKey: "[\"seerr\"]"),
+            new RequestWant("b", "q", r.Member, "c2", "f", Episodes(4), "pending", "awaiting_approval", 0, "null", r.Now, r.Now, TargetKey: target),
+        }, r.Member, 1, r.Now, 7, target);
+        Assert.Null(season);
+        Assert.Equal(("asked", "waiting"), (episodes[3], episodes[4]));
     }
 
     [Fact]

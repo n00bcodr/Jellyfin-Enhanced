@@ -14,7 +14,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public LedgerRequestFacts(RequestLedger ledger, SeerrRequestReadModel seerr, TitleAliases aliases)
         { _ledger = ledger; _seerr = seerr; _aliases = aliases; }
         private static bool Direct => ArrInstanceLibraries.AbsentParentalEnabled && JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend == "je";
-        private RequestWant[] Wants(TitleKey key) => !_ledger.Database.Available ? Array.Empty<RequestWant>() : _ledger.ForTitle(_aliases.Canonical(key.Title).ToString()).ToArray();
+        private string Canonical(TitleKey key) => _aliases.Canonical(key.Title).ToString();
+        private RequestWant[] Wants(TitleKey key) => !_ledger.Database.Available ? Array.Empty<RequestWant>() : _ledger.ForTitle(Canonical(key)).ToArray();
         /// <inheritdoc />
         public long Revision => Direct ? _ledger.Revision : _seerr.Revision;
         /// <inheritdoc />
@@ -28,22 +29,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return new RequestFacts { AskedAt = wants.Min(w => w.CreatedAt).UtcDateTime, AskedByViewer = wants.Any(w => w.UserId == viewer.UserId),
                 Pending = wants.Any(w => w.Status == "pending"), ApprovedAt = At(null), ApprovedStandardAt = At("standard"), Approved4kAt = At("4k"),
                 Declined = wants.All(w => w.Status == "declined"), StandardDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "standard"), FourKDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "4k"),
-                Sent = wants.Where(w => w.Status == "sent").SelectMany(SentParts).ToArray() };
+                Sent = Sent(wants, () => _ledger.Dispatches(Canonical(titleKey))) };
+        }
+
+        private static RequestSentPart[] Sent(RequestWant[] wants, Func<IReadOnlyList<RequestDispatch>> dispatches)
+        {
+            var sent = wants.Where(w => w.Status == "sent").ToArray();
+            if (sent.Length == 0) return Array.Empty<RequestSentPart>();
+            var went = dispatches();
+            return sent.SelectMany(w => SentParts(w, went)).Distinct().ToArray();
         }
 
         /// <summary>
-        /// The parts of the title a sent want covers, at the time it was last sent (its last change). A request
-        /// moved from Seerr went out in Seerr long before the move: it counts from when it was asked for there.
+        /// The parts of the title a sent want covers, each at the latest time something covering it went out to the
+        /// want's target (<see cref="RequestLedger.Dispatches"/>): a confirmed send, or a request that was already
+        /// processing in Seerr when it moved (from when it was asked for there). Joining scope that was already sent,
+        /// an approval of it or a target move restarts nothing; a part nothing went out for has no time.
         /// </summary>
-        internal static IEnumerable<RequestSentPart> SentParts(RequestWant want)
+        internal static IEnumerable<RequestSentPart> SentParts(RequestWant want, IReadOnlyList<RequestDispatch> dispatches)
         {
             var fourK = want.Input.Variant == "4k";
-            var at = (want.OriginKind == RequestOrigin.SeerrImportKind ? want.CreatedAt : want.UpdatedAt).UtcDateTime;
+            var went = dispatches.Where(d => d.TargetKey == want.TargetKey && d.Input.Key == want.Input.Key && d.Input.Variant == want.Input.Variant).ToArray();
+            DateTime? When(Func<MutationInput, bool> covers)
+                => went.Where(d => covers(d.Input)).Select(d => (DateTime?)d.At.UtcDateTime).Max();
             if (want.Input.Scope == "episodes")
-                return want.Input.Episodes.Select(e => new RequestSentPart(fourK, e.Season, e.Episode, at));
-            if (want.Input.Scope == "movie" || want.Input.Seasons.Length == 0)
-                return new[] { new RequestSentPart(fourK, null, null, at) };
-            return want.Input.Seasons.Select(s => new RequestSentPart(fourK, s, null, at));
+            {
+                foreach (var e in want.Input.Episodes)
+                {
+                    if (When(i => i.Covers(e)) is DateTime at) yield return new RequestSentPart(fourK, e.Season, e.Episode, at);
+                }
+            }
+            else if (want.Input.Scope == "movie" || want.Input.Seasons.Length == 0)
+            {
+                if (When(i => i.Scope == want.Input.Scope) is DateTime at) yield return new RequestSentPart(fourK, null, null, at);
+            }
+            else
+            {
+                foreach (var s in want.Input.Seasons)
+                {
+                    if (When(i => i.Seasons.Contains(s)) is DateTime at) yield return new RequestSentPart(fourK, s, null, at);
+                }
+            }
         }
         /// <inheritdoc />
         public bool AskedBy(TitleKey titleKey, Guid userId) => Direct ? Wants(titleKey).Any(w => w.UserId == userId && w.Status != "cancelled") : _seerr.AskedBy(titleKey, userId);
