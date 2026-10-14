@@ -515,6 +515,8 @@ Admins see a delete button on all reviews, not just their own. A confirmation di
 
 Shows recently watched, favorited, and reviewed titles across the server, so users can see what others are up to. Each viewer only ever sees activity for items they themselves have library access to - someone else's activity on a library you can't see never appears.
 
+Administrators can enable **"Non-admins only see their own activity"** to limit regular users to their own entries; admins still see everyone.
+
 **Features:**
 
 - Recently watched (full playback completions)

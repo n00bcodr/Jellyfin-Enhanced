@@ -134,6 +134,7 @@ Configured under **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **E
 | **Show recently watched** | On | Include playback completions in the feed |
 | **Show recently favorited** | On | Include favorites in the feed |
 | **Show recently reviewed** | On | Include new/updated [User Reviews](enhanced-features.md#user-reviews) in the feed |
+| **Non-admins only see their own activity** | Off | Regular users only see their own watched, favorited and reviewed entries; administrators still see everyone |
 | **Show Active Streams section** | On | Adds a live "who's watching now" section, independent of the [Active Streams Widget](../other/other-settings.md#active-streams-widget)'s own header icon |
 | **Add Activity as a native Home tab** | Off | Adds a Home-page tab, no external plugin needed |
 | **Use Plugin Pages** | Off | Adds an "Activity" sidebar link via [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) (Jellyfin 12: user profile menu instead) |
