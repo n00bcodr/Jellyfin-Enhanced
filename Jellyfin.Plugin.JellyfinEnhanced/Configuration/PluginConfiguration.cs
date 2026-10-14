@@ -799,6 +799,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public bool ArrIntegrationEnabled { get; set; }
 
+        /// <summary>Enable durable requests; also requires the integration and phase 1 switches.</summary>
+        public bool ArrPhase3Enabled { get; set; }
+
+        /// <summary>Request authority: seerr (default), je (opt in), or status_only.</summary>
+        public string ArrRequestBackend { get; set; } = "seerr";
+
+        /// <summary>Allow 4K movie requests in phase 3, subject to target and user capabilities.</summary>
+        public bool ArrRequest4kMoviesEnabled { get; set; }
+
+        /// <summary>Allow 4K series requests in phase 3, subject to target and user capabilities.</summary>
+        public bool ArrRequest4kSeriesEnabled { get; set; }
+
+        /// <summary>Household preset: ask_first, open_house, or approve_everything.</summary>
+        public string ArrRequestPreset { get; set; } = "ask_first";
+
+        /// <summary>Role for users without an override: Watcher, Kid, Member, or Manager.</summary>
+        public string ArrRequestDefaultRole { get; set; } = "Watcher";
+
+        /// <summary>Server-owned per-user role, quota and 4K overrides as a JSON object keyed by user id.</summary>
+        public string ArrRequestUsers { get; set; } = "{}";
+
+        /// <summary>Server-owned quota and 4K defaults by household role, as a JSON object.</summary>
+        public string ArrRequestRoles { get; set; } = "{}";
+
+        /// <summary>Rolling quota limit; zero selects the preset default, negative means unlimited.</summary>
+        public int ArrRequestQuotaLimit { get; set; } = 0;
+
+        /// <summary>Quota window in days.</summary>
+        public int ArrRequestQuotaWindowDays { get; set; } = 7;
+
+        /// <summary>Total seasons of a series beyond which Members require approval.</summary>
+        public int ArrRequestSeriesThreshold { get; set; } = 4;
+
+        /// <summary>Days before a requester can repeat a declined scope.</summary>
+        public int ArrRequestDeclineCooldownDays { get; set; } = 7;
+
+        /// <summary>Maximum pending wants per user.</summary>
+        public int ArrRequestPendingLimit { get; set; } = 10;
+
+        /// <summary>Optional estimated GB limit per quota window; zero disables it.</summary>
+        public double ArrRequestQuotaGb { get; set; } = 0;
+
+        /// <summary>Charge each new season for a future-season want.</summary>
+        public bool ArrRequestChargeFutureSeasons { get; set; } = true;
+
+        /// <summary>Days before an unfulfilled request is marked stale.</summary>
+        public int ArrRequestStaleDays { get; set; } = 30;
+
+        /// <summary>Lab-only cleanup route; default off, never shown on the config page.</summary>
+        public bool ArrRequestLabEnabled { get; set; }
+
         // ---- Requests & downloads, phase 1: status on pages and live updates ----
 
         /// <summary>

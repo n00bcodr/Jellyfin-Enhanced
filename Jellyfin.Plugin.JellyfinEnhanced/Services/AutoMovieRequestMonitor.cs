@@ -14,6 +14,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // Monitors playback events to automatically request next movies in collections.
     public class AutoMovieRequestMonitor : IDisposable
     {
+        private readonly PlaybackWorkQueue _work;
         private readonly ISessionManager _sessionManager;
         private readonly IUserManager _userManager;
         private readonly ILibraryManager _libraryManager;
@@ -36,6 +37,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _libraryManager = libraryManager;
             _autoMovieRequestService = autoMovieRequestService;
             _logger = logger;
+            _work = new(message => _logger.Warning(message));
         }
 
         // Initialize and start monitoring playback events.
@@ -64,7 +66,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Handle playback progress events to detect when user starts watching a movie.
-        private async void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
+        private void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
+        {
+            lock (_sessionLock)
+            {
+                var key = $"{e.Session?.UserId}_{e.Item?.Id}";
+                if (_checkedSessions.TryGetValue(key, out var checkedAt) && DateTime.Now - checkedAt < TimeSpan.FromHours(1)) return;
+            }
+            _work.Enqueue(() => HandleOnPlaybackProgressAsync(e));
+        }
+
+        private async Task HandleOnPlaybackProgressAsync(PlaybackProgressEventArgs e)
         {
             try
             {
@@ -161,6 +173,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _logger.Info("[Auto-Movie-Request] Unsubscribing from playback events");
 
             _sessionManager.PlaybackProgress -= OnPlaybackProgress;
+            _work.Dispose();
 
             GC.SuppressFinalize(this);
         }

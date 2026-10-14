@@ -443,10 +443,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private bool MayAskByKey(StatusViewer viewer, TitleKey key, IReadOnlyList<JfCopy> copies)
         {
-            if (viewer.IsAdmin || copies.Any(x => x.Visible)) return true;
+            if ((viewer.IsAdmin && (!ArrInstanceLibraries.AbsentParentalEnabled || !viewer.HasParentalLimit)) || copies.Any(x => x.Visible)) return true;
             if (copies.Count > 0) return !viewer.HasParentalLimit;
+            if (!_libraries.MaySeeAbsent(viewer, key)) return false;
             if (AskedBy(key, viewer)) return true;
-            if (viewer.HasParentalLimit) return false;
+            if (!ArrInstanceLibraries.AbsentParentalEnabled && viewer.HasParentalLimit) return false;
             var holders = _store.Instances(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr)
                 .SelectMany(i => PathsOf(i, key).Select(path => (Instance: i, Path: path))).ToList();
             return holders.Count > 0 ? holders.Any(c => MayUseCopy(viewer, new CopyAccess(true, false, false), c.Instance, c.Path))
@@ -480,7 +481,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private bool MayUseCopy(StatusViewer viewer, CopyAccess access, ArrConnection instance, string? path)
         {
-            if (viewer.IsAdmin) return true;
+            if (viewer.IsAdmin && (!ArrInstanceLibraries.AbsentParentalEnabled || !viewer.HasParentalLimit)) return true;
             if (access.Absent) return _libraries.CanSeeAbsent(viewer, instance, path, access.Asked);
             var target = _libraries.Resolve(instance, path);
             // A visible Jellyfin title already grants access to its arr facts. Only a resolved
@@ -595,7 +596,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 _view.Revision.ToString(CultureInfo.InvariantCulture),
                 _requests.Revision.ToString(CultureInfo.InvariantCulture),
                 _libraries.Revision,
-                (config?.ArrHouseholdContactName ?? string.Empty) + "#" + (config?.ArrStatusLookingHours ?? 24).ToString(CultureInfo.InvariantCulture)
+                (config?.ArrRequestBackend ?? "seerr") + "#" + (config?.ArrPhase3Enabled == true ? "3" : "0") + "#" + (config?.ArrHouseholdContactName ?? string.Empty) + "#" + (config?.ArrStatusLookingHours ?? 24).ToString(CultureInfo.InvariantCulture)
                     + "#" + (HandoffGrace(config)?.TotalMinutes.ToString(CultureInfo.InvariantCulture) ?? "-") + "#" + HandoffEpoch(viewer, config),
                 bucket.ToString(CultureInfo.InvariantCulture));
             // Hashed so the key's size does not grow with the request; the user id stays readable as the prefix.

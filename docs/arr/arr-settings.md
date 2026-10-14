@@ -402,3 +402,35 @@ people's newer events never push yours out).
     The Requests page for downloads is separate from the Seerr Requests page. Both can be enabled independently. The Seerr Requests page (showing media requests and issues) is configured in the **Seerr Settings** tab.
 
 Direct URL: `/web/index.html#!/jellyfinenhanced/downloads`
+
+### Ask for it (phase 3)
+
+`ArrPhase3Enabled` is off by default; enable the integration and phase 1 switches first. `ArrRequestBackend` accepts
+`seerr` (default), `je` (explicit opt in), or `status_only`. Only the durable server API is available here; outgoing
+transports and the request/household UI follow separately. Approved jobs remain retryable with the placeholder backend.
+
+`ArrRequestPreset` selects `ask_first`, `open_house`, or `approve_everything`. `ArrRequestDefaultRole` defaults to
+`Watcher`; accepted household roles are Watcher, Kid, Member and Manager. Administrator status always comes from
+Jellyfin, never from the JSON role settings. Kid suggestions are not automatically applied.
+
+The advanced fields are server-owned. Quota and preset settings govern JE mode; Seerr mode uses its own quota facts and reports allowance as unavailable until a complete backend read is supplied:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `ArrRequest4kMoviesEnabled` / `ArrRequest4kSeriesEnabled` | false | Phase-3 edition switches; work with Seerr disabled in JE mode |
+| `ArrRequestQuotaLimit` | 0 | Preset limit: 7 for Ask first, 15 for Open house; negative means unlimited |
+| `ArrRequestQuotaWindowDays` | 7 | Rolling window, bounded to 1–365 days |
+| `ArrRequestSeriesThreshold` | 4 | Cumulative seasons before a Member needs approval |
+| `ArrRequestDeclineCooldownDays` | 7 | Wait before repeating a declined scope |
+| `ArrRequestPendingLimit` | 10 | Pending requests per person |
+| `ArrRequestQuotaGb` | 0 | Optional estimated GB cap; zero disables it |
+| `ArrRequestChargeFutureSeasons` | true | Charge the owner once when a new season starts |
+| `ArrRequestStaleDays` | 30 | Flag a sent but unfulfilled request for review; no automatic refund |
+| `ArrRequestRoles` | `{}` | Optional per-role `QuotaLimit`, `QuotaGb` and `FourKInstances` defaults |
+| `ArrRequestUsers` | `{}` | Per-user `Role`, `QuotaLimit`, `QuotaGb` and `FourKInstances` overrides |
+
+For example, the roles JSON can be `{"Manager":{"FourKInstances":["your-4k-instance-id"]}}`; the users JSON is keyed by
+Jellyfin user id. A missing per-user quota inherits the role quota, then the global/preset quota. An empty per-user 4K
+instance list removes that user's inherited grant. Phase 3 has its own movie/TV 4K switches under Ask for it; the older Seerr switches remain in use while phase 3 is off. Seerr mode additionally
+requires Seerr's edition setting and the user's corresponding permission. Optional GB accounting currently uses coarse
+scope estimates; transport metadata enrichment is part of the next server phase.

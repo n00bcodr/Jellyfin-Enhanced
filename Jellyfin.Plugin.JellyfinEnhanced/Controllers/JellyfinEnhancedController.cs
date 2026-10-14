@@ -886,6 +886,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        // Phase 3 uses the ledger edition policy; Jellyfin administrator status alone does not grant Seerr 4K.
+        private async Task<bool> LegacyCanRequest4kAsync(Configuration.PluginConfiguration config, bool movie, JellyseerrPermission permissions)
+        {
+            var bits = JellyseerrPermission.REQUEST_4K | (movie ? JellyseerrPermission.REQUEST_4K_MOVIE : JellyseerrPermission.REQUEST_4K_TV);
+            var permission = JellyseerrPermissionHelper.HasPermission(permissions, JellyseerrPermission.ADMIN) || JellyseerrPermissionHelper.HasAnyPermission(permissions, bits);
+            if (!permission || !Services.Acquire.Requests.RequestPolicy.EditionEnabled(config, movie)) return false;
+            var url = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+            if (url == null) return false;
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+                var uri = url.TrimEnd('/') + "/api/v1/settings/main";
+                using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, uri, config.GetJellyseerrApiKey());
+                using var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false);
+                var (body, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, uri, timeout.Token).ConfigureAwait(false);
+                if (error != null || body == null) return false;
+                using var settings = JsonDocument.Parse(body);
+                var enabled = settings.RootElement.TryGetProperty(movie ? "movie4kEnabled" : "series4kEnabled", out var value) && value.ValueKind == JsonValueKind.True;
+                return Services.Acquire.Requests.RequestPolicy.Can4k(JellyfinEnhanced.Instance?.Configuration ?? config, movie, "seerr", false, false, enabled, permission);
+            }
+            catch (Exception) { return false; }
+        }
+
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
         {
             // Propagate client disconnects (superseded search queries, page
@@ -957,6 +981,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     code = "unlinked",
                     message = "Current Jellyfin user is not linked to a Jellyseerr user."
                 });
+            }
+
+            if (config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && method == HttpMethod.Post && apiPath == "/api/v1/request" && content != null)
+            {
+                try
+                {
+                    using var input = JsonDocument.Parse(content);
+                    if (input.RootElement.TryGetProperty("is4k", out var edition) && edition.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                        return BadRequest(Services.Acquire.Requests.RequestOutcome.Refused("invalid_input", 400));
+                    if (input.RootElement.TryGetProperty("is4k", out var fourK) && fourK.ValueKind == JsonValueKind.True)
+                    {
+                        var movie = input.RootElement.TryGetProperty("mediaType", out var type) && type.GetString() == "movie";
+                        if (!await LegacyCanRequest4kAsync(config, movie, seerrUser!.Permissions).ConfigureAwait(false))
+                            return StatusCode(403, Services.Acquire.Requests.RequestOutcome.Refused("requests_4k_required"));
+                    }
+                }
+                catch (Exception ex) when (ex is JsonException or InvalidOperationException) { return BadRequest(Services.Acquire.Requests.RequestOutcome.Refused("invalid_input", 400)); }
             }
 
             // Enforce Seerr permissions for write operations and sensitive reads.
@@ -10898,7 +10939,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrEmpty(jellyfinUserId))
                 return BadRequest(new { message = "Jellyfin User ID not found." });
 
-            var jellyseerrUser = await GetJellyseerrUser(jellyfinUserId);
+            var jellyseerrUser = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled
+                ? await GetJellyseerrUser(jellyfinUserId, bypassCache: true, allowAutoImport: false)
+                : await GetJellyseerrUser(jellyfinUserId);
             if (jellyseerrUser == null)
                 return NotFound(new { message = "Current user is not linked to a Seerr account." });
 
@@ -11123,8 +11166,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // read is started for the next request, which counts as nobody watching (it doesn't keep
             // the arrs' system facts refreshed on users' behalf).
             var rootsConsulted = false;
-            var filterByAccess = config.CalendarFilterByLibraryAccess && !isAdmin;
-            Jellyfin.Database.Implementations.Entities.User? calendarUser = filterByAccess ? ArrCaller.Human(User, _userManager) : null;
+            var calendarPerson = ArrCaller.Human(User, _userManager);
+            var parentalCalendar = Services.Acquire.ArrInstanceLibraries.AbsentParentalEnabled && calendarPerson != null && Services.SeerrParentalFilter.PolicyFor(calendarPerson).IsRestricted;
+            var filterByAccess = (config.CalendarFilterByLibraryAccess && !isAdmin) || Services.Acquire.ArrInstanceLibraries.AbsentParentalEnabled;
+            Jellyfin.Database.Implementations.Entities.User? calendarUser = filterByAccess ? calendarPerson : null;
             if (filterByAccess && calendarUser == null)
                 return Ok(new { events = new List<ArrItem>(), errors });
 
@@ -11193,11 +11238,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
+            int ParentalTmdbId(ArrItem evt)
+            {
+                if (evt.TmdbId > 0) return evt.TmdbId.Value;
+                if (evt.TvdbId is not > 0) return 0;
+                var indexed = evt.InstanceId == null ? null : _arrState.PeekLibrary(evt.InstanceId)?.SeriesByTvdb(evt.TvdbId.Value)?.TmdbId;
+                if (indexed > 0) return indexed.Value;
+                var key = Services.Acquire.TitleKey.ForSeries(evt.TvdbId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), null, null)!;
+                return _titleAliases?.Of(key).FirstOrDefault(k => k.Provider == "tmdb")?.NumericId ?? 0;
+            }
+
+            if (parentalCalendar && calendarUser != null)
+            {
+                var absent = events.Where(e => jellyfinVerdicts?.ContainsKey(e) != true)
+                    .Select(e => (Type: e.Source == nameof(ArrType.Radarr) ? "movie" : "tv", Id: ParentalTmdbId(e))).Where(e => e.Id > 0).Distinct().Take(100);
+                using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                budget.CancelAfter(TimeSpan.FromSeconds(8));
+                using var lookups = new SemaphoreSlim(16);
+                await Task.WhenAll(absent.Select(async e =>
+                {
+                    try
+                    {
+                        await lookups.WaitAsync(budget.Token).ConfigureAwait(false);
+                        try { await (_parentalFilter?.MaySeeAbsentAsync(e.Type, e.Id, calendarUser.Id.ToString("N"), budget.Token) ?? Task.FromResult(false)).ConfigureAwait(false); }
+                        finally { lookups.Release(); }
+                    }
+                    catch (OperationCanceledException) { /* Unverified rows remain hidden. */ }
+                })).ConfigureAwait(false);
+            }
+
             // True when the filter is off (or the caller is an administrator), or the caller may see the event.
             bool IsAccessible(ArrItem evt)
             {
                 if (calendarUser == null || jellyfinVerdicts == null) return true;
                 if (jellyfinVerdicts.TryGetValue(evt, out var visible)) return visible;
+                if (parentalCalendar && _parentalFilter?.MaySeeAbsent(evt.Source == nameof(ArrType.Radarr) ? "movie" : "tv", ParentalTmdbId(evt), calendarUser.Id.ToString("N"), out _) != true) return false;
                 // Shoko (no instance) keeps its own rule: only titles already in the user's Shoko
                 // collection, matched to Jellyfin when Jellyfin has them.
                 if (evt.Source == nameof(ArrType.Shoko)) return true;

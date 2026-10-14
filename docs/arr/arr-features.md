@@ -587,3 +587,97 @@ of other people's titles cannot crowd out their own. A short hourly history read
 if still short it merges into the existing ring and leaves the full read due for the next poll.
 A cold short read keeps a real timestamp and a separate retry flag. Episode file ids used to recheck
 delayed notifications remain on the server; inbox rows and browser toasts receive only display parameters.
+
+## Durable requests (phase 3, server API)
+
+**Ask for it** is off by default and requires both the integration and status switches. Request handling defaults
+to Seerr; selecting Jellyfin Enhanced is an explicit administrator choice. The server now stores requests, approvals,
+quota reservations and outgoing jobs in the same SQLite database as notifications. JE backup and restore include this
+database. Request transports will be added separately: this release queues approved requests safely and reports
+`backend_unavailable` while retrying. It makes no request-backend network calls.
+
+Household roles are Watcher (status only), Kid (always approval), Member, Manager and Jellyfin Admin. The default role
+is Watcher. Members in JE mode follow the selected house rules; Managers approve only visible titles. Seerr-mode Managers can read pending cards, but approving or declining additionally requires a fresh Seerr management permission check. Roles never loosen Jellyfin's
+rating, tag or library rules. With phase 3 enabled, upcoming titles absent from Jellyfin also need a verified local
+rating for restricted users; unrated titles and failed lookups are hidden. Keyword rules need a configured Seerr.
+The calendar enforces rating and shared destination rules even when its legacy optional library filter is off. Existing Jellyfin copies use Jellyfin's own
+visibility decision. With all phase-3 prerequisites enabled, a single server edition check gates 4K submissions and
+approval edits, including legacy Seerr movie and season submits. Seerr's Admin permission grants its 4K permissions;
+Jellyfin administrator status alone does not bypass Seerr's edition settings or permission. With any prerequisite
+disabled, legacy Seerr submissions retain their previous behavior and make no additional edition-settings read.
+Legacy approve/decline also keeps its cached user lookup and optional automatic user import while any prerequisite is off.
+
+Quota uses a rolling window. Movies and seasons cost one; the first five single episodes in a window are free, then
+another group of five costs one. Episode allowance follows the reservation's approval date, including delayed approvals.
+The optional estimated GB limit is a hard cap for every role: create and approval return 429 `quota_exceeded` when
+exceeded, and queued jobs re-check it before sending. Approval can grant count-quota and series-threshold excess.
+Overlapping asks charge only additional scope. An existing user's covered scope reuses
+their want; another user follows covered intent without a charge. Sharing requires the same backend, resolved instance,
+connection generation and Seerr source. A request for another target creates its own work. Members need approval after their cumulative scope
+passes the series threshold, even when they ask for seasons individually; currently the entire new uncovered scope
+waits for approval. If shared scope is withdrawn from a mixed request, that request shows pending with reason `removed`;
+its own job and charge stay with its owner. Approval adds only missing scope, and the full ask becomes sent only when
+every part is confirmed. When approval changes the resolved target, it replaces known-unsent old-target work and
+rechecks free followers against their current policy. Eligible followers move with the new target; others return to
+review. A send-time hold also returns dependants to review when their scope has no live job. Old-target completions
+cannot change the current target's request state. Reapproval refunds the linked charge of known-unsent parked work
+before charging its replacement; uncertain or succeeded work keeps its charge. Approval edits replace known-unsent jobs and their charges together; an edit conflicting with
+sent or uncertain scope returns 409. Future-season owners pay once per observed
+new season, including an overdraft; followers do not. Declines have a configurable cooldown. Cancel before sending or
+decline refunds the reservation. An uncertain outgoing action keeps its reservation until a fresh read of the original
+connection resolves it, even after authority changes. Deleting an approver anonymizes retained job contexts and preserves
+send certainty; only known-unsent queued approvals return to review, refunding just their own scope's charges. Charges
+for surviving jobs still count toward count, estimated GB and episode allowances. Deleting a requester anonymizes
+sent, uncertain and shared intent while retaining the transport records needed for read-back. Purely unsent intent
+without followers is deleted. Known-unsent jobs are cancelled, and followers of an uncertain or confirmed send remain
+linked. If read-back or a pre-send refusal proves a deleted requester's job was not sent, that job is cancelled and
+only its scope's reservation is refunded. Fully unsent anonymous intent is cancelled; free followers whose coverage is
+lost end with `removed` and can ask again. Other confirmed or uncertain jobs and their charges are retained.
+Transport outcomes still reach the JSONL audit if their ledger row disappears during the send.
+
+All routes below require an authenticated Jellyfin person; API keys and deleted or disabled accounts cannot use them.
+Paths are relative to `/JellyfinEnhanced`. Responses include `outcome`, `reason`, `certainty` and safe `message` fields.
+New intent (including a free follow of queued intent) returns 201; a repeated ask or a scope confirmed upstream returns 200; malformed input returns 400, permission or policy refusal
+403, missing ids 404, conflicting idempotency or concurrent changes 409, hard limits 429, and unavailable storage 503.
+Bulk approval returns 207 when some rows fail, with a separate checked outcome for every item.
+
+| Method | Route | Access and purpose |
+|---|---|---|
+| POST | `acquire/requests` | `requests.create`; create explicit movie, seasons, episodes, future or next-season scope |
+| GET | `acquire/requests?view=mine` | Own requests filtered by current visibility |
+| GET | `acquire/requests?view=pending` | `requests.approve`; visible pending requests |
+| GET | `acquire/requests/quota` | Own allowance, use, estimate and next usable slot |
+| POST | `acquire/requests/{id}/cancel` | Owner, or visible Admin; before the outgoing write |
+| POST | `acquire/requests/{id}/approve` | Approver; optional `input` edits scope/edition; instance/profile/folder edits require Admin |
+| POST | `acquire/requests/{id}/decline` | Approver; plain-text `reason`, at most 500 characters |
+| POST | `acquire/requests/bulk-approve` | Approver; at most 20 `ids`, each independently checked |
+
+Create example:
+
+```json
+{
+  "clientRequestId": "a-new-client-generated-id",
+  "input": {
+    "key": "tv:tvdb:78874",
+    "scope": "seasons",
+    "variant": "standard",
+    "seasons": [1, 2],
+    "episodes": []
+  }
+}
+```
+
+A future or next-season scope confirms one explicit season number; episode scope uses objects such as
+`{"season":1,"episode":2}`. The canonical input is stored with an immutable fingerprint: reusing the client id with a
+different input returns `idempotency_conflict`. Approving with edits uses the same input shape inside the approval body.
+A matching ask from an Admin or Manager who may approve authorizes the existing pending scope after fresh requester
+checks. The original scope owner keeps the charge; the new asker follows for free. A Member allowed to request
+automatically can start their own authorized scope when the earlier ask is still awaiting approval. Once scope is queued,
+other visible, permitted pending wants covered by it become free followers; additional scope remains pending. Declining
+one pending want preserves other users' pending intents and holds their reservations until approval. Quota response fields
+use camelCase, including `used`, `remaining`, `nextSlotAt`, `usedGb` and `available`.
+Requests are serialized locally by title and edition; this lock cannot stop another upstream application writing.
+The outgoing worker rechecks identity, roles, visibility, edition, flags, authority and connection identity at send.
+A changed permission parks work for review. Restarted `sending` rows become `maybe_sent` and require read-back before
+any resend. List validators include user, role and policy revision, with private cache headers. Family responses contain
+no backend connection, folder, profile, credential or other person's identity.

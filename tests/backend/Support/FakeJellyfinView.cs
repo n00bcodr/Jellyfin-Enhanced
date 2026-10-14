@@ -65,6 +65,9 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     /// <summary>Runs on every viewer lookup (tests use it to make something happen right after a user was checked).</summary>
     public Action<Guid>? OnViewer { get; set; }
 
+    /// <summary>A prerequisite-read barrier for final authorization race tests.</summary>
+    public Action? OnCopies { get; set; }
+
     public StatusViewer? Viewer(Guid userId)
     {
         OnViewer?.Invoke(userId);
@@ -113,6 +116,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     /// <summary>Copies carrying the key or any alias of the same kind (Jellyfin's "any provider id"), once per item.</summary>
     public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
     {
+        OnCopies?.Invoke();
         var keys = new[] { titleKey }.Concat(aliases ?? Array.Empty<TitleKey>()).Where(k => k.IsMovie == titleKey.IsMovie).Select(k => k.Title.ToString()).Distinct().ToList();
         CopyQueries.Add(keys);
         var seen = new HashSet<Guid>();

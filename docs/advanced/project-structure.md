@@ -398,3 +398,12 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`/Helpers/AudioLanguageTagHelper.cs`**: Maps stream language codes to tag names (base and regional) and computes the tag changes for an item.
     * **`/ScheduledTasks/AudioLanguageTagsSyncTask.cs`**: "Sync Audio Language Tags to Jellyfin" (no default triggers). Writes the tags for every movie and series.
     * **`/Services/TagCacheService.cs`**: Applies the same tags to a movie or series when its cache entry is rebuilt after a library event.
+
+* **`/Services/Acquire/Requests/`**: Durable request server core. `RequestModels.cs` contains normalized scopes, outcomes
+  and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility; `RequestLedger.cs`
+  commits intent, reservations, approvals, events and outbox jobs in acquire.db schema 2. `RequestService.cs` orchestrates
+  policy preparation and private list projections. `RequestOutbox.cs` provides local title locks, restart recovery,
+  final-send authorization and a network-free placeholder transport. `LedgerRequestFacts.cs` selects ledger facts in JE
+  mode and the existing Seerr read model otherwise. `AcquireRequestsController.cs` exposes the authenticated server API.
+* **`/Services/PlaybackWorkQueue.cs`**: Bounded handoff for the legacy movie/season playback monitors; recipes run on an
+  observed worker task rather than an asynchronous event callback.

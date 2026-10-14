@@ -172,7 +172,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                     titles.Add(change);
                 }
             }
-            if (isAdmin) return own.Concat(titles.Select(c => c.Key)).ToList();
+            if (isAdmin && (!ArrInstanceLibraries.AbsentParentalEnabled || _view.Viewer(userId)?.HasParentalLimit != true)) return own.Concat(titles.Select(c => c.Key)).ToList();
             if (titles.Count == 0) return own;
             changes = titles;
             var user = Helpers.ArrCaller.Find(userId, _userManager);
@@ -266,12 +266,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             {
                 return Verdict.Hidden;
             }
-            // Not in Jellyfin: someone who asked for it hears about it whatever their limits.
+            // Absent titles require a verified rating before ownership can grant destination access.
+            var viewer = _view.Viewer(user.Id) ?? new StatusViewer { UserId = user.Id, HasParentalLimit = !Unrestricted(user), Handle = user };
+            var parentalKey = new[] { title }.Concat(_aliases.Of(title)).FirstOrDefault(k => k.Provider == "tmdb") ?? title;
+            if (ArrInstanceLibraries.AbsentParentalEnabled && !_libraries.MaySeeAbsent(viewer, parentalKey)) return Verdict.Hidden;
+            // Not in Jellyfin: ownership grants the destination exception.
             // "Asked" includes a request deleted in the last few minutes: its own announcement is
             // decided after the list no longer has it.
             var keys = new[] { title }.Concat(_aliases.Of(title)).ToList();
             if (_requests != null && keys.Any(k => _requests.AskedLatelyBy(k, user.Id))) return Verdict.Visible;
-            if (!Unrestricted(user)) return Verdict.Absent;
+            if (!ArrInstanceLibraries.AbsentParentalEnabled && !Unrestricted(user)) return Verdict.Absent;
+
             var instances = (instanceId != null
                 ? new[] { instanceId }
                 : Holders(type == "movie" ? ArrKind.Radarr : ArrKind.Sonarr, id)).ToList();

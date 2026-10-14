@@ -50,6 +50,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public ArrClient ForUnsaved(ArrKind kind, string url, string apiKey, string? name = null)
             => Create(new ArrConnection { Id = string.Empty, Kind = kind, Url = url ?? string.Empty, Name = name ?? kind.ToString() }, apiKey);
 
+        /// <summary>Connection identity for durable jobs; display-name changes do not change it.</summary>
+        public string? ConnectionGeneration(string instanceId)
+        {
+            var instance = _registry.Get(instanceId);
+            return instance == null ? null : Fingerprint(instance, _registry.ResolveApiKey(instance));
+        }
+
         private ArrClient Create(ArrConnection connection, string key)
             => new(connection, key, () => _httpClientFactory.CreateClient(ArrHttp.ClientName));
 

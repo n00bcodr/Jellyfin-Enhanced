@@ -10,7 +10,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
     /// <summary>
     /// The SQLite database of "Requests &amp; downloads" (<c>acquire.db</c> in Jellyfin Enhanced's data
-    /// folder): follows, notifications and their delivery state now; the request ledger later. It
+    /// folder): follows, notifications, request intent, quota reservations and the outgoing ledger. It
     /// uses the host's own <c>Microsoft.Data.Sqlite</c> (both Jellyfin 10.11 and 12 ship it).
     /// <list type="bullet">
     /// <item><description>WAL, <c>synchronous=FULL</c>, foreign keys on, a busy timeout as a backstop.</description></item>
@@ -123,6 +123,58 @@ CREATE TABLE email_codes (
     sent_at INTEGER NOT NULL,
     sent_today INTEGER NOT NULL DEFAULT 1,
     day TEXT NOT NULL);
+",
+            // 2: user intent, shared acquisitions, immutable outbox and quota accounting.
+            @"
+CREATE TABLE acquisitions (
+    id TEXT PRIMARY KEY, title_key TEXT NOT NULL, variant TEXT NOT NULL,
+    state TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE UNIQUE INDEX acquisitions_active ON acquisitions(title_key,variant) WHERE state='active';
+CREATE TABLE wants (
+    id TEXT PRIMARY KEY, acquisition_id TEXT NOT NULL REFERENCES acquisitions(id),
+    user_id TEXT NOT NULL, client_request_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
+    title_key TEXT NOT NULL, variant TEXT NOT NULL, mutation_input TEXT NOT NULL, owned_input TEXT,
+    status TEXT NOT NULL, reason TEXT NOT NULL, cost INTEGER NOT NULL,
+    target_key TEXT NOT NULL DEFAULT '', parental_signature TEXT NOT NULL, is_follower INTEGER NOT NULL DEFAULT 0, origin_kind TEXT NOT NULL DEFAULT 'interactive',
+    origin_source_id TEXT, origin_request_id TEXT, import_batch_id TEXT,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+    UNIQUE(user_id,client_request_id), UNIQUE(origin_source_id,origin_request_id));
+CREATE TABLE request_inputs (
+    user_id TEXT NOT NULL, client_request_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
+    want_id TEXT NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
+    PRIMARY KEY(user_id,client_request_id));
+CREATE INDEX wants_user ON wants(user_id,status);
+CREATE INDEX wants_title ON wants(title_key,variant,status);
+CREATE TABLE reservations (
+    id TEXT PRIMARY KEY, want_id TEXT NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL, cost INTEGER NOT NULL, estimated_gb REAL NOT NULL,
+    state TEXT NOT NULL, charged_at INTEGER NOT NULL, scope TEXT NOT NULL,
+    episode_count INTEGER NOT NULL DEFAULT 0,
+    job_id TEXT,
+    UNIQUE(want_id,scope));
+CREATE INDEX reservations_user ON reservations(user_id,state,charged_at);
+CREATE TABLE approvals (
+    id TEXT PRIMARY KEY, want_id TEXT NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
+    actor_id TEXT, action TEXT NOT NULL, reason TEXT, edits TEXT,
+    instance_id TEXT NOT NULL, connection_generation TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE jobs (
+    id TEXT PRIMARY KEY, want_id TEXT NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
+    action TEXT NOT NULL, instance_id TEXT NOT NULL, connection_generation TEXT NOT NULL,
+    mutation_input TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE, fingerprint TEXT NOT NULL,
+    authorization_context TEXT NOT NULL, state TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL,
+    reason TEXT NOT NULL, outcome TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE INDEX jobs_due ON jobs(state,next_attempt);
+CREATE TABLE request_audit (
+    id TEXT PRIMARY KEY, want_id TEXT REFERENCES wants(id) ON DELETE SET NULL,
+    job_id TEXT REFERENCES jobs(id) ON DELETE SET NULL, actor_id TEXT,
+    action TEXT NOT NULL, outcome TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE request_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, title_key TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE request_notices (
+    id TEXT PRIMARY KEY, want_id TEXT NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE request_deleted_users (user_hash TEXT PRIMARY KEY);
 ",
         };
 
@@ -426,6 +478,51 @@ CREATE TABLE email_codes (
                     }
                     transaction.Commit();
                     _logger?.Info($"Requests & downloads: database migrated to schema {v + 1}.");
+                }
+                var extensionBackedUp = false;
+                // Earlier phase-3a installations already have schema 2. Extend that migration idempotently.
+                using (var columns = connection.CreateCommand())
+                {
+                    columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('reservations') WHERE name='episode_count'";
+                    if (Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+                    {
+                        if (existed && version == 2) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
+                        using var transaction = connection.BeginTransaction(deferred: false);
+                        using var extend = connection.CreateCommand();
+                        extend.Transaction = transaction;
+                        extend.CommandText = @"ALTER TABLE reservations ADD COLUMN episode_count INTEGER NOT NULL DEFAULT 0;
+UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=reservations.want_id),0) WHERE scope='initial';";
+                        extend.ExecuteNonQuery();
+                        transaction.Commit();
+                    }
+                }
+                using (var columns = connection.CreateCommand())
+                {
+                    columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('wants') WHERE name='target_key'";
+                    var addTarget = Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0;
+                    columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('reservations') WHERE name='job_id'";
+                    var addJob = Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0;
+                    columns.CommandText = "SELECT COUNT(*) FROM meta WHERE key='request_target_repair_v3'";
+                    var repair = Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0;
+                    if (addTarget || addJob || repair)
+                    {
+                        columns.CommandText = addTarget ? "SELECT COUNT(*) FROM wants" : "SELECT COUNT(*) FROM wants WHERE target_key='' AND status IN ('pending','queued','sent','stale')";
+                        var repairsRows = Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) > 0;
+                        if (existed && version == 2 && !extensionBackedUp && (addTarget || addJob || repairsRows)) BackupBeforeMigration(connection, version);
+                        using var transaction = connection.BeginTransaction(deferred: false);
+                        using var extend = connection.CreateCommand();
+                        extend.Transaction = transaction;
+                        if (addTarget || addJob)
+                        {
+                            extend.CommandText = (addTarget ? "ALTER TABLE wants ADD COLUMN target_key TEXT NOT NULL DEFAULT '';" : "") +
+                                (addJob ? "ALTER TABLE reservations ADD COLUMN job_id TEXT;" : "");
+                            extend.ExecuteNonQuery();
+                        }
+                        Requests.RequestLedger.ExtendSchemaTwo(connection, transaction, addTarget || repair, addJob, onlyEmptyTargets: !addTarget);
+                        extend.CommandText = "INSERT OR REPLACE INTO meta(key,value) VALUES('request_target_repair_v3','1')";
+                        extend.ExecuteNonQuery();
+                        transaction.Commit();
+                    }
                 }
                 _version = UserVersion(connection);
             }

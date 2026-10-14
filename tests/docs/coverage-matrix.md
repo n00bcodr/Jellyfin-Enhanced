@@ -161,3 +161,6 @@ These are assessed gaps beyond implemented cases, not claims that all other comb
 - Actual rendered page coverage remains limited to selected mocked visuals and one real-host settings journey; full-page mobile/accessibility, reverse-proxy browser navigation and native-device rendering remain outside automated evidence.
 
 Uncovered cases remain documented for follow-up. Human visual and translation quality assessment is separate from deterministic regression assertions.
+
+| Durable requests (phase 3a) | `IntegrationRequestLedgerTests`, `IntegrationRequestPolicyTablesTests`, `IntegrationRequestParentalTests` | SQLite rollback/reopen and restore fences; duplicate and concurrent wants/approval; canonical conflicts; rolling/episode/series/merge/future quotas; cooldown/refund; raw API role/parental/4K denials; private role/user/revision ETags; final-send prerequisite and transport-gate races; placeholder retry and uncertain-send recovery; deletion purge; async-void scan |
+| Request integration boundaries | `ApiArrRouteMatrixTests`, `ApiArrBodyLimitTests`, `ApiSeerrTests`, `IntegrationCalendarAccessTests`, `pages-config-requests.test.mjs` | Checked route/role/capability table, person-only access, pre-binding caps, shared legacy 4K gate, phase-3 absent calendar restriction, config round trip and dependency wiring |

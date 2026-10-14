@@ -672,6 +672,13 @@ public class IntegrationCalendarAccessTests
         // All libraries (and a rating limit, which can't judge titles Jellyfin doesn't have yet): the
         // unresolved ones as well, because every library is open.
         Assert.Equal(new[] { "Dune", "Show A", "Show B" }, Titles(await rig.Events(TestCallers.Principal(rig.Kid.Id, admin: false))));
+        // Phase 3 requires a verified rating even for an open destination, and even with the library toggle off.
+        var config = rig.R.Arr.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true;
+        config.CalendarFilterByLibraryAccess = false;
+        Assert.Empty(await rig.Events(TestCallers.Principal(rig.Kid.Id, admin: false)));
+        Assert.Equal(new[] { "Show A" }, Titles(await rig.Events(TestCallers.Principal(rig.Member.Id, admin: false))));
+        config.ArrPhase3Enabled = false; config.CalendarFilterByLibraryAccess = true;
         // A folder blocked for them hides it whatever else they may open.
         rig.Kid.SetPreference(PreferenceKind.BlockedMediaFolders, [rig.R.Kids.Id]);
         Assert.Equal(new[] { "Show A" }, Titles(await rig.Events(TestCallers.Principal(rig.Kid.Id, admin: false))));

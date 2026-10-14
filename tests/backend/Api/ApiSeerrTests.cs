@@ -20,6 +20,7 @@ public class ApiSeerrTests
         public ApiPluginFixture Plugin { get; } = new();
         public Guid UserId { get; } = Guid.NewGuid();
         public Guid OtherUserId { get; } = Guid.NewGuid();
+        public bool Importable { get; set; }
         public JellyseerrPermission Permissions { get; set; } = JellyseerrPermission.REQUEST;
         public ConcurrentQueue<(string Path, string Method, string? User, string? Body)> Calls { get; } = new();
         public Func<HttpRequestMessage, HttpResponseMessage> Reply { get; set; } = _ => IntegrationTransport.Response("{\"id\":99}");
@@ -40,6 +41,8 @@ public class ApiSeerrTests
                 var user = request.Headers.TryGetValues("X-Api-User", out var values) ? values.Single() : null;
                 Calls.Enqueue((path, request.Method.Method, user, body));
                 Assert.Equal("test-secret", Assert.Single(request.Headers.GetValues("X-Api-Key")));
+                if (Importable && path.StartsWith("/api/v1/user?")) return IntegrationTransport.Response("{\"results\":[]}");
+                if (Importable && path == "/api/v1/user/import-from-jellyfin") return IntegrationTransport.Response(JsonSerializer.Serialize(new[] { new { id = 27, jellyfinUserId = UserId.ToString("N"), permissions = (int)Permissions } }));
                 if (path.StartsWith("/api/v1/user?")) return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] {
                     new { id = 27, jellyfinUserId = UserId.ToString("N"), permissions = (int)Permissions },
                     new { id = 38, jellyfinUserId = OtherUserId.ToString("N"), permissions = (int)Permissions }
@@ -82,6 +85,107 @@ public class ApiSeerrTests
         foreach (var field in new[] { "serverId", "profileId", "rootFolder", "languageProfileId", "tags" })
             Assert.Equal(advanced, request.RootElement.TryGetProperty(field, out _));
         Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/user?"));
+    }
+
+    [Theory]
+    [InlineData(true, true, true, true)]
+    [InlineData(true, false, true, false)]
+    [InlineData(true, true, false, false)]
+    [InlineData(false, true, true, false)]
+    public async Task LegacyMovieAndSeasonsRoutesShareTheServer4kGateEvenForJellyfinAdmins(bool editionSwitch, bool setting, bool permission, bool allowed)
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST | (permission ? JellyseerrPermission.REQUEST_4K : JellyseerrPermission.NONE) };
+        f.SetUser(f.UserId, admin: true);
+        f.Plugin.Plugin.Configuration.ArrIntegrationEnabled = true;
+        f.Plugin.Plugin.Configuration.ArrPhase1Enabled = true;
+        f.Plugin.Plugin.Configuration.ArrPhase3Enabled = true;
+        f.Plugin.Plugin.Configuration.ArrRequest4kMoviesEnabled = editionSwitch;
+        f.Plugin.Plugin.Configuration.ArrRequest4kSeriesEnabled = editionSwitch;
+        f.Plugin.Plugin.Configuration.JellyseerrEnable4KRequests = editionSwitch;
+        f.Plugin.Plugin.Configuration.JellyseerrEnable4KTvRequests = editionSwitch;
+        f.Reply = request => request.RequestUri!.AbsolutePath == "/api/v1/settings/main"
+            ? IntegrationTransport.Response(JsonSerializer.Serialize(new { movie4kEnabled = setting, series4kEnabled = setting }))
+            : IntegrationTransport.Response("{\"id\":99}");
+        var movie = await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":101,\"is4k\":true}"));
+        var tv = await f.Controller.RequestTvSeasons(101, Body("{\"mediaType\":\"tv\",\"mediaId\":101,\"seasons\":[1],\"is4k\":true}"));
+        if (allowed) { Assert.IsType<ContentResult>(movie); Assert.IsType<ContentResult>(tv); Assert.Equal(2, f.Calls.Count(c => c.Method == "POST")); }
+        else { Assert.Equal(403, Assert.IsType<ObjectResult>(movie).StatusCode); Assert.Equal(403, Assert.IsType<ObjectResult>(tv).StatusCode); Assert.DoesNotContain(f.Calls, c => c.Method == "POST"); }
+    }
+
+    [Theory]
+    [InlineData(false, true, true, false)]
+    [InlineData(true, false, true, false)]
+    [InlineData(true, true, false, false)]
+    [InlineData(false, true, true, true)]
+    [InlineData(true, false, true, true)]
+    [InlineData(true, true, false, true)]
+    public async Task R2DisabledPhasePreservesLegacyMovieAndSeasonsAdminProxy(bool integration, bool phase1, bool phase3, bool settingsFail)
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.ADMIN };
+        var config = f.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = integration; config.ArrPhase1Enabled = phase1; config.ArrPhase3Enabled = phase3;
+        config.JellyseerrEnable4KRequests = false; config.JellyseerrEnable4KTvRequests = false;
+        f.Reply = request => request.RequestUri!.AbsolutePath == "/api/v1/settings/main" && settingsFail
+            ? IntegrationTransport.Response("{}", 503) : IntegrationTransport.Response("{\"id\":99}");
+        foreach (var admin in new[] { false, true })
+        {
+            f.SetUser(f.UserId, admin);
+            Assert.IsType<ContentResult>(await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":101,\"is4k\":true}")));
+            Assert.IsType<ContentResult>(await f.Controller.RequestTvSeasons(101, Body("{\"mediaType\":\"tv\",\"mediaId\":101,\"seasons\":[1],\"is4k\":true}")));
+        }
+        Assert.Equal(4, f.Calls.Count(c => c.Method == "POST"));
+        Assert.DoesNotContain(f.Calls, c => c.Path == "/api/v1/settings/main");
+    }
+
+    [Fact]
+    public async Task R2EnabledPhaseRecognizesSeerrAdminAsHolding4k()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.ADMIN };
+        var config = f.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true;
+        config.ArrRequest4kMoviesEnabled = true; config.ArrRequest4kSeriesEnabled = true;
+        f.Reply = request => request.RequestUri!.AbsolutePath == "/api/v1/settings/main"
+            ? IntegrationTransport.Response("{\"movie4kEnabled\":true,\"series4kEnabled\":true}") : IntegrationTransport.Response("{\"id\":99}");
+        Assert.IsType<ContentResult>(await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":101,\"is4k\":true}")));
+        Assert.IsType<ContentResult>(await f.Controller.RequestTvSeasons(101, Body("{\"mediaType\":\"tv\",\"mediaId\":101,\"seasons\":[1],\"is4k\":true}")));
+        Assert.Equal(2, f.Calls.Count(c => c.Method == "POST"));
+    }
+
+    [Theory]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, false)]
+    public async Task S5DisabledPhaseKeepsLegacyAdminAutoImportAndCachedApproveDecline(bool integration, bool phase1, bool phase3)
+    {
+        using var f = new SeerrFixture { Importable = true };
+        f.SetUser(f.UserId, admin: true);
+        var config = f.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = integration; config.ArrPhase1Enabled = phase1; config.ArrPhase3Enabled = phase3;
+        config.JellyseerrAutoImportUsers = true; config.DownloadsPageEnabled = true;
+        f.Controller.Request.Path = "/JellyfinEnhanced/arr/requests/99/approve";
+        Assert.IsType<OkObjectResult>(await f.Controller.ActOnRequest(99));
+        f.Controller.Request.Path = "/JellyfinEnhanced/arr/requests/99/decline";
+        Assert.IsType<OkObjectResult>(await f.Controller.ActOnRequest(99));
+        Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/user?"));
+        Assert.Single(f.Calls, c => c.Path == "/api/v1/user/import-from-jellyfin");
+        Assert.Equal("27", Assert.Single(f.Calls, c => c.Path.EndsWith("/99/approve")).User);
+        Assert.Equal("27", Assert.Single(f.Calls, c => c.Path.EndsWith("/99/decline")).User);
+        config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true;
+        Assert.IsType<NotFoundObjectResult>(await f.Controller.ActOnRequest(99));
+        Assert.Equal(2, f.Calls.Count(c => c.Path.StartsWith("/api/v1/user?")));
+        Assert.Single(f.Calls, c => c.Path == "/api/v1/user/import-from-jellyfin");
+    }
+
+    [Fact]
+    public async Task AStringEditionCannotBypassTheBoolean4kGate()
+    {
+        using var f = new SeerrFixture(); f.SetUser(f.UserId, admin: true);
+        f.Plugin.Plugin.Configuration.ArrIntegrationEnabled = true;
+        f.Plugin.Plugin.Configuration.ArrPhase1Enabled = true;
+        f.Plugin.Plugin.Configuration.ArrPhase3Enabled = true;
+        var response = Assert.IsType<BadRequestObjectResult>(await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":101,\"is4k\":\"true\"}")));
+        Assert.Equal(400, response.StatusCode); Assert.DoesNotContain(f.Calls, c => c.Method == "POST");
     }
 
     [Fact]

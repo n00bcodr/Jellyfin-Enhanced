@@ -2587,6 +2587,23 @@
                             <!-- /Requests & downloads, phase 1 -->
 
                             <!-- Requests & downloads, phase 2: one switch for "Tell me" (notifications) and the admin essentials -->
+                            <div class="checkboxContainer"><label><input id="arrPhase3Enabled" is="emby-checkbox" type="checkbox"/><span>Ask for it (durable requests, phase 3)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrPhase3Enabled"><div class="fieldDescription">Requires status on pages. Request transports arrive separately; requests remain safely queued meanwhile. Kids always need approval. Roles never override Jellyfin parental limits or library access.</div></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestBackend">Request handling</label><select id="arrRequestBackend" is="emby-select"><option value="seerr">Seerr (default)</option><option value="je">Jellyfin Enhanced (opt in)</option><option value="status_only">Status only</option></select></div>
+                            <div class="checkboxContainer"><label><input id="arrRequest4kMoviesEnabled" is="emby-checkbox" type="checkbox"/><span>Allow 4K movie requests</span></label></div>
+                            <div class="checkboxContainer"><label><input id="arrRequest4kSeriesEnabled" is="emby-checkbox" type="checkbox"/><span>Allow 4K series requests</span></label></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestPreset">House rules</label><select id="arrRequestPreset" is="emby-select"><option value="ask_first">Ask first</option><option value="open_house">Open house</option><option value="approve_everything">Approve everything</option></select></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestDefaultRole">Default role for new users</label><select id="arrRequestDefaultRole" is="emby-select"><option value="Watcher">Watcher (status only)</option><option value="Kid">Kid (always approval)</option><option value="Member">Member</option><option value="Manager">Manager</option></select></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestRoles">Per-role quota and 4K defaults (JSON)</label><textarea id="arrRequestRoles" is="emby-textarea"></textarea></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestUsers">Per-user roles, quotas and 4K instances (JSON)</label><textarea id="arrRequestUsers" is="emby-textarea"></textarea></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestQuotaLimit">Rolling request limit (0: preset; -1: unlimited)</label><input id="arrRequestQuotaLimit" is="emby-input" type="number" step="any"/></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestQuotaWindowDays">Quota window (days)</label><input id="arrRequestQuotaWindowDays" is="emby-input" type="number" step="any"/></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestSeriesThreshold">Seasons per series before approval is required</label><input id="arrRequestSeriesThreshold" is="emby-input" type="number" step="any"/></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestDeclineCooldownDays">Decline cooldown (days)</label><input id="arrRequestDeclineCooldownDays" is="emby-input" type="number" step="any"/></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestPendingLimit">Maximum pending requests per user</label><input id="arrRequestPendingLimit" is="emby-input" type="number" step="any"/></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestQuotaGb">Estimated GB per window (0: disabled)</label><input id="arrRequestQuotaGb" is="emby-input" type="number" step="any"/></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestStaleDays">Days before an unfulfilled request needs review</label><input id="arrRequestStaleDays" is="emby-input" type="number" step="any"/></div>
+                            <div class="checkboxContainer"><label><input id="arrRequestChargeFutureSeasons" is="emby-checkbox" type="checkbox"/><span>Charge future seasons when they start</span></label></div>
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
                                 <div class="fieldDescription je-field-desc-xl">The second stage: people get told when what they asked for (or follow) is ready, and administrators get alerts and day-to-day tools. Administrators get <strong>Overview</strong>, <strong>Activity</strong>, <strong>System</strong> and <strong>Audit</strong> tabs on the Requests page: every Sonarr/Radarr with its live state, queue, health and disk space; a <strong>Needs attention</strong> list built from what the apps themselves report (import blocked, download warnings and failures, low disk, health checks, imports Jellyfin hasn't picked up, requests Seerr OK'd that no Sonarr/Radarr has) with a fix next to each; the queue with remove (keeping the download's data, optionally blocklisting it and searching again), search again and retry import; removing a download <em>with</em> its data needs a typed confirmation. Every action is recorded in the audit log and in Jellyfin's activity log. Needs "Show where things have got to". Notifications have their own switch below.</div>
@@ -6051,6 +6068,22 @@
          */
         function jeLoadArrNotifySettings(config) {
             var num = function(v, d) { return (v !== undefined && v !== null) ? v : d; };
+            document.querySelector('#arrPhase3Enabled').checked = config.ArrPhase3Enabled === true;
+            document.querySelector('#arrRequestBackend').value = config.ArrRequestBackend;
+            document.querySelector('#arrRequest4kMoviesEnabled').checked = config.ArrRequest4kMoviesEnabled === true;
+            document.querySelector('#arrRequest4kSeriesEnabled').checked = config.ArrRequest4kSeriesEnabled === true;
+            document.querySelector('#arrRequestPreset').value = config.ArrRequestPreset;
+            document.querySelector('#arrRequestDefaultRole').value = config.ArrRequestDefaultRole;
+            document.querySelector('#arrRequestRoles').value = config.ArrRequestRoles;
+            document.querySelector('#arrRequestUsers').value = config.ArrRequestUsers;
+            document.querySelector('#arrRequestQuotaLimit').value = config.ArrRequestQuotaLimit;
+            document.querySelector('#arrRequestQuotaWindowDays').value = config.ArrRequestQuotaWindowDays;
+            document.querySelector('#arrRequestSeriesThreshold').value = config.ArrRequestSeriesThreshold;
+            document.querySelector('#arrRequestDeclineCooldownDays').value = config.ArrRequestDeclineCooldownDays;
+            document.querySelector('#arrRequestPendingLimit').value = config.ArrRequestPendingLimit;
+            document.querySelector('#arrRequestQuotaGb').value = config.ArrRequestQuotaGb;
+            document.querySelector('#arrRequestStaleDays').value = config.ArrRequestStaleDays;
+            document.querySelector('#arrRequestChargeFutureSeasons').checked = config.ArrRequestChargeFutureSeasons === true;
             document.querySelector('#arrPhase2Enabled').checked = config.ArrPhase2Enabled === true;
             document.querySelector('#arrNotificationsEnabled').checked = config.ArrNotificationsEnabled !== false;
             document.querySelector('#arrNotifyHouseholdUrl').value = config.ArrNotifyHouseholdUrl || '';
@@ -6078,6 +6111,22 @@
          */
         function jeSaveArrNotifySettings(config) {
             var clamp = function(id, lo, hi, d) { var n = parseInt(document.querySelector(id).value, 10); return isNaN(n) ? d : Math.min(hi, Math.max(lo, n)); };
+            config.ArrPhase3Enabled = document.querySelector('#arrPhase3Enabled').checked;
+            config.ArrRequestBackend = document.querySelector('#arrRequestBackend').value;
+            config.ArrRequest4kMoviesEnabled = document.querySelector('#arrRequest4kMoviesEnabled').checked;
+            config.ArrRequest4kSeriesEnabled = document.querySelector('#arrRequest4kSeriesEnabled').checked;
+            config.ArrRequestPreset = document.querySelector('#arrRequestPreset').value;
+            config.ArrRequestDefaultRole = document.querySelector('#arrRequestDefaultRole').value;
+            config.ArrRequestRoles = document.querySelector('#arrRequestRoles').value;
+            config.ArrRequestUsers = document.querySelector('#arrRequestUsers').value;
+            config.ArrRequestQuotaLimit = Number(document.querySelector('#arrRequestQuotaLimit').value);
+            config.ArrRequestQuotaWindowDays = Number(document.querySelector('#arrRequestQuotaWindowDays').value);
+            config.ArrRequestSeriesThreshold = Number(document.querySelector('#arrRequestSeriesThreshold').value);
+            config.ArrRequestDeclineCooldownDays = Number(document.querySelector('#arrRequestDeclineCooldownDays').value);
+            config.ArrRequestPendingLimit = Number(document.querySelector('#arrRequestPendingLimit').value);
+            config.ArrRequestQuotaGb = Number(document.querySelector('#arrRequestQuotaGb').value);
+            config.ArrRequestStaleDays = Number(document.querySelector('#arrRequestStaleDays').value);
+            config.ArrRequestChargeFutureSeasons = document.querySelector('#arrRequestChargeFutureSeasons').checked;
             config.ArrPhase2Enabled = document.querySelector('#arrPhase2Enabled').checked;
             config.ArrNotificationsEnabled = document.querySelector('#arrNotificationsEnabled').checked;
             config.ArrNotifyHouseholdUrl = (document.querySelector('#arrNotifyHouseholdUrl').value || '').trim();
@@ -9735,7 +9784,8 @@
             { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
-            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled'] },
+            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled', 'arrPhase3Enabled'] },
+            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },

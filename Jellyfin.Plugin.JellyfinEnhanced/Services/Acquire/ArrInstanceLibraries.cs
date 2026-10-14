@@ -64,6 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private const int MaxCacheEntries = 20_000;
 
         private readonly ArrStateStore _store;
+        internal SeerrParentalFilter? Parental { get; set; }
         private readonly Func<IReadOnlyList<JfLibraryRoot>> _library;
         private readonly Func<DateTimeOffset> _now;
         private readonly object _gate = new();
@@ -72,7 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Creates the resolver (DI).</summary>
         public ArrInstanceLibraries(ArrStateStore store, IJellyfinLibraryAccess library)
-            : this(store, library, null)
+            : this(store, library, (Func<DateTimeOffset>?)null)
         {
         }
 
@@ -154,7 +155,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Whether an absent title's copy may contribute status for this viewer, including their own request.</summary>
         internal bool CanSeeAbsent(StatusViewer viewer, ArrConnection instance, string? path, bool asked)
-            => viewer.IsAdmin || asked || (!viewer.HasParentalLimit && viewer.Handle is User user && CanOpen(user, Resolve(instance, path), Libraries()));
+            => !AbsentParentalEnabled ? viewer.IsAdmin || asked || (!viewer.HasParentalLimit && viewer.Handle is User legacyUser && CanOpen(legacyUser, Resolve(instance, path), Libraries())) :
+               (!viewer.HasParentalLimit || MaySeeAbsent(viewer, instance, path)) && (asked || (viewer.Handle is User user && CanOpen(user, Resolve(instance, path), Libraries())));
+
+        internal static bool AbsentParentalEnabled => JellyfinEnhanced.Instance?.Configuration is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true };
+
+        /// <summary>Cache-only parental check for an absent indexed copy.</summary>
+        internal bool MaySeeAbsent(StatusViewer viewer, ArrConnection instance, string? path, TitleKey? key = null)
+        {
+            if (!AbsentParentalEnabled || !viewer.HasParentalLimit) return true;
+            var library = _store.PeekLibrary(instance.Id);
+            var tmdb = key?.Provider == "tmdb" ? key.NumericId : null;
+            if (!tmdb.HasValue && path != null)
+                tmdb = instance.Kind == ArrKind.Radarr ? library?.Movies.FirstOrDefault(m => m.Path == path)?.TmdbId : library?.Series.FirstOrDefault(m => m.Path == path)?.TmdbId;
+            if (!tmdb.HasValue && key?.Provider == "tvdb") tmdb = library?.SeriesByTvdb(key.NumericId ?? 0)?.TmdbId;
+            return Parental?.MaySeeAbsent(instance.Kind == ArrKind.Radarr ? "movie" : "tv", tmdb ?? 0, viewer.UserId.ToString("N"), out _) == true;
+        }
+
+        /// <summary>Cache-only rating decision by canonical key, resolving TVDB to TMDB through indexed copies.</summary>
+        internal bool MaySeeAbsent(StatusViewer viewer, TitleKey key)
+        {
+            if (!AbsentParentalEnabled || !viewer.HasParentalLimit) return true;
+            var tmdb = key.Provider == "tmdb" ? key.NumericId : null;
+            foreach (var instance in _store.Registry.All())
+            {
+                if (tmdb.HasValue) break;
+                if (!key.IsMovie && key.Provider == "tvdb") tmdb = _store.PeekLibrary(instance.Id)?.SeriesByTvdb(key.NumericId ?? 0)?.TmdbId;
+            }
+            return Parental?.MaySeeAbsent(key.IsMovie ? "movie" : "tv", tmdb ?? 0, viewer.UserId.ToString("N"), out _) == true;
+        }
 
         /// <summary>A token that changes with mappings, linked libraries, roots and Jellyfin library locations.</summary>
         internal string Revision => CurrentState().Revision;

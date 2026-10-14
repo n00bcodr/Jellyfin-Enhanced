@@ -68,7 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.IArrJellyfinView, Services.Acquire.ArrJellyfinView>();
             serviceCollection.AddSingleton<Services.Acquire.SeerrRequestReadModel>();
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.SeerrRequestReadModel>());
-            serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts>(sp => sp.GetRequiredService<Services.Acquire.SeerrRequestReadModel>());
+            serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts, Services.Acquire.Requests.LedgerRequestFacts>();
             serviceCollection.AddSingleton<Services.Acquire.TitleAliases>();
             serviceCollection.AddSingleton<Services.Acquire.ArrStatusService>();
             // The Requests page (everyone's own requests) and the administrator's Manage drawer.
@@ -77,7 +77,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Phase 2 (admin essentials): the hub's admin tabs, queue actions, the Jellyfin bridge
             // (targeted refresh after imports, not-in-Jellyfin list, path doctor) and the activity log mirror.
             serviceCollection.AddSingleton<Services.Acquire.IJellyfinLibraryAccess, Services.Acquire.JellyfinLibraryAccess>();
-            serviceCollection.AddSingleton<Services.Acquire.ArrInstanceLibraries>();
+            serviceCollection.AddSingleton(sp => new Services.Acquire.ArrInstanceLibraries(sp.GetRequiredService<Services.Arr.ArrStateStore>(), sp.GetRequiredService<Services.Acquire.IJellyfinLibraryAccess>()) { Parental = sp.GetRequiredService<Services.SeerrParentalFilter>() });
             serviceCollection.AddSingleton<Services.Acquire.JellyfinBridge>();
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.JellyfinBridge>());
             serviceCollection.AddSingleton<Services.Acquire.ArrAdminHubService>();
@@ -105,6 +105,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHttpClient(Services.Acquire.Notify.NotifyEndpoints.ClientName)
                 .ConfigureHttpClient(c => c.Timeout = System.Threading.Timeout.InfiniteTimeSpan)
                 .ConfigurePrimaryHttpMessageHandler(Services.Arr.ArrHttp.CreateHandler);
+            serviceCollection.AddSingleton<Services.Acquire.Requests.RequestLedger>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.IRequestBackend, Services.Acquire.Requests.UnavailableRequestBackend>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.IRequestPolicy, Services.Acquire.Requests.RequestPolicy>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.RequestTitleLocks>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.RequestService>();
+            serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             serviceCollection.AddSingleton<Services.Acquire.AcquireDatabase>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.NotifyStore>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.INotifyUsers, Services.Acquire.Notify.JellyfinNotifyUsers>();

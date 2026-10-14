@@ -350,8 +350,8 @@ public class IntegrationSeerrReadModelTests
     public async Task TheContainerCanDisposeItOncePerRegistrationWithoutThrowing()
     {
         // Jellyfin disposes its host on every shutdown/restart; the read model is registered as
-        // itself, as a hosted service and as the request facts, so the container disposes the one
-        // instance up to three times. A throw there escaped Program.StartServer (restart = crash).
+        // itself and as a hosted service, so the container disposes the same instance twice.
+        // The authority-selecting facts wrapper does not own the read model. A throw there escaped Program.StartServer (restart = crash).
         using var rig = new Rig();
         var registered = new ServiceCollection();
         new Jellyfin.Plugin.JellyfinEnhanced.PluginServiceRegistrator().RegisterServices(registered, Mock.Of<MediaBrowser.Controller.IServerApplicationHost>());
@@ -360,16 +360,14 @@ public class IntegrationSeerrReadModelTests
         var forwards = registered.Where(d => d.ServiceType == typeof(IHostedService) && d.ImplementationFactory != null && Forwards(d, probe)).ToList();
         Assert.Single(forwards);
         var facts = registered.Single(d => d.ServiceType == typeof(IArrRequestFacts));
-        Assert.Same(rig.Model, facts.ImplementationFactory!(probe));
+        Assert.Equal(typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts), facts.ImplementationType);
 
         IServiceCollection services = new ServiceCollection();
         services.AddSingleton(_ => rig.Model);
         foreach (var d in forwards) services.Add(d);
-        services.Add(facts);
         var provider = services.BuildServiceProvider();
         var hosted = provider.GetServices<IHostedService>().ToList();
         Assert.Same(rig.Model, Assert.Single(hosted));
-        Assert.Same(rig.Model, provider.GetRequiredService<IArrRequestFacts>());
         Assert.Same(rig.Model, provider.GetRequiredService<SeerrRequestReadModel>());
         foreach (var h in hosted) await h.StartAsync(default);
         foreach (var h in hosted) await h.StopAsync(default);

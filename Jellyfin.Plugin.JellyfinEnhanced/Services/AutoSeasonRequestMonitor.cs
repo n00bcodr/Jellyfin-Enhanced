@@ -14,6 +14,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // Monitors playback events to automatically request next seasons when threshold is reached.
     public class AutoSeasonRequestMonitor : IDisposable
     {
+        private readonly PlaybackWorkQueue _work;
         private readonly ISessionManager _sessionManager;
         private readonly IUserManager _userManager;
         private readonly ILibraryManager _libraryManager;
@@ -36,6 +37,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _libraryManager = libraryManager;
             _autoSeasonRequestService = autoSeasonRequestService;
             _logger = logger;
+            _work = new(message => _logger.Warning(message));
         }
 
         // Initialize and start monitoring playback events.
@@ -65,7 +67,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Handle playback stopped events to check if we should request next season.
-        private async void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
+        private void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e) => _work.Enqueue(() => HandleOnPlaybackStoppedAsync(e));
+
+        private async Task HandleOnPlaybackStoppedAsync(PlaybackStopEventArgs e)
         {
             try
             {
@@ -153,7 +157,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Handle playback progress events to detect when user starts watching a new episode.
-        private async void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
+        private void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
+        {
+            lock (_sessionLock)
+            {
+                var key = $"{e.Session?.UserId}_{e.Item?.Id}";
+                if (_checkedSessions.TryGetValue(key, out var checkedAt) && DateTime.Now - checkedAt < TimeSpan.FromHours(1)) return;
+            }
+            _work.Enqueue(() => HandleOnPlaybackProgressAsync(e));
+        }
+
+        private async Task HandleOnPlaybackProgressAsync(PlaybackProgressEventArgs e)
         {
             try
             {
@@ -231,6 +245,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             _sessionManager.PlaybackStopped -= OnPlaybackStopped;
             _sessionManager.PlaybackProgress -= OnPlaybackProgress;
+            _work.Dispose();
 
             GC.SuppressFinalize(this);
         }

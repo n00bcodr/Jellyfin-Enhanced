@@ -145,7 +145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public bool TryGetRestrictedPolicy(string? jellyfinUserId, out Policy policy)
         {
             policy = default;
-            if (!IsEnabled() || string.IsNullOrEmpty(jellyfinUserId) || !Guid.TryParse(jellyfinUserId, out var userGuid))
+            if (!IsEnabled() || string.IsNullOrEmpty(jellyfinUserId) || !Guid.TryParse(jellyfinUserId, out var userGuid) || userGuid == Guid.Empty)
             {
                 return false;
             }
@@ -156,6 +156,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return false;
             }
 
+            policy = PolicyFor(user);
+            return policy.IsRestricted;
+        }
+
+        /// <summary>Jellyfin's rating and tag policy, independent of plugin flags and transport configuration.</summary>
+        public static Policy PolicyFor(Jellyfin.Database.Implementations.Entities.User user)
+        {
             // Same source Jellyfin's own gate reads (BaseItem.GetBlockUnratedValue);
             // no DTO materialisation on the hot path.
             var blocked = user.GetPreferenceValues<UnratedItem>(PreferenceKind.BlockUnratedItems);
@@ -167,8 +174,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var blockedTags = ParentalTagDecision.ToTagSet(user.GetPreference(PreferenceKind.BlockedTags));
             var allowedTags = ParentalTagDecision.ToTagSet(user.GetPreference(PreferenceKind.AllowedTags));
 
-            policy = new Policy(user.MaxParentalRatingScore, user.MaxParentalRatingSubScore, blockMovies, blockSeries, blockedTags, allowedTags);
-            return policy.IsRestricted;
+            return new Policy(user.MaxParentalRatingScore, user.MaxParentalRatingSubScore, blockMovies, blockSeries, blockedTags, allowedTags);
         }
 
         private string Region()
@@ -412,6 +418,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             return TmdbAccess.Deny;
         }
+
+        /// <summary>Verified absent-title rating and tags, retained with a request for later review.</summary>
+        public sealed record AbsentSignature(int? Score, int? SubScore, string[] Keywords, string[] Genres);
+
+        /// <summary>Cache-only absent-title decision. Restricted users require a rated, verified signature.</summary>
+        public bool MaySeeAbsent(string mediaType, int tmdbId, string userId, out AbsentSignature? facts)
+        {
+            facts = null;
+            if (!TryGetRestrictedPolicy(userId, out var policy)) return true;
+            if (tmdbId <= 0 || (policy.HasTagRules && !HasSeerr())) return false;
+            var key = mediaType + ":" + tmdbId.ToString(CultureInfo.InvariantCulture) + ":" + Region();
+            if (!TryGetFreshSignature(key, policy.HasTagRules, out var signature) || signature?.Score == null) return false;
+            facts = new AbsentSignature(signature.Score, signature.SubScore, signature.Keywords ?? Array.Empty<string>(), signature.Genres ?? Array.Empty<string>());
+            return IsAllowed(signature, mediaType, policy);
+        }
+
+        /// <summary>Bounded absent-title check; lookup failures and unrated titles refuse restricted users.</summary>
+        public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, string userId, CancellationToken ct)
+        {
+            if (!TryGetRestrictedPolicy(userId, out var policy)) return true;
+            if (tmdbId <= 0 || (policy.HasTagRules && !HasSeerr())) return false;
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromSeconds(8));
+                await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, timeout.Token).ConfigureAwait(false);
+                return MaySeeAbsent(mediaType, tmdbId, userId, out _);
+            }
+            catch (Exception) { return false; }
+        }
+
+        private static bool HasSeerr() => JellyfinEnhanced.Instance?.Configuration is { JellyseerrEnabled: true } c && !string.IsNullOrWhiteSpace(c.JellyseerrUrls) && !string.IsNullOrWhiteSpace(c.GetJellyseerrApiKey());
 
         // ── Decisions ────────────────────────────────────────────────────────
 

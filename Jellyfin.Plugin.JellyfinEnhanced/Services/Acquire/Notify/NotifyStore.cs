@@ -598,7 +598,7 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
                 }
                 // Their id on the Seerr requests seen (written by earlier versions, never read; no
                 // longer written): the states stay, they tell what's new.
-                return removed + Exec(c, t, "UPDATE seerr_seen SET user_id=NULL WHERE user_id=$u", ("$u", id));
+                return removed + Exec(c, t, "UPDATE seerr_seen SET user_id=NULL WHERE user_id=$u", ("$u", id)) + Requests.RequestLedger.PurgeUser(c, t, userId);
             });
         }
 

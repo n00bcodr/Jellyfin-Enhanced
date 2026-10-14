@@ -63,6 +63,15 @@ public class ApiArrRouteMatrixTests
     }
 
     [Fact]
+    public void EveryRouteDocumentsHouseholdRolesAndEditionCapability()
+    {
+        using var table = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Api", "ArrRoutes.json")));
+        foreach (var row in table.RootElement.GetProperty("routes").EnumerateArray())
+            foreach (var column in new[] { "Member", "Manager", "Kid", "requests.4k", "capability" })
+                Assert.False(string.IsNullOrWhiteSpace(row.GetProperty(column).GetString()));
+    }
+
+    [Fact]
     public void EveryRouteSignsInExceptTheSecretCheckedWebhook()
     {
         var access = Table().ToDictionary(r => r.Method + " " + r.Route, r => r.Access, StringComparer.Ordinal);
@@ -127,6 +136,7 @@ public class ApiArrRouteMatrixTests
                 new ArrAdminController(N.Arr.Factory, Audit, users, logger),
                 new ArrStateController(N.Store, users),
                 new ArrStatusController(N.Status),
+                new AcquireRequestsController(new ServicesForRequests(N).Service),
                 new RequestsHubController(Hub, Manage),
                 new ArrAdminHubController(N.Hub, Queue, N.Bridge, Runner, N.Status, Manage),
                 new NotifyController(N.Service, N.Dispatcher, new NtfySender(N.Ntfy), new EmailSender(N.Mail), N.Users) { Config = () => N.Config, Now = () => N.Arr.Now },
@@ -138,6 +148,18 @@ public class ApiArrRouteMatrixTests
                 controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
                 controller.HttpContext.User = caller;
                 yield return controller;
+            }
+        }
+
+        private sealed class ServicesForRequests
+        {
+            public Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService Service { get; }
+            public ServicesForRequests(IntegrationNotificationsTests.Rig n)
+            {
+                var policy = new IntegrationRequestLedgerTests.Policy();
+                foreach (var viewer in new[] { n.Admin, n.Emma })
+                    policy.People[viewer.UserId] = new(viewer.UserId, viewer.IsAdmin ? "Admin" : "Member", true, viewer.IsAdmin, viewer.IsAdmin, true, "p", "je", "", "", 7, 7, 0, "null");
+                Service = new(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(n.Db), policy, n.View, n.Feed, () => n.Arr.Now);
             }
         }
 
