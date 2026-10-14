@@ -301,6 +301,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ActivityFeedShowWatched = true;
             ActivityFeedShowFavorited = true;
             ActivityFeedShowReviewed = true;
+            ActivityFeedOwnOnlyForNonAdmins = false;
             ActivityFeedShowActiveStreams = true;
             ActivityFeedUsePluginPages = false;
             ActivityFeedUseCustomTabs = false;
@@ -896,6 +897,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ActivityFeedShowWatched { get; set; } = true;
         public bool ActivityFeedShowFavorited { get; set; } = true;
         public bool ActivityFeedShowReviewed { get; set; } = true;
+        /// <summary>
+        /// When true, non-admins only see their own entries in the Activity Feed.
+        /// Admins always see everyone.
+        /// </summary>
+        public bool ActivityFeedOwnOnlyForNonAdmins { get; set; }
         /// <summary>
         /// Shows the Active Streams section on the Activity Feed page. This is
         /// separate from ActiveStreamsEnabled (the header widget toggle) so an

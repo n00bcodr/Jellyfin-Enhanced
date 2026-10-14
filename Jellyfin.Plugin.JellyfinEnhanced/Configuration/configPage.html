@@ -1731,6 +1731,10 @@
                             <div class="checkboxContainer"><label><input id="activityFeedShowWatched" is="emby-checkbox" type="checkbox"/><span>Show recently watched</span></label></div>
                             <div class="checkboxContainer"><label><input id="activityFeedShowFavorited" is="emby-checkbox" type="checkbox"/><span>Show recently favorited</span></label></div>
                             <div class="checkboxContainer"><label><input id="activityFeedShowReviewed" is="emby-checkbox" type="checkbox"/><span>Show recently reviewed</span></label></div>
+                            <div class="checkboxContainer"><label><input id="activityFeedOwnOnlyForNonAdmins" is="emby-checkbox" type="checkbox"/><span>Non-admins only see their own activity</span></label></div>
+                            <div class="je-setting-description" data-desc-for="activityFeedOwnOnlyForNonAdmins">
+                                <div class="fieldDescription je-field-desc-xl">When enabled, regular users only see their own watched, favorited and reviewed entries. Administrators still see everyone.</div>
+                            </div>
                             <div class="checkboxContainer"><label><input id="activityFeedShowActiveStreams" is="emby-checkbox" type="checkbox"/><span>Show Active Streams section</span></label></div>
                             <div class="je-setting-description" data-desc-for="activityFeedShowActiveStreams">
                                 <div class="fieldDescription je-field-desc-xl">Adds a live "who's watching now" section to this page, independent of whether the Active Streams header widget (Extras tab) is shown. Still requires that feature's data collection to be enabled there.</div>
@@ -6770,6 +6774,7 @@
                 document.querySelector('#activityFeedShowWatched').checked = config.ActivityFeedShowWatched !== false;
                 document.querySelector('#activityFeedShowFavorited').checked = config.ActivityFeedShowFavorited !== false;
                 document.querySelector('#activityFeedShowReviewed').checked = config.ActivityFeedShowReviewed !== false;
+                document.querySelector('#activityFeedOwnOnlyForNonAdmins').checked = config.ActivityFeedOwnOnlyForNonAdmins === true;
                 document.querySelector('#activityFeedShowActiveStreams').checked = config.ActivityFeedShowActiveStreams !== false;
                 document.querySelector('#activityFeedUseNativeTab').checked = config.ActivityFeedUseNativeTab === true;
                 document.querySelector('#activityFeedUsePluginPages').checked = config.ActivityFeedUsePluginPages === true;
@@ -7293,6 +7298,7 @@
             config.ActivityFeedShowWatched = document.querySelector('#activityFeedShowWatched').checked;
             config.ActivityFeedShowFavorited = document.querySelector('#activityFeedShowFavorited').checked;
             config.ActivityFeedShowReviewed = document.querySelector('#activityFeedShowReviewed').checked;
+            config.ActivityFeedOwnOnlyForNonAdmins = document.querySelector('#activityFeedOwnOnlyForNonAdmins').checked;
             config.ActivityFeedShowActiveStreams = document.querySelector('#activityFeedShowActiveStreams').checked;
             config.ActivityFeedUseNativeTab = document.querySelector('#activityFeedUseNativeTab').checked;
             config.ActivityFeedUsePluginPages = document.querySelector('#activityFeedUsePluginPages').checked;
@@ -8644,7 +8650,7 @@
             { parent: 'audioLanguageTagSyncEnabled', label: 'Enable Audio Language Tags Sync', children: ['audioLanguageTagPrefix', 'audioLanguageTagShowAsLinks'] },
             { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseNativeTab', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
             { parent: 'recommendationsPageEnabled', label: 'Enable Recommendations Page', children: ['recommendationsUseNativeTab', 'recommendationsUsePluginPages', 'recommendationsUseCustomTabs', 'recommendationsAutoCreateCustomTab'] },
-            { parent: 'activityFeedEnabled', label: 'Enable Activity Feed', children: ['activityFeedShowWatched', 'activityFeedShowFavorited', 'activityFeedShowReviewed', 'activityFeedShowActiveStreams', 'activityFeedUseNativeTab', 'activityFeedUsePluginPages', 'activityFeedUseCustomTabs', 'activityFeedAutoCreateCustomTab'] },
+            { parent: 'activityFeedEnabled', label: 'Enable Activity Feed', children: ['activityFeedShowWatched', 'activityFeedShowFavorited', 'activityFeedShowReviewed', 'activityFeedOwnOnlyForNonAdmins', 'activityFeedShowActiveStreams', 'activityFeedUseNativeTab', 'activityFeedUsePluginPages', 'activityFeedUseCustomTabs', 'activityFeedAutoCreateCustomTab'] },
             { parent: 'catchUpEnabled', label: 'Enable Catch Up', children: ['catchUpLogEnabled', 'catchUpUseNativeTab', 'catchUpUsePluginPages', 'catchUpUseCustomTabs', 'catchUpAutoCreateCustomTab'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
