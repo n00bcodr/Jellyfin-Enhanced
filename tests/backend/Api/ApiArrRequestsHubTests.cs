@@ -1257,6 +1257,80 @@ public class ApiArrRequestsHubTests
     }
 
     [Fact]
+    public async Task SearchForEveryoneRunsTheArrsSearchAgainOnlyForWhatRequestsAlreadySent()
+    {
+        // Firefly S1E4 is monitored in Sonarr with nothing grabbed; Seerr's OK of season 1 was two days ago.
+        using var rig = await Ready();
+        rig.Sonarr.CommandStarted = rig.Arr.Now.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
+        var policy = new IntegrationRequestLedgerTests.Policy();
+        foreach (var (viewer, role) in new[] { (rig.Emma, "Member"), (rig.Kid, "Kid"), (rig.Sam, "Watcher") })
+            policy.People[viewer.UserId] = new(viewer.UserId, role, role != "Watcher", false, false, true, "r1", "je", "", "", 7, 7, 0, "null");
+        using var db = new AcquireDatabase(Path.Combine(rig.Arr.Plugin.Core.Root, "family-search.db"));
+        var ledger = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(db);
+        var requests = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService(ledger, policy, rig.View, rig.Feed, () => rig.Arr.Now);
+        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, rig.Manage, () => rig.Arr.Now);
+        async Task<(int Status, JsonElement Body)> Press(StatusViewer? viewer, string key, string idem)
+        {
+            var c = new AcquireRequestsController(requests, null, search) { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
+            c.HttpContext.User = viewer == null ? TestCallers.Unknown() : TestCallers.Principal(viewer.UserId, viewer.IsAdmin);
+            var reply = await Send(c, () => c.Search(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchBody(key, idem), default));
+            return (reply.Status, Root(reply));
+        }
+        int Searches() => rig.Sonarr.Writes.Count(w => w.Path == "/api/v3/command" && w.Body.Contains("EpisodeSearch", StringComparison.Ordinal));
+        const string E4 = "tv:tvdb:78874:s1:e4";
+
+        // Nothing went out through a request yet: the caller asks for it instead (no arr call).
+        var first = await Press(rig.Emma, E4, "p1");
+        Assert.Equal((200, "skipped", "not_requested"), (first.Status, first.Body.GetProperty("outcome").GetString(), first.Body.GetProperty("reason").GetString()));
+        Assert.Equal(0, Searches());
+
+        // Emma's ask for that episode goes out.
+        var input = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestEpisode(1, 4) } };
+        Assert.Equal(201, (await requests.CreateAsync(rig.Emma.UserId, new("ask-e4", input), default)).HttpStatus);
+        await new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestOutbox(ledger, policy, new IntegrationRequestLedgerTests.Backend(),
+            new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestTitleLocks(), rig.Feed, rig.Audit, () => rig.Arr.Now).TickAsync(default);
+        Assert.Equal("sent", ledger.List(rig.Emma.UserId, false).Single().Status);
+
+        // Not missing for long enough yet (a 30-day "still looking" period): nothing to search, the page asks instead.
+        rig.Arr.Plugin.Plugin.Configuration.ArrStatusLookingHours = 720;
+        var fresh = await Press(rig.Emma, E4, "p1b");
+        Assert.Equal((200, "skipped", "not_searchable"), (fresh.Status, fresh.Body.GetProperty("outcome").GetString(), fresh.Body.GetProperty("reason").GetString()));
+        Assert.Equal(0, Searches());
+        rig.Arr.Plugin.Plugin.Configuration.ArrStatusLookingHours = 24;
+
+        // Missing for a long while: Emma's Search runs Sonarr's search for exactly that episode; nothing grabbed.
+        var searched = await Press(rig.Emma, E4, "p2");
+        Assert.Equal(200, searched.Status);
+        Assert.Equal(("accepted", "searched", false), (searched.Body.GetProperty("outcome").GetString(), searched.Body.GetProperty("reason").GetString(), searched.Body.GetProperty("found").GetBoolean()));
+        Assert.Equal(1, Searches());
+        var command = JsonNode.Parse(rig.Sonarr.Writes.Last(w => w.Path == "/api/v3/command").Body)!;
+        Assert.Equal(104, (int)command["episodeIds"]![0]!);
+        Assert.DoesNotContain("sonarr.lan", searched.Body.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        // No new request, nothing charged.
+        Assert.Single(ledger.List(rig.Emma.UserId, false));
+        Assert.Empty(ledger.List(rig.Kid.UserId, false));
+
+        // Once per looking period for the whole household: the kid's press right after is refused.
+        var again = await Press(rig.Kid, E4, "p3");
+        Assert.Equal((429, "searched_recently"), (again.Status, again.Body.GetProperty("reason").GetString()));
+        Assert.Equal(1, Searches());
+        // Watchers can't, and neither can callers who aren't a person.
+        var watcher = await Press(rig.Sam, E4, "p4");
+        Assert.Equal((403, "requests_create_required"), (watcher.Status, watcher.Body.GetProperty("reason").GetString()));
+        Assert.Equal(403, (await Press(null, E4, "p5")).Status);
+        // A season or series key isn't a single part; a movie nobody's request sent is asked for instead.
+        Assert.Equal(400, (await Press(rig.Emma, "tv:tvdb:78874:s1", "p6")).Status);
+        Assert.Equal("not_requested", (await Press(rig.Emma, "movie:tmdb:693134", "p7")).Body.GetProperty("reason").GetString());
+
+        // The next looking period: the kid (who may see Firefly) may search again.
+        rig.Arr.Now += TimeSpan.FromHours(25);
+        var later = await Press(rig.Kid, E4, "p8");
+        Assert.Equal(200, later.Status);
+        Assert.Equal(2, Searches());
+        Assert.Empty(ledger.List(rig.Kid.UserId, false));
+    }
+
+    [Fact]
     public async Task TheDeletionOfTheLastRequestForATitleStillReachesThoseWhoFollowedIt()
     {
         // The kid asked for Kid Film (666) and Sam for Sam Film (777); neither is in Jellyfin or an arr.

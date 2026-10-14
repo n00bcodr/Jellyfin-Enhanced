@@ -221,7 +221,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
                 else
                 {
-                    state = MovieFromArr(copy, c);
+                    state = MovieFromArr(copy, c, facts.Request);
                 }
                 variants.Add((copy, state, visible ?? matched.FirstOrDefault()));
             }
@@ -299,8 +299,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static bool MayBeHiddenCopy(ArrCopyFacts copy, CopyState state, ComposeContext c)
             => state.Reason == StatusReasonCode.NotVisibleToUser || copy.Movie!.HasFile || RecentImport(copy, c, TimeSpan.FromDays(30)) != null;
 
-        /// <summary>A movie copy that is not (visibly) in Jellyfin: where the arr has got to.</summary>
-        internal static CopyState MovieFromArr(ArrCopyFacts copy, ComposeContext c)
+        /// <summary>
+        /// A movie copy that is not (visibly) in Jellyfin: where the arr has got to. A request that went
+        /// out for it (<paramref name="request"/>) restarts the "still looking" clock.
+        /// </summary>
+        internal static CopyState MovieFromArr(ArrCopyFacts copy, ComposeContext c, RequestFacts? request = null)
         {
             var movie = copy.Movie!;
             if (copy.Queue.Count > 0) return FromQueue(BestRow(copy.Queue), c, copy);
@@ -325,7 +328,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 return new CopyState(StatusStage.NotOut, StatusReasonCode.NotReleased, Date: date, DateIsDay: true);
             }
             if (copy.QueueUnknown) return Unknown();
-            var since = Latest(Valid(movie.Added), Valid(movie.DigitalRelease) is DateTime d && d <= c.Now ? d : null);
+            var since = Latest(Latest(Valid(movie.Added), Valid(movie.DigitalRelease) is DateTime d && d <= c.Now ? d : null), SentFor(request, copy, null, null));
             return Looking(since, c, movie.LastSearchTime);
         }
 
@@ -355,7 +358,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var all = new List<(int Season, CopyState State, ArrEpisodeEntry? Arr, int Episode)>();
             foreach (var s in seasons)
             {
-                var episodes = EpisodeStates(copy, s, jfEpisodes, c, hidden);
+                var episodes = EpisodeStates(copy, s, jfEpisodes, c, hidden, facts.Request);
                 all.AddRange(episodes.Select(e => (s, e.State, e.Arr, e.Episode)));
                 var summary = copy.Episodes != null ? Summarize(episodes.Select(e => (e.State, e.Arr, s, e.Episode)).ToList(), c) : SeasonFromStats(copy, s, jfEpisodes, c, hidden);
                 perSeason.Add(new SeasonStatus
@@ -427,7 +430,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null) : null,
                 };
             }
-            var episodes = EpisodeStates(copy, season, jfEpisodes, c, hidden);
+            var episodes = EpisodeStates(copy, season, jfEpisodes, c, hidden, facts.Request);
             var summary = copy.Episodes != null ? Summarize(episodes.Select(e => (e.State, e.Arr, season, e.Episode)).ToList(), c) : SeasonFromStats(copy, season, jfEpisodes, c, hidden);
             var stage = SummaryStage(summary);
             var progress = episodes.Where(e => e.State.Stage == StatusStage.Downloading && e.State.Progress != null).Select(e => e.State.Progress!).ToList();
@@ -500,7 +503,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             else
             {
                 arr = copy.Episodes?.Find(season, number);
-                state = EpisodeFromArr(copy, season, number, arr, c);
+                state = EpisodeFromArr(copy, season, number, arr, c, facts.Request);
             }
             var recent = state.Stage == StatusStage.Ready && copy != null && RecentEpisodeImport(copy, season, number, arr, c) != null;
             var quiet = (state.Stage == StatusStage.Ready && state.Reason == StatusReasonCode.Ready && !recent) || state.Stage == StatusStage.None;
@@ -593,7 +596,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var family = SeriesCopyForViewer(facts, copies, c);
             var state = family == null
                 ? (visible ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready) : NothingKnown(facts))
-                : SeriesCopyState(WithoutHiddenRows(family, hidden), visible, c);
+                : SeriesCopyState(WithoutHiddenRows(family, hidden), visible, c, facts.Request);
             if (!visible && copies.Count > 0 && c.Viewer.IsAdmin && state.Stage == StatusStage.AlmostReady)
             {
                 // An admin is told why.
@@ -674,7 +677,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             else
             {
                 var per = wanted.OrderBy(n => n).Select(n => copy.Episodes != null
-                    ? Summarize(EpisodeStates(copy, n, visibleEpisodes, c, hidden).Select(e => (e.State, e.Arr, n, e.Episode)).ToList(), c)
+                    ? Summarize(EpisodeStates(copy, n, visibleEpisodes, c, hidden, facts.Request).Select(e => (e.State, e.Arr, n, e.Episode)).ToList(), c)
                     : SeasonFromStats(copy, n, visibleEpisodes, c, hidden)).ToList();
                 var waiting = per.Where(x => SummaryStage(x) != StatusStage.Ready).ToList();
                 if (waiting.Count == 0)
@@ -794,8 +797,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             };
         }
 
-        /// <summary>Where a series copy has got to as a whole (keys path, admin line).</summary>
-        internal static CopyState SeriesCopyState(ArrCopyFacts copy, bool inJellyfin, ComposeContext c)
+        /// <summary>Where a series copy has got to as a whole (keys path, admin line); a request that went out restarts the "still looking" clock.</summary>
+        internal static CopyState SeriesCopyState(ArrCopyFacts copy, bool inJellyfin, ComposeContext c, RequestFacts? request = null)
         {
             var series = copy.Series!;
             if (copy.Queue.Count > 0)
@@ -809,14 +812,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (series.EpisodeCount == 0 && series.NextAiring is DateTime next && next > c.Now)
                 return new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: next);
             if (copy.QueueUnknown) return Unknown();
-            return Looking(Valid(series.Added), c);
+            return Looking(Latest(Valid(series.Added), SentFor(request, copy, null, null)), c);
         }
 
         /// <summary>
         /// Per-episode states of one season: every number Sonarr or Jellyfin knows, except episodes
-        /// Jellyfin has but hides from this viewer (<paramref name="hidden"/>).
+        /// Jellyfin has but hides from this viewer (<paramref name="hidden"/>). Requests that went out
+        /// (<paramref name="request"/>) restart the "still looking" clock of the episodes they cover.
         /// </summary>
-        internal static List<(int Episode, CopyState State, ArrEpisodeEntry? Arr, JfEpisode? Row)> EpisodeStates(ArrCopyFacts copy, int season, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, HiddenParts? hidden = null)
+        internal static List<(int Episode, CopyState State, ArrEpisodeEntry? Arr, JfEpisode? Row)> EpisodeStates(ArrCopyFacts copy, int season, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, HiddenParts? hidden = null, RequestFacts? request = null)
         {
             var result = new List<(int, CopyState, ArrEpisodeEntry?, JfEpisode?)>();
             var files = (jfEpisodes ?? Array.Empty<JfEpisode>()).Where(e => e.Season == season && !e.Hidden).ToList();
@@ -845,15 +849,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
                 else
                 {
-                    state = EpisodeFromArr(copy, season, n, arr, c);
+                    state = EpisodeFromArr(copy, season, n, arr, c, request);
                 }
                 result.Add((n, state, arr, row));
             }
             return result;
         }
 
-        /// <summary>An episode Jellyfin cannot play (yet): where Sonarr has got to.</summary>
-        internal static CopyState EpisodeFromArr(ArrCopyFacts copy, int season, int episode, ArrEpisodeEntry? arr, ComposeContext c)
+        /// <summary>
+        /// An episode Jellyfin cannot play (yet): where Sonarr has got to. "Nothing grabbed for a long
+        /// while" counts from the latest of its air date, the series being added and a request for it
+        /// going out (<paramref name="request"/>).
+        /// </summary>
+        internal static CopyState EpisodeFromArr(ArrCopyFacts copy, int season, int episode, ArrEpisodeEntry? arr, ComposeContext c, RequestFacts? request = null)
         {
             var rows = RowsFor(copy, season, episode, arr);
             if (rows.Count > 0) return FromQueue(BestRow(rows), c, copy);
@@ -868,7 +876,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (air == null || NotYet(air.Value, arr.AirDateIsDay, c.Now)) return new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: air, DateIsDay: arr.AirDateIsDay);
             if (!arr.Monitored || copy.Series?.Monitored == false) return new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored);
             if (copy.QueueUnknown) return Unknown();
-            return Looking(Latest(air, Valid(copy.Series?.Added)), c, arr.LastSearchTime);
+            return Looking(Latest(Latest(air, Valid(copy.Series?.Added)), SentFor(request, copy, season, episode)), c, arr.LastSearchTime);
         }
 
         // ------------------------------------------------------------------ queue
@@ -1195,7 +1203,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     continue;
                 }
                 var matched = copies != null ? MatchCopies(other, copies, siblings) : new List<JfCopy>();
-                variants.Add((other, SeriesCopyState(other, matched.Count > 0, c), matched.FirstOrDefault()));
+                variants.Add((other, SeriesCopyState(other, matched.Count > 0, c, facts.Request), matched.FirstOrDefault()));
                 problems.AddRange(found);
             }
             return any;
@@ -1608,5 +1616,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static DateTime? Valid(DateTime? d) => d.HasValue && d.Value.Year > 1900 ? d : null;
 
         private static DateTime? Latest(DateTime? a, DateTime? b) => a == null ? b : b == null ? a : (a > b ? a : b);
+
+        /// <summary>When a request covering this part of the copy's edition (4K instance or not) last went out, or null.</summary>
+        private static DateTime? SentFor(RequestFacts? request, ArrCopyFacts copy, int? season, int? episode)
+            => Valid(request?.SentFor(copy.Instance.Role == "4k", season, episode));
     }
 }

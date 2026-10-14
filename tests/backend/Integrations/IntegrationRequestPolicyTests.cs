@@ -205,3 +205,35 @@ public class IntegrationRequestParentalTests
         Assert.False(await parental.MaySeeAbsentAsync("movie", 603, kid.UserId.ToString("N"), default));
     }
 }
+
+/// <summary>
+/// Phase 3 combine: the ledger tells the status composer when each part of a title went out (JE mode), so the
+/// "still looking" clock of a freshly asked-for episode starts then, not when the arr first listed the series.
+/// </summary>
+[Collection("Plugin singleton")]
+public class IntegrationLedgerSentFactsTests
+{
+    [Fact]
+    public async Task TheLedgerSaysWhenEachPartOfATitleWentOut()
+    {
+        using var arr = new FakeArr();
+        var config = arr.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true; config.ArrRequestBackend = "je";
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        var episode = new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 4) } };
+        Assert.Equal(201, (await rig.Create(rig.Member, episode)).HttpStatus);
+        Assert.Equal(201, (await rig.Create(rig.Kid, IntegrationRequestLedgerTests.Seasons(2))).HttpStatus); // waits for an OK: not out
+        rig.Now = rig.Now.AddMinutes(3);
+        await rig.Runner().TickAsync(CancellationToken.None);
+        using var store = arr.Store();
+        using var seerr = new SeerrRequestReadModel(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
+        var facts = new LedgerRequestFacts(rig.Ledger, seerr, new TitleAliases(store, null)).For(TitleKey.Parse("tv:tvdb:78874")!, rig.View.Users[rig.Member])!;
+        var sentAt = rig.Ledger.ForTitle("tv:tvdb:78874").Single(w => w.UserId == rig.Member).UpdatedAt.UtcDateTime;
+        Assert.Equal(new[] { new RequestSentPart(false, 1, 4, sentAt) }, facts.Sent.ToArray());
+        Assert.Equal(sentAt, facts.SentFor(false, 1, 4));
+        Assert.Null(facts.SentFor(false, 2, 1));
+        // Seerr mode: the Seerr read model answers instead (the ledger's parts aren't Seerr's).
+        config.ArrRequestBackend = "seerr";
+        Assert.Null(new LedgerRequestFacts(rig.Ledger, seerr, new TitleAliases(store, null)).For(TitleKey.Parse("tv:tvdb:78874")!, rig.View.Users[rig.Member]));
+    }
+}

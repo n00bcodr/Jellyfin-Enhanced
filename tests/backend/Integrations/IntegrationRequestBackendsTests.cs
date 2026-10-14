@@ -686,9 +686,13 @@ public class IntegrationRequestBackendsTests
         Assert.False(none.Can4k);
         // Seerr mode: Seerr picks its own server, so a request isn't tied to an arr's connection.
         Assert.NotEqual(string.Empty, policy.Evaluate(admin.UserId, Movie()).ConnectionGeneration);
+        var jeMode = policy.Evaluate(admin.UserId, Movie());
         lab.Config.ArrRequestBackend = "seerr";
         var seerr = policy.Evaluate(admin.UserId, Movie());
         Assert.Equal((string.Empty, string.Empty), (seerr.InstanceId, seerr.ConnectionGeneration));
+        // ...but the target a JE-mode request would go to is still known (a move from Seerr links its requests there).
+        Assert.Equal((jeMode.InstanceId, jeMode.ConnectionGeneration), policy.JeTarget(admin.UserId, Movie()));
+        Assert.Equal(lab.Instance("Radarr").Id, ((IRequestPolicy)policy).JeTarget(admin.UserId, Movie()).InstanceId);
     }
 
     // ------------------------------------------------------------------ Seerr

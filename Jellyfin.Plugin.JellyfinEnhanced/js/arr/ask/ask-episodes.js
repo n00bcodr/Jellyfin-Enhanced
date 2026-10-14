@@ -25,8 +25,10 @@
     let season = null; // { itemId, rows, loading, statusRef, generation }
     /** @type {Map<number, {state: string, at: number}>} optimistic states after an ask, until the server agrees */
     const local = new Map();
-    /** How long an administrator's Search outcome stays in the place of its button. */
+    /** How long a Search outcome stays in the place of its button. */
     const SEARCHED_TTL_MS = 2 * 60 * 1000;
+    /** At most this many episodes are searched one by one from the banner by someone who doesn't manage the arrs. */
+    const BANNER_SEARCH_MAX = 10;
     /** @type {Map<number, {chip: string, tone: string, at: number}>} outcomes of an administrator's Search, by episode */
     const searched = new Map();
     /** @type {{chip: string, tone: string, at: number, itemId: string}|null} outcome of an administrator's Search from the banner */
@@ -410,8 +412,9 @@
 
     /**
      * Search for an episode missing for a long while. An administrator's Search runs the arr's own
-     * search for that episode right away (Searching…, then what it found, in place of the button);
-     * everyone else asks for the episode like Get it (the request backend turns it into a search).
+     * search for that episode right away (Searching…, then what it found, in place of the button).
+     * Everyone else's runs it too when requests already sent the episode (no new request); otherwise
+     * they ask for the episode like Get it (the request backend turns that into a search).
      * @param {Object} ep Episode status.
      * @param {HTMLButtonElement} button The button pressed.
      * @param {string|null} [scope] The season the button was made for (nothing happens on another).
@@ -426,20 +429,22 @@
         const caps = await JE.arrAsk.me();
         if (JE.arrAsk.epoch() !== started || season !== target) return;
         const instanceId = JE.arrAsk.searchInstance(caps, target.statusRef, ep.key);
-        if (!instanceId) {
-            await getEpisodes([ep.episode], button, true, target.itemId);
-            return;
-        }
         const place = button?.closest('.listItem') || null;
         busy.add(ep.episode);
         JE.internals?.arrStatusEpisodes?.apply?.();
         let result;
         try {
-            result = await JE.arrAsk.adminSearch(ep.key, instanceId);
+            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId) : await JE.arrAsk.familySearch(ep.key);
         } finally {
             busy.delete(ep.episode);
         }
         if (JE.arrAsk.epoch() !== started) return;
+        if (!result) {
+            // Nothing sent for it yet (or not missing for long enough): ask for it like Get it.
+            if (season?.itemId !== target.itemId) return;
+            await getEpisodes([ep.episode], button, true, target.itemId);
+            return;
+        }
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) searched.set(ep.episode, { chip: result.chip, tone: result.tone, at: Date.now() });
         announce(result.text);
@@ -870,8 +875,9 @@
     /**
      * Search from the banner for the season's episodes missing for a long while. An administrator's
      * Search runs the arr's search for that episode (one) or the season (several: the season search
-     * looks for exactly its monitored missing episodes) and shows what it found in the banner;
-     * everyone else asks for those episodes like Get them.
+     * looks for exactly its monitored missing episodes) and shows what it found in the banner.
+     * Everyone else's searches again for the episodes requests already sent (one by one, at most
+     * ten) and asks for the rest like Get them.
      * @param {Array<Object>} eps Episode statuses.
      * @param {Object} status Season status.
      * @param {HTMLButtonElement} button The button pressed.
@@ -886,19 +892,34 @@
         const caps = await JE.arrAsk.me();
         if (JE.arrAsk.epoch() !== started || season !== target) return;
         const instanceId = key ? JE.arrAsk.searchInstance(caps, status, key) : null;
-        if (!instanceId) {
-            await getEpisodes(numbers, button, true, target.itemId);
-            return;
-        }
         numbers.forEach(n => busy.add(n));
         JE.internals?.arrStatusEpisodes?.apply?.();
         let result;
+        let toAsk = [];
         try {
-            result = await JE.arrAsk.adminSearch(key, instanceId);
+            if (instanceId) {
+                result = await JE.arrAsk.adminSearch(key, instanceId);
+            } else {
+                const done = [];
+                for (const [i, ep] of eps.entries()) {
+                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key) : null;
+                    if (JE.arrAsk.epoch() !== started) return;
+                    if (one) done.push(one);
+                    else toAsk.push(ep.episode);
+                }
+                result = done.find(r => r.state === 'found') || done.find(r => r.ok) || done[0] || null;
+            }
         } finally {
             numbers.forEach(n => busy.delete(n));
         }
         if (JE.arrAsk.epoch() !== started) return;
+        if (!result) {
+            if (season?.itemId !== target.itemId) return;
+            await getEpisodes(numbers, button, true, target.itemId);
+            return;
+        }
+        // Episodes no request sent yet are asked for like Get them.
+        if (toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId);
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) bannerSearched = { chip: result.chip, tone: result.tone, at: Date.now(), itemId: target.itemId };
         announce(result.text);

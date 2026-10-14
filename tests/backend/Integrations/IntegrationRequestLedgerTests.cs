@@ -32,6 +32,9 @@ public class IntegrationRequestLedgerTests
             if (!(Configuration.ArrIntegrationEnabled && Configuration.ArrPhase1Enabled && Configuration.ArrPhase3Enabled)) person = person with { Refusal = "feature_disabled" };
             return Adjust?.Invoke(user, input, person) ?? person;
         }
+        // Like production: the JE target doesn't depend on who handles requests now (Seerr-mode facts carry no instance).
+        public (string InstanceId, string ConnectionGeneration) JeTarget(Guid user, MutationInput input)
+            => People.TryGetValue(user, out var known) ? (known.InstanceId, known.ConnectionGeneration) : (string.Empty, string.Empty);
     }
     internal sealed class Backend : IRequestBackend
     {

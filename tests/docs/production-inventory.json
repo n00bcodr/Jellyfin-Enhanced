@@ -543,6 +543,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestSearchService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestService.cs",
       "category": "Services"
     },
@@ -2128,6 +2132,15 @@
       "verb": "POST",
       "path": "/JellyfinEnhanced/acquire/requests",
       "method": "Create",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
+      "following_attributes": [
+        "BodyLimit(MaxBodyBytes)"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/requests/search",
+      "method": "Search",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
       "following_attributes": [
         "BodyLimit(MaxBodyBytes)"
@@ -9372,8 +9385,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 504,
-    "routes": 242,
+    "files": 505,
+    "routes": 243,
     "configuration_properties": 576,
     "storage_references": 81,
     "scheduled_tasks": 14,

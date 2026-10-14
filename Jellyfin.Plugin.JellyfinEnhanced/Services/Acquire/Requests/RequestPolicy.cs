@@ -43,6 +43,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         string AuthorizationStamp(Guid userId, MutationInput input);
         /// <summary>Reads current facts without network I/O.</summary>
         RequestPolicyFacts Evaluate(Guid userId, MutationInput input);
+        /// <summary>
+        /// The Sonarr/Radarr instance and connection a Jellyfin Enhanced-mode request like <paramref name="input"/>
+        /// goes to, whatever handles requests right now (a move from Seerr records its links on that target before
+        /// it switches; Seerr-mode facts carry no instance).
+        /// </summary>
+        (string InstanceId, string ConnectionGeneration) JeTarget(Guid userId, MutationInput input)
+        {
+            var facts = Evaluate(userId, input);
+            return (facts.InstanceId, facts.ConnectionGeneration);
+        }
     }
     /// <summary>Central role, parental, destination, edition and disk policy.</summary>
     public sealed class RequestPolicy : IRequestPolicy
@@ -121,10 +131,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var key = TitleKey.Parse(input.Key)!;
             // The default instance of the edition's role: 4K only ever goes to a 4K instance, standard to a
             // standard one (never an anime or "other" instance picked by accident).
-            var instance = input.InstanceId != null ? _store.Registry.Get(input.InstanceId) :
-                _store.Registry.DefaultFor(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr, input.Variant == "4k" ? ArrInstanceRole.FourK : ArrInstanceRole.Standard);
-            var instanceId = instance?.Id ?? string.Empty;
-            var generation = instance == null ? string.Empty : _clients.ConnectionGeneration(instance.Id) ?? string.Empty;
+            var (instance, instanceId, generation) = Target(input, key);
             var binding = _backend.Binding(userId, input);
             var visible = false;
             SeerrParentalFilter.AbsentSignature? signature = null;
@@ -179,6 +186,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 limit, config.ArrRequestBackend == "seerr" ? Math.Clamp(binding.QuotaWindowDays, 1, 365) : Math.Clamp(config.ArrRequestQuotaWindowDays, 1, 365),
                 Math.Max(0, settings.QuotaGb ?? defaults.QuotaGb ?? config.ArrRequestQuotaGb), JsonSerializer.Serialize(signature),
                 refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota);
+        }
+        /// <inheritdoc />
+        public (string InstanceId, string ConnectionGeneration) JeTarget(Guid userId, MutationInput input)
+        {
+            var (_, id, generation) = Target(input, TitleKey.Parse(input.Key)!);
+            return (id, generation);
+        }
+        /// <summary>
+        /// The instance a request goes to: the one named (administrators), else the default instance of the
+        /// edition's role (4K only ever to a 4K instance, standard to a standard one; never an anime or "other"
+        /// instance picked by accident), with its connection generation.
+        /// </summary>
+        private (ArrConnection? Instance, string Id, string Generation) Target(MutationInput input, TitleKey key)
+        {
+            var instance = input.InstanceId != null ? _store.Registry.Get(input.InstanceId) :
+                _store.Registry.DefaultFor(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr, input.Variant == "4k" ? ArrInstanceRole.FourK : ArrInstanceRole.Standard);
+            return (instance, instance?.Id ?? string.Empty, instance == null ? string.Empty : _clients.ConnectionGeneration(instance.Id) ?? string.Empty);
         }
         /// <summary>The one edition-capability calculation used by every submit path.</summary>
         public static bool Can4k(PluginConfiguration config, bool movie, string backend, bool capability, bool fourKInstance, bool seerrEnabled, bool seerrPermission)

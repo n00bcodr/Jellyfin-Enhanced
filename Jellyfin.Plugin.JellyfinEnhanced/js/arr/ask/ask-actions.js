@@ -317,15 +317,18 @@
     }
 
     /**
-     * Runs an administrator's Search from an action button: Searching…, then what it found (a toast,
-     * and the outcome in the button's place for a couple of minutes).
+     * Runs a Search from an action button: Searching…, then what it found (a toast, and the outcome
+     * in the button's place for a couple of minutes). An administrator's runs on the instance given;
+     * everyone else's runs when requests already sent the title in scope (JE.arrAsk.familySearch),
+     * otherwise <paramref name="fallback"/> asks for it instead.
      * @param {HTMLButtonElement} button Button.
      * @param {string} doneKey key|action.
      * @param {string} key Title key in scope.
-     * @param {string} instanceId Instance (JE.arrAsk.searchInstance).
+     * @param {string|null} instanceId Instance (JE.arrAsk.searchInstance), or null for a family Search.
+     * @param {Function} [fallback] Asks for it instead (family Search that doesn't apply).
      * @returns {Promise<void>}
      */
-    async function runSearch(button, doneKey, key, instanceId) {
+    async function runSearch(button, doneKey, key, instanceId, fallback) {
         busy.add(doneKey);
         button.disabled = true;
         button.setAttribute('aria-busy', 'true');
@@ -334,11 +337,18 @@
         if (text) text.textContent = tr('arr_ask_searching');
         let result;
         try {
-            result = await JE.arrAsk.adminSearch(key, instanceId);
+            result = instanceId ? await JE.arrAsk.adminSearch(key, instanceId) : await JE.arrAsk.familySearch(key);
         } catch {
             result = { ok: false, state: 'failed', chip: '', text: tr('arr_manage_search_failed', { message: '' }), tone: 'attention' };
         } finally {
             busy.delete(doneKey);
+        }
+        if (!result) {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+            if (text) text.textContent = label;
+            if (fallback) await fallback();
+            return;
         }
         JE.arrAsk.toast(result.text);
         if (result.chip) done.set(doneKey, { chip: result.chip, tone: result.tone, at: Date.now(), ttl: SEARCHED_TTL_MS });
@@ -360,7 +370,8 @@
     /**
      * A missing episode's own page (Jellyfin's row for a missing episode opens it; on TV that is how
      * an episode is asked for): Get it, or Ask {contact}. Missing for a long while (monitored, nothing
-     * grabbed): Search instead (an administrator's runs the arr's search; everyone else asks).
+     * grabbed): Search instead (an administrator's runs the arr's search; everyone else's too when
+     * requests already sent the episode, otherwise they ask).
      * @param {Object} status Episode status.
      * @param {Object} caps Capabilities.
      * @returns {HTMLElement|null} Box, or null when the episode isn't simply missing.
@@ -379,7 +390,7 @@
             const doneKey = `${key}|s${season}e${episode}|search`;
             const instanceId = JE.arrAsk.searchInstance(caps, status, status.key);
             const text = caps.asksFirst ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
-            box.appendChild(action(doneKey, 'search', text, (b) => (instanceId ? runSearch(b, doneKey, status.key, instanceId) : ask(b, doneKey))));
+            box.appendChild(action(doneKey, 'search', text, (b) => runSearch(b, doneKey, status.key, instanceId, () => ask(b, doneKey))));
         } else {
             const doneKey = `${key}|s${season}e${episode}`;
             const text = caps.asksFirst ? tr('arr_actions_ask_episode', { contact }) : tr('arr_ask_get_it');

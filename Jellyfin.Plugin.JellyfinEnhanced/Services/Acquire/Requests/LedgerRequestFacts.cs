@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
@@ -26,7 +27,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             DateTime? At(string? variant) => approved.Where(w => variant == null || w.Input.Variant == variant).Select(w => (DateTime?)w.UpdatedAt.UtcDateTime).Min();
             return new RequestFacts { AskedAt = wants.Min(w => w.CreatedAt).UtcDateTime, AskedByViewer = wants.Any(w => w.UserId == viewer.UserId),
                 Pending = wants.Any(w => w.Status == "pending"), ApprovedAt = At(null), ApprovedStandardAt = At("standard"), Approved4kAt = At("4k"),
-                Declined = wants.All(w => w.Status == "declined"), StandardDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "standard"), FourKDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "4k") };
+                Declined = wants.All(w => w.Status == "declined"), StandardDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "standard"), FourKDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "4k"),
+                Sent = wants.Where(w => w.Status == "sent").SelectMany(SentParts).ToArray() };
+        }
+
+        /// <summary>
+        /// The parts of the title a sent want covers, at the time it was last sent (its last change). A request
+        /// moved from Seerr went out in Seerr long before the move: it counts from when it was asked for there.
+        /// </summary>
+        internal static IEnumerable<RequestSentPart> SentParts(RequestWant want)
+        {
+            var fourK = want.Input.Variant == "4k";
+            var at = (want.OriginKind == RequestOrigin.SeerrImportKind ? want.CreatedAt : want.UpdatedAt).UtcDateTime;
+            if (want.Input.Scope == "episodes")
+                return want.Input.Episodes.Select(e => new RequestSentPart(fourK, e.Season, e.Episode, at));
+            if (want.Input.Scope == "movie" || want.Input.Seasons.Length == 0)
+                return new[] { new RequestSentPart(fourK, null, null, at) };
+            return want.Input.Seasons.Select(s => new RequestSentPart(fourK, s, null, at));
         }
         /// <inheritdoc />
         public bool AskedBy(TitleKey titleKey, Guid userId) => Direct ? Wants(titleKey).Any(w => w.UserId == userId && w.Status != "cancelled") : _seerr.AskedBy(titleKey, userId);

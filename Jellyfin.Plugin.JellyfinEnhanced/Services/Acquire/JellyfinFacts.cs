@@ -209,7 +209,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The request was declined.</summary>
         public bool Declined { get; init; }
+
+        /// <summary>
+        /// The parts of the title that requests on their way cover (sent to Sonarr/Radarr by Jellyfin
+        /// Enhanced, or OK'd in Seerr), each with when that happened. "Nothing grabbed for a long while"
+        /// counts from then: an episode asked for today in a series the arr has listed for years is
+        /// still fresh.
+        /// </summary>
+        public IReadOnlyList<RequestSentPart> Sent { get; init; } = Array.Empty<RequestSentPart>();
+
+        /// <summary>
+        /// The latest time a request covering this part went out, for the standard or the 4K copy;
+        /// null when none did. <paramref name="season"/> null asks about the whole title (any part
+        /// counts); <paramref name="episode"/> null about a whole season (any of its parts counts).
+        /// </summary>
+        /// <param name="fourK">The 4K copy (else the standard one).</param>
+        /// <param name="season">Season number, or null for the title.</param>
+        /// <param name="episode">Episode number, or null for the season.</param>
+        /// <returns>When, or null.</returns>
+        public DateTime? SentFor(bool fourK, int? season, int? episode)
+        {
+            DateTime? latest = null;
+            foreach (var part in Sent)
+            {
+                if (part.FourK != fourK) continue;
+                var covers = season == null || part.Season == null
+                    || (part.Season == season && (episode == null || part.Episode == null || part.Episode == episode));
+                if (covers && (latest == null || part.At > latest)) latest = part.At;
+            }
+
+            return latest;
+        }
     }
+
+    /// <summary>
+    /// One part of a title a request on its way covers (see <see cref="RequestFacts.Sent"/>):
+    /// <paramref name="Season"/> null is the whole title, <paramref name="Episode"/> null a whole season.
+    /// </summary>
+    /// <param name="FourK">For the 4K copy.</param>
+    /// <param name="Season">Season number, or null for the whole title.</param>
+    /// <param name="Episode">Episode number, or null for the whole season.</param>
+    /// <param name="At">When the request went out (UTC).</param>
+    public sealed record RequestSentPart(bool FourK, int? Season, int? Episode, DateTime At);
 
     /// <summary>
     /// Source of request facts for the status composer. The default knows nothing; the Seerr read

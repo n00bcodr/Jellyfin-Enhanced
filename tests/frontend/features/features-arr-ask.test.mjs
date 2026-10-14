@@ -67,6 +67,7 @@ function rowsBody({ displayMissing = true, canRequest = true, requests = {}, sea
 
 function setup(t, { rows = row(1), status = season(), config = {}, server = {}, spoiler = false, html = null, observe = null } = {}) {
   const posts = [];
+  const searches = [];
   const gets = [];
   const toasts = [];
   const bodyObservers = [];
@@ -80,6 +81,14 @@ function setup(t, { rows = row(1), status = season(), config = {}, server = {}, 
     url: `http://jellyfin.test/web/index.html#/details?id=${SEASON_ID}`,
     fetch: async (url, init = {}) => {
       const path = String(url).replace('http://jellyfin.test/JellyfinEnhanced', '');
+      if ((init.method || 'GET') === 'POST' && path === '/acquire/requests/search') {
+        // Search for something no request sent yet: the server says to ask instead (unless a test answers).
+        const body = JSON.parse(init.body);
+        searches.push({ path, body });
+        const answer = server.search ? server.search(body, searches.length) : { status: 200, body: { outcome: 'skipped', reason: 'not_requested', certainty: 'Rejected', message: 'Nothing was asked for here yet.' } };
+        if (answer instanceof Error) throw answer;
+        return jsonResponse(answer.body, answer.status);
+      }
       if ((init.method || 'GET') === 'POST') {
         const body = JSON.parse(init.body);
         posts.push({ path, body });
@@ -124,7 +133,7 @@ function setup(t, { rows = row(1), status = season(), config = {}, server = {}, 
   for (const m of MODULES) h.load(m);
   h.JE.initializeArrStatus();
   return {
-    ...h, posts, gets, toasts, userChange,
+    ...h, posts, searches, gets, toasts, userChange,
     setRows(fn) { rowsAnswer = fn; },
     setStatus(next) { shownStatus = next; },
     /** Moves to another hash and tells the navigation listeners. */
@@ -492,6 +501,44 @@ test('rows: an administrator\'s Search runs the arr search for exactly that epis
   assert.equal(h.posts[1].body.key, 'tv:tvdb:1:s1:e4');
   assert.equal(h.toasts.at(-1), 'Found a copy — downloading');
   assert.ok(!h.posts.some(p => p.path === '/acquire/requests'), 'an administrator\'s Search is not a request');
+});
+
+test('rows: someone else\'s Search on an episode a request already sent searches again (no new request) and says what it found; otherwise it asks', async t => {
+  let answer = { status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched for it.', found: false } };
+  const h = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ requests: { 2: 'household' } }), search: () => answer } });
+  await h.open();
+  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  await settle(20);
+  same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1:e2']);
+  assert.match(h.searches[0].body.idempotencyKey, /\S{8,}/);
+  same(h.posts, [], 'not a request');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-searched').textContent, 'Nothing found yet · searched just now');
+  same(h.toasts, ['Nothing found yet · searched just now']);
+
+  // Nothing sent for E4 yet: the server says so, and the Search asks for it like Get it.
+  answer = { status: 200, body: { outcome: 'skipped', reason: 'not_requested', certainty: 'Rejected', message: 'Nothing was asked for here yet.' } };
+  h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get').click();
+  await settle(20);
+  assert.equal(h.searches.at(-1).body.key, 'tv:tvdb:1:s1:e4');
+  assert.equal(h.posts.length, 1);
+  same(h.posts[0].body.input.episodes, [{ season: 1, episode: 4 }]);
+});
+
+test('banner: someone else\'s Search searches again each episode a request sent and asks for the others', async t => {
+  const h = setup(t, {
+    status: longMissing(),
+    server: {
+      rows: () => rowsBody({ displayMissing: false }),
+      search: (body) => (body.key.endsWith(':e2') ? { status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Found it.', found: true } } : { status: 200, body: { outcome: 'skipped', reason: 'not_requested', certainty: 'Rejected', message: 'Ask.' } })
+    }
+  });
+  await h.open();
+  h.document.querySelector('.je-arr-banner .je-ask-get').click();
+  await settle(30);
+  same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1:e2', 'tv:tvdb:1:s1:e4']);
+  assert.equal(h.posts.length, 1, 'one ask, for the episode no request sent');
+  same(h.posts[0].body.input.episodes, [{ season: 1, episode: 4 }]);
+  assert.ok(h.toasts.includes('Found a copy — downloading'));
 });
 
 test('rows: without the Manage drawer an administrator\'s Search asks like everyone else', async t => {

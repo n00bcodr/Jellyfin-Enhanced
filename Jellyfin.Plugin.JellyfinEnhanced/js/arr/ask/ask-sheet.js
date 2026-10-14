@@ -951,9 +951,9 @@
 
         /**
          * Search for a title missing for a long while (monitored, nothing grabbed): an
-         * administrator's runs the arr's search right away; a movie is otherwise asked for with one
-         * tap, a series opens the sheet (the request backend turns an ask for a monitored scope
-         * into a search).
+         * administrator's runs the arr's search right away; so does anyone's for a movie requests
+         * already sent; a movie is otherwise asked for with one tap, a series opens the sheet (the
+         * request backend turns an ask for a monitored scope into a search).
          * @returns {HTMLButtonElement} Button.
          */
         function searchButton() {
@@ -970,12 +970,17 @@
                 b.disabled = true;
                 const instanceId = JE.arrAsk.searchInstance(caps, status, status?.key || title.key);
                 let words = null;
+                let searched = null;
                 try {
                     if (instanceId) {
                         label.textContent = tr('arr_ask_searching');
                         const result = await JE.arrAsk.adminSearch(status?.key || title.key, instanceId);
                         JE.arrAsk.toast(result.text);
                         words = result.chip ? { chip: result.chip, tone: result.tone } : null;
+                    } else if (kind === 'movie' && (searched = await JE.arrAsk.familySearch(status?.key || title.key))) {
+                        // Requests already sent this movie: search for it again instead of asking.
+                        JE.arrAsk.toast(searched.text);
+                        words = searched.chip ? { chip: searched.chip, tone: searched.tone } : null;
                     } else {
                         const result = kind === 'movie' ? await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key)) : await open(title, { opener: b });
                         if (result && (result.ok || result.state === 'unknown')) {

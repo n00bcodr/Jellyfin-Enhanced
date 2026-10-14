@@ -78,6 +78,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     }
     /// <summary>A single episode coordinate.</summary>
     public sealed record RequestEpisode(int Season, int Episode);
+    /// <summary>Family Search payload: the title key in scope (a movie, or a series with a season and an episode) and one idempotency key per press.</summary>
+    public sealed record RequestSearchBody(string? Key, string? IdempotencyKey);
     /// <summary>Create payload; the id is scoped to the signed-in requester.</summary>
     public sealed record CreateRequest(string ClientRequestId, MutationInput Input);
     /// <summary>Approval edits; omitted input preserves the confirmed scope.</summary>

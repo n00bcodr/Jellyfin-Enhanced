@@ -34,6 +34,7 @@ const inDays = days => new Date(Date.now() + days * 86400000).toISOString();
  */
 function setup(t, { me = MEMBER, quota = { used: 2, limit: 7, remaining: 5, nextSlotAt: null, usedGb: 0, available: true }, answer, routes, html = '', hash = '#/home', status, item, config = {} } = {}) {
   const posts = [];
+  const searches = [];
   const gets = [];
   const toasts = [];
   const statusCalls = [];
@@ -45,6 +46,14 @@ function setup(t, { me = MEMBER, quota = { used: 2, limit: 7, remaining: 5, next
       const u = new URL(url);
       const path = u.pathname.replace(/^\/JellyfinEnhanced/, '') + u.search;
       const method = init.method || 'GET';
+      if (method === 'POST' && path === '/acquire/requests/search') {
+        // A family Search: the server says to ask instead unless a test's route answers it.
+        const body = JSON.parse(init.body);
+        searches.push({ path, body });
+        const custom = routes ? await routes(method, path, body) : null;
+        if (custom) return jsonResponse(custom.body, custom.status ?? 200);
+        return jsonResponse({ outcome: 'skipped', reason: 'not_requested', certainty: 'Rejected', message: 'Nothing was asked for here yet.' }, 200);
+      }
       if (method === 'POST') {
         const body = JSON.parse(init.body);
         posts.push({ path, body });
@@ -100,7 +109,7 @@ function setup(t, { me = MEMBER, quota = { used: 2, limit: 7, remaining: 5, next
   });
   t.after(() => h.close());
   for (const m of MODULES) h.load(m);
-  return { ...h, posts, gets, toasts, statusCalls, state, Sheet: h.JE.arrAskSheet };
+  return { ...h, posts, searches, gets, toasts, statusCalls, state, Sheet: h.JE.arrAskSheet };
 }
 
 async function settle(n = 12) {
@@ -712,6 +721,48 @@ test('mount API: a title missing for a long while gets Search (an ask for member
   assert.equal(b.querySelector('.je-arr-chip').textContent, 'Nothing found yet · searched just now');
   assert.equal(h.toasts.at(-1), 'Nothing found yet · searched just now');
   admin.destroy();
+});
+
+test('a family Search on an episode page or a mounted movie searches again what a request already sent, instead of asking', async t => {
+  let answer = { body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched for it.', found: true } };
+  const h = setup(t, {
+    html: PAGE + '<div id="m"></div>', hash: '#/details?id=e5', me: KID,
+    routes: (method, path) => (method === 'POST' && path === '/acquire/requests/search' ? answer : null)
+  });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, LONG_MISSING_EPISODE, {});
+  await settle();
+  click(h, page.querySelector('.je-ask-action'));
+  await settle(20);
+  same(h.searches.map(p => p.body.key), ['tv:tvdb:371980:s3:e5']);
+  assert.match(h.searches[0].body.idempotencyKey, /\S{8,}/);
+  same(h.posts, [], 'no request: it was already sent');
+  assert.equal(page.querySelector('.je-ask-actions .je-arr-chip').textContent, 'Found a copy');
+  same(h.toasts, ['Found a copy — downloading']);
+
+  // Searched lately (the household's one search for this looking period): said plainly, still no request.
+  answer = { status: 429, body: { outcome: 'blocked', reason: 'searched_recently', certainty: 'Rejected', message: 'Searched for it a little while ago.' } };
+  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, key: 'tv:tvdb:371980:s3:e6' }, {});
+  await settle();
+  click(h, page.querySelector('.je-ask-action'));
+  await settle(20);
+  same(h.posts, []);
+  assert.equal(h.toasts.at(-1), "Searched for it a little while ago. We'll keep looking.");
+
+  // A mounted movie (the title page): Search runs the family search first.
+  answer = { body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched for it.', found: false } };
+  h.state.me = MEMBER;
+  await h.JE.arrAsk.me(true);
+  const m = h.document.getElementById('m');
+  const controls = h.Sheet.mount(m, MOVIE);
+  await settle();
+  controls.update({ key: MOVIE.key, kind: 'movie', stage: 'looking', reason: { code: 'no_release_yet' } });
+  click(h, m.querySelector('.je-ask-mount-search'));
+  await settle(20);
+  same(h.searches.at(-1).body.key, MOVIE.key);
+  same(h.posts, []);
+  assert.equal(m.querySelector('.je-arr-chip').textContent, 'Nothing found yet · searched just now');
+  controls.destroy();
 });
 
 // ------------------------------------------------------------------ collections

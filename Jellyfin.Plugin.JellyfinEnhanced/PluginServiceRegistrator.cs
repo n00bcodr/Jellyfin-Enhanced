@@ -123,6 +123,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestHubProjection>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.HouseholdService>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestService>();
+            // Search again for what requests already sent, once it has been missing for a long while (family Search).
+            serviceCollection.AddSingleton<Services.Acquire.Requests.RequestSearchService>();
             // Phase 3c: season request rows (episode metadata + the caller's request states).
             serviceCollection.AddSingleton<Services.Acquire.Requests.SeasonRowsService>();
             // Phase 3c: collection gaps (what the caller has of a collection, what is missing).

@@ -410,6 +410,28 @@ public class IntegrationSeerrMigrationTests
     }
 
     [Fact]
+    public async Task MovedRequestsAreLinkedOnTheTargetJellyfinEnhancedSendsToEvenThoughSeerrHandledRequestsDuringTheMove()
+    {
+        using var m = new Mig();
+        // As in production: while Seerr handles requests, a person's request facts name no Sonarr/Radarr.
+        m.R.Policy.Adjust = (_, _, facts) => facts.Backend == "seerr" ? facts with { InstanceId = string.Empty, ConnectionGeneration = string.Empty } : facts;
+        var alice = m.R.Add("Member");
+        var bob = m.R.Add("Member");
+        m.Add(1, "movie", alice, status: 2, mediaStatus: 3, tmdb: 600);   // approved in Seerr, downloading
+        Assert.Equal(1, (await m.Commit()).Imported);
+        Assert.Equal("je", m.R.Policy.Configuration.ArrRequestBackend);
+        var link = m.R.Ledger.ForTitle("movie:tmdb:600").Single();
+        Assert.Equal(RequestLedger.TargetKey(new RequestAuthorization(alice, null, "request", "movie", "standard", "je", "r1", "g1", "x")), link.TargetKey);
+        // Asks after the switch join what Seerr is already fetching: no job, no charge, no second add.
+        var asked = await m.R.Create(bob, IntegrationRequestLedgerTests.Movie(600));
+        Assert.Equal((200, "merged", "looking"), (asked.HttpStatus, asked.Outcome, asked.Reason));
+        var again = await m.R.Create(alice, IntegrationRequestLedgerTests.Movie(600));
+        Assert.Equal((200, "looking"), (again.HttpStatus, again.Reason));
+        Assert.Equal(0, m.Count("SELECT COUNT(*) FROM jobs"));
+        Assert.Equal(0, m.Count("SELECT COALESCE(SUM(cost),0) FROM reservations WHERE state='charged'"));
+    }
+
+    [Fact]
     public async Task ProofThatPeopleCanStillAskInSeerrSurvivesALaterFailedRead()
     {
         using var m = new Mig();

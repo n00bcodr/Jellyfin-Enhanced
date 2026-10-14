@@ -421,6 +421,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 StandardDone = Done(false),
                 FourKDone = Done(true),
                 Declined = active.Count == 0,
+                // OK'd in Seerr and not done yet: Seerr sent it to Sonarr/Radarr then (its last change).
+                Sent = active.Where(r => r.Status == SeerrRequestStatus.Approved && (r.UpdatedAt ?? r.CreatedAt).HasValue)
+                    .SelectMany(r => r.IsMovie || r.Seasons.Count == 0
+                        ? new[] { new RequestSentPart(r.Is4k, null, null, (r.UpdatedAt ?? r.CreatedAt)!.Value) }
+                        : r.Seasons.Select(s => new RequestSentPart(r.Is4k, s, null, (r.UpdatedAt ?? r.CreatedAt)!.Value)))
+                    .ToArray(),
             };
         }
 

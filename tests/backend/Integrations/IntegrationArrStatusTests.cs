@@ -386,6 +386,68 @@ public class IntegrationArrStatusTests
     }
 
     [Fact]
+    public void ARequestGoingOutRestartsTheStillLookingClockOfThePartItCovers()
+    {
+        // A movie Radarr listed 30 h ago with nothing grabbed: missing for a long while (Search)...
+        var movie = Movie(added: Now.AddHours(-30));
+        Assert.Equal(StatusReasonCode.NoReleaseYet, StatusComposer.Movie(MovieFacts(Copy(movie)), null, Array.Empty<JfCopy>(), Ctx(), false).Reason.Code);
+        // ...unless a request for it went out two hours ago: still looking (no Search yet).
+        var facts = MovieFacts(Copy(movie));
+        facts.Request = new RequestFacts { Sent = new[] { new RequestSentPart(false, null, null, Now.AddHours(-2)) } };
+        var fresh = StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), Ctx(), false);
+        Assert.Equal((StatusStage.Looking, StatusReasonCode.Looking), (fresh.Stage, fresh.Reason.Code));
+        // A request for the 4K copy leaves the standard copy's clock alone; one older than the looking hours too.
+        facts.Request = new RequestFacts { Sent = new[] { new RequestSentPart(true, null, null, Now.AddHours(-2)), new RequestSentPart(false, null, null, Now.AddHours(-25)) } };
+        Assert.Equal(StatusReasonCode.NoReleaseYet, StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), Ctx(), false).Reason.Code);
+
+        // Episodes of a series Sonarr has listed for a year: only the parts a request covers start again.
+        var series = new ArrSeriesEntry { Id = 3, TvdbId = 279121, Title = "Show", Monitored = true, Added = Now.AddDays(-400) };
+        var e4 = new ArrEpisodeEntry { Id = 104, SeasonNumber = 1, EpisodeNumber = 4, AirDateUtc = Now.AddDays(-300), Monitored = true };
+        var e5 = new ArrEpisodeEntry { Id = 105, SeasonNumber = 1, EpisodeNumber = 5, AirDateUtc = Now.AddDays(-293), Monitored = true };
+        var copy = new ArrCopyFacts(Sonarr) { Series = series, Episodes = new ArrEpisodesSnapshot(3, new[] { e4, e5 }) };
+        Assert.Equal(StatusReasonCode.NoReleaseYet, StatusComposer.EpisodeFromArr(copy, 1, 4, e4, Ctx()).Reason);
+        var oneEpisode = new RequestFacts { Sent = new[] { new RequestSentPart(false, 1, 4, Now.AddMinutes(-10)) } };
+        Assert.Equal(StatusReasonCode.Looking, StatusComposer.EpisodeFromArr(copy, 1, 4, e4, Ctx(), oneEpisode).Reason);
+        Assert.Equal(StatusReasonCode.NoReleaseYet, StatusComposer.EpisodeFromArr(copy, 1, 5, e5, Ctx(), oneEpisode).Reason);
+        Assert.Equal(new[] { StatusReasonCode.Looking, StatusReasonCode.NoReleaseYet },
+            StatusComposer.EpisodeStates(copy, 1, null, Ctx(), null, oneEpisode).Select(r => r.State.Reason).ToArray());
+        // A season request covers its episodes until the looking hours have passed since it went out.
+        var season = new RequestFacts { Sent = new[] { new RequestSentPart(false, 1, null, Now.AddHours(-23)) } };
+        Assert.Equal(StatusReasonCode.Looking, StatusComposer.EpisodeFromArr(copy, 1, 5, e5, Ctx(), season).Reason);
+        Assert.Equal(StatusReasonCode.NoReleaseYet, StatusComposer.EpisodeFromArr(copy, 1, 5, e5, new ComposeContext(Member, Now.AddHours(2), 24), season).Reason);
+        // The series page's whole-series state and a season page read the request too.
+        var show = new TitleFacts(ShowKey) { Request = season };
+        show.Copies.Add(copy);
+        var seasonItem = new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = TitleKey.Parse("tv:tvdb:279121:s1")!, Season = 1 };
+        var seasonStatus = StatusComposer.Season(show, seasonItem, Array.Empty<JfEpisode>(), Ctx(), detail: true);
+        Assert.DoesNotContain(seasonStatus.Episodes!, e => e.Reason.Code == StatusReasonCode.NoReleaseYet);
+
+        // Where the times come from: a sent want's parts (JE mode), Seerr's OK'd requests (Seerr mode).
+        var at = new DateTimeOffset(2026, 10, 12, 11, 0, 0, TimeSpan.Zero);
+        Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestWant Want(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput input)
+            => new("w", "a", Guid.NewGuid(), "c", "f", input, "sent", "looking", 0, "null", at.AddHours(-1), at);
+        Assert.Equal(new[] { new RequestSentPart(false, 1, 4, at.UtcDateTime), new RequestSentPart(false, 2, 1, at.UtcDateTime) },
+            Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(new() { Key = "tv:tvdb:279121", Scope = "episodes", Episodes = new[] { new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestEpisode(1, 4), new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestEpisode(2, 1) } })).ToArray());
+        Assert.Equal(new[] { new RequestSentPart(true, 3, null, at.UtcDateTime) },
+            Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(new() { Key = "tv:tvdb:279121", Scope = "future", Variant = "4k", Seasons = new[] { 3 } })).ToArray());
+        Assert.Equal(new[] { new RequestSentPart(false, null, null, at.UtcDateTime) },
+            Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(Want(new() { Key = "movie:tmdb:693134" })).ToArray());
+        // A request moved from Seerr went out there long before the move (its want changed at the move): asked-for time.
+        var moved = Want(new() { Key = "tv:tvdb:279121", Scope = "seasons", Seasons = new[] { 1 } }) with { OriginKind = "seerr_import", CreatedAt = at.AddDays(-20) };
+        Assert.Equal(new[] { new RequestSentPart(false, 1, null, at.AddDays(-20).UtcDateTime) },
+            Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.SentParts(moved).ToArray());
+        var seerr = SeerrRequestReadModel.FactsOf(new[]
+        {
+            new SeerrRequestRecord { Id = 1, IsMovie = false, TvdbId = 279121, Status = SeerrRequestStatus.Approved, Seasons = new[] { 1 }, CreatedAt = Now.AddHours(-3), UpdatedAt = Now.AddHours(-2) },
+            new SeerrRequestRecord { Id = 2, IsMovie = false, TvdbId = 279121, Status = SeerrRequestStatus.Pending, Seasons = new[] { 2 }, CreatedAt = Now.AddHours(-1) },
+        }, Member.UserId)!;
+        Assert.Equal(Now.AddHours(-2), seerr.SentFor(false, 1, 5));
+        Assert.Equal(Now.AddHours(-2), seerr.SentFor(false, null, null));
+        Assert.Null(seerr.SentFor(true, 1, 5));
+        Assert.Null(seerr.SentFor(false, 2, 1));
+    }
+
+    [Fact]
     public void AFinishedRequestIsNeverOverdueOnATitleThatIsHere()
     {
         var ctx = new ComposeContext(Admin, Now, 24) { HandoffGrace = TimeSpan.FromMinutes(15) };

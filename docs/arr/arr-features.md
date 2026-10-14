@@ -214,16 +214,30 @@ no longer says "Still looking, we'll keep trying" with a journey: it says plainl
 **Search** instead of **Get it** (on its row, on the *Missing* line when every episode there is like that, and on the
 episode's own page, and on a series page when the whole series has nothing; Kids see "Ask Dad to search"). This also
 holds when someone already asked for it and the ask was sent: once nothing turns up for that long, it reads **Missing**
-with **Search** again (an ask still waiting for an OK keeps *Waiting for OK*). Fresh ones keep "Looking for it"; ones
-Sonarr/Radarr isn't fetching keep "Not being fetched".
+with **Search** again (an ask still waiting for an OK keeps *Waiting for OK*). Those hours count from the latest of
+when it aired or came out, when Sonarr/Radarr first listed it, and when a request for it last went out (to Sonarr/Radarr
+in Jellyfin Enhanced mode, or OK'd in Seerr in Seerr mode): an episode asked for today in a series Sonarr has had for
+years reads "Looking for it", not **Missing**. Fresh ones keep "Looking for it"; ones Sonarr/Radarr isn't fetching keep
+"Not being fetched".
 
 - **Administrators** (with the Manage drawer on): **Search** runs Sonarr's or Radarr's own search for exactly that
   episode (from the *Missing* line: the season; a series with nothing at all: the series) right away, shows
   *Searching…*, then says what happened: *Found a copy — downloading* when the search grabbed something, *Nothing
   found yet · searched just now* when it didn't. The admin line under the status also says when Sonarr/Radarr last
   searched ("Sonarr · Monitored; still nothing grabbed · since 2 Jan · last searched 3 h ago").
-- **Everyone else who may ask**: **Search** asks for it like **Get it** (Kids: *Waiting for OK*; the request limit
+- **Everyone else who may ask**: when a request already went out for that episode or movie (theirs or someone
+  else's in the household), **Search** runs Sonarr's or Radarr's search for it again, with no new request: nothing is
+  charged and no OK is needed, since the request already was. It says what happened the same way (*Found a copy —
+  downloading*, *Nothing found yet · searched just now*). The household gets one such search per episode or movie per
+  "still looking" period; pressing it again sooner says "Searched for it a little while ago. We'll keep looking." From
+  the *Missing* line, each episode a request sent is searched (at most ten), and the others are asked for. For
+  anything no request sent yet, **Search** asks for it like **Get it** (Kids: *Waiting for OK*; the request limit
   applies), and the request goes to Sonarr/Radarr as a search for what they already monitor.
+  The route is `POST acquire/requests/search` with `{"key": "tv:tvdb:78874:s1:e4", "idempotencyKey": "…"}` (a movie
+  key, or a series key with one season and episode). It answers `{found}` (true, false, or null while unknown);
+  outcome `skipped` with `not_requested` (nothing was sent for it: ask instead) or `not_searchable` (not missing for
+  long enough) when there is nothing for it to search; 429 `searched_recently`, 502 `search_failed`, and the request
+  API's own refusals (Watchers, parental limits).
 
 Watchers see the rows and labels but no **Get it** or **Search**. Titles, overviews and thumbnails of missing episodes come from TMDB
 through Jellyfin Enhanced (one read per season page, using the TMDB key in the plugin settings); without a key the rows
@@ -719,6 +733,7 @@ Bulk approval returns 207 when some rows fail, with a separate checked outcome f
 | GET | `acquire/requests/quota` | Own allowance, use, estimate and next usable slot |
 | GET | `acquire/requests/me` | Any person (Watchers too); own role, whether they may ask or approve, 4K, the household contact word |
 | GET | `acquire/requests/season/{itemId}` | A season item the caller can open; their request state per episode and the metadata of episodes with no file |
+| POST | `acquire/requests/search` | `requests.create`; search again for a movie or one episode a request already sent and that is missing for a long while (no new request; see [Get it and Search](#missing-episodes-get-it-and-search-phase-3)) |
 | POST | `acquire/requests/{id}/cancel` | Owner, or visible Admin; before the outgoing write |
 | POST | `acquire/requests/{id}/approve` | Approver; optional `input` edits scope/edition; instance/profile/folder edits require Admin |
 | POST | `acquire/requests/{id}/decline` | Approver; plain-text `reason`, at most 500 characters |

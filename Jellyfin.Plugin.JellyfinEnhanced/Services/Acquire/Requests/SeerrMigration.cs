@@ -277,8 +277,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     {
                         // The instance a JE-mode request of this kind and edition goes to (independent of the person).
                         var probe = movie ? new MutationInput { Key = "movie:tmdb:1", Variant = input.Variant } : new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 }, Variant = input.Variant };
-                        var facts = _policy.Evaluate(actor, probe);
-                        targets[(movie, input.Variant)] = target = RequestLedger.TargetKey(new RequestAuthorization(actor, null, "request", probe.Scope, probe.Variant, "je", facts.InstanceId, facts.ConnectionGeneration, facts.Revision));
+                        // Asked of the JE target itself: while Seerr still handles requests the person's facts carry no instance.
+                        var (instanceId, generation) = _policy.JeTarget(actor, probe);
+                        targets[(movie, input.Variant)] = target = RequestLedger.TargetKey(new RequestAuthorization(actor, null, "request", probe.Scope, probe.Variant, "je", instanceId, generation, string.Empty));
                     }
                     return target;
                 }

@@ -270,6 +270,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
+        /// For a family Search: the instance whose copy of the movie or episode in <paramref name="key"/>
+        /// has been missing for a long while (monitored, out, nothing grabbed for longer than the
+        /// "still looking" hours, a request going out restarting that clock), standard copies first;
+        /// null when no copy is, the viewer can't see the series or Jellyfin hides that episode from them.
+        /// </summary>
+        internal async Task<string?> SearchableInstanceAsync(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
+        {
+            if (!key.IsMovie && (key.Season == null || key.Episode == null)) return null;
+            var title = key.Title;
+            var gather = await GatherAsync(viewer, new[] { title }, loadEpisodes: key.IsMovie ? null : new[] { title }, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            ApplyRequests(gather, viewer);
+            if (!gather.Facts.TryGetValue(title, out var facts)) return null;
+            var c = Context(viewer);
+            if (key.IsMovie)
+            {
+                // A copy the viewer can already open is not missing.
+                if (CopiesOf(title, viewer).Any(x => x.Visible)) return null;
+            }
+            else
+            {
+                if (CopiesOf(title, viewer).FirstOrDefault(x => x.Visible) is not { } series) return null;
+                if (HiddenFromViewer(facts, series.ItemId, viewer)?.Hides(key.Season!.Value, key.Episode!.Value) == true) return null;
+                if (_view.Episodes(series.ItemId, key.Season!.Value, viewer, includeVirtual: false)
+                    .Any(e => !e.Hidden && new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(key.Episode!.Value))) return null;
+            }
+            foreach (var copy in facts.Copies.OrderBy(x => x.Instance.Role == "4k" ? 1 : 0))
+            {
+                StatusComposer.CopyState? state = key.IsMovie
+                    ? copy.Movie != null && !copy.Movie.HasFile ? StatusComposer.MovieFromArr(copy, c, facts.Request) : null
+                    : copy.Series != null ? StatusComposer.EpisodeFromArr(copy, key.Season!.Value, key.Episode!.Value, copy.Episodes?.Find(key.Season!.Value, key.Episode!.Value), c, facts.Request) : null;
+                if (state?.Reason == StatusReasonCode.NoReleaseYet) return copy.Instance.Id;
+            }
+            return null;
+        }
+
+        /// <summary>
         /// The full status of a season or episode Jellyfin has no item for, by key (the Manage drawer):
         /// where Sonarr has got to with that season or episode, not the whole series. Reads the
         /// series' episodes from the arr when they aren't in memory (administrators only).

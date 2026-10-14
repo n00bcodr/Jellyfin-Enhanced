@@ -412,8 +412,13 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility; `RequestLedger.cs`
   commits intent, reservations, approvals, events and outbox jobs in acquire.db schema 2. `RequestService.cs` orchestrates
   policy preparation and private list projections. `RequestOutbox.cs` provides local title locks, restart recovery,
-  final-send authorization and a network-free placeholder transport. `LedgerRequestFacts.cs` selects ledger facts in JE
-  mode and the existing Seerr read model otherwise. `AcquireRequestsController.cs` exposes the authenticated server API.
+  final-send authorization and a network-free fallback transport. `RequestBackends.cs` sends each job through the
+  backend it was authorised for: `DirectArrBackend.cs` (Jellyfin Enhanced mode: Sonarr/Radarr adds and field-scoped
+  monitoring, confirmed by a fresh read) or `SeerrBackend.cs` (Seerr mode, as the person who asked); `ArrAddService.cs`
+  is the administrators' Manage › Add to. `LedgerRequestFacts.cs` selects ledger facts in JE
+  mode and the existing Seerr read model otherwise (including when requests went out, which restarts the "still looking"
+  clock). `RequestSearchService.cs` runs the arr's search again for what requests already sent (family Search).
+  `AcquireRequestsController.cs` exposes the authenticated server API.
   `SeerrMigrationReader.cs` reads every Seerr request complete-or-nothing (with a digest and Seerr's requesting state) and
   `SeerrMigration.cs` runs the admin dry run, the import into `RequestLedgerImport.cs` (import batches, rollback by batch,
   the automation log) and the switch to JE request handling; `AcquireMigrationController.cs` exposes it to administrators.

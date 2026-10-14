@@ -19,10 +19,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     {
         private readonly RequestService _service;
         private readonly SeasonRowsService? _rows;
+        private readonly RequestSearchService? _search;
         /// <summary>Maximum request payload size.</summary>
         public const int MaxBodyBytes = 64 * 1024;
         /// <summary>Creates the controller.</summary>
-        public AcquireRequestsController(RequestService service, SeasonRowsService? rows = null) { _service = service; _rows = rows; }
+        public AcquireRequestsController(RequestService service, SeasonRowsService? rows = null, RequestSearchService? search = null) { _service = service; _rows = rows; _search = search; }
         private StatusViewer? Person() => ArrCaller.Human(User, _service.View);
         private IActionResult Reply(RequestOutcome outcome) { Response.Headers["Cache-Control"] = "private, no-store"; return StatusCode(outcome.HttpStatus, outcome); }
         private RequestOutcome? Gate(StatusViewer? viewer, bool approve = false, bool readOnly = false)
@@ -45,6 +46,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var viewer = Person();
             if (Gate(viewer) is { } refusal) return Reply(refusal);
             return Reply(await _service.CreateAsync(viewer!.UserId, body, ct).ConfigureAwait(false));
+        }
+        /// <summary>
+        /// Search again for a movie or one episode that requests already sent and that has been missing for
+        /// a long while (anyone who may ask; no new request, no charge, no OK needed). <c>found</c> says
+        /// whether the search grabbed a copy (null: not known). Outcome <c>skipped</c> (<c>not_requested</c>,
+        /// <c>not_searchable</c>): nothing was searched; ask for it instead.
+        /// </summary>
+        [Authorize]
+        [HttpPost("acquire/requests/search")]
+        [BodyLimit(MaxBodyBytes)]
+        public async Task<IActionResult> Search([FromBody] RequestSearchBody? body, CancellationToken ct)
+        {
+            var viewer = Person();
+            if (Gate(viewer) is { } refusal) return Reply(refusal);
+            if (_search == null) return Reply(RequestOutcome.Refused("feature_disabled"));
+            var (outcome, found) = await _search.SearchAsync(viewer!, body?.Key, body?.IdempotencyKey, ct).ConfigureAwait(false);
+            if (outcome.HttpStatus >= 400) return Reply(outcome);
+            Response.Headers["Cache-Control"] = "private, no-store";
+            return Ok(new { outcome = outcome.Outcome, reason = outcome.Reason, certainty = outcome.Certainty.ToString(), message = outcome.Message, found });
         }
         /// <summary>Cancel an unsent own request (administrators may cancel visible requests).</summary>
         [Authorize]
