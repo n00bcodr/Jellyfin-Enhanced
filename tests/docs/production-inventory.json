@@ -4941,6 +4941,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ActivityFeedOwnOnlyForNonAdmins",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ActivityFeedShowActiveStreams",
       "type": "bool",
       "initializer": "true",
@@ -7622,7 +7630,7 @@
     "build_targets": 2,
     "files": 352,
     "routes": 173,
-    "configuration_properties": 521,
+    "configuration_properties": 522,
     "storage_references": 65,
     "scheduled_tasks": 13,
     "locales": 33
