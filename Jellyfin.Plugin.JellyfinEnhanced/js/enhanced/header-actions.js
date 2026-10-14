@@ -304,14 +304,16 @@
             closeLauncher();
             header?.classList.remove('je-header-actions-host');
             row?.classList.remove('je-header-actions-row', 'je-launcher-tight');
-            const previous = header;
             header = current;
             row = header.closest('.MuiToolbar-root, .headerTop') || header.parentElement;
             header.classList.add('je-header-actions-host');
             row.classList.add('je-header-actions-row');
             header.prepend(tray);
-            // Drop the stand-in helpers created while the native tray was missing.
-            if (previous?.hasAttribute('data-je-header-fallback') && !previous.children.length) previous.remove();
+            // Drop stand-ins that helpers.js created while the native tray was missing,
+            // including one left empty by a user switch.
+            document.querySelectorAll('[data-je-header-fallback]').forEach(stale => {
+                if (stale !== header && !stale.children.length) stale.remove();
+            });
             schedule();
         }
     }

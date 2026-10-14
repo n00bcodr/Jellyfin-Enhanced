@@ -28,6 +28,19 @@ function header(t, width = 170) {
   }
   return { ...h, tray, resize(next) { width = next; h.window.dispatchEvent(new h.window.Event('resize')); }, logout() { signedIn = false; reset(); }, login() { signedIn = true; } };
 }
+function muiHeader(t, contents = '<div class="MuiBox-root" id="native"><button>SyncPlay</button><a>Search</a></div>') {
+  let reset, userId = 'user';
+  const h = createHarness({ html: `<div class="MuiAppBar-root"><div class="MuiToolbar-root"><button aria-label="Open Menu"></button>${contents}</div></div>`,
+    JE: { t: key => key, session: { getUserId: () => userId, onUserChange: (name, callback) => { if (name === 'header-actions') reset = callback; } } },
+    globals: { ResizeObserver: class { observe() {} unobserve() {} disconnect() {} } } });
+  t.after(() => h.close());
+  Object.defineProperty(h.window.HTMLElement.prototype, 'offsetParent', { configurable: true, get() { return this.parentElement; } });
+  for (const file of ['core/dom-observer.js', 'core/ui-kit.js', 'enhanced/helpers.js', 'enhanced/header-actions.js']) h.load(file);
+  const tray = h.JE.headerActions.getTray();
+  const toolbar = h.document.querySelector('.MuiToolbar-root');
+  const flush = () => new Promise(resolve => h.JE.core.dom.afterNextPaint(() => h.JE.core.dom.afterNextPaint(resolve)));
+  return { ...h, tray, toolbar, flush, switchUser() { userId = 'next-user'; reset(); } };
+}
 
 test('narrow header preserves foreign plugin buttons and forwards overflow actions to mounted originals', async t => {
   const h = header(t, 130);
@@ -71,24 +84,93 @@ test('identity reset discards previous user actions and signed-out tray access',
 });
 
 test('MUI header moves the fallback tray before native buttons when the user menu mounts late', async t => {
-  const h = createHarness({ html: '<div class="MuiAppBar-root"><div class="MuiToolbar-root"><button aria-label="Open Menu"></button><div class="MuiBox-root" id="native"><button>SyncPlay</button><a>Search</a></div></div></div>',
-    JE: { t: key => key, session: { getUserId: () => 'user', onUserChange() {} } },
-    globals: { ResizeObserver: class { observe() {} unobserve() {} disconnect() {} } } });
-  t.after(() => h.close());
-  Object.defineProperty(h.window.HTMLElement.prototype, 'offsetParent', { configurable: true, get() { return this.parentElement; } });
-  for (const file of ['core/dom-observer.js', 'core/ui-kit.js', 'enhanced/helpers.js', 'enhanced/header-actions.js']) h.load(file);
-  const tray = h.JE.headerActions.getTray();
-  const toolbar = h.document.querySelector('.MuiToolbar-root');
+  const h = muiHeader(t);
+  const { tray, toolbar, flush } = h;
   const fallback = toolbar.querySelector('.headerRight');
   assert.ok(tray); assert.ok(fallback);
   assert.equal(tray.parentElement, fallback);
   assert.equal(toolbar.lastElementChild, fallback);
-  const flush = () => new Promise(resolve => h.JE.core.dom.afterNextPaint(() => h.JE.core.dom.afterNextPaint(resolve)));
   await flush();
   toolbar.insertAdjacentHTML('beforeend', '<div><button aria-controls="app-user-menu"></button></div>');
   await flush();
   assert.equal(h.document.getElementById('native').firstElementChild, tray);
   assert.equal(h.document.querySelector('[data-je-header-fallback]'), null);
+});
+
+test('MUI header moves all JE header buttons together when the user menu mounts late', async t => {
+  const h = muiHeader(t);
+  const fallback = h.tray.parentElement;
+  assert.equal(fallback, h.toolbar.querySelector('.headerRight'));
+  h.tray.insertAdjacentHTML('beforeend', '<div id="randomItemButtonContainer"><button id="randomItemButton" class="headerButton">Random</button></div><button id="je-active-streams" class="headerButton">Active streams</button><div id="je-native-tabs-group"><button id="je-native-tab-link-calendar" class="headerButton">Calendar tab</button><span id="je-native-tabs-separator" aria-hidden="true"></span></div>');
+  for (const id of ['calendar', 'requests', 'bookmarks']) {
+    const button = h.document.createElement('button'); button.id = id; button.className = 'headerButton'; h.tray.appendChild(button);
+  }
+  const actions = [...h.tray.querySelectorAll('.headerButton')];
+  const groups = ['randomItemButtonContainer', 'je-native-tabs-group'].map(id => h.document.getElementById(id));
+  for (const element of [...actions, ...groups]) assert.ok(fallback.contains(element), element.id);
+  await h.flush();
+  h.toolbar.insertAdjacentHTML('beforeend', '<div><button aria-controls="app-user-menu"></button></div>');
+  await h.flush();
+  const native = h.document.getElementById('native');
+  assert.equal(native.firstElementChild, h.tray);
+  for (const element of [...actions, ...groups]) {
+    assert.ok(h.tray.contains(element), element.id);
+    assert.ok(native.contains(element), element.id);
+    assert.equal(element.closest('.headerRight, [data-je-header-fallback]'), null, element.id);
+  }
+  assert.equal(fallback.isConnected, false);
+  assert.equal(h.document.querySelector('[data-je-header-fallback]'), null);
+});
+
+test('MUI header moves the fallback tray before native buttons when the native box mounts late', async t => {
+  const h = muiHeader(t, '<div id="user-menu"><button aria-controls="app-user-menu"></button></div>');
+  const userMenu = h.document.getElementById('user-menu');
+  const fallback = h.toolbar.querySelector('.headerRight');
+  assert.equal(h.tray.parentElement, fallback);
+  assert.equal(fallback.nextElementSibling, userMenu);
+  await h.flush();
+  userMenu.insertAdjacentHTML('beforebegin', '<div class="MuiBox-root" id="native"><button>SyncPlay</button><a>Search</a></div>');
+  await h.flush();
+  assert.equal(h.document.getElementById('native').firstElementChild, h.tray);
+  assert.equal(fallback.isConnected, false);
+  assert.equal(h.document.querySelector('.headerRight, [data-je-header-fallback]'), null);
+});
+
+test('MUI header removes the empty fallback after a user switch and late user menu mount', async t => {
+  const h = muiHeader(t);
+  const fallback = h.toolbar.querySelector('.headerRight');
+  assert.equal(h.tray.parentElement, fallback);
+  await h.flush();
+  h.switchUser();
+  assert.equal(h.tray.isConnected, false);
+  assert.equal(fallback.isConnected, true);
+  assert.equal(fallback.children.length, 0);
+  h.toolbar.insertAdjacentHTML('beforeend', '<div><button aria-controls="app-user-menu"></button></div>');
+  const next = h.JE.headerActions.getTray();
+  await h.flush();
+  assert.equal(next, h.tray);
+  assert.equal(h.document.getElementById('native').firstElementChild, next);
+  assert.equal(fallback.isConnected, false);
+  assert.equal(h.document.querySelector('[data-je-header-fallback]'), null);
+});
+
+test('MUI header keeps a stable fallback between a foreign button and the user menu', async t => {
+  const h = muiHeader(t, '<div class="MuiBox-root" id="native"><button>SyncPlay</button><a>Search</a></div><button id="foreign">Moonfin</button><div id="user-menu"><button aria-controls="app-user-menu"></button></div>');
+  const native = h.document.getElementById('native');
+  const foreign = h.document.getElementById('foreign');
+  const userMenu = h.document.getElementById('user-menu');
+  const fallback = h.toolbar.querySelector('.headerRight');
+  for (let frame = 0; frame < 2; frame++) {
+    await h.flush();
+    assert.equal(h.tray.parentElement, fallback);
+    assert.equal(fallback.parentElement, h.toolbar);
+    assert.equal(fallback.previousElementSibling, foreign);
+    assert.equal(fallback.nextElementSibling, userMenu);
+    assert.equal(foreign.previousElementSibling, native);
+    assert.equal(foreign.contains(h.tray), false);
+    assert.equal(native.contains(h.tray), false);
+    assert.equal(h.JE.headerActions.getTray(), h.tray);
+  }
 });
 
 test('injected icon stylesheet keeps public full fonts distinct from JE subsets and respects theme classes', t => {
