@@ -10,6 +10,7 @@ import { createHarness, jsRoot } from '../helpers/harness.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = [
+  'arr/live/arr-intent.js',
   'arr/status/status-core.js', 'arr/status/status-styles.js',
   'arr/manage/manage-styles.js', 'arr/manage/manage-drawer.js',
   'arr/hub/hub-styles.js', 'arr/hub/hub-render.js',
@@ -222,7 +223,7 @@ test('Remove & search again asks first (keeps the data); deleting the data needs
   const h = setup(t, {
     hash: '#/requests?tab=activity',
     responses: (path, options) => {
-      if (path === '/arr/admin/hub/activity') return activity();
+      if (path.startsWith('/arr/admin/hub/activity')) return activity();
       if (path === '/arr/admin/queue/confirm') { posts.push({ path, body: options.body }); return { token: 'TOKEN-1', expiresAt: iso(2), download: activity().queue[0] }; }
       if (options?.method === 'POST') { posts.push({ path, body: options.body }); return { status: 'Succeeded', message: 'Done.', readBack: 'Removed from the queue.' }; }
       return null;
@@ -564,7 +565,7 @@ test('an admin:ops change that arrives while the tab is being read is read once 
 test('switching admin tabs closes the Remove dialog the tabs opened on the tab it was opened on', async t => {
   const h = setup(t, {
     hash: '#/requests?tab=activity',
-    responses: (path) => path === '/arr/admin/hub/activity' ? activity() : path === '/arr/admin/hub/overview' ? overview() : null
+    responses: (path) => path.startsWith('/arr/admin/hub/activity') ? activity() : path === '/arr/admin/hub/overview' ? overview() : null
   });
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-ops-dl'));
@@ -672,7 +673,7 @@ test('two instances reporting the same download id are separate rows for busy st
   const h = setup(t, {
     hash: '#/requests?tab=activity',
     responses: (path, options) => {
-      if (path === '/arr/admin/hub/activity') return { instances: [card('r1', 'Radarr', 'Radarr'), card('r4', 'Radarr 4K', 'Radarr')], queue: [twin('r1', 'Radarr'), twin('r4', 'Radarr 4K')], history: [] };
+      if (path.startsWith('/arr/admin/hub/activity')) return { instances: [card('r1', 'Radarr', 'Radarr'), card('r4', 'Radarr 4K', 'Radarr')], queue: [twin('r1', 'Radarr'), twin('r4', 'Radarr 4K')], history: [] };
       if (options?.method === 'POST') { posts.push(options.body); return pending; }
       return null;
     }
@@ -695,7 +696,7 @@ test('Cancel closes every dialog: the tabs\' Remove, the drawer\'s Remove and th
   const h = setup(t, {
     hash: '#/requests?tab=activity',
     responses: (path, options) => {
-      if (path === '/arr/admin/hub/activity') return activity();
+      if (path.startsWith('/arr/admin/hub/activity')) return activity();
       if (path === '/arr/admin/queue/confirm') return { token: 'TOKEN-1', expiresAt: iso(2), download: activity().queue[0] };
       if (path.startsWith('/arr/admin/manage?')) return drawerAnswer();
       return null;
@@ -738,7 +739,7 @@ test('delete-data confirmation: a queue that is changing (409) says so and opens
   const h = setup(t, {
     hash: '#/requests?tab=activity',
     responses: (path) => {
-      if (path === '/arr/admin/hub/activity') return activity();
+      if (path.startsWith('/arr/admin/hub/activity')) return activity();
       if (path === '/arr/admin/queue/confirm') return Object.assign(new Error('Conflict'), { status: 409 });
       return null;
     }
@@ -775,7 +776,7 @@ test('a tab whose re-read fails keeps what it shows with a note, retries on its 
   const h = setup(t, {
     hash: '#/requests?tab=activity',
     responses: path => {
-      if (path !== '/arr/admin/hub/activity') return null;
+      if (!path.startsWith('/arr/admin/hub/activity')) return null;
       if (fail) return Object.assign(new Error('HTTP 502'), { status: 502 });
       const a = activity();
       a.instances[0] = card('r1', 'Radarr', 'Radarr', { queueAsOf: iso(-12), queueExpired: true });
@@ -835,7 +836,7 @@ test('a tab whose re-read keeps failing retries on its own after 5 s, backs off 
   const h = setup(t, {
     hash: '#/requests?tab=activity',
     responses: path => {
-      if (path !== '/arr/admin/hub/activity') return null;
+      if (!path.startsWith('/arr/admin/hub/activity')) return null;
       reads++;
       return fail ? Object.assign(new Error('HTTP 502'), { status: 502 }) : activity();
     }
@@ -1014,7 +1015,7 @@ test('a download that can\'t be removed with its data offers no delete option, i
   const h = setup(t, {
     hash: '#/requests?tab=activity',
     responses: path => {
-      if (path !== '/arr/admin/hub/activity') return null;
+      if (!path.startsWith('/arr/admin/hub/activity')) return null;
       const a = activity();
       a.queue[0].actions = ['remove', 'search'];
       return a;
@@ -1039,7 +1040,7 @@ test('the Overview\'s "delete it too?" sends Remove & search again\'s choices (b
   const h = setup(t, {
     responses: (path, options) => {
       if (path === '/arr/admin/hub/overview') return overview();
-      if (path === '/arr/admin/hub/activity') {
+      if (path.startsWith('/arr/admin/hub/activity')) {
         const a = activity();
         a.queue.push({ instanceId: 'r1', instance: 'Radarr', kind: 'Radarr', downloadId: 'dlC', ids: [10], title: 'Plan 9', episodes: 0, status: 'delay', state: 'downloading', actions: ['search'] });
         return a;

@@ -113,6 +113,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Message = status == 503 ? "Couldn't ask right now. Try again later." : status == 429 ? "You've used this week's requests." : "This one can't be asked for here.",
         };
     }
+    /// <summary>
+    /// The caller's own request capabilities, for the request controls (Request, Get it, the request
+    /// sheet). Never another person's; no instance, profile, folder or Seerr detail.
+    /// </summary>
+    public sealed record RequestCapabilities
+    {
+        /// <summary>The caller's household role: watcher, kid, member, manager or admin.</summary>
+        [JsonPropertyName("role")] public string Role { get; init; } = "watcher";
+        /// <summary>The caller may ask for titles at all (role and request backend).</summary>
+        [JsonPropertyName("canRequest")] public bool CanRequest { get; init; }
+        /// <summary>The caller may approve other people's asks.</summary>
+        [JsonPropertyName("canApprove")] public bool CanApprove { get; init; }
+        /// <summary>The caller's asks always wait for an OK (Kid, or the Approve everything preset).</summary>
+        [JsonPropertyName("asksFirst")] public bool AsksFirst { get; init; }
+        /// <summary>The caller may ask for 4K movies.</summary>
+        [JsonPropertyName("can4kMovies")] public bool Can4kMovies { get; init; }
+        /// <summary>The caller may ask for 4K series.</summary>
+        [JsonPropertyName("can4kSeries")] public bool Can4kSeries { get; init; }
+        /// <summary>Request authority: je or seerr.</summary>
+        [JsonPropertyName("backend")] public string Backend { get; init; } = "seerr";
+        /// <summary>What the household calls the person who OKs requests (empty: the client's neutral word).</summary>
+        [JsonPropertyName("contact")] public string Contact { get; init; } = string.Empty;
+        /// <summary>Episodes a Member gets free per window before each five count as one request.</summary>
+        [JsonPropertyName("freeEpisodes")] public int FreeEpisodes { get; init; } = 5;
+    }
     /// <summary>A quota charge; expiries use a strict rolling window.</summary>
     public sealed record QuotaCharge(int Cost, DateTimeOffset At, double EstimatedGb = 0, string? WantId = null);
     /// <summary>Quota projection, including the next time a usable slot returns.</summary>
@@ -122,7 +147,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         [property: JsonPropertyName("remaining")] int? Remaining,
         [property: JsonPropertyName("nextSlotAt")] DateTimeOffset? NextSlotAt,
         [property: JsonPropertyName("usedGb")] double UsedGb,
-        [property: JsonPropertyName("available")] bool Available = true);
+        [property: JsonPropertyName("available")] bool Available = true,
+        [property: JsonPropertyName("episodes"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Episodes = null);
     /// <summary>Pure projection of timestamped charges; it does no I/O.</summary>
     public static class QuotaProjector
     {

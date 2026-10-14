@@ -67,6 +67,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Library name of a movie.</summary>
         public string? LibraryName { get; init; }
+
+        /// <summary>TMDB id of the movie, or of the series a season or episode belongs to (metadata lookups only).</summary>
+        public int? TmdbId { get; init; }
     }
 
     /// <summary>One Jellyfin copy of a movie or series (any library), with whether the viewer can open it.</summary>

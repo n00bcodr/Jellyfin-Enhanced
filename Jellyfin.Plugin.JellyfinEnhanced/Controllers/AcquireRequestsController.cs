@@ -18,10 +18,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     public sealed class AcquireRequestsController : ControllerBase
     {
         private readonly RequestService _service;
+        private readonly SeasonRowsService? _rows;
         /// <summary>Maximum request payload size.</summary>
         public const int MaxBodyBytes = 64 * 1024;
         /// <summary>Creates the controller.</summary>
-        public AcquireRequestsController(RequestService service) { _service = service; }
+        public AcquireRequestsController(RequestService service, SeasonRowsService? rows = null) { _service = service; _rows = rows; }
         private StatusViewer? Person() => ArrCaller.Human(User, _service.View);
         private IActionResult Reply(RequestOutcome outcome) { Response.Headers["Cache-Control"] = "private, no-store"; return StatusCode(outcome.HttpStatus, outcome); }
         private RequestOutcome? Gate(StatusViewer? viewer, bool approve = false, bool readOnly = false)
@@ -120,6 +121,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             await _service.Policy.PrepareIdentityAsync(viewer!.UserId, mediaType == "movie", ct).ConfigureAwait(false);
             if (Gate(Person(), readOnly: true) is { } changed) return Reply(changed);
             return Ok(new { outcome = "accepted", reason = "quota", certainty = "Succeeded", message = "Request allowance", quota = _service.Quota(viewer.UserId, mediaType == "movie") });
+        }
+        /// <summary>The caller's own request capabilities (role, may ask, may approve, 4K, contact word).</summary>
+        [Authorize]
+        [HttpGet("acquire/requests/me")]
+        public async Task<IActionResult> Me(CancellationToken ct = default)
+        {
+            var viewer = Person();
+            if (Gate(viewer, readOnly: true) is { } refusal) return Reply(refusal);
+            await _service.Policy.PrepareIdentityAsync(viewer!.UserId, true, ct).ConfigureAwait(false);
+            if (Gate(Person(), readOnly: true) is { } changed) return Reply(changed);
+            Response.Headers["Cache-Control"] = "private, no-store";
+            return Ok(new { outcome = "accepted", reason = "me", certainty = "Succeeded", message = "Your requests", me = _service.Me(viewer.UserId) });
+        }
+        /// <summary>
+        /// One season's request rows: the caller's request state per episode and the metadata of the
+        /// episodes Jellyfin has no file for (title, air date, runtime, overview, TMDB still path), for
+        /// the "Get it" controls and the rows JE draws for missing episodes. Items the caller can't see
+        /// get 404 like any other id.
+        /// </summary>
+        [Authorize]
+        [HttpGet("acquire/requests/season/{itemId}")]
+        public async Task<IActionResult> Season([FromRoute] string itemId, [FromQuery] string? language = null, CancellationToken ct = default)
+        {
+            var viewer = Person();
+            if (Gate(viewer, readOnly: true) is { } refusal) return Reply(refusal);
+            if (!Guid.TryParse(itemId, out var seasonId) || seasonId == Guid.Empty) return Reply(RequestOutcome.Refused("invalid_id", 400));
+            if (_rows == null) return Reply(RequestOutcome.Refused("feature_disabled"));
+            var rows = await _rows.ForSeasonAsync(viewer!, seasonId, language, ct).ConfigureAwait(false);
+            if (rows == null) return Reply(RequestOutcome.Refused("not_found", 404));
+            var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "season", certainty = "Succeeded", message = "Season", rows });
+            var etag = "\"" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(viewer!.UserId.ToString("N") + "|")
+                .Concat(bytes).ToArray()), 0, 16) + "\"";
+            Response.Headers["Cache-Control"] = "private, no-cache";
+            Response.Headers["ETag"] = etag;
+            if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], etag)) return StatusCode(304);
+            return File(bytes, "application/json; charset=utf-8");
         }
         /// <summary>Lab-only crash checkpoint: persist a sending row without contacting any transport.</summary>
         [Authorize]

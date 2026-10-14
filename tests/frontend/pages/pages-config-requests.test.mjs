@@ -24,7 +24,7 @@ test('durable request settings round trip through actual config-page wiring with
     const config = {
         ArrPhase3Enabled: false, ArrRequestBackend: 'seerr', ArrRequest4kMoviesEnabled: false, ArrRequest4kSeriesEnabled: false, ArrRequestPreset: 'ask_first', ArrRequestDefaultRole: 'Watcher', ArrRequestUsers: '{}', ArrRequestRoles: '{}',
         ArrRequestQuotaLimit: 0, ArrRequestQuotaWindowDays: 7, ArrRequestSeriesThreshold: 4, ArrRequestDeclineCooldownDays: 7, ArrRequestPendingLimit: 10,
-        ArrRequestQuotaGb: 0, ArrRequestStaleDays: 30, ArrRequestChargeFutureSeasons: true
+        ArrRequestQuotaGb: 0, ArrRequestStaleDays: 30, ArrRequestChargeFutureSeasons: true, ArrKidsHideSearch: false
     };
     h.window.loadRequests(config);
     const result = {};
@@ -34,7 +34,10 @@ test('durable request settings round trip through actual config-page wiring with
     h.document.getElementById('arrRequestBackend').value = 'je';
     h.document.getElementById('arrPhase3Enabled').checked = true;
     h.document.getElementById('arrRequestQuotaLimit').value = '3';
+    h.document.getElementById('arrKidsHideSearch').checked = true;
     h.window.saveRequests(result);
+    assert.equal(result.ArrKidsHideSearch, true);
+    assert.match(h.document.querySelector('label:has(#arrKidsHideSearch) span').textContent, /^Hide free-text search from Kids$/);
     assert.equal(result.ArrRequestBackend, 'je');
     assert.equal(result.ArrRequestQuotaLimit, 3);
     assert.equal(result.ArrPhase3Enabled, true);

@@ -184,7 +184,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>A date still to come: an instant after now, or a date-only day still ahead somewhere.</summary>
         private static bool NotYet(DateTime date, bool isDay, DateTime now) => isDay ? DayStillAhead(date, now) : date > now;
 
-        internal sealed record CopyState(string Stage, string Reason, bool Attention = false, StatusProgress? Progress = null, DateTime? Date = null, DateTime? Since = null, ArrQueueEntry? Row = null, IReadOnlyDictionary<string, string>? Params = null, bool DateIsDay = false)
+        internal sealed record CopyState(string Stage, string Reason, bool Attention = false, StatusProgress? Progress = null, DateTime? Date = null, DateTime? Since = null, ArrQueueEntry? Row = null, IReadOnlyDictionary<string, string>? Params = null, bool DateIsDay = false, DateTime? LastSearch = null)
         {
             /// <summary><see cref="Date"/> as "yyyy-MM-dd" when it is a calendar day only (null otherwise).</summary>
             public string? Day => DateIsDay && Date is DateTime d ? DayOf(d) : null;
@@ -326,7 +326,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             if (copy.QueueUnknown) return Unknown();
             var since = Latest(Valid(movie.Added), Valid(movie.DigitalRelease) is DateTime d && d <= c.Now ? d : null);
-            return Looking(since, c);
+            return Looking(since, c, movie.LastSearchTime);
         }
 
         // ------------------------------------------------------------------ series, seasons, episodes
@@ -868,7 +868,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (air == null || NotYet(air.Value, arr.AirDateIsDay, c.Now)) return new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: air, DateIsDay: arr.AirDateIsDay);
             if (!arr.Monitored || copy.Series?.Monitored == false) return new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored);
             if (copy.QueueUnknown) return Unknown();
-            return Looking(Latest(air, Valid(copy.Series?.Added)), c);
+            return Looking(Latest(air, Valid(copy.Series?.Added)), c, arr.LastSearchTime);
         }
 
         // ------------------------------------------------------------------ queue
@@ -1278,6 +1278,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Since = state.Since,
                 Fix = FixFor(state.Reason),
                 Scope = scope,
+                LastSearch = state.LastSearch,
             };
         }
 
@@ -1512,10 +1513,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private static CopyState Unknown() => new(StatusStage.Looking, StatusReasonCode.ServiceDown);
 
-        private static CopyState Looking(DateTime? since, ComposeContext c)
+        /// <summary>
+        /// Monitored, out, no file and nothing under way: "looking" while it is fresh, "no release yet"
+        /// (shown as Missing with a Search button) once nothing was grabbed for longer than LookingHours.
+        /// <paramref name="lastSearch"/> is when the arr last searched for it (admin line), if it says.
+        /// </summary>
+        private static CopyState Looking(DateTime? since, ComposeContext c, DateTime? lastSearch = null)
         {
             var longer = since.HasValue && c.Now - since.Value > TimeSpan.FromHours(c.LookingHours);
-            return new CopyState(StatusStage.Looking, longer ? StatusReasonCode.NoReleaseYet : StatusReasonCode.Looking, Since: since);
+            return new CopyState(StatusStage.Looking, longer ? StatusReasonCode.NoReleaseYet : StatusReasonCode.Looking, Since: since, LastSearch: Valid(lastSearch));
         }
 
         /// <summary>

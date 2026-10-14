@@ -107,7 +107,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return File(JsonSerializer.SerializeToUtf8Bytes(overview, CamelCase), "application/json; charset=utf-8");
         }
 
-        /// <summary>Search now for the title in scope on one instance (administrators only; audited, one idempotency key per click).</summary>
+        /// <summary>
+        /// Search now for the title in scope on one instance (administrators only; audited, one idempotency
+        /// key per click). <c>found</c> says whether the search grabbed a copy (null: not known).
+        /// </summary>
         [HttpPost("arr/admin/manage/search")]
         [Authorize]
         [PrivateResponse]
@@ -129,9 +132,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 // The audit line keeps the user id either way.
             }
-            var outcome = await _manage.SearchAsync(viewer, userName, request.InstanceId, key, request.IdempotencyKey, cancellationToken).ConfigureAwait(false);
+            var result = await _manage.SearchCheckedAsync(viewer, userName, request.InstanceId, key, request.IdempotencyKey, cancellationToken).ConfigureAwait(false);
+            var outcome = result.Outcome;
             return Ok(new
             {
+                found = result.Found,
                 status = outcome.Status,
                 message = outcome.Message,
                 readBack = outcome.ReadBack?.Summary,

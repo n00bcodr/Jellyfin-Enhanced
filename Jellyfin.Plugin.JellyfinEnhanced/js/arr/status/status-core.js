@@ -235,6 +235,17 @@
     }
 
     /**
+     * True when a title (or episode) is monitored, out and still has no copy long after it was
+     * wanted (nothing grabbed for longer than LookingHours, reason no_release_yet): it is shown as
+     * plainly Missing with a Search button instead of "still looking" with a journey.
+     * @param {Object} status Status or episode status.
+     * @returns {boolean} Searchable.
+     */
+    function searchable(status) {
+        return status?.reason?.code === 'no_release_yet' && status?.stage === 'looking' && !status?.attention;
+    }
+
+    /**
      * The family sentence for a status (or an episode status).
      * @param {Object} status Status from the server.
      * @param {Object} ctx Response context (contact).
@@ -397,6 +408,10 @@
             const label = v.scope ? `${v.scope} · ${v.instance}` : v.instance;
             const parts = [label, adminReasonText(v)];
             if (v.since && (v.attention || v.stage !== 'ready')) parts.push(sinceText(v.since));
+            if (v.lastSearch && v.stage === 'looking') {
+                const age = ageText(v.lastSearch);
+                parts.push(age ? tr('arr_admin_last_searched', { age }) : tr('arr_admin_last_searched_now'));
+            }
             if (v.client) parts.push(v.client);
             if (v.quality) parts.push(v.quality + (typeof v.customFormatScore === 'number' ? ` · CF ${v.customFormatScore}` : ''));
             lines.push({
@@ -530,6 +545,7 @@
      */
     function toneOf(status) {
         if (status?.attention) return 'attention';
+        if (searchable(status)) return 'notHere';
         return status?.stage || 'none';
     }
 
@@ -544,13 +560,14 @@
         const block = el('div', 'je-arr-status');
         block.dataset.jeArrKey = status.key || '';
         const tone = toneOf(status);
-        const hasJourney = Array.isArray(status.journey) && status.journey.length > 1;
+        // Missing for a long while: no journey (it would promise steps nothing is taking).
+        const hasJourney = Array.isArray(status.journey) && status.journey.length > 1 && !searchable(status);
         const pill = el(hasJourney ? 'button' : 'div', `je-arr-pill je-arr-tone-${tone}`);
         if (hasJourney) {
             pill.type = 'button';
             pill.setAttribute('aria-expanded', 'false');
         }
-        pill.appendChild(icon(status.attention ? 'schedule' : (STAGE_ICONS[status.stage] || 'info'), 'je-arr-pill-icon'));
+        pill.appendChild(icon(status.attention ? 'schedule' : (STAGE_ICONS[toneOf(status)] || STAGE_ICONS[status.stage] || 'info'), 'je-arr-pill-icon'));
         pill.appendChild(el('span', 'je-arr-pill-text', familyText(status, ctx)));
         if (hasJourney) pill.appendChild(icon('expand_more', 'je-arr-pill-caret'));
         block.appendChild(pill);
@@ -811,6 +828,7 @@
         fetchKey,
         feedPosition,
         familyText,
+        searchable,
         summaryPieces,
         chipText,
         adminLines,

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -241,6 +242,28 @@ public class ApiArrRequestsHubTests
         }
         Assert.DoesNotContain("Sam Film", emma.Body);
         Assert.DoesNotContain("Waiting Film", sam.Body);
+    }
+
+    [Fact]
+    public async Task TheHubSaysWhenJellyfinEnhancedsOwnRequestListIsTheRequestBackend()
+    {
+        using var rig = await Ready();
+        var c = rig.Arr.Plugin.Plugin.Configuration;
+        Assert.False(Root(await Hub(rig, rig.Emma)).GetProperty("seerr").GetProperty("ledger").GetBoolean());
+        c.ArrPhase3Enabled = true;
+        c.ArrRequestBackend = "je";
+        try
+        {
+            // JE mode: the page doesn't call a missing Seerr a problem (requests come from the ledger).
+            Assert.True(Root(await Hub(rig, rig.Emma)).GetProperty("seerr").GetProperty("ledger").GetBoolean());
+            c.ArrRequestBackend = "seerr";
+            Assert.False(Root(await Hub(rig, rig.Emma)).GetProperty("seerr").GetProperty("ledger").GetBoolean());
+        }
+        finally
+        {
+            c.ArrPhase3Enabled = false;
+            c.ArrRequestBackend = "seerr";
+        }
     }
 
     [Fact]
@@ -1189,6 +1212,48 @@ public class ApiArrRequestsHubTests
         Assert.Equal(400, (await Search(radarr, "movie:tmdb:693134", null)).GetProperty("http").GetInt32());
         Assert.Empty(rig.Radarr4k.Writes);
         Assert.Single(rig.Radarr.Writes);
+    }
+
+    [Fact]
+    public async Task SearchNowSaysWhetherTheSearchFoundACopy()
+    {
+        using var rig = await Ready();
+        var radarr = rig.Arr.Instance("RadarrMainZ").Id;
+        var sonarr = rig.Arr.Instance("SonarrZ").Id;
+        var started = new DateTime(2026, 10, 12, 12, 0, 0, DateTimeKind.Utc);
+        rig.Radarr.CommandStarted = started.ToString("o", CultureInfo.InvariantCulture);
+        rig.Sonarr.CommandStarted = started.ToString("o", CultureInfo.InvariantCulture);
+        static JsonObject Grab(string field, int id, DateTime at, int? episodeId = null, int? season = null, string eventType = "grabbed")
+            => new() { [field] = id, ["eventType"] = eventType, ["date"] = at.ToString("o", CultureInfo.InvariantCulture), ["episodeId"] = episodeId, ["seasonNumber"] = season };
+        async Task<JsonElement> Search(string instance, string key, string idem)
+        {
+            var c = rig.Controller(rig.Admin);
+            return Root(await Send(c, () => c.Search(new ManageSearchRequest { InstanceId = instance, Key = key, IdempotencyKey = idem }, default)));
+        }
+        static bool? Found(JsonElement reply) => reply.GetProperty("found").ValueKind == JsonValueKind.Null ? null : reply.GetProperty("found").GetBoolean();
+
+        // Nothing grabbed since the search started (an older grab and a later import don't count).
+        rig.Radarr.TitleHistory.Add(Grab("movieId", 2, started.AddDays(-3)));
+        rig.Radarr.TitleHistory.Add(Grab("movieId", 2, started.AddSeconds(30), eventType: "downloadFolderImported"));
+        Assert.False(Found(await Search(radarr, "movie:tmdb:693134", "found-1")));
+        // A grab of the movie during the search: found.
+        rig.Radarr.TitleHistory.Add(Grab("movieId", 2, started.AddSeconds(4)));
+        Assert.True(Found(await Search(radarr, "movie:tmdb:693134", "found-2")));
+        // Still running when the read-back stopped watching, or no start time: not known.
+        rig.Radarr.CommandStatus = "started";
+        Assert.Null(Found(await Search(radarr, "movie:tmdb:693134", "found-3")));
+        rig.Radarr.CommandStatus = "completed";
+        rig.Radarr.CommandStarted = null;
+        Assert.Null(Found(await Search(radarr, "movie:tmdb:693134", "found-4")));
+
+        // An episode: only a grab of that episode counts (Sonarr's history of the season is read).
+        rig.Sonarr.TitleHistory.Add(Grab("seriesId", 1, started.AddSeconds(5), episodeId: 105, season: 1));
+        Assert.False(Found(await Search(sonarr, "tv:tvdb:78874:s1:e4", "found-5")));
+        rig.Sonarr.TitleHistory.Add(Grab("seriesId", 1, started.AddSeconds(6), episodeId: 104, season: 1));
+        Assert.True(Found(await Search(sonarr, "tv:tvdb:78874:s1:e4", "found-6")));
+        Assert.Contains(rig.Arr.Calls, c => c.Contains("/api/v3/history/series", StringComparison.Ordinal) && c.Contains("seasonNumber=1", StringComparison.Ordinal));
+        // A refused search says nothing about finding.
+        Assert.Equal(JsonValueKind.Null, (await Search(sonarr, "movie:tmdb:693134", "found-7")).GetProperty("found").ValueKind);
     }
 
     [Fact]

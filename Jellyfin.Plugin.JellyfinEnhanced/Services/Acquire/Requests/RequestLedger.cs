@@ -139,11 +139,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             if (input.Scope == "movie") return 1;
             if (input.Scope != "episodes") return input.Seasons.Length;
-            var episodes = int.Parse(Scalar(c, t, "SELECT COALESCE(SUM(episode_count),0) FROM reservations WHERE user_id=$u AND state='charged' AND charged_at>$since AND charged_at<=$at AND ($exclude IS NULL OR want_id<>$exclude)",
-                ("$u", Id(user)), ("$since", Ms(now.AddDays(-days))), ("$at", Ms(now)), ("$exclude", excludeWant))!, CultureInfo.InvariantCulture);
+            var episodes = EpisodesCharged(c, t, user, now, days, excludeWant);
             static int EpisodeCost(int count) => Math.Max(0, (count - 5 + 4) / 5);
             return EpisodeCost(episodes + input.Episodes.Length) - EpisodeCost(episodes);
         }
+        private static int EpisodesCharged(SqliteConnection c, SqliteTransaction? t, Guid user, DateTimeOffset now, int days, string? excludeWant = null)
+            => int.Parse(Scalar(c, t, "SELECT COALESCE(SUM(episode_count),0) FROM reservations WHERE user_id=$u AND state='charged' AND charged_at>$since AND charged_at<=$at AND ($exclude IS NULL OR want_id<>$exclude)",
+                ("$u", Id(user)), ("$since", Ms(now.AddDays(-days))), ("$at", Ms(now)), ("$exclude", excludeWant))!, CultureInfo.InvariantCulture);
+        /// <summary>
+        /// Single episodes charged to the user in the rolling window: an episode ask costs what it adds to
+        /// them (the first five of a window are free), so request previews need the count.
+        /// </summary>
+        public int EpisodesCharged(Guid user, int days, DateTimeOffset now) => _db.Read(c => EpisodesCharged(c, null, user, now, days));
         private static bool OverSeries(RequestPolicyFacts facts, MutationInput input, IEnumerable<RequestWant> own, int threshold)
             => facts.Role == "Member" && !TitleKey.Parse(input.Key)!.IsMovie && own.Where(w => w.Input.Key == input.Key && w.Status is not ("declined" or "cancelled"))
                 .SelectMany(w => w.Input.SeasonNumbers).Concat(input.SeasonNumbers).Distinct().Count() > Math.Clamp(threshold, 1, 200);

@@ -3896,6 +3896,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ArrSeerrModalStatus = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrSeerrModalStatus,
                 // Phase 2 notifications (bell, Notify me, Remind, "Requests & alerts" panel).
                 ArrNotificationsEnabled = Services.Acquire.Notify.NotifyFlags.Enabled(config),
+                // Phase 3 request controls (Request, Get it, request sheet): on with a request backend only.
+                ArrRequestsEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend is "je" or "seerr",
+                // Kids don't get the JE-mode search row (the search route refuses them too).
+                config.ArrKidsHideSearch,
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,

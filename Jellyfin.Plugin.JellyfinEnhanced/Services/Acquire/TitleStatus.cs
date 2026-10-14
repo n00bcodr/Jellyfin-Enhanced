@@ -341,6 +341,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Season/episode this copy's attention line is about (series pages).</summary>
         public string? Scope { get; init; }
+
+        /// <summary>When the arr last searched for this copy (UTC; movies and episodes still being looked for), if it says.</summary>
+        public DateTime? LastSearch { get; init; }
     }
 
     /// <summary>Admin-only part of a status: every copy across instances and why each is where it is.</summary>

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -124,15 +125,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Json(await _hub.OverviewAsync(cancellationToken).ConfigureAwait(false));
         }
 
-        /// <summary>Activity: downloads grouped per download with their actions, recent history.</summary>
+        /// <summary>
+        /// Activity: downloads grouped per download with their actions, recent history. With any of
+        /// <paramref name="q"/>, <paramref name="kind"/>, <paramref name="instance"/> or
+        /// <paramref name="page"/> the history is a search over every record held instead: one page
+        /// of 50 at most, with its counts, each instance's coverage and the filters echoed
+        /// (<c>historyPage</c>). 400 <c>invalid_request</c> for text over 100 characters, an unknown
+        /// event kind or a page below 1; 400 <c>unknown_instance</c> for an instance that isn't set
+        /// up and usable.
+        /// </summary>
+        /// <param name="q">Words in the title, release name or message.</param>
+        /// <param name="kind">Event kind: grabbed, imported, failed, deleted, renamed, ignored or other.</param>
+        /// <param name="instance">Instance id.</param>
+        /// <param name="page">Page (1-based).</param>
+        /// <param name="cancellationToken">Cancellation.</param>
         [HttpGet("arr/admin/hub/activity")]
         [Authorize]
-        public async Task<IActionResult> GetActivity(CancellationToken cancellationToken)
+        public async Task<IActionResult> GetActivity([FromQuery] string? q, [FromQuery(Name = "event")] string? kind, [FromQuery] string? instance, [FromQuery] int? page, CancellationToken cancellationToken)
         {
             if (Admin() is null) return Forbid();
             if (!_hub.Enabled) return StatusCode(403, new { code = "feature_disabled" });
+            AdminHistoryQuery? search = null;
+            if (q != null || kind != null || instance != null || page != null)
+            {
+                var text = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
+                var eventKind = string.IsNullOrWhiteSpace(kind) ? null : kind.Trim().ToLowerInvariant();
+                if (text is { Length: > AdminHistoryQuery.MaxQueryLength } || (eventKind != null && !AdminHistoryQuery.EventKinds.Contains(eventKind)) || page is < 1)
+                    return BadRequest(new { code = "invalid_request" });
+                string? instanceId = null;
+                if (!string.IsNullOrWhiteSpace(instance))
+                {
+                    if (!ValidId(instance) || _hub.Store.Registry.Get(instance.Trim()) is not { Usable: true } known) return BadRequest(new { code = "unknown_instance" });
+                    instanceId = known.Id;
+                }
+                search = new AdminHistoryQuery { Text = text, Event = eventKind, Instance = instanceId, Page = Math.Min(page ?? 1, AdminHistoryQuery.MaxPage) };
+            }
             using var scope = _hub.Store.BeginRequest("arr/admin/hub/activity");
-            return Json(await _hub.ActivityAsync(cancellationToken).ConfigureAwait(false));
+            return Json(await _hub.ActivityAsync(search, cancellationToken).ConfigureAwait(false));
         }
 
         /// <summary>System: health, disks, tasks, versions, live connection and webhook, Seerr, Jellyfin bridge and path doctor.</summary>

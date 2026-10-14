@@ -31,6 +31,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Extra words: the audit action and outcome, who did it.</summary>
         public string? Text { get; init; }
+
+        /// <summary>The arr's message of a history event (failures, ignored downloads).</summary>
+        public string? Message { get; init; }
     }
 
     /// <summary>A queue row of the copy in the Manage drawer.</summary>
@@ -247,6 +250,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     {
         /// <summary>The action outcome (status, message, read-back, audit id).</summary>
         public ArrActionOutcome Outcome { get; init; } = new();
+
+        /// <summary>
+        /// True: the arr grabbed a release for the title in scope while the search ran (a "grabbed"
+        /// event for it in the arr's history since the search started). False: the search finished
+        /// and grabbed nothing. Null: unknown (still running, failed, or the history could not be read).
+        /// </summary>
+        public bool? Found { get; init; }
     }
 
     /// <summary>
@@ -393,7 +403,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (added != null) events.Add(new ManageEvent { Event = "added", At = added });
                 events.AddRange((history.Value?.Records ?? Array.Empty<ArrHistoryEntry>())
                     .Where(h => (key.IsMovie ? h.MovieId : h.SeriesId) == arrId && InScope(h.SeasonNumber, h.EpisodeNumber))
-                    .Select(h => new ManageEvent { Event = h.EventType ?? "unknown", At = h.Date, Season = h.SeasonNumber, Episode = h.EpisodeNumber }));
+                    .Select(h => new ManageEvent { Event = h.EventType ?? "unknown", At = h.Date, Season = h.SeasonNumber, Episode = h.EpisodeNumber, Message = h.Message }));
                 var targets = Targets(key.IsMovie, arrId.Value);
                 events.AddRange(audit
                     .Where(a => string.Equals(a.InstanceId, instance.Id, StringComparison.OrdinalIgnoreCase) && targets.Any(t => a.Target == t || a.Target.StartsWith(t + ":", StringComparison.Ordinal)) && a.Outcome != ArrAuditLog.StartedOutcome)
@@ -534,19 +544,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// the arr's command for up to ten seconds and reports how it ended (or that it is still running).
         /// </summary>
         public async Task<ArrActionOutcome> SearchAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string idempotencyKey, CancellationToken cancellationToken)
+            => (await SearchCheckedAsync(viewer, userName, instanceId, key, idempotencyKey, cancellationToken).ConfigureAwait(false)).Outcome;
+
+        /// <summary>
+        /// <see cref="SearchAsync"/>, and whether it found a copy: once the arr's search command has
+        /// completed, the arr's history of the title in scope is read for a grab since the command
+        /// started (<see cref="ManageSearchResult.Found"/>), so the page can say "Found a copy" or
+        /// "Nothing found yet" honestly.
+        /// </summary>
+        public async Task<ManageSearchResult> SearchCheckedAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string idempotencyKey, CancellationToken cancellationToken)
         {
             var instance = _store.Registry.Get(instanceId);
             if (instance == null || !instance.Usable || instance.Kind != (key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr))
-                return Refuse(viewer, userName, instanceId, key, "wrong_instance", "That instance can't search for this title.");
+                return new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, "wrong_instance", "That instance can't search for this title.") };
             var library = await _store.GetLibraryAsync(instance, cancellationToken).ConfigureAwait(false);
             var title = key.Title;
             var arrId = key.IsMovie ? FindMovie(library.Value, title)?.Id : FindSeries(library.Value, title)?.Id;
             if (arrId == null)
-                return Refuse(viewer, userName, instance.Id, key, "not_in_arr", $"{instance.Name} doesn't have this title.");
+                return new ManageSearchResult { Outcome = Refuse(viewer, userName, instance.Id, key, "not_in_arr", $"{instance.Name} doesn't have this title.") };
 
             object command;
             string action;
             string target;
+            int? episodeId = null;
+            int? seasonNumber = key.Season;
+            bool? found = null;
             if (key.IsMovie)
             {
                 command = new { name = "MoviesSearch", movieIds = new[] { arrId.Value } };
@@ -558,8 +580,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var episodes = await _store.GetEpisodesAsync(instance, arrId.Value, cancellationToken).ConfigureAwait(false);
                 var match = episodes.Value?.Episodes.FirstOrDefault(e => e.SeasonNumber == season && e.EpisodeNumber == episode);
                 if (match == null)
-                    return Refuse(viewer, userName, instance.Id, key, "no_such_episode", $"{instance.Name} doesn't list S{season:00}E{episode:00} of this series.");
+                    return new ManageSearchResult { Outcome = Refuse(viewer, userName, instance.Id, key, "no_such_episode", $"{instance.Name} doesn't list S{season:00}E{episode:00} of this series.") };
                 command = new { name = "EpisodeSearch", episodeIds = new[] { match.Id } };
+                episodeId = match.Id;
                 action = "episode.search";
                 target = "episode-of:" + arrId.Value.ToString(CultureInfo.InvariantCulture) + ":" + match.Id.ToString(CultureInfo.InvariantCulture);
             }
@@ -614,6 +637,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     }
                     if (last == null) return new ArrReadBack { Confirmed = null, Summary = "Could not check the search." };
                     var message = string.IsNullOrWhiteSpace(last.Message) ? null : last.Message!.Trim();
+                    if (string.Equals(last.Status, "completed", StringComparison.OrdinalIgnoreCase))
+                        found = await GrabbedSinceAsync(client.Value!, key.IsMovie, arrId.Value, seasonNumber, episodeId, ArrDates.Parse(last.Started), ct).ConfigureAwait(false);
                     return (last.Status?.ToLowerInvariant()) switch
                     {
                         "completed" => new ArrReadBack { Confirmed = true, Summary = "Search finished" + (message != null && !string.Equals(message, "Completed", StringComparison.OrdinalIgnoreCase) ? ": " + Cap(message) : ".") },
@@ -628,9 +653,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 // What the search found shows up in the queue and history; the drawer and pills follow the feed.
                 _store.RequestRefresh(instance.Id, ArrSnapshotKind.Queue);
                 _store.RequestRefresh(instance.Id, ArrSnapshotKind.History);
+                // The title's own "last searched" time (the admin line) moves too.
+                if (key.IsMovie) _ = _store.RefreshTitlesAsync(instance.Id, new[] { arrId.Value }, CancellationToken.None);
+                else _store.RequestEpisodesRefresh(instance.Id, arrId.Value);
                 if (key.IsMovie ? key.Provider == "tmdb" : key.Provider == "tvdb") _feed?.Bump(new[] { title.ToString() }, instance.Id);
             }
-            return outcome;
+            return new ManageSearchResult { Outcome = outcome, Found = outcome.Status == ArrActionStatus.Succeeded ? found : null };
+        }
+
+        /// <summary>
+        /// True when the arr's history of the movie (or of the series, narrowed to the season or
+        /// episode in scope) holds a grab since <paramref name="since"/> (the search command's start,
+        /// as the arr reports it); false when it holds none; null when it can't be read or the start
+        /// time is unknown.
+        /// </summary>
+        private static async Task<bool?> GrabbedSinceAsync(ArrClient client, bool movie, int arrId, int? season, int? episodeId, DateTime? since, CancellationToken ct)
+        {
+            if (since is not DateTime start) return null;
+            var query = new List<KeyValuePair<string, string?>>
+            {
+                new(movie ? "movieId" : "seriesId", arrId.ToString(CultureInfo.InvariantCulture)),
+            };
+            if (!movie && season is int s) query.Add(new("seasonNumber", s.ToString(CultureInfo.InvariantCulture)));
+            var read = await client.GetAsync<List<ArrGrabWire>>(movie ? "history/movie" : "history/series", query, ArrCallClass.Read, ct).ConfigureAwait(false);
+            if (!read.Ok || read.Value == null) return null;
+            // The arrs write whole seconds: a grab in the command's first second counts.
+            var from = start.AddSeconds(-1);
+            return read.Value.Any(h => string.Equals(h.EventType, "grabbed", StringComparison.OrdinalIgnoreCase)
+                && (episodeId == null || h.EpisodeId == episodeId)
+                && ArrDates.Parse(h.Date) is DateTime at && at >= from);
         }
 
         private static string Cap(string text) => text.Length > 200 ? text[..200] + "…" : text;
@@ -646,6 +697,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             /// <summary>The arr's message.</summary>
             [JsonPropertyName("message")] public string? Message { get; set; }
+
+            /// <summary>When the command started (UTC, as the arr reports it).</summary>
+            [JsonPropertyName("started")] public string? Started { get; set; }
+        }
+
+        /// <summary>The parts of an arr history record the search check reads.</summary>
+        internal sealed class ArrGrabWire
+        {
+            /// <summary>grabbed, downloadFolderImported, …</summary>
+            [JsonPropertyName("eventType")] public string? EventType { get; set; }
+
+            /// <summary>When (UTC).</summary>
+            [JsonPropertyName("date")] public string? Date { get; set; }
+
+            /// <summary>Sonarr episode id.</summary>
+            [JsonPropertyName("episodeId")] public int? EpisodeId { get; set; }
         }
     }
 }

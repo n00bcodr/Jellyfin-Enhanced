@@ -7,6 +7,9 @@
  * (the titles it shows plus the user's own request-list key) to re-read in place; it never polls on
  * its own (the admin tabs follow the administrators' feed key, with a slow fallback poll of their
  * own). Exposes JE.arrHub { show, hide, refresh } and JE.initializeArrHub.
+ * Phase 3 tabs (Approvals, Household, Discover) plug in through H.extraTabs ({id, label, visible(data) →
+ * true | false | 'pending', count(), render(panel), leave(), after?: 'own'}); H.mineLedger.merge(view) adds the
+ * request ledger's own requests to My requests; H.starters run once when the page starts.
  */
 (function (JE) {
     'use strict';
@@ -110,13 +113,58 @@
      * @returns {string[]} Tab ids.
      */
     function tabs() {
-        const list = [...OWN_TABS];
+        // Phase-3 tabs go after My requests (Approvals, Household), or after the own tabs with after: 'own' (Discover).
+        const extra = extraTabs().filter(t => extraVisible(t) === true);
+        const list = [OWN_TABS[0], ...extra.filter(t => t.after !== 'own').map(t => t.id), ...OWN_TABS.slice(1), ...extra.filter(t => t.after === 'own').map(t => t.id)];
         const admin = H.admin?.tabs ? H.admin.tabs(state.data) : [];
         list.push(...admin);
         // With phase 2 the Activity tab holds the queue and history: the Downloads page folds into it.
         if (!admin.length && state.data?.admin?.downloads && JE.downloadsPage?.renderForCustomTab) list.push('downloads');
         if (state.data?.admin?.calendar && JE.calendarPage?.renderForCustomTab) list.push('calendar');
         return list;
+    }
+
+    /**
+     * The phase-3 tabs registered on H.extraTabs.
+     * @returns {Object[]} Tab descriptors.
+     */
+    function extraTabs() {
+        return Array.isArray(H.extraTabs) ? H.extraTabs : [];
+    }
+
+    /**
+     * Whether a phase-3 tab is offered: true, false, or 'pending' while its module is still
+     * finding out (the tab named in the URL then waits instead of falling back to My requests).
+     * @param {Object} tab Tab descriptor.
+     * @returns {boolean|string} Visibility.
+     */
+    function extraVisible(tab) {
+        try {
+            return tab.visible(state.data);
+        } catch (err) {
+            console.warn(`${logPrefix} could not check the ${tab.id} tab`, err);
+            return false;
+        }
+    }
+
+    /**
+     * The phase-3 tab descriptor with this id, if any.
+     * @param {string} id Tab id.
+     * @returns {Object|null} Tab descriptor.
+     */
+    function extraTab(id) {
+        return extraTabs().find(t => t.id === id) || null;
+    }
+
+    /**
+     * Tells the phase-3 tabs other than the shown one (or all) that they are not shown.
+     * @param {Object|null} shown The shown tab descriptor.
+     * @returns {void}
+     */
+    function leaveExtras(shown) {
+        for (const tab of extraTabs()) {
+            if (tab !== shown) tab.leave?.();
+        }
     }
 
     /**
@@ -188,6 +236,7 @@
         document.body.classList.remove('je-hub-active');
         leaveEmbedded();
         H.admin?.leave?.();
+        leaveExtras(null);
         follow(null);
         const page = document.getElementById(PAGE_ID);
         if (page) {
@@ -445,8 +494,10 @@
     function renderPage(root) {
         H.injectStyles?.();
         const available = tabs();
-        // A tab named in the URL that isn't known yet (admin tabs before the first answer) waits for it.
-        if (!available.includes(state.tab) && state.data) state.tab = 'mine';
+        // A tab named in the URL that isn't known yet (admin tabs before the first answer, phase-3
+        // tabs while their module finds out) waits for it.
+        const pending = extraTab(state.tab) && extraVisible(extraTab(state.tab)) === 'pending';
+        if (!available.includes(state.tab) && state.data && !pending) state.tab = 'mine';
         // An embedded admin tab keeps its own DOM while it stays selected.
         if (state.embedded && state.embedded.tab === state.tab && root.contains(state.embedded.node)) {
             renderTabs(root, available);
@@ -469,6 +520,14 @@
         panel.setAttribute('role', 'tabpanel');
         root.appendChild(panel);
 
+        const extra = extraTab(state.tab);
+        if (extra && available.includes(state.tab)) {
+            H.admin?.leave?.();
+            leaveExtras(extra);
+            extra.render(panel);
+            return;
+        }
+        leaveExtras(null);
         if (isAdminTab(state.tab) && available.includes(state.tab)) {
             H.admin.render(panel, state.tab);
             return;
@@ -510,7 +569,22 @@
         const actions = { open: openEntry, play: playEntry, manage: manageEntry };
         if (state.tab === 'soon') H.renderSoon(panel, view, actions);
         else if (state.tab === 'ready') H.renderReady(panel, view, actions);
-        else H.renderMine(panel, view, actions);
+        else H.renderMine(panel, mineView(view), actions);
+    }
+
+    /**
+     * My requests with the request ledger's own requests added (phase 3), when that module is there.
+     * @param {Object} view Visible hub data.
+     * @returns {Object} The view to render.
+     */
+    function mineView(view) {
+        if (!view || typeof H.mineLedger?.merge !== 'function') return view;
+        try {
+            return H.mineLedger.merge(view);
+        } catch (err) {
+            console.warn(`${logPrefix} could not add the request ledger to My requests`, err);
+            return view;
+        }
     }
 
     /**
@@ -525,7 +599,7 @@
         strip.textContent = '';
         const view = visibleData(state.data);
         const counts = {
-            mine: (view?.mine || []).filter(e => e.group !== 'declined').length,
+            mine: (mineView(view)?.mine || []).filter(e => e.group !== 'declined').length,
             soon: (view?.soon || []).length,
             ready: (view?.ready || []).length,
             overview: (H.admin?.state?.data?.overview?.needsAttention || []).length
@@ -538,11 +612,13 @@
             button.dataset.jeFocus = `tab:${id}`;
             button.setAttribute('role', 'tab');
             button.setAttribute('aria-selected', String(id === state.tab));
-            button.textContent = tr(`arr_hub_tab_${id}`);
-            if (counts[id]) {
+            const extra = extraTab(id);
+            button.textContent = extra ? tr(extra.label) : tr(`arr_hub_tab_${id}`);
+            const n = extra ? extra.count?.() : counts[id];
+            if (n) {
                 const count = document.createElement('span');
                 count.className = 'je-hub-tab-count';
-                count.textContent = String(counts[id]);
+                count.textContent = String(n);
                 button.appendChild(count);
             }
             button.addEventListener('click', () => selectTab(id));
@@ -662,6 +738,13 @@
         window.addEventListener('je-hidden-content-changed', () => {
             if (state.visible && state.data) render();
         });
+        for (const start of Array.isArray(H.starters) ? H.starters : []) {
+            try {
+                start();
+            } catch (err) {
+                console.warn(`${logPrefix} could not start a Requests page extension`, err);
+            }
+        }
         handleNavigation();
     }
 
@@ -695,6 +778,7 @@
 
     H.state = state;
     H.load = load;
+    H.render = render;
     H.visibleData = visibleData;
     H.renderTabs = refreshTabs;
     H.selectTab = selectTab;

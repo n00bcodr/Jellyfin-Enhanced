@@ -130,6 +130,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         Virtual = season.LocationType == LocationType.Virtual,
                         Path = season.Path,
                         DateCreated = Utc(season.DateCreated),
+                        TmdbId = TmdbOf(series),
                     };
                 }
                 case Episode episode:
@@ -358,6 +359,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _libraryManager.ItemUpdated -= OnItemChanged;
             _libraryManager.ItemRemoved -= OnItemChanged;
         }
+
+        /// <summary>The TMDB id of a series, when Jellyfin has one.</summary>
+        private static int? TmdbOf(Series? series)
+            => int.TryParse(series?.GetProviderId(MetadataProvider.Tmdb), NumberStyles.None, CultureInfo.InvariantCulture, out var id) && id > 0 ? id : null;
 
         private static TitleKey? SeriesKey(Series series)
             => TitleKey.ForSeries(series.GetProviderId(MetadataProvider.Tvdb), series.GetProviderId(MetadataProvider.Tmdb), series.GetProviderId(MetadataProvider.Imdb));

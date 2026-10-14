@@ -2536,11 +2536,11 @@
                                 <div class="fieldDescription">A small corner badge on poster cards while something is downloading, almost ready or taking longer than usual, and seasons' "4/10" progress on series pages.</div>
                             </div>
                             <div class="inputContainer">
-                                <label class="inputLabel" for="arrStatusLookingHours">"Still looking" after (hours)</label>
+                                <label class="inputLabel" for="arrStatusLookingHours">"Missing" with Search after (hours)</label>
                                 <input id="arrStatusLookingHours" is="emby-input" type="number" min="1" max="720"/>
                             </div>
                             <div class="je-setting-description" data-desc-for="arrStatusLookingHours">
-                                <div class="fieldDescription">How long a wanted title reads "Looking for it" before it reads "Still looking, we'll keep trying". 1-720, default 24.</div>
+                                <div class="fieldDescription">How long a wanted title (monitored, out, nothing grabbed) reads "Looking for it" before it reads plainly "Missing" with a Search button. 1-720, default 24.</div>
                             </div>
                             <div class="inputContainer">
                                 <label class="inputLabel" for="arrHouseholdContactName">What the family calls you</label>
@@ -2604,6 +2604,8 @@
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestQuotaGb">Estimated GB per window (0: disabled)</label><input id="arrRequestQuotaGb" is="emby-input" type="number" step="any"/></div>
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestStaleDays">Days before an unfulfilled request needs review</label><input id="arrRequestStaleDays" is="emby-input" type="number" step="any"/></div>
                             <div class="checkboxContainer"><label><input id="arrRequestChargeFutureSeasons" is="emby-checkbox" type="checkbox"/><span>Charge future seasons when they start</span></label></div>
+                            <div class="checkboxContainer"><label><input id="arrKidsHideSearch" is="emby-checkbox" type="checkbox"/><span>Hide free-text search from Kids</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrKidsHideSearch"><div class="fieldDescription">With Jellyfin Enhanced handling requests, the search page gets a "Not in your library" row and the Requests page a Discover tab. On: Kids don't get the search row (Discover stays, limited to titles within their parental limits).</div></div>
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
                                 <div class="fieldDescription je-field-desc-xl">The second stage: people get told when what they asked for (or follow) is ready, and administrators get alerts and day-to-day tools. Administrators get <strong>Overview</strong>, <strong>Activity</strong>, <strong>System</strong> and <strong>Audit</strong> tabs on the Requests page: every Sonarr/Radarr with its live state, queue, health and disk space; a <strong>Needs attention</strong> list built from what the apps themselves report (import blocked, download warnings and failures, low disk, health checks, imports Jellyfin hasn't picked up, requests Seerr OK'd that no Sonarr/Radarr has) with a fix next to each; the queue with remove (keeping the download's data, optionally blocklisting it and searching again), search again and retry import; removing a download <em>with</em> its data needs a typed confirmation. Every action is recorded in the audit log and in Jellyfin's activity log. Needs "Show where things have got to". Notifications have their own switch below.</div>
@@ -2634,7 +2636,7 @@
                                     <input id="arrSeerrHandoffGraceMinutes" is="emby-input" type="number" min="1" max="1440"/>
                                 </div>
                                 <div class="je-setting-description" data-desc-for="arrSeerrHandoffGraceMinutes">
-                                    <div class="fieldDescription">When Seerr has OK'd a request but no Sonarr/Radarr has the title after this long, administrators see "OK'd in Seerr … ago, but no Sonarr/Radarr has it" (usually Seerr's own Sonarr/Radarr settings). The family keeps seeing "OK'd! Getting started" until the "Still looking" hours above, then "Taking longer than usual". 1-1440, default 15.</div>
+                                    <div class="fieldDescription">When Seerr has OK'd a request but no Sonarr/Radarr has the title after this long, administrators see "OK'd in Seerr … ago, but no Sonarr/Radarr has it" (usually Seerr's own Sonarr/Radarr settings). The family keeps seeing "OK'd! Getting started" until the "Missing" hours above, then "Taking longer than usual". 1-1440, default 15.</div>
                                 </div>
                                 <div class="checkboxContainer"><label><input id="arrActivityLogMirror" is="emby-checkbox" type="checkbox"/><span>Copy actions into Jellyfin's activity log</span></label></div>
                                 <div class="je-setting-description" data-desc-for="arrActivityLogMirror">
@@ -6211,6 +6213,7 @@
             document.querySelector('#arrRequestQuotaGb').value = config.ArrRequestQuotaGb;
             document.querySelector('#arrRequestStaleDays').value = config.ArrRequestStaleDays;
             document.querySelector('#arrRequestChargeFutureSeasons').checked = config.ArrRequestChargeFutureSeasons === true;
+            document.querySelector('#arrKidsHideSearch').checked = config.ArrKidsHideSearch === true;
             document.querySelector('#arrPhase2Enabled').checked = config.ArrPhase2Enabled === true;
             document.querySelector('#arrNotificationsEnabled').checked = config.ArrNotificationsEnabled !== false;
             document.querySelector('#arrNotifyHouseholdUrl').value = config.ArrNotifyHouseholdUrl || '';
@@ -6254,6 +6257,7 @@
             config.ArrRequestQuotaGb = Number(document.querySelector('#arrRequestQuotaGb').value);
             config.ArrRequestStaleDays = Number(document.querySelector('#arrRequestStaleDays').value);
             config.ArrRequestChargeFutureSeasons = document.querySelector('#arrRequestChargeFutureSeasons').checked;
+            config.ArrKidsHideSearch = document.querySelector('#arrKidsHideSearch').checked;
             config.ArrPhase2Enabled = document.querySelector('#arrPhase2Enabled').checked;
             config.ArrNotificationsEnabled = document.querySelector('#arrNotificationsEnabled').checked;
             config.ArrNotifyHouseholdUrl = (document.querySelector('#arrNotifyHouseholdUrl').value || '').trim();
@@ -9912,7 +9916,7 @@
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
             { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled', 'arrPhase3Enabled'] },
-            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons'] },
+            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },

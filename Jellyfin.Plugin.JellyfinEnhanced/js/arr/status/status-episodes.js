@@ -4,24 +4,30 @@
  * missing episodes) get a chip on their row; the others are listed in the banner above the list,
  * never both. Uses the season status the details surface already fetched (no request of its own)
  * and re-applies the chips when Jellyfin renders the episode rows after the status arrived.
+ * Phase 3 (ask-episodes.js) plugs in through extend(): it can word a chip differently (a request's
+ * state), take episodes out of the banner because it draws rows for them, and decorate the page.
  */
 (function (JE) {
     'use strict';
 
     let state = null; // { page, status, ctx }
     let observer = null;
+    /** Phase-3 extension: { chip?(ep), drawn?(status), decorate?(page, status, ctx, parts), clear?(page) }. */
+    let extension = null;
 
     /**
      * Banner entries: episodes without a row that are not simply ready (the next upcoming one only).
      * @param {Object} status Season status.
+     * @param {Set<number>} [drawn] Episodes another surface shows as rows (left out).
      * @returns {{missing: Object[], other: Object[]}} Entries.
      */
-    function bannerEntries(status) {
+    function bannerEntries(status, drawn) {
         const missing = [];
         const other = [];
         let upcoming = false;
         for (const ep of status.episodes || []) {
             if (ep.row || ep.stage === 'ready' || ep.stage === 'none') continue;
+            if (drawn && drawn.has(ep.episode)) continue;
             if (ep.stage === 'notOut') {
                 if (upcoming) continue;
                 upcoming = true;
@@ -39,10 +45,11 @@
     /**
      * Builds the banner, or null when every episode that matters has a row.
      * @param {Object} status Season status.
+     * @param {Set<number>} [drawn] Episodes shown as rows by another surface.
      * @returns {HTMLElement|null} Banner.
      */
-    function buildBanner(status) {
-        const { missing, other } = bannerEntries(status);
+    function buildBanner(status, drawn) {
+        const { missing, other } = bannerEntries(status, drawn);
         if (!missing.length && !other.length) return null;
         const S = JE.arrStatus;
         const banner = S.el('div', 'je-arr-banner');
@@ -62,6 +69,8 @@
             body.appendChild(chip);
         }
         banner.appendChild(body);
+        // What this banner says on its own: phase-3 controls added to it later don't count as a change.
+        banner.dataset.jeArrBase = banner.textContent;
         return banner;
     }
 
@@ -72,8 +81,9 @@
      */
     function buildChip(ep) {
         const S = JE.arrStatus;
-        const tone = ep.attention ? 'attention' : ep.stage;
-        const chip = S.el('span', `je-arr-chip je-arr-tone-${tone}`, S.chipText(ep));
+        const override = extension?.chip ? extension.chip(ep) : null;
+        const tone = override?.tone || (ep.attention ? 'attention' : ep.stage);
+        const chip = S.el('span', `je-arr-chip je-arr-tone-${tone}`, override?.text || S.chipText(ep));
         chip.dataset.jeArrKey = ep.key || '';
         return chip;
     }
@@ -143,20 +153,27 @@
                 image.appendChild(chip);
             }
         });
-        const list = firstRow ? firstRow.closest('.itemsContainer') : null;
+        // A season without any episode row of Jellyfin's own still has its (empty) list once
+        // jellyfin-web has rendered the season's children.
+        const list = firstRow ? firstRow.closest('.itemsContainer') : page.querySelector('#listChildrenCollapsible:not(.hide) .itemsContainer');
+        const drawn = extension?.drawn ? extension.drawn(status, { page, list }) : null;
         const old = page.querySelector('.je-arr-banner');
-        const banner = buildBanner(status);
+        const banner = buildBanner(status, drawn);
+        let shownBanner = old;
         if (!banner) {
             if (old) old.remove();
-            return;
+            shownBanner = null;
+        } else if (!old || old.dataset.jeArrBase !== banner.dataset.jeArrBase) {
+            if (old) old.remove();
+            shownBanner = banner;
+            if (list && list.parentNode) list.parentNode.insertBefore(banner, list);
+            else {
+                const anchor = JE.internals?.arrStatusDetails?.anchorOf(page);
+                if (anchor) anchor.appendChild(banner);
+                else shownBanner = null;
+            }
         }
-        if (old && old.textContent === banner.textContent) return;
-        if (old) old.remove();
-        if (list && list.parentNode) list.parentNode.insertBefore(banner, list);
-        else {
-            const anchor = JE.internals?.arrStatusDetails?.anchorOf(page);
-            if (anchor) anchor.appendChild(banner);
-        }
+        if (extension?.decorate) extension.decorate(page, status, state.ctx, { banner: shownBanner, list, drawn });
     }
 
     /**
@@ -191,12 +208,30 @@
         if (state?.page) {
             state.page.querySelectorAll('.je-arr-chip-row, .je-arr-chip').forEach(n => n.remove());
             state.page.querySelectorAll('.je-arr-banner').forEach(n => n.remove());
+            if (extension?.clear) extension.clear(state.page);
         }
         state = null;
+    }
+
+    /**
+     * Plugs a phase-3 extension in (one at a time).
+     * @param {{chip?: Function, drawn?: Function, decorate?: Function, clear?: Function}|null} ext Extension.
+     * @returns {void}
+     */
+    function extend(ext) {
+        extension = ext || null;
+    }
+
+    /**
+     * The season page shown now ({page, status, ctx}) or null.
+     * @returns {Object|null} State.
+     */
+    function current() {
+        return state;
     }
 
     JE.session?.onUserChange?.('arr-status-episodes', clear);
 
     JE.internals = JE.internals || {};
-    JE.internals.arrStatusEpisodes = { render, clear, apply, bannerEntries };
+    JE.internals.arrStatusEpisodes = { render, clear, apply, bannerEntries, extend, current };
 })(window.JellyfinEnhanced);

@@ -4,7 +4,7 @@ import {createHarness,deferred,plain} from '../helpers/harness.mjs';
 function setup(t,{api=async()=>({}),ajax=async()=>({results:[]}),config={},html='',globals={}}={}){
   let epoch=0,changed;const notices=[],calls=[];
   const h=createHarness({html,globals,JE:{pluginConfig:{JellyseerrEnabled:true,DownloadsPageShowIssues:true,DownloadsShowHistory:true,...config},helpers:{},t:key=>key,toast:message=>notices.push(message),session:{getEpoch:()=>epoch,isCurrent:value=>value===epoch,onUserChange:(_key,fn)=>{changed=fn;}},core:{api:{plugin:async(...args)=>{calls.push(args);return api(...args);}}}},apiClient:{ajax,getUrl:(path,params)=>'http://jellyfin.test'+path+(params?'?'+new URLSearchParams(params):'')}});
-  t.after(()=>h.close());h.load('arr/requests/requests-page-data.js');const P=h.JE.internals.requestsPage;const rendered=[];P.renderPage=()=>rendered.push(P.state.isLoading);
+  t.after(()=>h.close());h.load('arr/live/arr-intent.js');h.load('arr/requests/requests-page-data.js');const P=h.JE.internals.requestsPage;const rendered=[];P.renderPage=()=>rendered.push(P.state.isLoading);
   return {...h,P,notices,calls,rendered,switchUser:()=>{epoch++;changed();}};
 }
 // Pages hold whole grid rows: with three live columns that is four rows of 12 cards.

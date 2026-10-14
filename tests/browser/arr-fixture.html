@@ -29,14 +29,26 @@ button, input, select { font: inherit; }
 </style></head><body>
 <header class="skinHeader"><div class="headerRight"></div></header>
 <div class="mainAnimatedPages"><div id="itemDetailPage" class="mainAnimatedPage">
-<h1>Importing Film</h1><div class="mainDetailButtons"></div>
+<h1 class="itemName">Importing Film</h1><div class="mainDetailButtons"></div>
 <div class="detailPagePrimaryContent"><div class="detailSection"></div></div>
 </div></div>
 <script>
 /** Boots production modules in manifest order against a local mock Jellyfin host. */
 async function bootArrFixture() {
-    const admin = new URLSearchParams(location.search).get('user') !== 'member';
-    document.documentElement.classList.add(innerWidth <= 600 ? 'layout-mobile' : 'layout-desktop');
+    const params = new URLSearchParams(location.search);
+    const admin = params.get('user') !== 'member';
+    // Phase 3 (request controls): ?ask=1 loads js/arr/ask/ and turns ArrRequestsEnabled on; ?view=season
+    // adds a season's native episode list; ?tv=1 is jellyfin-web's TV layout.
+    const ask = params.get('ask') === '1';
+    document.documentElement.classList.add(params.get('tv') === '1' ? 'layout-tv' : innerWidth <= 600 ? 'layout-mobile' : 'layout-desktop');
+    if (params.get('view') === 'season') {
+        const row = n => '<div class="listItem listItem-largeImage listItem-withContentWrapper" data-type="Episode" data-id="' + 'e'.repeat(31) + n + '">'
+            + '<div class="listItem-content"><div class="listItemImage listItemImage-large"></div><div class="listItemBody">'
+            + '<div class="listItemBodyText"><bdi>' + n + '. Episode ' + n + '</bdi></div>'
+            + '<div class="secondary listItemMediaInfo listItemBodyText"><div class="mediaInfoItem">45m</div></div></div></div></div>';
+        document.querySelector('#itemDetailPage').insertAdjacentHTML('beforeend',
+            '<div id="childrenContent"><div class="itemsContainer vertical-list">' + row(1) + row(3) + '</div></div>');
+    }
     const user = { Id: admin ? 'a'.repeat(32) : 'b'.repeat(32), Policy: { IsAdministrator: admin } };
     window.ApiClient = {
         getCurrentUserId: () => user.Id, getCurrentUser: async () => user,
@@ -50,7 +62,7 @@ async function bootArrFixture() {
         core: {}, helpers: {}, currentSettings: { isAdmin: admin },
         pluginConfig: { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase2Enabled: true,
             ArrStatusEnabled: true, ArrRequestsHubEnabled: true, ArrManageDrawerEnabled: true,
-            ArrNotificationsEnabled: true, ArrSeerrModalStatus: true, ArrStatusPosterBadges: true },
+            ArrNotificationsEnabled: true, ArrSeerrModalStatus: true, ArrStatusPosterBadges: true, ArrRequestsEnabled: ask },
         /** Translates real English locale strings, refusing missing keys. */
         t(key, params = {}) {
             if (!(key in translations)) throw new Error('Missing English string: ' + key);
@@ -60,7 +72,8 @@ async function bootArrFixture() {
     const shared = ['core/navigation.js', 'core/session.js', 'core/lifecycle.js', 'core/dom-observer.js',
         'core/ui-kit.js', 'core/api-client.js', 'enhanced/config.js', 'enhanced/helpers.js', 'enhanced/header-actions.js'];
     const manifest = await fetch(root + 'component-scripts.json').then(r => r.json());
-    for (const path of manifest.filter(p => shared.includes(p) || /^arr\/(live|status|manage|hub|notify|admin)\//.test(p))) {
+    const arrDirs = ask ? /^arr\/(live|status|manage|hub|notify|admin|ask)\// : /^arr\/(live|status|manage|hub|notify|admin)\//;
+    for (const path of manifest.filter(p => shared.includes(p) || arrDirs.test(p))) {
         await new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = root + path; script.onload = resolve; script.onerror = reject;

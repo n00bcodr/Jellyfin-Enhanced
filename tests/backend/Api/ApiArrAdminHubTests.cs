@@ -236,7 +236,7 @@ public class ApiArrAdminHubTests
         Assert.Equal(95, radarr.GetProperty("disks")[0].GetProperty("usedPercent").GetInt32());
         Assert.Equal(3, overview.GetProperty("downloading").GetInt32());
 
-        var activity = Json(await Send(() => c.GetActivity(default)));
+        var activity = Json(await Send(() => c.GetActivity(null, null, null, null, default)));
         var pack = activity.GetProperty("queue").EnumerateArray().Single(g => g.GetProperty("downloadId").GetString() == "pack");
         Assert.Equal(("S02E01–E03", 3), (pack.GetProperty("scope").GetString(), pack.GetProperty("episodes").GetInt32()));
         var system = Json(await Send(() => c.GetSystem(default)));
@@ -592,7 +592,7 @@ public class ApiArrAdminHubTests
         var c = rig.Controller(rig.AdminUser);
         foreach (var (name, call) in new (string, Func<Task<IActionResult>>)[]
         {
-            ("overview", () => c.GetOverview(default)), ("activity", () => c.GetActivity(default)), ("system", () => c.GetSystem(default)),
+            ("overview", () => c.GetOverview(default)), ("activity", () => c.GetActivity(null, null, null, null, default)), ("system", () => c.GetSystem(default)),
             ("action", () => c.QueueActionRun(new QueueActionRequest { InstanceId = rig.Instance("RadarrMainZ").Id, DownloadId = "dl1", Action = "search", IdempotencyKey = "k1" }, default)),
             ("confirm", () => c.Confirm(new QueueConfirmRequest { InstanceId = rig.Instance("RadarrMainZ").Id, DownloadId = "dl1" }, default)),
         })
@@ -723,7 +723,7 @@ public class ApiArrAdminHubTests
         Assert.Equal(404, (await Send(() => c.Confirm(new QueueConfirmRequest { InstanceId = radarr.Id, DownloadId = "dl2" }, default))).Status);
         Assert.Equal(0, rig.Arr.CallCount("radarr.lan", "queue/2"));
         // The Activity tab lists what was last read, with no actions on it.
-        var activity = Json(await Send(() => c.GetActivity(default)));
+        var activity = Json(await Send(() => c.GetActivity(null, null, null, null, default)));
         var sintel = activity.GetProperty("queue").EnumerateArray().Single(g => g.GetProperty("downloadId").GetString() == "dl2");
         Assert.Equal(0, sintel.GetProperty("actions").GetArrayLength());
         Assert.Contains(activity.GetProperty("queue").EnumerateArray(), g => g.GetProperty("instanceId").GetString() == rig.Instance("SonarrZ").Id && g.GetProperty("actions").GetArrayLength() > 0);

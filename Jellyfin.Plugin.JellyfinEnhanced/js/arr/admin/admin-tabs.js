@@ -8,7 +8,9 @@
  * action, remove *with* the download's data only after a typed confirmation and a server-issued
  * token (POST /arr/admin/queue/confirm), and Scan now (POST /arr/admin/bridge/scan). Every action is
  * audited on the server. The server refuses all of it to non-administrators; the tabs only exist
- * when the hub answer carries the admin block with phase 2 on.
+ * when the hub answer carries the admin block with phase 2 on. The Activity tab's history is
+ * searched on the server (words, event kind, instance, page: GET …/activity?q=&event=&instance=&page=);
+ * every read takes an intent token (JE.arrIntent) and publishes only while it is still current.
  */
 (function (JE) {
     'use strict';
@@ -22,6 +24,8 @@
         system: '/arr/admin/hub/system',
         audit: '/arr/admin/audit?take=200'
     };
+    const HISTORY_DEBOUNCE_MS = 300;
+    const HISTORY_MAX_QUERY = 100;
     const POLL_MS = 10000;
     const FEED_POLL_MS = 60000;
     const FEED_KEY = 'admin:ops';
@@ -48,8 +52,15 @@
         groups: new Map(),
         results: {},
         banner: null,
-        dialog: null
+        dialog: null,
+        // The Activity tab's history search: what is asked for (q, event, instance, page), the
+        // text typed but not searched yet, its 300 ms timer and the search box (kept across redraws).
+        history: { q: '', event: '', instance: '', page: 1, typed: '', timer: null, input: null, failedRoute: null }
     };
+
+    // One intent per tab: a read publishes only while it is the tab's newest, the user is the same
+    // and the tab's route (with the history search) is what it was when the read started.
+    const intents = {};
 
     /**
      * Translates through the shared status helper.
@@ -73,6 +84,33 @@
         if (cls) e.className = cls;
         if (text != null) e.textContent = text;
         return e;
+    }
+
+    /**
+     * The route a tab is read from now (the Activity tab's carries its history search; page 1 at
+     * least, so the answer always says how much each instance's history covers).
+     * @param {string} tab Tab id.
+     * @returns {string} Route.
+     */
+    function route(tab) {
+        if (tab !== 'activity') return ROUTES[tab];
+        const hs = state.history;
+        const query = new URLSearchParams();
+        if (hs.q) query.set('q', hs.q);
+        if (hs.event) query.set('event', hs.event);
+        if (hs.instance) query.set('instance', hs.instance);
+        query.set('page', String(Math.max(1, hs.page | 0)));
+        return `${ROUTES.activity}?${query.toString()}`;
+    }
+
+    /**
+     * The intent fence of a tab's reads.
+     * @param {string} tab Tab id.
+     * @returns {Object} JE.arrIntent fence.
+     */
+    function intentOf(tab) {
+        if (!intents[tab]) intents[tab] = JE.arrIntent.create(`admin:${tab}`, { intent: () => ({ tab, route: route(tab) }) });
+        return intents[tab];
     }
 
     /**
@@ -148,6 +186,13 @@
         state.panel = null;
         state.generation++;
         stopRetry();
+        // Words typed but not searched yet are searched when the tab is shown again.
+        if (state.history.timer) {
+            clearTimeout(state.history.timer);
+            const q = state.history.typed.trim().slice(0, HISTORY_MAX_QUERY);
+            if (q !== state.history.q) Object.assign(state.history, { q, page: 1 });
+        }
+        state.history.timer = null;
         if (state.timer) clearTimeout(state.timer);
         state.timer = null;
         if (state.reloadTimer) clearTimeout(state.reloadTimer);
@@ -176,10 +221,13 @@
 
     /**
      * Reads one tab (one read at a time per tab; an answer for a tab no longer shown is kept for later).
+     * Every read takes the tab's intent token: an answer (or a failure) whose token went stale —
+     * the history search, its filters or page changed while it ran, or someone else signed in — is
+     * dropped, and the tab is read once more after it with what is asked for now.
      * @param {string} tab Tab id.
      * @param {boolean} [fresh] The answer must come from a read that starts now (something changed:
-     *   a feed change, an action's outcome): asked while a read is under way, the tab is read once
-     *   more after it, since that read may have looked before the change.
+     *   a feed change, an action's outcome, a new search): asked while a read is under way, the tab
+     *   is read exactly once more after it, since that read may have looked before the change.
      * @returns {Promise<void>}
      */
     async function load(tab, fresh) {
@@ -190,26 +238,43 @@
         }
         delete state.again[tab];
         const generation = state.generation;
+        const intent = intentOf(tab);
+        const token = intent.next();
         const run = (async () => {
             try {
-                const data = await JE.core.api.plugin(ROUTES[tab], { skipRetry: true });
+                const data = await JE.core.api.plugin(route(tab), { skipRetry: true });
                 if (generation !== state.generation) return;
-                if (!data || typeof data !== 'object') throw new Error('empty answer');
-                const attention = (state.data.overview?.needsAttention || []).length;
-                state.data[tab] = data;
-                state.failed[tab] = false;
-                state.loadedAt[tab] = Date.now();
-                state.okAt[tab] = state.loadedAt[tab];
-                if (state.retry.tab === tab) stopRetry();
-                // The hub's Overview tab shows how many rows need attention: redraw its tab strip.
-                if (tab === 'overview' && (state.data.overview?.needsAttention || []).length !== attention) H.renderTabs?.();
+                if (!intent.current(token)) {
+                    // Asked for something else meanwhile: this answer is for what is no longer asked.
+                    state.again[tab] = true;
+                } else {
+                    if (!data || typeof data !== 'object') throw new Error('empty answer');
+                    const attention = (state.data.overview?.needsAttention || []).length;
+                    state.data[tab] = data;
+                    state.failed[tab] = false;
+                    state.loadedAt[tab] = Date.now();
+                    state.okAt[tab] = state.loadedAt[tab];
+                    if (tab === 'activity') {
+                        state.history.failedRoute = null;
+                        settleHistoryPage(data);
+                    }
+                    if (state.retry.tab === tab) stopRetry();
+                    // The hub's Overview tab shows how many rows need attention: redraw its tab strip.
+                    if (tab === 'overview' && (state.data.overview?.needsAttention || []).length !== attention) H.renderTabs?.();
+                }
             } catch (err) {
                 if (generation !== state.generation) return;
-                // What the tab shows stays (with a note saying the re-read failed), and it is tried
-                // again on its own, sooner than the fallback poll.
-                state.failed[tab] = true;
-                if (state.data[tab] && state.tab === tab) scheduleRetry(tab, generation);
-                console.warn(`${logPrefix} could not load the ${tab} tab (${err?.status || err?.message || err})`);
+                if (!intent.current(token)) {
+                    // A late failure of what is no longer asked changes nothing.
+                    state.again[tab] = true;
+                } else {
+                    // What the tab shows stays (with a note saying the re-read failed), and it is
+                    // tried again on its own, sooner than the fallback poll.
+                    state.failed[tab] = true;
+                    if (tab === 'activity') state.history.failedRoute = route(tab);
+                    if (state.data[tab] && state.tab === tab) scheduleRetry(tab, generation);
+                    console.warn(`${logPrefix} could not load the ${tab} tab (${err?.status || err?.message || err})`);
+                }
             } finally {
                 delete state.loading[tab];
             }
@@ -221,6 +286,112 @@
         })();
         state.loading[tab] = run;
         return run;
+    }
+
+    /**
+     * Takes the page the server answered when it showed another one (a page past the last shows
+     * the last), so the search asks for the page shown.
+     * @param {Object} data Activity answer.
+     * @returns {void}
+     */
+    function settleHistoryPage(data) {
+        const hp = data?.historyPage;
+        const hs = state.history;
+        if (!hp || !historyAnswers(hp, { ...hs, page: hp.page })) return;
+        if (typeof hp.page === 'number' && hp.page >= 1 && hp.page !== hs.page) hs.page = hp.page;
+    }
+
+    /**
+     * True when a history page answers the search asked for (words, event kind, instance, page).
+     * @param {Object} hp The answer's historyPage.
+     * @param {{q: string, event: string, instance: string, page: number}} [asked] The search (now by default).
+     * @returns {boolean} Answers it.
+     */
+    function historyAnswers(hp, asked) {
+        const hs = asked || state.history;
+        return !!hp && (hp.q || '') === hs.q && (hp.event || '') === hs.event && (hp.instance || '') === hs.instance && (hp.page || 1) === hs.page;
+    }
+
+    /**
+     * Changes the history search and reads the Activity tab for it (one trailing read when a read
+     * is under way; its answer is dropped).
+     * @param {Object} change New q / event / instance / page.
+     * @returns {void}
+     */
+    function setHistory(change) {
+        const hs = state.history;
+        const next = { q: hs.q, event: hs.event, instance: hs.instance, page: hs.page, ...change };
+        if (next.q === hs.q && next.event === hs.event && next.instance === hs.instance && next.page === hs.page) return;
+        Object.assign(hs, next);
+        if (state.tab === 'activity') draw();
+        load('activity', true);
+    }
+
+    /**
+     * Searches for what was typed (after the pause, on Enter, or at once when cleared).
+     * @param {string} text Typed text.
+     * @returns {void}
+     */
+    function searchHistory(text) {
+        const hs = state.history;
+        if (hs.timer) clearTimeout(hs.timer);
+        hs.timer = null;
+        const q = String(text || '').trim().slice(0, HISTORY_MAX_QUERY);
+        if (q !== hs.q) setHistory({ q, page: 1 });
+    }
+
+    /**
+     * The history search box: one element for the whole visit, so a redraw keeps what is typed,
+     * the caret and the browser's undo; it searches 300 ms after the last key (Enter at once).
+     * @returns {HTMLInputElement} Search box.
+     */
+    function historyInput() {
+        const hs = state.history;
+        if (hs.input) return hs.input;
+        const input = document.createElement('input');
+        input.type = 'search';
+        input.className = 'je-history-input';
+        input.maxLength = HISTORY_MAX_QUERY;
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.setAttribute('enterkeyhint', 'search');
+        input.placeholder = tr('arr_history_search_placeholder');
+        input.setAttribute('aria-label', tr('arr_history_search_label'));
+        input.dataset.jeFocus = 'history:q';
+        input.value = hs.typed;
+        input.addEventListener('input', () => {
+            hs.typed = input.value;
+            if (hs.timer) clearTimeout(hs.timer);
+            // Emptied (the clear button, or every character deleted): search at once.
+            if (!input.value.trim() && hs.q) {
+                searchHistory('');
+                return;
+            }
+            hs.timer = setTimeout(() => {
+                hs.timer = null;
+                searchHistory(hs.typed);
+            }, HISTORY_DEBOUNCE_MS);
+        });
+        input.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            searchHistory(input.value);
+        });
+        hs.input = input;
+        return input;
+    }
+
+    /**
+     * Clears the words and filters of the history search.
+     * @returns {void}
+     */
+    function clearHistory() {
+        const hs = state.history;
+        if (hs.timer) clearTimeout(hs.timer);
+        hs.timer = null;
+        hs.typed = '';
+        if (hs.input) hs.input.value = '';
+        setHistory({ q: '', event: '', instance: '', page: 1 });
     }
 
     /**
@@ -273,6 +444,7 @@
         const panel = state.panel;
         if (!panel || !state.tab) return;
         const focus = focused();
+        const caret = selection();
         panel.textContent = '';
         if (state.banner) {
             const banner = el('div', `je-ops-banner${state.banner.failed ? ' je-ops-banner-error' : state.banner.unknown ? ' je-ops-banner-unknown' : ''}`, state.banner.message);
@@ -305,6 +477,27 @@
             const target = nodes.find(n => n.dataset.jeFocus === focus)
                 || focusFallbacks(focus, previousGroups, state.groups).map(match => nodes.find(n => match(n.dataset.jeFocus))).find(Boolean);
             target?.focus({ preventScroll: true });
+            // A text box gets its caret (or selection) back where it was.
+            if (caret && target && target === caret.node) {
+                try {
+                    target.setSelectionRange(caret.start, caret.end, caret.direction);
+                } catch (e) { /* not a text box */ }
+            }
+        }
+    }
+
+    /**
+     * The caret of the text box that has focus inside the panel, if any.
+     * @returns {{node: HTMLInputElement, start: number, end: number, direction: string}|null} Caret.
+     */
+    function selection() {
+        const active = document.activeElement;
+        if (!state.panel || !active || !state.panel.contains(active) || active.tagName !== 'INPUT') return null;
+        try {
+            if (typeof active.selectionStart !== 'number') return null;
+            return { node: active, start: active.selectionStart, end: active.selectionEnd, direction: active.selectionDirection || 'none' };
+        } catch (e) {
+            return null;
         }
     }
 
@@ -362,7 +555,17 @@
             seerrUrl,
             act,
             queue: queueAction,
-            scan: scanNow
+            scan: scanNow,
+            history: {
+                asked: state.history,
+                answers: historyAnswers,
+                pending: () => !!state.loading.activity,
+                failed: () => state.failed.activity === true && state.history.failedRoute === route('activity'),
+                input: historyInput,
+                set: setHistory,
+                clear: clearHistory,
+                retry: () => { stopRetry(); load('activity', true); }
+            }
         };
     }
 
@@ -792,6 +995,9 @@
         state.expanded.clear();
         leave();
         closeDialog();
+        // Another person's search box starts empty.
+        state.history = { q: '', event: '', instance: '', page: 1, typed: '', timer: null, input: null, failedRoute: null };
+        for (const tab of Object.keys(intents)) intents[tab].invalidate();
     });
 
     A.tabs = tabs;

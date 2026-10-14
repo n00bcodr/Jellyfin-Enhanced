@@ -364,6 +364,28 @@ public class IntegrationArrStatusTests
     }
 
     [Fact]
+    public void AMovieMissingForALongWhileTellsAdminsWhenTheArrLastSearchedForIt()
+    {
+        var searched = Now.AddHours(-5);
+        var movie = new ArrMovieEntry
+        {
+            Id = 7, TmdbId = 693134, Title = "Dune: Part Two", Monitored = true, IsAvailable = true, Added = Now.AddHours(-30),
+            MinimumAvailability = "released", Path = "/data/movies/Dune Part Two (2024)", LastSearchTime = searched,
+        };
+        var admin = StatusComposer.Movie(MovieFacts(Copy(movie)), null, Array.Empty<JfCopy>(), Ctx(Admin), false);
+        Assert.Equal((StatusStage.Looking, StatusReasonCode.NoReleaseYet), (admin.Stage, admin.Reason.Code));
+        var variant = Assert.Single(admin.Admin!.Variants);
+        Assert.Equal((searched, StatusFix.SearchNow), (variant.LastSearch, variant.Fix));
+        // Never searched (the arr says nothing): no time. Family members get no admin block at all.
+        var never = StatusComposer.Movie(MovieFacts(Copy(Movie(added: Now.AddHours(-30)))), null, Array.Empty<JfCopy>(), Ctx(Admin), false);
+        Assert.Null(Assert.Single(never.Admin!.Variants).LastSearch);
+        Assert.Null(StatusComposer.Movie(MovieFacts(Copy(movie)), null, Array.Empty<JfCopy>(), Ctx(), false).Admin);
+        // A copy downloading has no "last searched" line.
+        var downloading = StatusComposer.Movie(MovieFacts(Copy(movie, queue: new[] { Row() })), null, Array.Empty<JfCopy>(), Ctx(Admin), false);
+        Assert.Null(Assert.Single(downloading.Admin!.Variants).LastSearch);
+    }
+
+    [Fact]
     public void AFinishedRequestIsNeverOverdueOnATitleThatIsHere()
     {
         var ctx = new ComposeContext(Admin, Now, 24) { HandoffGrace = TimeSpan.FromMinutes(15) };

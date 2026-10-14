@@ -71,6 +71,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts, Services.Acquire.Requests.LedgerRequestFacts>();
             serviceCollection.AddSingleton<Services.Acquire.TitleAliases>();
             serviceCollection.AddSingleton<Services.Acquire.ArrStatusService>();
+            // Discover rows and the search row for the JE request backend (TMDB, filtered per caller).
+            serviceCollection.AddSingleton<Services.Acquire.Requests.DiscoverService>();
             // The Requests page (everyone's own requests) and the administrator's Manage drawer.
             serviceCollection.AddSingleton<Services.Acquire.RequestsHubService>();
             serviceCollection.AddSingleton<Services.Acquire.ArrManageService>();
@@ -115,7 +117,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Requests.ArrAddService>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.IRequestPolicy, Services.Acquire.Requests.RequestPolicy>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestTitleLocks>();
+            // Phase 3c hub: approval cards, own requests, chip bar counts and the Household tab.
+            serviceCollection.AddSingleton<Services.Acquire.Requests.IHouseholdDirectory, Services.Acquire.Requests.JellyfinHouseholdDirectory>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.IRequestPlaces, Services.Acquire.Requests.RequestPlaces>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.RequestHubProjection>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.HouseholdService>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestService>();
+            // Phase 3c: season request rows (episode metadata + the caller's request states).
+            serviceCollection.AddSingleton<Services.Acquire.Requests.SeasonRowsService>();
+            // Phase 3c: collection gaps (what the caller has of a collection, what is missing).
+            serviceCollection.AddSingleton<Services.Acquire.Requests.CollectionGapsService>();
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             serviceCollection.AddSingleton<Services.Acquire.AcquireDatabase>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.NotifyStore>();

@@ -906,6 +906,7 @@
             if (event.season != null && event.episode != null && data.episode == null) label += ` · S${pad(event.season)}E${pad(event.episode)}`;
             body.appendChild(el('span', 'je-manage-event-label', label));
             if (event.at) body.appendChild(el('span', 'je-manage-event-time', when(event.at)));
+            if (event.message) body.appendChild(el('span', 'je-manage-event-detail', event.message));
             li.appendChild(body);
             list.appendChild(li);
         }

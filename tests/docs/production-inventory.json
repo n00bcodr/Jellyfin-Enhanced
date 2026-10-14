@@ -63,6 +63,18 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireCollectionsController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireDiscoverController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHouseholdController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
       "category": "Controllers"
     },
@@ -463,7 +475,23 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/CollectionGapsService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/DirectArrBackend.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/DiscoverService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/HouseholdDirectory.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/HouseholdService.cs",
       "category": "Services"
     },
     {
@@ -472,6 +500,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestBackends.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestHubProjection.cs",
       "category": "Services"
     },
     {
@@ -487,11 +519,19 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestPlaces.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestPolicy.cs",
       "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/SeasonRowsService.cs",
       "category": "Services"
     },
     {
@@ -1015,6 +1055,38 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/ask/ask-actions.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/ask/ask-collection.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/ask/ask-core.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/ask/ask-episodes.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/ask/ask-search.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/ask/ask-sheet-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/ask/ask-sheet.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/ask/ask-styles.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/calendar/calendar-custom-tab.js",
       "category": "js"
     },
@@ -1043,6 +1115,34 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-approvals.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-chipbar.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-discover.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-extra-core.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-extra-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-household.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-mine-ledger.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-page.js",
       "category": "js"
     },
@@ -1052,6 +1152,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/live/arr-intent.js",
       "category": "js"
     },
     {
@@ -1881,6 +1985,64 @@
   ],
   "routes": [
     {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/requests/collection/{itemId}",
+      "method": "Collection",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireCollectionsController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/discover",
+      "method": "Discover",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireDiscoverController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/search",
+      "method": "Search",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireDiscoverController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/requests/approvals",
+      "method": "Approvals",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHouseholdController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/requests/mine",
+      "method": "Mine",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHouseholdController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/requests/attention",
+      "method": "Attention",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHouseholdController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/household",
+      "method": "Household",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHouseholdController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/household",
+      "method": "SaveHousehold",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHouseholdController.cs",
+      "following_attributes": [
+        "BodyLimit(MaxBodyBytes)"
+      ]
+    },
+    {
       "verb": "POST",
       "path": "/JellyfinEnhanced/acquire/requests",
       "method": "Create",
@@ -1936,6 +2098,20 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/acquire/requests/quota",
       "method": "Quota",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/requests/me",
+      "method": "Me",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/requests/season/{itemId}",
+      "method": "Season",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
       "following_attributes": []
     },
@@ -5558,6 +5734,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrKidsHideSearch",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrRequestLabEnabled",
       "type": "bool",
       "initializer": null,
@@ -8703,6 +8887,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/AcquireDatabase.cs"
     },
     {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/DiscoverService.cs"
+    },
+    {
       "literal": "bookmark.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/AnalyticsReportingService.cs"
     },
@@ -9102,10 +9290,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 466,
-    "routes": 228,
-    "configuration_properties": 575,
-    "storage_references": 80,
+    "files": 492,
+    "routes": 238,
+    "configuration_properties": 576,
+    "storage_references": 81,
     "scheduled_tasks": 14,
     "locales": 33
   }

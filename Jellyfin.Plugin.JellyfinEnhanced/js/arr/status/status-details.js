@@ -138,6 +138,7 @@
             JE.internals?.arrStatusEpisodes?.clear?.();
             JE.internals?.arrManage?.attachDetails?.(visiblePage(), null);
             JE.internals?.arrNotify?.attachDetails?.(visiblePage(), null);
+            JE.internals?.arrAskActions?.attachDetails?.(visiblePage(), null);
             release();
             return;
         }
@@ -152,6 +153,7 @@
         JE.internals?.arrManage?.attachDetails?.(livePage, status);
         // Phase 2: Notify me / Following in the action row, Remind next to a stuck status.
         JE.internals?.arrNotify?.attachDetails?.(livePage, status, data);
+        JE.internals?.arrAskActions?.attachDetails?.(livePage, status, data);
         // The title's own key and, for a title Jellyfin knows by another id, the key the feed announces it under.
         const keys = [status.key, status.liveKey].filter(Boolean);
         state.unsubscribe = JE.arrStatus.subscribe(keys, () => update(true), { since: data.since ?? null });

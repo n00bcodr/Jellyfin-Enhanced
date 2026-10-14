@@ -280,6 +280,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         }
 
         /// <summary>
+        /// Asks for a refresh of one Sonarr series' episodes when they are held in memory (debounced like
+        /// <see cref="RequestRefresh"/>). Returns false when they are not held or the instance is unknown.
+        /// </summary>
+        public bool RequestEpisodesRefresh(string instanceId, int seriesId)
+        {
+            var connection = _factory.Registry.Get(instanceId);
+            if (connection == null || StateFor(connection, out _) is not { } state) return false;
+            if (state.ExistingEpisodes(seriesId) is not { } slot) return false;
+            slot.Request(_now() + DebounceDelay);
+            return true;
+        }
+
+        /// <summary>
         /// One reconciler pass: drops state of removed/changed instances and starts every refresh
         /// that is due (interval reached for a snapshot read recently, or a debounced request).
         /// Returns the refreshes started.

@@ -96,6 +96,27 @@
   .je-ops-dialog { border-radius: 12px 12px 0 0; }
 }
 .layout-tv .je-ops-btn { min-height: 3em; font-size: 1em; }
+.je-history-tools { display: flex; flex-direction: column; gap: 0.6em; margin: 0 0 0.8em; }
+.je-history-search { display: flex; align-items: center; gap: 0.4em; min-height: 2.6em; padding: 0 0.7em; border-radius: 8px; border: 1px solid rgba(127,127,127,0.55); background: rgba(127,127,127,0.08); max-width: 32em; }
+.je-history-search:focus-within { outline: 3px solid #7c5ce6; outline-offset: 2px; }
+.je-history-search .material-icons { opacity: 0.75; }
+.je-history-input { flex: 1 1 auto; min-width: 0; font: inherit; color: inherit; background: transparent; border: 0; outline: 0; padding: 0.5em 0; }
+.je-history-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em; }
+.je-history-chips-label { font-size: 0.85em; opacity: 0.75; margin-right: 0.3em; }
+.je-history-chip { font: inherit; font-size: 0.85em; display: inline-flex; align-items: center; gap: 0.25em; min-height: 2.2em; padding: 0.2em 0.75em; border-radius: 999px;
+  border: 1px solid rgba(127,127,127,0.55); background: transparent; color: inherit; cursor: pointer; }
+.je-history-chip .material-icons { font-size: 1.1em; }
+.je-history-chip[aria-pressed="true"] { background: #6d4ed8; border-color: #7c5ce6; color: #fff; font-weight: 700; }
+.je-history-chip:focus-visible, .layout-tv .je-history-chip:focus, .je-history .je-ops-btn:focus-visible, .layout-tv .je-history .je-ops-btn:focus { outline: 3px solid #7c5ce6; outline-offset: 2px; }
+.je-history-coverage { opacity: 0.7; }
+.je-history-pending { opacity: 0.5; }
+.je-history-pager { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 0.6em; margin-top: 0.8em; }
+.je-history-page { font-size: 0.9em; }
+@media (max-width: 600px) {
+  .je-history-search, .je-history-chip { min-height: 44px; }
+  .je-history-search { max-width: none; }
+}
+.layout-tv .je-history-search, .layout-tv .je-history-chip { min-height: 3em; font-size: 1em; }
 `;
 
     /**

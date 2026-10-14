@@ -51,6 +51,10 @@ internal sealed class FakeArr : IDisposable
         public string CommandStatus { get; set; } = "completed";
         /// <summary>The message of those commands.</summary>
         public string? CommandMessage { get; set; } = "Completed";
+        /// <summary>Non-null: the <c>started</c> time (ISO, UTC) those commands report.</summary>
+        public string? CommandStarted { get; set; }
+        /// <summary>Rows of the per-title history routes (<c>/history/movie?movieId=</c>, <c>/history/series?seriesId=&amp;seasonNumber=</c>), flat as the arrs answer them.</summary>
+        public List<JsonObject> TitleHistory { get; } = new();
         /// <summary><c>/health</c> rows.</summary>
         public List<JsonObject> Health { get; } = new();
         /// <summary><c>/diskspace</c> rows (path, freeSpace, totalSpace).</summary>
@@ -219,7 +223,15 @@ internal sealed class FakeArr : IDisposable
                 return IntegrationTransport.Response(command.ToJsonString(), 201);
             }
             if (path.StartsWith("/api/v3/command/", StringComparison.Ordinal) && int.TryParse(path["/api/v3/command/".Length..], out var commandId))
-                return IntegrationTransport.Response(new JsonObject { ["id"] = commandId, ["status"] = host.CommandStatus, ["message"] = host.CommandMessage }.ToJsonString());
+                return IntegrationTransport.Response(new JsonObject { ["id"] = commandId, ["status"] = host.CommandStatus, ["message"] = host.CommandMessage, ["started"] = host.CommandStarted }.ToJsonString());
+            if (request.Method == HttpMethod.Get && path is "/api/v3/history/movie" or "/api/v3/history/series")
+            {
+                var field = path.EndsWith("/movie", StringComparison.Ordinal) ? "movieId" : "seriesId";
+                var id = query[field];
+                var season = query["seasonNumber"];
+                var rows = host.TitleHistory.Where(r => r[field]?.ToString() == id && (season == null || r["seasonNumber"]?.ToString() == season));
+                return IntegrationTransport.Response(new JsonArray(rows.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+            }
             if (request.Method == HttpMethod.Get && TitleById(host, path) is { } title) return title;
             if (Library(host, request, path, query) is { } library) return library;
             // Queue removal (DELETE /queue/{id} and /queue/bulk {ids}): recorded with the query, rows dropped.

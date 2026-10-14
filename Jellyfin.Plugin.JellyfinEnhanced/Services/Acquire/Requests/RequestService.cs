@@ -125,7 +125,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             using var command = RequestLedger.Cmd(c, null, "SELECT reason FROM approvals WHERE want_id=$id AND action='declined' ORDER BY created_at DESC LIMIT 1", ("$id", wantId));
             return command.ExecuteScalar() as string;
         });
-        /// <summary>Current rolling quota status.</summary>
-        public QuotaProjection Quota(Guid user, bool movie = true) => _ledger.Quota(Identity(user, movie), _now());
+        /// <summary>The caller's own request capabilities (no I/O; identity was prepared by the caller).</summary>
+        public RequestCapabilities Me(Guid user)
+        {
+            var config = _policy.Configuration;
+            var movie = Identity(user, true);
+            var movie4k = _policy.Evaluate(user, new MutationInput { Key = "movie:tmdb:1", Variant = "4k" });
+            var series4k = _policy.Evaluate(user, new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 }, Variant = "4k" });
+            var backend = config.ArrRequestBackend is "je" or "seerr" ? config.ArrRequestBackend : "status_only";
+            return new RequestCapabilities
+            {
+                Role = movie.Role.ToLowerInvariant(),
+                CanRequest = movie.CanCreate && movie.Role != "Watcher" && backend != "status_only",
+                CanApprove = movie.CanApprove,
+                AsksFirst = movie.Role == "Kid" || (movie.Role == "Member" && backend == "je" && config.ArrRequestPreset == "approve_everything"),
+                Can4kMovies = movie4k.Can4k,
+                Can4kSeries = series4k.Can4k,
+                Backend = backend,
+                Contact = (config.ArrHouseholdContactName ?? string.Empty).Trim(),
+            };
+        }
+        /// <summary>
+        /// Current rolling quota status; for series also the single episodes charged in the window
+        /// (what the next episode ask costs depends on them).
+        /// </summary>
+        public QuotaProjection Quota(Guid user, bool movie = true)
+        {
+            var facts = Identity(user, movie);
+            var now = _now();
+            var quota = _ledger.Quota(facts, now);
+            return movie || !_ledger.Database.Available ? quota : quota with { Episodes = _ledger.EpisodesCharged(user, facts.WindowDays, now) };
+        }
     }
 }

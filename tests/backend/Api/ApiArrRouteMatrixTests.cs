@@ -137,6 +137,9 @@ public class ApiArrRouteMatrixTests
                 new ArrStateController(N.Store, users),
                 new ArrStatusController(N.Status),
                 new AcquireRequestsController(new ServicesForRequests(N).Service),
+                new AcquireDiscoverController(IntegrationRequestDiscoverTests.Offline(new ServicesForRequests(N).Service)),
+                Household(new ServicesForRequests(N).Service),
+                new AcquireCollectionsController(new ServicesForRequests(N).Service, null),
                 new RequestsHubController(Hub, Manage),
                 new ArrAdminHubController(N.Hub, Queue, N.Bridge, Runner, N.Status, Manage),
                 new NotifyController(N.Service, N.Dispatcher, new NtfySender(N.Ntfy), new EmailSender(N.Mail), N.Users) { Config = () => N.Config, Now = () => N.Arr.Now },
@@ -150,6 +153,14 @@ public class ApiArrRouteMatrixTests
                 controller.HttpContext.User = caller;
                 yield return controller;
             }
+        }
+
+        /// <summary>The household routes over an empty directory and an offline TMDB (no title data).</summary>
+        private AcquireHouseholdController Household(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService service)
+        {
+            var projection = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestHubProjection(service, new IntegrationRequestHouseholdTests.FakeDirectory(), null,
+                (_, _, _) => Task.FromResult<Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.HubTitleMeta?>(null), () => N.Arr.Now);
+            return new AcquireHouseholdController(projection, new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.HouseholdService(projection, N.Feed, _ => { }));
         }
 
         private sealed class ServicesForRequests

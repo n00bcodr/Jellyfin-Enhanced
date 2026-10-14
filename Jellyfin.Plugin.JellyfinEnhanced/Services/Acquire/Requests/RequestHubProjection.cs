@@ -1,0 +1,470 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using MediaBrowser.Controller.Configuration;
+
+namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
+{
+    /// <summary>Display facts of a title for the hub's request cards (no instance, profile or path).</summary>
+    public sealed record HubTitleMeta
+    {
+        /// <summary>Title name.</summary>
+        [JsonPropertyName("title")] public string? Title { get; init; }
+
+        /// <summary>Release year.</summary>
+        [JsonPropertyName("year")] public int? Year { get; init; }
+
+        /// <summary>TMDB poster path ("/abc.jpg"), validated; the client builds the image URL.</summary>
+        [JsonPropertyName("poster")] public string? Poster { get; init; }
+
+        /// <summary>Official rating (Jellyfin's, else TMDB's certification for the server's country).</summary>
+        [JsonPropertyName("rating")] public string? Rating { get; init; }
+
+        /// <summary>A Jellyfin item of the title the caller can open.</summary>
+        [JsonPropertyName("itemId")] public string? ItemId { get; init; }
+    }
+
+    /// <summary>
+    /// The hub's request views over the ledger: approval cards for Managers and Admins (who asked,
+    /// their role and quota use, the title's rating against a limited requester's limit, who else
+    /// wants it, the ledger's size estimate, the free space where it would land and a 4K copy already
+    /// here), the caller's own requests with display data, and the
+    /// home chip bar's counts. Every list is filtered by the caller's current title visibility; names
+    /// of other people only reach Managers and Admins; nothing names an instance, profile, folder or
+    /// path. Title data comes from the caller's own Jellyfin items, else TMDB through the shared
+    /// <see cref="TmdbResponseCache"/> (server key, cached, bounded per answer).
+    /// </summary>
+    public sealed class RequestHubProjection
+    {
+        /// <summary>Most cards in one answer.</summary>
+        public const int MaxItems = 200;
+
+        /// <summary>Most titles one answer resolves display data for.</summary>
+        public const int MaxMetaTitles = 100;
+
+        /// <summary>Most people named in "Also wanted by".</summary>
+        public const int MaxAlsoWanted = 5;
+
+        /// <summary>TMDB lookups running at once for one answer.</summary>
+        private const int TmdbConcurrency = 4;
+
+        /// <summary>How long one answer waits for TMDB in total.</summary>
+        private static readonly TimeSpan TmdbBudget = TimeSpan.FromSeconds(6);
+
+        /// <summary>Own finished, declined or cancelled requests stay listed this long.</summary>
+        private static readonly TimeSpan KeepClosedFor = TimeSpan.FromDays(30);
+
+        /// <summary>Reasons of a want that is held at send and needs a person to look at it.</summary>
+        public static readonly IReadOnlySet<string> StuckReasons = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "authorization_changed", "identity_changed", "configuration_changed", "instance_changed", "seerr_whole_series_only",
+        };
+
+        private static readonly Regex PosterPath = new("^/[A-Za-z0-9_.-]{1,80}$", RegexOptions.CultureInvariant);
+        private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+        private readonly RequestService _service;
+        private readonly IHouseholdDirectory _directory;
+        private readonly TitleAliases? _aliases;
+        private readonly Func<string, int, CancellationToken, Task<HubTitleMeta?>> _tmdb;
+        private readonly Func<DateTimeOffset> _now;
+        private readonly IRequestPlaces? _places;
+
+        /// <summary>Creates the projection over the shared TMDB cache (DI).</summary>
+        public RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases aliases, TmdbResponseCache tmdb, IServerConfigurationManager serverConfig, IRequestPlaces places)
+            : this(service, directory, aliases, (media, id, ct) => TmdbTitleAsync(tmdb, Region(serverConfig), media, id, ct), () => DateTimeOffset.UtcNow, places)
+        {
+        }
+
+        /// <summary>Creates the projection with an explicit TMDB reader, clock and place facts (tests).</summary>
+        internal RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases? aliases, Func<string, int, CancellationToken, Task<HubTitleMeta?>> tmdb, Func<DateTimeOffset> now, IRequestPlaces? places = null)
+        {
+            _service = service;
+            _directory = directory;
+            _aliases = aliases;
+            _tmdb = tmdb;
+            _now = now;
+            _places = places;
+        }
+
+        /// <summary>The request service this projection reads.</summary>
+        public RequestService Service => _service;
+
+        /// <summary>The household directory (people and libraries).</summary>
+        public IHouseholdDirectory Directory => _directory;
+
+        /// <summary>
+        /// Approval cards: every pending want the caller (a Manager or Admin) can see, oldest first,
+        /// with display data. Administrators also get the reason code and job diagnostics.
+        /// </summary>
+        public async Task<StatusBody> ApprovalsAsync(StatusViewer caller, CancellationToken ct)
+        {
+            var viewer = _service.Identity(caller.UserId);
+            var admin = viewer.Role == "Admin";
+            var now = _now();
+            var parked = Parked();
+            var all = _service.Ledger.List(caller.UserId, true);
+            var shown = new List<(RequestWant Want, RequestPolicyFacts Facts)>();
+            foreach (var want in all)
+            {
+                var facts = _service.Policy.Evaluate(caller.UserId, want.Input);
+                if (facts.Visible) shown.Add((want, facts));
+            }
+            var more = shown.Count > MaxItems;
+            shown = shown.Take(MaxItems).ToList();
+            var meta = await MetaAsync(shown.Select(s => s.Want.Input.Key), caller, ct).ConfigureAwait(false);
+            var estimates = Estimates(shown.Select(s => s.Want.Id));
+            var people = new Dictionary<Guid, HouseholdPerson?>();
+            HouseholdPerson? Person(Guid id) => people.TryGetValue(id, out var p) ? p : people[id] = _directory.Person(id);
+            // Where each request would land (library name + rounded free space, never a path), once per
+            // instance, folder and title.
+            var places = new Dictionary<string, RequestPlace?>(StringComparer.Ordinal);
+            if (_places != null)
+            {
+                foreach (var (want, _) in shown)
+                {
+                    var instance = _service.Policy.Evaluate(want.UserId, want.Input).InstanceId;
+                    var placeKey = instance + "|" + want.Input.RootFolder + "|" + want.Input.Key;
+                    if (!places.ContainsKey(placeKey)) places[placeKey] = await _places.PlaceAsync(instance, want.Input.RootFolder, want.Input.Key, ct).ConfigureAwait(false);
+                }
+            }
+            var items = shown.Select(s =>
+            {
+                var w = s.Want;
+                var requester = _service.Policy.Evaluate(w.UserId, w.Input);
+                var requesterViewer = _service.View.Viewer(w.UserId);
+                var quota = _service.Ledger.Quota(requester, now);
+                var title = meta.GetValueOrDefault(w.Input.Key) ?? new HubTitleMeta();
+                var stuck = StuckReasons.Contains(w.Reason) || parked.Contains(w.Id);
+                var other = w.Input.Variant == "4k" ? w.Input with { Variant = "standard" } : w.Input with { Variant = "4k" };
+                var otherFacts = _service.Policy.Evaluate(caller.UserId, other);
+                var alsoWanted = _service.Ledger.ForTitle(w.Input.Key)
+                    .Where(o => o.UserId != w.UserId && o.Status is "pending" or "queued" or "sent" or "stale")
+                    .Select(o => o.UserId).Distinct().Select(Person).Where(p => p != null && !p.Disabled)
+                    .Select(p => p!.Name).Where(n => n.Length > 0).Distinct(StringComparer.Ordinal).Take(MaxAlsoWanted).ToArray();
+                // A 4K copy that is already here (administrators also get the 4K instance's name).
+                var place = places.GetValueOrDefault(requester.InstanceId + "|" + w.Input.RootFolder + "|" + w.Input.Key);
+                var fourK = _places?.FourKHolder(w.Input.Key);
+                return new
+                {
+                    id = w.Id,
+                    key = w.Input.Key,
+                    kind = TitleKey.Parse(w.Input.Key)?.IsMovie == true ? "movie" : "tv",
+                    scope = w.Input.Scope,
+                    variant = w.Input.Variant,
+                    seasons = w.Input.Seasons,
+                    episodes = w.Input.Episodes.Select(e => new { season = e.Season, episode = e.Episode }).ToArray(),
+                    createdAt = w.CreatedAt,
+                    reason = w.Reason,
+                    overQuota = w.Reason == "over_quota",
+                    stuck,
+                    cost = w.Cost,
+                    title = title.Title,
+                    year = title.Year,
+                    poster = title.Poster,
+                    itemId = title.ItemId,
+                    requester = new
+                    {
+                        name = Person(w.UserId) is { Disabled: false } person && person.Name.Length > 0 ? person.Name : null,
+                        role = requester.Role.ToLowerInvariant(),
+                        quota = new { used = quota.Used, limit = quota.Limit, available = quota.Available },
+                    },
+                    // The title's rating against a limited requester's own limit; nothing when they have none.
+                    rating = requesterViewer?.HasParentalLimit == true ? new { label = title.Rating, within = requester.Visible } : null,
+                    alsoWanted,
+                    estimateGb = estimates.TryGetValue(w.Id, out var gb) && gb > 0 ? (double?)Math.Round(gb, 1) : null,
+                    space = place == null ? null : new { library = place.Library, freeGb = Math.Round(place.FreeBytes / 1_000_000_000.0, 1) },
+                    already4k = fourK != null ? true : (bool?)null,
+                    already4kIn = admin ? fourK : null,
+                    canApprove = viewer.CanApprove && s.Facts.CanApprove && (w.Input.Variant != "4k" || s.Facts.Can4k),
+                    canSwitchVariant = viewer.CanApprove && otherFacts.CanApprove && (other.Variant != "4k" || otherFacts.Can4k),
+                    admin = admin ? new { reason = w.Reason, jobs = _service.Ledger.ForWant(w.Id).Select(j => new { id = j.Id, state = j.State, attempts = j.Attempts, reason = j.Reason }).ToArray() } : null,
+                };
+            }).ToArray();
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "approvals", certainty = "Succeeded", message = "Requests waiting for an OK", more, items }, Json);
+            return Body(caller.UserId, viewer, "approvals", bytes);
+        }
+
+        /// <summary>
+        /// The caller's own requests in the ledger with display data: open ones always, finished,
+        /// declined and cancelled ones for 30 days. <c>canCancel</c> marks the ones not sent yet.
+        /// </summary>
+        public async Task<StatusBody> MineAsync(StatusViewer caller, CancellationToken ct)
+        {
+            var viewer = _service.Identity(caller.UserId);
+            var now = _now();
+            var sending = InFlight();
+            var own = _service.Ledger.List(caller.UserId, false)
+                .Where(w => w.Status is "pending" or "queued" or "sent" or "stale" || now - w.UpdatedAt <= KeepClosedFor)
+                .Where(w => _service.Policy.Evaluate(caller.UserId, w.Input).Visible)
+                .OrderByDescending(w => w.CreatedAt).ToList();
+            var more = own.Count > MaxItems;
+            own = own.Take(MaxItems).ToList();
+            var meta = await MetaAsync(own.Select(w => w.Input.Key), caller, ct).ConfigureAwait(false);
+            var items = own.Select(w =>
+            {
+                var title = meta.GetValueOrDefault(w.Input.Key) ?? new HubTitleMeta();
+                return new
+                {
+                    id = w.Id,
+                    key = w.Input.Key,
+                    kind = TitleKey.Parse(w.Input.Key)?.IsMovie == true ? "movie" : "tv",
+                    scope = w.Input.Scope,
+                    variant = w.Input.Variant,
+                    seasons = w.Input.Seasons,
+                    episodes = w.Input.Episodes.Select(e => new { season = e.Season, episode = e.Episode }).ToArray(),
+                    status = w.Status,
+                    reason = w.Reason,
+                    group = Group(w.Status),
+                    createdAt = w.CreatedAt,
+                    updatedAt = w.UpdatedAt,
+                    canCancel = w.Status is "pending" or "queued" && !sending.Contains(w.Id),
+                    declineReason = w.Status == "declined" ? DeclineReason(w.Id) : null,
+                    title = title.Title,
+                    year = title.Year,
+                    poster = title.Poster,
+                    itemId = title.ItemId,
+                };
+            }).ToArray();
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "mine", certainty = "Succeeded", message = "Your requests", more, items }, Json);
+            return Body(caller.UserId, viewer, "mine", bytes);
+        }
+
+        /// <summary>
+        /// The home chip bar's counts for a Manager or Admin: requests waiting for their OK, and the
+        /// visible ones held at send (stuck). Reads only memory and the ledger (no network).
+        /// </summary>
+        public StatusBody Attention(StatusViewer caller)
+        {
+            var viewer = _service.Identity(caller.UserId);
+            var (needOk, stuck) = Counts(caller.UserId, viewer);
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "attention", certainty = "Succeeded", message = "Needs attention", needOk, stuck }, Json);
+            return Body(caller.UserId, viewer, "attention", bytes);
+        }
+
+        /// <summary>The counts behind <see cref="Attention"/>.</summary>
+        internal (int NeedOk, int Stuck) Counts(Guid caller, RequestPolicyFacts viewer)
+        {
+            var parked = Parked();
+            int needOk = 0, stuck = 0;
+            foreach (var want in _service.Ledger.List(caller, true).Take(1000))
+            {
+                var facts = _service.Policy.Evaluate(caller, want.Input);
+                if (!facts.Visible) continue;
+                if (StuckReasons.Contains(want.Reason) || parked.Contains(want.Id)) stuck++;
+                else if (viewer.CanApprove && facts.CanApprove && (want.Input.Variant != "4k" || facts.Can4k)) needOk++;
+            }
+            return (needOk, stuck);
+        }
+
+        /// <summary>The My requests group of a want state.</summary>
+        internal static string Group(string status) => status switch
+        {
+            "pending" => "needsOk",
+            "queued" or "sent" or "stale" => "onTheWay",
+            "fulfilled" => "ready",
+            "declined" => "declined",
+            _ => "cancelled",
+        };
+
+        /// <summary>
+        /// Display data per title key for one caller: their own visible Jellyfin item first (name,
+        /// year, official rating), then TMDB (title, year, poster, certification) within a bounded
+        /// budget. Keys past <see cref="MaxMetaTitles"/> or whose lookup fails get nothing.
+        /// </summary>
+        internal async Task<Dictionary<string, HubTitleMeta>> MetaAsync(IEnumerable<string> keys, StatusViewer caller, CancellationToken ct)
+        {
+            var result = new Dictionary<string, HubTitleMeta>(StringComparer.Ordinal);
+            var lookups = new List<(string Key, string Media, int Id)>();
+            foreach (var raw in keys.Distinct(StringComparer.Ordinal).Take(MaxMetaTitles))
+            {
+                if (TitleKey.Parse(raw) is not { } key) continue;
+                var aliases = _aliases?.Of(key) ?? Array.Empty<TitleKey>();
+                var copy = _service.View.Copies(key, caller, aliases).FirstOrDefault(c => c.Visible);
+                var item = copy == null ? null : _directory.Item(copy.ItemId);
+                result[raw] = new HubTitleMeta
+                {
+                    Title = string.IsNullOrWhiteSpace(item?.Name) ? null : item!.Name,
+                    Year = item?.Year,
+                    Rating = item?.OfficialRating,
+                    ItemId = copy?.ItemId.ToString("N", CultureInfo.InvariantCulture),
+                };
+                var tmdb = key.Provider == "tmdb" ? key.NumericId : aliases.FirstOrDefault(a => a.Provider == "tmdb")?.NumericId;
+                if (copy == null && tmdb is > 0) lookups.Add((raw, key.IsMovie ? "movie" : "tv", tmdb.Value));
+            }
+            if (lookups.Count == 0) return result;
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            budget.CancelAfter(TmdbBudget);
+            using var gate = new SemaphoreSlim(TmdbConcurrency);
+            var answers = await Task.WhenAll(lookups.Select(async l =>
+            {
+                try
+                {
+                    await gate.WaitAsync(budget.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return (l.Key, (HubTitleMeta?)null);
+                }
+                try
+                {
+                    return (l.Key, await _tmdb(l.Media, l.Id, budget.Token).ConfigureAwait(false));
+                }
+                catch (Exception) when (!ct.IsCancellationRequested)
+                {
+                    return (l.Key, (HubTitleMeta?)null);
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            })).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            foreach (var (key, tmdb) in answers)
+            {
+                if (tmdb == null) continue;
+                var known = result[key];
+                result[key] = known with
+                {
+                    Title = known.Title ?? tmdb.Title,
+                    Year = known.Year ?? tmdb.Year,
+                    Poster = tmdb.Poster != null && PosterPath.IsMatch(tmdb.Poster) ? tmdb.Poster : null,
+                    Rating = known.Rating ?? tmdb.Rating,
+                };
+            }
+            return result;
+        }
+
+        /// <summary>Wants with a job parked for a person to look at.</summary>
+        private HashSet<string> Parked() => _service.Ledger.Database.Read(c =>
+        {
+            using var command = RequestLedger.Cmd(c, null, "SELECT DISTINCT want_id FROM jobs WHERE state='parked'");
+            using var reader = command.ExecuteReader();
+            var set = new HashSet<string>(StringComparer.Ordinal);
+            while (reader.Read()) set.Add(reader.GetString(0));
+            return set;
+        });
+
+        /// <summary>Wants with a send under way or of unknown outcome (they can't be cancelled).</summary>
+        private HashSet<string> InFlight() => _service.Ledger.Database.Read(c =>
+        {
+            using var command = RequestLedger.Cmd(c, null, "SELECT DISTINCT want_id FROM jobs WHERE state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown'");
+            using var reader = command.ExecuteReader();
+            var set = new HashSet<string>(StringComparer.Ordinal);
+            while (reader.Read()) set.Add(reader.GetString(0));
+            return set;
+        });
+
+        /// <summary>The ledger's size estimate (GB) of each want's held or charged reservations.</summary>
+        private Dictionary<string, double> Estimates(IEnumerable<string> wantIds)
+        {
+            var ids = wantIds.ToHashSet(StringComparer.Ordinal);
+            if (ids.Count == 0) return new Dictionary<string, double>(StringComparer.Ordinal);
+            return _service.Ledger.Database.Read(c =>
+            {
+                using var command = RequestLedger.Cmd(c, null, "SELECT want_id,SUM(estimated_gb) FROM reservations WHERE state IN ('held','charged') GROUP BY want_id");
+                using var reader = command.ExecuteReader();
+                var map = new Dictionary<string, double>(StringComparer.Ordinal);
+                while (reader.Read())
+                {
+                    var id = reader.GetString(0);
+                    if (ids.Contains(id)) map[id] = reader.IsDBNull(1) ? 0 : reader.GetDouble(1);
+                }
+                return map;
+            });
+        }
+
+        private string? DeclineReason(string wantId) => _service.Ledger.Database.Read(c =>
+        {
+            using var command = RequestLedger.Cmd(c, null, "SELECT reason FROM approvals WHERE want_id=$id AND action='declined' ORDER BY created_at DESC LIMIT 1", ("$id", wantId));
+            return command.ExecuteScalar() as string;
+        });
+
+        /// <summary>A private body whose ETag covers the caller, their role, the policy revision and the bytes.</summary>
+        internal static StatusBody Body(Guid user, RequestPolicyFacts viewer, string view, byte[] bytes)
+        {
+            var stamp = user.ToString("N", CultureInfo.InvariantCulture) + "|" + viewer.Role + "|" + viewer.Revision + "|" + view + "|";
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(stamp).Concat(bytes).ToArray());
+            return new StatusBody(bytes, "\"" + Convert.ToHexString(hash, 0, 20) + "\"");
+        }
+
+        private static string Region(IServerConfigurationManager serverConfig)
+        {
+            var code = serverConfig.Configuration.MetadataCountryCode;
+            return string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
+        }
+
+        /// <summary>Title, year, poster and certification of a TMDB title through the shared cache (server key).</summary>
+        private static async Task<HubTitleMeta?> TmdbTitleAsync(TmdbResponseCache tmdb, string region, string media, int id, CancellationToken ct)
+        {
+            var key = JellyfinEnhanced.Instance?.Configuration.GetTmdbApiKey();
+            if (string.IsNullOrEmpty(key)) return null;
+            var path = media + "/" + id.ToString(CultureInfo.InvariantCulture);
+            var details = await tmdb.GetAsync(path, string.Empty, key, ct, bundle: true).ConfigureAwait(false);
+            if (!details.IsSuccess) return null;
+            var ratings = await tmdb.GetAsync(path + "/" + (media == "movie" ? "release_dates" : "content_ratings"), string.Empty, key, ct, bundle: true).ConfigureAwait(false);
+            return ParseTmdb(media, details.Content, ratings.IsSuccess ? ratings.Content : null, region);
+        }
+
+        /// <summary>Reads a TMDB details answer (and its release dates / content ratings) into display facts.</summary>
+        internal static HubTitleMeta? ParseTmdb(string media, string details, string? ratings, string region)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(details);
+                var root = doc.RootElement;
+                string? Text(string name) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+                var title = Text(media == "movie" ? "title" : "name");
+                var date = Text(media == "movie" ? "release_date" : "first_air_date");
+                int? year = date is { Length: >= 4 } && int.TryParse(date.AsSpan(0, 4), NumberStyles.None, CultureInfo.InvariantCulture, out var y) ? y : null;
+                var poster = Text("poster_path");
+                return new HubTitleMeta
+                {
+                    Title = string.IsNullOrWhiteSpace(title) ? null : title.Trim(),
+                    Year = year,
+                    Poster = poster != null && PosterPath.IsMatch(poster) ? poster : null,
+                    Rating = ratings == null ? null : Certification(media, ratings, region),
+                };
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
+        private static string? Certification(string media, string ratings, string region)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(ratings);
+                if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array) return null;
+                foreach (var country in results.EnumerateArray())
+                {
+                    if (!country.TryGetProperty("iso_3166_1", out var code) || code.GetString() != region) continue;
+                    if (media != "movie")
+                        return country.TryGetProperty("rating", out var r) && r.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(r.GetString()) ? Short(r.GetString()!) : null;
+                    if (!country.TryGetProperty("release_dates", out var dates) || dates.ValueKind != JsonValueKind.Array) return null;
+                    foreach (var release in dates.EnumerateArray())
+                    {
+                        if (release.TryGetProperty("certification", out var cert) && cert.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(cert.GetString())) return Short(cert.GetString()!);
+                    }
+                    return null;
+                }
+                return null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
+        private static string Short(string value) => value.Trim().Length > 12 ? value.Trim()[..12] : value.Trim();
+    }
+}

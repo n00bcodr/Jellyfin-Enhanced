@@ -163,7 +163,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 }
                 // A short read cannot replace knowledge of older events or advance the full-read
                 // clock. With no ring yet, keep what was read but leave a full read due next poll.
-                return ArrResult<ArrHistorySnapshot>.Success(BuildHistory(read!.Records.Select(ToHistoryEntry), read.Short ? previous : null, read.Short ? previous?.FullReadAt ?? now : now, fullReadDue: read.Short));
+                return ArrResult<ArrHistorySnapshot>.Success(BuildHistory(read!.Records.Select(ToHistoryEntry), read.Short ? previous : null, read.Short ? previous?.FullReadAt ?? now : now, fullReadDue: read.Short, arrTotal: read.TotalRecords));
             }
 
             // The arrs answer only records strictly after "date", and their dates have whole seconds:
@@ -177,14 +177,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             return ArrResult<ArrHistorySnapshot>.Success(BuildHistory(fresh.Value!.Select(ToHistoryEntry), previous, previous.FullReadAt));
         }
 
-        /// <summary>Merges new records into the ring (dedup by id, newest first, capped).</summary>
-        internal static ArrHistorySnapshot BuildHistory(IEnumerable<ArrHistoryEntry> incoming, ArrHistorySnapshot? previous, DateTimeOffset fullReadAt, bool fullReadDue = false)
+        /// <summary>
+        /// Merges new records into the ring (dedup by id, newest first, capped). <paramref name="arrTotal"/>
+        /// is the arr's <c>totalRecords</c> of a full read; without one, the previous count grows by
+        /// the records that are new to the ring.
+        /// </summary>
+        internal static ArrHistorySnapshot BuildHistory(IEnumerable<ArrHistoryEntry> incoming, ArrHistorySnapshot? previous, DateTimeOffset fullReadAt, bool fullReadDue = false, int? arrTotal = null)
         {
             var byId = new Dictionary<int, ArrHistoryEntry>();
             foreach (var r in incoming) byId[r.Id] = r;
+            var added = byId.Count;
             if (previous != null)
             {
-                foreach (var r in previous.Records) byId.TryAdd(r.Id, r);
+                foreach (var r in previous.Records)
+                {
+                    if (!byId.TryAdd(r.Id, r)) added--;
+                }
             }
             var records = byId.Values
                 .OrderByDescending(r => r.Date ?? DateTime.MinValue)
@@ -198,6 +206,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 Watermark = records.Any(r => r.Date.HasValue) ? watermark : previous?.Watermark,
                 FullReadAt = fullReadAt,
                 FullReadDue = fullReadDue,
+                ArrTotal = arrTotal is int reported ? Math.Max(reported, records.Count)
+                    : previous?.ArrTotal is int before ? Math.Max(before + added, records.Count)
+                    : null,
             };
         }
 

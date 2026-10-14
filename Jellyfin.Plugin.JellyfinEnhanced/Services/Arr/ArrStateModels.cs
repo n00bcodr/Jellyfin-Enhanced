@@ -559,6 +559,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>The full read stayed short and must be retried on the next history poll.</summary>
         public bool FullReadDue { get; init; }
+
+        /// <summary>
+        /// How many records the arr's whole history holds, as far as JE knows: its <c>totalRecords</c>
+        /// at the latest full read plus the records added since (never fewer than the ring holds);
+        /// null until a full read reported it.
+        /// </summary>
+        public int? ArrTotal { get; init; }
     }
 
     /// <summary>One calendar entry: a Sonarr episode or a Radarr movie with its release dates.</summary>

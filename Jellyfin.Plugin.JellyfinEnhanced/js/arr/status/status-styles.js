@@ -137,6 +137,8 @@ button.je-arr-pill:focus-visible, .layout-tv button.je-arr-pill:focus { outline:
         if (typeof JE.initializeArrHub === 'function') JE.initializeArrHub();
         // Phase 2: notifications (bell, Notify me, Remind, "Requests & alerts").
         if (typeof JE.initializeArrNotify === 'function') JE.initializeArrNotify();
+        // Phase 3: asking for titles (Get it on season pages, the request sheet, smart actions).
+        if (typeof JE.initializeArrAsk === 'function') JE.initializeArrAsk();
     }
 
     JE.internals = JE.internals || {};

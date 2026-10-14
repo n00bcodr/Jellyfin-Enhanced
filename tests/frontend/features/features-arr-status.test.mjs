@@ -80,7 +80,7 @@ test('every reason code reads as a plain family sentence from en.json', t => {
   assert.equal(text('queued'), 'Waiting in line');
   assert.equal(text('delay_held'), 'Waiting in line');
   assert.equal(text('looking'), 'Looking for it');
-  assert.equal(text('no_release_yet'), "Still looking, we'll keep trying");
+  assert.equal(text('no_release_yet'), 'Missing', 'missing for a long while: plainly Missing (with Search on the page)');
   assert.match(text('not_released', { params: { date: iso(40) } }), /^Not out yet, expected /);
   assert.match(text('in_cinemas', { params: { date: iso(40) } }), /^In cinemas; at home around /);
   assert.equal(text('not_aired', { params: { date: iso(1) } }), 'Airs tomorrow');

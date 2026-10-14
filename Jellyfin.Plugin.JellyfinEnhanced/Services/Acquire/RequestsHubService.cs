@@ -95,6 +95,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The last read failed (what is shown may be out of date).</summary>
         public bool Unavailable { get; init; }
+
+        /// <summary>
+        /// Jellyfin Enhanced's own request list is the request backend (phase 3 in JE mode): requests
+        /// show from it, so a Seerr that isn't set up is not a problem to report on the page.
+        /// </summary>
+        public bool Ledger { get; init; }
     }
 
     /// <summary>The Requests page's Sonarr/Radarr line (family-safe: no instance names, no error text).</summary>
@@ -316,7 +322,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 Contact = contact,
                 LookingHours = lookingHours,
-                Seerr = new HubSeerr { Configured = _requests.Active, Loaded = _requests.Loaded, Unavailable = state.LastError != null },
+                Seerr = new HubSeerr
+                {
+                    Configured = _requests.Active,
+                    Loaded = _requests.Loaded,
+                    Unavailable = state.LastError != null,
+                    Ledger = config is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true, ArrRequestBackend: "je" },
+                },
                 Arr = new HubArr { Unavailable = arrDown },
                 More = more,
                 Mine = mine.OrderBy(e => GroupOrder(e.Group)).ThenByDescending(e => e.AskedAt ?? DateTime.MinValue).ToList(),

@@ -847,6 +847,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Days before an unfulfilled request is marked stale.</summary>
         public int ArrRequestStaleDays { get; set; } = 30;
 
+        /// <summary>
+        /// Hide the free-text search row (titles not in the library) from Kids in JE request mode; the
+        /// search route then refuses them. Discover rows stay, filtered by their parental limits. Off by default.
+        /// </summary>
+        public bool ArrKidsHideSearch { get; set; }
+
         /// <summary>Lab-only cleanup route; default off, never shown on the config page.</summary>
         public bool ArrRequestLabEnabled { get; set; }
 

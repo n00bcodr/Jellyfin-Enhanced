@@ -677,34 +677,222 @@
         }
         panel.appendChild(queue);
 
-        const history = el('section', 'je-ops-box je-ops-section');
-        history.appendChild(el('h2', 'je-ops-box-title', tr('arr_ops_history_title')));
-        // The newest 100 events of every instance together (the arrs' own history holds more).
-        if ((data.history || []).length) history.appendChild(el('div', 'je-ops-item-sub', tr('arr_ops_history_newest', { n: data.history.length })));
-        if (!(data.history || []).length) history.appendChild(el('div', 'je-ops-empty', tr('arr_ops_history_empty')));
-        else {
-            const table = el('table', 'je-ops-table');
-            const head = el('thead');
-            const hr = el('tr');
-            for (const key of ['arr_ops_col_when', 'arr_ops_col_event', 'arr_ops_col_title', 'arr_ops_col_instance', 'arr_ops_col_quality']) hr.appendChild(el('th', '', tr(key)));
-            head.appendChild(hr);
-            table.appendChild(head);
-            const tbody = el('tbody');
-            for (const h of data.history) {
-                const tr2 = el('tr');
-                const pad = n => String(n).padStart(2, '0');
-                const scope = h.season != null && h.episode != null ? ` S${pad(h.season)}E${pad(h.episode)}` : '';
-                tr2.appendChild(el('td', '', when(h.date)));
-                tr2.appendChild(el('td', '', EVENT_KEYS[h.event] ? tr(EVENT_KEYS[h.event]) : h.event));
-                tr2.appendChild(el('td', '', (h.title || '') + scope));
-                tr2.appendChild(el('td', '', h.instance));
-                tr2.appendChild(el('td', '', h.quality || ''));
-                tbody.appendChild(tr2);
-            }
-            table.appendChild(tbody);
-            history.appendChild(table);
+        panel.appendChild(historySection(data, ctx));
+    }
+
+    /**
+     * The Activity tab's history: the search tools (words, event kind, instance), what the search
+     * covers per instance, the rows of the page answered and the pager. An answer for another
+     * search than the one asked (it is on its way) is shown dimmed under "Searching…"; a failed read
+     * of the search asked for shows an error with Try again. An answer without a search block (an
+     * older server) is drawn as the newest events, without the tools.
+     * @param {Object} data Activity.
+     * @param {Object} ctx Callbacks and helpers (ctx.history: the search of admin-tabs.js).
+     * @returns {HTMLElement} Section.
+     */
+    function historySection(data, ctx) {
+        const section = el('section', 'je-ops-box je-ops-section je-history');
+        section.appendChild(el('h2', 'je-ops-box-title', tr('arr_ops_history_title')));
+        const rows = data.history || [];
+        const hp = data.historyPage;
+        const search = ctx.history;
+        if (!hp || !search) {
+            // The newest 100 events of every instance together (the arrs' own history holds more).
+            if (rows.length) section.appendChild(el('div', 'je-ops-item-sub', tr('arr_ops_history_newest', { n: rows.length })));
+            if (!rows.length) section.appendChild(el('div', 'je-ops-empty', tr('arr_ops_history_empty')));
+            else section.appendChild(historyTable(rows));
+            return section;
         }
-        panel.appendChild(history);
+
+        const asked = search.asked;
+        section.appendChild(historyTools(data, search));
+        const answers = search.answers(hp);
+        const filtered = !!(asked.q || asked.event || asked.instance);
+        if (!answers && search.failed()) {
+            const box = el('div', 'je-ops-empty je-history-error');
+            box.setAttribute('role', 'alert');
+            box.appendChild(el('span', 'je-ops-bad', tr('arr_history_error')));
+            const actions = el('div', 'je-ops-dl-actions');
+            const retry = button(tr('arr_hub_retry'), 'refresh', '', 'history:retry');
+            retry.addEventListener('click', () => search.retry());
+            actions.appendChild(retry);
+            if (filtered) actions.appendChild(clearButton(search));
+            box.appendChild(actions);
+            section.appendChild(box);
+            return section;
+        }
+
+        const status = el('div', 'je-ops-item-sub je-history-status');
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        status.textContent = answers ? tr(hp.total === 1 ? 'arr_history_results_one' : 'arr_history_results', { n: count(hp.total) }) : tr('arr_history_searching');
+        section.appendChild(status);
+        for (const line of coverageLines(hp)) section.appendChild(el('div', 'je-ops-item-sub je-history-coverage', line));
+
+        const body = el('div', `je-history-body${answers ? '' : ' je-history-pending'}`);
+        if (!answers) body.setAttribute('aria-busy', 'true');
+        if (!rows.length) {
+            const empty = el('div', 'je-ops-empty');
+            empty.appendChild(el('div', '', tr(filtered ? 'arr_history_no_match' : 'arr_ops_history_empty')));
+            if (filtered) {
+                const actions = el('div', 'je-ops-dl-actions');
+                actions.appendChild(clearButton(search));
+                empty.appendChild(actions);
+            }
+            body.appendChild(empty);
+        } else {
+            body.appendChild(historyTable(rows));
+        }
+        section.appendChild(body);
+        if ((hp.pages || 1) > 1) section.appendChild(pager(hp, search));
+        return section;
+    }
+
+    /**
+     * The search box and the event / instance chips.
+     * @param {Object} data Activity (its instances name the instance chips).
+     * @param {Object} search ctx.history.
+     * @returns {HTMLElement} Tools.
+     */
+    function historyTools(data, search) {
+        const asked = search.asked;
+        const tools = el('div', 'je-history-tools');
+        tools.setAttribute('role', 'search');
+        const box = el('label', 'je-history-search');
+        box.appendChild(icon('search'));
+        box.appendChild(search.input());
+        tools.appendChild(box);
+        const kinds = [['', 'arr_history_event_all'], ['grabbed', 'arr_history_event_grabbed'], ['imported', 'arr_history_event_imported'], ['failed', 'arr_history_event_failed'],
+            ['deleted', 'arr_history_event_deleted'], ['renamed', 'arr_history_event_renamed'], ['ignored', 'arr_history_event_ignored']];
+        tools.appendChild(chips(tr('arr_history_event_label'), kinds.map(([value, key]) => ({ value, label: tr(key) })), asked.event, 'event', value => search.set({ event: value, page: 1 })));
+        const instances = (data.instances || []).filter(i => i && i.id);
+        if (instances.length > 1 || asked.instance) {
+            const options = [{ value: '', label: tr('arr_history_instance_all') }, ...instances.map(i => ({ value: i.id, label: i.name || i.id }))];
+            tools.appendChild(chips(tr('arr_history_instance_label'), options, asked.instance, 'instance', value => search.set({ instance: value, page: 1 })));
+        }
+        return tools;
+    }
+
+    /**
+     * A row of toggle chips (one pressed).
+     * @param {string} label Group name.
+     * @param {Array<{value: string, label: string}>} options Chips.
+     * @param {string} selected The value pressed.
+     * @param {string} name Focus id prefix.
+     * @param {function(string): void} pick Called with the chip's value.
+     * @returns {HTMLElement} Group.
+     */
+    function chips(label, options, selected, name, pick) {
+        const group = el('div', 'je-history-chips');
+        group.setAttribute('role', 'group');
+        group.setAttribute('aria-label', label);
+        group.appendChild(el('span', 'je-history-chips-label', label));
+        for (const option of options) {
+            const chip = el('button', 'je-history-chip', option.label);
+            chip.type = 'button';
+            chip.dataset.jeFocus = `history:${name}:${option.value}`;
+            chip.dataset.value = option.value;
+            const on = option.value === selected;
+            chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+            if (on) chip.prepend(icon('check'));
+            chip.addEventListener('click', () => { if (option.value !== selected) pick(option.value); });
+            group.appendChild(chip);
+        }
+        return group;
+    }
+
+    /**
+     * "Clear filters".
+     * @param {Object} search ctx.history.
+     * @returns {HTMLButtonElement} Button.
+     */
+    function clearButton(search) {
+        const b = button(tr('arr_history_clear'), 'clear', '', 'history:clear');
+        b.addEventListener('click', () => search.clear());
+        return b;
+    }
+
+    /**
+     * Previous / Next and "Page 2 of 7". At the first or last page the button stays focusable
+     * (aria-disabled) so D-pad focus isn't lost.
+     * @param {Object} hp The answer's historyPage.
+     * @param {Object} search ctx.history.
+     * @returns {HTMLElement} Pager.
+     */
+    function pager(hp, search) {
+        const nav = el('nav', 'je-history-pager');
+        nav.setAttribute('aria-label', tr('arr_history_pager'));
+        const page = hp.page || 1;
+        const pages = hp.pages || 1;
+        const prev = button(tr('arr_history_prev'), 'chevron_left', '', 'history:prev');
+        const next = button(tr('arr_history_next'), 'chevron_right', '', 'history:next');
+        if (page <= 1) prev.setAttribute('aria-disabled', 'true');
+        if (page >= pages) next.setAttribute('aria-disabled', 'true');
+        prev.addEventListener('click', () => { if (page > 1) search.set({ page: page - 1 }); });
+        next.addEventListener('click', () => { if (page < pages) search.set({ page: page + 1 }); });
+        nav.appendChild(prev);
+        nav.appendChild(el('span', 'je-history-page', tr('arr_history_page', { page: count(page), pages: count(pages) })));
+        nav.appendChild(next);
+        return nav;
+    }
+
+    /**
+     * "Radarr: the newest 2,000 of 5,312 events, since 3 Oct" — one line per instance searched.
+     * @param {Object} hp The answer's historyPage.
+     * @returns {string[]} Lines.
+     */
+    function coverageLines(hp) {
+        return (hp.coverage || []).map(c => {
+            const instance = c.instance || c.instanceId || '';
+            if (c.unread) return tr('arr_history_coverage_unread', { instance });
+            if (!c.held) return tr('arr_history_coverage_empty', { instance });
+            if (c.complete) return tr('arr_history_coverage_all', { instance, n: count(c.held) });
+            const date = c.since ? JE.arrStatus.formatDate(c.since) : '';
+            if (typeof c.total === 'number') return tr('arr_history_coverage', { instance, n: count(c.held), total: count(c.total), date });
+            return tr('arr_history_coverage_held', { instance, n: count(c.held), date });
+        });
+    }
+
+    /**
+     * A count as this browser writes numbers ("5,312").
+     * @param {number} n Count.
+     * @returns {string} Text.
+     */
+    function count(n) {
+        return typeof n === 'number' && isFinite(n) ? n.toLocaleString() : String(n ?? '');
+    }
+
+    /**
+     * The history rows: when, event, title (with the release and the arr's message under it),
+     * instance, quality.
+     * @param {Object[]} rows History rows.
+     * @returns {HTMLTableElement} Table.
+     */
+    function historyTable(rows) {
+        const table = el('table', 'je-ops-table');
+        const head = el('thead');
+        const hr = el('tr');
+        for (const key of ['arr_ops_col_when', 'arr_ops_col_event', 'arr_ops_col_title', 'arr_ops_col_instance', 'arr_ops_col_quality']) hr.appendChild(el('th', '', tr(key)));
+        head.appendChild(hr);
+        table.appendChild(head);
+        const tbody = el('tbody');
+        const pad = n => String(n).padStart(2, '0');
+        for (const h of rows) {
+            const tr2 = el('tr');
+            const scope = h.season != null && h.episode != null ? ` S${pad(h.season)}E${pad(h.episode)}` : '';
+            tr2.appendChild(el('td', '', when(h.date)));
+            tr2.appendChild(el('td', '', EVENT_KEYS[h.event] ? tr(EVENT_KEYS[h.event]) : h.event));
+            const title = el('td', 'je-ops-wrap');
+            title.appendChild(document.createTextNode((h.title || '') + scope));
+            if (h.release) title.appendChild(el('div', 'je-ops-item-sub je-ops-path', h.release));
+            if (h.message) title.appendChild(el('div', 'je-ops-msg', h.message));
+            tr2.appendChild(title);
+            tr2.appendChild(el('td', '', h.instance));
+            tr2.appendChild(el('td', '', h.quality || ''));
+            tbody.appendChild(tr2);
+        }
+        table.appendChild(tbody);
+        return table;
     }
 
     /**

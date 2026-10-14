@@ -214,7 +214,7 @@ Under **Show where things have got to (status on pages)**:
 | Setting | Default | What it does |
 |---|---|---|
 | **Show status badges on posters** | On | Corner badge on poster cards while something downloads, is almost ready or takes longer than usual |
-| **"Still looking" after (hours)** | 24 | When "Looking for it" becomes "Still looking, we'll keep trying" (1-720) |
+| **"Missing" with Search after (hours)** | 24 | When "Looking for it" (nothing grabbed yet) becomes plainly **Missing** with a **Search** button (1-720) |
 | **What the family calls you** | (empty: "the admin") | Used in family texts: "Waiting for Dad to OK it" |
 | **Requests page** | On | The "Requests" sidebar page (`#/requests`): everyone's own requests (waiting for an OK, on the way, not out yet, said no), Coming soon and Ready. Administrators also get the Downloads and Calendar pages as tabs when those pages are on; with it on, the Downloads page's own sidebar link reads "Downloads" |
 | **Manage button for administrators** | On | The Manage panel on details pages, Seerr's more-info window and the Requests page: explanation, Search now, Open in Sonarr/Radarr, versions across instances, timeline, Seerr's requests |
@@ -408,7 +408,10 @@ Direct URL: `/web/index.html#!/jellyfinenhanced/downloads`
 `ArrPhase3Enabled` is off by default; enable the integration and phase 1 switches first. `ArrRequestBackend` accepts
 `seerr` (default), `je` (explicit opt in), or `status_only`. In `je` mode approved requests go straight to Sonarr and
 Radarr; in `seerr` mode they go to Seerr as the person who asked. How each is sent is described in
-[Sending requests](arr-features.md#sending-requests-phase-3). The request/household UI follows separately.
+[Sending requests](arr-features.md#sending-requests-phase-3). With phase 3 on and a request backend selected, the
+request controls appear for people who may ask (see [Requests & downloads](arr-features.md#missing-episodes-get-it-and-search-phase-3):
+Get it on season pages, the request sheet, series and collection actions, Approvals, Household and, in JE mode,
+Discover).
 
 **Add defaults per instance.** With the master switch on, each Sonarr/Radarr card has *When Jellyfin Enhanced adds a
 title*: the quality profile, root folder and tags new titles get, plus Radarr's minimum availability or Sonarr's
@@ -442,3 +445,21 @@ Jellyfin user id. A missing per-user quota inherits the role quota, then the glo
 instance list removes that user's inherited grant. Phase 3 has its own movie/TV 4K switches under Ask for it; the older Seerr switches remain in use while phase 3 is off. Seerr mode additionally
 requires Seerr's edition setting and the user's corresponding permission. Optional GB accounting uses coarse scope
 estimates (it is not the arr's actual file size).
+
+#### Discover and search (JE mode)
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `ArrKidsHideSearch` | false | **Hide free-text search from Kids**: Kids don't get the search page's "Not in your library" row, and the search route refuses them. The Discover tab stays, limited to titles within their parental limits |
+
+Discover and the search row need request handling set to Jellyfin Enhanced and a TMDB API key; see
+[Discover and search (JE mode)](arr-features.md#discover-and-search-je-mode).
+
+#### Household tab
+
+Admins can edit `ArrRequestPreset`, `ArrRequestDefaultRole`, `ArrRequestQuotaLimit`, the per-role `QuotaLimit` in
+`ArrRequestRoles` and each person's `Role` and `QuotaLimit` in `ArrRequestUsers` from the Household tab of the Requests
+page instead of the JSON fields. A save changes only those values; 4K grants and GB caps in the same JSON are kept.
+Limits offer the inherited value, **No limit** (−1) or a fixed number of requests per window. Jellyfin administrators
+are always Admin and have no role picker. People with a Jellyfin parental limit get a hint that Kid may suit them; it is
+never applied automatically. Managers can read the tab but not change it.

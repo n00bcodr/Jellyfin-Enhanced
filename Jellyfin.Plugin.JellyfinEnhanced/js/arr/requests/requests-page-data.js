@@ -170,17 +170,16 @@
   const captureEpoch = () => (JE.session ? JE.session.getEpoch() : 0);
   const epochCurrent = (e) => !JE.session || JE.session.isCurrent(e);
 
-  // Each list's reads are fenced: a read may publish its rows (or its failure) only while it is
-  // the newest read of that list, the user is the same and what the page asks the list for (page,
-  // filter, page size) hasn't changed since it started. Otherwise a 30-second poll still reading
-  // page 1 could overwrite the page 2 the user just opened, a filter's late answer could land on
-  // another filter, and a late failure could empty newer rows.
-  const readSeq = { downloads: 0, requests: 0, issues: 0, history: 0 };
-  const READ_INTENT = {
-    downloads: () => "",
-    requests: () => `${state.requestsPage}|${state.requestsFilter}|${state.requestsPageSize}`,
-    issues: () => `${state.issuesPage}|${state.issuesFilter}|${state.issuesPageSize}`,
-    history: () => `${state.historyPage}|${state.historyPageSize}`,
+  // Each list's reads are fenced by an intent token (JE.arrIntent): a read may publish its rows (or
+  // its failure) only while it is the newest read of that list, the user is the same and what the
+  // page asks the list for (page, filter, page size) hasn't changed since it started. Otherwise a
+  // 30-second poll still reading page 1 could overwrite the page 2 the user just opened, a filter's
+  // late answer could land on another filter, and a late failure could empty newer rows.
+  const intents = {
+    downloads: JE.arrIntent.create("downloads", { intent: () => ({ tab: "downloads" }) }),
+    requests: JE.arrIntent.create("requests", { intent: () => ({ tab: "requests", page: state.requestsPage, filter: state.requestsFilter, pageSize: state.requestsPageSize }) }),
+    issues: JE.arrIntent.create("issues", { intent: () => ({ tab: "issues", page: state.issuesPage, filter: state.issuesFilter, pageSize: state.issuesPageSize }) }),
+    history: JE.arrIntent.create("history", { intent: () => ({ tab: "history", page: state.historyPage, pageSize: state.historyPageSize }) }),
   };
 
   /**
@@ -189,10 +188,8 @@
    * @returns {() => boolean} True while this read may still publish its outcome.
    */
   function beginRead(list) {
-    const seq = ++readSeq[list];
-    const epoch = captureEpoch();
-    const intent = READ_INTENT[list]();
-    return () => seq === readSeq[list] && epochCurrent(epoch) && READ_INTENT[list]() === intent;
+    const token = intents[list].next();
+    return () => intents[list].current(token);
   }
 
   // The three paged lists share one grid layout, so each page holds whole rows.
@@ -339,7 +336,7 @@
    */
   async function fetchIssues() {
     if (!JE.pluginConfig?.JellyseerrEnabled || !JE.pluginConfig?.DownloadsPageShowIssues) {
-      readSeq.issues++; // a read still running must not bring the section back
+      intents.issues.invalidate(); // a read still running must not bring the section back
       state.issues = [];
       state.issuesTotalPages = 1;
       state.issuesError = false;
@@ -412,7 +409,7 @@
    */
   async function fetchHistory() {
     if (!JE.pluginConfig?.DownloadsShowHistory) {
-      readSeq.history++;
+      intents.history.invalidate();
       state.history = [];
       state.historyVisible = false;
       return null;

@@ -81,7 +81,7 @@ function dataFor(admin = true, origin = 'http://127.0.0.1:4179') {
  * @param {{admin?: boolean, origin: string}} options Fixture identity.
  * @returns {Promise<Object>} Mutable data, requests, failures and one-response hold helper.
  */
-async function installArrRoutes(page, { admin = true, origin } = {}) {
+async function installArrRoutes(page, { admin = true, origin, extra = [], patterns = [] } = {}) {
   const data = dataFor(admin, origin);
   const unexpected = [], requests = [], holds = new Map();
   const outcome = { status: 'Succeeded', message: 'Fixture done', readBack: 'Finished' };
@@ -105,7 +105,8 @@ async function installArrRoutes(page, { admin = true, origin } = {}) {
     ['GET /arr/queue', () => ({ instances: [], items: [] })], ['GET /arr/history', () => ({ items: [] })],
     ['GET /arr/requests', () => ({ items: [] })], ['GET /arr/calendar', () => ({ events: [] })],
     ['GET /arr/calendar/user-data', () => ({})], ['POST /arr/calendar/user-data', () => ({})],
-    ['GET /items/by-providers', () => null], ['GET /arr/series-slugs', () => ({})], ['GET /arr/movie-instances', () => ({})]
+    ['GET /items/by-providers', () => null], ['GET /arr/series-slugs', () => ({})], ['GET /arr/movie-instances', () => ({})],
+    ...extra
   ]);
   await page.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
@@ -116,7 +117,8 @@ async function installArrRoutes(page, { admin = true, origin } = {}) {
     requests.push(key);
     const handler = routes.get(key)
       || (request.method() === 'GET' && /^\/acquire\/status\/item\/[a-z0-9]+$/.test(path) ? () => data.status : null)
-      || (request.method() === 'POST' && /^\/arr\/requests\/\d+\/(approve|decline|delete)$/.test(path) ? () => outcome : null);
+      || (request.method() === 'POST' && /^\/arr\/requests\/\d+\/(approve|decline|delete)$/.test(path) ? () => outcome : null)
+      || patterns.find(([method, pattern]) => method === request.method() && pattern.test(path))?.[2];
     if (!handler) { unexpected.push(key); return route.fulfill({ status: 500, json: { code: 'unexpected_fixture_request' } }); }
     const held = holds.get(key);
     if (held) { holds.delete(key); held.started(); await held.promise; }
@@ -124,7 +126,10 @@ async function installArrRoutes(page, { admin = true, origin } = {}) {
     if (path === '/acquire/changes' && request.postDataJSON()?.wait) {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
-    await route.fulfill({ json: handler(request) });
+    const answer = handler(request, url);
+    // Phase-3 request routes answer with a real HTTP status: {__status, body}.
+    if (answer && typeof answer === 'object' && '__status' in answer) await route.fulfill({ status: answer.__status, json: answer.body });
+    else await route.fulfill({ json: answer });
   });
   return { data, requests, unexpected,
     /** Holds exactly the next response; tests must release it in finally. */

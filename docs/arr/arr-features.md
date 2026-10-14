@@ -188,6 +188,68 @@ tags) or that they asked for themselves while Jellyfin doesn't have them yet (on
 limits hide it, their own request no longer shows it); nothing they receive names a server, path, download client,
 release or another person.
 
+### Missing episodes: Get it and Search (phase 3)
+
+With **Ask for it** on (see [Durable requests](#durable-requests-phase-3-server-api)), season pages let people who may
+ask fetch the episodes that are missing, one tap each:
+
+- **Rows for missing episodes.** When your Jellyfin profile shows missing episodes (*Settings → Display → Display
+  missing episodes within seasons*; each person turns it on for themselves), every missing episode is a row in the
+  season's list, in episode order: title, runtime, air date, overview and a dimmed thumbnail, with one **Missing** label
+  and a **Get it** button. Where your library makes its own rows for missing episodes (the TMDb plugin's *Import missing
+  episodes* option) those rows get the same label and button; for every other missing episode Jellyfin Enhanced adds a
+  row that looks like the others (never a second row for the same episode). Tap a row Jellyfin Enhanced added to see
+  where that episode has got to.
+- **The "Missing" line instead.** With that display setting off, the season keeps the *Missing: E4, E7* line above
+  the list and it gets **Get them** (or **Get E4** for a single one). Rows and the line are never shown together.
+- **What happens after a tap** is said plainly on the row: *Waiting for OK* when the ask needs someone's OK (Kids
+  always; Members over their allowance or house rules), *Asked!* when it went straight through, *Someone asked* when
+  another person in the household already asked for it. Anything else (over the week's allowance, not allowed,
+  couldn't ask right now) shows as a short message and **Get it** stays.
+- An episode that is downloading shows the download ring on its thumbnail next to its *Downloading 60%* label.
+
+**Search instead of "Still looking".** An episode (or movie) that is monitored in Sonarr/Radarr, has aired or come
+out, and has had nothing grabbed for longer than the "still looking" hours (`ArrStatusLookingHours`, 24 by default)
+no longer says "Still looking, we'll keep trying" with a journey: it says plainly **Missing**, and its button reads
+**Search** instead of **Get it** (on its row, on the *Missing* line when every episode there is like that, and on the
+episode's own page, and on a series page when the whole series has nothing; Kids see "Ask Dad to search"). This also
+holds when someone already asked for it and the ask was sent: once nothing turns up for that long, it reads **Missing**
+with **Search** again (an ask still waiting for an OK keeps *Waiting for OK*). Fresh ones keep "Looking for it"; ones
+Sonarr/Radarr isn't fetching keep "Not being fetched".
+
+- **Administrators** (with the Manage drawer on): **Search** runs Sonarr's or Radarr's own search for exactly that
+  episode (from the *Missing* line: the season; a series with nothing at all: the series) right away, shows
+  *Searching…*, then says what happened: *Found a copy — downloading* when the search grabbed something, *Nothing
+  found yet · searched just now* when it didn't. The admin line under the status also says when Sonarr/Radarr last
+  searched ("Sonarr · Monitored; still nothing grabbed · since 2 Jan · last searched 3 h ago").
+- **Everyone else who may ask**: **Search** asks for it like **Get it** (Kids: *Waiting for OK*; the request limit
+  applies), and the request goes to Sonarr/Radarr as a search for what they already monitor.
+
+Watchers see the rows and labels but no **Get it** or **Search**. Titles, overviews and thumbnails of missing episodes come from TMDB
+through Jellyfin Enhanced (one read per season page, using the TMDB key in the plugin settings); without a key the rows
+show the episode number and air date only. Episodes your parental limits hide from you never get a row, and Spoiler
+Guard hides the overview and blurs the thumbnail of a protected series' missing episodes.
+
+![Season page with missing episodes as rows: Missing and Get it, a download ring, and Asked!](../images/arr-season-missing-episodes.png)
+
+![The Missing line with each episode's state and Get them](../images/arr-season-missing-banner.png)
+
+### Searching the history
+
+The history at the bottom of the Activity tab is searched on the server, over everything Jellyfin Enhanced
+holds of each app's history (up to its newest 2,000 events per app), not only what is on screen:
+
+- **Search** looks for the words in the title (or episode title), the release name and the app's message
+  (why a download failed, for example), ignoring upper/lower case. It searches a moment after you stop typing,
+  or at once with Enter.
+- **Event** (Grabbed, Imported, Failed, Deleted, Renamed, Ignored) and, with more than one app, **Instance**
+  narrow it down. **Clear filters** goes back to everything.
+- 50 events a page, newest first, with **Previous** / **Next** and "Page 2 of 7".
+- Under the search, one line per app says what it covers: "Radarr: showing the newest 2,000 of 5,312 events,
+  since 3 Oct", or "all 420 events" when everything the app has is there. Older events are only in the app.
+
+Failed and ignored events show the app's own message under the title (in the Manage drawer's timeline too).
+
 ### Notifications (phase 2)
 
 **Off by default** (*arr Settings tab → Requests & downloads (new) → Tell me, and admin essentials → Notifications).
@@ -655,6 +717,8 @@ Bulk approval returns 207 when some rows fail, with a separate checked outcome f
 | GET | `acquire/requests?view=mine` | Own requests filtered by current visibility |
 | GET | `acquire/requests?view=pending` | `requests.approve`; visible pending requests |
 | GET | `acquire/requests/quota` | Own allowance, use, estimate and next usable slot |
+| GET | `acquire/requests/me` | Any person (Watchers too); own role, whether they may ask or approve, 4K, the household contact word |
+| GET | `acquire/requests/season/{itemId}` | A season item the caller can open; their request state per episode and the metadata of episodes with no file |
 | POST | `acquire/requests/{id}/cancel` | Owner, or visible Admin; before the outgoing write |
 | POST | `acquire/requests/{id}/approve` | Approver; optional `input` edits scope/edition; instance/profile/folder edits require Admin |
 | POST | `acquire/requests/{id}/decline` | Approver; plain-text `reason`, at most 500 characters |
@@ -689,6 +753,128 @@ The outgoing worker rechecks identity, roles, visibility, edition, flags, author
 A changed permission parks work for review. Restarted `sending` rows become `maybe_sent` and require read-back before
 any resend. List validators include user, role and policy revision, with private cache headers. Family responses contain
 no backend connection, folder, profile, credential or other person's identity.
+
+### Asking for titles
+
+With **Ask for it** on, people who may request see request controls on Jellyfin's own pages. Watchers see none,
+and nothing changes while the feature is off. Family members only ever see plain words: no servers, quality
+profiles, folders or tags.
+
+- **Movies** are asked for with one tap and a toast ("Asked! We'll let you know."). A short sheet appears first only
+  when the weekly allowance is nearly used, when the person's asks wait for an OK, or when they may choose 4K.
+- **The request sheet** is a bottom sheet on phones, a dialog on desktop and a full-screen panel on TV (Back closes
+  it). For a series it offers large cards: *Everything*, *Just the latest season*, *Next season only*, *Pick
+  seasons…*, *Pick episodes…* and *Just new episodes from now on*. Each card shows what it costs ("Uses 2 of your 4
+  this week"); with no weekly limit there is no cost line. A Standard / 4K choice appears only for people who may
+  ask for 4K. Seasons already in Jellyfin (in any quality) or already asked for are not offered again for the
+  standard copy; for 4K every season stays offered, since Jellyfin's count doesn't say which copies are 4K.
+- **Over the weekly limit** with Jellyfin Enhanced handling requests, the sheet says when the next request frees up
+  and its button becomes **Send to {contact} for an OK**: the ask is kept and waits for an OK. With Seerr handling
+  requests, Seerr's limit applies and the sheet says so instead of sending.
+- **Kids** (and everyone under *Approve everything*) see "Ask {contact}" instead of "Request", and the toast says
+  "Asked! {contact} will take a look."
+- **Series pages** get **Get Season N** (the first season with aired episodes and none of it here), **Get missing
+  episodes** (aired episodes missing from seasons that are partly here) and **More…** (the sheet), with the cost of
+  the first one. After an ask the button shows where it stands: *Waiting for OK* or *Asked!*.
+- **Movies in the library** get **Get 4K** for people who may ask for 4K, when no 4K copy is there yet.
+- **Collection pages** say "You have 4 of 6." and offer **Get the 2 missing** with a cost preview ("Uses 2 of your 5
+  this week; 1 need {contact}'s OK"). Movies that aren't out yet are listed but not asked for; movies someone has
+  already asked for show that instead. The button asks for each movie in turn (at most 20) and then says what
+  happened, for example "Asked for 2 · 1 waits for Dad's OK · 1 couldn't be asked". The list comes from the
+  collection's TMDB entry, so it needs the server's TMDB key. Movies the person can't see in Jellyfin are left out,
+  and for people with parental limits a missing movie is only listed when its rating is known and allowed.
+
+Every ask carries a client request id: a double tap or a retry after a lost answer is the same request.
+`GET acquire/requests/collection/{itemId}` (any signed-in person who can open the collection) answers
+`{outcome, reason, certainty, message, collection: {have, total, missing: [{key, title, year, poster, released,
+request}]}}`, where `request` is the person's own request state (`waiting`, `asked`, `declined`) or `household` when
+someone else asked. A collection the person can't open, or one TMDB can't describe, answers 404.
+
+### Discover and search (JE mode)
+
+With **Ask for it** on and request handling set to **Jellyfin Enhanced**, people who may ask for titles (Members,
+Managers, administrators and Kids) get two places to find titles that aren't in Jellyfin yet. In Seerr mode Seerr's own
+discovery and search row stay as they are, and neither of these appears.
+
+- **Discover tab** on the Requests page (`#/requests?tab=discover`): rows for Trending, Coming soon, Popular TV and
+  "Because you watched …" (recommendations for up to three titles you watched lately; the row is left out when there
+  are none). Rows scroll sideways on wider screens and become a two-column grid on phones; **More** loads the next page.
+- **Not in your library** row on Jellyfin's search page: while you type, the titles you don't have yet are shown after
+  Jellyfin's own Movies and Shows rows. It only appears when Seerr's search row is off.
+
+Each card shows the poster, title and year, a state chip (**In your library**, **Asked!**, **Waiting for OK** or
+**Someone asked**, always with an icon and words) and a **Request** button. People whose asks wait for an OK
+see **Ask {name}** instead, using the name set under "What the family calls you". Series open the request sheet with
+their seasons (read from TMDB); movies are asked for with one tap unless the sheet is needed (4K can be chosen, the
+request limit is nearly used, or the ask waits for an OK). Without the request sheet, series cards offer **Notify me**
+only. After your own ask the button stays as **Request more** while there is more to ask for: other seasons of a
+series (the sheet leaves out the seasons you already asked for), or the other copy of a movie for people who may ask
+for 4K (the sheet then starts on it). A card opens the title in Jellyfin when you
+have it, otherwise Seerr's details window when Seerr is set up.
+
+Titles and posters come from TMDB through the server (the TMDB key set for the plugin), cached per person for a short
+time. People with parental controls only see titles Jellyfin lets them open, or titles not in Jellyfin whose rating
+could be checked and is within their limit; unrated titles and failed lookups are left out. A copy in a library you
+can't open doesn't count as "in your library". Titles you hid everywhere with Hidden Content are left out of Discover
+when Hidden Content filters discovery, and out of the search row when it filters search. Administrators can hide the
+search row from Kids (**Hide free-text search from Kids**); Discover stays for them, filtered as above.
+
+Routes (relative to `/JellyfinEnhanced`, a signed-in person who may ask; API keys and unknown users get 403
+`user_required`, Watchers `requests_create_required`, Seerr mode and phase 3 off `feature_disabled`):
+
+| Route | Answer |
+|---|---|
+| `GET acquire/discover?list=trending\|upcoming\|popular\|because&type=movie\|tv&page=1..10` | One page of a row (`because`: groups per watched title) |
+| `GET acquire/search?q=…&page=1..10` | Movies and series only; queries over 100 characters get 400 `query_too_long`; Kids get 403 `search_hidden` when search is hidden from them |
+
+Each result carries the title key, kind, TMDB id, title, year, poster path, a short overview, whether you have it
+(with the Jellyfin item), whether anyone asked and your own ask's state, with what your own open asks cover
+(`mineVariants`: standard and/or 4k; `mineSeasons`: the seasons your standard asks cover whole; both left out when
+empty). Nothing about Sonarr/Radarr, paths or other people is included. TMDB being unavailable answers 503 `discover_unavailable`.
+
+### Approvals and household
+
+With **Ask for it** on, the Requests page (`#/requests`) gains two tabs for Managers and Admins, and My requests
+lists requests made through Jellyfin Enhanced.
+
+- **Approvals** shows one card per request waiting for an OK on titles the approver can see: poster, title, who asked
+  and when, what they asked for (Movie, Season 2, S2E8), their role and how much of their request limit they have used.
+  For someone with a parental limit the card shows the title's rating against it ("G · within Leo's limit"). It also
+  lists who else wants the title, an **Over quota** chip, a size estimate when one is known, the free space where it
+  would land ("Movies drive: 1.2 TB free": the Jellyfin library name, never a folder) and **Already in 4K** when a 4K
+  copy is already there (administrators see which 4K Radarr/Sonarr has it). **Approve** and
+  **Decline** are always buttons. Decline offers reasons ("Not for kids", "We have something similar", "Too big right
+  now", "Let's watch it together"), an optional short note (up to 200 characters; not on TV) or no reason at all; the
+  requester sees the words. **Change and approve** approves fewer seasons or episodes, or switches between Standard and 4K
+  when the approver may give 4K. **Select** approves up to 20 at once; each one is checked again, so some can be
+  refused while others go through, and each card says how it went. On phones you can also swipe right to approve, or
+  left for the decline reasons. Requests held back at sending are marked **Stuck** with the reason in plain words
+  for Admins ("Stuck · their access changed since the OK"); the reason code is under the card's **Details**. A Manager who can't approve a card (such as a Seerr-mode Manager without Seerr's request-management
+  permission) sees it read-only.
+- **Household** lists the people who share at least one library with a Manager (everyone, for Admins), each with
+  their role, request use and open requests. Admins can also set each person's role and request limit, the house rules
+  (who needs an OK, the role for everyone else, the household limit and per-role limits) and see who may ask for 4K.
+  **Save** asks for a confirmation first. Jellyfin administrators are always Admin; nobody can be made Admin here.
+- **My requests** adds your own requests to the list, one row per title, grouped like the existing rows. Requests not
+  sent yet have **Cancel**.
+- **Home chip bar**: Managers and Admins see "3 need your OK · 1 stuck" above the home rows when something is
+  waiting. The chips open the Approvals tab; the stuck chip shows only the stuck requests. The bar follows live
+  updates and is hidden when nothing is waiting.
+
+| Method | Route | Access and purpose |
+|---|---|---|
+| GET | `acquire/requests/approvals` | Manager or Admin; approval cards for visible titles (requester names, role, quota use, rating line, "also wanted by", estimate) |
+| GET | `acquire/requests/mine` | Any person; own requests with title data and whether each can still be cancelled |
+| GET | `acquire/requests/attention` | Manager or Admin; `needOk` and `stuck` counts for visible titles (no network) |
+| GET | `acquire/household` | Manager (people sharing a library) or Admin (everyone, overrides and house rules) |
+| POST | `acquire/household` | Jellyfin administrator; saves roles, per-person limits, role limits, the preset and the default role |
+
+The household save body names only what changes, for example
+`{"preset":"ask_first","users":{"<user id>":{"role":"Kid","quotaLimit":3}},"roles":{"Member":{"quotaLimit":7}}}`.
+A person's entry replaces their role and limit overrides (`null` removes one); other parts of the override, such as
+4K grants and GB caps, are kept. Unknown user ids, the Admin role, unknown presets and limits outside −1 to 10000 are
+refused with 400 and nothing is written. Responses are private to the caller and never name an instance, profile,
+folder or path.
 
 ### Sending requests (phase 3)
 

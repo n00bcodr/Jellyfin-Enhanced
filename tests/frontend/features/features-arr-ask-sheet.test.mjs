@@ -1,0 +1,983 @@
+// Requests & downloads, phase 3: the request sheet (movie one tap vs sheet, series cards and costs,
+// over quota, 4K, retry-safe asks, focus), smart actions on details pages, collection gaps and the
+// mountable request controls — the real modules against a fake request API.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { setImmediate as nextTurn } from 'node:timers/promises';
+import { createHarness, jsRoot, jsonResponse, deferred } from '../helpers/harness.mjs';
+
+const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
+const MODULES = [
+  'arr/status/status-core.js', 'arr/status/status-episodes.js', 'arr/status/status-details.js',
+  'arr/ask/ask-core.js', 'arr/ask/ask-episodes.js', 'arr/ask/ask-sheet-styles.js', 'arr/ask/ask-sheet.js',
+  'arr/ask/ask-actions.js', 'arr/ask/ask-collection.js', 'arr/ask/ask-styles.js'
+];
+const ARR_WORDS = /sonarr|radarr|instance|profile|root folder|tags?\b|quality|path/i;
+
+/** JE.t as the real one behaves: the English string with {name} parameters filled in. */
+function translate(key, params) {
+  const text = en[key];
+  if (text === undefined) throw new Error(`missing en.json key ${key}`);
+  return Object.entries(params || {}).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), text);
+}
+
+const MEMBER = { role: 'member', canRequest: true, canApprove: false, asksFirst: false, can4kMovies: false, can4kSeries: false, backend: 'je', contact: 'Dad', freeEpisodes: 5 };
+const KID = { ...MEMBER, role: 'kid', asksFirst: true };
+const WATCHER = { ...MEMBER, role: 'watcher', canRequest: false };
+const inDays = days => new Date(Date.now() + days * 86400000).toISOString();
+
+/**
+ * A harness with the request API faked: `me`, `quota` (per media type) and `answer(input, n)` for
+ * POST acquire/requests; `routes(method, path)` may answer anything else.
+ */
+function setup(t, { me = MEMBER, quota = { used: 2, limit: 7, remaining: 5, nextSlotAt: null, usedGb: 0, available: true }, answer, routes, html = '', hash = '#/home', status, item, config = {} } = {}) {
+  const posts = [];
+  const gets = [];
+  const toasts = [];
+  const statusCalls = [];
+  const state = { me, quota, answer: answer || (() => ({ status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded', message: 'Asked!', requestId: 'a'.repeat(32) } })) };
+  const h = createHarness({
+    html,
+    url: `http://jellyfin.test/web/index.html${hash}`,
+    fetch: async (url, init = {}) => {
+      const u = new URL(url);
+      const path = u.pathname.replace(/^\/JellyfinEnhanced/, '') + u.search;
+      const method = init.method || 'GET';
+      if (method === 'POST') {
+        const body = JSON.parse(init.body);
+        posts.push({ path, body });
+        if (path === '/acquire/requests') {
+          const a = await state.answer(body.input, posts.length, body);
+          return jsonResponse(a.body, a.status);
+        }
+      } else {
+        gets.push(path);
+      }
+      const custom = routes ? await routes(method, path) : null;
+      if (custom) return jsonResponse(custom.body, custom.status ?? 200);
+      if (path === '/acquire/requests/me') return jsonResponse({ outcome: 'accepted', reason: 'me', me: state.me });
+      if (path.startsWith('/acquire/requests/quota')) {
+        const q = typeof state.quota === 'function' ? state.quota(path) : state.quota;
+        return jsonResponse({ outcome: 'accepted', reason: 'quota', quota: q });
+      }
+      return jsonResponse({ outcome: 'denied', reason: 'not_found' }, 404);
+    },
+    JE: {
+      pluginConfig: { ArrStatusEnabled: true, ArrRequestsEnabled: true, ...config },
+      t: translate,
+      toast: (text) => toasts.push(text),
+      escapeHtml: (s) => s,
+      helpers: {
+        debounce: fn => fn,
+        addCSS: (id, css) => { const s = h.document.createElement('style'); s.id = id; s.textContent = css; h.document.head.appendChild(s); },
+        getItemCached: async (id) => (typeof item === 'function' ? item(id) : item) || null
+      },
+      core: {
+        api: {
+          plugin: async (path) => {
+            statusCalls.push(path);
+            return typeof status === 'function' ? status(path) : status || null;
+          }
+        },
+        navigation: { onNavigate: () => () => {}, onViewPage: () => () => {} },
+        lifecycle: { register: () => ({ track: x => x }) }
+      },
+      session: { epoch: 0, getEpoch() { return this.epoch; }, isCurrent: () => true, onUserChange: () => {} },
+      internals: {
+        arrNotify: {
+          attachModal: (mount, s, key) => {
+            const b = h.document.createElement('button');
+            b.className = 'je-notify-follow';
+            b.dataset.key = key;
+            b.textContent = 'Notify me';
+            mount.appendChild(b);
+          }
+        }
+      }
+    }
+  });
+  t.after(() => h.close());
+  for (const m of MODULES) h.load(m);
+  return { ...h, posts, gets, toasts, statusCalls, state, Sheet: h.JE.arrAskSheet };
+}
+
+async function settle(n = 12) {
+  for (let i = 0; i < n; i++) await nextTurn();
+}
+
+const sheetEl = h => h.document.querySelector('.je-sheet');
+const primary = h => h.document.querySelector('.je-sheet-primary');
+const card = (h, id) => h.document.querySelector(`.je-sheet-card[data-choice="${id}"]`);
+const costText = (h, id) => card(h, id).querySelector('.je-sheet-card-cost').textContent;
+const click = (h, node) => node.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+const key = (h, k, shift = false) => (h.document.activeElement || h.document.body).dispatchEvent(new h.window.KeyboardEvent('keydown', { key: k, shiftKey: shift, bubbles: true, cancelable: true }));
+
+const SERIES = {
+  key: 'tv:tvdb:393199', kind: 'series', name: 'Andor', year: 2022, poster: '/andor.jpg',
+  seasons: [{ season: 1, episodes: 12, have: 12 }, { season: 2, episodes: 12, have: 0 }, { season: 3, episodes: 6, have: 0 }],
+  latestSeason: 3, nextSeason: 4
+};
+const MOVIE = { key: 'movie:tmdb:1084242', kind: 'movie', name: 'Toy Story 5', year: 2026, poster: '/toy.jpg' };
+
+// ------------------------------------------------------------------ movies: one tap vs the sheet
+
+test('a movie is asked for with one tap and a toast when nothing needs the sheet', async t => {
+  const h = setup(t);
+  const result = await h.Sheet.openOrAsk(MOVIE);
+  assert.equal(result.state, 'asked');
+  assert.equal(h.posts.length, 1);
+  assert.equal(h.posts[0].body.input.key, MOVIE.key);
+  assert.equal(h.posts[0].body.input.scope, 'movie');
+  assert.equal(h.posts[0].body.input.variant, 'standard');
+  assert.equal(sheetEl(h), null);
+  assert.deepEqual(h.toasts, ["Asked! We'll let you know."]);
+});
+
+test('a second tap on a movie while the first is out is the same single request', async t => {
+  const gate = deferred();
+  const h = setup(t, { answer: async () => { await gate.promise; return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } }; } });
+  const first = h.Sheet.openOrAsk(MOVIE);
+  const second = h.Sheet.openOrAsk(MOVIE);
+  await settle();
+  gate.resolve();
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(h.posts.length, 1);
+  assert.equal(a, b);
+  assert.equal(h.toasts.length, 1);
+});
+
+for (const [name, me, quota, expectToggle] of [
+  ['the quota is nearly used', MEMBER, { used: 6, limit: 7, remaining: 1, available: true }, false],
+  ["the caller's asks wait for an OK", KID, { used: 0, limit: 7, remaining: 7, available: true }, false],
+  ['the caller may choose 4K', { ...MEMBER, can4kMovies: true }, null, true]
+]) {
+  test(`a movie opens the sheet when ${name}`, async t => {
+    const h = setup(t, { me, quota });
+    const pending = h.Sheet.openOrAsk(MOVIE);
+    await settle();
+    assert.ok(sheetEl(h), 'sheet shown');
+    assert.equal(h.posts.length, 0, 'nothing asked before the sheet is confirmed');
+    assert.equal(!!h.document.querySelector('.je-sheet-variant'), expectToggle);
+    h.Sheet.close();
+    assert.equal(await pending, null);
+  });
+}
+
+test('an unknown allowance (Seerr placeholder) does not force the sheet', async t => {
+  const h = setup(t, { quota: { used: 0, limit: null, remaining: null, available: false } });
+  const result = await h.Sheet.openOrAsk(MOVIE);
+  assert.equal(result.state, 'asked');
+  assert.equal(sheetEl(h), null);
+});
+
+test('a Watcher is told plainly and nothing is asked', async t => {
+  const h = setup(t, { me: WATCHER });
+  assert.equal(await h.Sheet.openOrAsk(MOVIE), null);
+  assert.equal(await h.Sheet.open(SERIES), null);
+  assert.equal(h.posts.length, 0);
+  assert.deepEqual(h.toasts, ["You can't ask for this one.", "You can't ask for this one."]);
+});
+
+// ------------------------------------------------------------------ series cards and costs
+
+test('series cards show what each costs from the quota projection', async t => {
+  const h = setup(t, { quota: { used: 3, limit: 7, remaining: 4, available: true } });
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  assert.equal(h.document.querySelector('.je-sheet-title').textContent, 'Get Andor');
+  assert.equal(h.document.querySelector('.je-sheet-facts').textContent, '3 seasons · 30 episodes');
+  assert.deepEqual([...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice), ['everything', 'latest', 'next', 'pick', 'episodes', 'future']);
+  assert.equal(card(h, 'everything').querySelector('.je-sheet-card-label').textContent, 'Everything (2 seasons)');
+  assert.equal(costText(h, 'everything'), 'Uses 2 of your 4 this week');
+  assert.equal(costText(h, 'latest'), 'Uses 1 of your 4 this week');
+  assert.equal(costText(h, 'next'), 'Uses 1 of your 4 this week');
+  assert.equal(costText(h, 'future'), 'Uses 1 of your 4 now, then 1 for each new season');
+  assert.equal(card(h, 'everything').getAttribute('aria-pressed'), 'true');
+  assert.equal(h.document.activeElement, card(h, 'everything'));
+  assert.match(primary(h).textContent, /Request/);
+  assert.equal(h.document.querySelector('img.je-sheet-poster').src, 'https://image.tmdb.org/t/p/w154/andor.jpg');
+
+  click(h, primary(h));
+  const result = await pending;
+  assert.equal(result.state, 'asked');
+  assert.equal(h.posts.length, 1);
+  const input = h.posts[0].body.input;
+  assert.deepEqual({ key: input.key, scope: input.scope, seasons: [...input.seasons], variant: input.variant }, { key: 'tv:tvdb:393199', scope: 'seasons', seasons: [2, 3], variant: 'standard' });
+  assert.equal(sheetEl(h), null, 'closed after the ask');
+  assert.deepEqual(h.toasts, ["Asked! We'll let you know."]);
+});
+
+test('next season, future and the pickers send the scope the card names', async t => {
+  const h = setup(t, { quota: { used: 0, limit: null, remaining: null, available: true } });
+  const asks = [];
+  h.state.answer = (input) => { asks.push(input); return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } }; };
+  for (const [choice, expected] of [['next', { scope: 'next_season', seasons: [4] }], ['future', { scope: 'future', seasons: [3] }], ['latest', { scope: 'seasons', seasons: [3] }]]) {
+    const pending = h.Sheet.open(SERIES);
+    await settle();
+    assert.equal(costText(h, choice), '', 'no cost line for an unlimited allowance');
+    click(h, card(h, choice));
+    click(h, primary(h));
+    await pending;
+    const input = asks[asks.length - 1];
+    assert.deepEqual({ scope: input.scope, seasons: [...input.seasons] }, expected, choice);
+  }
+
+  // Pick seasons: nothing picked → a hint, no request; complete seasons can't be picked.
+  let pending = h.Sheet.open(SERIES);
+  await settle();
+  click(h, card(h, 'pick'));
+  const panel = h.document.querySelector('.je-sheet-pick');
+  assert.equal(panel.hidden, false);
+  const boxes = [...panel.querySelectorAll('input[type=checkbox]')];
+  assert.deepEqual(boxes.map(b => b.disabled), [true, false, false]);
+  assert.match(panel.textContent, /All here/);
+  const before = asks.length;
+  click(h, primary(h));
+  await settle();
+  assert.equal(asks.length, before);
+  assert.equal(h.document.querySelector('.je-sheet-message').textContent, 'Choose at least one first.');
+  boxes[2].checked = true;
+  boxes[2].dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  click(h, primary(h));
+  await pending;
+  assert.deepEqual([...asks[asks.length - 1].seasons], [3]);
+
+  // Pick episodes: six episodes of season 2 → episodes scope.
+  pending = h.Sheet.open(SERIES);
+  await settle();
+  click(h, card(h, 'episodes'));
+  click(h, h.document.querySelector('.je-sheet-episode-season[data-season="2"]'));
+  for (const n of [1, 2, 3, 4, 5, 6]) click(h, h.document.querySelector(`.je-sheet-episode[data-episode="${n}"]`));
+  assert.equal(h.document.querySelector('.je-sheet-episode[data-episode="3"]').getAttribute('aria-pressed'), 'true');
+  click(h, primary(h));
+  await pending;
+  const eps = asks[asks.length - 1];
+  assert.equal(eps.scope, 'episodes');
+  assert.deepEqual(eps.episodes.map(e => `${e.season}x${e.episode}`), ['2x1', '2x2', '2x3', '2x4', '2x5', '2x6']);
+});
+
+test('episode costs: the free ones cost nothing, then one per five', async t => {
+  const h = setup(t, { quota: { used: 0, limit: 7, remaining: 7, available: true } });
+  const I = h.JE.internals.arrAskSheet;
+  assert.equal(I.episodeCost(5, 5), 0);
+  assert.equal(I.episodeCost(6, 5), 1);
+  assert.equal(I.episodeCost(10, 5), 1);
+  assert.equal(I.episodeCost(11, 5), 2);
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  click(h, card(h, 'episodes'));
+  click(h, h.document.querySelector('.je-sheet-episode[data-episode="1"]'));
+  assert.equal(costText(h, 'episodes'), 'Free (up to 5 episodes a week)');
+  for (const n of [2, 3, 4, 5, 6]) click(h, h.document.querySelector(`.je-sheet-episode[data-episode="${n}"]`));
+  assert.equal(costText(h, 'episodes'), 'Uses 1 of your 7 this week');
+  h.Sheet.close();
+  assert.equal(await pending, null);
+});
+
+// ------------------------------------------------------------------ over quota, Seerr, 4K
+
+test('over quota in JE mode: the amber note and "Send to Dad for an OK", recorded as waiting', async t => {
+  const h = setup(t, {
+    quota: { used: 7, limit: 7, remaining: 0, nextSlotAt: inDays(3), available: true },
+    answer: () => ({ status: 201, body: { outcome: 'accepted', reason: 'over_quota', certainty: 'Succeeded', requestId: 'b'.repeat(32) } })
+  });
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  const note = h.document.querySelector('.je-sheet-note');
+  assert.equal(note.hidden, false);
+  assert.ok(note.classList.contains('je-sheet-note-attention'));
+  assert.match(note.textContent, /^hourglass_emptyYou've used this week's 7 requests \(next frees up .+\)$/);
+  assert.equal(primary(h).textContent, 'sendSend to Dad for an OK');
+  assert.match(costText(h, 'everything'), /Needs Dad's OK \(only 0 left this week\)/);
+  click(h, primary(h));
+  const result = await pending;
+  assert.equal(result.state, 'waiting');
+  assert.deepEqual(h.toasts, ["Sent to Dad for an OK (you've used this week's requests)."]);
+});
+
+test('over quota in Seerr mode: the honest quota words and no Send', async t => {
+  const h = setup(t, { me: { ...MEMBER, backend: 'seerr' }, quota: { used: 7, limit: 7, remaining: 0, nextSlotAt: inDays(2), available: true } });
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  assert.equal(primary(h).hidden, true);
+  assert.match(h.document.querySelector('.je-sheet-note').textContent, /You've used this week's requests · next one frees up /);
+  assert.equal(h.document.querySelector('.je-sheet-secondary').textContent, 'Close');
+  click(h, h.document.querySelector('.je-sheet-secondary'));
+  assert.equal(await pending, null);
+  assert.equal(h.posts.length, 0);
+});
+
+test('a 429 from the server keeps the sheet open with the quota words', async t => {
+  const h = setup(t, {
+    quota: { used: 0, limit: null, remaining: null, available: false },
+    answer: () => ({ status: 429, body: { outcome: 'quota_exceeded', reason: 'quota_exceeded', certainty: 'Rejected' } })
+  });
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  click(h, primary(h));
+  await settle(20);
+  assert.ok(sheetEl(h), 'still open');
+  assert.equal(h.document.querySelector('.je-sheet-message').textContent, "You've used this week's requests.");
+  h.Sheet.close();
+  assert.equal(await pending, null);
+});
+
+test('the Standard / 4K toggle appears only for people who may ask for 4K of that kind', async t => {
+  const h = setup(t);
+  let pending = h.Sheet.open(SERIES);
+  await settle();
+  assert.equal(h.document.querySelector('.je-sheet-variant'), null);
+  h.Sheet.close();
+  await pending;
+
+  h.state.me = { ...MEMBER, can4kSeries: true };
+  h.JE.arrAsk.me(true);
+  await settle();
+  pending = h.Sheet.open(SERIES);
+  await settle();
+  const options = [...h.document.querySelectorAll('.je-sheet-variant-option')];
+  assert.deepEqual(options.map(o => o.textContent), ['Standard', '4K']);
+  assert.equal(options[0].getAttribute('aria-pressed'), 'true');
+  click(h, options[1]);
+  assert.equal(options[1].getAttribute('aria-pressed'), 'true');
+  click(h, primary(h));
+  await pending;
+  assert.equal(h.posts[0].body.input.variant, '4k');
+});
+
+// ------------------------------------------------------------------ retry safety and focus
+
+test('a double tap on the sheet sends one request; a retry after a failure reuses its id', async t => {
+  const gate = deferred();
+  let n = 0;
+  const h = setup(t, {
+    answer: async () => {
+      n++;
+      if (n === 1) { await gate.promise; return { status: 503, body: { outcome: 'unavailable', reason: 'database_unavailable', certainty: 'Failed' } }; }
+      return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } };
+    }
+  });
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  click(h, primary(h));
+  click(h, primary(h));
+  await settle();
+  assert.equal(primary(h).disabled, true);
+  assert.equal(primary(h).textContent, 'Asking…');
+  gate.resolve();
+  await settle(20);
+  assert.equal(h.posts.length, 1, 'one request for the double tap');
+  assert.equal(h.document.querySelector('.je-sheet-message').textContent, "Couldn't ask right now. Try again later.");
+  click(h, primary(h));
+  await pending;
+  assert.equal(h.posts.length, 2);
+  assert.equal(h.posts[1].body.clientRequestId, h.posts[0].body.clientRequestId, 'the retry is the same ask');
+});
+
+test('Tab stays inside the sheet, Escape closes it and focus returns to the opener', async t => {
+  const h = setup(t, { html: '<button id="opener">More…</button>' });
+  const opener = h.document.getElementById('opener');
+  opener.focus();
+  const pending = h.Sheet.open(SERIES, { opener });
+  await settle();
+  const sheet = sheetEl(h);
+  assert.equal(sheet.getAttribute('role'), 'dialog');
+  assert.equal(sheet.getAttribute('aria-modal'), 'true');
+  assert.equal(h.document.getElementById(sheet.getAttribute('aria-labelledby')).textContent, 'Get Andor');
+  const focusables = [...sheet.querySelectorAll('button, input')].filter(n => !n.disabled && !n.closest('[hidden]') && !n.hidden);
+  const last = focusables[focusables.length - 1];
+  last.focus();
+  key(h, 'Tab');
+  assert.equal(h.document.activeElement, focusables[0], 'Tab from the last goes to the first');
+  key(h, 'Tab', true);
+  assert.equal(h.document.activeElement, last, 'Shift+Tab from the first goes to the last');
+  key(h, 'Escape');
+  assert.equal(await pending, null);
+  assert.equal(sheetEl(h), null);
+  assert.equal(h.document.activeElement, opener);
+});
+
+test('on TV the sheet is a full-screen panel and Back closes it', async t => {
+  const h = setup(t);
+  h.document.documentElement.classList.add('layout-tv');
+  const pending = h.Sheet.open(MOVIE);
+  await settle();
+  assert.ok(h.document.querySelector('.je-sheet-backdrop').classList.contains('je-sheet-tv'));
+  key(h, 'Backspace');
+  assert.equal(await pending, null);
+});
+
+// ------------------------------------------------------------------ family words
+
+const OUTCOMES = [
+  [201, { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' }, "Asked! We'll let you know.", true],
+  [201, { outcome: 'accepted', reason: 'awaiting_approval', certainty: 'Succeeded' }, 'Asked! Dad will take a look.', true],
+  [200, { outcome: 'merged', reason: 'looking', certainty: 'Succeeded' }, "Someone in your household already asked, we'll tell you both.", true],
+  [200, { outcome: 'already_requested', reason: 'looking', certainty: 'Succeeded' }, "Someone in your household already asked, we'll tell you both.", true],
+  [200, { outcome: 'nothing_to_request', reason: 'nothing_to_request', certainty: 'Succeeded' }, "That's already here or on its way.", true],
+  [202, { outcome: 'maybe_sent', reason: 'maybe_sent', certainty: 'Unknown' }, "Asked! We'll confirm shortly.", true],
+  [429, { outcome: 'quota_exceeded', reason: 'quota_exceeded', certainty: 'Rejected' }, "You've used this week's requests.", false],
+  [403, { outcome: 'blocked', reason: 'parental_blocked', certainty: 'Rejected' }, "This one can't be asked for here.", false],
+  [403, { outcome: 'blocked', reason: 'decline_cooldown', certainty: 'Rejected' }, 'Dad said no to this one recently. You can ask again later.', false],
+  [403, { outcome: 'denied', reason: 'requests_create_required', certainty: 'Rejected' }, "You can't ask for this one.", false],
+  [503, { outcome: 'unavailable', reason: 'database_unavailable', certainty: 'Failed' }, "Couldn't ask right now. Try again later.", false],
+  [409, { outcome: 'denied', reason: 'idempotency_conflict', certainty: 'Rejected' }, 'That changed while you asked. Try again.', false]
+];
+
+test('every request outcome reads as honest family words, in the toast or in the sheet', async t => {
+  const h = setup(t, { quota: { used: 0, limit: null, remaining: null, available: false } });
+  for (const [status, body, words, closes] of OUTCOMES) {
+    h.state.answer = () => ({ status, body });
+    h.toasts.length = 0;
+    const pending = h.Sheet.open(SERIES);
+    await settle();
+    click(h, primary(h));
+    await settle(20);
+    if (closes) {
+      await pending;
+      assert.deepEqual(h.toasts, [words], `${status} ${body.outcome}/${body.reason}`);
+      assert.equal(sheetEl(h), null);
+    } else {
+      const sheet = sheetEl(h);
+      assert.ok(sheet, `${status} ${body.reason} keeps the sheet open`);
+      assert.equal(h.document.querySelector('.je-sheet-message').textContent, words, `${status} ${body.reason}`);
+      assert.doesNotMatch(sheet.textContent, ARR_WORDS);
+      h.Sheet.close();
+      assert.equal(await pending, null);
+    }
+  }
+});
+
+// ------------------------------------------------------------------ kids and the mount API
+
+test('kids: "Ask Dad" on the mounted controls, the sheet asks Dad, then "Waiting for OK"', async t => {
+  const h = setup(t, {
+    me: KID,
+    html: '<div id="host"></div>',
+    answer: () => ({ status: 201, body: { outcome: 'accepted', reason: 'awaiting_approval', certainty: 'Succeeded', requestId: 'c'.repeat(32) } })
+  });
+  const host = h.document.getElementById('host');
+  const controls = h.Sheet.mount(host, MOVIE);
+  await settle();
+  const request = host.querySelector('.je-ask-mount-request');
+  assert.equal(request.textContent, 'front_handAsk Dad');
+  assert.ok(host.querySelector('.je-notify-follow'), 'Notify me next to it');
+  click(h, request);
+  await settle();
+  assert.equal(h.document.querySelector('.je-sheet-title').textContent, 'Ask Dad for Toy Story 5');
+  assert.equal(primary(h).textContent, 'front_handAsk Dad');
+  assert.match(h.document.querySelector('.je-sheet-note').textContent, /Dad will take a look first\./);
+  assert.doesNotMatch(sheetEl(h).textContent, ARR_WORDS);
+  click(h, primary(h));
+  await settle(30);
+  assert.deepEqual(h.toasts, ['Asked! Dad will take a look.']);
+  assert.equal(host.querySelector('.je-ask-mount-request'), null);
+  assert.equal(host.querySelector('.je-arr-chip').textContent, 'Waiting for OK');
+  controls.destroy();
+  assert.equal(host.children.length, 0);
+});
+
+test('mount API: the current request state replaces Request; Watchers get Notify me only; off renders nothing', async t => {
+  const h = setup(t, { html: '<div id="a"></div><div id="b"></div>' });
+  const a = h.document.getElementById('a');
+  const controls = h.Sheet.mount(a, SERIES);
+  await settle();
+  assert.equal(a.querySelector('.je-ask-mount-request').textContent, 'addRequest');
+  controls.update({ key: SERIES.key, kind: 'series', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 42 } });
+  assert.equal(a.querySelector('.je-ask-mount-request'), null);
+  assert.equal(a.querySelector('.je-arr-chip').textContent, 'Downloading · 42%');
+  controls.update({ key: SERIES.key, kind: 'series', stage: 'notHere', reason: { code: 'not_in_arr' } });
+  assert.ok(a.querySelector('.je-ask-mount-request'));
+  controls.destroy();
+
+  h.state.me = WATCHER;
+  h.JE.arrAsk.me(true);
+  await settle();
+  const b = h.document.getElementById('b');
+  const watcher = h.Sheet.mount(b, MOVIE);
+  await settle();
+  assert.equal(b.querySelector('.je-ask-mount-request'), null);
+  assert.ok(b.querySelector('.je-notify-follow'));
+  watcher.destroy();
+
+  h.JE.pluginConfig.ArrRequestsEnabled = false;
+  const off = h.Sheet.mount(b, MOVIE);
+  await settle();
+  assert.equal(b.querySelector('.je-ask-mount').children.length, 0);
+  off.destroy();
+});
+
+// ------------------------------------------------------------------ details-page smart actions
+
+const PAGE = '<div id="itemDetailPage"><div class="detailPagePrimaryContent"><div class="detailSection"><h3 class="itemName">Severance</h3></div></div></div>';
+const SERIES_STATUS = {
+  key: 'tv:tvdb:371980', itemId: 'series1', kind: 'series', stage: 'looking', reason: { code: 'partial' },
+  summary: { aired: 28, ready: 18, missing: 10 },
+  seasons: [
+    { season: 1, itemId: 's1', stage: 'ready', summary: { aired: 9, ready: 9, missing: 0 } },
+    { season: 2, itemId: null, stage: 'looking', summary: { aired: 10, ready: 0, missing: 10 } },
+    { season: 3, itemId: 's3', stage: 'looking', summary: { aired: 6, ready: 4, missing: 2 } }
+  ]
+};
+const SEASON3 = { items: [{ key: 'tv:tvdb:371980:s3', kind: 'season', episodes: [
+  { episode: 1, stage: 'ready', reason: { code: 'ready' } },
+  { episode: 5, stage: 'looking', reason: { code: 'looking' } },
+  { episode: 6, stage: 'notHere', reason: { code: 'not_in_arr' } },
+  { episode: 7, stage: 'downloading', reason: { code: 'downloading' } }
+] }] };
+
+test('series page: Get Season 2, Get missing episodes, More… and the cost line; each ask turns into its state', async t => {
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', status: (path) => path.includes('/item/s3') ? SEASON3 : null, quota: { used: 6, limit: 7, remaining: 1, available: true } });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, { contact: 'Dad' });
+  await settle();
+  const box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+  assert.ok(box);
+  assert.deepEqual([...box.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['Get Season 2', 'Get missing episodes', 'More…']);
+  assert.equal(box.querySelector('.je-ask-action-cost').textContent, 'Uses 1 of your 1 this week');
+  assert.doesNotMatch(box.textContent, ARR_WORDS);
+
+  const [season, missing] = box.querySelectorAll('.je-ask-action');
+  season.focus();
+  click(h, season);
+  await settle(20);
+  assert.deepEqual([...h.posts[0].body.input.seasons], [2]);
+  assert.equal(h.posts[0].body.input.scope, 'seasons');
+  const chip = box.querySelector('.je-arr-chip');
+  assert.equal(chip.textContent, 'Asked!');
+  assert.equal(h.document.activeElement, chip, 'focus stays where the button was');
+
+  click(h, missing);
+  await settle(20);
+  assert.ok(h.statusCalls.some(p => p.includes('/acquire/status/item/s3')), 'reads the season with missing episodes');
+  const input = h.posts[1].body.input;
+  assert.equal(input.scope, 'episodes');
+  assert.deepEqual(input.episodes.map(e => `${e.season}x${e.episode}`), ['3x5', '3x6']);
+
+  // A later status read draws the states again (the page remembers its asks).
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, { contact: 'Dad' });
+  await settle();
+  assert.deepEqual([...page.querySelectorAll('.je-ask-actions .je-arr-chip')].map(n => n.textContent), ['Asked!', 'Asked!']);
+});
+
+test('series page for a kid: "Ask Dad for Season 2"; Watchers and the feature off show nothing', async t => {
+  const h = setup(t, { me: KID, html: PAGE, hash: '#/details?id=series1' });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, {});
+  await settle();
+  assert.deepEqual([...page.querySelectorAll('.je-ask-action-text')].map(n => n.textContent).slice(0, 2), ['Ask Dad for Season 2', 'Ask Dad for the missing episodes']);
+
+  h.state.me = WATCHER;
+  await h.JE.arrAsk.me(true);
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-actions'), null);
+
+  h.state.me = MEMBER;
+  await h.JE.arrAsk.me(true);
+  h.JE.pluginConfig.ArrRequestsEnabled = false;
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-actions'), null);
+  // Season and episode pages are the season rows' business.
+  h.JE.pluginConfig.ArrRequestsEnabled = true;
+  h.JE.internals.arrAskActions.attachDetails(page, { ...SERIES_STATUS, kind: 'season' }, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-actions'), null);
+});
+
+test('More… opens the sheet with the series seasons and returns focus to it', async t => {
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', item: { Id: 'series1', Name: 'Severance', ProductionYear: 2022, ImageTags: { Primary: 'tag1' } } });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, {});
+  await settle();
+  const more = [...page.querySelectorAll('.je-ask-action')].find(b => b.textContent.includes('More…'));
+  assert.equal(more.getAttribute('aria-label'), 'More ways to get Severance');
+  more.focus();
+  click(h, more);
+  await settle(20);
+  assert.equal(h.document.querySelector('.je-sheet-title').textContent, 'Get Severance');
+  assert.equal(h.document.querySelector('.je-sheet-facts').textContent, '3 seasons · 25 episodes');
+  assert.equal(card(h, 'everything').querySelector('.je-sheet-card-label').textContent, 'Everything (2 seasons)');
+  assert.ok(h.document.querySelector('img.je-sheet-poster').src.startsWith('http://jellyfin.test/Items/series1/Images/Primary'));
+  key(h, 'Escape');
+  await settle();
+  assert.equal(h.document.activeElement, more);
+});
+
+test('a movie in the library: Get 4K only for 4K holders and only without a 4K copy', async t => {
+  const movieStatus = { key: 'movie:tmdb:603', itemId: 'm1', kind: 'movie', stage: 'ready', reason: { code: 'ready' }, quiet: true };
+  const hd = { Id: 'm1', MediaSources: [{ MediaStreams: [{ Type: 'Video', Width: 1920, Height: 1080 }] }] };
+  const uhd = { Id: 'm1', MediaSources: [{ MediaStreams: [{ Type: 'Video', Width: 3840, Height: 2160 }] }] };
+  let item = hd;
+  const h = setup(t, { html: PAGE, hash: '#/details?id=m1', item: () => item });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, movieStatus, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-actions'), null, 'no 4K for a member without it');
+
+  h.state.me = { ...MEMBER, can4kMovies: true };
+  await h.JE.arrAsk.me(true);
+  h.JE.internals.arrAskActions.attachDetails(page, movieStatus, {});
+  await settle();
+  const get4k = page.querySelector('.je-ask-action');
+  assert.equal(get4k.textContent, '4kGet 4K');
+  click(h, get4k);
+  await settle(20);
+  assert.equal(h.posts[0].body.input.variant, '4k');
+  assert.equal(page.querySelector('.je-ask-actions .je-arr-chip').textContent, 'Asked!');
+
+  item = uhd;
+  h.JE.internals.arrAskActions.attachDetails(page, { ...movieStatus, key: 'movie:tmdb:604' }, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-actions'), null, 'a 4K copy is here already');
+});
+
+// ------------------------------------------------------------------ Search (missing for a long while)
+
+const ADMIN = { ...MEMBER, role: 'admin', canApprove: true };
+const same = (actual, expected, message) => assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected, message);
+const LONG_MISSING_EPISODE = {
+  key: 'tv:tvdb:371980:s3:e5', itemId: 'e5', kind: 'episode', stage: 'looking', reason: { code: 'no_release_yet' }
+};
+const ADMIN_BLOCK = { variants: [{ instance: 'Sonarr', instanceId: 'son1', kind: 'Sonarr', role: 'standard', stage: 'looking', reason: { code: 'no_release_yet' }, fix: 'search_now' }] };
+
+test('an episode missing for a long while: Search; a Kid asks Dad, a member asks, a fresh one keeps Get it', async t => {
+  const h = setup(t, { html: PAGE, hash: '#/details?id=e5', me: KID });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, LONG_MISSING_EPISODE, {});
+  await settle();
+  const ask = page.querySelector('.je-ask-action');
+  assert.equal(ask.textContent, 'searchAsk Dad to search');
+  click(h, ask);
+  await settle(20);
+  same(h.posts[0].body.input, { key: 'tv:tvdb:371980', scope: 'episodes', variant: 'standard', seasons: [], episodes: [{ season: 3, episode: 5 }] });
+
+  h.state.me = MEMBER;
+  await h.JE.arrAsk.me(true);
+  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, key: 'tv:tvdb:371980:s3:e6' }, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-action').textContent, 'searchSearch');
+  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, key: 'tv:tvdb:371980:s3:e7', reason: { code: 'looking' } }, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-action').textContent, 'addGet it', 'still fresh: Get it');
+});
+
+test('an administrator\'s Search on an episode page runs the arr search at once and says what it found', async t => {
+  const h = setup(t, {
+    html: PAGE, hash: '#/details?id=e5', me: ADMIN, config: { ArrManageDrawerEnabled: true },
+    routes: (method, path) => (method === 'POST' && path === '/arr/admin/manage/search' ? { body: { status: 'Succeeded', found: true } } : null)
+  });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, admin: ADMIN_BLOCK }, {});
+  await settle();
+  const search = page.querySelector('.je-ask-action');
+  assert.equal(search.textContent, 'searchSearch');
+  click(h, search);
+  assert.equal(search.querySelector('.je-ask-action-text').textContent, 'Searching…');
+  await settle(20);
+  same(h.posts.map(p => [p.path, p.body.instanceId, p.body.key]), [['/arr/admin/manage/search', 'son1', 'tv:tvdb:371980:s3:e5']]);
+  assert.equal(page.querySelector('.je-ask-actions .je-arr-chip').textContent, 'Found a copy');
+  same(h.toasts, ['Found a copy — downloading']);
+});
+
+test('mount API: a title missing for a long while gets Search (an ask for members, the arr search for admins)', async t => {
+  const h = setup(t, {
+    html: '<div id="a"></div><div id="b"></div>', config: { ArrManageDrawerEnabled: true },
+    routes: (method, path) => (method === 'POST' && path === '/arr/admin/manage/search' ? { body: { status: 'Succeeded', found: false } } : null)
+  });
+  const a = h.document.getElementById('a');
+  const controls = h.Sheet.mount(a, MOVIE);
+  await settle();
+  controls.update({ key: MOVIE.key, kind: 'movie', stage: 'looking', reason: { code: 'no_release_yet' } });
+  const search = a.querySelector('.je-ask-mount-search');
+  assert.equal(search.textContent, 'searchSearch');
+  click(h, search);
+  await settle(20);
+  same(h.posts[0].body.input, { key: MOVIE.key, scope: 'movie', variant: 'standard', seasons: [], episodes: [] });
+  assert.equal(a.querySelector('.je-arr-chip').textContent, 'Asked!');
+  controls.destroy();
+
+  h.state.me = ADMIN;
+  await h.JE.arrAsk.me(true);
+  const b = h.document.getElementById('b');
+  const admin = h.Sheet.mount(b, MOVIE);
+  await settle();
+  admin.update({ key: MOVIE.key, kind: 'movie', stage: 'looking', reason: { code: 'no_release_yet' }, admin: { variants: [{ instance: 'Radarr', instanceId: 'rad1', kind: 'Radarr', role: 'standard', stage: 'looking', reason: { code: 'no_release_yet' } }] } });
+  click(h, b.querySelector('.je-ask-mount-search'));
+  await settle(20);
+  same([h.posts[1].path, h.posts[1].body.instanceId, h.posts[1].body.key], ['/arr/admin/manage/search', 'rad1', MOVIE.key]);
+  assert.equal(b.querySelector('.je-arr-chip').textContent, 'Nothing found yet · searched just now');
+  assert.equal(h.toasts.at(-1), 'Nothing found yet · searched just now');
+  admin.destroy();
+});
+
+// ------------------------------------------------------------------ collections
+
+const BOX_PAGE = '<div id="itemDetailPage"><div class="detailPagePrimaryContent"><div class="detailSection"></div></div></div>';
+const GAPS = {
+  have: 4, total: 7,
+  missing: [
+    { key: 'movie:tmdb:11', title: 'Part Five', year: 2008, poster: '/p5.jpg', released: true, request: null },
+    { key: 'movie:tmdb:12', title: 'Part Six', year: 2011, poster: null, released: true, request: null },
+    { key: 'movie:tmdb:13', title: 'Part Seven', year: 2012, poster: null, released: true, request: null },
+    { key: 'movie:tmdb:14', title: 'Part Eight', year: 2031, poster: null, released: false, request: null }
+  ]
+};
+
+test('collection page: "You have 4 of 7", the cost preview, then an honest summary of each ask', async t => {
+  let gaps = GAPS;
+  const answers = {
+    'movie:tmdb:11': { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } },
+    'movie:tmdb:12': { status: 201, body: { outcome: 'accepted', reason: 'over_quota', certainty: 'Succeeded' } },
+    'movie:tmdb:13': { status: 503, body: { outcome: 'unavailable', reason: 'database_unavailable', certainty: 'Failed' } }
+  };
+  const h = setup(t, {
+    html: BOX_PAGE, hash: '#/details?id=box1', item: { Id: 'box1', Type: 'BoxSet' },
+    quota: { used: 5, limit: 7, remaining: 2, available: true },
+    routes: (method, path) => path.startsWith('/acquire/requests/collection/box1') ? { body: { outcome: 'accepted', reason: 'collection', collection: gaps } } : null,
+    answer: (input) => answers[input.key]
+  });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, null);
+  await settle(20);
+  const block = page.querySelector('.je-ask-coll');
+  assert.ok(block);
+  assert.match(block.querySelector('.je-ask-coll-have').textContent, /You have 4 of 7\./);
+  assert.equal(block.querySelector('.je-ask-coll-get').textContent, 'downloadGet the 3 missing');
+  assert.equal(block.querySelector('.je-ask-coll-cost').textContent, "Uses 2 of your 2 this week; 1 need Dad's OK");
+  assert.deepEqual([...block.querySelectorAll('.je-ask-coll-part')].map(li => li.textContent), ['Part Five (2008)', 'Part Six (2011)', 'Part Seven (2012)', 'Part Eight (2031)Not out yet']);
+  assert.doesNotMatch(block.textContent, ARR_WORDS);
+
+  gaps = { ...GAPS, missing: GAPS.missing.map(p => p.key === 'movie:tmdb:11' ? { ...p, request: 'asked' } : p.key === 'movie:tmdb:12' ? { ...p, request: 'waiting' } : p) };
+  click(h, block.querySelector('.je-ask-coll-get'));
+  await settle(60);
+  assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:11', 'movie:tmdb:12', 'movie:tmdb:13'], 'released ones only, one by one');
+  assert.equal(new Set(h.posts.map(p => p.body.clientRequestId)).size, 3, 'each its own ask');
+  const line = "Asked for 1 · 1 waits for Dad's OK · 1 couldn't be asked";
+  assert.deepEqual(h.toasts, [line]);
+  const after = page.querySelector('.je-ask-coll');
+  assert.equal(after.querySelector('.je-ask-coll-summary').textContent, line);
+  assert.deepEqual([...after.querySelectorAll('.je-ask-coll-part .je-arr-chip')].map(c => c.textContent), ['Asked!', 'Waiting for OK', 'Not out yet']);
+  assert.equal(after.querySelector('.je-ask-coll-get').textContent, 'downloadGet the missing one');
+});
+
+test('collection preview for kids and the summary words', async t => {
+  const h = setup(t, { me: KID });
+  const C = h.JE.internals.arrAskCollection;
+  assert.equal(C.costPreview(2, KID, null), "2 need Dad's OK");
+  assert.equal(C.costPreview(2, MEMBER, { limit: 5, remaining: 5, available: true }), 'Uses 2 of your 5 this week');
+  assert.equal(C.costPreview(2, MEMBER, { limit: 5, remaining: 0, available: true }), "2 need Dad's OK");
+  assert.equal(C.costPreview(2, MEMBER, { limit: null, remaining: null, available: true }), '');
+  assert.equal(C.costPreview(2, { ...MEMBER, backend: 'seerr' }, { limit: 5, remaining: 0, available: true }), "You've used this week's requests");
+  assert.equal(C.summarize([{ state: 'waiting' }, { state: 'waiting' }, { state: 'nothing' }, { state: 'failed' }, { state: 'denied' }], MEMBER),
+    "2 wait for Dad's OK · 1 already here or on the way · 2 couldn't be asked");
+  assert.equal(C.summarize([{ state: 'asked' }, { state: 'merged' }, { state: 'unknown' }], MEMBER), 'Asked for 3');
+});
+
+test('a collection answer is shown only while its page, user and request are still current', async t => {
+  const slow = { box1: deferred(), box3: deferred() };
+  let reads = 0;
+  const h = setup(t, {
+    html: BOX_PAGE, hash: '#/details?id=box1', item: (id) => ({ Id: id, Type: 'BoxSet' }),
+    routes: async (method, path) => {
+      if (!path.startsWith('/acquire/requests/collection/')) return null;
+      reads++;
+      const id = /collection\/(\w+)/.exec(path)[1];
+      if (slow[id]) await slow[id].promise;
+      return { body: { collection: { ...GAPS, have: id === 'box1' ? 1 : 2 } } };
+    }
+  });
+  const page = h.document.getElementById('itemDetailPage');
+  const C = h.JE.internals.arrAskCollection;
+  C.attach(page, 'box1');
+  await settle();
+  // The person moves on to another collection before the first answer arrives.
+  h.window.location.hash = '#/details?id=box2';
+  C.attach(page, 'box2');
+  await settle(20);
+  slow.box1.resolve();
+  await settle(20);
+  assert.equal(reads, 2);
+  assert.match(page.querySelector('.je-ask-coll-have').textContent, /You have 2 of 7/);
+
+  // A user switch while the read is out: the old user's answer is dropped.
+  C.clear(page);
+  h.window.location.hash = '#/details?id=box3';
+  const pending = C.attach(page, 'box3');
+  await settle(10);
+  assert.equal(reads, 3, 'the read is out');
+  h.JE.session.epoch = 1;
+  slow.box3.resolve();
+  await pending;
+  await settle(20);
+  assert.equal(page.querySelector('.je-ask-coll'), null);
+});
+
+test('not a collection, no gaps, or the feature off: no block and no collection read', async t => {
+  const h = setup(t, { html: BOX_PAGE, hash: '#/details?id=p1', item: { Id: 'p1', Type: 'Person' } });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, null);
+  await settle(20);
+  assert.equal(page.querySelector('.je-ask-coll'), null);
+  assert.ok(!h.gets.some(p => p.startsWith('/acquire/requests/collection/')));
+  h.JE.pluginConfig.ArrRequestsEnabled = false;
+  h.JE.internals.arrAskActions.attachDetails(page, null);
+  await settle(20);
+  assert.equal(h.gets.length, 0);
+});
+
+test('nothing reaches the network while the modules load', async t => {
+  const h = setup(t);
+  await settle(5);
+  assert.equal(h.gets.length + h.posts.length + h.statusCalls.length, 0);
+  assert.equal(typeof h.JE.arrAskSheet.mount, 'function');
+  assert.ok(Object.isFrozen(h.JE.arrAskSheet));
+});
+
+// ------------------------------------------------------------------ review round 1
+
+test('episode costs follow the episodes already charged this window, as the server charges them', async t => {
+  const h = setup(t, { quota: { used: 1, limit: 7, remaining: 6, nextSlotAt: null, usedGb: 0, available: true, episodes: 5 } });
+  const I = h.JE.internals.arrAskSheet;
+  assert.equal(I.costOf({ scope: 'episodes', episodes: [{}] }, MEMBER, { episodes: 5 }), 1, 'the free ones are used up');
+  assert.equal(I.costOf({ scope: 'episodes', episodes: [{}, {}] }, MEMBER, { episodes: 3 }), 0);
+  assert.equal(I.costOf({ scope: 'episodes', episodes: [{}, {}, {}] }, MEMBER, { episodes: 3 }), 1);
+  assert.equal(I.costOf({ scope: 'episodes', episodes: [{}] }, MEMBER, null), 0, 'nothing charged yet: free');
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  click(h, card(h, 'episodes'));
+  click(h, h.document.querySelector('.je-sheet-episode[data-episode="1"]'));
+  assert.equal(costText(h, 'episodes'), 'Uses 1 of your 6 this week');
+  h.Sheet.close();
+  assert.equal(await pending, null);
+});
+
+test('a series named without its seasons (search and Discover cards) has them read before the sheet opens', async t => {
+  const tmdb = { seasons: [
+    { season_number: 0, episode_count: 3, air_date: '2010-01-01' },
+    { season_number: 1, episode_count: 10, air_date: '2011-04-17' },
+    { season_number: 2, episode_count: 8, air_date: '2012-04-01' },
+    { season_number: 3, episode_count: 9, air_date: '2999-01-01' }
+  ] };
+  const h = setup(t, { routes: (method, path) => (path === '/tmdb/tv/1399' ? { body: tmdb } : null) });
+  const pending = h.Sheet.open({ key: 'tv:tmdb:1399', kind: 'series', name: 'A show', year: 2011, poster: '/p.jpg' });
+  await settle();
+  assert.ok(h.gets.includes('/tmdb/tv/1399'));
+  same([...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice), ['everything', 'latest', 'next', 'pick', 'episodes', 'future']);
+  click(h, card(h, 'everything'));
+  click(h, primary(h));
+  await settle(20);
+  same(h.posts[0].body.input, { key: 'tv:tmdb:1399', scope: 'seasons', variant: 'standard', seasons: [1, 2], episodes: [] });
+  assert.equal((await pending).ok, true);
+
+  // TMDB can't be read (or a parental refusal): say so instead of an empty sheet.
+  const none = setup(t, { routes: (method, path) => (path.startsWith('/tmdb/') ? { status: 403, body: {} } : null) });
+  assert.equal(await none.Sheet.open({ key: 'tv:tmdb:7', kind: 'series', name: 'Hidden' }), null);
+  assert.equal(sheetEl(none), null);
+  same(none.toasts, ["Couldn't load this series' seasons. Try again in a moment."]);
+});
+
+const SERIES_NOTHING = {
+  key: 'tv:tvdb:371980', itemId: 'series1', kind: 'series', stage: 'looking', reason: { code: 'no_release_yet' },
+  summary: { aired: 16, ready: 0, missing: 16 },
+  seasons: [
+    { season: 1, itemId: 's1', stage: 'looking', summary: { aired: 10, ready: 0, missing: 10 } },
+    { season: 2, itemId: 's2', stage: 'looking', summary: { aired: 6, ready: 0, missing: 6 } }
+  ]
+};
+
+test('a series missing for a long while: Search for everyone who may ask (members and kids through a request)', async t => {
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', me: KID });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_NOTHING, { contact: 'Dad' });
+  await settle();
+  const texts = () => [...page.querySelectorAll('.je-ask-actions .je-ask-action-text')].map(n => n.textContent);
+  same(texts(), ['Ask Dad for Season 1', 'Ask Dad for the missing episodes', 'Ask Dad to search', 'More…']);
+  click(h, [...page.querySelectorAll('.je-ask-actions .je-ask-action')].find(b => b.textContent.endsWith('Ask Dad to search')));
+  await settle(20);
+  same(h.posts.map(p => p.path), ['/acquire/requests']);
+  same(h.posts[0].body.input, { key: 'tv:tvdb:371980', scope: 'seasons', variant: 'standard', seasons: [1, 2], episodes: [] });
+
+  h.state.me = MEMBER;
+  await h.JE.arrAsk.me(true);
+  h.JE.internals.arrAskActions.attachDetails(page, { ...SERIES_NOTHING, key: 'tv:tvdb:1' }, { contact: 'Dad' });
+  await settle();
+  same(texts(), ['Get Season 1', 'Get missing episodes', 'Search', 'More…']);
+
+  // Still fresh: no Search.
+  h.JE.internals.arrAskActions.attachDetails(page, { ...SERIES_NOTHING, key: 'tv:tvdb:2', reason: { code: 'looking' } }, { contact: 'Dad' });
+  await settle();
+  same(texts(), ['Get Season 1', 'Get missing episodes', 'More…']);
+});
+
+test('an ask prepared before a sign-out is not sent as the next person (one tap and the series page)', async t => {
+  const h = setup(t, { routes: (method, path) => { if (path.startsWith('/acquire/requests/quota')) h.JE.session.epoch++; return null; } });
+  assert.equal(await h.Sheet.openOrAsk(MOVIE), null);
+  await settle();
+  assert.equal(h.posts.length, 0, 'the one-tap ask was dropped');
+  assert.equal(sheetEl(h), null);
+
+  const p = setup(t, {
+    html: PAGE, hash: '#/details?id=series1', quota: { used: 0, limit: 7, remaining: 7, available: true },
+    status: (path) => { if (path.includes('/item/s3')) { p.JE.session.epoch++; return SEASON3; } return null; }
+  });
+  const page = p.document.getElementById('itemDetailPage');
+  p.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, { contact: 'Dad' });
+  await settle();
+  const missing = [...page.querySelectorAll('.je-ask-action')].find(b => b.textContent.endsWith('Get missing episodes'));
+  click(p, missing);
+  await settle(20);
+  assert.ok(p.statusCalls.some(x => x.includes('/item/s3')));
+  assert.equal(p.posts.length, 0, 'the episodes read for the old session are not asked for');
+  assert.equal(p.toasts.length, 0);
+});
+
+// ------------------------------------------------------------------ review round 2
+
+test('4K: seasons here in the library (any quality) stay offered, and the cards follow the copy chosen', async t => {
+  const h = setup(t, { me: { ...MEMBER, can4kSeries: true } });
+  const HERE = { ...SERIES, seasons: [{ season: 1, episodes: 10, have: 10 }, { season: 2, episodes: 10, have: 10 }], latestSeason: 2, nextSeason: null };
+  const pending = h.Sheet.open(HERE);
+  await settle();
+  const choices = () => [...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice);
+  const boxes = () => [...h.document.querySelectorAll('.je-sheet-pick input')].map(b => b.disabled);
+  // Standard: both seasons are here, so only the pickers and the future card are left.
+  same(choices(), ['pick', 'episodes', 'future']);
+  same(boxes(), [true, true]);
+  const variant = v => h.document.querySelector(`.je-sheet-variant-option[data-variant="${v}"]`);
+  variant('4k').focus();
+  click(h, variant('4k'));
+  same(choices(), ['everything', 'latest', 'pick', 'episodes', 'future'], 'a 4K holder can ask for 4K of what is here');
+  same(boxes(), [false, false]);
+  assert.equal(h.document.querySelector('.je-sheet-pick .je-sheet-check-facts').textContent, '10 episodes', 'no "All here" for 4K');
+  assert.equal(h.document.activeElement, variant('4k'), 'focus stays on the toggle');
+  assert.equal(card(h, 'everything').getAttribute('aria-pressed'), 'false', 'the choice made is kept');
+  click(h, card(h, 'everything'));
+  click(h, primary(h));
+  const result = await pending;
+  same(h.posts[0].body.input, { key: SERIES.key, scope: 'seasons', variant: '4k', seasons: [1, 2], episodes: [] });
+  assert.equal(result.input.variant, '4k', 'the result says what was asked for');
+  // Back to Standard: what is here is not offered again.
+  const again = h.Sheet.open(HERE, { variant: '4k' });
+  await settle();
+  click(h, variant('standard'));
+  same(choices(), ['pick', 'episodes', 'future']);
+  h.Sheet.close();
+  await again;
+});
+
+test('seasons the caller already asked for are not offered again for the standard copy', async t => {
+  const h = setup(t, { me: { ...MEMBER, can4kSeries: true } });
+  const pending = h.Sheet.open({ ...SERIES, askedSeasons: [2] });
+  await settle();
+  const facts = () => [...h.document.querySelectorAll('.je-sheet-pick .je-sheet-check')].map(c => [c.querySelector('input').disabled, c.querySelector('.je-sheet-check-facts')?.textContent]);
+  same(facts(), [[true, 'All here'], [true, 'Already asked for'], [false, '6 episodes']]);
+  assert.equal(card(h, 'everything').querySelector('.je-sheet-card-label').textContent, en.arr_sheet_card_everything_one, 'one season left to ask for');
+  click(h, h.document.querySelector('.je-sheet-variant-option[data-variant="4k"]'));
+  same(facts(), [[false, '12 episodes'], [false, '12 episodes'], [false, '6 episodes']]);
+  h.Sheet.close();
+  await pending;
+});

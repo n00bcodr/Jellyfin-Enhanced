@@ -126,6 +126,8 @@
         }
         // Phase 2: Following / Notify me (own requests are followed unless muted).
         JE.internals?.arrNotify?.rowButton?.(entry, buttons);
+        // Phase 3: Cancel on the caller's own requests that haven't been sent yet (hub-mine-ledger.js).
+        H.rowExtras?.(entry, buttons);
         if (buttons.childNodes.length) row.appendChild(buttons);
         const open = () => actions.open(entry);
         row.addEventListener('click', open);
@@ -145,7 +147,8 @@
      */
     function buildNotes(data) {
         const box = el('div');
-        if (!data.seerr?.configured) {
+        // In JE mode the requests come from JE's own list: no Seerr is needed to show them.
+        if (!data.seerr?.configured && !data.seerr?.ledger) {
             box.appendChild(el('div', 'je-hub-note', tr(data.admin ? 'arr_hub_not_configured_admin' : 'arr_hub_not_configured')));
         } else if (data.seerr?.unavailable) {
             box.appendChild(el('div', 'je-hub-note je-hub-note-warn', data.admin?.seerr?.lastError

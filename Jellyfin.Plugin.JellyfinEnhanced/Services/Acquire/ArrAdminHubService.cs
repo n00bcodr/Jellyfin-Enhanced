@@ -219,6 +219,93 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Title key.</summary>
         public string? Key { get; init; }
+
+        /// <summary>The arr's message (failures, ignored downloads).</summary>
+        public string? Message { get; init; }
+    }
+
+    /// <summary>
+    /// A search of the Activity tab's history: words, an event kind, one instance and a page, over
+    /// every record the server holds (each instance's history ring), not only the newest page.
+    /// </summary>
+    public sealed class AdminHistoryQuery
+    {
+        /// <summary>Rows per page.</summary>
+        public const int PageSize = 50;
+
+        /// <summary>Longest search text.</summary>
+        public const int MaxQueryLength = 100;
+
+        /// <summary>Highest page asked for (pages past the last show the last).</summary>
+        public const int MaxPage = 10_000;
+
+        /// <summary>The event kinds a search can ask for (see <see cref="ArrAdminHubService.EventKind"/>).</summary>
+        public static readonly IReadOnlyList<string> EventKinds = new[] { "grabbed", "imported", "failed", "deleted", "renamed", "ignored", "other" };
+
+        /// <summary>Words looked for in the title (or episode title), release name and message (case-insensitive; null: any).</summary>
+        public string? Text { get; init; }
+
+        /// <summary>One event kind (null: any).</summary>
+        public string? Event { get; init; }
+
+        /// <summary>One instance id (null: every instance).</summary>
+        public string? Instance { get; init; }
+
+        /// <summary>The page (1-based).</summary>
+        public int Page { get; init; } = 1;
+    }
+
+    /// <summary>What one instance's history ring holds: the newest N of the M records its arr has, since a date.</summary>
+    public sealed class AdminHistoryCoverage
+    {
+        /// <summary>Instance id.</summary>
+        public string InstanceId { get; init; } = string.Empty;
+
+        /// <summary>Instance name.</summary>
+        public string Instance { get; init; } = string.Empty;
+
+        /// <summary>Records held (searched).</summary>
+        public int Held { get; init; }
+
+        /// <summary>Records the arr's whole history holds (null: not known yet).</summary>
+        public int? Total { get; init; }
+
+        /// <summary>The oldest record held (UTC).</summary>
+        public DateTime? Since { get; init; }
+
+        /// <summary>Every record the arr has is held.</summary>
+        public bool Complete { get; init; }
+
+        /// <summary>No history of this instance is in memory (it couldn't be read).</summary>
+        public bool Unread { get; init; }
+    }
+
+    /// <summary>The page of a history search, with its counts, coverage and the filters it answers.</summary>
+    public sealed class AdminHistoryPage
+    {
+        /// <summary>The search text answered (null: none).</summary>
+        public string? Q { get; init; }
+
+        /// <summary>The event kind answered (null: any).</summary>
+        public string? Event { get; init; }
+
+        /// <summary>The instance answered (null: every instance).</summary>
+        public string? Instance { get; init; }
+
+        /// <summary>The page shown (1-based; the last page when a later one was asked for).</summary>
+        public int Page { get; init; } = 1;
+
+        /// <summary>Pages (at least 1).</summary>
+        public int Pages { get; init; } = 1;
+
+        /// <summary>Matching events.</summary>
+        public int Total { get; init; }
+
+        /// <summary>Rows per page.</summary>
+        public int PageSize { get; init; } = AdminHistoryQuery.PageSize;
+
+        /// <summary>What each searched instance's history covers.</summary>
+        public IReadOnlyList<AdminHistoryCoverage> Coverage { get; init; } = Array.Empty<AdminHistoryCoverage>();
     }
 
     /// <summary>The Activity tab: downloads (grouped) and recent history.</summary>
@@ -235,6 +322,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>A queue was cut at the read cap.</summary>
         public bool Truncated { get; init; }
+
+        /// <summary>
+        /// The history search this answer is for (only when one was asked for): <see cref="History"/>
+        /// is then that page of the matching events.
+        /// </summary>
+        public AdminHistoryPage? HistoryPage { get; init; }
     }
 
     /// <summary>One instance on the System tab.</summary>
@@ -433,13 +526,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The low-disk threshold (percent free) the Overview, System and the administrators' alert share.</summary>
         internal static int LowDiskPercent(PluginConfiguration? config) => Math.Clamp(config?.ArrLowDiskPercent ?? 10, 1, 50);
 
-        /// <summary>The Activity tab.</summary>
-        public async Task<AdminActivity> ActivityAsync(CancellationToken cancellationToken)
+        /// <summary>The Activity tab with the newest history of every instance.</summary>
+        public Task<AdminActivity> ActivityAsync(CancellationToken cancellationToken) => ActivityAsync(null, cancellationToken);
+
+        /// <summary>
+        /// The Activity tab. Without a <paramref name="search"/> its history is the newest 100 events
+        /// of every instance together; with one, it is one page (at most
+        /// <see cref="AdminHistoryQuery.PageSize"/> rows) of the events matching it among every
+        /// record held (each instance's ring), newest first, with the counts, what each searched
+        /// instance's ring covers and the filters answered. The instance of a search must be one of
+        /// the usable instances (the controller checks).
+        /// </summary>
+        /// <param name="search">The history search, or null.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        public async Task<AdminActivity> ActivityAsync(AdminHistoryQuery? search, CancellationToken cancellationToken)
         {
             var config = _config();
             var cards = new List<AdminInstanceCard>();
             var queue = new List<QueueGroup>();
             var history = new List<AdminHistoryRow>();
+            var matches = new List<(ArrConnection Instance, ArrHistoryEntry Entry)>();
+            var coverage = new List<AdminHistoryCoverage>();
             var truncated = false;
             foreach (var instance in Usable())
             {
@@ -449,24 +556,106 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 truncated |= read.Queue.Value?.Truncated == true;
                 queue.AddRange(groups);
                 cards.Add(Card(instance, read, groups, Live(instance, read.History.Value), config));
-                foreach (var h in (read.History.Value?.Records ?? Array.Empty<ArrHistoryEntry>()).Take(HistoryRows))
+                var records = read.History.Value?.Records ?? Array.Empty<ArrHistoryEntry>();
+                if (search == null)
                 {
-                    history.Add(new AdminHistoryRow
-                    {
-                        InstanceId = instance.Id, Instance = instance.Name, Event = h.EventType ?? "unknown", Title = h.Title, Year = h.Year,
-                        Season = h.SeasonNumber, Episode = h.EpisodeNumber, Date = h.Date, Quality = h.Quality, Release = h.SourceTitle,
-                        Key = JellyfinBridge.KeyOf(instance.Kind, h.TmdbId, h.TvdbId, h.SeasonNumber, h.EpisodeNumber),
-                    });
+                    history.AddRange(records.Take(HistoryRows).Select(h => HistoryRow(instance, h)));
+                    continue;
                 }
+                if (search.Instance != null && !string.Equals(search.Instance, instance.Id, StringComparison.OrdinalIgnoreCase)) continue;
+                coverage.Add(Coverage(instance, read.History.Value));
+                matches.AddRange(records.Where(h => Matches(h, search)).Select(h => (instance, h)));
             }
+
+            AdminHistoryPage? page = null;
+            if (search != null)
+            {
+                var pages = Math.Max(1, (matches.Count + AdminHistoryQuery.PageSize - 1) / AdminHistoryQuery.PageSize);
+                var shown = Math.Clamp(search.Page, 1, pages);
+                history = matches
+                    .OrderByDescending(m => m.Entry.Date ?? DateTime.MinValue)
+                    .ThenBy(m => m.Instance.Id, StringComparer.Ordinal)
+                    .ThenByDescending(m => m.Entry.Id)
+                    .Skip((shown - 1) * AdminHistoryQuery.PageSize)
+                    .Take(AdminHistoryQuery.PageSize)
+                    .Select(m => HistoryRow(m.Instance, m.Entry))
+                    .ToList();
+                page = new AdminHistoryPage
+                {
+                    Q = search.Text,
+                    Event = search.Event,
+                    Instance = search.Instance,
+                    Page = shown,
+                    Pages = pages,
+                    Total = matches.Count,
+                    Coverage = coverage,
+                };
+            }
+            else
+            {
+                history = history.OrderByDescending(h => h.Date ?? DateTime.MinValue).Take(HistoryRows).ToList();
+            }
+
             return new AdminActivity
             {
                 Instances = cards,
                 Queue = queue.OrderBy(g => g.Problem == null ? 1 : 0).ThenBy(g => g.Added ?? DateTime.MaxValue).ToList(),
-                History = history.OrderByDescending(h => h.Date ?? DateTime.MinValue).Take(HistoryRows).ToList(),
+                History = history,
                 Truncated = truncated,
+                HistoryPage = page,
             };
         }
+
+        /// <summary>
+        /// The kind of a history event as the search filters it: grabbed, imported (any "…Imported"),
+        /// failed (any "…Failed"), deleted, renamed, ignored, or other.
+        /// </summary>
+        /// <param name="eventType">The arr's event type.</param>
+        /// <returns>One of <see cref="AdminHistoryQuery.EventKinds"/>.</returns>
+        public static string EventKind(string? eventType)
+        {
+            if (string.IsNullOrEmpty(eventType)) return "other";
+            if (string.Equals(eventType, "grabbed", StringComparison.OrdinalIgnoreCase)) return "grabbed";
+            if (eventType.EndsWith("Imported", StringComparison.OrdinalIgnoreCase)) return "imported";
+            if (eventType.EndsWith("Failed", StringComparison.OrdinalIgnoreCase)) return "failed";
+            if (eventType.EndsWith("Deleted", StringComparison.OrdinalIgnoreCase)) return "deleted";
+            if (eventType.EndsWith("Renamed", StringComparison.OrdinalIgnoreCase)) return "renamed";
+            if (eventType.EndsWith("Ignored", StringComparison.OrdinalIgnoreCase)) return "ignored";
+            return "other";
+        }
+
+        private static bool Matches(ArrHistoryEntry h, AdminHistoryQuery search)
+        {
+            if (search.Event != null && EventKind(h.EventType) != search.Event) return false;
+            if (search.Text is not { } text) return true;
+            return Contains(h.Title, text) || Contains(h.SourceTitle, text) || Contains(h.Message, text) || Contains(h.EpisodeTitle, text);
+        }
+
+        private static bool Contains(string? value, string text) => value != null && value.Contains(text, StringComparison.OrdinalIgnoreCase);
+
+        private static AdminHistoryCoverage Coverage(ArrConnection instance, ArrHistorySnapshot? history)
+        {
+            var records = history?.Records ?? Array.Empty<ArrHistoryEntry>();
+            var since = records.Where(r => r.Date.HasValue).Select(r => r.Date!.Value).DefaultIfEmpty().Min();
+            var total = history?.ArrTotal;
+            return new AdminHistoryCoverage
+            {
+                InstanceId = instance.Id,
+                Instance = instance.Name,
+                Held = records.Count,
+                Total = total,
+                Since = records.Any(r => r.Date.HasValue) ? since : null,
+                Complete = history != null && total is int t && records.Count >= t,
+                Unread = history == null,
+            };
+        }
+
+        private static AdminHistoryRow HistoryRow(ArrConnection instance, ArrHistoryEntry h) => new()
+        {
+            InstanceId = instance.Id, Instance = instance.Name, Event = h.EventType ?? "unknown", Title = h.Title, Year = h.Year,
+            Season = h.SeasonNumber, Episode = h.EpisodeNumber, Date = h.Date, Quality = h.Quality, Release = h.SourceTitle,
+            Key = JellyfinBridge.KeyOf(instance.Kind, h.TmdbId, h.TvdbId, h.SeasonNumber, h.EpisodeNumber), Message = h.Message,
+        };
 
         /// <summary>The System tab.</summary>
         public async Task<AdminSystem> SystemAsync(CancellationToken cancellationToken)
