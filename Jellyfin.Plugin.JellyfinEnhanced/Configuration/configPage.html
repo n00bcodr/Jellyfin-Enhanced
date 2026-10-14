@@ -8963,7 +8963,7 @@
                     ? 'Plugin restart required'
                     : 'Wrong plugin build for this Jellyfin version';
                 document.getElementById('je-host-mismatch-msg').textContent = ' ' + (data.message || '');
-                document.getElementById('je-host-mismatch-install').style.display = data.stale ? 'none' : '';
+                document.getElementById('je-host-mismatch-install').style.display = data.mismatch ? '' : 'none';
                 document.getElementById('je-host-mismatch-asset').textContent = data.expectedAsset || '';
                 var link = document.getElementById('je-host-mismatch-link');
                 link.textContent = data.manifestUrl || '';

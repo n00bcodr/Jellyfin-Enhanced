@@ -142,7 +142,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return isStale
                 ? diagnosis + "The plugin file on disk was replaced after Jellyfin loaded it, but Jellyfin is still " +
                   "running the old copy from memory and a dashboard restart keeps it loaded. Stop and start the " +
-                  "Jellyfin service or container (e.g. systemctl restart jellyfin, docker restart <container>) to load it."
+                  "Jellyfin service or container (e.g. systemctl restart jellyfin, docker restart <container>) to load it." +
+                  // A different file is not necessarily the right build, so keep the install advice as a fallback.
+                  (!IsMismatch ? ""
+                      : includeInstallAdvice ? $" If this warning is still logged after that, install {ExpectedAssetName} from {ManifestUrl}."
+                      : " If this warning is still shown after that, the file on disk is the wrong build too.")
                 : diagnosis + (includeInstallAdvice ? $"Install {ExpectedAssetName} from {ManifestUrl}. " : "") +
                   "Both builds share one version number, so after installing the right one, stop and start " +
                   "the Jellyfin service or container (e.g. systemctl restart jellyfin, docker restart <container>); " +

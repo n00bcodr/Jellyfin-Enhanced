@@ -123,11 +123,13 @@ public class CoreHostCompatibilityTests
         Assert.Contains("systemctl restart jellyfin", message);
         Assert.Contains("docker restart <container>", message);
         Assert.DoesNotContain("Install ", message);
+        Assert.Equal(mismatch && stale, message.Contains("the file on disk is the wrong build too", StringComparison.Ordinal));
         Assert.Equal(mismatch, message.Contains("This copy of Jellyfin Enhanced was built for", StringComparison.Ordinal));
         Assert.Equal(stale, message.Contains("still running the old copy from memory", StringComparison.Ordinal));
         Assert.Equal(!stale, message.Contains("Both builds share one version number", StringComparison.Ordinal));
 
         var logged = service.GetCompatibilityMessage(stale, includeInstallAdvice: true)!;
-        Assert.Equal(!stale, logged.Contains($"Install {service.ExpectedAssetName} from {HostCompatibilityService.ManifestUrl}.", StringComparison.Ordinal));
+        // Stale and mismatched: the replacement may be the wrong build too, so the log still names the right one.
+        Assert.Equal(mismatch, logged.Contains($"{service.ExpectedAssetName} from {HostCompatibilityService.ManifestUrl}.", StringComparison.Ordinal));
     }
 }
