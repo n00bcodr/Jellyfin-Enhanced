@@ -78,6 +78,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!Guid.TryParse(itemId, out var id)) return BadRequest(new { code = "invalid_id" });
 
             using var scope = _service.Store.BeginRequest("acquire/status/item");
+            // The page of a title that isn't in the library (native details, Jellyfin 12): by key, under
+            // the same viewer rules as the page itself. A page the viewer may not open, or whose
+            // metadata can't be read, gets the empty list like an item they can't see.
+            if (HttpContext?.RequestServices?.GetService(typeof(IAbsentTitlePages)) is IAbsentTitlePages pages)
+            {
+                var absent = await pages.ResolveAsync(viewer.UserId, id, cancellationToken).ConfigureAwait(false);
+                if (absent.Outcome == AbsentLookup.Found && absent.Title != null)
+                {
+                    return Send(await _service.ForAbsentAsync(viewer, absent.Title, cancellationToken).ConfigureAwait(false));
+                }
+
+                if (absent.Outcome != AbsentLookup.NotAbsent) return Send(_service.Empty(viewer, id));
+            }
+
             // Items the caller can't see (or that have no status: other types, no provider id) get an
             // empty list, never a 404 that would tell them apart.
             var body = await _service.ForItemAsync(viewer, id, cancellationToken).ConfigureAwait(false);

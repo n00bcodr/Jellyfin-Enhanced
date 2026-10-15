@@ -193,6 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowElsewhereOnJellyseerr = false;
             JellyseerrUseMoreInfoModal = true;
             JellyseerrAvailablePosterLinksToJellyfin = false;
+            NativeAbsentDetailsEnabled = false;
             JellyseerrSearchExcludeLibraryItems = false;
             JellyseerrUrls = "";
             JellyseerrApiKey = "";
@@ -757,6 +758,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShowElsewhereOnJellyseerr { get; set; }
         public bool JellyseerrUseMoreInfoModal { get; set; } = true;
         public bool JellyseerrAvailablePosterLinksToJellyfin { get; set; } = false;
+        /// <summary>
+        /// Experimental (Jellyfin 12, web): a Seerr title that isn't in the library opens Jellyfin's own
+        /// details page (served by JE from Seerr/TMDB data, nothing is added to the library) instead of the
+        /// More Info modal. Off by default; the modal stays the fallback.
+        /// </summary>
+        public bool NativeAbsentDetailsEnabled { get; set; } = false;
         public string JellyseerrUrls { get; set; }
         public string JellyseerrApiKey { get; set; }
         public string JellyseerrUrlMappings { get; set; }

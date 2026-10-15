@@ -2024,6 +2024,10 @@
                             <div class="je-setting-description" data-desc-for="jellyseerrUseMoreInfoModal">
                                 <div class="fieldDescription je-field-desc-xl">When enabled, clicking a Seerr result title or poster opens an in-app More Info modal.<br/>When disabled, clicking will open the item in Seerr.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="nativeAbsentDetailsEnabled" is="emby-checkbox" type="checkbox"/><span>Open titles that aren't in the library on Jellyfin's own details page (Experimental)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="nativeAbsentDetailsEnabled">
+                                <div class="fieldDescription je-field-desc-xl">Jellyfin 12 web only. A title that isn't in your library (Seerr results and discovery rows, recommendations, the Requests page, notifications, the calendar, Hidden Content) opens on a regular Jellyfin details page, filled in from Seerr and TMDB, with the request controls on it. Nothing is added to your library and other apps never see these titles. If the page can't be loaded the More Info modal opens instead. When off, or on Jellyfin 10.11, titles open as set above.</div>
+                            </div>
                             <div class="checkboxContainer"><label><input id="jellyseerrAvailablePosterLinksToJellyfin" is="emby-checkbox" type="checkbox"/><span>Link available items' posters straight to Jellyfin</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrAvailablePosterLinksToJellyfin">
                                 <div class="fieldDescription je-field-desc-xl">For a Seerr result that's already available in your library, clicking the poster goes straight to the Jellyfin item, just like the title link already does. If "Open results in More Info modal" above is enabled, the modal can no longer be opened by clicking the poster of an available item.</div>
@@ -8021,6 +8025,7 @@
                 document.querySelector('#jellyseerrEnable4kTvRequests').checked = !!config.JellyseerrEnable4KTvRequests;
                 document.querySelector('#jellyseerrUseMoreInfoModal').checked = !!config.JellyseerrUseMoreInfoModal;
                 document.querySelector('#jellyseerrAvailablePosterLinksToJellyfin').checked = !!config.JellyseerrAvailablePosterLinksToJellyfin;
+                document.querySelector('#nativeAbsentDetailsEnabled').checked = config.NativeAbsentDetailsEnabled === true;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
                 document.querySelector('#jellyseerrShowQuotaInfo').checked = config.JellyseerrShowQuotaInfo !== false;
                 document.querySelector('#jellyseerrShowSimilar').checked = config.JellyseerrShowSimilar !== false;
@@ -8611,6 +8616,7 @@
             config.JellyseerrEnable4KTvRequests = document.querySelector('#jellyseerrEnable4kTvRequests').checked;
             config.JellyseerrUseMoreInfoModal = document.querySelector('#jellyseerrUseMoreInfoModal').checked;
             config.JellyseerrAvailablePosterLinksToJellyfin = document.querySelector('#jellyseerrAvailablePosterLinksToJellyfin').checked;
+            config.NativeAbsentDetailsEnabled = document.querySelector('#nativeAbsentDetailsEnabled').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
             config.JellyseerrShowQuotaInfo = document.querySelector('#jellyseerrShowQuotaInfo').checked;
             config.JellyseerrShowSimilar = document.querySelector('#jellyseerrShowSimilar').checked;

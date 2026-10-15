@@ -460,8 +460,9 @@
     }
 
     /**
-     * Opens what a notification is about (its Jellyfin page, else the Requests page or, for an
-     * administrators' alert, the tab of it the server linked) and marks it read.
+     * Opens what a notification is about (its Jellyfin page; for a title that isn't in the library,
+     * its native details page when offered; else the Requests page or, for an administrators'
+     * alert, the tab of it the server linked) and marks it read.
      * @param {Object} item Inbox item.
      * @returns {void}
      */
@@ -477,7 +478,16 @@
             return;
         }
         // Administrators' alerts link to the Requests page's tab that shows them (Overview, System).
-        window.location.hash = typeof item.link === 'string' && /^#\/requests(\?tab=[a-z]+)?$/.test(item.link) ? item.link : '#/requests';
+        const fallback = typeof item.link === 'string' && /^#\/requests(\?tab=[a-z]+)?$/.test(item.link) ? item.link : '#/requests';
+        const alert = /\?tab=/.test(fallback);
+        if (!alert && typeof item.key === 'string' && /^(movie|tv):[a-z]+:[A-Za-z0-9]+(:s\d+(:e\d+)?)?$/.test(item.key) && JE.titleDetails?.available?.() === true) {
+            // A title notice: the title's page (a copy the user can open first), else the Requests page.
+            const m = /^(.*?)(?::s(\d+)(?::e(\d+))?)?$/.exec(item.key);
+            JE.titleDetails.openKey(m[1], { season: m[2] != null ? Number(m[2]) : undefined, episode: m[3] != null ? Number(m[3]) : undefined, modal: false })
+                .then((opened) => { if (!opened) window.location.hash = fallback; });
+            return;
+        }
+        window.location.hash = fallback;
     }
 
     // ------------------------------------------------------------------ toasts

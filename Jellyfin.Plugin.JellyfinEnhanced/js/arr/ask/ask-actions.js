@@ -153,7 +153,10 @@
             return;
         }
         JE.internals?.arrAskCollection?.clear?.(page);
-        if (status.kind !== 'series' && status.kind !== 'movie' && status.kind !== 'episode') {
+        // A season of a title that isn't in the library (native details) gets Get Season N; library
+        // season pages are left to the season rows.
+        const absentSeason = status.kind === 'season' && isAbsent(status);
+        if (status.kind !== 'series' && status.kind !== 'movie' && status.kind !== 'episode' && !absentSeason) {
             clear(page);
             return;
         }
@@ -165,7 +168,8 @@
             }
             const box = status.kind === 'series' ? await seriesActions(page, status, ctx, caps, gen)
                 : status.kind === 'episode' ? episodeActions(status, caps)
-                    : await movieActions(page, status, caps, gen);
+                    : status.kind === 'season' ? await seasonActions(status, caps, gen)
+                        : await movieActions(page, status, caps, gen);
             if (gen !== generation) return;
             // Asks (and a family Search, which is an ask or a search on the title's own folder) are checked for this
             // title first: refused right now, the page says why instead of offering a button that can't work. An
@@ -475,7 +479,10 @@
                     : run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, wanted), 'tv')), plan.nextSeason != null || plan.missing > 0, searchFrom ? 'search' : 'ask'));
             }
         }
-        const more = action(`${key}|more`, 'more_horiz', tr('arr_actions_more'), (b) => openSheet(b, status, plan), true, 'more');
+        // A series that isn't in the library (native details): the sheet is its Request (it says why when the
+        // title can't be asked for now, so it stays when the box is paused).
+        const absent = isAbsent(status);
+        const more = action(`${key}|more`, absent ? 'add' : 'more_horiz', tr(absent ? 'arr_actions_request' : 'arr_actions_more'), (b) => openSheet(b, status, plan), !absent || plan.nextSeason != null, 'more');
         more.setAttribute('aria-label', tr('arr_actions_more_label', { name: page.querySelector('.itemName, h1, h3.itemName')?.textContent?.trim() || '' }).trim());
         box.appendChild(more);
         if (firstCost) {
@@ -484,6 +491,44 @@
             const line = JE.internals?.arrAskSheet?.costLine?.(firstCost, caps, allowance);
             if (line?.text) box.appendChild(JE.arrStatus.el('span', 'je-ask-action-cost', line.text));
         }
+        box.dataset.sig = signature(box);
+        return box;
+    }
+
+    /**
+     * True for the status of a page of a title that isn't in the library (native details): its
+     * item id is a synthetic page id, never a library item.
+     * @param {Object} status Status.
+     * @returns {boolean} Absent.
+     */
+    function isAbsent(status) {
+        return !!status?.itemId && !!JE.titleDetails?.isSynthetic?.(status.itemId);
+    }
+
+    /**
+     * The season page of a title that isn't in the library: Get Season N while the season has aired
+     * episodes and nothing of it is here, asked for or on its way.
+     * @param {Object} status Season status.
+     * @param {Object} caps Capabilities.
+     * @param {number} gen Generation of this render.
+     * @returns {Promise<HTMLElement|null>} Box.
+     */
+    async function seasonActions(status, caps, gen) {
+        const m = /^(.*):s(\d+)$/.exec(String(status.key || ''));
+        const summary = status.summary || {};
+        if (!m || !(summary.aired > 0) || summary.ready > 0 || summary.downloading > 0 || summary.almostReady > 0
+            || !['notHere', 'looking'].includes(status.stage) || status.attention) return null;
+        const key = JE.arrAsk.seriesKey(m[1]);
+        const season = Number(m[2]);
+        const contact = JE.arrAsk.contact(caps);
+        const box = actionsBox(caps);
+        const doneKey = `${key}|season:${season}`;
+        box.appendChild(action(doneKey, 'download', caps.asksFirst ? tr('arr_actions_ask_season', { contact, season }) : tr('arr_actions_get_season', { season }),
+            (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, [season]), 'tv')));
+        const allowance = await quota('tv');
+        if (gen !== generation) return null;
+        const line = JE.internals?.arrAskSheet?.costLine?.(JE.arrAsk.seasonsInput(key, [season]), caps, allowance);
+        if (line?.text) box.appendChild(JE.arrStatus.el('span', 'je-ask-action-cost', line.text));
         box.dataset.sig = signature(box);
         return box;
     }

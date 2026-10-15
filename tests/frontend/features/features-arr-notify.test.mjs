@@ -522,6 +522,37 @@ test('"Hide titles" is offered for e-mail too, with phone alerts not set up or s
   assert.equal(neither.box, undefined);
 });
 
+test('a notice about a title that is not in the library opens its native page; alerts keep their tab; no page, the Requests page', async t => {
+  const h = setup(t);
+  h.state.inbox = {
+    unread: 3, more: false, items: [
+      item(9, 'declined', { title: 'Dune' }, { key: 'movie:tmdb:693134' }),
+      item(8, 'episodes', { title: 'Andor' }, { key: 'tv:tvdb:393189:s1:e3' }),
+      item(7, 'attention', { code: 'import_blocked', title: 'Severance', scope: 'S02E05', instance: 'Sonarr' }, { key: 'tv:tvdb:1', link: '#/requests?tab=overview' })
+    ]
+  };
+  const keyed = [];
+  let answer = true;
+  h.JE.titleDetails = { available: () => true, openKey: async (key, o) => { keyed.push([key, o.season ?? null, o.episode ?? null, o.modal]); return answer; } };
+  h.JE.initializeArrNotify();
+  await until(() => h.document.getElementById('je-notify-bell'));
+  await h.JE.arrNotify.loadPrefs();
+  await h.JE.arrNotify.refresh();
+  const row = n => { h.document.getElementById('je-notify-bell').click(); return [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')][n].querySelector('.je-notify-body'); };
+  row(0).click();
+  row(1).click();
+  await wait(5);
+  assert.deepEqual(keyed, [['movie:tmdb:693134', null, null, false], ['tv:tvdb:393189', 1, 3, false]]);
+  row(2).click();
+  assert.equal(h.window.location.hash, '#/requests?tab=overview');
+  assert.equal(keyed.length, 2);
+  // Nowhere to open it (the navigator answered no): the Requests page as before.
+  answer = false;
+  row(0).click();
+  await wait(5);
+  assert.equal(h.window.location.hash, '#/requests');
+});
+
 test('administrators\' Needs attention alerts read like the Overview row and open the tab the server linked', async t => {
   const h = setup(t);
   h.state.inbox = {

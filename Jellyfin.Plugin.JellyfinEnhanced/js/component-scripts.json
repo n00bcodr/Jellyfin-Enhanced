@@ -238,6 +238,8 @@
     "arr/hub/hub-mine-ledger.js",
     "arr/hub/hub-chipbar.js",
     "arr/hub/hub-page.js",
+    "// Native details for titles not in the library (JE.titleDetails; experimental, Jellyfin 12): read by the Seerr cards at click time.",
+    "jellyseerr/nativedetails/native-details.js",
     "// notifications (Requests & downloads, phase 2) — notify-core.js first",
     "// (JE.arrNotify); notify-styles.js last (JE.initializeArrNotify, started by JE.initializeArrStatus).",
     "arr/notify/notify-core.js",

@@ -144,6 +144,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return Cache.Put(cacheKey, Serialize(statuses));
         }
 
+        /// <summary>The empty answer for an item id (the same body an item the viewer can't see gets).</summary>
+        public StatusBody Empty(StatusViewer viewer, Guid itemId)
+        {
+            var none = CacheKey(viewer, "item", itemId.ToString("N", CultureInfo.InvariantCulture), "none");
+            return Cache.Get(none) ?? Cache.Put(none, Serialize(Array.Empty<TitleStatus>()));
+        }
+
         /// <summary>
         /// The full status of one Jellyfin item for its details page (journey, seasons or episodes).
         /// No statuses (an empty list) when the viewer can't see the item, it is not a movie, series,
@@ -257,6 +264,83 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (Cache.Get(cacheKey) is { } hit) return hit;
             var composed = Compose(viewer, gather, title, detail: true);
             return Cache.Put(cacheKey, Serialize(composed == null ? Array.Empty<TitleStatus>() : new[] { composed.Status }));
+        }
+
+        /// <summary>
+        /// The details-page status of a title, season or episode that isn't in the library (the native
+        /// details page, whose id is a page id and never a copy): composed by key like the more-info
+        /// modal, with the season and episode facts from public metadata. A Sonarr that holds the
+        /// series supplies the episode states; otherwise every aired episode is simply not here. Once a
+        /// copy the viewer can open arrives, <see cref="TitleStatus.OpenItemId"/> names it. Empty when the
+        /// viewer may not ask about the title by key.
+        /// </summary>
+        public async Task<StatusBody> ForAbsentAsync(StatusViewer viewer, AbsentTitle page, CancellationToken cancellationToken)
+        {
+            var title = page.Title.Title;
+            var gather = await GatherAsync(viewer, new[] { title }, loadEpisodes: title.IsMovie ? null : new[] { title }, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            // An episode or season page also follows the asks that cover that part (never the series' other parts).
+            var asked = page.Kind == "episode" && page.Season is int s && page.Episode is int e ? _requests.ForEpisode(title, s, e, viewer)
+                : page.Kind == "season" && page.Season is int whole ? _requests.ForSeason(title, whole, viewer)
+                : null;
+            var cacheKey = CacheKey(viewer, "absent", page.Signature + "|" + (asked == null ? string.Empty : JsonSerializer.Serialize(asked)), gather.Revision);
+            if (Cache.Get(cacheKey) is { } hit) return hit;
+            var status = ComposeAbsent(viewer, page, gather, asked);
+            return Cache.Put(cacheKey, Serialize(status == null ? Array.Empty<TitleStatus>() : new[] { status }));
+        }
+
+        private TitleStatus? ComposeAbsent(StatusViewer viewer, AbsentTitle page, Gathered gather, RequestFacts? episodeRequests)
+        {
+            var title = page.Title.Title;
+            var copies = CopiesOf(title, viewer);
+            if (!MayAskByKey(viewer, title, copies)) return null;
+            ApplyRequests(gather, viewer);
+            var facts = gather.Facts[title];
+            var c = Context(viewer);
+            // Virtual: the page id never stands for a file, so nothing on it can read as Ready.
+            var item = new JfItemRef { ItemId = page.PageId, Kind = page.Kind, Key = page.ScopeKey, Season = page.Season, Episode = page.Episode, Virtual = true, TmdbId = page.TmdbId };
+            TitleStatus status;
+            switch (page.Kind)
+            {
+                case "movie":
+                    status = StatusComposer.Movie(facts, null, copies, c, detail: true);
+                    break;
+                case "series":
+                    var seasons = page.Seasons.Select(s => new JfSeason { ItemId = s.PageId, Season = s.Season }).ToList();
+                    status = facts.Copies.Any(x => x.Series != null)
+                        ? StatusComposer.Series(facts, item, Array.Empty<JfEpisode>(), seasons, c, detail: true)
+                        : StatusComposer.AbsentSeries(facts, page, c);
+                    break;
+                case "season":
+                    var rows = page.Rows
+                        ? page.Episodes.Select(e => new JfEpisode { ItemId = e.PageId, Season = e.Season, Episode = e.Episode, Virtual = true }).ToList()
+                        : new List<JfEpisode>();
+                    status = facts.Copies.Any(x => x.Series != null)
+                        ? StatusComposer.Season(facts, item, rows, c, detail: true)
+                        : StatusComposer.AbsentSeason(facts, page, episodeRequests, c);
+                    break;
+                default:
+                    status = facts.Copies.Any(x => x.Series != null)
+                        ? StatusComposer.Episode(facts, item, c, detail: true)
+                        : StatusComposer.AbsentEpisode(facts, page, item, episodeRequests, c);
+                    break;
+            }
+
+            status = WithLiveKey(status, facts);
+            status.OpenItemId = OpenableCopy(viewer, page, copies);
+            return status;
+        }
+
+        /// <summary>
+        /// The library item the viewer can open for an absent page once a copy has arrived: the movie or
+        /// series; for a season or episode page that season or (playable) episode, when it is there.
+        /// </summary>
+        private string? OpenableCopy(StatusViewer viewer, AbsentTitle page, IReadOnlyList<JfCopy> copies)
+        {
+            if (copies.FirstOrDefault(x => x.Visible) is not { } shown) return null;
+            if (page.Kind is "movie" or "series") return shown.ItemId.ToString("N", CultureInfo.InvariantCulture);
+            var scope = ScopeItem(viewer, page.ScopeKey);
+            if (scope == null || (page.Kind == "episode" && scope.Virtual)) return null;
+            return scope.ItemId.ToString("N", CultureInfo.InvariantCulture);
         }
 
         /// <summary>

@@ -1310,7 +1310,9 @@
 
         try {
             const itemId = detailsItemIdFromHash();
-            if (itemId) {
+            // A title that isn't in the library (native details): its native "More Like This" rail is
+            // the one recommendations rail, and its own Request replaces "Request More".
+            if (itemId && !JE.titleDetails?.isSynthetic?.(itemId)) {
                 // Use requestAnimationFrame instead of fixed timeout
                 // This ensures we're in sync with the rendering cycle
                 requestAnimationFrame(() => {

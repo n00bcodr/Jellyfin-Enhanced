@@ -390,6 +390,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The Jellyfin item this status was asked for, if any.</summary>
         public string? ItemId { get; init; }
 
+        /// <summary>
+        /// On the page of a title that isn't in the library (native details): the Jellyfin item of its
+        /// copy the viewer can open now, once one has arrived (the page then offers "Open"). Absent
+        /// otherwise, and never a page id.
+        /// </summary>
+        public string? OpenItemId { get; set; }
+
         /// <summary>movie, series, season or episode.</summary>
         public string Kind { get; init; } = string.Empty;
 

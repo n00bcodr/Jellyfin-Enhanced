@@ -292,6 +292,30 @@ test('the details page gets one request, the pill under the title, and re-render
   assert.equal(h.S.refresh(['movie:tmdb:2']), 0, 'other titles do not refetch');
 });
 
+test('the page of a title that is not in the library is read by its page id and shows one pill in its own slot', async t => {
+  const PAGE_ID = '4a45ad120001479b00000000c8f267bc';
+  const h = setup(t, {
+    html: detailsHtml, hash: `#/details?id=${PAGE_ID}`,
+    responses: path => path.startsWith(`/acquire/status/item/${PAGE_ID}`)
+      ? { contact: 'Dad', items: [{ key: 'tv:tvdb:393189', itemId: PAGE_ID, kind: 'series', stage: 'notHere', reason: { code: 'not_in_arr' }, seasons: [{ season: 1, stage: 'notHere', summary: { aired: 12 } }], openItemId: 'copy1' }] }
+      : null
+  });
+  const shown = [];
+  h.JE.titleDetails = { isSynthetic: id => String(id || '').startsWith('4a45ad1') };
+  h.JE.internals.nativeDetails = { statusShown: (page, status) => shown.push(status.openItemId) };
+  const section = h.document.querySelector('.detailSection');
+  const slot = h.document.createElement('div');
+  slot.className = 'je-native-absent-status';
+  section.prepend(slot);
+  await h.JE.internals.arrStatusDetails.update(false);
+  assert.equal(h.calls[0].path, `/acquire/status/item/${PAGE_ID}`);
+  // A pill (like the modal), not a library series' counts; in the page's slot; Open handed to the page.
+  const block = slot.querySelector('.je-arr-status[data-je-arr-surface="details"]');
+  assert.ok(block && block.classList.contains('je-arr-pill-block') || block.querySelector('.je-arr-pill'));
+  assert.equal(slot.querySelector('.je-arr-summary'), null);
+  assert.deepEqual(shown, ['copy1']);
+});
+
 test('a quiet status draws nothing; a 403 switches the surfaces off for the page load', async t => {
   const h = setup(t, {
     html: detailsHtml, hash: '#/details?id=movie1',

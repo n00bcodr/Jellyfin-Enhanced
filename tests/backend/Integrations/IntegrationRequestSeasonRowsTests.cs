@@ -61,6 +61,33 @@ public class IntegrationRequestSeasonRowsTests
         => new() { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = numbers.Select(n => new RequestEpisode(1, n)).ToArray() };
 
     [Fact]
+    public async Task ASeasonOfATitleThatIsntInTheLibraryListsEveryEpisodeFromMetadata()
+    {
+        using var s = new Setup();
+        var seriesPage = Guid.NewGuid();
+        var page = new AbsentTitle { PageId = Guid.NewGuid(), Kind = "season", Title = TitleKey.Parse("tv:tvdb:393189")!, TmdbId = 83867, Season = 1, SeriesPageId = seriesPage };
+        var rows = await s.Rows.ForAbsentSeasonAsync(s.Viewer(s.R.Member), page, "en", CancellationToken.None);
+        Assert.NotNull(rows);
+        Assert.Equal(("tv:tvdb:393189:s1", "tv:tvdb:393189", seriesPage.ToString("N")), (rows!.Key, rows.Series, rows.SeriesId));
+        // No file anywhere: every episode gets its metadata (Jellyfin's rows of E1/E2 belong to another series here).
+        Assert.Equal(new[] { 1, 2, 3, 4 }, rows.Episodes.Select(e => e.Episode));
+        Assert.Equal(("Pilot", "/a1.jpg"), (rows.Episodes[0].Title, rows.Episodes[0].Still));
+        Assert.Equal((83867, 1, "en"), s.TmdbCalls.Single());
+        Assert.True(rows.CanRequest);
+        // Episodes the library has but hides from this viewer get no row (no title, overview or still).
+        var hiding = await s.Rows.ForAbsentSeasonAsync(s.Viewer(s.R.Member), new AbsentTitle { PageId = Guid.NewGuid(), Kind = "season", Title = page.Title, TmdbId = 83867, Season = 1, SeriesPageId = seriesPage, HiddenEpisodes = new[] { 2 } }, "en", CancellationToken.None);
+        Assert.Equal(new[] { 1, 3, 4 }, hiding!.Episodes.Select(e => e.Episode));
+        // Spoiler Guard on the title: no title, overview or still (the air date as its switch says), the rows themselves stay.
+        var guarded = await s.Rows.ForAbsentSeasonAsync(s.Viewer(s.R.Member), new AbsentTitle { PageId = Guid.NewGuid(), Kind = "season", Title = page.Title, TmdbId = 83867, Season = 1, SeriesPageId = seriesPage, Spoilers = new AbsentRowSpoilers(true, true, false) }, "en", CancellationToken.None);
+        Assert.Equal(new[] { 1, 2, 3, 4 }, guarded!.Episodes.Select(e => e.Episode));
+        Assert.All(guarded.Episodes, e => Assert.True(e.Title == null && e.Overview == null && e.Still == null));
+        Assert.Equal(rows.Episodes[0].AirDate, guarded.Episodes[0].AirDate);
+        // Only season pages with their series page have rows.
+        Assert.Null(await s.Rows.ForAbsentSeasonAsync(s.Viewer(s.R.Member), new AbsentTitle { PageId = Guid.NewGuid(), Kind = "episode", Title = page.Title, Season = 1, SeriesPageId = seriesPage }, null, CancellationToken.None));
+        Assert.Null(await s.Rows.ForAbsentSeasonAsync(s.Viewer(s.R.Member), new AbsentTitle { PageId = Guid.NewGuid(), Kind = "season", Title = page.Title, Season = 1 }, null, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task MetadataIsSentOnlyForEpisodesWithoutAFileAndOnlySafeStillPaths()
     {
         using var s = new Setup();

@@ -197,6 +197,40 @@ test('calendar card navigates to series while play button targets episode and un
   h.document.querySelector('[data-event-id="movie"]').click();assert.equal(h.window.location.hash,'#/details?id=episode-id');
 });
 
+test('with native details on, a title without a file opens its page by key (the episode from Play, the series from the card)', async t => {
+  const h = actions(t);
+  const keyed = [];
+  h.JE.titleDetails = { available: () => true, openKey: async (key, o) => { keyed.push({ key, ...o }); return true; } };
+  h.P.state.events = [
+    {id: 'movie', type: 'Movie', hasFile: false, tmdbId: 438631},
+    {id: 'ep', type: 'Series', hasFile: false, tvdbId: 393189, tmdbId: 83867, seasonNumber: 1, episodeNumber: 3},
+    {id: 'imdb', type: 'Movie', hasFile: false, imdbId: 'tt0111161'}
+  ];
+  h.document.body.innerHTML = '<div class="je-calendar-card" data-event-id="movie"></div><div class="je-calendar-card" data-event-id="ep"></div><div class="je-calendar-card" data-event-id="imdb"></div>';
+  h.document.body.addEventListener('click', h.P.handleEventClick);
+  // The series card: no file anywhere, the provider lookup finds no item → the series page.
+  h.JE.core.api.plugin = async () => { throw Object.assign(new Error('HTTP 400'), {status: 400}); };
+  for (const id of ['movie', 'ep', 'imdb']) h.document.querySelector(`[data-event-id="${id}"]`).click();
+  await new Promise(r => setTimeout(r, 20));
+  assert.equal(keyed.length, 3);
+  assert.ok(keyed.some(k => k.key === 'movie:tmdb:438631' && k.mediaType === 'movie'));
+  assert.ok(keyed.some(k => k.key === 'movie:imdb:tt0111161'));
+  assert.ok(keyed.some(k => k.key === 'tv:tvdb:393189' && k.season === undefined), 'the card opens the series');
+  // Play on an episode whose file Jellyfin hasn't got for this viewer: that episode's page.
+  keyed.length = 0;
+  h.P.state.events.push({id: 'epfile', type: 'Series', hasFile: true, tvdbId: 393189, seasonNumber: 1, episodeNumber: 3});
+  h.document.body.insertAdjacentHTML('beforeend', '<div class="je-calendar-card" data-event-id="epfile"><button class="je-calendar-play-btn" data-event-id="epfile"></button></div>');
+  h.document.querySelector('[data-event-id="epfile"] button').click();
+  await new Promise(r => setTimeout(r, 20));
+  assert.deepEqual(keyed.map(k => [k.key, k.season, k.episode]), [['tv:tvdb:393189', 1, 3]]);
+  // Native details off: nothing opens for a title without a file (as before).
+  keyed.length = 0;
+  h.JE.titleDetails.available = () => false;
+  h.document.querySelector('[data-event-id="movie"]').click();
+  await new Promise(r => setTimeout(r, 5));
+  assert.equal(keyed.length, 0);
+});
+
 test('a date-only release is on its own day west of UTC, with no clock time, and the request names the viewer\'s days', async t => {
   const previous = process.env.TZ;
   process.env.TZ = 'America/Los_Angeles';

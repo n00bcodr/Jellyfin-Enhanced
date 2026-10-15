@@ -61,6 +61,37 @@ public class ApiConfigurationTests
         Assert.Equal(authenticated, json.Contains("private-mapping-sentinel", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void NativeDetailsAreOfferedOnlyByAJellyfin12BuildWithTheSwitchOnAndSeerrSetUp()
+    {
+        using var fixture = new ApiPluginFixture();
+        var config = fixture.Plugin.Configuration;
+        SeedSecrets(config);
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
+        bool Offered()
+        {
+            using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
+            var cap = document.RootElement.GetProperty("NativeAbsentDetails");
+            Assert.Equal(1, cap.GetProperty("ContractVersion").GetInt32());
+            return cap.GetProperty("Enabled").GetBoolean();
+        }
+
+        config.JellyseerrEnabled = true;
+        config.JellyseerrUrls = "http://seerr.invalid:5055";
+        Assert.False(Offered()); // off by default
+        config.NativeAbsentDetailsEnabled = true;
+#if NET9_0
+        // A 10.11 build has no facade: it never offers the page, so its clients keep the modal.
+        Assert.False(Offered());
+#else
+        Assert.True(Offered());
+        config.JellyseerrEnabled = false; // no metadata source: the modal (or nothing) as before
+        Assert.False(Offered());
+#endif
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

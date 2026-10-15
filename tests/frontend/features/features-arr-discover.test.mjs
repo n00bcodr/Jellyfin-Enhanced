@@ -188,6 +188,17 @@ test('with Seerr set up, cards the caller does not have open its more-info windo
   assert.deepEqual(opened, [[20, 'tv']]);
 });
 
+test('with native details offered, a card the caller does not have opens the title\'s page (no Seerr needed)', async t => {
+  const opened = [], native = [];
+  const h = setup(t, { hash: '#/requests?tab=discover', config: { JellyseerrEnabled: false }, JE: { jellyseerrMoreInfo: { open: (id, type) => opened.push([id, type]) } } });
+  h.JE.titleDetails = { available: () => true, open: (id, type) => { native.push([id, type]); return true; } };
+  h.JE.initializeArrHub();
+  await until(() => hubPage(h).querySelectorAll('.je-discover-card').length >= 7);
+  cardOf(hubPage(h), 'tv:tmdb:20').querySelector('button.je-discover-poster-box').click();
+  assert.deepEqual(native, [[20, 'tv']]);
+  assert.deepEqual(opened, []);
+});
+
 test('Request on a movie asks once with the movie input, toasts the honest outcome and updates every card of the title', async t => {
   const posts = [];
   const h = setup(t, {

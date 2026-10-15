@@ -535,6 +535,32 @@ test('mount API: the current request state replaces Request; Watchers get Notify
   off.destroy();
 });
 
+test('mount API: a redraw keeps the keyboard focus on the control (or its stand-in)', async t => {
+  const h = setup(t, { html: '<div id="a"></div>' });
+  const a = h.document.getElementById('a');
+  const controls = h.Sheet.mount(a, MOVIE);
+  await settle();
+  const notHere = { key: MOVIE.key, kind: 'movie', stage: 'notHere', reason: { code: 'not_in_arr' } };
+  a.querySelector('.je-ask-mount-request').focus();
+  // A re-read with the same state (the details surface forwards every read) redraws the row.
+  controls.update(notHere);
+  controls.update({ ...notHere });
+  const request = a.querySelector('.je-ask-mount-request');
+  assert.ok(request);
+  assert.equal(h.document.activeElement, request);
+  // Request gives way to a state chip: the focus goes to the mount's next control (Notify me), not the page.
+  controls.update({ key: MOVIE.key, kind: 'movie', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 42 } });
+  assert.equal(a.querySelector('.je-ask-mount-request'), null);
+  assert.ok(a.contains(h.document.activeElement) && h.document.activeElement.tagName === 'BUTTON');
+  // Focus elsewhere on the page is never taken.
+  const outside = h.document.createElement('button');
+  h.document.body.appendChild(outside);
+  outside.focus();
+  controls.update(notHere);
+  assert.equal(h.document.activeElement, outside);
+  controls.destroy();
+});
+
 // ------------------------------------------------------------------ details-page smart actions
 
 const PAGE = '<div id="itemDetailPage"><div class="detailPagePrimaryContent"><div class="detailSection"><h3 class="itemName">Severance</h3></div></div></div>';
@@ -586,6 +612,46 @@ test('series page: Get Season 2, Get missing episodes, More… and the cost line
   h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, { contact: 'Dad' });
   await settle();
   assert.deepEqual([...page.querySelectorAll('.je-ask-actions .je-arr-chip')].map(n => n.textContent), ['Asked!', 'Asked!']);
+});
+
+test('a series or season that isn\'t in the library (native details): Get Season N and Request; library seasons stay with the rows', async t => {
+  const SERIES_PAGE = '4a45ad120001479b00000000c8f267bc';
+  const SEASON_PAGE = '4a45ad130001479b0001000092805890';
+  const h = setup(t, { html: PAGE, hash: `#/details?id=${SERIES_PAGE}`, item: { Id: SERIES_PAGE, Name: 'Andor', ProductionYear: 2022 } });
+  h.JE.titleDetails = { isSynthetic: id => String(id || '').startsWith('4a45ad1') };
+  const page = h.document.getElementById('itemDetailPage');
+  const absent = {
+    key: 'tv:tvdb:393189', itemId: SERIES_PAGE, kind: 'series', stage: 'notHere', reason: { code: 'not_in_arr' },
+    seasons: [{ season: 1, itemId: SEASON_PAGE, stage: 'notHere', summary: { aired: 12, ready: 0 } }, { season: 2, stage: 'notHere', summary: { aired: 12, ready: 0 } }]
+  };
+  h.JE.internals.arrAskActions.attachDetails(page, absent, { contact: 'Dad' });
+  await settle();
+  let box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+  // "More…" is the title's Request here; nothing counts as "missing episodes" of a title that isn't here.
+  assert.deepEqual([...box.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['Get Season 1', 'Request']);
+  click(h, box.querySelectorAll('.je-ask-action')[1]);
+  await settle(20);
+  assert.ok(sheetEl(h), 'Request opens the request sheet');
+  assert.deepEqual([...h.document.querySelectorAll('.je-sheet-card')].length > 0, true);
+  key(h, 'Escape');
+  await settle();
+  // A season page of it: Get Season 1, asked as that season.
+  const season = { key: 'tv:tvdb:393189:s1', itemId: SEASON_PAGE, kind: 'season', stage: 'notHere', reason: { code: 'not_in_arr' }, summary: { aired: 12, ready: 0 }, episodes: [] };
+  h.JE.internals.arrAskActions.attachDetails(page, season, { contact: 'Dad' });
+  await settle();
+  box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+  assert.deepEqual([...box.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['Get Season 1']);
+  click(h, box.querySelector('.je-ask-action'));
+  await settle(20);
+  assert.equal(h.posts.at(-1).body.input.key, 'tv:tvdb:393189');
+  assert.deepEqual([...h.posts.at(-1).body.input.seasons], [1]);
+  // Something of the season is on its way, or a library season: no season action.
+  h.JE.internals.arrAskActions.attachDetails(page, { ...season, summary: { aired: 12, downloading: 2 } }, { contact: 'Dad' });
+  await settle();
+  assert.equal(page.querySelector('.je-ask-actions[data-je-ask-surface="details"]'), null);
+  h.JE.internals.arrAskActions.attachDetails(page, { ...season, itemId: 'season1' }, { contact: 'Dad' });
+  await settle();
+  assert.equal(page.querySelector('.je-ask-actions[data-je-ask-surface="details"]'), null);
 });
 
 test('series page for a kid: "Ask Dad for Season 2"; Watchers and the feature off show nothing', async t => {

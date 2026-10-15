@@ -99,6 +99,8 @@
      * @param {object} visit The details visit (see discardItemStatsPrefetch).
      */
     function prefetchItemStats(itemId, mediaSourceId, { watchProgress, fileSize }, visit) {
+        // A title that isn't in the library (native details page) has no stats to read.
+        if (JE.titleDetails?.isSynthetic?.(itemId)) return;
         if (!JE.core?.api?.plugin) return;
         const now = Date.now();
         const progress = watchProgressCache.get(itemId);
@@ -155,6 +157,8 @@
      *   request is shared with the file-size chip (the progress itself ignores it).
      */
     async function displayWatchProgress(itemId, container, mediaSourceId = null) {
+        // A title that isn't in the library (native details page) has no files to describe.
+        if (JE.titleDetails?.isSynthetic?.(itemId)) return;
         // show itemMiscInfo if hidden like on season pages
         if (container.classList.contains('hide')) {
             container.classList.remove('hide')
@@ -380,6 +384,8 @@
      * @param {HTMLElement} container The DOM element to append the info to.
      */
     async function displayItemSize(itemId, container, mediaSourceId = null) {
+        // A title that isn't in the library (native details page) has no files to describe.
+        if (JE.titleDetails?.isSynthetic?.(itemId)) return;
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
         const cacheKey = `${itemId}|${mediaSourceId || ''}`;
@@ -610,6 +616,8 @@
      * @param {HTMLElement} container The DOM element to append the info to.
      */
     async function displayAudioLanguages(itemId, container, mediaSourceId = null) {
+        // A title that isn't in the library (native details page) has no files to describe.
+        if (JE.titleDetails?.isSynthetic?.(itemId)) return;
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
         const cacheKey = `${itemId}|${mediaSourceId || ''}`;

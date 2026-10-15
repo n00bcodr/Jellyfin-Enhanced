@@ -155,13 +155,53 @@
   }
 
   /**
-   * Navigate to Jellyfin item by provider IDs
+   * The title key of a calendar event (movie by TMDB/IMDb, series by TVDB/TMDB), or null.
+   * @param {Object} event Calendar event.
+   * @returns {string|null} Key.
+   */
+  function titleKeyOf(event) {
+    if (event.type === "Movie") {
+      if (Number(event.tmdbId) > 0) return `movie:tmdb:${Number(event.tmdbId)}`;
+      return /^tt\d+$/.test(String(event.imdbId || "")) ? `movie:imdb:${event.imdbId}` : null;
+    }
+    if (Number(event.tvdbId) > 0) return `tv:tvdb:${Number(event.tvdbId)}`;
+    return Number(event.tmdbId) > 0 ? `tv:tmdb:${Number(event.tmdbId)}` : null;
+  }
+
+  /**
+   * A title that isn't in the library (or not for this viewer): its native details page — the
+   * episode's when the event names one — through the navigator, which takes a copy the viewer can
+   * open first. Returns false when native details aren't offered.
+   * @param {Object} event Calendar event.
+   * @param {boolean} preferSeries Open the series rather than the episode.
+   * @returns {Promise<boolean>} Opened.
+   */
+  async function openAbsent(event, preferSeries) {
+    if (JE.titleDetails?.available?.() !== true) return false;
+    const key = titleKeyOf(event);
+    if (!key) return false;
+    const isMovie = event.type === "Movie";
+    const scoped = !isMovie && !preferSeries && Number.isInteger(event.seasonNumber) && Number.isInteger(event.episodeNumber);
+    return JE.titleDetails.openKey(key, {
+      mediaType: isMovie ? "movie" : "tv",
+      tmdbId: Number(event.tmdbId) > 0 ? Number(event.tmdbId) : undefined,
+      season: scoped ? event.seasonNumber : undefined,
+      episode: scoped ? event.episodeNumber : undefined,
+    });
+  }
+
+  /**
+   * Navigate to Jellyfin item by provider IDs (or, with native details on, to the title's page when
+   * it isn't in the library).
    */
   async function navigateToJellyfinItem(event, options = {}) {
     const preferSeries = !!options.preferSeries;
     const isMovie = event.type === "Movie";
 
-    if (!event.hasFile && (!preferSeries || isMovie)) return;
+    if (!event.hasFile && (!preferSeries || isMovie)) {
+      await openAbsent(event, preferSeries);
+      return;
+    }
 
     const itemId = (preferSeries || isMovie)
       ? event.itemId
@@ -184,6 +224,7 @@
         window.location.hash = `#/details?id=${providerItemId}`;
         return;
       }
+      await openAbsent(event, preferSeries);
     } catch (error) {
       console.error(`${logPrefix} Navigation failed:`, error);
     }

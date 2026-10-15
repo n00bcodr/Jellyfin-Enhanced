@@ -339,6 +339,145 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return Looking(since, c, movie.LastSearchTime, sent.HasValue);
         }
 
+        // ------------------------------------------------------------------ titles that aren't in the library
+
+        /// <summary>
+        /// A series page of a title no Sonarr holds (the native details page of an absent title): the
+        /// series status by key (asked, OK'd, declined or not here) with one entry per season from public
+        /// metadata, so the page can offer "Get Season N". Nothing is counted as missing or ready: the
+        /// seasons are simply not here, and no page id stands for a copy.
+        /// </summary>
+        /// <param name="facts">Facts of the series (requests applied).</param>
+        /// <param name="page">The absent page.</param>
+        /// <param name="c">Context.</param>
+        /// <returns>Status.</returns>
+        public static TitleStatus AbsentSeries(TitleFacts facts, AbsentTitle page, ComposeContext c)
+        {
+            var state = ApplyRequest(NothingKnown(facts), facts.Request, c, facts);
+            var seasons = page.Seasons.Where(s => s.Season > 0).OrderBy(s => s.Season).Select(s => new SeasonStatus
+            {
+                Season = s.Season,
+                ItemId = Id(s.PageId),
+                Stage = s.Aired > 0 ? StatusStage.NotHere : StatusStage.NotOut,
+                Summary = new StatusSummary { Aired = s.Aired },
+            }).ToList();
+            var next = page.Seasons.Where(s => s.Season > 0 && s.Aired == 0 && s.AirDate is DateTime d && d > c.Now).OrderBy(s => s.Season).FirstOrDefault();
+            return new TitleStatus
+            {
+                Key = facts.Key.ToString(),
+                ItemId = Id(page.PageId),
+                Kind = "series",
+                Stage = state.Stage,
+                Reason = Reason(state),
+                Attention = state.Attention,
+                Quiet = state.Stage == StatusStage.None,
+                NextDate = next.Season > 0 ? next.AirDate : null,
+                Seasons = seasons,
+                Admin = c.Viewer.IsAdmin ? WithHandoff(AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null), state) : null,
+            };
+        }
+
+        /// <summary>
+        /// A season page of a title no Sonarr holds: every episode from public metadata, aired ones not
+        /// here (or where the asks for this whole season have got to), later ones not out yet (the next
+        /// one with its date; a date-only air day counts as ahead while it is still that day somewhere,
+        /// as on the Sonarr path). Episodes the page lists as rows (the viewer shows missing episodes)
+        /// carry their row's page id; the others go to the banner. Asks for single episodes come from
+        /// the season rows, and a request for other parts of the series never marks this season as asked.
+        /// </summary>
+        /// <param name="facts">Facts of the series.</param>
+        /// <param name="page">The absent page.</param>
+        /// <param name="request">Requests that cover this whole season, or null.</param>
+        /// <param name="c">Context.</param>
+        /// <returns>Status.</returns>
+        public static TitleStatus AbsentSeason(TitleFacts facts, AbsentTitle page, RequestFacts? request, ComposeContext c)
+        {
+            var season = page.Season ?? 0;
+            var down = ApplyRequest(NothingKnown(facts), request, c, facts);
+            // Spoiler Guard on the title with its air-date switch: the rows name no air dates (as the page's episode list).
+            var dates = page.Spoilers?.AirDate != true;
+            var list = new List<EpisodeStatus>();
+            var aired = 0;
+            DateTime? nextAir = null;
+            int? nextEpisode = null;
+            foreach (var e in page.Episodes.Where(e => e.Season == season).OrderBy(e => e.Episode))
+            {
+                var out_ = e.AirDate is DateTime d && !NotYet(d, isDay: true, c.Now);
+                if (out_) aired++;
+                else if (e.AirDate is DateTime future && (nextAir == null || future < nextAir))
+                {
+                    nextAir = future;
+                    nextEpisode = e.Episode;
+                }
+
+                var state = out_ ? down : new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: e.AirDate, DateIsDay: true);
+                list.Add(new EpisodeStatus
+                {
+                    Key = facts.Key.WithEpisode(season, e.Episode).ToString(),
+                    Season = season,
+                    Episode = e.Episode,
+                    ItemId = page.Rows ? Id(e.PageId) : null,
+                    Row = page.Rows,
+                    Stage = state.Stage,
+                    Reason = Reason(state),
+                    AirDate = dates ? e.AirDate : null,
+                });
+            }
+
+            var stage = aired > 0 ? down.Stage : StatusStage.NotOut;
+            return new TitleStatus
+            {
+                Key = facts.Key.WithSeason(season).ToString(),
+                ItemId = Id(page.PageId),
+                Kind = "season",
+                Stage = stage,
+                Reason = aired > 0 ? Reason(down) : new StatusReason { Code = StatusReasonCode.NotAired },
+                Attention = aired > 0 && down.Attention,
+                Quiet = stage == StatusStage.None,
+                NextDate = nextAir,
+                NextDay = nextAir is DateTime day ? DayOf(day) : null,
+                Summary = new StatusSummary { Aired = aired, NextAir = nextAir, NextAirIsDay = nextAir != null, NextEpisode = nextEpisode },
+                Episodes = list,
+                Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null) : null,
+            };
+        }
+
+        /// <summary>
+        /// An episode page of a title no Sonarr holds: not out yet (with its air date) until it airs, as
+        /// in its season's rows (a date-only air day is ahead while it is still that day somewhere); after that not here, or where the asks that cover this episode (the
+        /// episode itself, or a season that holds it) have got to. A request for other parts of the
+        /// series never marks this episode as asked.
+        /// </summary>
+        /// <param name="facts">Facts of the series.</param>
+        /// <param name="page">The absent page.</param>
+        /// <param name="item">The page as an item reference (virtual).</param>
+        /// <param name="request">Requests that cover this episode, or null.</param>
+        /// <param name="c">Context.</param>
+        /// <returns>Status.</returns>
+        public static TitleStatus AbsentEpisode(TitleFacts facts, AbsentTitle page, JfItemRef item, RequestFacts? request, ComposeContext c)
+        {
+            var season = page.Season ?? 0;
+            var number = page.Episode ?? 0;
+            var air = page.Episodes.FirstOrDefault(e => e.Season == season && e.Episode == number).AirDate;
+            var state = air is DateTime d && !NotYet(d, isDay: true, c.Now)
+                ? ApplyRequest(NothingKnown(facts), request, c, facts)
+                : new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: air, DateIsDay: air != null);
+            return new TitleStatus
+            {
+                Key = facts.Key.WithEpisode(season, number).ToString(),
+                ItemId = Id(page.PageId),
+                Kind = "episode",
+                Stage = state.Stage,
+                Reason = Reason(state),
+                Attention = state.Attention,
+                Quiet = state.Stage == StatusStage.None && !(c.Viewer.IsAdmin && state.Attention),
+                NextDate = state.Date,
+                NextDay = state.Day,
+                Journey = EpisodeJourney(state, null, season, number, null, item, c),
+                Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null) : null,
+            };
+        }
+
         // ------------------------------------------------------------------ series, seasons, episodes
 
         /// <summary>A series page (or card): per-season summary and the series pill.</summary>

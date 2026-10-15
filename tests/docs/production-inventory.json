@@ -119,6 +119,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "category": "Controllers"
     },
@@ -381,6 +385,10 @@
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
       "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/AbsentTitle.cs",
+      "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/AcquireDatabase.cs",
@@ -848,6 +856,46 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MovieCollectionsBatch.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsAllowlist.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsArtwork.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsDtos.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsFacadeFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsLibrary.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsPages.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsPolicy.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsSource.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsSpoilers.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/SyntheticId.cs",
       "category": "Services"
     },
     {
@@ -1764,6 +1812,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/moreinfo/more-info-modal-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/nativedetails/native-details.js",
       "category": "js"
     },
     {
@@ -4121,6 +4173,15 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/native-details/resolve",
+      "method": "Resolve",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/acquire/notify/inbox",
       "method": "GetInbox",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
@@ -5549,6 +5610,14 @@
     {
       "class": "PluginConfiguration",
       "name": "JellyseerrAvailablePosterLinksToJellyfin",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "NativeAbsentDetailsEnabled",
       "type": "bool",
       "initializer": "false",
       "constructor_assignment": "false",
@@ -9093,6 +9162,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/MdblistService.cs"
     },
     {
+      "literal": "native-details-revocations.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsPolicy.cs"
+    },
+    {
       "literal": "settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagSettingsProvider.cs"
     },
@@ -9408,10 +9481,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 509,
-    "routes": 244,
-    "configuration_properties": 576,
-    "storage_references": 81,
+    "files": 522,
+    "routes": 245,
+    "configuration_properties": 577,
+    "storage_references": 82,
     "scheduled_tasks": 14,
     "locales": 33
   }

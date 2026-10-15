@@ -324,6 +324,27 @@ test('banner mode (missing episodes not shown as rows): states per episode and G
   assert.match(h.document.querySelector('.je-ask-banner-action').textContent, /E4 · Waiting for OK/);
 });
 
+test('a season that is not in the library at all: the banner lists it and leaves asking to Get Season N', async t => {
+  const absent = {
+    key: 'tv:tvdb:1:s1', itemId: SEASON_ID, kind: 'season', stage: 'notHere', reason: { code: 'not_in_arr' }, summary: { aired: 2 },
+    episodes: [
+      { key: 'tv:tvdb:1:s1:e2', season: 1, episode: 2, row: false, stage: 'notHere', reason: { code: 'not_in_arr' } },
+      { key: 'tv:tvdb:1:s1:e4', season: 1, episode: 4, row: false, stage: 'notHere', reason: { code: 'not_in_arr' } }
+    ]
+  };
+  const h = setup(t, { status: absent, server: { rows: () => rowsBody({ displayMissing: false }) } });
+  h.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+  await h.open();
+  const banner = h.document.querySelector('.je-arr-banner');
+  assert.equal(banner.querySelector('.je-arr-banner-title').textContent, 'Missing: E2, E4');
+  assert.equal(banner.querySelector('.je-ask-get'), null, 'Get Season 1 on the page asks for the season');
+  // Once part of it was asked for, the rest is offered on the banner again.
+  const partly = setup(t, { status: absent, server: { rows: () => rowsBody({ displayMissing: false, requests: { 2: 'asked' } }) } });
+  partly.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
+  await partly.open();
+  assert.equal(partly.document.querySelector('.je-arr-banner .je-ask-get').textContent, 'downloadGet E4');
+});
+
 test('people who cannot ask see the rows and states but no Get it; with phase 3 off nothing changes', async t => {
   const watcher = setup(t, { server: { rows: () => rowsBody({ canRequest: false }) } });
   await watcher.open();

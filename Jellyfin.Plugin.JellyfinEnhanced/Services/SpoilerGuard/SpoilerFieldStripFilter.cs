@@ -675,6 +675,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ApplyStripping(item, userState, cfg, userId, ResolveCategoryReveal(item, userState, cfg, userId, seriesId.Value));
         }
 
+        /// <summary>
+        /// The strip for a title that isn't in the library (the native details facade answers it before
+        /// this filter runs, so it calls this itself): what <see cref="StripItem"/> applies to the same
+        /// kind for a viewer who guards the title and has watched none of it, with no reveal. Seasons 0
+        /// and 1 pass, as in the library.
+        /// </summary>
+        /// <param name="item">The facade's DTO.</param>
+        /// <param name="userState">The viewer's Spoiler Guard state.</param>
+        /// <param name="cfg">Plugin configuration.</param>
+        /// <param name="userId">The viewer.</param>
+        internal void StripAbsent(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
+        {
+            if (item == null) return;
+            if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Season && item.IndexNumber.GetValueOrDefault(int.MaxValue) <= 1) return;
+            ApplyStripping(item, userState, cfg, userId);
+        }
+
+        /// <summary>
+        /// What the strip leaves out of a not-in-library episode row (a native details season page's
+        /// rows) for a viewer who guards the title: its title, overview and air date, by the same admin
+        /// and per-user switches as <see cref="StripAbsent"/>.
+        /// </summary>
+        /// <param name="userState">The viewer's Spoiler Guard state.</param>
+        /// <param name="cfg">Plugin configuration.</param>
+        /// <returns>Title, overview and air date: true where the strip removes them.</returns>
+        internal static (bool Title, bool Overview, bool AirDate) AbsentRowStrip(UserSpoilerBlur userState, PluginConfiguration cfg)
+            => (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles),
+                ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions),
+                ShouldStrip(cfg.SpoilerStripPremiereDate, userState.Prefs?.HideAirDate));
+
         // Advanced-mode category reveal for an unwatched episode of a guarded
         // series. Gate order: admin master (SpoilerAdvancedMode), then the
         // user's per-user opt-out (UseAdvancedCategories == false restores the

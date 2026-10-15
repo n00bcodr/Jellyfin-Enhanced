@@ -849,6 +849,35 @@ request, blocked?}]}}`, where `request` is the person's own request state (`wait
 ask for it now, as in the title check (`{"reason": "low_disk"}`; where and how much is free for administrators only).
 A collection the person can't open, or one TMDB can't describe, answers 404.
 
+### Titles that aren't in the library (native details)
+
+With Seerr's experimental **Open titles that aren't in the library on Jellyfin's own details page** on (see
+[Seerr](../seerr/seerr-features.md#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental)), a
+title you don't have opens on a Jellyfin details page, and the request controls above sit on it exactly as on a
+library page: the status pill and journey (or the season's pill), *Notify me*, *Manage* for administrators, and
+
+- **movies**: *Request* (one tap, or the sheet when it's needed), turning into the request's state or *Search*;
+- **series**: **Get Season N** and **Request** (the sheet with every season);
+- **seasons**: **Get Season N**, and the episodes as rows with *Missing* and **Get it** (or *Search*) when the person
+  shows missing episodes, otherwise the *Missing: E1…* banner (it leaves asking for the whole season to Get Season N);
+  a downloading episode gets its ring;
+- **episodes**: **Get it** or *Search*.
+
+The status comes from Sonarr or Radarr when one holds the title (downloading, looking, almost ready…), otherwise every
+aired episode is simply not here and later ones are *not out yet*. The page's id is never taken for a copy: once one
+arrives that the person can open, the page offers **Open**.
+
+The routes behind it (paths relative to `/JellyfinEnhanced`; the native page's own requests are answered by the
+facade and never touch the library):
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `acquire/status/item/{pageId}` | The page's status by key, as for a library item; adds `openItemId` once a copy the caller can open is here. An empty list when the caller may not open the page |
+| GET | `acquire/requests/season/{pageId}` | A season page's rows: every episode's metadata and the caller's request state; 404 when the caller may not open it |
+| GET | `native-details/resolve?key=…[&season=&episode=]` or `?id={pageId}` | Where a title opens for the caller: `{itemId}` (a library item they can open, the season or episode when named) or `{id}` (the native page). 404 when the title has no TMDB id; 403 for API keys or with the setting off |
+
+`items/by-providers` now answers only with an item the caller can open (an API key keeps the first match).
+
 ### Discover and search (JE mode)
 
 With **Ask for it** on and request handling set to **Jellyfin Enhanced**, people who may ask for titles (Members,

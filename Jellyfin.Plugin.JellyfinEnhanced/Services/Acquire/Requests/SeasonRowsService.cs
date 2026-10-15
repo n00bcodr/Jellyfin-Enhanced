@@ -119,11 +119,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             if (_view.Resolve(seasonId, viewer) is not { Kind: "season", Key: { } key, SeriesId: Guid seriesId, Season: int season } item) return null;
             var jf = _view.Episodes(seriesId, season, viewer, includeVirtual: true).Where(e => e.Season == season).ToList();
+            var tmdbId = item.TmdbId ?? _aliases?.Of(key.Title).Append(key.Title).FirstOrDefault(k => k.Provider == "tmdb" && !k.IsMovie)?.NumericId;
+            return await ComposeAsync(viewer, key, seriesId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, tmdbId, jf, language, ct).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// The rows of a season of a title that isn't in the library (the native details page of an
+        /// absent title, whose ids are page ids): every episode comes from public metadata, none has a
+        /// file. The caller has already applied the page's viewer rules.
+        /// </summary>
+        /// <param name="viewer">Viewer.</param>
+        /// <param name="page">The absent season page.</param>
+        /// <param name="language">Metadata language.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The rows.</returns>
+        public Task<SeasonRows?> ForAbsentSeasonAsync(StatusViewer viewer, AbsentTitle page, string? language, CancellationToken ct)
+        {
+            if (page.Kind != "season" || page.Season is not int season || page.SeriesPageId is not Guid seriesPageId) return Task.FromResult<SeasonRows?>(null);
+            // Episodes the library has but hides from the viewer get no row, as on a library series.
+            var hidden = page.HiddenEpisodes.Select(n => new JfEpisode { Season = season, Episode = n, Hidden = true }).ToList();
+            return ComposeAbsentAsync(viewer, page, seriesPageId, season, hidden, language, ct);
+        }
+
+        private async Task<SeasonRows?> ComposeAbsentAsync(StatusViewer viewer, AbsentTitle page, Guid seriesPageId, int season, List<JfEpisode> hidden, string? language, CancellationToken ct)
+        {
+            var rows = await ComposeAsync(viewer, page.ScopeKey, seriesPageId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, page.TmdbId, hidden, language, ct).ConfigureAwait(false);
+            if (rows == null || page.Spoilers is not { } spoilers) return rows;
+            // Spoiler Guard on the title: the rows carry no plot (as the page's own episode list).
+            return rows with
+            {
+                Episodes = rows.Episodes.Select(e => e with
+                {
+                    Title = spoilers.Title ? null : e.Title,
+                    Overview = spoilers.Overview ? null : e.Overview,
+                    AirDate = spoilers.AirDate ? null : e.AirDate,
+                    Still = null,
+                }).ToList(),
+            };
+        }
+
+        private async Task<SeasonRows?> ComposeAsync(StatusViewer viewer, TitleKey key, string seriesId, int season, int? tmdbId, List<JfEpisode> jf, string? language, CancellationToken ct)
+        {
             var hidden = new HashSet<int>(jf.Where(e => e.Hidden).SelectMany(Numbers));
             var withFile = new HashSet<int>(jf.Where(e => !e.Hidden && !e.Virtual).SelectMany(Numbers));
             var series = key.Title;
             var canonical = _aliases?.Canonical(series) ?? series;
-            var tmdbId = item.TmdbId ?? _aliases?.Of(series).Append(series).FirstOrDefault(k => k.Provider == "tmdb" && !k.IsMovie)?.NumericId;
 
             var meta = new Dictionary<int, SeasonRowEpisode>();
             if (tmdbId is int id && id > 0)
@@ -166,7 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Key = key.ToString(),
                 Series = canonical.ToString(),
                 Season = season,
-                SeriesId = seriesId.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
+                SeriesId = seriesId,
                 DisplayMissing = viewer.DisplayMissingEpisodes,
                 CanRequest = canRequest,
                 Blocked = canRequest ? null : RequestBlock.Of(facts),

@@ -238,6 +238,45 @@ public class IntegrationLedgerSentFactsTests
     }
 
     [Fact]
+    public async Task AnEpisodeGetsOnlyTheAsksThatCoverIt()
+    {
+        using var arr = new FakeArr();
+        var config = arr.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true; config.ArrRequestBackend = "je";
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        var episode = new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 4) } };
+        Assert.Equal(201, (await rig.Create(rig.Member, episode)).HttpStatus);
+        Assert.Equal(201, (await rig.Create(rig.Kid, IntegrationRequestLedgerTests.Seasons(2))).HttpStatus); // waits for an OK
+        rig.Now = rig.Now.AddMinutes(3);
+        await rig.Runner().TickAsync(CancellationToken.None);
+        using var store = arr.Store();
+        using var seerr = new SeerrRequestReadModel(new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404))), new ArrChangeFeed(), null, () => config, () => arr.Now);
+        var series = TitleKey.Parse("tv:tvdb:78874")!;
+        var member = rig.View.Users[rig.Member];
+        var facts = new LedgerRequestFacts(rig.Ledger, seerr, new TitleAliases(store, null));
+        // The member's own episode went out: approved, not waiting; the kid's season 2 ask doesn't touch it.
+        var e4 = facts.ForEpisode(series, 1, 4, member)!;
+        Assert.False(e4.Pending);
+        Assert.True(e4.AskedByViewer);
+        Assert.NotNull(e4.ApprovedAt);
+        // An episode of season 2 waits with the kid's ask (someone else's).
+        var s2 = facts.ForEpisode(series, 2, 3, member)!;
+        Assert.True(s2.Pending);
+        Assert.False(s2.AskedByViewer);
+        // Nothing asks for the next episode.
+        Assert.Null(facts.ForEpisode(series, 1, 5, member));
+        // A season page follows only asks for that whole season: the kid's season 2, never the single
+        // episode of season 1 or another season's ask.
+        Assert.True(facts.ForSeason(series, 2, member)!.Pending);
+        Assert.Null(facts.ForSeason(series, 1, member));
+        Assert.Null(facts.ForSeason(series, 3, member));
+        // Seerr mode: Seerr's requests answer instead (it has none here), as for the whole title.
+        config.ArrRequestBackend = "seerr";
+        Assert.Null(facts.ForEpisode(series, 2, 3, member));
+        Assert.Null(facts.ForSeason(series, 2, member));
+    }
+
+    [Fact]
     public async Task TheClockCountsFromWhatWentOutNotFromJoinsOrFromWhenAMovedRequestWasAskedForInSeerr()
     {
         using var arr = new FakeArr();

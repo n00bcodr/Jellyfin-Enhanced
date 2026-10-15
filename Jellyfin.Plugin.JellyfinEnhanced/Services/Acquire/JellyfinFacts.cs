@@ -272,6 +272,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         RequestFacts? For(TitleKey titleKey, StatusViewer viewer);
 
         /// <summary>
+        /// What is known about the requests that cover one episode of a series (asks for the episode or a
+        /// season that holds it, never the series' other parts), as seen by the viewer; null when nothing
+        /// or when this source can't tell parts apart.
+        /// </summary>
+        /// <param name="seriesKey">Series key.</param>
+        /// <param name="season">Season number.</param>
+        /// <param name="episode">Episode number.</param>
+        /// <param name="viewer">Viewer.</param>
+        /// <returns>Request facts, or null.</returns>
+        RequestFacts? ForEpisode(TitleKey seriesKey, int season, int episode, StatusViewer viewer) => null;
+
+        /// <summary>
+        /// What is known about the requests that cover a whole season of a series (asks for that season,
+        /// or for the whole series where the source asks that way; never asks for single episodes or
+        /// other seasons), as seen by the viewer; null when nothing or when this source can't tell parts apart.
+        /// </summary>
+        /// <param name="seriesKey">Series key.</param>
+        /// <param name="season">Season number.</param>
+        /// <param name="viewer">Viewer.</param>
+        /// <returns>Request facts, or null.</returns>
+        RequestFacts? ForSeason(TitleKey seriesKey, int season, StatusViewer viewer) => null;
+
+        /// <summary>
         /// True when this user asked for the title (movie or series key) themselves. Such a title is
         /// theirs to follow even before it is in Jellyfin, whatever their content limits.
         /// </summary>

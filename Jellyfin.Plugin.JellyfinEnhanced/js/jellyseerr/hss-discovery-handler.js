@@ -27,18 +27,20 @@
             const tmdbId = discoverCard.dataset.tmdbId;
             const mediaType = discoverCard.dataset.mediaType;
 
-            // Check if JE.jellyseerrMoreInfo is available
-            if (!tmdbId || !mediaType || !JE?.jellyseerrMoreInfo?.open) {
+            // Native details (when offered) or the more-info modal; without either the card keeps its own link.
+            const nativeOn = JE?.titleDetails?.available?.() === true;
+            if (!tmdbId || !mediaType || (!nativeOn && !JE?.jellyseerrMoreInfo?.open)) {
                 return;
             }
-
-            console.log(`${logPrefix} Opening more-info modal for TMDB ID: ${tmdbId}, Type: ${mediaType}`);
 
             e.preventDefault();
             e.stopPropagation();
 
-            // Open the more-info modal
-            JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+            if (JE.titleDetails?.show) {
+                JE.titleDetails.show(tmdbId, mediaType);
+            } else {
+                JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+            }
         }, true);
     }
 

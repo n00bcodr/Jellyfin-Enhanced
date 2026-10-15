@@ -58,7 +58,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // EnabledFolders), so part of the fingerprint but not a parental limit. A series' seasons
             // and episodes always sit in the series' own library, so they never hide parts of it.
             var blockedFolders = user.GetPreferenceValues<Guid>(PreferenceKind.BlockedMediaFolders);
-            var parental = user.MaxParentalRatingScore.HasValue || blockedTags.Length > 0 || allowedTags.Length > 0 || blockedUnrated.Length > 0;
+            var parental = HasParentalLimit(user);
 
             var fingerprint = new StringBuilder();
             fingerprint.Append(isAdmin ? 'A' : 'U').Append('|').Append(allFolders ? '*' : '-').Append('|');
@@ -84,6 +84,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Handle = user,
             };
         }
+
+        /// <summary>
+        /// True when Jellyfin's parental rules can hide parts of a series from this user (a rating limit,
+        /// tag rules or blocked unrated items). Without them a series' seasons and episodes are visible
+        /// exactly when the series is: they sit in its library.
+        /// </summary>
+        /// <param name="user">User.</param>
+        /// <returns>True when the user has a parental limit.</returns>
+        internal static bool HasParentalLimit(User user)
+            => user.MaxParentalRatingScore.HasValue
+                || (user.GetPreference(PreferenceKind.BlockedTags)?.Length ?? 0) > 0
+                || (user.GetPreference(PreferenceKind.AllowedTags)?.Length ?? 0) > 0
+                || user.GetPreferenceValues<UnratedItem>(PreferenceKind.BlockUnratedItems).Length > 0;
 
         /// <inheritdoc />
         public JfItemRef? Resolve(Guid itemId, StatusViewer viewer)

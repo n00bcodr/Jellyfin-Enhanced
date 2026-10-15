@@ -363,8 +363,11 @@
           e.stopPropagation();
           e.stopImmediatePropagation();
           const mediaId = titleLink.getAttribute("data-media-id");
+          const tmdbId = Number(titleLink.getAttribute("data-tmdb-id"));
           if (mediaId && window.Emby?.Page?.showItem) {
             window.Emby.Page.showItem(mediaId);
+          } else if (tmdbId > 0) {
+            window.JellyfinEnhanced?.titleDetails?.open?.(tmdbId, titleLink.getAttribute("data-media-type") === "tv" ? "tv" : "movie");
           }
           return;
         }

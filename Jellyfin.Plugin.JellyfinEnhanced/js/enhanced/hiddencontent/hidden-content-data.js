@@ -288,6 +288,8 @@
      * @param {string} [params.hideScope] Scope: 'global', 'nextup', 'continuewatching', or 'homesections'.
      */
     function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }) {
+        // Synthetic ids (titles not in the library, shown on a native details page) are never stored.
+        if ((itemId && JE.titleDetails?.isSynthetic?.(itemId)) || (seriesId && JE.titleDetails?.isSynthetic?.(seriesId))) return;
         const data = getHiddenData();
         const key = itemId || `tmdb-${tmdbId}`;
         const newItem = {

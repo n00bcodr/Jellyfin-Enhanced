@@ -1021,7 +1021,14 @@
             existing?.remove();
             return;
         }
-        const itemId = status.itemId;
+        // The page of a title that isn't in the library (native details): its page id is no item, so
+        // the drawer opens by the title's key.
+        const pageId = (() => {
+            try { return new URLSearchParams((window.location.hash || '').split('?')[1] || '').get('id'); } catch { return null; }
+        })();
+        const absent = !!JE.titleDetails?.isSynthetic?.(pageId);
+        const key = absent ? String(status.key || '').replace(/:s\d+(:e\d+)?$/, '') : '';
+        const itemId = absent ? (key ? `key:${key}` : '') : status.itemId;
         if (!itemId) {
             existing?.remove();
             return;
@@ -1040,7 +1047,7 @@
         button.appendChild(content);
         button.addEventListener('click', (e) => {
             e.preventDefault();
-            open({ itemId });
+            open(absent ? { key } : { itemId });
         });
         host.appendChild(button);
     }

@@ -571,8 +571,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal static HiddenTitles FromHiddenContent(UserHiddenContent? data)
         {
             var settings = data?.Settings ?? new HiddenContentSettings();
-            if (data?.Items == null || data.Items.Count == 0 || !settings.Enabled) return HiddenTitles.None;
+            var keys = GlobalHiddenKeys(data);
+            if (keys.Count == 0) return HiddenTitles.None;
+            var empty = new HashSet<string>();
+            return new HiddenTitles(settings.FilterDiscovery ? keys : empty, settings.FilterSearch ? keys : empty);
+        }
+
+        /// <summary>
+        /// What a Hidden Content file hides everywhere (global scope): title keys (movie:tmdb:N, tv:tmdb:N)
+        /// and Jellyfin item ids (32 hex digits). Empty when Hidden Content is off; the caller applies its
+        /// own surface switch.
+        /// </summary>
+        internal static HashSet<string> GlobalHiddenKeys(UserHiddenContent? data)
+        {
+            var settings = data?.Settings ?? new HiddenContentSettings();
             var keys = new HashSet<string>(StringComparer.Ordinal);
+            if (data?.Items == null || data.Items.Count == 0 || !settings.Enabled) return keys;
             foreach (var item in data.Items.Values)
             {
                 if (item == null || !string.Equals(string.IsNullOrEmpty(item.HideScope) ? "global" : item.HideScope, "global", StringComparison.OrdinalIgnoreCase)) continue;
@@ -582,8 +596,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (string.Equals(item.Type, "Movie", StringComparison.OrdinalIgnoreCase)) keys.Add("movie:tmdb:" + id);
                 else if (string.Equals(item.Type, "Series", StringComparison.OrdinalIgnoreCase)) keys.Add("tv:tmdb:" + id);
             }
-            var empty = new HashSet<string>();
-            return new HiddenTitles(settings.FilterDiscovery ? keys : empty, settings.FilterSearch ? keys : empty);
+            return keys;
         }
 
         private HiddenTitles Hidden(Guid user)

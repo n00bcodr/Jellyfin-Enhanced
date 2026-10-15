@@ -127,7 +127,9 @@
             isAddingLink = true;
             try {
                 const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-                if (!itemId) return;
+                // A title that isn't in the library (native details) is already the request page; its
+                // information panel carries the Seerr link.
+                if (!itemId || JE.titleDetails?.isSynthetic?.(itemId)) return;
 
                 const item = JE.helpers?.getItemCached
                     ? await JE.helpers.getItemCached(itemId)

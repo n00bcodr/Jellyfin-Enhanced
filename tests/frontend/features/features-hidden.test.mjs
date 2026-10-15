@@ -64,3 +64,21 @@ test('parent-series response after disabling filtering cannot hide cards',async 
  h.api.filterNativeCards();h.api.getHiddenData().settings.enabled=false;response.resolve({Items:[{Id:'episode',SeriesId:'series'}]});await response.promise;await new Promise(resolve=>setImmediate(resolve));h.flush();
  assert.equal(h.document.querySelector('.card').classList.contains('je-hidden'),false);
 });
+test('titles that are not in the library (native details synthetic ids) never become Hidden Content rules',t=>{
+ const SYN='4a45ad11000a938e00000000f9c67720',REAL='0123456789abcdef0123456789abcdef';
+ const html=`<div class="card" data-id="${SYN}" data-type="Movie"><div class="cardBox"></div></div><div class="card" data-id="${REAL}" data-type="Movie"><div class="cardBox"></div></div>`;
+ const h=createHarness({html,apiClient:{ajax:async()=>({Items:[]})},globals:{requestAnimationFrame:fn=>fn()},JE:{t:k=>k,titleDetails:{isSynthetic:id=>String(id).replace(/-/g,'').toLowerCase()===SYN},userConfig:{hiddenContent:{items:{},settings:{enabled:true,showHideButtons:true,showButtonLibrary:true}}}}});
+ t.after(()=>h.close());
+ h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
+ const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
+ let saves=0;Object.assign(api,{debouncedSave:()=>{saves++;},showUndoToast:()=>{}});
+ api.addLibraryHideButtons();
+ assert.equal(h.document.querySelector(`[data-id="${SYN}"] .je-hide-btn`),null);
+ assert.ok(h.document.querySelector(`[data-id="${REAL}"] .je-hide-btn`));
+ api.hideItem({itemId:SYN,name:'Dune: Part Two',type:'Movie'});
+ api.hideItem({itemId:'',tmdbId:1,seriesId:SYN,name:'Episode',type:'Episode'});
+ assert.deepEqual(Object.keys(api.getHiddenData().items),[]);
+ assert.equal(saves,0);
+ api.hideItem({itemId:REAL,name:'Real',type:'Movie'});
+ assert.deepEqual(Object.keys(api.getHiddenData().items),[REAL]);
+});

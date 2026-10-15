@@ -124,6 +124,31 @@ public class IntegrationSeerrReadModelTests
     }
 
     [Fact]
+    public async Task AnEpisodeGetsTheRequestsForItsSeasonOnly()
+    {
+        using var rig = new Rig();
+        // Sam's seasons 1-2 are OK'd; Emma's season 3 waits for an OK.
+        rig.Seerr.Requests.Add(FakeSeerr.Request(2, "tv", 83867, 2, rig.Sam, T0.AddHours(1), T0.AddHours(2), tvdb: 393189, seasons: [1, 2], userName: "Sam"));
+        rig.Seerr.Requests.Add(FakeSeerr.Request(5, "tv", 83867, 1, rig.Emma, T0.AddHours(3), tvdb: 393189, seasons: [3], userName: "Emma"));
+        await rig.Model.RefreshAsync(default);
+        var key = Key("tv:tvdb:393189");
+        var s2 = rig.Model.ForEpisode(key, 2, 5, rig.Viewer(rig.Emma))!;
+        Assert.False(s2.Pending);
+        Assert.Equal(T0.AddHours(2), s2.ApprovedAt);
+        Assert.False(s2.AskedByViewer);
+        var s3 = rig.Model.ForEpisode(key, 3, 1, rig.Viewer(rig.Emma))!;
+        Assert.True(s3.Pending);
+        Assert.True(s3.AskedByViewer);
+        Assert.Null(rig.Model.ForEpisode(key, 4, 1, rig.Viewer(rig.Emma)));
+        // A season page: the requests that name the season, as for its episodes.
+        Assert.True(rig.Model.ForSeason(key, 3, rig.Viewer(rig.Emma))!.Pending);
+        Assert.False(rig.Model.ForSeason(key, 2, rig.Viewer(rig.Emma))!.Pending);
+        Assert.Null(rig.Model.ForSeason(key, 4, rig.Viewer(rig.Emma)));
+        // The whole title still reads as before (one OK'd beside a pending one: not waiting).
+        Assert.False(rig.Model.For(key, rig.Viewer(rig.Emma))!.Pending);
+    }
+
+    [Fact]
     public async Task AnOkdRequestBesideAPendingOneIsNotWaitingAndAllDeclinedMeansSaidNo()
     {
         using var rig = new Rig();

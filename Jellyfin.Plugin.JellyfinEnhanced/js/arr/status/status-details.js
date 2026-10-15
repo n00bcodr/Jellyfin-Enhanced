@@ -43,7 +43,9 @@
      * @returns {HTMLElement|null} Anchor.
      */
     function anchorOf(page) {
-        return page.querySelector('.detailPagePrimaryContent .detailSection')
+        // A title that isn't in the library (native details): the page's own status slot.
+        return page.querySelector('.je-native-absent-status')
+            || page.querySelector('.detailPagePrimaryContent .detailSection')
             || page.querySelector('.detailPagePrimaryContent')
             || page.querySelector('.detailPagePrimaryContainer');
     }
@@ -71,7 +73,12 @@
         else if (episodes) episodes.clear();
         if (status.quiet && !status.admin) return null;
         let block = null;
-        if (status.kind === 'series' || status.kind === 'season') {
+        // The page of a title that isn't in the library: one pill for its scope (not here, asked,
+        // downloading…), like the more-info modal, rather than the counts of a library series.
+        const absent = !!JE.titleDetails?.isSynthetic?.(itemIdFromHash());
+        if (absent && !status.quiet) {
+            block = JE.arrStatus.buildPill(status, ctx);
+        } else if (status.kind === 'series' || status.kind === 'season') {
             block = JE.arrStatus.buildSummary(status);
         } else if (!status.quiet) {
             block = JE.arrStatus.buildPill(status, ctx);
@@ -98,6 +105,8 @@
         if (!JE.arrStatus?.enabled()) return;
         const page = visiblePage();
         const itemId = itemIdFromHash();
+        // A title that isn't in the library (native details facade) is read by its page id too: the
+        // server answers it by key (status, seasons and episodes from public metadata).
         if (!page || !itemId) {
             stop();
             return;
@@ -154,6 +163,8 @@
         // Phase 2: Notify me / Following in the action row, Remind next to a stuck status.
         JE.internals?.arrNotify?.attachDetails?.(livePage, status, data);
         JE.internals?.arrAskActions?.attachDetails?.(livePage, status, data);
+        // Native details of an absent title: Open once a copy arrives, and the blocks in its slot.
+        JE.internals?.nativeDetails?.statusShown?.(livePage, status);
         // The title's own key and, for a title Jellyfin knows by another id, the key the feed announces it under.
         const keys = [status.key, status.liveKey].filter(Boolean);
         state.unsubscribe = JE.arrStatus.subscribe(keys, () => update(true), { since: data.since ?? null });

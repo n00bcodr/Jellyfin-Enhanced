@@ -627,7 +627,8 @@
     }
 
     /**
-     * Opens a request: its Jellyfin page when the viewer can open one, else Seerr's more-info modal.
+     * Opens a request: its Jellyfin page when the viewer can open one, else the title's native
+     * details page (when offered) or Seerr's more-info modal.
      * @param {Object} entry Hub entry.
      * @returns {void}
      */
@@ -636,7 +637,13 @@
             showItem(entry.itemId);
             return;
         }
-        if (entry.tmdbId && JE.jellyseerrMoreInfo?.open) JE.jellyseerrMoreInfo.open(entry.tmdbId, entry.kind === 'tv' ? 'tv' : 'movie');
+        const mediaType = entry.kind === 'tv' ? 'tv' : 'movie';
+        if (JE.titleDetails?.show) {
+            if (entry.tmdbId) JE.titleDetails.show(entry.tmdbId, mediaType);
+            else if (entry.key) JE.titleDetails.openKey(entry.key, { mediaType });
+            return;
+        }
+        if (entry.tmdbId && JE.jellyseerrMoreInfo?.open) JE.jellyseerrMoreInfo.open(entry.tmdbId, mediaType);
     }
 
     /**

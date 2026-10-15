@@ -26,11 +26,12 @@
  *   close() → void   closes the sheet (its promise resolves with null).
  *
  * Request controls mount API (for pages that show a title JE draws itself):
- *   const controls = JE.arrAskSheet.mount(container, { key, kind, name, year, poster, seasons });
+ *   const controls = JE.arrAskSheet.mount(container, { key, kind, name, year, poster, seasons }, { notify });
  *   controls.update(status);   // the title's status (JE.arrStatus item) or null when unknown
  *   controls.destroy();        // removes everything and stops listening
  *   Renders Request (or "Ask {contact}" when the caller's asks wait for an OK), Notify me (when
- *   JE.arrNotify offers following the key) and the current request state into the container; a
+ *   JE.arrNotify offers following the key, unless options.notify is false because the page has its
+ *   own Notify me button) and the current request state into the container; a
  *   title missing for a long while (JE.arrStatus.searchable) gets Search instead (an administrator's
  *   runs the arr's search at once). The title is checked first (JE.arrAsk.check, once per title, the controls
  *   wait for it): when it can't be asked for now (e.g. "Paused: storage full", its drive is nearly full) the
@@ -956,9 +957,11 @@
      * Renders a title's request controls into a container (see the file comment).
      * @param {HTMLElement} container Where the controls go.
      * @param {{key: string, kind: string, name?: string, year?: number, poster?: string, seasons?: Array}} title Title.
+     * @param {{notify?: boolean}} [options] notify: false leaves Notify me out (the page has its own).
      * @returns {{update: (status: Object|null) => void, destroy: () => void}} Controls.
      */
-    function mount(container, title) {
+    function mount(container, title, options) {
+        const withNotify = options?.notify !== false;
         const host = el('div', 'je-ask-mount');
         host.dataset.jeAskKey = title?.key || '';
         container.appendChild(host);
@@ -1011,11 +1014,36 @@
         }
 
         /**
-         * Draws the controls for the current status and capabilities.
+         * The control of this mount that has the keyboard focus, as a selector for its stand-in after
+         * a redraw; null when the focus is elsewhere.
+         * @returns {string|null} Selector.
+         */
+        function focusedControl() {
+            const active = document.activeElement;
+            if (!active || active === document.body || !host.contains(active)) return null;
+            const classes = [...active.classList].filter(c => /^[A-Za-z0-9_-]+$/.test(c));
+            return active.tagName.toLowerCase() + classes.map(c => `.${c}`).join('');
+        }
+
+        /**
+         * Draws the controls for the current status and capabilities. A control that had the keyboard
+         * (or remote) focus hands it to its stand-in, or to the mount's first control when it is gone.
          * @returns {void}
          */
         function render() {
             if (destroyed) return;
+            const focused = focusedControl();
+            draw();
+            if (!focused || destroyed) return;
+            const target = host.querySelector(focused) || host.querySelector('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])');
+            target?.focus?.({ preventScroll: true });
+        }
+
+        /**
+         * Draws the controls (see render).
+         * @returns {void}
+         */
+        function draw() {
             host.replaceChildren();
             if (!JE.arrAsk?.enabled() || !title?.key) return;
             prepareStyles();
@@ -1067,9 +1095,11 @@
                 });
                 row.appendChild(b);
             }
-            const notify = el('div', 'je-ask-mount-notify');
-            JE.internals?.arrNotify?.attachModal?.(notify, status, title.key, { contact: caps?.contact || '' });
-            if (notify.childNodes.length) row.appendChild(notify);
+            if (withNotify) {
+                const notify = el('div', 'je-ask-mount-notify');
+                JE.internals?.arrNotify?.attachModal?.(notify, status, title.key, { contact: caps?.contact || '' });
+                if (notify.childNodes.length) row.appendChild(notify);
+            }
             if (row.childNodes.length) host.appendChild(row);
         }
 

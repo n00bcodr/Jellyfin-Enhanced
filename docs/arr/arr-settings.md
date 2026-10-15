@@ -415,7 +415,8 @@ Radarr; in `seerr` mode they go to Seerr as the person who asked. How each is se
 [Sending requests](arr-features.md#sending-requests-phase-3). With phase 3 on and a request backend selected, the
 request controls appear for people who may ask (see [Requests & downloads](arr-features.md#missing-episodes-get-it-and-search-phase-3):
 Get it on season pages, the request sheet, series and collection actions, Approvals, Household and, in JE mode,
-Discover).
+Discover). With Seerr's experimental *Open titles that aren't in the library on Jellyfin's own details page* on, the
+same controls appear on those pages (see [Titles that aren't in the library](arr-features.md#titles-that-arent-in-the-library-native-details)).
 
 **Add defaults per instance.** With the master switch on, each Sonarr/Radarr card has *When Jellyfin Enhanced adds a
 title*: the quality profile, root folder and tags new titles get, plus Radarr's minimum availability or Sonarr's

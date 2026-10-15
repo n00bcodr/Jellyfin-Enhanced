@@ -3745,6 +3745,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return new JsonResult(BuildPublicConfig(config));
         }
 
+        /// <summary>True in the Jellyfin 12 build, which registers the native details facade; a 10.11 build never offers it.</summary>
+#if JF12
+        internal const bool NativeAbsentDetailsCapable = true;
+#else
+        internal const bool NativeAbsentDetailsCapable = false;
+#endif
+
         /// <summary>
         /// The public config payload. Shared by /public-config and /bootstrap so the
         /// field list lives in one place. Redaction of the Seerr URLs is keyed on the
@@ -3914,6 +3921,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowElsewhereOnJellyseerr,
                 config.JellyseerrUseMoreInfoModal,
                 config.JellyseerrAvailablePosterLinksToJellyfin,
+                // Native details for not-in-library titles: the capability (a Jellyfin 12 build with the
+                // facade registered), the admin switch and Seerr set up (the pages' metadata source);
+                // anything else means the modal.
+                NativeAbsentDetails = new
+                {
+                    Enabled = NativeAbsentDetailsCapable && config.NativeAbsentDetailsEnabled
+                        && config.JellyseerrEnabled && !string.IsNullOrWhiteSpace(config.JellyseerrUrls) && !string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()),
+                    ContractVersion = 1,
+                },
                 config.AddRequestedMediaToWatchlist,
                 config.SyncJellyseerrWatchlist,
                 config.JellyseerrAutoImportUsers,
@@ -11907,6 +11923,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var itemIds = _itemRepository.GetItemIdsByProviders(providers, includeItemTypes);
+
+            // Only an item the caller can open: the repository lookup sees every library, so a
+            // match outside the caller's libraries or parental limits is left out (an unknown or
+            // API-key caller gets the first match, as before, since it has no library view).
+            var callerId = ArrCaller.PersonId(User);
+            var caller = callerId is Guid uid ? _userManager.GetUserById(uid) : null;
+            if (caller != null)
+            {
+                itemIds = itemIds.Where(id => _libraryManager.GetItemById(id) is { } candidate && candidate.IsVisibleStandalone(caller)).ToList();
+            }
 
             if (itemIds.Count == 0)
                 return BadRequest("No provider ids supplied or no items found");

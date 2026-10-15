@@ -142,6 +142,10 @@
      * @returns {Promise<Object|null>} The response.
      */
     function fetchBatch(ids, keys, signal) {
+        // Titles that aren't in the library (native details pages) have no item status; their page
+        // reads its status by title key instead.
+        if (ids?.length && JE.titleDetails?.isSynthetic) ids = ids.filter(id => !JE.titleDetails.isSynthetic(id));
+        if (!ids?.length && !keys?.length) return Promise.resolve({ items: [] });
         const q = [];
         if (ids?.length) q.push(`ids=${ids.map(encodeURIComponent).join(',')}`);
         if (keys?.length) q.push(`keys=${keys.map(encodeURIComponent).join(',')}`);

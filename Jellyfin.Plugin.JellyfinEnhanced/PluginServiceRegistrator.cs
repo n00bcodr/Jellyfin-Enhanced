@@ -294,6 +294,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<NativePosterTagStamper>();
             serviceCollection.AddSingleton<PosterTagImageFilter>();
 
+#if JF12
+            // Native details for titles not in the library (experimental, NativeAbsentDetailsEnabled):
+            // answers jellyfin-web's details requests for synthetic ids, no library rows. Inert while off
+            // (synthetic ids are then refused; every other request passes straight through).
+            serviceCollection.AddSingleton<Services.NativeDetails.INativeDetailsSource, Services.NativeDetails.SeerrNativeDetailsSource>();
+            // The grant key is kept in the plugin's data folder, so open pages survive a restart.
+            serviceCollection.AddSingleton(sp => new Services.NativeDetails.NativeDetailsArtwork(
+                sp.GetRequiredService<System.Net.Http.IHttpClientFactory>(),
+                JellyfinEnhanced.Instance?.DataFolderPath));
+            serviceCollection.AddSingleton(sp =>
+            {
+                var policy = new Services.NativeDetails.NativeDetailsPolicy(
+                    sp.GetRequiredService<SeerrParentalFilter>(),
+                    sp.GetRequiredService<Services.NativeDetails.INativeDetailsSource>(),
+                    sp.GetRequiredService<Services.Acquire.IJellyfinLibraryAccess>(),
+                    sp.GetRequiredService<Services.Acquire.Requests.IRequestPolicy>(),
+                    // Next to the grant key: a sign-out still ends the user's grants after a restart.
+                    JellyfinEnhanced.Instance?.DataFolderPath,
+                    // What the library itself holds (hidden copies, seasons and episodes are never re-made from public data).
+                    new Services.NativeDetails.NativeDetailsLibrary(
+                        sp.GetRequiredService<MediaBrowser.Controller.Library.ILibraryManager>(),
+                        sp.GetRequiredService<Services.Acquire.TitleAliases>(),
+                        () => sp.GetRequiredService<Services.Acquire.IArrJellyfinView>().Revision));
+                // A sign-out (or a removed session) ends the user's artwork grants.
+                var sessions = sp.GetService<MediaBrowser.Controller.Session.ISessionManager>();
+                if (sessions != null) sessions.SessionEnded += (_, e) => policy.Revoke(e.SessionInfo?.UserId ?? Guid.Empty);
+                return policy;
+            });
+            serviceCollection.AddSingleton<Services.NativeDetails.NativeDetailsFacadeFilter>();
+            // The Requests & downloads routes (status, season rows) answer for synthetic page ids by key.
+            serviceCollection.AddSingleton<Services.Acquire.IAbsentTitlePages, Services.NativeDetails.NativeDetailsPages>();
+#endif
+
             serviceCollection.Configure<MvcOptions>(o =>
             {
                 // All are IAsyncActionFilters that rewrite the response after
@@ -302,6 +335,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 // clients echo the final "sb-...-jet...-jeu..." tag on image requests.
                 // The poster tag image filter is registered BEFORE the blur filter so
                 // it post-processes AFTER it: tags are drawn on Spoiler Guard's output.
+#if JF12
+                // First: a synthetic-id request is answered (or refused) before any native action or JE filter runs.
+                o.Filters.AddService<Services.NativeDetails.NativeDetailsFacadeFilter>(Services.NativeDetails.NativeDetailsFacadeFilter.Order);
+#endif
                 o.Filters.AddService<HiddenContentResponseFilter>();
                 o.Filters.AddService<SpoilerIdentityTagFilter>();
                 o.Filters.AddService<SpoilerFieldStripFilter>();

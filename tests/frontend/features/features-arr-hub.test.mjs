@@ -312,6 +312,38 @@ test('details pages get the Manage button only with an admin status', t => {
   assert.equal(page.querySelectorAll('.je-manage-open').length, 0);
 });
 
+test('a request whose title the viewer has no copy of opens the title\'s native page; with only a key, through the server', async t => {
+  const h = setup(t, { hash: '#/requests', responses: path => (path === '/acquire/hub' ? hubAnswer({ mine: [
+    entry('Dune', 'onTheWay', 'downloading', 'downloading', { key: 'movie:tmdb:693134', tmdbId: 693134, kind: 'movie' }),
+    entry('Andor', 'onTheWay', 'approved', 'approved', { key: 'tv:tvdb:393189', kind: 'tv', tmdbId: 0 })
+  ] }) : null) });
+  const shown = [], keyed = [];
+  h.JE.titleDetails = { show: (id, type) => { shown.push([id, type]); return true; }, openKey: async (key, o) => { keyed.push([key, o.mediaType]); return true; } };
+  h.JE.initializeArrStatus();
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  const rows = [...page.querySelectorAll('.je-hub-row')];
+  rows.find(r => r.dataset.jeArrKey === 'movie:tmdb:693134').click();
+  rows.find(r => r.dataset.jeArrKey === 'tv:tvdb:393189').click();
+  assert.deepEqual(shown, [[693134, 'movie']]);
+  assert.deepEqual(keyed, [['tv:tvdb:393189', 'tv']]);
+});
+
+test('on the page of a title that is not in the library, Manage opens by the title\'s key', t => {
+  const PAGE_ID = '4a45ad130001479b0001000092805890';
+  const h = setup(t, { hash: `#/details?id=${PAGE_ID}`, html: '<div id="itemDetailPage"><div class="mainDetailButtons"></div></div>' });
+  h.JE.titleDetails = { isSynthetic: id => id === PAGE_ID };
+  const opened = [];
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrManage.attachDetails(page, { key: 'tv:tvdb:393189:s1', itemId: PAGE_ID, kind: 'season', stage: 'notHere', admin: { variants: [] } });
+  const button = page.querySelector('.je-manage-open');
+  assert.equal(button.dataset.itemId, 'key:tv:tvdb:393189');
+  // A movie status of such a page names no item at all: still by key.
+  h.JE.internals.arrManage.attachDetails(page, { key: 'movie:tmdb:5', kind: 'movie', stage: 'notHere', admin: { variants: [] } });
+  assert.equal(page.querySelector('.je-manage-open').dataset.itemId, 'key:movie:tmdb:5');
+  void opened;
+});
+
 test('the Seerr more-info modal gets the pill and journey of its title, follows it, and admins get Manage', async t => {
   const answers = { 'movie:tmdb:5': [status('downloading', 'downloading', { key: 'movie:tmdb:5', progress: { percent: 42 }, journey: [{ stage: 'asked', state: 'done', byYou: false }, { stage: 'downloading', state: 'current' }, { stage: 'ready', state: 'next' }] })] };
   const h = setup(t, {

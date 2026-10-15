@@ -21,6 +21,7 @@ Search, request, and discover media directly from Jellyfin using your Seerr inst
 - **Requests Tab**
     - **View request status** - pending, approved, available
 - **Recommendations + Discovery** - Recommendations and similar items on detail pages
+- **Jellyfin's own details page for titles that aren't in the library** *(experimental, Jellyfin 12 web)*
 - **Issue Reporting** - Report problems directly to Seerr
 - **Watchlist Sync** - Auto-add requested media to Jellyfin watchlist *([requires the KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks)*)
 
@@ -92,6 +93,44 @@ View Seerr recommendations and similar items on detail pages.
 1. Check **"Show Seerr Recommendations and Similar items"**
 2. Optional: Enable **"Exclude already in library items"**
 3. Optional: Enable **"Exclude rejected items"**
+
+### Titles that aren't in the library: Jellyfin's own details page (experimental)
+
+With **Open titles that aren't in the library on Jellyfin's own details page** on (Seerr settings, *Discovery & UI
+Extras*; off by default), a title you don't have opens on a regular Jellyfin details page instead of the More Info
+modal: the backdrop, logo, poster, title, year, runtime, rating, tagline, overview, genres, tags, cast and crew, the
+seasons and episodes of a series, and *More Like This*. Nothing is added to your library: the page is filled in from
+Seerr and TMDB while you look at it, and other apps (TV, mobile, DLNA) never see these titles in their lists.
+
+**Where it opens from.** Seerr search results, discovery rows (genre, network, studio, person, collection, tag),
+recommendations and *Recommended*/*Similar* rows, Home Screen Sections discover cards, the Requests page, the
+calendar, Hidden Content, and notifications about a title. A title (or the season or episode asked for) that you can
+open in Jellyfin goes to your library copy instead; Seerr's own "it's in the library" link is checked for you first.
+On a search card, Enter opens the page and Space still shows the overview with its Request button.
+
+**What the page shows.** On top of Jellyfin's layout:
+
+- **Request**: with [Requests & downloads](../arr/arr-features.md#titles-that-arent-in-the-library-native-details)
+  on, the status pill and journey, *Request* (the request sheet), *Notify me* and, for administrators, *Manage*.
+  Series pages get **Get Season N**; season pages list every episode as a row with **Get it** (or *Search* for one
+  missing for a long while) when you show missing episodes, or the *Missing: E1, E2…* banner when you don't; episode
+  pages get **Get it**. Without Requests & downloads, *Request* opens the request window over the page.
+- The ratings row (Rotten Tomatoes, IMDb, TMDB), the trailers and teasers, and an *Information* panel: production
+  status, release or air dates, revenue, budget, original language, production countries, studios, streaming
+  services and links (Seerr, TMDB, IMDb, TVDB, Rotten Tomatoes, Trakt, Letterboxd, SIMKL), plus the movie's
+  collection with *View* and Spoiler Guard's switch for the title. *Elsewhere* works as on any details page.
+- **Open**: when the title arrives in your library while the page is open, an *Open* button takes you to it. A link
+  to such a page after that goes straight to the library copy.
+
+Play, Shuffle, Played, Favourite, the More menu, Download, Hide and Spoiler Guard's item buttons are hidden: there is
+nothing to play, and no rule or mark is ever stored for a title you don't have. Cast members can't be opened (they
+have no library filmography).
+
+**When it can't open.** A title your account may not see (parental limits, libraries you can't open, an account
+not linked to Seerr) shows "This title isn't available to you." with *Go back*, never the modal. If Seerr can't be
+reached, you're taken back and the More Info modal opens once; if that happens again within a few seconds the page
+says it can't be loaded right now. With the setting off, on Jellyfin 10.11 and in other apps, titles open exactly as
+before (the modal, or Seerr, as set above).
 
 ### Discovery Pages
 

@@ -25,6 +25,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return FactsOf(Wants(titleKey), viewer.UserId, () => _ledger.Dispatches(Canonical(titleKey)));
         }
 
+        /// <inheritdoc />
+        /// <remarks>
+        /// The configured authority, as <see cref="For"/>: in Jellyfin Enhanced mode the ledger's asks for the
+        /// episode itself or a season that holds it; in Seerr mode Seerr's requests for its season.
+        /// </remarks>
+        public RequestFacts? ForEpisode(TitleKey seriesKey, int season, int episode, StatusViewer viewer)
+        {
+            if (!Direct) return _seerr.ForEpisode(seriesKey, season, episode, viewer);
+            var part = new RequestEpisode(season, episode);
+            return FactsOf(Wants(seriesKey).Where(w => w.Input.Covers(part)), viewer.UserId, () => _ledger.Dispatches(Canonical(seriesKey)));
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// The configured authority, as <see cref="For"/>: in Jellyfin Enhanced mode the ledger's asks that name
+        /// the whole season (an ask for some of its episodes covers those episodes only); in Seerr mode Seerr's
+        /// requests for it.
+        /// </remarks>
+        public RequestFacts? ForSeason(TitleKey seriesKey, int season, StatusViewer viewer)
+        {
+            if (!Direct) return _seerr.ForSeason(seriesKey, season, viewer);
+            return FactsOf(Wants(seriesKey).Where(w => w.Input.Seasons.Contains(season)), viewer.UserId, () => _ledger.Dispatches(Canonical(seriesKey)));
+        }
+
         /// <summary>
         /// The request facts of some requests for one title (all of a household's, or one person's): asked, waiting
         /// for an OK, OK'd (per edition), declined, done, and the parts that went out with when. Null when none of

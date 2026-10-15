@@ -954,8 +954,12 @@
         const outcome = search ? bannerSearched : null;
         // Asking can't be done now: the banner says why (administrators: where and how much is free).
         const words = open.length ? blockedWords() : null;
+        // A season of a title that isn't in the library (native details) with every aired episode
+        // still open: its page's "Get Season N" asks for exactly that, so the banner doesn't repeat it.
+        const wholeSeason = !search && !asked.length && open.length > 0 && open.length === (status.summary?.aired || -1)
+            && !!JE.titleDetails?.isSynthetic?.(status.itemId);
         let action = banner.querySelector('.je-ask-banner-action');
-        const signature = `${open.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}`;
+        const signature = `${open.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}`;
         if (action && action.dataset.sig === signature) return;
         if (action) action.remove();
         if (!missing.length) return;
@@ -969,7 +973,7 @@
             const note = S.el('span', `je-arr-chip je-ask-searched je-arr-tone-${outcome.tone}`, outcome.chip);
             note.tabIndex = -1;
             action.appendChild(note);
-        } else if (offer.length) {
+        } else if (offer.length && !wholeSeason) {
             const btn = S.el('button', `je-ask-get je-ask-get-many${search ? ' je-ask-search' : ''}`);
             btn.type = 'button';
             btn.dataset.jeFocus = 'ask-get-them';

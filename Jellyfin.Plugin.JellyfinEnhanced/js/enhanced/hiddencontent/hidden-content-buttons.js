@@ -195,6 +195,8 @@
 
             const itemId = getCardItemId(card);
             if (!itemId) continue;
+            // A title that isn't in the library (native details page): never a Hidden Content rule.
+            if (JE.titleDetails?.isSynthetic?.(itemId)) continue;
 
             const cardType = (card.dataset.type || '').toLowerCase();
             const isPerson = cardType === 'person' || card.classList.contains('personCard');

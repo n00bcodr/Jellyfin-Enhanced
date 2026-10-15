@@ -171,16 +171,18 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
     }
 
     /**
-     * True when the card body opens something (the caller's Jellyfin copy, or Seerr's window).
+     * True when the card body opens something (the caller's Jellyfin copy, the native details page,
+     * or Seerr's window).
      * @param {Object} card Card data.
      * @returns {boolean} Openable.
      */
     function openable(card) {
-        return !!(card.inLibrary && card.itemId) || (seerrWindow() && card.tmdbId > 0);
+        return !!(card.inLibrary && card.itemId) || ((seerrWindow() || JE.titleDetails?.available?.() === true) && card.tmdbId > 0);
     }
 
     /**
-     * Opens a card: the Jellyfin item when the caller has it, else Seerr's more-info window.
+     * Opens a card: the Jellyfin item when the caller has it, else the title's native details page
+     * (when offered) or Seerr's more-info window.
      * @param {Object} card Card data.
      * @returns {void}
      */
@@ -190,7 +192,11 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
             else window.location.hash = `#/details?id=${encodeURIComponent(card.itemId)}`;
             return;
         }
-        if (seerrWindow() && card.tmdbId > 0) JE.jellyseerrMoreInfo.open(card.tmdbId, card.kind === 'tv' ? 'tv' : 'movie');
+        if (!(card.tmdbId > 0)) return;
+        const mediaType = card.kind === 'tv' ? 'tv' : 'movie';
+        // The title's native details page when offered, else Seerr's window.
+        if (JE.titleDetails?.open?.(card.tmdbId, mediaType)) return;
+        if (seerrWindow()) JE.jellyseerrMoreInfo.open(card.tmdbId, mediaType);
     }
 
     /**
