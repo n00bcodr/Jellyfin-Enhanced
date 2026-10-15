@@ -4051,6 +4051,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "LanguageTagsMergeRegions",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "QualityTagsPreferredAudioLanguage",
       "type": "string",
       "initializer": "string.Empty",
@@ -7748,7 +7756,7 @@
     "build_targets": 2,
     "files": 356,
     "routes": 177,
-    "configuration_properties": 528,
+    "configuration_properties": 529,
     "storage_references": 69,
     "scheduled_tasks": 13,
     "locales": 33

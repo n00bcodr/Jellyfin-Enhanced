@@ -173,6 +173,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Admin <c>LanguageTagsPriorityStrict</c>.</summary>
         public bool LanguagePriorityStrict { get; private init; }
 
+        /// <summary>Admin <c>LanguageTagsMergeRegions</c>.</summary>
+        public bool LanguageMergeRegions { get; private init; }
+
         /// <summary>Admin <c>ShowUserReviews</c>.</summary>
         public bool ShowUserReviews { get; private init; }
 
@@ -327,6 +330,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 RatingTagsOnNextUp = user.RatingTagsOnNextUp,
                 LanguagePriorityTerms = LanguageFlagRules.ParsePriorityTerms(config.LanguageTagsPriority),
                 LanguagePriorityStrict = config.LanguageTagsPriorityStrict,
+                LanguageMergeRegions = config.LanguageTagsMergeRegions,
                 ShowUserReviews = config.ShowUserReviews,
                 ShowUserRatingOnPosters = config.ShowUserRatingOnPosters,
                 ShowUserRatingDash = config.ShowUserRatingDash,
@@ -499,6 +503,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["language.position"] = LanguageTagsPosition;
                 values["language.priority"] = string.Join(",", LanguagePriorityTerms);
                 values["language.priorityStrict"] = Bool(LanguagePriorityStrict);
+                values["language.mergeRegions"] = Bool(LanguageMergeRegions);
             }
 
             if (RatingTagsEnabled)

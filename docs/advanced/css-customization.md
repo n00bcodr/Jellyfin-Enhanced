@@ -377,6 +377,7 @@ Use `.language-overlay-container` and `.language-flag` to style language flags.
 | --- | --- | --- |
 | **Priority Languages** | Empty | `LanguageTagsPriority`: prioritizes language flags. |
 | **Only Show Priority Languages** | Off | `LanguageTagsPriorityStrict`: restricts output to the priority list. |
+| **Merge Regional Variants** | Off | `LanguageTagsMergeRegions`: regional and script variants share the base language's flag. |
 
 Flags are deduplicated by country and limited to three. Full flags normally precede partial flags, but priority ordering takes precedence.
 

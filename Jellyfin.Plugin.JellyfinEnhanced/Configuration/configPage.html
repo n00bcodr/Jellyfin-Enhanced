@@ -339,6 +339,10 @@
                                     <div class="je-setting-description" data-desc-for="languageTagsPriorityStrict">
                                         <div class="fieldDescription">Hide flags for every language not listed above. A title with none of them shows no flags at all.</div>
                                     </div>
+                                    <div class="checkboxContainer"><label><input id="languageTagsMergeRegions" is="emby-checkbox" type="checkbox"/><span>Merge Regional Variants</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="languageTagsMergeRegions">
+                                        <div class="fieldDescription">Show one flag per language, matching Jellyfin's own audio language filter. For example, English and English (United Kingdom) share a single flag instead of two.</div>
+                                    </div>
                                 </div>
                             </details>
 
@@ -6525,6 +6529,7 @@
                 if (lChk) lChk.checked = langEnabled;
                 document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
                 document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
+                document.querySelector('#languageTagsMergeRegions').checked = config.LanguageTagsMergeRegions === true;
                 const qualityAudioLangSelect = document.querySelector('#qualityTagsPreferredAudioLanguage');
                 // The culture list loads asynchronously; keep the value so it can be re-applied once the options exist.
                 qualityAudioLangSelect.dataset.savedValue = config.QualityTagsPreferredAudioLanguage || '';
@@ -7117,6 +7122,7 @@
             config.LanguageTagsPosition = document.querySelector('#languageTagsPosition').value;
             config.LanguageTagsPriority = document.querySelector('#languageTagsPriority').value.trim();
             config.LanguageTagsPriorityStrict = document.querySelector('#languageTagsPriorityStrict').checked;
+            config.LanguageTagsMergeRegions = document.querySelector('#languageTagsMergeRegions').checked;
             config.QualityTagsPreferredAudioLanguage = document.querySelector('#qualityTagsPreferredAudioLanguage').value || '';
             config.QualityTagsAudioLanguageFromUser = document.querySelector('#qualityTagsAudioLanguageFromUser').checked;
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
@@ -8672,7 +8678,7 @@
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },
-            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict'], noHint: true },
+            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp'], noHint: true },
             { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
