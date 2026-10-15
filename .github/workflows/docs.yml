@@ -7,8 +7,10 @@ on:
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
+      - 'overrides/**'
       - '.github/workflows/docs.yml'
       - 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html'
+      - 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs'
       - 'scripts/generate_config_flag_groups.py'
   workflow_dispatch:
 
@@ -46,7 +48,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install mkdocs-material==9.6.12 mdx-truly-sane-lists
+          pip install mkdocs-material==9.6.12 mdx-truly-sane-lists mkdocs-glightbox==0.5.2
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d

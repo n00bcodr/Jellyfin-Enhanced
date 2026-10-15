@@ -8,8 +8,19 @@ copyright: Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the co
 
 theme:
   name: material
+  # JE look: template overrides for the logo mark, nav/tab icons (overrides/partials/je-icons.html),
+  # the section bar above each page title, area names in titles, and the footer key hint
+  custom_dir: overrides
   logo: images/favicon.ico
   favicon: images/favicon.ico
+  # Jellyfin's own UI font
+  font:
+    text: Noto Sans
+    code: Noto Sans Mono
+  icon:
+    previous: material/chevron-left
+    next: material/chevron-right
+    top: material/arrow-up
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -27,22 +38,22 @@ theme:
         name: Switch to light mode
   features:
     - navigation.instant
+    - navigation.instant.progress
     - navigation.tracking
     - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
-    - navigation.expand
+    - navigation.indexes
     - navigation.top
     - navigation.footer
-    - navigation.indexes
     - toc.follow
-    - toc.integrate
     - search.suggest
     - search.highlight
     - search.share
     - content.code.copy
     - content.code.annotate
+    - content.tabs.link
     - announce.dismiss
-
 extra:
   404_page: true
   social:
@@ -57,9 +68,24 @@ plugins:
   - search:
       lang: en
       separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+  # Click any screenshot to open it full size
+  - glightbox:
+      touchNavigation: true
+      loop: false
+      effect: zoom
+      width: 100%
+      height: auto
+      zoomable: true
+      draggable: false
+      skip_classes:
+        - no-lightbox
 
 markdown_extensions:
   - meta
+  - toc:
+      permalink: true
+      title: On this page
+  - abbr
   - admonition
   - pymdownx.details
   - pymdownx.superfences
@@ -84,113 +110,79 @@ markdown_extensions:
   - pymdownx.caret
   - pymdownx.mark
   - pymdownx.tilde
+  # icons (:material-...:, :fontawesome-...:) for cards and buttons
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - mdx_truly_sane_lists
 
 
-# main tabs/headers
+# main tabs/headers — at most two levels: every area is a top tab, its pages sit directly under it
 nav:
-  # ——————————————
-  # landing page
-  # ——————————————
   - Home: index.md
 
-
-  # ——————————————
-  # Installation
-  # ——————————————
-  - Installation:
+  - Getting Started:
+    - Quick Start: getting-started/index.md
     - Installation: installation/installation.md
-    - Troubleshooting installation: installation/troubleshooting.md
+    - Compatibility: getting-started/compatibility.md
+    - Settings Overview: getting-started/settings-overview.md
+    - JE Pages & Tabs: getting-started/pages-and-tabs.md
+    - Troubleshooting: installation/troubleshooting.md
 
-
-  # ——————————————
-  # Enhanced
-  # ——————————————
   - Enhanced:
-    # Feature overview
-    - Enhanced Features: enhanced/enhanced-features.md
+    - Features: enhanced/enhanced-features.md
+    - Tags & Badges: enhanced/tags.md
+    - Settings: enhanced/enhanced-settings.md
 
-    # Enhanced Settings
-    - Enhanced Settings: enhanced/enhanced-settings.md
+  - Spoiler Guard:
+    - Features: spoiler-guard/spoiler-guard-features.md
+    - Settings: spoiler-guard/spoiler-guard-settings.md
 
-
-  # ——————————————
-  # Elsewhere
-  # ——————————————
-  - Elsewhere:
-    # Features overview
-    - Elsewhere Features: elsewhere/elsewhere-features.md
-
-    # Elsewhere Settings
-    - Elsewhere Settings: elsewhere/elsewhere-settings.md
-
-
-  # ——————————————
-  # Seerr
-  # ——————————————
   - Seerr:
-    # Features overview
-    - Seerr Features: seerr/seerr-features.md
-
-    # Seerr Settings
-    - Seerr Settings: seerr/seerr-settings.md
+    - Features: seerr/seerr-features.md
+    - Settings: seerr/seerr-settings.md
     - Permission Audit: seerr/permission-audit.md
 
-
-  # ——————————————
-  # Spoiler Guard
-  # ——————————————
-  - Spoiler Guard:
-    # Features overview
-    - Spoiler Guard Features: spoiler-guard/spoiler-guard-features.md
-
-    # Spoiler Guard Settings
-    - Spoiler Guard Settings: spoiler-guard/spoiler-guard-settings.md
-
-
-  # ——————————————
-  # *arr
-  # ——————————————
   - "*arr":
-    # Features overview
-    - "*arr Features": arr/arr-features.md
+    - Features: arr/arr-features.md
+    - Settings: arr/arr-settings.md
+    - Troubleshooting: arr/troubleshooting-support.md
 
-    # *arr Settings
-    - "*arr Settings": arr/arr-settings.md
+  - Elsewhere:
+    - Features: elsewhere/elsewhere-features.md
+    - Settings: elsewhere/elsewhere-settings.md
 
-    # Troubleshooting + Support
-    - Troubleshooting + Support: arr/troubleshooting-support.md
-
-
-  # ——————————————
-  # Other
-  # ——————————————
   - Other:
-    # Features overview
-    - Other Features: other/other-features.md
+    - Features: other/other-features.md
+    - Settings: other/other-settings.md
 
-    # Other Settings
-    - Other Settings: other/other-settings.md
-
-
-  # ——————————————
-  # Advanced, misc
-  # ——————————————
   - Advanced:
     - CSS Customization: advanced/css-customization.md
     - API: advanced/api.md
+    - Community Analytics: advanced/community-analytics.md
     - Project Structure: advanced/project-structure.md
-  - FAQ + Support:
+
+  - Help:
     - FAQ: faq-support/faq.md
-    - Report issues: faq-support/report-issues.md
+    - Report Issues: faq-support/report-issues.md
     - Feature Requests: faq-support/feature-requests.md
     - Contributing Translations: faq-support/contributing-translations.md
     - Support + Community: faq-support/support.md
-  - Community Analytics: advanced/community-analytics.md
-  - Related Projects: other-projects/other-projects.md
-  - About: about.md
+    - Related Projects: other-projects/other-projects.md
+    - About: about.md
+
+exclude_docs: |
+  /404.md
+
+# Report broken links and anchors at build time
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
 
 extra_css:
   - stylesheets/extra.css
+  - stylesheets/touch.css
 extra_javascript:
   - javascripts/extra.js
