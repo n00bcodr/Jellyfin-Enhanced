@@ -610,3 +610,44 @@ test('storage full: a card says "Paused: storage full" only when the server mark
   assert.equal(h.document.querySelector('.je-sheet-note-paused').textContent, `storagePaused: storage full · ${sentence}`);
   assert.equal(posts.length, 0);
 });
+
+test('JE mode with native details: a search-row card opens the title\'s native page and its Request asks through JE without leaving the search page; without native details the card keeps Seerr\'s window', async t => {
+  for (const nativeOn of [true, false]) {
+    await t.test(nativeOn ? 'native details offered' : 'native details off', async t2 => {
+      const posts = [], native = [], opened = [];
+      const h = setup(t2, {
+        html: SEARCH_HTML,
+        config: { ArrRequestsJeMode: true, JellyseerrEnabled: true },
+        // Seerr's request controls in JE mode (their capture listener is on the page too).
+        modules: ['arr/ask/ask-seerr.js'],
+        JE: { jellyseerrMoreInfo: { open: (id, type) => opened.push([id, type]) } },
+        routes: f => {
+          if (f.path === '/acquire/search') return page([card('movie:tmdb:2', 'Dune: Part Two'), card('tv:tmdb:20', 'A show')]);
+          if (f.path === '/acquire/requests' && f.init.method === 'POST') {
+            posts.push(JSON.parse(f.init.body));
+            return { status: 201, body: { outcome: 'accepted', reason: 'queued', certainty: 'Succeeded', message: 'Asked!', requestId: 'r1' } };
+          }
+          return undefined;
+        }
+      });
+      h.JE.titleDetails = { available: () => nativeOn, open: (id, type) => { if (!nativeOn) return false; native.push([id, type]); return true; } };
+      h.JE.initializeArrAskSearch();
+      typeInto(h, 'dune');
+      await until(() => h.document.querySelectorAll('.je-ask-search-section .je-discover-card').length === 2);
+      const section = h.document.querySelector('.je-ask-search-section');
+      cardOf(section, 'tv:tmdb:20').querySelector('button.je-discover-poster-box').click();
+      if (nativeOn) {
+        assert.deepEqual(native, [[20, 'tv']], 'the card body opens the native page');
+        assert.deepEqual(opened, [], 'not Seerr\'s window');
+      } else {
+        assert.deepEqual(opened, [[20, 'tv']], 'without native details: Seerr\'s window, as before');
+      }
+      cardOf(section, 'movie:tmdb:2').querySelector('.je-discover-request').click();
+      await until(() => h.toasts.length === 1);
+      assert.equal(posts.length, 1);
+      assert.deepEqual(posts[0].input, { key: 'movie:tmdb:2', scope: 'movie', variant: 'standard', seasons: [], episodes: [] });
+      assert.equal(native.length, nativeOn ? 1 : 0, 'Request never opens the page');
+      assert.equal(opened.length, nativeOn ? 0 : 1, 'Request never opens Seerr\'s window');
+    });
+  }
+});

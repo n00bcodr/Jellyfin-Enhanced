@@ -2,7 +2,9 @@
 // More Info modal go through the navigator (JE.titleDetails), and keep the modal when it isn't offered.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness } from '../helpers/harness.mjs';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { createHarness, jsRoot } from '../helpers/harness.mjs';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
@@ -83,4 +85,14 @@ test('nothing here reaches the network while loading', async t => {
   h.load('jellyseerr/hss-discovery-handler.js');
   h.load('enhanced/hiddencontent/hidden-content-page-cards.js');
   await wait(20);
+});
+
+test('the navigator loads before every module that asks it about an id (a cold deep link runs some of them at load time)', () => {
+  const order = JSON.parse(readFileSync(resolve(jsRoot, 'component-scripts.json'), 'utf8')).filter(e => !e.startsWith('//'));
+  const at = order.indexOf('jellyseerr/nativedetails/native-details.js');
+  assert.ok(at >= 0);
+  for (const name of ['core/navigation.js', 'core/session.js', 'core/lifecycle.js']) assert.ok(order.indexOf(name) < at, `${name} loads first`);
+  const readers = order.filter(f => f !== 'jellyseerr/nativedetails/native-details.js' && /JE\.titleDetails/.test(readFileSync(resolve(jsRoot, f), 'utf8')));
+  assert.ok(readers.includes('jellyseerr/item-details.js') && readers.includes('jellyseerr/seerr-detail-link.js'));
+  for (const f of readers) assert.ok(order.indexOf(f) > at, `${f} loads after native-details.js`);
 });

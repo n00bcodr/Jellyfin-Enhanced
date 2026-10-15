@@ -863,6 +863,11 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
   a downloading episode gets its ring;
 - **episodes**: **Get it** or *Search*.
 
+These are the page's only request controls, and they ask through Jellyfin Enhanced in both request modes: in JE mode
+the request goes straight to Sonarr or Radarr (asks that need an OK wait for it), in Seerr mode Jellyfin Enhanced
+passes it on to Seerr as the person who asked. In JE mode the cards of the *Not in your library* search row and of the
+Discover tab open these pages too, and the request is followed on the page and in *My requests* through to *Ready*.
+
 The status comes from Sonarr or Radarr when one holds the title (downloading, looking, almost ready…), otherwise every
 aired episode is simply not here and later ones are *not out yet*. The page's id is never taken for a copy: once one
 arrives that the person can open, the page offers **Open**.
@@ -902,7 +907,9 @@ library can't be ticked) and asks Jellyfin Enhanced for each ticked one, then sa
 for 2 · 1 waits for Dad's OK"). Up to 20 can be asked for at a time: with more than that missing, the first 20 are
 ticked, a note says so, and no more can be ticked until one is unticked. Seerr's own request windows (with its servers, profiles and folders) are never shown
 in JE mode, and Seerr's "only Seerr results" search filter (double-tap on its icon) does nothing there. In Seerr mode
-every Seerr control behaves as before.
+every Seerr control behaves as before. With Seerr's experimental native details page on, the card itself (title,
+poster, Enter) opens the title's [details page](#titles-that-arent-in-the-library-native-details) instead of Seerr's
+window; only its **Request** button opens the sheet.
 
 Each card shows the poster, title and year, a state chip (**In your library**, **Asked!**, **Waiting for OK** or
 **Someone asked**, always with an icon and words) and a **Request** button. People whose asks wait for an OK

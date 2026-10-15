@@ -103,8 +103,9 @@ seasons and episodes of a series, and *More Like This*. Nothing is added to your
 Seerr and TMDB while you look at it, and other apps (TV, mobile, DLNA) never see these titles in their lists.
 
 **Where it opens from.** Seerr search results, discovery rows (genre, network, studio, person, collection, tag),
-recommendations and *Recommended*/*Similar* rows, Home Screen Sections discover cards, the Requests page, the
-calendar, Hidden Content, and notifications about a title. A title (or the season or episode asked for) that you can
+recommendations and *Recommended*/*Similar* rows, Home Screen Sections discover cards, the Requests page (also its
+Discover tab and, when Jellyfin Enhanced handles requests, the *Not in your library* search row), the calendar,
+Hidden Content, and notifications about a title. A title (or the season or episode asked for) that you can
 open in Jellyfin goes to your library copy instead; Seerr's own "it's in the library" link is checked for you first.
 On a search card, Enter opens the page and Space still shows the overview with its Request button.
 
