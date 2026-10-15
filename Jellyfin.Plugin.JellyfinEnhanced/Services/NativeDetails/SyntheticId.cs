@@ -18,8 +18,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>An episode (TMDB tv id + season + episode number).</summary>
         Episode = 4,
 
-        /// <summary>A cast or crew member (TMDB person id); artwork only, never a details page.</summary>
+        /// <summary>A cast or crew member (TMDB person id): a person page and its artwork.</summary>
         Person = 5,
+
+        /// <summary>A TMDB genre (genre id): the discovery page of a genre the viewer's library doesn't offer.</summary>
+        Genre = 6,
+
+        /// <summary>A TMDB production company (company id): the discovery page of a studio the viewer's library doesn't offer.</summary>
+        Studio = 7,
+
+        /// <summary>A TMDB TV network (network id): the discovery page of a network the viewer's library doesn't offer.</summary>
+        Network = 8,
     }
 
     /// <summary>
@@ -55,13 +64,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>An episode id.</summary>
         public static SyntheticId EpisodeOf(int tmdb, int season, int episode) => new(SyntheticKind.Episode, tmdb, season, episode);
 
-        /// <summary>A person (artwork owner) id.</summary>
+        /// <summary>A person id.</summary>
         public static SyntheticId Person(int tmdb) => new(SyntheticKind.Person, tmdb, 0, 0);
+
+        /// <summary>A genre id.</summary>
+        public static SyntheticId Genre(int tmdb) => new(SyntheticKind.Genre, tmdb, 0, 0);
+
+        /// <summary>A studio (production company) id.</summary>
+        public static SyntheticId Studio(int tmdb) => new(SyntheticKind.Studio, tmdb, 0, 0);
+
+        /// <summary>A TV network id.</summary>
+        public static SyntheticId Network(int tmdb) => new(SyntheticKind.Network, tmdb, 0, 0);
+
+        /// <summary>True for a title (movie, series, season, episode): a page with a request key.</summary>
+        public bool IsTitle => Kind is SyntheticKind.Movie or SyntheticKind.Series or SyntheticKind.Season or SyntheticKind.Episode;
 
         /// <summary>True for a movie.</summary>
         public bool IsMovie => Kind == SyntheticKind.Movie;
 
-        /// <summary>The series this id belongs to (itself for a series; movies and people have none).</summary>
+        /// <summary>The series this id belongs to (itself for a series; movies, people and name pages have none).</summary>
         public SyntheticId SeriesId => Series(TmdbId);
 
         /// <summary>The season this id belongs to (seasons and episodes).</summary>
@@ -142,7 +163,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (TmdbId <= 0 || Season < 0 || Episode < 0 || Season > 0xffff || Episode > 0xffff) return false;
             return Kind switch
             {
-                SyntheticKind.Movie or SyntheticKind.Series or SyntheticKind.Person => Season == 0 && Episode == 0,
+                SyntheticKind.Movie or SyntheticKind.Series or SyntheticKind.Person
+                    or SyntheticKind.Genre or SyntheticKind.Studio or SyntheticKind.Network => Season == 0 && Episode == 0,
                 SyntheticKind.Season => Episode == 0,
                 SyntheticKind.Episode => true,
                 _ => false,

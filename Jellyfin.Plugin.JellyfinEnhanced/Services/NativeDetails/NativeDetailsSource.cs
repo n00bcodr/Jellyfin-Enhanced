@@ -33,6 +33,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>The title's TMDB logo file path (needs JE's TMDB key), or null.</summary>
         Task<string?> LogoPathAsync(bool movie, int tmdb, CancellationToken ct);
 
+        /// <summary>Seerr's person details (name, biography, birth and death, known-for department), or why there are none.</summary>
+        Task<SourceAnswer> PersonAsync(int tmdb, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+
+        /// <summary>Seerr's list of TMDB movie or TV genres (id, name), or why there is none.</summary>
+        Task<SourceAnswer> GenresAsync(bool movie, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+
+        /// <summary>Seerr's details of a production company (studio), or why there are none.</summary>
+        Task<SourceAnswer> StudioAsync(int tmdb, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+
+        /// <summary>Seerr's details of a TV network, or why there are none.</summary>
+        Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+
         /// <summary>
         /// True when the Jellyfin user has a linked Seerr account, false when not, null when it can't
         /// be told (Seerr unreachable and no earlier answer): the page then fails over to the modal
@@ -70,7 +82,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private static readonly TimeSpan LinkTtl = TimeSpan.FromMinutes(5);
         private static readonly TimeSpan LinkMissRefresh = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(10);
-        private static readonly System.Text.RegularExpressions.Regex TitlePath = new(@"^/api/v1/((?:movie|tv)/[0-9]{1,9}(?:/season/[0-9]{1,4})?)$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        private static readonly System.Text.RegularExpressions.Regex TitlePath = new(@"^/api/v1/((?:movie|tv)/[0-9]{1,9}(?:/season/[0-9]{1,4})?|(?:person|studio|network)/[0-9]{1,9})$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         // The linked-account check guards every facade route: one bounded refresh at a time, and a
         // failed refresh is not retried by the callers queued behind it.
         private static readonly TimeSpan LinkRefreshBudget = TimeSpan.FromSeconds(4);
@@ -114,6 +126,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         /// <inheritdoc />
         public Task<SourceAnswer> SeasonAsync(int tmdb, int season, CancellationToken ct) => GetAsync($"/api/v1/tv/{tmdb}/season/{season}", ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> PersonAsync(int tmdb, CancellationToken ct) => GetAsync($"/api/v1/person/{tmdb}", ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> GenresAsync(bool movie, CancellationToken ct) => GetAsync(movie ? "/api/v1/genres/movie" : "/api/v1/genres/tv", ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> StudioAsync(int tmdb, CancellationToken ct) => GetAsync($"/api/v1/studio/{tmdb}", ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) => GetAsync($"/api/v1/network/{tmdb}", ct);
 
         /// <inheritdoc />
         public async Task<JsonElement?> RecommendationsAsync(bool movie, int tmdb, CancellationToken ct)
@@ -298,8 +322,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>
-        /// True only when TMDB itself answers 404 for the title (or season) a failed Seerr path names;
-        /// false without a TMDB key, for other paths, and when TMDB can't be asked either.
+        /// True only when TMDB itself answers 404 for the title (or season, person, studio or network) a
+        /// failed Seerr path names; false without a TMDB key, for other paths, and when TMDB can't be asked either.
         /// </summary>
         private async Task<bool> TmdbSaysMissingAsync(string seerrPath)
         {
@@ -309,7 +333,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             try
             {
                 using var timeout = new CancellationTokenSource(FetchTimeout);
-                var response = await _tmdb.GetAsync(match.Groups[1].Value, string.Empty, key, timeout.Token).ConfigureAwait(false);
+                // Seerr's studio is TMDB's company.
+                var tmdbPath = match.Groups[1].Value.StartsWith("studio/", StringComparison.Ordinal) ? "company/" + match.Groups[1].Value.Substring(7) : match.Groups[1].Value;
+                var response = await _tmdb.GetAsync(tmdbPath, string.Empty, key, timeout.Token).ConfigureAwait(false);
                 return response.StatusCode == 404;
             }
             catch (Exception ex)

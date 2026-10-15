@@ -26,7 +26,12 @@
 //   - offers Open once a copy the viewer can open arrives (a deep link to a title that is already
 //     here goes straight to it);
 //   - re-checks the page on every view (Back, restore) and shows a neutral refusal when the server
-//     refuses the title (parental limit, no access).
+//     refuses the title (parental limit, no access);
+//   - lets the page's names lead somewhere: the server links cast and crew to the library's person
+//     page, or to a person page of their own (this module adds "Known for"; the filmography is JE's
+//     person discovery row), and genres, studios and networks to the library's list page, or to a
+//     discovery page (#/list?genreId|studioId=<synthetic id>: the list holds nothing, JE's discovery
+//     row the titles; this module hides the list's play buttons there).
 // The id format is shared with the server (Services/NativeDetails/SyntheticId.cs): 4a45ad, version
 // 1, kind, TMDB id (8 hex), season (4), episode (4), FNV-1a check (8) over "<serverId>|<prefix>".
 (function (JE) {
@@ -35,8 +40,14 @@
     const NAMESPACE = '4a45ad';
     const VERSION = '1';
     const CONTRACT = 1;
-    const KINDS = { movie: 1, series: 2, season: 3, episode: 4, person: 5 };
-    const KIND_NAMES = { 1: 'movie', 2: 'series', 3: 'season', 4: 'episode', 5: 'person' };
+    const KINDS = { movie: 1, series: 2, season: 3, episode: 4, person: 5, genre: 6, studio: 7, network: 8 };
+    const KIND_NAMES = { 1: 'movie', 2: 'series', 3: 'season', 4: 'episode', 5: 'person', 6: 'genre', 7: 'studio', 8: 'network' };
+    /** Kinds that are titles (a request key, status, the information panel); the others are pages a title links to. */
+    const TITLE_KINDS = new Set(['movie', 'series', 'season', 'episode']);
+    /** On a person page: the native tagline is replaced by "Known for …". */
+    const PERSON_CLASS = 'je-native-absent-person';
+    /** On a genre/studio/network discovery page (a native list page with nothing of the library in it). */
+    const LIST_CLASS = 'je-native-absent-list';
     const PAGE_CLASS = 'je-native-absent';
     /** A refused page: only the refusal box is shown (and no backdrop). */
     const REFUSED_CLASS = 'je-native-absent-refused';
@@ -109,8 +120,8 @@
     }
 
     /**
-     * The synthetic id of a title (or season/episode) on this server.
-     * @param {string} kind movie, series, season, episode or person.
+     * The synthetic id of a title (or season/episode), person, genre, studio or network on this server.
+     * @param {string} kind movie, series, season, episode, person, genre, studio or network.
      * @param {number} tmdbId TMDB id.
      * @param {number} [season] Season number.
      * @param {number} [episode] Episode number.
@@ -338,6 +349,11 @@
             + `${x} .trailer-info { padding: 0.5rem; }\n`
             + `${x} .trailer-name { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.15rem; }\n`
             + `${x} .trailer-type { font-size: 0.8rem; opacity: 0.75; }\n`
+            + `.je-native-absent-knownfor { opacity: 0.85; font-size: 1.05em; }\n`
+            + `.je-native-absent-knownfor:empty { display: none; }\n`
+            + `#itemDetailPage.${PERSON_CLASS} .tagline { display: none !important; }\n`
+            // A discovery page's own list is empty by construction: no paging, play, sort or filter controls.
+            + `.${LIST_CLASS} .itemsViewSettingsContainer, .${LIST_CLASS} .paging, .${LIST_CLASS} .alphaPicker { display: none !important; }\n`
             + `.je-native-absent-refusal { padding: 3em 1.5em; text-align: center; font-size: 1.15em; }\n`
             // A refused page keeps nothing of the title on screen: a restored view's earlier content is hidden.
             + `#itemDetailPage.${REFUSED_CLASS} > :not(.je-native-absent-refusal) { display: none !important; }\n`
@@ -359,6 +375,39 @@
         } catch {
             return null;
         }
+    }
+
+    /**
+     * The synthetic genre/studio/network id of the list page in the current URL (#/list?genreId= or
+     * studioId=), or null.
+     * @returns {string|null} Id.
+     */
+    function listIdFromHash() {
+        const hash = window.location.hash || '';
+        if (!/\/list/i.test(hash)) return null;
+        try {
+            const params = new URLSearchParams(hash.split('?')[1] || '');
+            return params.get('genreId') || params.get('studioId');
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Marks the list page shown now as a discovery page when its genre/studio/network id is synthetic
+     * (its list, paging, play, filter and sort controls have nothing to act on there), and unmarks
+     * other list pages.
+     * @returns {void}
+     */
+    function adaptListPage() {
+        const listId = listIdFromHash();
+        const parts = listId ? parse(listId) : null;
+        const discovery = !!parts && (parts.kind === 'genre' || parts.kind === 'studio' || parts.kind === 'network');
+        if (discovery) injectStyles();
+        document.querySelectorAll(`.${LIST_CLASS}`).forEach(n => n.classList.remove(LIST_CLASS));
+        if (!discovery) return;
+        const page = document.querySelector('.page:not(.hide)');
+        if (page && page.id !== 'itemDetailPage') page.classList.add(LIST_CLASS);
     }
 
     /**
@@ -781,6 +830,20 @@
     }
 
     /**
+     * A person page: the department TMDB knows them for (the server gives it as the tagline), in
+     * place of the native tagline.
+     * @param {Object} state Page state.
+     * @param {Object} item Item DTO.
+     * @returns {void}
+     */
+    function showKnownFor(state, item) {
+        const department = Array.isArray(item?.Taglines) ? String(item.Taglines[0] || '').trim() : '';
+        if (state.parts.kind !== 'person' || !department || !state.container) return;
+        state.container.querySelector('.je-native-absent-knownfor')?.remove();
+        state.container.insertBefore(el('div', 'je-native-absent-knownfor', JE.t('native_details_known_for', { department })), state.container.firstChild);
+    }
+
+    /**
      * Loads the page's item (every view: a restored page is checked again) and adapts the page.
      * @returns {Promise<void>}
      */
@@ -789,18 +852,26 @@
         const page = visiblePage();
         // Capability or admin switch off (or a 10.11 server): native pages stay exactly as they are.
         if (!available()) {
-            page?.classList.remove(PAGE_CLASS);
+            page?.classList.remove(PAGE_CLASS, PERSON_CLASS);
+            document.querySelectorAll(`.${LIST_CLASS}`).forEach(n => n.classList.remove(LIST_CLASS));
             unrefuse(null);
             dispose();
             return;
         }
+        adaptListPage();
         const parts = id ? parse(id) : null;
-        if (page) page.classList.toggle(PAGE_CLASS, !!parts);
+        if (page) {
+            page.classList.toggle(PAGE_CLASS, !!parts);
+            page.classList.toggle(PERSON_CLASS, parts?.kind === 'person');
+        }
         if (!parts || !page) {
             unrefuse(parts ? null : page);
             dispose();
             return;
         }
+        // A person page (or a genre/studio/network page opened as details) has no request key, status,
+        // information panel or modal to fall back to.
+        const isTitle = TITLE_KINDS.has(parts.kind);
         injectStyles();
         // The same page shown again (Back, restore): keep its controls, check it again.
         const same = current && current.id === id && current.page === page && document.contains(current.container || page);
@@ -818,7 +889,7 @@
         let status = 0;
         // Where this title opens for the viewer now: a copy that is already here wins (asked once
         // per page; a restored page keeps its Open button from the status instead).
-        const where = same ? Promise.resolve(null) : resolve({ id });
+        const where = same || !isTitle ? Promise.resolve(null) : resolve({ id });
         try {
             item = await ApiClient.getItem(ApiClient.getCurrentUserId(), id);
         } catch (err) {
@@ -828,12 +899,17 @@
         if (!item) {
             if (status === 404 || status === 403) {
                 dispose();
-                refuse(page);
+                refuse(page, isTitle ? undefined : 'native_details_page_unavailable');
                 return;
             }
             // Outage or an unusable page: back to where the user was, then the modal, once; a
             // second failure soon after says so on the page instead of leaving its spinner.
             dispose();
+            if (!isTitle) {
+                // No modal shows a person: the page says it can't be loaded.
+                refuse(page, 'native_details_page_failed');
+                return;
+            }
             if (fellBackFrom === id) {
                 refuse(page, 'native_details_failed');
                 return;
@@ -861,6 +937,10 @@
             return;
         }
         if (same) return;
+        if (!isTitle) {
+            showKnownFor(state, item);
+            return;
+        }
         state.key = keyOf(item, parts);
         mountRequest(state, item);
         // A status the details surface read before the mount existed: the mount starts from it.
@@ -872,22 +952,18 @@
     }
 
     /**
-     * Blocks native shortcuts that would act on a synthetic id: card context menus anywhere, and
-     * person links on synthetic pages (no library filmography exists for those people).
+     * Blocks native shortcuts that would act on a synthetic id: card context menus anywhere (a click
+     * opens the card's page: a title, or a person's own page).
      * @param {Event} e Event.
      * @returns {void}
      */
     function guard(e) {
-        if (!available()) return;
+        if (!available() || e.type !== 'contextmenu') return;
         const target = /** @type {Element|null} */ (e.target instanceof Element ? e.target : null);
         const card = target?.closest?.('[data-id]');
-        if (!card) return;
-        const parts = parse(card.getAttribute('data-id'));
-        if (!parts) return;
-        if (e.type === 'contextmenu' || parts.kind === 'person') {
-            e.preventDefault();
-            e.stopPropagation();
-        }
+        if (!card || !parse(card.getAttribute('data-id'))) return;
+        e.preventDefault();
+        e.stopPropagation();
     }
 
     /**
@@ -913,13 +989,12 @@
             unrefuse(null);
             dispose();
         });
-        document.addEventListener('click', guard, true);
         document.addEventListener('contextmenu', guard, true);
         JE.session?.onUserChange?.('native-details', () => { cancelPendingModal(); dispose(); });
     }
 
     JE.titleDetails = Object.freeze({ available, open, show, openKey, openModal, syntheticId, parse, isSynthetic });
     JE.internals = JE.internals || {};
-    JE.internals.nativeDetails = { start, onView, dispose, guard, statusShown, resolve, current: () => current };
+    JE.internals.nativeDetails = { start, onView, dispose, guard, statusShown, resolve, adaptListPage, current: () => current };
     start();
 })(window.JellyfinEnhanced);

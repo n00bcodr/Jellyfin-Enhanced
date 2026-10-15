@@ -4,6 +4,9 @@
 // Dual-feed spec over JE.discoveryBase — the base owns the TV/movie
 // pagination, filter/sort controls, infinite scroll, dedup and lifecycle
 // wiring; this module keeps the Jellyfin-genre → TMDB-genre resolution.
+// A genre the viewer's library doesn't offer (linked from a native details
+// page of a title not in the library) has a synthetic id that carries its
+// TMDB genre id; its list page holds nothing else, the row is its content.
 (function(JE) {
     'use strict';
 
@@ -63,6 +66,16 @@
     }
 
     /**
+     * The TMDB genre id a synthetic genre id carries (see js/jellyseerr/nativedetails), or 0.
+     * @param {string} genreId
+     * @returns {number}
+     */
+    function syntheticGenreTmdb(genreId) {
+        const parts = JE.titleDetails?.parse?.(genreId);
+        return parts && parts.kind === 'genre' ? parts.tmdbId : 0;
+    }
+
+    /**
      * Gets genre information from Jellyfin
      * @param {string} genreId
      * @param {AbortSignal} [signal]
@@ -78,7 +91,10 @@
                 throw new DOMException('Aborted', 'AbortError');
             }
 
-            const response = await fetchWithManagedRequest(`/JellyfinEnhanced/genre/${genreId}`, { signal });
+            // A synthetic genre: its name is the page's own item (JE's genre route knows library genres only).
+            const response = syntheticGenreTmdb(genreId)
+                ? await ApiClient.getItem(ApiClient.getCurrentUserId(), genreId).then(item => (item?.Name ? { name: item.Name } : null))
+                : await fetchWithManagedRequest(`/JellyfinEnhanced/genre/${genreId}`, { signal });
 
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
@@ -146,8 +162,17 @@
         if (!status?.active || !genreInfo?.name) return null;
 
         // TMDB genres are already cached from the parallel fetch above
-        const tmdbGenreIds = await getTmdbGenreIds(genreInfo.name, signal);
+        let tmdbGenreIds = await getTmdbGenreIds(genreInfo.name, signal);
         if (signal.aborted) return null;
+
+        // A synthetic genre names its TMDB id: that id for the media type whose list has it.
+        const direct = syntheticGenreTmdb(genreId);
+        if (direct) {
+            const known = Object.values(await fetchTmdbGenres(signal) || {});
+            const movie = known.some(g => g.movie === direct) ? direct : null;
+            const tv = known.some(g => g.tv === direct) ? direct : null;
+            tmdbGenreIds = { movie: movie || tmdbGenreIds?.movie || null, tv: tv || tmdbGenreIds?.tv || null };
+        }
 
         if (!tmdbGenreIds || (!tmdbGenreIds.tv && !tmdbGenreIds.movie)) return null;
 

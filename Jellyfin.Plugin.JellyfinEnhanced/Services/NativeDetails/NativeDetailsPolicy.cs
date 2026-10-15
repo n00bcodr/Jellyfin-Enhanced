@@ -113,7 +113,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <returns>The access.</returns>
         public async Task<Access> SeeAsync(User viewer, SyntheticId title, CancellationToken ct)
         {
-            if (title.Kind == SyntheticKind.Person) return Access.Refused;
+            if (!title.IsTitle) return Access.Refused;
             var access = await ViewerAccessAsync(viewer, ct).ConfigureAwait(false);
             if (access != Access.Allowed) return access;
             var mediaType = title.IsMovie ? "movie" : "tv";
@@ -121,6 +121,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (!await _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false)) return Access.Refused;
             return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
         }
+
+        /// <summary>
+        /// Whether the viewer may open a page a title links to that isn't a title: a person's page, or the
+        /// discovery page of a genre, studio or network. These hold public data only (a biography, a name)
+        /// and their titles come from discovery rows filtered for the viewer, so the viewer-level rule
+        /// applies (the feature, Seerr, the viewer's link); a person TMDB marks as an adult performer is
+        /// refused to a viewer with a parental limit (see <see cref="PersonAllowed"/>).
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="page">A person, genre, studio or network id.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The access.</returns>
+        public async Task<Access> SeeLinkedPageAsync(User viewer, SyntheticId page, CancellationToken ct)
+        {
+            if (page.IsTitle) return Access.Refused;
+            return await ViewerAccessAsync(viewer, ct).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// True when a person's page may be shown to the viewer: TMDB's adult flag (adult performers) refuses
+        /// it to viewers with any parental limit, as a title outside their rating would be.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="person">Seerr's person details.</param>
+        /// <returns>True when allowed.</returns>
+        public static bool PersonAllowed(User viewer, JsonElement person)
+            => !(person.ValueKind == JsonValueKind.Object && person.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True)
+               || !ArrJellyfinView.HasParentalLimit(viewer);
 
         /// <summary>
         /// What the library holds of the title for this viewer: its copies, and the seasons and episodes
@@ -306,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <returns>True when the title may be shown.</returns>
         public bool MayListAbsent(User viewer, SyntheticId title)
         {
-            if (title.Kind == SyntheticKind.Person) return false;
+            if (!title.IsTitle) return false;
             if (!_parental.MaySeeAbsent(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), out _)) return false;
             return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title);
         }

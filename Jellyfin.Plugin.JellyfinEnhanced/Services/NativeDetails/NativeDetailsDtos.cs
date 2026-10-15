@@ -21,22 +21,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
     public sealed class NativeDetailsDtos
     {
         private const int MaxCast = 40;
+        private const int MaxStudios = 6;
         private readonly string _serverId;
         private readonly Guid _viewer;
         private readonly string _revision;
         private readonly NativeDetailsArtwork _artwork;
         private readonly string _region;
-        private readonly IReadOnlyDictionary<string, Guid> _genres;
+        private readonly ITitleLinks _links;
 
         /// <summary>Creates a builder for one viewer.</summary>
-        public NativeDetailsDtos(string serverId, Guid viewer, string revision, NativeDetailsArtwork artwork, string region, IReadOnlyDictionary<string, Guid> genres)
+        /// <param name="serverId">This server's id.</param>
+        /// <param name="viewer">The effective viewer (artwork grants are theirs).</param>
+        /// <param name="revision">The viewer's policy revision.</param>
+        /// <param name="artwork">Artwork grants.</param>
+        /// <param name="region">Certification region.</param>
+        /// <param name="links">Where the page's people, genres, studios and tags lead for the viewer.</param>
+        public NativeDetailsDtos(string serverId, Guid viewer, string revision, NativeDetailsArtwork artwork, string region, ITitleLinks links)
         {
             _serverId = serverId;
             _viewer = viewer;
             _revision = revision;
             _artwork = artwork;
             _region = region;
-            _genres = genres;
+            _links = links;
         }
 
         /// <summary>The GUID of a synthetic id on this server.</summary>
@@ -57,7 +64,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             dto.OfficialRating = SeerrCertificationExtractor.Extract(m, "movie", _region).Certification;
             dto.CommunityRating = Rating(m);
             Genres(dto, m);
-            dto.Tags = Names(m, "keywords");
+            dto.Studios = Studios(m, "productionCompanies", network: false);
+            dto.Tags = Tags(m);
             dto.ProductionLocations = Names(m, "productionCountries");
             dto.People = People(m, movie: true);
             dto.RemoteTrailers = Trailers(m);
@@ -89,7 +97,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             dto.OfficialRating = SeerrCertificationExtractor.Extract(s, "tv", _region).Certification;
             dto.CommunityRating = Rating(s);
             Genres(dto, s);
-            dto.Tags = Names(s, "keywords");
+            dto.Studios = Studios(s, "networks", network: true);
+            dto.Tags = Tags(s);
             dto.ProductionLocations = Names(s, "productionCountries");
             dto.People = People(s, movie: false);
             dto.RemoteTrailers = Trailers(s);
@@ -158,6 +167,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             ParentArt(dto, seriesGuid, series, logo);
+            return dto;
+        }
+
+        /// <summary>
+        /// A person page DTO (a cast or crew member Jellyfin has no page for): photo, name, biography,
+        /// birth and death dates, birthplace and, as the tagline, the department TMDB knows them for.
+        /// No library filmography: the page's titles come from Jellyfin Enhanced's person discovery row.
+        /// </summary>
+        public BaseItemDto Person(SyntheticId id, JsonElement p)
+        {
+            var guid = Id(id);
+            var dto = Base(guid, BaseItemKind.Person, Str(p, "name") ?? string.Empty, folder: false);
+            dto.MediaType = MediaType.Unknown;
+            dto.Overview = Str(p, "biography");
+            dto.PremiereDate = Date(p, "birthday");
+            dto.EndDate = Date(p, "deathday");
+            dto.ProductionLocations = Str(p, "placeOfBirth") is { Length: > 0 } place ? new[] { place } : Array.Empty<string>();
+            dto.Taglines = Str(p, "knownForDepartment") is { Length: > 0 } department ? new[] { department } : Array.Empty<string>();
+            var imdb = Str(p, "imdbId");
+            dto.ProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tmdb"] = id.TmdbId.ToString(CultureInfo.InvariantCulture) };
+            var links = new List<ExternalUrl>();
+            if (!string.IsNullOrEmpty(imdb) && imdb.StartsWith("nm", StringComparison.Ordinal) && imdb.Length > 2 && imdb.Skip(2).All(char.IsAsciiDigit))
+            {
+                dto.ProviderIds["Imdb"] = imdb;
+                links.Add(new ExternalUrl { Name = "IMDb", Url = "https://www.imdb.com/name/" + imdb });
+            }
+
+            links.Add(new ExternalUrl { Name = "TheMovieDb", Url = "https://www.themoviedb.org/person/" + id.TmdbId.ToString(CultureInfo.InvariantCulture) });
+            dto.ExternalUrls = links.ToArray();
+            if (Grant(guid, ImageType.Primary, 0, Str(p, "profilePath")) is { } photo)
+            {
+                dto.ImageTags[ImageType.Primary] = photo;
+                dto.PrimaryImageAspectRatio = 2.0 / 3.0;
+            }
+
+            return dto;
+        }
+
+        /// <summary>The DTO of a genre, studio or network discovery page (a name; its titles come from Jellyfin Enhanced's discovery row).</summary>
+        public BaseItemDto NamePage(SyntheticId id, string name)
+        {
+            var dto = Base(Id(id), id.Kind == SyntheticKind.Genre ? BaseItemKind.Genre : BaseItemKind.Studio, name, folder: false);
+            dto.MediaType = MediaType.Unknown;
+            dto.ProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tmdb"] = id.TmdbId.ToString(CultureInfo.InvariantCulture) };
             return dto;
         }
 
@@ -276,7 +329,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 foreach (var c in cast.EnumerateArray().OrderBy(c => Int(c, "order") ?? int.MaxValue).Take(MaxCast))
                 {
-                    if (Person(c, PersonKind.Actor, Str(c, "character")) is { } p) people.Add(p);
+                    if (CastMember(c, PersonKind.Actor, Str(c, "character")) is { } p) people.Add(p);
                 }
             }
 
@@ -291,7 +344,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                         "Screenplay" or "Writer" when movie => PersonKind.Writer,
                         _ => (PersonKind?)null,
                     };
-                    if (kind is { } k && people.Count(x => x.Type == k) < 6 && Person(c, k, job) is { } p) people.Add(p);
+                    if (kind is { } k && people.Count(x => x.Type == k) < 6 && CastMember(c, k, job) is { } p) people.Add(p);
                 }
             }
 
@@ -299,18 +352,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 foreach (var c in creators.EnumerateArray().Take(6))
                 {
-                    if (Person(c, PersonKind.Creator, null) is { } p) people.Add(p);
+                    if (CastMember(c, PersonKind.Creator, null) is { } p) people.Add(p);
                 }
             }
 
             return people.ToArray();
         }
 
-        private BaseItemPerson? Person(JsonElement p, PersonKind kind, string? role)
+        /// <summary>
+        /// A cast or crew entry: the library's person when Jellyfin has them and the viewer can open their
+        /// page (with its own photo), else the person's own page made from public data (photo by grant).
+        /// </summary>
+        private BaseItemPerson? CastMember(JsonElement p, PersonKind kind, string? role)
         {
             var tmdb = Int(p, "id") ?? 0;
             var name = Str(p, "name");
             if (tmdb <= 0 || string.IsNullOrEmpty(name)) return null;
+            if (_links.Person(name, tmdb) is { } library)
+            {
+                return new BaseItemPerson { Id = library.Id, Name = name, Role = role, Type = kind, PrimaryImageTag = library.ImageTag };
+            }
+
             var guid = Id(SyntheticId.Person(tmdb));
             return new BaseItemPerson
             {
@@ -322,11 +384,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             };
         }
 
+        /// <summary>The title's genres; each links to the library genre or the genre's discovery page (none: text only, left out of the links).</summary>
         private void Genres(BaseItemDto dto, JsonElement title)
         {
             dto.Genres = Names(title, "genres");
-            dto.GenreItems = dto.Genres.Where(g => _genres.ContainsKey(g)).Select(g => new NameGuidPair { Name = g, Id = _genres[g] }).ToArray();
+            var items = new List<NameGuidPair>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (name, tmdb) in Named(title, "genres"))
+            {
+                if (seen.Add(name) && _links.Genre(name, tmdb) is { } id) items.Add(new NameGuidPair { Name = name, Id = id });
+            }
+
+            dto.GenreItems = items.ToArray();
         }
+
+        /// <summary>A movie's production companies or a series' networks, each linked to the library studio or its discovery page.</summary>
+        private NameGuidPair[] Studios(JsonElement title, string property, bool network)
+        {
+            var items = new List<NameGuidPair>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (name, tmdb) in Named(title, property))
+            {
+                if (items.Count >= MaxStudios) break;
+                if (seen.Add(name) && _links.Studio(name, tmdb, network) is { } id) items.Add(new NameGuidPair { Name = name, Id = id });
+            }
+
+            return items.ToArray();
+        }
+
+        /// <summary>The title's keywords as tags, only those that lead somewhere for the viewer.</summary>
+        private string[] Tags(JsonElement title) => Names(title, "keywords").Where(_links.Tag).ToArray();
+
+        /// <summary>The (name, TMDB id) pairs of a named-object array (genres, companies, networks).</summary>
+        private static IEnumerable<(string Name, int Tmdb)> Named(JsonElement e, string name)
+            => Obj(e, name) is { ValueKind: JsonValueKind.Array } a
+                ? a.EnumerateArray().Select(x => (Name: Str(x, "name")?.Trim() ?? string.Empty, Tmdb: Int(x, "id") ?? 0)).Where(x => x.Name.Length > 0).Take(30)
+                : Enumerable.Empty<(string, int)>();
 
         private static MediaUrl[] Trailers(JsonElement title)
         {

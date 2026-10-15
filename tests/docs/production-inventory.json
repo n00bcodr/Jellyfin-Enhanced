@@ -879,6 +879,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsLinks.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsPages.cs",
       "category": "Services"
     },
@@ -9481,7 +9485,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 522,
+    "files": 523,
     "routes": 245,
     "configuration_properties": 577,
     "storage_references": 82,

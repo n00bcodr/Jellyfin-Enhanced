@@ -7,6 +7,9 @@
 // resolution (known-network map + company search scoring) and picks the
 // series feed: Seerr's network feed for a known network, the plugin's
 // TMDB-backed series-by-company feed for any other studio.
+// A studio or network the viewer's library doesn't offer (linked from a native
+// details page of a title not in the library) has a synthetic id that carries
+// its TMDB company or network id; its list page holds nothing else.
 (function(JE) {
     'use strict';
 
@@ -83,6 +86,16 @@
     };
 
     /**
+     * The TMDB company/network a synthetic studio id carries (see js/jellyseerr/nativedetails), or null.
+     * @param {string} studioId
+     * @returns {{kind: string, tmdbId: number}|null}
+     */
+    function syntheticStudio(studioId) {
+        const parts = JE.titleDetails?.parse?.(studioId);
+        return parts && (parts.kind === 'studio' || parts.kind === 'network') ? parts : null;
+    }
+
+    /**
      * Gets studio information from Jellyfin (with caching)
      * @param {string} studioId
      * @param {AbortSignal} [signal]
@@ -98,7 +111,15 @@
                 throw new DOMException('Aborted', 'AbortError');
             }
 
-            const response = await fetchWithManagedRequest(`/JellyfinEnhanced/studio/${studioId}`, { signal });
+            // A synthetic studio/network: the name is the page's own item, the TMDB id is in the id.
+            const synthetic = syntheticStudio(studioId);
+            const response = synthetic
+                ? await ApiClient.getItem(ApiClient.getCurrentUserId(), studioId).then(item => (item?.Name ? {
+                    name: item.Name,
+                    tmdbId: synthetic.kind === 'studio' ? String(synthetic.tmdbId) : null,
+                    networkId: synthetic.kind === 'network' ? synthetic.tmdbId : null
+                } : null))
+                : await fetchWithManagedRequest(`/JellyfinEnhanced/studio/${studioId}`, { signal });
 
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
@@ -217,7 +238,8 @@
 
         // TV network IDs are different from company IDs in TMDB
         // Always use name lookup for TV networks
-        const tvNetworkId = getKnownNetworkId(studioInfo.name);
+        const tvNetworkId = (Number.isInteger(studioInfo.networkId) && studioInfo.networkId > 0 ? studioInfo.networkId : null)
+            || getKnownNetworkId(studioInfo.name);
 
         // For movie studios, use stored tmdbId if available, otherwise search
         const companyId = studioInfo.tmdbId

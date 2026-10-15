@@ -28,7 +28,7 @@ public class NativeDetailsIdTests
     [Fact]
     public void IdsRoundTripPerKindAndBindToTheServer()
     {
-        var ids = new[] { SyntheticId.Movie(693134), SyntheticId.Series(83867), SyntheticId.SeasonOf(83867, 2), SyntheticId.EpisodeOf(83867, 1, 12), SyntheticId.Person(1190668) };
+        var ids = new[] { SyntheticId.Movie(693134), SyntheticId.Series(83867), SyntheticId.SeasonOf(83867, 2), SyntheticId.EpisodeOf(83867, 1, 12), SyntheticId.Person(1190668), SyntheticId.Genre(878), SyntheticId.Studio(923), SyntheticId.Network(2739) };
         foreach (var id in ids)
         {
             var guid = id.ToGuid(Server);
@@ -42,6 +42,10 @@ public class NativeDetailsIdTests
 
         // The vector the live lab served and the web client's test computes too.
         Assert.Equal("4a45ad11000a938e00000000f9c67720", SyntheticId.Movie(693134).Format(Server));
+        Assert.Equal("4a45ad1500000ee200000000f845f0a8", SyntheticId.Person(3810).Format(Server));
+        Assert.Equal("4a45ad1600002a0d0000000061de6198", SyntheticId.Genre(10765).Format(Server));
+        // Only titles are titles; the pages they link to aren't.
+        Assert.All(ids, id => Assert.Equal(id.Kind is SyntheticKind.Movie or SyntheticKind.Series or SyntheticKind.Season or SyntheticKind.Episode, id.IsTitle));
         Assert.Equal(SyntheticId.Movie(693134).Format(Server), SyntheticId.Movie(693134).Format("0202511B-0EAC-4284-AB04-5B3BA556D72E"));
     }
 
@@ -55,6 +59,8 @@ public class NativeDetailsIdTests
         // Kind and coordinates must agree: a movie with a season is rejected even with a valid check.
         Assert.False(new SyntheticId(SyntheticKind.Movie, 1, 2, 0).IsWellFormed());
         Assert.False(new SyntheticId((SyntheticKind)9, 1, 0, 0).IsWellFormed());
+        Assert.False(new SyntheticId(SyntheticKind.Genre, 1, 1, 0).IsWellFormed());
+        Assert.False(new SyntheticId(SyntheticKind.Network, 1, 0, 2).IsWellFormed());
         var rnd = new Random(7);
         for (var i = 0; i < 2000; i++)
         {
@@ -76,9 +82,10 @@ public class ApiNativeDetailsTests
     private const string MovieJson = """
     {"id":693134,"title":"Dune: Part Two","originalTitle":"Dune: Part Two","overview":"Paul unites with the Fremen.","tagline":"Long live the fighters.",
      "releaseDate":"2024-02-27","runtime":167,"voteAverage":8.14,"genres":[{"id":878,"name":"Science Fiction"},{"id":12,"name":"Adventure"}],
-     "keywords":[{"id":1,"name":"desert"}],"productionCountries":[{"iso_3166_1":"US","name":"United States of America"}],
+     "keywords":[{"id":1,"name":"desert"},{"id":2,"name":"sandworm"}],"productionCountries":[{"iso_3166_1":"US","name":"United States of America"}],
+     "productionCompanies":[{"id":923,"name":"Legendary Pictures"},{"id":99,"name":"Tiny Co"}],
      "posterPath":"/poster.jpg","backdropPath":"/back.jpg","imdbId":"tt15239678",
-     "credits":{"cast":[{"id":1190668,"name":"Timothée Chalamet","character":"Paul","profilePath":"/p.jpg","order":0}],"crew":[{"id":137427,"name":"Denis Villeneuve","job":"Director","profilePath":null}]},
+     "credits":{"cast":[{"id":1190668,"name":"Timothée Chalamet","character":"Paul","profilePath":"/p.jpg","order":0},{"id":3810,"name":"Javier Bardem","character":"Stilgar","profilePath":"/jb.jpg","order":1}],"crew":[{"id":137427,"name":"Denis Villeneuve","job":"Director","profilePath":null}]},
      "releases":{"results":[{"iso_3166_1":"US","release_dates":[{"type":3,"certification":"PG-13"}]}]},
      "relatedVideos":[{"site":"YouTube","type":"Trailer","key":"abc_DEF-123","name":"Trailer"},{"site":"YouTube","type":"Trailer","key":"bad key\"","name":"Bad"}],
      "mediaInfo":{"requests":[{"requestedBy":{"displayName":"someone else"}}]}}
@@ -89,7 +96,7 @@ public class ApiNativeDetailsTests
      "posterPath":"/sp.jpg","backdropPath":"/sb.jpg","externalIds":{"tvdbId":393189,"imdbId":"tt9253284"},
      "contentRatings":{"results":[{"iso_3166_1":"US","rating":"TV-14"}]},"genres":[{"id":1,"name":"Drama"}],
      "seasons":[{"seasonNumber":1,"name":"Season 1","episodeCount":3,"airDate":"2022-09-21","posterPath":"/s1.jpg"},{"seasonNumber":2,"name":"Season 2","episodeCount":12,"airDate":"2025-04-22","posterPath":"/s2.jpg"}],
-     "credits":{"cast":[],"crew":[]},"createdBy":[{"id":5,"name":"Tony Gilroy","profilePath":"/tg.jpg"}]}
+     "credits":{"cast":[],"crew":[]},"createdBy":[{"id":5,"name":"Tony Gilroy","profilePath":"/tg.jpg"}],"networks":[{"id":2739,"name":"Disney+"}]}
     """;
 
     private const string SeasonJson = """
@@ -102,6 +109,11 @@ public class ApiNativeDetailsTests
     private const string RecsJson = """
     {"results":[{"id":438631,"mediaType":"movie","title":"Dune","releaseDate":"2021-09-15","posterPath":"/d1.jpg","voteAverage":7.8},
                 {"id":1,"mediaType":"person","name":"Not a title"},{"id":335984,"mediaType":"movie","title":"Blade Runner 2049","posterPath":"/br.jpg"}]}
+    """;
+
+    private const string PersonJson = """
+    {"id":3810,"name":"Javier Bardem","biography":"Spanish actor.","birthday":"1969-03-01","deathday":null,"placeOfBirth":"Las Palmas, Spain",
+     "knownForDepartment":"Acting","imdbId":"nm0000849","profilePath":"/jb.jpg","adult":false,"popularity":12.5}
     """;
 
     /// <summary>Known titles answer; unknown ones are "no such title" (Seerr 404); <see cref="Down"/> is an outage.</summary>
@@ -121,6 +133,25 @@ public class ApiNativeDetailsTests
         public Task<SourceAnswer> SeasonAsync(int tmdb, int season, CancellationToken ct) { Calls++; return Task.FromResult(SeasonsDown ? SourceAnswer.Unavailable : Answer(tmdb == 83867 && KnownSeasons.Contains(season), SeasonJson.Replace("\"seasonNumber\":1", "\"seasonNumber\":" + season, StringComparison.Ordinal))); }
         public Task<JsonElement?> RecommendationsAsync(bool movie, int tmdb, CancellationToken ct) { Calls++; return Task.FromResult<JsonElement?>(J(Recs)); }
         public Task<string?> LogoPathAsync(bool movie, int tmdb, CancellationToken ct) { Calls++; return Task.FromResult<string?>("/logo.png"); }
+        /// <summary>People the source knows (Bardem by default); <see cref="AdultPerson"/> marks one an adult performer.</summary>
+        public int? AdultPerson { get; set; }
+        public Task<SourceAnswer> PersonAsync(int tmdb, CancellationToken ct)
+        {
+            Calls++;
+            if (tmdb == AdultPerson) return Task.FromResult(Answer(true, PersonJson.Replace("\"adult\":false", "\"adult\":true", StringComparison.Ordinal).Replace("3810", tmdb.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)));
+            return Task.FromResult(Answer(tmdb == 3810, PersonJson));
+        }
+
+        public bool GenresDown { get; set; }
+        public Task<SourceAnswer> GenresAsync(bool movie, CancellationToken ct)
+        {
+            Calls++;
+            if (GenresDown && !movie) return Task.FromResult(SourceAnswer.Unavailable);
+            return Task.FromResult(Answer(true, movie ? """[{"id":878,"name":"Science Fiction"},{"id":12,"name":"Adventure"}]""" : """[{"id":10765,"name":"Sci-Fi & Fantasy"},{"id":18,"name":"Drama"}]"""));
+        }
+
+        public Task<SourceAnswer> StudioAsync(int tmdb, CancellationToken ct) { Calls++; return Task.FromResult(Answer(tmdb == 99, """{"id":99,"name":"Tiny Co"}""")); }
+        public Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) { Calls++; return Task.FromResult(Answer(tmdb == 2739, """{"id":2739,"name":" Disney+ "}""")); }
         /// <summary>Seerr can't tell who is linked (unreachable, no earlier answer).</summary>
         public bool LinkUnknown { get; set; }
         public Task<bool?> IsSeerrLinkedAsync(Guid userId, CancellationToken ct) => Task.FromResult<bool?>(LinkUnknown ? null : Linked.Contains(userId));
@@ -142,6 +173,7 @@ public class ApiNativeDetailsTests
         public NativeDetailsArtwork Artwork { get; private set; } = null!;
         public NativeDetailsPolicy Policy { get; private set; } = null!;
         public NativeDetailsFacadeFilter Filter { get; private set; } = null!;
+        public Mock<MediaBrowser.Controller.Drawing.IImageProcessor> ImageTags { get; } = new();
         public string Rating { get; set; } = "PG-13";
         private readonly string? _stateDir;
         private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter _parental;
@@ -166,6 +198,12 @@ public class ApiNativeDetailsTests
             Libraries.Libs.Add(new() { Id = ShowsLib.ToString(), Name = "Shows", CollectionType = "tvshows" });
             Library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((MediaBrowser.Controller.Entities.BaseItem?)null);
             Library.Setup(l => l.GetItemList(It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>())).Returns(new List<MediaBrowser.Controller.Entities.BaseItem>());
+            // People, genres and studios by name (read only: never created); none unless a test adds them.
+            Library.Setup(l => l.GetPerson(It.IsAny<string>())).Returns((MediaBrowser.Controller.Entities.Person?)null);
+            Library.Setup(l => l.GetGenreId(It.IsAny<string>())).Returns((string n) => NameId("genre", n));
+            Library.Setup(l => l.GetStudioId(It.IsAny<string>())).Returns((string n) => NameId("studio", n));
+            ImageTags.Setup(i => i.GetImageCacheTag(It.IsAny<MediaBrowser.Controller.Entities.BaseItem>(), It.IsAny<MediaBrowser.Controller.Entities.ItemImageInfo>()))
+                .Returns((MediaBrowser.Controller.Entities.BaseItem item, MediaBrowser.Controller.Entities.ItemImageInfo _) => "lib-tag-" + item.Id.ToString("N"));
             Images = new IntegrationTransport((req, _) =>
             {
                 lock (Hosts) Hosts.Add(req.RequestUri!.Host);
@@ -199,8 +237,13 @@ public class ApiNativeDetailsTests
         {
             Artwork = new NativeDetailsArtwork(Images, _stateDir);
             Policy = new NativeDetailsPolicy(_parental, Source, Libraries, null, _stateDir, new NativeDetailsLibrary(Library.Object, null, LibraryRevision));
-            Filter = new NativeDetailsFacadeFilter(Callers.Users.Object, Library.Object, Dto.Object, _host.Object, _server.Object, Source, Policy, Artwork, _parental, Plugin.Core.Manager, _strip, _spoilerUsers);
+            Filter = new NativeDetailsFacadeFilter(Callers.Users.Object, Library.Object, Dto.Object, _host.Object, _server.Object, Source, Policy, Artwork, _parental, Plugin.Core.Manager, _strip, _spoilerUsers,
+                new NativeDetailsLinks(Library.Object, ImageTags.Object, LibraryRevision));
         }
+
+        /// <summary>The id Jellyfin derives for a genre or studio name (a stand-in: stable per kind and name).</summary>
+        public static Guid NameId(string kind, string name)
+            => new(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(kind + "|" + name.ToLowerInvariant())).AsSpan(0, 16));
 
         public User Person(bool admin = false, bool linked = true)
         {
@@ -272,6 +315,18 @@ public class ApiNativeDetailsTests
         // Read-only: GET everywhere, HEAD only for artwork.
         Assert.All(NativeDetailsAllowlist.Routes, r => Assert.Equal(r.Answer == FacadeAnswer.Image ? new[] { "GET", "HEAD" } : new[] { "GET" }, r.Methods));
         Assert.Equal(NativeDetailsFacadeFilter.Order, -1000);
+        // People, genres, studios and networks open their own page (the item) and nothing a title has;
+        // a person page also reads its (empty) ancestors and collections.
+        SyntheticKind[] KindsOf(string action) => NativeDetailsAllowlist.Routes.Single(r => r.Controller + "." + r.Action == action).Kinds;
+        var linked = new[] { SyntheticKind.Person, SyntheticKind.Genre, SyntheticKind.Studio, SyntheticKind.Network };
+        Assert.Equal(Enum.GetValues<SyntheticKind>(), KindsOf("UserLibrary.GetItem").OrderBy(k => k));
+        Assert.Contains(SyntheticKind.Person, KindsOf("Library.GetAncestors"));
+        Assert.Contains(SyntheticKind.Person, KindsOf("Library.GetItemCollections"));
+        foreach (var route in NativeDetailsAllowlist.Routes.Where(r => r.Answer is not (FacadeAnswer.Item or FacadeAnswer.Image or FacadeAnswer.Batch)))
+        {
+            var allowed = route.Action is "GetAncestors" or "GetItemCollections" ? new[] { SyntheticKind.Person } : Array.Empty<SyntheticKind>();
+            Assert.Empty(route.Kinds.Intersect(linked).Except(allowed));
+        }
     }
 
     public sealed class QueueBody
@@ -1220,6 +1275,283 @@ public class ApiNativeDetailsTests
         var refused = await Call(rig, "JellyfinEnhanced", "SaveUserHiddenContent", Me(viewer), new() { ["userId"] = viewer.Id.ToString("N"), ["userConfiguration"] = body }, "POST");
         Assert.Equal(0, refused.NextCalls);
         Assert.Equal(403, Status(refused.Result));
+    }
+
+    // ---- Phase 3e2: where the names on a synthetic page lead -------------------------------------------
+
+    /// <summary>A library person (with a primary image) under a TMDB id, opened for the given viewers unless hidden.</summary>
+    private static MediaBrowser.Controller.Entities.Person LibraryPerson(Rig rig, string name, string? tmdb, HashSet<Guid> hidden, params User[] viewers)
+    {
+        var person = new MediaBrowser.Controller.Entities.Person { Id = Guid.NewGuid(), Name = name };
+        if (tmdb != null) person.SetProviderId(MetadataProvider.Tmdb, tmdb);
+        person.ImageInfos = new[] { new MediaBrowser.Controller.Entities.ItemImageInfo { Type = ImageType.Primary, Path = "/people/" + name + ".jpg" } };
+        rig.Library.Setup(l => l.GetPerson(name)).Returns(person);
+        foreach (var viewer in viewers)
+        {
+            rig.Library.Setup(l => l.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(person.Id, viewer)).Returns(() => hidden.Contains(person.Id) ? null : person);
+        }
+
+        return person;
+    }
+
+    /// <summary>A library genre/studio/tag the viewer finds titles behind (or not), by name.</summary>
+    private static void LibraryName(Rig rig, User viewer, string kind, string name, bool exists, Func<bool> finds)
+    {
+        var id = Rig.NameId(kind, name);
+        if (exists)
+        {
+            MediaBrowser.Controller.Entities.BaseItem item = kind == "genre"
+                ? new MediaBrowser.Controller.Entities.Genre { Id = id, Name = name }
+                : new MediaBrowser.Controller.Entities.Studio { Id = id, Name = name };
+            rig.Library.Setup(l => l.GetItemById(id)).Returns(item);
+        }
+
+        var movie = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid(), Name = "Some title" };
+        rig.Library.Setup(l => l.GetItemList(It.Is<MediaBrowser.Controller.Entities.InternalItemsQuery>(q => q.User == viewer
+                && (kind == "genre" ? q.GenreIds.Contains(id) : kind == "studio" ? q.StudioIds.Contains(id) : q.Tags.Contains(name)))))
+            .Returns(() => finds() ? new List<MediaBrowser.Controller.Entities.BaseItem> { movie } : new List<MediaBrowser.Controller.Entities.BaseItem>());
+    }
+
+    [Fact]
+    public async Task CastAndCrewLeadToTheLibrarysPersonPageOrTheirOwn()
+    {
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        var other = rig.Person();
+        var hidden = new HashSet<Guid>();
+        var chalamet = LibraryPerson(rig, "Timothée Chalamet", "1190668", hidden, viewer, other);
+        // A namesake: Jellyfin has someone of that name, but not this TMDB person.
+        LibraryPerson(rig, "Javier Bardem", "999", hidden, viewer);
+        var movie = Id(SyntheticId.Movie(693134));
+        async Task<BaseItemDto> Page(User who) => Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(who), new() { ["itemId"] = movie })).Result);
+
+        var dto = await Page(viewer);
+        var paul = dto.People.Single(p => p.Name == "Timothée Chalamet");
+        // The library's own person page (native), with the library's own photo.
+        Assert.Equal(chalamet.Id, paul.Id);
+        Assert.Equal("lib-tag-" + chalamet.Id.ToString("N"), paul.PrimaryImageTag);
+        Assert.Equal(PersonKind.Actor, paul.Type);
+        Assert.Equal("Paul", paul.Role);
+        // Someone the library doesn't have (or only a namesake of): their own page, their photo by grant.
+        foreach (var name in new[] { "Javier Bardem", "Denis Villeneuve" })
+        {
+            var entry = dto.People.First(p => p.Name == name);
+            Assert.True(SyntheticId.TryParse(entry.Id, Server, out var person));
+            Assert.Equal(SyntheticKind.Person, person.Kind);
+            if (entry.PrimaryImageTag != null)
+            {
+                Assert.True(rig.Artwork.TryRead(entry.PrimaryImageTag, out var grant));
+                Assert.Equal(entry.Id, grant!.Owner);
+                Assert.Equal(viewer.Id, grant.Viewer);
+            }
+        }
+
+        Assert.Equal(PersonKind.Director, dto.People.Single(p => p.Name == "Denis Villeneuve").Type);
+        // A library person Jellyfin doesn't let this viewer open: their own page instead, never the library's.
+        hidden.Add(chalamet.Id);
+        var paulHidden = (await Page(viewer)).People.Single(p => p.Name == "Timothée Chalamet");
+        Assert.True(SyntheticId.TryParse(paulHidden.Id, Server, out var own) && own == SyntheticId.Person(1190668));
+        Assert.NotEqual("lib-tag-" + chalamet.Id.ToString("N"), paulHidden.PrimaryImageTag);
+        // The library lookup fails: their own page (no error).
+        rig.Library.Setup(l => l.GetPerson("Timothée Chalamet")).Throws(new InvalidOperationException("db"));
+        hidden.Clear();
+        Assert.True(SyntheticId.TryParse((await Page(other)).People.Single(p => p.Name == "Timothée Chalamet").Id, Server, out _));
+    }
+
+    [Fact]
+    public async Task WhereNamesLeadIsReadAgainWhenTheLibraryOrTheViewersPolicyChanges()
+    {
+        using var rig = new Rig();
+        long revision = 1;
+        rig.LibraryRevision = () => revision;
+        rig.Restart();
+        var viewer = rig.Person();
+        var hidden = new HashSet<Guid>();
+        var chalamet = LibraryPerson(rig, "Timothée Chalamet", "1190668", hidden, viewer);
+        var sciFiShown = true;
+        LibraryName(rig, viewer, "genre", "Science Fiction", true, () => sciFiShown);
+        rig.Plugin.Plugin.Configuration.JellyseerrShowGenreDiscovery = false;
+        async Task<BaseItemDto> Page() => Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result);
+        Assert.Equal(chalamet.Id, (await Page()).People.Single(p => p.Name == "Timothée Chalamet").Id);
+        Assert.Equal(new[] { "Science Fiction" }, (await Page()).GenreItems.Select(g => g.Name));
+        // Within one library revision the answers are reused (an absent page reads up to ~50 names).
+        hidden.Add(chalamet.Id);
+        sciFiShown = false;
+        rig.Library.Invocations.Clear();
+        var cached = await Page();
+        Assert.Equal(chalamet.Id, cached.People.Single(p => p.Name == "Timothée Chalamet").Id);
+        Assert.DoesNotContain(rig.Library.Invocations, i => i.Method.Name is "GetPerson" or "GetGenreId");
+        // The library changed (any add, update or remove): read again.
+        revision++;
+        var fresh = await Page();
+        Assert.True(SyntheticId.TryParse(fresh.People.Single(p => p.Name == "Timothée Chalamet").Id, Server, out _));
+        Assert.Empty(fresh.GenreItems);
+        // The viewer's policy revision is part of the key too (here moved by a sign-out).
+        hidden.Clear();
+        sciFiShown = true;
+        revision++;
+        Assert.Equal(chalamet.Id, (await Page()).People.Single(p => p.Name == "Timothée Chalamet").Id);
+        hidden.Add(chalamet.Id);
+        Assert.Equal(chalamet.Id, (await Page()).People.Single(p => p.Name == "Timothée Chalamet").Id);
+        rig.Policy.Revoke(viewer.Id);
+        Assert.True(SyntheticId.TryParse((await Page()).People.Single(p => p.Name == "Timothée Chalamet").Id, Server, out _));
+    }
+
+    [Fact]
+    public async Task APersonsOwnPageHoldsTheirPublicDetailsUnderTheViewerRule()
+    {
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        var me = Me(viewer);
+        var bardem = Id(SyntheticId.Person(3810));
+        var run = await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = bardem });
+        Assert.Equal(0, run.NextCalls);
+        var dto = Value<BaseItemDto>(run.Result);
+        Assert.Equal(bardem, dto.Id);
+        Assert.Equal(BaseItemKind.Person, dto.Type);
+        Assert.Equal("Javier Bardem", dto.Name);
+        Assert.Equal("Spanish actor.", dto.Overview);
+        Assert.Equal(new DateTime(1969, 3, 1, 0, 0, 0, DateTimeKind.Utc), dto.PremiereDate);
+        Assert.Null(dto.EndDate);
+        Assert.Equal(new[] { "Las Palmas, Spain" }, dto.ProductionLocations);
+        Assert.Equal(new[] { "Acting" }, dto.Taglines);
+        Assert.Equal("3810", dto.ProviderIds["Tmdb"]);
+        Assert.Equal("nm0000849", dto.ProviderIds["Imdb"]);
+        Assert.Equal(new[] { "https://www.imdb.com/name/nm0000849", "https://www.themoviedb.org/person/3810" }, dto.ExternalUrls.Select(u => u.Url));
+        Assert.Equal(MediaType.Unknown, dto.MediaType);
+        Assert.Equal(LocationType.Virtual, dto.LocationType);
+        Assert.Empty(dto.MediaSources);
+        Assert.False(dto.UserData.IsFavorite);
+        Assert.True(rig.Artwork.TryRead(dto.ImageTags[ImageType.Primary], out var photo));
+        Assert.Equal((bardem, viewer.Id), (photo!.Owner, photo.Viewer));
+        // The photo is served by its grant.
+        Assert.Equal(200, Status((await Call(rig, "Image", "GetItemImage", null, new() { ["itemId"] = bardem, ["imageType"] = ImageType.Primary, ["tag"] = dto.ImageTags[ImageType.Primary], ["maxWidth"] = 300 })).Result));
+        // The page's other native reads: no ancestors, no collections, and no library filmography (the
+        // titles come from JE's person discovery row, filtered for the viewer).
+        Assert.Empty(Value<BaseItemDto[]>((await Call(rig, "Library", "GetAncestors", me, new() { ["itemId"] = bardem })).Result));
+        Assert.Empty(Value<QueryResult<BaseItemDto>>((await Call(rig, "Library", "GetItemCollections", me, new() { ["itemId"] = bardem })).Result).Items);
+        var films = await Call(rig, "Items", "GetItemsByUserIdLegacy", me, new() { ["personIds"] = new[] { bardem }, ["includeItemTypes"] = new[] { BaseItemKind.Movie } });
+        Assert.Equal(0, films.NextCalls);
+        Assert.Empty(Value<QueryResult<BaseItemDto>>(films.Result).Items);
+        // Still nothing a title has: no similar rail, seasons, playback or user data for a person id.
+        Assert.Equal(404, Status((await Call(rig, "Library", "GetSimilarItems", me, new() { ["itemId"] = bardem })).Result));
+        Assert.Equal(403, Status((await Call(rig, "UserLibrary", "MarkFavoriteItem", me, new() { ["itemId"] = bardem }, "POST")).Result));
+        Assert.Equal(404, Status((await Call(rig, "ArrStatus", "GetItemStatus", me, new() { ["itemId"] = bardem.ToString("N") })).Result));
+        // Unknown to TMDB: 404; Seerr down: retryable.
+        Assert.Equal(404, Status((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = Id(SyntheticId.Person(77)) })).Result));
+        rig.Source.Down = true;
+        Assert.Equal(503, Status((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = bardem })).Result));
+        rig.Source.Down = false;
+        // The viewer rule: unlinked (Seerr mode) or the feature off is a refusal like a hidden item.
+        var unlinked = rig.Person(linked: false);
+        Assert.Equal(404, Status((await Call(rig, "UserLibrary", "GetItem", Me(unlinked), new() { ["itemId"] = bardem })).Result));
+        // An adult performer: refused to a viewer with any parental limit, shown to one without.
+        rig.Source.AdultPerson = 4242;
+        var adult = Id(SyntheticId.Person(4242));
+        Assert.Equal(200, Status((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = adult })).Result));
+        var kid = rig.Person();
+        kid.MaxParentalRatingScore = 10;
+        Assert.Equal(404, Status((await Call(rig, "UserLibrary", "GetItem", Me(kid), new() { ["itemId"] = adult })).Result));
+        Assert.Equal(200, Status((await Call(rig, "UserLibrary", "GetItem", Me(kid), new() { ["itemId"] = bardem })).Result));
+        rig.Plugin.Plugin.Configuration.NativeAbsentDetailsEnabled = false;
+        var off = await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = bardem });
+        Assert.Equal((404, 0), (Status(off.Result), off.NextCalls));
+    }
+
+    [Fact]
+    public async Task GenresStudiosAndTagsLeadToTheLibraryOrADiscoveryPageNeverToNothing()
+    {
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        var me = Me(viewer);
+        var config = rig.Plugin.Plugin.Configuration;
+        var sciFiShown = true;
+        // "Science Fiction" and "Legendary Pictures" are in the library with titles this viewer finds;
+        // "Adventure" is in the library but nothing behind it is the viewer's; "Tiny Co" and "Disney+" aren't there.
+        LibraryName(rig, viewer, "genre", "Science Fiction", true, () => sciFiShown);
+        LibraryName(rig, viewer, "genre", "Adventure", true, () => false);
+        LibraryName(rig, viewer, "studio", "Legendary Pictures", true, () => true);
+        LibraryName(rig, viewer, "tag", "desert", false, () => true);
+        LibraryName(rig, viewer, "tag", "sandworm", false, () => false);
+        async Task<BaseItemDto> Page(SyntheticId id) => Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = Id(id) })).Result);
+        string Where(Guid id) => SyntheticId.TryParse(id, Server, out var s) ? s.Kind + ":" + s.TmdbId : id == Rig.NameId("genre", "Science Fiction") || id == Rig.NameId("studio", "Legendary Pictures") ? "library" : "?";
+
+        // Every discovery row on (the defaults) and the viewer linked to Seerr.
+        var movie = await Page(SyntheticId.Movie(693134));
+        Assert.Equal(new[] { "Science Fiction", "Adventure" }, movie.Genres);
+        Assert.Equal(new[] { "Science Fiction=library", "Adventure=Genre:12" }, movie.GenreItems.Select(g => g.Name + "=" + Where(g.Id)));
+        Assert.Equal(new[] { "Legendary Pictures=library", "Tiny Co=Studio:99" }, movie.Studios.Select(g => g.Name + "=" + Where(g.Id)));
+        Assert.Equal(new[] { "desert", "sandworm" }, movie.Tags);
+        var series = await Page(SyntheticId.Series(83867));
+        Assert.Equal(new[] { "Disney+=Network:2739" }, series.Studios.Select(g => g.Name + "=" + Where(g.Id)));
+        Assert.Equal(new[] { "Drama=Genre:1" }, series.GenreItems.Select(g => g.Name + "=" + Where(g.Id)));
+
+        // The rows switched off: a name leads to the library only when the viewer finds titles there.
+        config.JellyseerrShowGenreDiscovery = false;
+        config.JellyseerrShowNetworkDiscovery = false;
+        config.JellyseerrShowTagDiscovery = false;
+        movie = await Page(SyntheticId.Movie(693134));
+        Assert.Equal(new[] { "Science Fiction" }, movie.GenreItems.Select(g => g.Name));
+        Assert.Equal(new[] { "Science Fiction", "Adventure" }, movie.Genres);
+        Assert.Equal(new[] { "Legendary Pictures" }, movie.Studios.Select(g => g.Name));
+        Assert.Equal(new[] { "desert" }, movie.Tags);
+        Assert.Empty((await Page(SyntheticId.Series(83867))).Studios);
+        // What the viewer finds is read again (cached per library revision only when there is one).
+        sciFiShown = false;
+        Assert.Empty((await Page(SyntheticId.Movie(693134))).GenreItems);
+
+        // Jellyfin Enhanced mode: the page needs no Seerr account, the discovery rows do.
+        config.JellyseerrShowGenreDiscovery = true;
+        config.JellyseerrShowNetworkDiscovery = true;
+        config.JellyseerrShowTagDiscovery = true;
+        config.ArrIntegrationEnabled = true;
+        config.ArrPhase1Enabled = true;
+        config.ArrPhase3Enabled = true;
+        config.ArrRequestBackend = "je";
+        var unlinked = rig.Person(linked: false);
+        LibraryName(rig, unlinked, "genre", "Science Fiction", true, () => true);
+        var forUnlinked = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(unlinked), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result);
+        Assert.Equal(new[] { "Science Fiction" }, forUnlinked.GenreItems.Select(g => g.Name));
+        Assert.Empty(forUnlinked.Studios);
+        Assert.Empty(forUnlinked.Tags);
+        // The linked viewer in the same mode gets the discovery pages (Science Fiction shows them nothing in the library now).
+        Assert.Equal(new[] { "Science Fiction=Genre:878", "Adventure=Genre:12" }, (await Page(SyntheticId.Movie(693134))).GenreItems.Select(g => g.Name + "=" + Where(g.Id)));
+    }
+
+    [Fact]
+    public async Task GenreStudioAndNetworkDiscoveryPagesAnswerTheirName()
+    {
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        var me = Me(viewer);
+        async Task<IActionResult?> Item(SyntheticId id) => (await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = Id(id) })).Result;
+        var sciFi = Value<BaseItemDto>(await Item(SyntheticId.Genre(878)));
+        Assert.Equal((BaseItemKind.Genre, "Science Fiction", Id(SyntheticId.Genre(878))), (sciFi.Type, sciFi.Name, sciFi.Id));
+        Assert.Equal("Sci-Fi & Fantasy", Value<BaseItemDto>(await Item(SyntheticId.Genre(10765))).Name);
+        var studio = Value<BaseItemDto>(await Item(SyntheticId.Studio(99)));
+        Assert.Equal((BaseItemKind.Studio, "Tiny Co"), (studio.Type, studio.Name));
+        var network = Value<BaseItemDto>(await Item(SyntheticId.Network(2739)));
+        Assert.Equal((BaseItemKind.Studio, "Disney+"), (network.Type, network.Name));
+        Assert.Empty(network.ImageTags);
+        Assert.Equal(LocationType.Virtual, network.LocationType);
+        // Unknown ids: 404; a genre list that can't be read: retryable.
+        Assert.Equal(404, Status(await Item(SyntheticId.Genre(4))));
+        Assert.Equal(404, Status(await Item(SyntheticId.Studio(5))));
+        Assert.Equal(404, Status(await Item(SyntheticId.Network(6))));
+        rig.Source.GenresDown = true;
+        Assert.Equal(503, Status(await Item(SyntheticId.Genre(10765))));
+        Assert.Equal(200, Status(await Item(SyntheticId.Genre(878))));
+        // The list page's own query names the synthetic genre/studio: it matches nothing (never the whole library).
+        var list = await Call(rig, "Items", "GetItems", me, new() { ["genreIds"] = new[] { Id(SyntheticId.Genre(878)) }, ["recursive"] = true });
+        Assert.Equal(0, list.NextCalls);
+        Assert.Empty(Value<QueryResult<BaseItemDto>>(list.Result).Items);
+        var byStudio = await Call(rig, "Items", "GetItems", me, new() { ["studioIds"] = new[] { Id(SyntheticId.Studio(99)) } });
+        Assert.Equal(0, byStudio.NextCalls);
+        // Their pages have nothing else: no ancestors, similar items or artwork routes beyond the item.
+        Assert.Equal(404, Status((await Call(rig, "Library", "GetAncestors", me, new() { ["itemId"] = Id(SyntheticId.Genre(878)) })).Result));
+        Assert.Equal(404, Status((await Call(rig, "Library", "GetSimilarItems", me, new() { ["itemId"] = Id(SyntheticId.Studio(99)) })).Result));
+        // Not linked to Seerr: refused like any page.
+        Assert.Equal(404, Status((await Call(rig, "UserLibrary", "GetItem", Me(rig.Person(linked: false)), new() { ["itemId"] = Id(SyntheticId.Genre(878)) })).Result));
     }
 }
 

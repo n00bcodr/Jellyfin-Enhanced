@@ -124,8 +124,25 @@ On a search card, Enter opens the page and Space still shows the overview with i
   to such a page after that goes straight to the library copy.
 
 Play, Shuffle, Played, Favourite, the More menu, Download, Hide and Spoiler Guard's item buttons are hidden: there is
-nothing to play, and no rule or mark is ever stored for a title you don't have. Cast members can't be opened (they
-have no library filmography).
+nothing to play, and no rule or mark is ever stored for a title you don't have.
+
+**Where the names lead.** The cast and crew, genres, studios or networks and tags on the page are links, as on a
+library title:
+
+- **People**: someone Jellyfin already has opens their Jellyfin page (with the *More with …* row of their other
+  titles). Anyone else opens a page of their own, built the same way: photo, name, biography, birth and death,
+  birthplace, what they're known for and their **Filmography** (best-known titles first, with the usual All / Movies /
+  Series filter and sort). Each title in it opens your library copy when you have one, otherwise its own page like
+  this one. A person TMDB marks as an adult performer isn't shown to accounts with a parental limit. The filmography
+  is read from Seerr with your Seerr account, so in Requests & downloads' own request mode an account without one
+  sees the person's page without it.
+- **Genres, studios and networks**: Jellyfin's own list of that genre or studio when your library has titles in it
+  that you can open (with the genre or network discovery row below, when it's on); otherwise a discovery page with
+  just that row. **Tags** open the tag's list with its discovery row.
+- A name that would lead to an empty page isn't a link: with a discovery row turned off (or, in Requests & downloads'
+  own request mode, for an account without a Seerr account) only the genres, studios and tags your library has for
+  you stay links. Your parental limits and library access apply on every one of these pages: the discovery rows and
+  filmographies list only titles you could open.
 
 **When it can't open.** A title your account may not see (parental limits, libraries you can't open, an account
 not linked to Seerr) shows "This title isn't available to you." with *Go back*, never the modal. If Seerr can't be

@@ -316,6 +316,15 @@ test('the page of a title that is not in the library is read by its page id and 
   assert.deepEqual(shown, ['copy1']);
 });
 
+test('a person page (or another page a title not in the library links to) has no status: nothing is read', async t => {
+  const PERSON = '4a45ad1500000ee200000000f845f0a8';
+  const h = setup(t, { html: detailsHtml, hash: `#/details?id=${PERSON}`, responses: () => ({ items: [] }) });
+  h.JE.titleDetails = { isSynthetic: id => String(id || '').startsWith('4a45ad1'), parse: id => (String(id).startsWith('4a45ad15') ? { kind: 'person', tmdbId: 3810 } : null) };
+  await h.JE.internals.arrStatusDetails.update(false);
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.document.querySelector('.je-arr-status'), null);
+});
+
 test('a quiet status draws nothing; a 403 switches the surfaces off for the page load', async t => {
   const h = setup(t, {
     html: detailsHtml, hash: '#/details?id=movie1',

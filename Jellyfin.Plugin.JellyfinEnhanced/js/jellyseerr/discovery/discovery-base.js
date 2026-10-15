@@ -71,6 +71,9 @@
      * @property {string} configKey - JE.pluginConfig gate key.
      * @property {boolean} [defaultEnabled=true] - true: render unless the config
      *   key is explicitly false. false: render only when the key is truthy.
+     * @property {(id: string) => boolean} [enabledFor] - Renders on this page
+     *   whatever the config key says (a page whose only titles are this row's,
+     *   such as the person page of someone the library doesn't have).
      * @property {() => string|null} getIdFromUrl - URL/hash contract: returns the
      *   page's id (or name) when the module applies to the current page.
      * @property {(id: string) => string} [pageKey] - Override the processed-page
@@ -226,10 +229,12 @@
             JE.discoveryFilter.fetchWithManagedRequest(path, key, options);
 
         /**
-         * Whether the module is enabled by plugin config.
+         * Whether the module is enabled by plugin config (or the spec enables it for this page).
+         * @param {string} [id] - The page's id.
          * @returns {boolean}
          */
-        function isEnabled() {
+        function isEnabled(id) {
+            if (id && typeof spec.enabledFor === 'function' && spec.enabledFor(id)) return true;
             if (spec.defaultEnabled === false) {
                 return !!JE.pluginConfig?.[spec.configKey];
             }
@@ -1277,7 +1282,7 @@
             // Prevent re-entry if already rendering this same page
             if (currentRenderingPageKey === pageKey) return;
 
-            if (!isEnabled()) return;
+            if (!isEnabled(id)) return;
 
             // Set rendering key before potentially aborting
             currentRenderingPageKey = pageKey;

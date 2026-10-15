@@ -73,6 +73,11 @@ test('synthetic ids match the server codec, parse back and stay on their server'
   assert.equal(h.td.parse(MOVIE, '1111111b0eac4284ab045b3ba556d72e'), null);
   assert.equal(h.td.syntheticId('movie', -1), null);
   assert.equal(h.td.syntheticId('collection', 5), null);
+  // The pages a title links to share the codec (the server's vectors, ApiNativeDetailsTests).
+  assert.equal(h.td.syntheticId('person', 3810), '4a45ad1500000ee200000000f845f0a8');
+  assert.equal(h.td.syntheticId('genre', 10765), '4a45ad1600002a0d0000000061de6198');
+  for (const kind of ['person', 'genre', 'studio', 'network']) assert.equal(h.td.parse(h.td.syntheticId(kind, 77)).kind, kind);
+  assert.equal(h.td.syntheticId('genre', 77, 1), h.td.syntheticId('genre', 77, 1), 'stable');
 });
 
 for (const [name, cap] of [['missing', null], ['off', { Enabled: false, ContractVersion: 1 }], ['unknown contract', { Enabled: true, ContractVersion: 2 }]]) {
@@ -427,7 +432,7 @@ test('ordinary pages are left alone', async t => {
   assert.equal(h.document.getElementById('je-native-absent-style'), null);
 });
 
-test('context menus on synthetic cards and person links on synthetic pages are blocked; real cards are not', t => {
+test('context menus on synthetic cards are blocked; a person card opens their page; real cards are left alone', t => {
   const h = setup(t, { html: PAGE });
   const person = h.td.syntheticId('person', 1190668);
   h.document.querySelector('[data-id="PERSON"]').setAttribute('data-id', person);
@@ -436,7 +441,8 @@ test('context menus on synthetic cards and person links on synthetic pages are b
     h.document.querySelector(sel).dispatchEvent(e);
     return e.defaultPrevented;
   };
-  assert.equal(fire(`[data-id="${person}"] a`, 'click'), true);
+  // A cast member Jellyfin has no page for leads to their own page (the click goes through to jellyfin-web).
+  assert.equal(fire(`[data-id="${person}"] a`, 'click'), false);
   assert.equal(fire(`[data-id="${person}"] a`, 'contextmenu'), true);
   assert.equal(fire('[data-id="0123456789abcdef0123456789abcdef"] a', 'click'), false);
   assert.equal(fire('[data-id="0123456789abcdef0123456789abcdef"] a', 'contextmenu'), false);
@@ -521,4 +527,68 @@ test('a card Seerr says is in the library is checked for this viewer before it o
   await wait(10);
   assert.deepEqual(h.resolved, ['/native-details/resolve?key=movie%3Atmdb%3A693134']);
   assert.deepEqual(h.shown, [`/details?id=${copy}&serverId=${SERVER}`]);
+});
+
+test('a person page made from public data: Known for in place of the tagline, no request controls, no title lookups', async t => {
+  const PERSON = '4a45ad1500000ee200000000f845f0a8';
+  const item = { Id: PERSON, Type: 'Person', Name: 'Javier Bardem', Taglines: ['Acting'] };
+  const h = setup(t, { html: PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${PERSON}&serverId=${SERVER}`, getItem: async (user, id) => (assert.equal(id, PERSON), item), modalData: { status: 'Released' } });
+  await h.JE.internals.nativeDetails.onView();
+  const page = h.document.getElementById('itemDetailPage');
+  assert.ok(page.classList.contains('je-native-absent'));
+  assert.ok(page.classList.contains('je-native-absent-person'));
+  assert.ok(h.document.getElementById('je-native-absent-style').textContent.includes('#itemDetailPage.je-native-absent-person .tagline { display: none !important; }'));
+  const line = page.querySelector('.je-native-absent-actions .je-native-absent-knownfor');
+  assert.equal(line?.textContent, 'native_details_known_for:{"department":"Acting"}');
+  // No where-it-opens lookup, request mount, status read or information panel: a person isn't a title.
+  assert.deepEqual(h.resolved, []);
+  assert.deepEqual(h.mounts, []);
+  assert.deepEqual(h.fetched, []);
+  await wait(10);
+  assert.equal(page.querySelector('.je-native-absent-extras'), null);
+  // Shown again (Back): checked again, Known for stays once.
+  await h.JE.internals.nativeDetails.onView();
+  assert.equal(page.querySelectorAll('.je-native-absent-knownfor').length, 1);
+  // Leaving for a library title takes the person class away.
+  h.window.location.hash = '#/details?id=0123456789abcdef0123456789abcdef';
+  await h.JE.internals.nativeDetails.onView();
+  assert.equal(page.classList.contains('je-native-absent-person'), false);
+  assert.equal(page.querySelector('.je-native-absent-knownfor'), null);
+});
+
+test('a person page without a known department shows no line; refused or unloadable person pages say "page", no modal, no back', async t => {
+  const PERSON = '4a45ad1500000ee200000000f845f0a8';
+  let answer = { Id: PERSON, Type: 'Person', Name: 'Someone', Taglines: [] };
+  const h = setup(t, { html: PAGE, inApp: true, url: `http://jellyfin.test/web/index.html#/details?id=${PERSON}&serverId=${SERVER}`, getItem: async () => { if (answer instanceof Error) throw answer; return answer; } });
+  await h.JE.internals.nativeDetails.onView();
+  assert.equal(h.document.querySelector('.je-native-absent-knownfor'), null);
+  answer = Object.assign(new Error('404'), { status: 404 });
+  await h.JE.internals.nativeDetails.onView();
+  assert.match(h.document.querySelector('.je-native-absent-refusal').textContent, /^native_details_page_unavailable/);
+  answer = Object.assign(new Error('503'), { status: 503 });
+  h.window.location.hash = `#/details?id=${h.td.syntheticId('person', 77)}&serverId=${SERVER}`;
+  await h.JE.internals.nativeDetails.onView();
+  assert.match(h.document.querySelector('.je-native-absent-refusal').textContent, /^native_details_page_failed/);
+  await wait(400);
+  assert.deepEqual(h.modal, []);
+  assert.deepEqual(h.back, []);
+});
+
+test('a discovery list page (a synthetic genre, studio or network) hides the empty list controls; library list pages are left alone', async t => {
+  const LIST = '<div class="page libraryPage" id="listPage"><div class="itemsViewSettingsContainer"><div class="paging">0-0 of 0</div><button class="btnPlay">Play</button></div><div class="itemsContainer"></div></div>';
+  const h = setup(t, { html: LIST, url: `http://jellyfin.test/web/index.html#/list?genreId=PLACEHOLDER&serverId=${SERVER}` });
+  const list = h.document.getElementById('listPage');
+  for (const [param, kind] of [['genreId', 'genre'], ['studioId', 'studio'], ['studioId', 'network']]) {
+    h.window.location.hash = `#/list?${param}=${h.td.syntheticId(kind, 878)}&serverId=${SERVER}`;
+    await h.JE.internals.nativeDetails.onView();
+    assert.ok(list.classList.contains('je-native-absent-list'), kind);
+  }
+  const css = h.document.getElementById('je-native-absent-style').textContent;
+  for (const sel of ['.itemsViewSettingsContainer', '.paging', '.alphaPicker']) assert.ok(css.includes(`.je-native-absent-list ${sel}`), sel);
+  // A library genre, a synthetic title id in the list URL, or another page: not a discovery page.
+  for (const hash of [`#/list?genreId=0123456789abcdef0123456789abcdef&serverId=${SERVER}`, `#/list?studioId=${MOVIE}&serverId=${SERVER}`, '#/home']) {
+    h.window.location.hash = hash;
+    await h.JE.internals.nativeDetails.onView();
+    assert.equal(list.classList.contains('je-native-absent-list'), false, hash);
+  }
 });

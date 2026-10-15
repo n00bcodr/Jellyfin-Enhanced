@@ -322,6 +322,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 if (sessions != null) sessions.SessionEnded += (_, e) => policy.Revoke(e.SessionInfo?.UserId ?? Guid.Empty);
                 return policy;
             });
+            // Where cast, genres, studios and tags on those pages lead (the library's own pages first; read only).
+            serviceCollection.AddSingleton(sp => new Services.NativeDetails.NativeDetailsLinks(
+                sp.GetRequiredService<MediaBrowser.Controller.Library.ILibraryManager>(),
+                sp.GetService<MediaBrowser.Controller.Drawing.IImageProcessor>(),
+                () => sp.GetRequiredService<Services.Acquire.IArrJellyfinView>().Revision));
             serviceCollection.AddSingleton<Services.NativeDetails.NativeDetailsFacadeFilter>();
             // The Requests & downloads routes (status, season rows) answer for synthetic page ids by key.
             serviceCollection.AddSingleton<Services.Acquire.IAbsentTitlePages, Services.NativeDetails.NativeDetailsPages>();

@@ -71,13 +71,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private static readonly string[] ItemId = { "itemId" };
         private static readonly SyntheticKind[] Titles = { SyntheticKind.Movie, SyntheticKind.Series, SyntheticKind.Season, SyntheticKind.Episode };
         private static readonly SyntheticKind[] MovieOrSeries = { SyntheticKind.Movie, SyntheticKind.Series };
+        /// <summary>Titles and people (the reads a person page makes besides its item: no ancestors, no collections).</summary>
+        private static readonly SyntheticKind[] TitlesAndPeople = { SyntheticKind.Movie, SyntheticKind.Series, SyntheticKind.Season, SyntheticKind.Episode, SyntheticKind.Person };
+        /// <summary>Every page a synthetic id opens: titles, people, and genre/studio/network discovery pages.</summary>
+        private static readonly SyntheticKind[] Pages = { SyntheticKind.Movie, SyntheticKind.Series, SyntheticKind.Season, SyntheticKind.Episode, SyntheticKind.Person, SyntheticKind.Genre, SyntheticKind.Studio, SyntheticKind.Network };
         private static readonly SyntheticKind[] Any = { SyntheticKind.Movie, SyntheticKind.Series, SyntheticKind.Season, SyntheticKind.Episode, SyntheticKind.Person };
 
         /// <summary>The allowlist.</summary>
         public static readonly IReadOnlyList<FacadeRoute> Routes = new[]
         {
-            new FacadeRoute("UserLibrary", "GetItem", Get, FacadeAnswer.Item, ItemId, Titles),
-            new FacadeRoute("UserLibrary", "GetItemLegacy", Get, FacadeAnswer.Item, ItemId, Titles),
+            new FacadeRoute("UserLibrary", "GetItem", Get, FacadeAnswer.Item, ItemId, Pages),
+            new FacadeRoute("UserLibrary", "GetItemLegacy", Get, FacadeAnswer.Item, ItemId, Pages),
             new FacadeRoute("UserLibrary", "GetIntros", Get, FacadeAnswer.EmptyQuery, ItemId, Titles),
             new FacadeRoute("UserLibrary", "GetIntrosLegacy", Get, FacadeAnswer.EmptyQuery, ItemId, Titles),
             new FacadeRoute("UserLibrary", "GetLocalTrailers", Get, FacadeAnswer.EmptyArray, ItemId, Titles),
@@ -87,9 +91,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             new FacadeRoute("Library", "GetThemeMedia", Get, FacadeAnswer.ThemeMedia, ItemId, Titles),
             new FacadeRoute("Library", "GetThemeSongs", Get, FacadeAnswer.ThemeResult, ItemId, Titles),
             new FacadeRoute("Library", "GetThemeVideos", Get, FacadeAnswer.ThemeResult, ItemId, Titles),
-            new FacadeRoute("Library", "GetItemCollections", Get, FacadeAnswer.EmptyQuery, ItemId, Titles),
+            new FacadeRoute("Library", "GetItemCollections", Get, FacadeAnswer.EmptyQuery, ItemId, TitlesAndPeople),
             new FacadeRoute("Library", "GetSimilarItems", Get, FacadeAnswer.Similar, ItemId, MovieOrSeries),
-            new FacadeRoute("Library", "GetAncestors", Get, FacadeAnswer.Ancestors, ItemId, Titles),
+            new FacadeRoute("Library", "GetAncestors", Get, FacadeAnswer.Ancestors, ItemId, TitlesAndPeople),
             new FacadeRoute("Videos", "GetAdditionalPart", Get, FacadeAnswer.EmptyQuery, ItemId, Titles),
             new FacadeRoute("TvShows", "GetSeasons", Get, FacadeAnswer.Seasons, new[] { "seriesId" }, new[] { SyntheticKind.Series }),
             new FacadeRoute("TvShows", "GetEpisodes", Get, FacadeAnswer.Episodes, new[] { "seriesId", "seasonId" }, new[] { SyntheticKind.Series, SyntheticKind.Season }),

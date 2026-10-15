@@ -871,6 +871,10 @@ Discover tab open these pages too, and the request is followed on the page and i
 The status comes from Sonarr or Radarr when one holds the title (downloading, looking, almost ready…), otherwise every
 aired episode is simply not here and later ones are *not out yet*. The page's id is never taken for a copy: once one
 arrives that the person can open, the page offers **Open**.
+Its cast, crew, genres, studios and tags lead to the library's own pages or to pages made the same way (a person's
+page with their filmography, a genre's or studio's discovery page; see
+[Seerr](../seerr/seerr-features.md#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental)), where a
+title opens the library copy or its own native page again.
 
 The routes behind it (paths relative to `/JellyfinEnhanced`; the native page's own requests are answered by the
 facade and never touch the library):

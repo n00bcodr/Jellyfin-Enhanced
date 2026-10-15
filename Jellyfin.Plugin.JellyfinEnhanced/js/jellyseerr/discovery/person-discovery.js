@@ -4,6 +4,9 @@
 // Client-paged spec over JE.discoveryBase — the base owns the chunked
 // pagination, filter/sort controls, infinite scroll and lifecycle wiring;
 // this module keeps the TMDB person resolution and the credits fetch.
+// On the person page of someone the library doesn't have (native details,
+// a synthetic person id) the row is the page's filmography: it renders
+// whatever the person-discovery switch says, most popular titles first.
 (function(JE) {
     'use strict';
 
@@ -138,6 +141,45 @@
     }
 
     /**
+     * The TMDB id of a person page made for someone the library doesn't have
+     * (a synthetic person id, see js/jellyseerr/nativedetails), or 0.
+     * @param {string} itemId
+     * @returns {number}
+     */
+    function syntheticPersonTmdb(itemId) {
+        const parts = JE.titleDetails?.parse?.(itemId);
+        return parts && parts.kind === 'person' ? parts.tmdbId : 0;
+    }
+
+    /**
+     * The name and TMDB id of a synthetic person page: the id carries the TMDB id
+     * and the page's own item the name (JE's person route knows library people only).
+     * @param {string} itemId
+     * @param {number} tmdbId
+     * @param {AbortSignal} [signal]
+     * @returns {Promise<{name: string, tmdbId: string}|null>}
+     */
+    async function syntheticPersonInfo(itemId, tmdbId, signal) {
+        const item = JE.helpers?.getItemCached
+            ? await JE.helpers.getItemCached(itemId)
+            : await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        return item?.Name ? { name: item.Name, tmdbId: String(tmdbId) } : null;
+    }
+
+    /**
+     * 1 for an appearance rather than a role (a talk show, news or reality series, or playing
+     * themselves), else 0.
+     * @param {any} credit
+     * @returns {number}
+     */
+    function appearance(credit) {
+        const genres = Array.isArray(credit?.genreIds) ? credit.genreIds : [];
+        if (genres.some(g => g === 10767 || g === 10763 || g === 10764)) return 1;
+        return /^(self|himself|herself|themselves)\b/i.test(String(credit?.character || '')) ? 1 : 0;
+    }
+
+    /**
      * Fetches person credits from Seerr
      * @param {number} personId
      * @param {AbortSignal} [signal]
@@ -178,7 +220,10 @@
         if (signal.aborted) return null;
         if (!isPerson) return null;
 
-        const personInfoPromise = getPersonInfo(itemId, signal);
+        const synthetic = syntheticPersonTmdb(itemId);
+        const personInfoPromise = synthetic
+            ? syntheticPersonInfo(itemId, synthetic, signal).catch((error) => { if (error?.name === 'AbortError') throw error; return null; })
+            : getPersonInfo(itemId, signal);
         const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
 
         const [personInfo, status] = await Promise.all([personInfoPromise, statusPromise]);
@@ -212,6 +257,13 @@
 
         console.debug(`${logPrefix} Fetched ${dedupedResults.length} credits for ${personInfo.name}`);
 
+        if (synthetic) {
+            // The page's filmography: what they are known for first (most voted), talk shows, news,
+            // reality and appearances as themselves after their roles.
+            dedupedResults.sort((a, b) => (appearance(a) - appearance(b)) || ((Number(b?.voteCount) || 0) - (Number(a?.voteCount) || 0)));
+            return { items: dedupedResults, title: JE.t('native_details_filmography') };
+        }
+
         return {
             items: dedupedResults,
             title: JE.t('discovery_more_from_person', { person: personInfo.name })
@@ -224,6 +276,8 @@
         logLabel: 'Person Discovery',
         configKey: 'JellyseerrShowPersonDiscovery',
         getIdFromUrl: JE.discoveryBase.idFromDetailUrl,
+        // A synthetic person page has no other titles: its filmography is this row.
+        enabledFor: (id) => syntheticPersonTmdb(id) > 0,
         pageSize: 40,
         resolveItems
     });

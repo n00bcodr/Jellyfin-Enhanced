@@ -43,7 +43,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private const int MaxSplitIds = 200;
         private static readonly ConcurrentDictionary<Type, PropertyInfo[]> BodyProperties = new();
-        private static readonly TimeSpan GenreTtl = TimeSpan.FromMinutes(30);
 
         private readonly IUserManager _users;
         private readonly ILibraryManager _library;
@@ -57,7 +56,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly Configuration.UserConfigurationManager? _userConfig;
         private readonly SpoilerFieldStripFilter? _spoilerStrip;
         private readonly SpoilerUserResolver? _spoilerUsers;
-        private (IReadOnlyDictionary<string, Guid> Map, DateTime At)? _genres;
+        private readonly NativeDetailsLinks _links;
 
         /// <summary>Creates the facade.</summary>
         public NativeDetailsFacadeFilter(
@@ -72,7 +71,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             SeerrParentalFilter parental,
             Configuration.UserConfigurationManager? userConfig = null,
             SpoilerFieldStripFilter? spoilerStrip = null,
-            SpoilerUserResolver? spoilerUsers = null)
+            SpoilerUserResolver? spoilerUsers = null,
+            NativeDetailsLinks? links = null)
         {
             _users = users;
             _library = library;
@@ -86,6 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             _userConfig = userConfig;
             _spoilerStrip = spoilerStrip;
             _spoilerUsers = spoilerUsers;
+            _links = links ?? new NativeDetailsLinks(library);
         }
 
         /// <inheritdoc />
@@ -220,7 +221,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (viewer == null) return refusal;
             var primary = hits.FirstOrDefault(h => h.Argument == route.IdArguments[0]);
             var title = primary.Argument == null ? hits[0].Id : primary.Id;
-            switch (await _policy.SeeAsync(viewer, title, ct).ConfigureAwait(false))
+            // A person's page and a genre, studio or network discovery page hold public data only: the viewer-level rule.
+            var access = title.IsTitle
+                ? await _policy.SeeAsync(viewer, title, ct).ConfigureAwait(false)
+                : await _policy.SeeLinkedPageAsync(viewer, title, ct).ConfigureAwait(false);
+            switch (access)
             {
                 case NativeDetailsPolicy.Access.Refused:
                     return new NotFoundResult();
@@ -230,15 +235,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             var guid = title.ToGuid(serverId);
-            var dtos = Dtos(viewer, serverId);
+            // The DTO builder (and where its names lead) only for the answers that draw items.
+            Task<NativeDetailsDtos> Dtos() => DtosAsync(viewer, serverId, ct);
             // Spoiler Guard composes here: JE's own strip and image filters never see these answers.
-            Configuration.UserSpoilerBlur? Spoilers() => Guarded(http, viewer, title);
+            Configuration.UserSpoilerBlur? Spoilers() => title.IsTitle ? Guarded(http, viewer, title) : null;
             switch (route.Answer)
             {
                 case FacadeAnswer.Item:
                     // A real library item with this id (never expected) wins.
                     if (_library.GetItemById(guid) != null) return null;
-                    return Guard(await ItemAsync(dtos, title, ct).ConfigureAwait(false), Spoilers(), viewer);
+                    if (!title.IsTitle) return await LinkedPageAsync(await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false);
+                    return Guard(await ItemAsync(await Dtos().ConfigureAwait(false), title, ct).ConfigureAwait(false), Spoilers(), viewer);
                 case FacadeAnswer.ThemeMedia:
                     return Ok(new AllThemeMediaResult { ThemeSongsResult = Theme(guid), ThemeVideosResult = Theme(guid), SoundtrackSongsResult = Theme(guid) });
                 case FacadeAnswer.ThemeResult:
@@ -248,13 +255,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 case FacadeAnswer.EmptyArray:
                     return Ok(Array.Empty<BaseItemDto>());
                 case FacadeAnswer.Ancestors:
-                    return Guard(await AncestorsAsync(dtos, title, ct).ConfigureAwait(false), Spoilers(), viewer);
+                    return Guard(await AncestorsAsync(await Dtos().ConfigureAwait(false), title, ct).ConfigureAwait(false), Spoilers(), viewer);
                 case FacadeAnswer.Seasons:
-                    return Guard(await SeasonsAsync(context, dtos, viewer, title, ct).ConfigureAwait(false), Spoilers(), viewer);
+                    return Guard(await SeasonsAsync(context, await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false), Spoilers(), viewer);
                 case FacadeAnswer.Episodes:
-                    return Guard(await EpisodesAsync(context, dtos, viewer, hits, ct).ConfigureAwait(false), Spoilers(), viewer);
+                    return Guard(await EpisodesAsync(context, await Dtos().ConfigureAwait(false), viewer, hits, ct).ConfigureAwait(false), Spoilers(), viewer);
                 case FacadeAnswer.Similar:
-                    return await SimilarAsync(context, dtos, viewer, title, ct).ConfigureAwait(false);
+                    return await SimilarAsync(context, await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false);
                 default:
                     return Refuse(method);
             }
@@ -286,11 +293,70 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return viewer == null || viewer.HasPermission(PermissionKind.IsDisabled) ? (null, new NotFoundResult()) : (viewer, null);
         }
 
-        private NativeDetailsDtos Dtos(User viewer, string serverId)
+        private async Task<NativeDetailsDtos> DtosAsync(User viewer, string serverId, CancellationToken ct)
         {
             var code = _serverConfig.Configuration?.MetadataCountryCode;
             var region = string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
-            return new NativeDetailsDtos(serverId, viewer.Id, _policy.Revision(viewer), _artwork, region, Genres());
+            var revision = _policy.Revision(viewer);
+            var links = _links.For(viewer, revision, serverId, await DiscoveryAsync(viewer, ct).ConfigureAwait(false));
+            return new NativeDetailsDtos(serverId, viewer.Id, revision, _artwork, region, links);
+        }
+
+        /// <summary>
+        /// The discovery destinations the viewer gets: Jellyfin Enhanced's genre, network and tag rows read
+        /// Seerr with the viewer's own Seerr account, so they need Seerr and that account (Seerr mode: the
+        /// page's own rule already asked for it; Jellyfin Enhanced mode doesn't, so it is asked here), and
+        /// each row's admin switch.
+        /// </summary>
+        private async Task<LinkDiscovery> DiscoveryAsync(User viewer, CancellationToken ct)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !NativeDetailsPolicy.SeerrConfigured(config)) return LinkDiscovery.None;
+            if (NativeDetailsPolicy.JeMode(config) && await _source.IsSeerrLinkedAsync(viewer.Id, ct).ConfigureAwait(false) != true) return LinkDiscovery.None;
+            return new LinkDiscovery(config.JellyseerrShowGenreDiscovery, config.JellyseerrShowNetworkDiscovery, config.JellyseerrShowTagDiscovery);
+        }
+
+        /// <summary>
+        /// A page a title links to that isn't a title: a person (Seerr's person details; an adult performer
+        /// is refused to a viewer with a parental limit) or a genre, studio or network discovery page (its name).
+        /// </summary>
+        private async Task<IActionResult> LinkedPageAsync(NativeDetailsDtos dtos, User viewer, SyntheticId page, CancellationToken ct)
+        {
+            switch (page.Kind)
+            {
+                case SyntheticKind.Person:
+                    var person = await _source.PersonAsync(page.TmdbId, ct).ConfigureAwait(false);
+                    if (person.Data is not { } p) return Failed(person);
+                    return NativeDetailsPolicy.PersonAllowed(viewer, p) ? Ok(dtos.Person(page, p)) : new NotFoundResult();
+                case SyntheticKind.Genre:
+                    var movie = await _source.GenresAsync(true, ct).ConfigureAwait(false);
+                    var tv = await _source.GenresAsync(false, ct).ConfigureAwait(false);
+                    var genre = GenreName(movie, page.TmdbId) ?? GenreName(tv, page.TmdbId);
+                    if (genre != null) return Ok(dtos.NamePage(page, genre));
+                    // Not in a list that answered: unknown; a list that couldn't be read: retryable.
+                    return movie.Data == null || tv.Data == null ? Unavailable() : new NotFoundResult();
+                case SyntheticKind.Studio:
+                case SyntheticKind.Network:
+                    var named = page.Kind == SyntheticKind.Studio
+                        ? await _source.StudioAsync(page.TmdbId, ct).ConfigureAwait(false)
+                        : await _source.NetworkAsync(page.TmdbId, ct).ConfigureAwait(false);
+                    if (named.Data is not { } n) return Failed(named);
+                    return NativeDetailsDtos.Str(n, "name") is { Length: > 0 } name ? Ok(dtos.NamePage(page, name.Trim())) : new NotFoundResult();
+                default:
+                    return new NotFoundResult();
+            }
+        }
+
+        /// <summary>The name of a genre in a TMDB genre list (id, name), or null.</summary>
+        private static string? GenreName(SourceAnswer list, int id)
+        {
+            if (list.Data is not { ValueKind: JsonValueKind.Array } genres) return null;
+            foreach (var g in genres.EnumerateArray())
+            {
+                if (NativeDetailsDtos.Int(g, "id") == id && NativeDetailsDtos.Str(g, "name") is { Length: > 0 } name) return name.Trim();
+            }
+
+            return null;
         }
 
         private async Task<IActionResult> ItemAsync(NativeDetailsDtos dtos, SyntheticId title, CancellationToken ct)
@@ -571,32 +637,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             return null;
-        }
-
-        private IReadOnlyDictionary<string, Guid> Genres()
-        {
-            var cached = _genres;
-            if (cached is { } c && DateTime.UtcNow - c.At < GenreTtl) return c.Map;
-            var map = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
-            try
-            {
-                // Read only: names of genres the library already has (never creates one).
-                var genres = _library.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { BaseItemKind.Genre } });
-                if (genres != null)
-                {
-                    foreach (var g in genres)
-                    {
-                        if (!string.IsNullOrEmpty(g.Name)) map.TryAdd(g.Name, g.Id);
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                // No genre links this time.
-            }
-
-            _genres = (map, DateTime.UtcNow);
-            return map;
         }
 
         private static ThemeMediaResult Theme(Guid owner) => new() { OwnerId = owner, Items = Array.Empty<BaseItemDto>(), StartIndex = 0, TotalRecordCount = 0 };

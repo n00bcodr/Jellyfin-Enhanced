@@ -106,8 +106,10 @@
         const page = visiblePage();
         const itemId = itemIdFromHash();
         // A title that isn't in the library (native details facade) is read by its page id too: the
-        // server answers it by key (status, seasons and episodes from public metadata).
-        if (!page || !itemId) {
+        // server answers it by key (status, seasons and episodes from public metadata). A person's own
+        // page (or another page such a title links to) has no status.
+        const synthetic = JE.titleDetails?.parse?.(itemId);
+        if (!page || !itemId || (synthetic && !['movie', 'series', 'season', 'episode'].includes(synthetic.kind))) {
             stop();
             return;
         }
