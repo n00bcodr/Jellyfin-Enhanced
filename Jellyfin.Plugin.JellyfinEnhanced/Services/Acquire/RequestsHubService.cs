@@ -7,9 +7,15 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
+    /// <summary>One episode of a request (season and episode number).</summary>
+    /// <param name="Season">Season number.</param>
+    /// <param name="Episode">Episode number.</param>
+    public sealed record HubEpisode(int Season, int Episode);
+
     /// <summary>Where a request sits on the Requests page.</summary>
     public static class HubGroup
     {
@@ -67,6 +73,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>When the viewer first asked.</summary>
         public DateTime? AskedAt { get; init; }
+
+        /// <summary>Single episodes asked for outside whole seasons (requests in Jellyfin Enhanced mode); null otherwise.</summary>
+        public IReadOnlyList<HubEpisode>? Episodes { get; init; }
 
         /// <summary>When it became ready (Jellyfin added it), for the Ready tab.</summary>
         public DateTime? ReadyAt { get; init; }
@@ -185,22 +194,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         };
 
+        /// <summary>Most series whose Sonarr episode lists one Requests page read loads (the rest use what is in memory).</summary>
+        private const int MaxEpisodeLoads = 20;
+
         private readonly ArrStatusService _status;
         private readonly SeerrRequestReadModel _requests;
         private readonly Func<PluginConfiguration?> _config;
+        private readonly RequestLedger? _ledger;
+        private readonly Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? _meta;
 
-        /// <summary>The service (DI).</summary>
-        public RequestsHubService(ArrStatusService status, SeerrRequestReadModel requests)
-            : this(status, requests, null)
+        /// <summary>The service (DI): Seerr's requests in Seerr mode, the request ledger once Jellyfin Enhanced handles requests.</summary>
+        public RequestsHubService(ArrStatusService status, SeerrRequestReadModel requests, RequestLedger ledger, RequestHubProjection projection)
+            : this(status, requests, null, ledger, projection.MetaAsync)
         {
         }
 
-        /// <summary>The service with explicit configuration (tests).</summary>
-        internal RequestsHubService(ArrStatusService status, SeerrRequestReadModel requests, Func<PluginConfiguration?>? config)
+        /// <summary>
+        /// The service with explicit configuration (tests). Without <paramref name="ledger"/> the page always lists
+        /// Seerr's requests; <paramref name="meta"/> names the ledger's titles (Jellyfin item, else TMDB).
+        /// </summary>
+        internal RequestsHubService(ArrStatusService status, SeerrRequestReadModel requests, Func<PluginConfiguration?>? config, RequestLedger? ledger = null, Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? meta = null)
         {
             _status = status;
             _requests = requests;
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
+            _ledger = ledger;
+            _meta = meta;
         }
 
         /// <summary>The status service (viewer lookup, request counter).</summary>
@@ -212,8 +231,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The Requests page body for the viewer.</summary>
         public Task<StatusBody> ForViewerAsync(StatusViewer viewer, CancellationToken cancellationToken)
         {
-            _requests.Touch();
             var config = _config();
+            if (_ledger != null && SharedRequestFacts.LedgerAuthority(config)) return ForLedgerAsync(viewer, config!, cancellationToken);
+            _requests.Touch();
             var now = _status.Now.UtcDateTime;
             // Open requests first (an old one still waiting never drops off the end), then the newest.
             // Only titles certainly finished for the page are left out before composing: declined
@@ -247,6 +267,154 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var arrDown = ArrUnavailable();
             var what = string.Join("|", _requests.Active ? "on" : "off", _requests.Loaded ? "loaded" : "-", state.LastError == null ? "ok" : "err", arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs);
             return _status.ForTitlesAsync(viewer, keys, "hub", what, composed => Build(viewer, entries, composed, config, state, arrDown, more), cancellationToken, scopes);
+        }
+
+        /// <summary>
+        /// The Requests page in Jellyfin Enhanced mode: the viewer's own requests from the request ledger, one entry per
+        /// title, each judged by exactly the part the viewer asked for (movie and edition, seasons, single episodes) as
+        /// the Seerr path judges a Seerr request: waiting for an OK, OK'd, looking, downloading, almost ready, ready
+        /// (with Play) or said no. Open ones first, then the newest; fulfilled ones stay as Ready for two weeks after
+        /// they arrived, declined ones for 30 days. Series asked for by season or episode have Sonarr's episode list
+        /// read (a few per page) so a single episode is judged by itself, not by its season.
+        /// </summary>
+        private async Task<StatusBody> ForLedgerAsync(StatusViewer viewer, PluginConfiguration config, CancellationToken cancellationToken)
+        {
+            var ledger = _ledger!;
+            var now = _status.Now.UtcDateTime;
+            static bool Open(RequestWant w) => w.Status is "pending" or "queued" or "sent" or "stale";
+            var mine = ledger.Database.Available ? ledger.List(viewer.UserId, false) : Array.Empty<RequestWant>();
+            var titles = mine.Where(w => w.Status != "cancelled" && TitleKey.Parse(w.Input.Key) != null)
+                .GroupBy(w => w.Input.Key, StringComparer.Ordinal)
+                .Select(g => g.ToList())
+                .Where(g => g.Any(w => w.Status != "declined") || now - g.Max(w => w.UpdatedAt.UtcDateTime) <= DeclinedFor)
+                .OrderBy(g => g.Any(Open) ? 0 : 1)
+                .ThenByDescending(g => g.Max(w => w.CreatedAt))
+                .ToList();
+            var more = titles.Count > MaxTitles;
+            // One edition per row: a 4K ask after the standard copy arrived follows the 4K copy.
+            var entries = titles.Take(MaxTitles).Select(g => LedgerRequestFacts.EditionOf(g).ToList()).ToList();
+            var keys = entries.Select(g => TitleKey.Parse(g[0].Input.Key)!).ToList();
+            var scopes = new Dictionary<TitleKey, ArrStatusService.RequestScope>();
+            for (var i = 0; i < entries.Count; i++)
+            {
+                var key = keys[i].ToString();
+                scopes[keys[i]] = LedgerRequestFacts.ScopeOf(entries[i], viewer.UserId, () => ledger.Dispatches(key));
+            }
+            var load = entries.Where(g => g.Any(Open)).Select(g => TitleKey.Parse(g[0].Input.Key)!)
+                .Where(k => !k.IsMovie && scopes[k] is var scope && (scope.Seasons.Count > 0 || scope.Episodes?.Count > 0)).Take(MaxEpisodeLoads).ToList();
+            var meta = _meta != null ? await _meta(keys.Select(k => k.ToString()), viewer, cancellationToken).ConfigureAwait(false) : new Dictionary<string, HubTitleMeta>();
+            var state = _requests.State;
+            var adminTabs = viewer.IsAdmin
+                ? (config.DownloadsPageEnabled ? "d" : "-") + (config.CalendarPageEnabled ? "c" : "-") + (JellyfinBridge.Phase2(config) ? "h" : "-")
+                : string.Empty;
+            var arrDown = ArrUnavailable();
+            var names = string.Join(",", meta.OrderBy(m => m.Key, StringComparer.Ordinal).Select(m => m.Key + "=" + m.Value.Title + "/" + m.Value.Year + "/" + m.Value.Poster + "/" + m.Value.ItemId));
+            var what = string.Join("|", "je", ledger.Revision.ToString(CultureInfo.InvariantCulture), arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs, MutationInput.Hash(names));
+            return await _status.ForTitlesAsync(viewer, keys, "hub", what, composed => BuildLedger(viewer, entries, composed, meta, config, state, arrDown, more), cancellationToken, scopes, load).ConfigureAwait(false);
+        }
+
+        private byte[] BuildLedger(StatusViewer viewer, List<List<RequestWant>> entries, IReadOnlyList<ArrStatusService.KeyedStatus> titles, Dictionary<string, HubTitleMeta> meta, PluginConfiguration config, SeerrReadModelState state, bool arrDown, bool more)
+        {
+            var now = _status.Now.UtcDateTime;
+            var byKey = titles.ToDictionary(t => t.Key.ToString(), StringComparer.Ordinal);
+            var mine = new List<HubEntry>();
+            var soon = new List<HubEntry>();
+            var ready = new List<HubEntry>();
+            foreach (var wants in entries)
+            {
+                if (!byKey.TryGetValue(wants[0].Input.Key, out var composed)) continue;
+                var entry = LedgerEntry(wants, composed, meta.GetValueOrDefault(wants[0].Input.Key), now);
+                if (entry == null) continue;
+                if (entry.Group == HubGroup.Ready) ready.Add(entry);
+                else mine.Add(entry);
+                if (entry.Group != HubGroup.Declined && entry.NextDate is DateTime next && next - now <= SoonWithin
+                    && (entry.NextDay == null ? next > now : StatusComposer.DayStillAhead(next, now))) soon.Add(entry);
+            }
+            var (contact, lookingHours) = _status.Texts();
+            var response = new HubResponse
+            {
+                Contact = contact,
+                LookingHours = lookingHours,
+                Seerr = new HubSeerr { Configured = _requests.Active, Loaded = true, Unavailable = false, Ledger = true },
+                Arr = new HubArr { Unavailable = arrDown },
+                More = more,
+                Mine = mine.OrderBy(e => GroupOrder(e.Group)).ThenByDescending(e => e.AskedAt ?? DateTime.MinValue).ToList(),
+                Soon = soon.OrderBy(e => e.NextDate).ToList(),
+                Ready = ready.OrderByDescending(e => e.ReadyAt ?? DateTime.MinValue).ToList(),
+                Admin = viewer.IsAdmin
+                    ? new HubAdmin { Downloads = config.DownloadsPageEnabled, Calendar = config.CalendarPageEnabled, Seerr = state, Hub = JellyfinBridge.Phase2(config) }
+                    : null,
+            };
+            return JsonSerializer.SerializeToUtf8Bytes(response, Json);
+        }
+
+        /// <summary>One title's entry from the viewer's ledger requests for it and its scoped status, or null when it is no longer worth showing.</summary>
+        private HubEntry? LedgerEntry(List<RequestWant> wants, ArrStatusService.KeyedStatus composed, HubTitleMeta? meta, DateTime now)
+        {
+            var key = TitleKey.Parse(wants[0].Input.Key)!;
+            var status = composed.Status;
+            var active = wants.Where(w => w.Status is not ("declined" or "cancelled")).ToList();
+            var request = active.Count == 0 ? "declined"
+                : active.Any(w => w.Status == "pending") ? "pending"
+                : active.All(w => w.Status == "fulfilled") ? "available"
+                : "approved";
+            DateTime? readyAt = null;
+            string group;
+            if (active.Count == 0)
+            {
+                if (now - wants.Max(w => w.UpdatedAt.UtcDateTime) > DeclinedFor) return null;
+                group = HubGroup.Declined;
+            }
+            else if (status.Stage == StatusStage.Ready)
+            {
+                // When the part asked for arrived (else when the request was marked fulfilled).
+                readyAt = (composed.Scoped ? composed.ArrivedAt : composed.Visible?.DateCreated)
+                    ?? active.Where(w => w.Status == "fulfilled").Select(w => (DateTime?)w.UpdatedAt.UtcDateTime).Max()
+                    ?? active.Max(w => w.UpdatedAt.UtcDateTime);
+                if (readyAt is DateTime at && now - at > ReadyFor) return null;
+                group = HubGroup.Ready;
+            }
+            else
+            {
+                group = status.Stage switch
+                {
+                    StatusStage.Asked => HubGroup.NeedsOk,
+                    StatusStage.NotOut => HubGroup.NotOut,
+                    _ => request == "pending" ? HubGroup.NeedsOk : HubGroup.OnTheWay,
+                };
+            }
+            DateTime? next = status.NextDate ?? status.Summary?.NextAir;
+            var nextDay = status.NextDate != null ? status.NextDay
+                : status.Summary?.NextAir is DateTime airs && status.Summary.NextAirIsDay ? StatusComposer.DayOf(airs) : null;
+            var tmdb = key.Provider == "tmdb" ? key.NumericId : _status.Aliases.Of(key).FirstOrDefault(k => k.Provider == "tmdb" && k.IsMovie == key.IsMovie)?.NumericId;
+            // Whole seasons asked for, and single episodes outside them (shown as "S1E3"): of the requests still on, or
+            // of the declined ones when nothing else is left.
+            var shown = active.Count > 0 ? active : wants;
+            var seasons = key.IsMovie ? null : shown.Where(w => w.Input.Scope != "episodes").SelectMany(w => w.Input.Seasons).Distinct().OrderBy(n => n).ToList();
+            var episodes = key.IsMovie ? null : shown.Where(w => w.Input.Scope == "episodes").SelectMany(w => w.Input.Episodes)
+                .Where(e => seasons == null || !seasons.Contains(e.Season)).Distinct().OrderBy(e => e.Season).ThenBy(e => e.Episode).Select(e => new HubEpisode(e.Season, e.Episode)).ToList();
+            return new HubEntry
+            {
+                Key = status.Key,
+                LiveKey = status.LiveKey,
+                Kind = key.IsMovie ? "movie" : "tv",
+                TmdbId = tmdb,
+                Title = meta?.Title ?? string.Empty,
+                Year = meta?.Year,
+                Poster = meta?.Poster,
+                // The copy of the part asked for (never the standard copy for a 4K request).
+                ItemId = composed.Visible?.ItemId.ToString("N", CultureInfo.InvariantCulture),
+                Request = request,
+                Is4k = wants.All(w => w.Input.Variant == "4k"),
+                Seasons = seasons is { Count: > 0 } ? seasons : null,
+                Episodes = episodes is { Count: > 0 } ? episodes : null,
+                AskedAt = wants.Min(w => w.CreatedAt).UtcDateTime,
+                ReadyAt = readyAt,
+                NextDate = next,
+                NextDay = nextDay,
+                Group = group,
+                Status = status,
+            };
         }
 
         /// <summary>A title's requests still under way: one is not declined, and neither Seerr nor its media says it is done.</summary>

@@ -254,6 +254,7 @@
     "arr/ask/ask-sheet.js",
     "arr/ask/ask-actions.js",
     "arr/ask/ask-collection.js",
+    "arr/ask/ask-seerr.js",
     "arr/ask/ask-styles.js",
 
     "// extras",

@@ -106,6 +106,44 @@ test('every key the notification modules use is in en.json', () => {
   }
 });
 
+test('OK\'d requests read in family words (on its way when someone else asked), and their switch shows only when the server offers it', async t => {
+  const h = setup(t);
+  h.state.inbox = {
+    unread: 2, more: false, items: [
+      item(7, 'approved', { title: 'Firefly', contact: 'Dad', scope: 'S1E4' }),
+      item(6, 'approved', { title: 'Dune', shared: '1' }),
+      item(5, 'stuck_digest', { count: '1', hours: '6', items: 'Dune' })
+    ]
+  };
+  h.JE.initializeArrNotify();
+  await until(() => h.document.getElementById('je-notify-bell'));
+  await h.JE.arrNotify.loadPrefs();
+  await h.JE.arrNotify.refresh();
+  h.document.getElementById('je-notify-bell').click();
+  const rows = [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')];
+  assert.deepEqual(rows.map(r => r.querySelector('.je-notify-text').textContent), [
+    "Dad OK'd Firefly S1E4",
+    'Dune is on its way',
+    '1 download has needed attention for over 6 h: Dune'
+  ]);
+  // The "OK'd" switch: absent while the server sends null, present (and saved) when it sends a value.
+  h.document.body.insertAdjacentHTML('beforeend', `<div id="jellyfin-enhanced-panel">${h.N.buildSettingsHtml()}</div>`);
+  const help = h.document.getElementById('jellyfin-enhanced-panel');
+  h.N.wireSettings({ help });
+  const host = help.querySelector('.je-arr-alerts');
+  await until(() => host.querySelector('.je-arr-alerts-group'));
+  const label = translate('arr_notify_pref_approved');
+  assert.ok(![...host.querySelectorAll('.je-arr-alerts-check')].some(b => b.textContent.startsWith(label)));
+  h.state.prefs = prefsBody({ approved: true });
+  await h.JE.arrNotify.loadPrefs();
+  h.N.wireSettings({ help });
+  await until(() => [...host.querySelectorAll('.je-arr-alerts-check')].some(b => b.textContent.startsWith(label)));
+  const box = [...host.querySelectorAll('.je-arr-alerts-check')].find(b => b.textContent.startsWith(label)).querySelector('input');
+  box.checked = false;
+  box.dispatchEvent(new h.window.Event('change'));
+  await until(() => h.calls.some(c => c.method === 'PUT' && c.body.approved === false));
+});
+
 test('the bell shows the unread count and an inbox with titles as text, Play for what is ready, and Mark all read', async t => {
   const h = setup(t);
   h.state.inbox = {

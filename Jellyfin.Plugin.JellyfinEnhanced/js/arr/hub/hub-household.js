@@ -329,7 +329,9 @@
                 li.appendChild(X.poster(request, 'je-household-poster'));
                 const words = X.el('div', 'je-household-request-body');
                 words.appendChild(X.el('div', 'je-household-request-title', X.titleText(request)));
-                words.appendChild(X.el('div', 'je-approval-meta', [X.scopeText(request), X.tr(`arr_household_state_${request.group === 'needsOk' ? 'waiting' : 'on_the_way'}`)].join(' · ')));
+                // Where the part asked for has got to (downloading, almost ready, ...) when the server says; else the request's state.
+                const state = request.group !== 'needsOk' && X.partText(request.partStatus);
+                words.appendChild(X.el('div', 'je-approval-meta', [X.scopeText(request), state || X.tr(`arr_household_state_${request.group === 'needsOk' ? 'waiting' : 'on_the_way'}`)].join(' · ')));
                 li.appendChild(words);
                 list.appendChild(li);
             }

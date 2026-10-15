@@ -334,8 +334,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 return new CopyState(StatusStage.NotOut, StatusReasonCode.NotReleased, Date: date, DateIsDay: true);
             }
             if (copy.QueueUnknown) return Unknown();
-            var since = Latest(Latest(Valid(movie.Added), Valid(movie.DigitalRelease) is DateTime d && d <= c.Now ? d : null), SentFor(request, copy, null, null, c));
-            return Looking(since, c, movie.LastSearchTime);
+            var sent = SentFor(request, copy, null, null, c);
+            var since = Latest(Latest(Valid(movie.Added), Valid(movie.DigitalRelease) is DateTime d && d <= c.Now ? d : null), sent);
+            return Looking(since, c, movie.LastSearchTime, sent.HasValue);
         }
 
         // ------------------------------------------------------------------ series, seasons, episodes
@@ -654,51 +655,74 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
-        /// The seasons a request asked for, by key (the Requests page): where those seasons have got
-        /// to rather than the whole series, so a request for a missing season of a series already in
-        /// Jellyfin isn't "Ready". Ready only when every requested season is (Sonarr's monitored
-        /// episodes of it all in Jellyfin, or, with no Sonarr copy, at least one of its episodes);
-        /// otherwise the seasons still to come decide the stage, and the request facts fill in when no
-        /// arr is working on them. Also returns when the newest episode of those seasons arrived.
-        /// <paramref name="series"/> is the whole-series status (its admin block is kept);
-        /// <paramref name="copies"/> are the series' Jellyfin copies as the viewer sees them: a family
-        /// member whose copies are all in libraries they can't open learns nothing from the Sonarr
-        /// copies that are (or may be) those (as <see cref="SeriesByKey"/>).
+        /// The seasons (and single episodes) a request asked for, by key (the Requests page): where those parts have got
+        /// to rather than the whole series, so a request for a missing season of a series already in Jellyfin isn't
+        /// "Ready". Ready only when every requested season is (Sonarr's monitored episodes of it all in Jellyfin, or,
+        /// with no Sonarr copy, at least one of its episodes) and every requested episode is in Jellyfin; otherwise the
+        /// parts still to come decide the stage, and the request facts fill in when no arr is working on them. Also
+        /// returns when the newest of those episodes arrived. <paramref name="episodes"/> are single episodes asked for
+        /// outside the requested seasons (their own state each, from Sonarr's episode list when it is in memory, else
+        /// from the queue). <paramref name="series"/> is the whole-series status (its admin block is kept);
+        /// <paramref name="copies"/> are the series' Jellyfin copies as the viewer sees them: a family member whose
+        /// copies are all in libraries they can't open learns nothing from the Sonarr copies that are (or may be)
+        /// those (as <see cref="SeriesByKey"/>).
         /// </summary>
-        public static (TitleStatus Status, DateTime? ArrivedAt) RequestedSeasons(TitleFacts facts, TitleStatus series, IReadOnlyList<int> seasons, IReadOnlyList<JfEpisode>? jfEpisodes, IReadOnlyList<JfCopy> copies, ComposeContext c, bool only4k = false)
+        public static (TitleStatus Status, DateTime? ArrivedAt) RequestedSeasons(TitleFacts facts, TitleStatus series, IReadOnlyList<int> seasons, IReadOnlyList<JfEpisode>? jfEpisodes, IReadOnlyList<JfCopy> copies, ComposeContext c, bool only4k = false, IReadOnlyList<(int Season, int Episode)>? episodes = null)
         {
             var (visibleEpisodes, hidden) = SplitHidden(jfEpisodes, null);
             var wanted = new HashSet<int>(seasons);
-            var real = (visibleEpisodes ?? Array.Empty<JfEpisode>()).Where(e => !e.Virtual && wanted.Contains(e.Season)).ToList();
-            var arrived = real.Select(e => e.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max();
+            var all = visibleEpisodes ?? Array.Empty<JfEpisode>();
+            var real = all.Where(e => !e.Virtual && wanted.Contains(e.Season)).ToList();
+            // Single episodes outside the requested seasons, with the Jellyfin episode that has each (if any).
+            var picked = (episodes ?? Array.Empty<(int Season, int Episode)>()).Where(p => !wanted.Contains(p.Season)).Distinct()
+                .Select(p => (Part: p, Have: all.FirstOrDefault(e => !e.Virtual && e.Season == p.Season && new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(p.Episode))))
+                .ToList();
+            var arrived = real.Select(e => e.DateCreated).Concat(picked.Where(p => p.Have != null).Select(p => p.Have!.DateCreated))
+                .Where(d => d.HasValue).DefaultIfEmpty(null).Max();
             var copy = SeriesCopyForViewer(facts, copies, c);
             CopyState state;
             StatusSummary? summary = null;
             if (copy == null)
             {
-                state = wanted.All(n => real.Any(e => e.Season == n))
+                state = wanted.All(n => real.Any(e => e.Season == n)) && picked.All(p => p.Have != null)
                     ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: arrived)
                     : ApplyRequest(NothingKnown(facts), facts.Request, c, facts);
             }
             else
             {
-                var per = wanted.OrderBy(n => n).Select(n => copy.Episodes != null
-                    ? Summarize(EpisodeStates(copy, n, visibleEpisodes, c, hidden, facts.Request).Select(e => (e.State, e.Arr, n, e.Episode)).ToList(), c)
-                    : SeasonFromStats(copy, n, visibleEpisodes, c, hidden)).ToList();
+                // Per requested season: its episodes' states (when Sonarr's list is in memory) and their summary.
+                var perStates = wanted.OrderBy(n => n).Select(n => copy.Episodes != null
+                    ? EpisodeStates(copy, n, visibleEpisodes, c, hidden, facts.Request).Select(e => (e.State, e.Arr, Season: n, e.Episode)).ToList()
+                    : null).ToList();
+                var per = wanted.OrderBy(n => n).Select((n, i) => perStates[i] is { } states ? Summarize(states, c) : SeasonFromStats(copy, n, visibleEpisodes, c, hidden)).ToList();
+                var singles = picked.Select(p =>
+                {
+                    var arr = copy.Episodes?.Find(p.Part.Season, p.Part.Episode);
+                    var one = p.Have != null
+                        ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: p.Have.DateCreated)
+                        : EpisodeFromArr(copy, p.Part.Season, p.Part.Episode, arr, c, facts.Request);
+                    return (State: one, Arr: arr, p.Part.Season, p.Part.Episode);
+                }).ToList();
                 var waiting = per.Where(x => SummaryStage(x) != StatusStage.Ready).ToList();
+                var singlesDone = singles.All(x => x.State.Stage == StatusStage.Ready);
+                if (!singlesDone) waiting.Add(Summarize(singles.Where(x => x.State.Stage != StatusStage.Ready).ToList(), c));
                 if (waiting.Count == 0)
                 {
-                    summary = Combine(per);
+                    summary = Combine(singles.Count > 0 ? per.Append(Summarize(singles, c)).ToList() : per);
                     state = new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: arrived);
                 }
                 else
                 {
                     summary = Combine(waiting);
                     var stage = SummaryStage(summary);
+                    // One download among the parts asked for: its progress (a single episode asked for reads "Downloading 40%").
+                    var downloads = perStates.Where(x => x != null).SelectMany(x => x!).Select(x => x.State).Concat(singles.Select(x => x.State))
+                        .Where(x => x.Stage == StatusStage.Downloading && x.Progress != null).Select(x => x.Progress!).ToList();
                     state = stage is StatusStage.None or StatusStage.Ready
                         // Nothing monitored, queued or aired there yet: the request says where it is.
                         ? ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored), facts.Request)
-                        : new CopyState(stage, SummaryReason(summary), Attention: summary.Attention > 0, Date: summary.NextAir, DateIsDay: summary.NextAirIsDay);
+                        : new CopyState(stage, SummaryReason(summary), Attention: summary.Attention > 0, Date: summary.NextAir, DateIsDay: summary.NextAirIsDay,
+                            Progress: stage == StatusStage.Downloading && downloads.Count == 1 ? downloads[0] : null);
                 }
             }
             var status = new TitleStatus
@@ -709,6 +733,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Reason = Reason(state),
                 Attention = state.Attention,
                 Quiet = state.Stage is StatusStage.Ready or StatusStage.None && !state.Attention,
+                Progress = state.Progress,
                 NextDate = state.Date,
                 NextDay = state.Day,
                 Summary = summary,
@@ -882,7 +907,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (air == null || NotYet(air.Value, arr.AirDateIsDay, c.Now)) return new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: air, DateIsDay: arr.AirDateIsDay);
             if (!arr.Monitored || copy.Series?.Monitored == false) return new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored);
             if (copy.QueueUnknown) return Unknown();
-            return Looking(Latest(Latest(air, Valid(copy.Series?.Added)), SentFor(request, copy, season, episode, c)), c, arr.LastSearchTime);
+            var sent = SentFor(request, copy, season, episode, c);
+            return Looking(Latest(Latest(air, Valid(copy.Series?.Added)), sent), c, arr.LastSearchTime, sent.HasValue);
         }
 
         // ------------------------------------------------------------------ queue
@@ -1532,10 +1558,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// (shown as Missing with a Search button) once nothing was grabbed for longer than LookingHours.
         /// <paramref name="lastSearch"/> is when the arr last searched for it (admin line), if it says.
         /// </summary>
-        private static CopyState Looking(DateTime? since, ComposeContext c, DateTime? lastSearch = null)
+        /// <summary>
+        /// Wanted and nothing grabbed yet: "looking", or missing for a long while (no release yet). <paramref name="sent"/>:
+        /// a request covering it already went out, so a household Search runs without a new request (and so without a new
+        /// OK): the missing state then says so in its <c>sent</c> parameter and the Search buttons read plain "Search".
+        /// </summary>
+        private static CopyState Looking(DateTime? since, ComposeContext c, DateTime? lastSearch = null, bool sent = false)
         {
             var longer = since.HasValue && c.Now - since.Value > TimeSpan.FromHours(c.LookingHours);
-            return new CopyState(StatusStage.Looking, longer ? StatusReasonCode.NoReleaseYet : StatusReasonCode.Looking, Since: since, LastSearch: Valid(lastSearch));
+            return new CopyState(StatusStage.Looking, longer ? StatusReasonCode.NoReleaseYet : StatusReasonCode.Looking, Since: since, LastSearch: Valid(lastSearch),
+                Params: longer && sent ? Params(("sent", "1")) : null);
         }
 
         /// <summary>

@@ -76,15 +76,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<string, int, CancellationToken, Task<HubTitleMeta?>> _tmdb;
         private readonly Func<DateTimeOffset> _now;
         private readonly IRequestPlaces? _places;
+        private readonly ArrStatusService? _status;
+
+        /// <summary>Most requests in one answer that get the status of their part (the rest show their request state).</summary>
+        public const int MaxPartStatuses = 60;
 
         /// <summary>Creates the projection over the shared TMDB cache (DI).</summary>
-        public RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases aliases, TmdbResponseCache tmdb, IServerConfigurationManager serverConfig, IRequestPlaces places)
-            : this(service, directory, aliases, (media, id, ct) => TmdbTitleAsync(tmdb, Region(serverConfig), media, id, ct), () => DateTimeOffset.UtcNow, places)
+        public RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases aliases, TmdbResponseCache tmdb, IServerConfigurationManager serverConfig, IRequestPlaces places, ArrStatusService status)
+            : this(service, directory, aliases, (media, id, ct) => TmdbTitleAsync(tmdb, Region(serverConfig), media, id, ct), () => DateTimeOffset.UtcNow, places, status)
         {
         }
 
-        /// <summary>Creates the projection with an explicit TMDB reader, clock and place facts (tests).</summary>
-        internal RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases? aliases, Func<string, int, CancellationToken, Task<HubTitleMeta?>> tmdb, Func<DateTimeOffset> now, IRequestPlaces? places = null)
+        /// <summary>Creates the projection with an explicit TMDB reader, clock, place facts and status service (tests; without one, no part statuses).</summary>
+        internal RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases? aliases, Func<string, int, CancellationToken, Task<HubTitleMeta?>> tmdb, Func<DateTimeOffset> now, IRequestPlaces? places = null, ArrStatusService? status = null)
         {
             _service = service;
             _directory = directory;
@@ -92,6 +96,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _tmdb = tmdb;
             _now = now;
             _places = places;
+            _status = status;
+        }
+
+        /// <summary>
+        /// Where exactly the part each request asks for has got to (movie and edition, seasons, single episodes), as
+        /// <paramref name="caller"/> may see it: the status the Requests page shows for it (waiting for an OK, OK'd,
+        /// looking, downloading, almost ready, ready). Requests on titles the caller may not ask about by key get
+        /// none; at most <see cref="MaxPartStatuses"/>. Never calls an arr except to read a series' episode list.
+        /// </summary>
+        /// <param name="wants">Requests (already filtered for the caller).</param>
+        /// <param name="caller">Who is looking.</param>
+        /// <param name="ct">Cancels the reads.</param>
+        internal async Task<Dictionary<string, TitleStatus>> PartStatusesAsync(IEnumerable<RequestWant> wants, StatusViewer caller, CancellationToken ct)
+        {
+            var result = new Dictionary<string, TitleStatus>(StringComparer.Ordinal);
+            if (_status == null) return result;
+            foreach (var want in wants.Take(MaxPartStatuses))
+            {
+                if (TitleKey.Parse(want.Input.Key) is not { } key) continue;
+                var title = key.ToString();
+                var scope = LedgerRequestFacts.ScopeOf(new[] { want }, want.UserId, () => _service.Ledger.Dispatches(title));
+                var composed = await _status.ComposeForAsync(caller, new[] { key }, new Dictionary<TitleKey, ArrStatusService.RequestScope> { [key] = scope }, ct, loadEpisodes: true).ConfigureAwait(false);
+                if (composed.Count > 0) result[want.Id] = composed[0].Status;
+            }
+            return result;
         }
 
         /// <summary>The request service this projection reads.</summary>
@@ -120,6 +149,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var more = shown.Count > MaxItems;
             shown = shown.Take(MaxItems).ToList();
             var meta = await MetaAsync(shown.Select(s => s.Want.Input.Key), caller, ct).ConfigureAwait(false);
+            var parts = await PartStatusesAsync(shown.Select(s => s.Want), caller, ct).ConfigureAwait(false);
             var estimates = Estimates(shown.Select(s => s.Want.Id));
             var people = new Dictionary<Guid, HouseholdPerson?>();
             HouseholdPerson? Person(Guid id) => people.TryGetValue(id, out var p) ? p : people[id] = _directory.Person(id);
@@ -145,8 +175,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var stuck = StuckReasons.Contains(w.Reason) || parked.Contains(w.Id);
                 var other = w.Input.Variant == "4k" ? w.Input with { Variant = "standard" } : w.Input with { Variant = "4k" };
                 var otherFacts = _service.Policy.Evaluate(caller.UserId, other);
+                // Only people who asked for the same part (an episode of another season isn't this request).
                 var alsoWanted = _service.Ledger.ForTitle(w.Input.Key)
-                    .Where(o => o.UserId != w.UserId && o.Status is "pending" or "queued" or "sent" or "stale")
+                    .Where(o => o.UserId != w.UserId && o.Status is "pending" or "queued" or "sent" or "stale" && o.Input.Overlaps(w.Input))
                     .Select(o => o.UserId).Distinct().Select(Person).Where(p => p != null && !p.Disabled)
                     .Select(p => p!.Name).Where(n => n.Length > 0).Distinct(StringComparer.Ordinal).Take(MaxAlsoWanted).ToArray();
                 // A 4K copy that is already here (administrators also get the 4K instance's name).
@@ -183,6 +214,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     space = place == null ? null : new { library = place.Library, freeGb = Math.Round(place.FreeBytes / 1_000_000_000.0, 1) },
                     already4k = fourK != null ? true : (bool?)null,
                     already4kIn = admin ? fourK : null,
+                    // Where the part asked for is (it may be on its way or here already through someone else's request).
+                    partStatus = parts.GetValueOrDefault(w.Id),
                     canApprove = viewer.CanApprove && s.Facts.CanApprove && (w.Input.Variant != "4k" || s.Facts.Can4k),
                     canSwitchVariant = viewer.CanApprove && otherFacts.CanApprove && (other.Variant != "4k" || otherFacts.Can4k),
                     admin = admin ? new { reason = w.Reason, jobs = _service.Ledger.ForWant(w.Id).Select(j => new { id = j.Id, state = j.State, attempts = j.Attempts, reason = j.Reason }).ToArray() } : null,

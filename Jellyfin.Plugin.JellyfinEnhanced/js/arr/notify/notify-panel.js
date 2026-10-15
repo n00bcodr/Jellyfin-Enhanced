@@ -183,6 +183,10 @@
         what.appendChild(el('h4', null, tr('arr_notify_panel_what')));
         what.appendChild(checkbox('arr_notify_pref_ready', 'arr_notify_pref_ready_desc', prefs.ready, on => save(host, { ready: on })));
         what.appendChild(checkbox('arr_notify_pref_episodes', 'arr_notify_pref_episodes_desc', prefs.episodes, on => save(host, { episodes: on })));
+        // Only while requests go through Jellyfin Enhanced (the server sends null otherwise).
+        if (prefs.approved !== null && prefs.approved !== undefined) {
+            what.appendChild(checkbox('arr_notify_pref_approved', null, prefs.approved, on => save(host, { approved: on })));
+        }
         what.appendChild(checkbox('arr_notify_pref_declined', null, prefs.declined, on => save(host, { declined: on })));
         what.appendChild(checkbox('arr_notify_pref_auto_follow', 'arr_notify_pref_auto_follow_desc', prefs.autoFollowRequests, on => save(host, { autoFollowRequests: on })));
         if (prefs.adminAlerts !== null && prefs.adminAlerts !== undefined) {

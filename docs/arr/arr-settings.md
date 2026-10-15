@@ -271,6 +271,10 @@ download *with* its data is never automatic and needs a one-time confirmation th
 | **Daily digest: downloads needing attention for at least (hours)** | 6 | Queue entries the app marks as a problem (import blocked, failed, warning) for at least this long (1-168) |
 | **Send the digest at (hour, server time)** | 9 | 0-23 |
 
+With phase 3 on, people also hear when a request of theirs is **OK'd** or **declined** in Jellyfin Enhanced (with the
+reason), through the bell, pop-ups, phone and e-mail like any alert (their own switches and quiet hours apply; a
+"A request of mine was OK'd" switch appears in "Requests & alerts"). Each is told once, even across restarts.
+
 Administrators are also told straight away, once per item, when Needs attention lists a download that needs a manual
 import (the app says import blocked) or a request Seerr OK'd that no Sonarr/Radarr has after the grace above. The
 low-disk alert uses **Low disk warning below** from the admin tools (at most once a day per root folder), so the alert
@@ -448,7 +452,7 @@ The advanced fields are server-owned. Quota and preset settings govern JE mode; 
 | `ArrRequestPendingLimit` | 10 | Pending requests per person |
 | `ArrRequestQuotaGb` | 0 | Optional estimated GB cap; zero disables it |
 | `ArrRequestChargeFutureSeasons` | true | Charge the owner of a "Keep getting new episodes" request once for each new season Sonarr monitors, once it starts (an aired episode or a file) |
-| `ArrRequestStaleDays` | 30 | Flag a sent but unfulfilled request for review; no automatic refund |
+| `ArrRequestStaleDays` | 30 | Flag a sent request that hasn't arrived for review; no automatic refund. A request whose part is in Jellyfin is marked fulfilled instead and never turns stale |
 | `ArrRequestRoles` | `{}` | Optional per-role `QuotaLimit`, `QuotaGb` and `FourKInstances` defaults |
 | `ArrRequestUsers` | `{}` | Per-user `Role`, `QuotaLimit`, `QuotaGb` and `FourKInstances` overrides |
 
@@ -465,7 +469,9 @@ estimates (it is not the arr's actual file size).
 | `ArrKidsHideSearch` | false | **Hide free-text search from Kids**: Kids don't get the search page's "Not in your library" row, and the search route refuses them. The Discover tab stays, limited to titles within their parental limits |
 
 Discover and the search row need request handling set to Jellyfin Enhanced and a TMDB API key; see
-[Discover and search (JE mode)](arr-features.md#discover-and-search-je-mode).
+[Discover and search (JE mode)](arr-features.md#discover-and-search-je-mode). In JE mode the search row replaces
+Seerr's (Seerr's **Show search results** setting no longer adds a second row), and Seerr's request buttons open
+Jellyfin Enhanced's request sheet.
 
 #### Household tab
 

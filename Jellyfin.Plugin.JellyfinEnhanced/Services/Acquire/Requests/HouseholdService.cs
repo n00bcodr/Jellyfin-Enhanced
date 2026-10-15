@@ -118,6 +118,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             var shownWants = open.Values.SelectMany(list => list.Where(w => Service.Policy.Evaluate(caller.UserId, w.Input).Visible).Take(MaxRequestsPerPerson)).ToList();
             var meta = await _hub.MetaAsync(shownWants.Select(w => w.Input.Key), caller, ct).ConfigureAwait(false);
+            // Where each shown request's part has got to (downloading, almost ready, ...), not just "on the way".
+            var parts = await _hub.PartStatusesAsync(shownWants, caller, ct).ConfigureAwait(false);
             var shownIds = shownWants.Select(w => w.Id).ToHashSet(StringComparer.Ordinal);
             var list = people.Select(p =>
             {
@@ -149,6 +151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             episodes = w.Input.Episodes.Select(e => new { season = e.Season, episode = e.Episode }).ToArray(),
                             status = w.Status,
                             group = RequestHubProjection.Group(w.Status),
+                            partStatus = parts.GetValueOrDefault(w.Id),
                             createdAt = w.CreatedAt,
                             title = title.Title,
                             year = title.Year,

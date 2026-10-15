@@ -206,6 +206,31 @@
         }
     }
 
+    /** Stages a request's own state already says: a part in one of them needs no pill of its own. */
+    const OWN_STAGES = new Set(['asked', 'notHere', 'none']);
+
+    /**
+     * Where the part a request asks for has got to, in family words ("Downloading · 45%", "Ready"), or ''
+     * when the server sent no status for it.
+     * @param {Object|null|undefined} status The part's status (a request's partStatus).
+     * @returns {string} Text.
+     */
+    function partText(status) {
+        if (!status || typeof JE.arrStatus?.familyText !== 'function') return '';
+        return JE.arrStatus.familyText(status, { contact: contact() });
+    }
+
+    /**
+     * The status pill of the part a request asks for (without administrators' lines or a journey), or null when
+     * there is none or it says no more than the request's own state (waiting for an OK, not here yet).
+     * @param {Object|null|undefined} status The part's status (a request's partStatus).
+     * @returns {HTMLElement|null} Pill.
+     */
+    function partPill(status) {
+        if (!status || OWN_STAGES.has(status.stage) || typeof JE.arrStatus?.buildPill !== 'function') return null;
+        return JE.arrStatus.buildPill({ ...status, admin: null, journey: null }, { contact: contact() });
+    }
+
     /**
      * "2 h ago" for an ISO date ('' when unknown).
      * @param {string} iso ISO date.
@@ -328,7 +353,7 @@
 
     Object.assign(X, {
         tr, el, icon, button, busy, epoch, intent, call, capabilities, approver, isAdmin, contact,
-        scopeText, ago, poster, titleText, isTv, focusedId, restoreFocus, follow, userKey
+        scopeText, ago, poster, titleText, isTv, focusedId, restoreFocus, follow, userKey, partText, partPill
     });
     H.extraTabs = H.extraTabs || [];
     H.starters = H.starters || [];

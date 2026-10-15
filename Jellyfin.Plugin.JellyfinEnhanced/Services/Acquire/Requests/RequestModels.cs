@@ -50,6 +50,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
         internal IEnumerable<int> SeasonNumbers => Scope == "episodes" ? Episodes.Select(e => e.Season).Distinct() : Seasons;
         internal bool Covers(RequestEpisode episode) => Seasons.Contains(episode.Season) || Episodes.Contains(episode);
+        /// <summary>
+        /// True when two inputs ask for some of the same part of a title in the same edition: the movie; a season both
+        /// name (whole seasons, next season, "keep getting"); an episode one names in a season the other names whole;
+        /// an episode both name.
+        /// </summary>
+        internal bool Overlaps(MutationInput other)
+        {
+            if (Key != other.Key || Variant != other.Variant) return false;
+            if (Scope == "movie" || other.Scope == "movie") return Scope == other.Scope;
+            if (Scope == "episodes" && other.Scope == "episodes") return Episodes.Intersect(other.Episodes).Any();
+            if (Scope == "episodes") return Episodes.Any(e => other.Seasons.Contains(e.Season));
+            if (other.Scope == "episodes") return other.Episodes.Any(e => Seasons.Contains(e.Season));
+            return Seasons.Intersect(other.Seasons).Any() || (Scope == "future" && other.Scope == "future");
+        }
         internal MutationInput? Extra(IEnumerable<MutationInput> covered)
         {
             var all = covered.Where(c => c.Key == Key && c.Variant == Variant && (InstanceId == null || c.InstanceId == null || c.InstanceId == InstanceId)).ToArray();

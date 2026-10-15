@@ -318,14 +318,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         {
             var generation = _db.Generation;
             var result = new List<DueDelivery>();
-            using var cmd = Command(c, null, @"SELECT d.id, d.notification_id, n.user_id, d.channel, d.attempts, n.kind, n.title_key, n.item_id, n.payload, n.created_at
+            using var cmd = Command(c, null, @"SELECT d.id, d.notification_id, n.user_id, d.channel, d.attempts, n.kind, n.title_key, n.item_id, n.payload, n.created_at, n.event_key
 FROM deliveries d JOIN notifications n ON n.id = d.notification_id
 WHERE d.status='pending' AND d.next_at <= $n ORDER BY d.next_at LIMIT $l", ("$n", Ms(now)), ("$l", limit));
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
                 if (!Guid.TryParse(r.GetString(2), out var user)) continue;
-                result.Add(new DueDelivery(r.GetInt64(0), r.GetInt64(1), user, r.GetString(3), r.GetInt32(4), r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7), r.GetString(8), At(r.GetInt64(9)), generation));
+                result.Add(new DueDelivery(r.GetInt64(0), r.GetInt64(1), user, r.GetString(3), r.GetInt32(4), r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7), r.GetString(8), At(r.GetInt64(9)), generation, r.IsDBNull(10) ? null : r.GetString(10)));
             }
             return (IReadOnlyList<DueDelivery>)result;
         });
@@ -803,6 +803,13 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// </summary>
         public static string EpisodeSeriesMark(string titleKey, Guid? seriesItem)
             => "ep-series|" + titleKey + "|" + (seriesItem?.ToString("N", CultureInfo.InvariantCulture) ?? string.Empty);
+
+        /// <summary>
+        /// Takes a request ledger notice (phase 3) in this transaction: true when it was still there (it is gone
+        /// after the commit), so the notification it becomes and its removal commit together.
+        /// </summary>
+        public bool TakeRequestNotice(string id)
+            => NotifyStore.Exec(Connection, Transaction, "DELETE FROM request_notices WHERE id=$id", ("$id", id)) == 1;
 
         /// <summary>Adds a notification and its deliveries; null when the user already has one for <paramref name="eventKey"/>.</summary>
         public long? Add(Guid userId, string eventKey, string kind, string? titleKey, string? itemId, IReadOnlyDictionary<string, string> payload, IReadOnlyList<(string Channel, DateTimeOffset At)> deliveries, DateTimeOffset now)

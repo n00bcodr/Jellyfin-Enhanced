@@ -26,6 +26,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>Your request was declined.</summary>
         public const string Declined = "declined";
 
+        /// <summary>Your request was OK'd (Jellyfin Enhanced's own requests, phase 3), or is on its way with someone else's.</summary>
+        public const string Approved = "approved";
+
         /// <summary>Admin: a new request waits for an OK.</summary>
         public const string Approval = "approval";
 
@@ -89,6 +92,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>Tell me when a request of mine is declined.</summary>
         public bool Declined { get; set; } = true;
+
+        /// <summary>Tell me when a request of mine is OK'd (requests Jellyfin Enhanced handles).</summary>
+        public bool Approved { get; set; } = true;
 
         /// <summary>Administrators: send admin alerts (approvals, outages, low disk, stuck digest, reminders) to my phone/e-mail too.</summary>
         public bool AdminAlerts { get; set; } = true;
@@ -171,7 +177,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
     /// <summary>A delivery that is due.</summary>
     /// <remarks><paramref name="Generation"/>: the database generation the row was read under (a restore makes its id meaningless).</remarks>
-    internal sealed record DueDelivery(long Id, long NotificationId, Guid UserId, string Channel, int Attempts, string Kind, string? TitleKey, string? ItemId, string Payload, DateTimeOffset CreatedAt, long Generation = 0);
+    internal sealed record DueDelivery(long Id, long NotificationId, Guid UserId, string Channel, int Attempts, string Kind, string? TitleKey, string? ItemId, string Payload, DateTimeOffset CreatedAt, long Generation = 0, string? EventKey = null);
 
     /// <summary>An episode number and its visible file at batch flush, rechecked at delivery.</summary>
     internal sealed record NotifyEpisode(Guid ItemId, int Season, int Episode);

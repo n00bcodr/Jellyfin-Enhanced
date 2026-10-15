@@ -334,7 +334,7 @@ test('the System tab shows live state, health, tasks, Seerr, the bridge and the 
   assert.match(problem('/movies'), /^Another instance has the same folder and neither maps it · Users who aren't administrators/);
   assert.equal(problem('/data/kids'), 'OK');
   assert.match(text, /Sintel: expected at \/data\/movies\/Sintel, Jellyfin has it at \/rigmedia\/movies\/Sintel/);
-  assert.match(text, /1 titles have files in Sonarr\/Radarr but aren't in Jellyfin at all/);
+  assert.match(text, /1 title has files in Sonarr\/Radarr but isn't in Jellyfin at all/);
   page.querySelector('.je-ops-bridge .je-ops-item .je-ops-btn').click();
   await until(() => posts.length === 1);
   assert.deepEqual([posts[0].path, posts[0].body.instanceId, posts[0].body.path], ['/arr/admin/bridge/scan', 's1', '/data/tv/Firefly/Season 01/E5.mkv']);

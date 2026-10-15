@@ -219,10 +219,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// page when <paramref name="scopes"/> name the part asked for. Titles the viewer may not ask
         /// about by key are left out. Never calls an arr.
         /// </summary>
-        internal async Task<IReadOnlyList<KeyedStatus>> ComposeForAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, IReadOnlyDictionary<TitleKey, RequestScope>? scopes, CancellationToken cancellationToken)
+        internal async Task<IReadOnlyList<KeyedStatus>> ComposeForAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, IReadOnlyDictionary<TitleKey, RequestScope>? scopes, CancellationToken cancellationToken, bool loadEpisodes = false)
         {
             var titles = keys.Select(k => k.Title).Distinct().ToList();
-            var gather = await GatherAsync(viewer, titles, loadEpisodes: null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            // Series scoped to seasons or episodes are judged by Sonarr's episode list (read when it isn't in memory).
+            var gather = await GatherAsync(viewer, titles, loadEpisodes: loadEpisodes ? EpisodeScoped(titles, scopes) : null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
             var result = new List<KeyedStatus>();
             foreach (var title in titles)
             {
@@ -232,6 +233,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             return result;
         }
+
+        /// <summary>The series among <paramref name="titles"/> whose scope names seasons or episodes.</summary>
+        private static List<TitleKey> EpisodeScoped(IEnumerable<TitleKey> titles, IReadOnlyDictionary<TitleKey, RequestScope>? scopes)
+            => titles.Where(t => !t.IsMovie && scopes != null && scopes.TryGetValue(t, out var s) && (s.Seasons.Count > 0 || s.Episodes?.Count > 0)).ToList();
 
         /// <summary>
         /// Whether a viewer may follow a title ("Notify me"): exactly when they may read its status by
@@ -337,8 +342,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// One title composed by key for <see cref="ForTitlesAsync"/>: its status and the Jellyfin copy
         /// the viewer can open, if any. <paramref name="Scoped"/>: the status is of the part asked for
         /// (<see cref="RequestScope"/>), and <paramref name="ArrivedAt"/> is when that part arrived.
+        /// <paramref name="Guessed"/>: a requested season reads Ready without Sonarr's episode list (no Sonarr copy could
+        /// be judged while a Sonarr couldn't be read, or a copy's list couldn't be read and only its season counts were
+        /// there): fine to show, not enough to close a request on.
         /// </summary>
-        internal sealed record KeyedStatus(TitleKey Key, TitleStatus Status, JfCopy? Visible, bool Scoped = false, DateTime? ArrivedAt = null);
+        internal sealed record KeyedStatus(TitleKey Key, TitleStatus Status, JfCopy? Visible, bool Scoped = false, DateTime? ArrivedAt = null, bool Guessed = false);
 
         /// <summary>
         /// The part of a title a request asked for: series seasons (none: the whole title, or the
@@ -355,11 +363,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// scopes only), used for Play when it is a copy the viewer can open; a 4K scope never falls
         /// back to the standard copy.
         /// </remarks>
-        internal sealed record RequestScope(IReadOnlyList<int> Seasons, bool Only4k, RequestFacts? Request, bool Available = false, DateTime? AvailableAt = null, Guid? JellyfinItemId = null)
+        internal sealed record RequestScope(IReadOnlyList<int> Seasons, bool Only4k, RequestFacts? Request, bool Available = false, DateTime? AvailableAt = null, Guid? JellyfinItemId = null, IReadOnlyList<(int Season, int Episode)>? Episodes = null)
         {
             /// <summary>A stable text form (part of the cache key; the request facts follow the read model's revision).</summary>
             public override string ToString() => string.Join(".", Seasons) + (Only4k ? "4k" : string.Empty) + (Available ? "a" : string.Empty)
-                + (JellyfinItemId is Guid id ? "@" + id.ToString("N", CultureInfo.InvariantCulture) : string.Empty);
+                + (JellyfinItemId is Guid id ? "@" + id.ToString("N", CultureInfo.InvariantCulture) : string.Empty)
+                + (Episodes is { Count: > 0 } picked ? "e" + string.Join(".", picked.Select(p => p.Season.ToString(CultureInfo.InvariantCulture) + "x" + p.Episode.ToString(CultureInfo.InvariantCulture))) : string.Empty);
         }
 
         /// <summary>The copy Seerr matched a 4K request to, when it is one the viewer can open (else null).</summary>
@@ -371,10 +380,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// the status bodies: <paramref name="what"/> names everything else the body depends on.
         /// Titles the viewer may not ask about by key are left out. Never calls an arr.
         /// </summary>
-        internal async Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null)
+        internal async Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null)
         {
             var titles = keys.Select(k => k.Title).Distinct().ToList();
-            var gather = await GatherAsync(viewer, titles, loadEpisodes: null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            var gather = await GatherAsync(viewer, titles, loadEpisodes: loadEpisodes, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
             RequestScope? ScopeOf(TitleKey t) => scopes != null && scopes.TryGetValue(t, out var scope) ? scope : null;
             var cacheKey = CacheKey(viewer, route, what + "|" + string.Join(",", titles.Select(t => t + (ScopeOf(t) is { } scope ? "@" + scope : string.Empty))), gather.Revision);
             if (Cache.Get(cacheKey) is { } hit) return hit;
@@ -415,7 +424,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 return whole with { Status = WithLiveKey(status, facts), Visible = shown ?? SeerrCopy(scope, copies), Scoped = true, ArrivedAt = arrived };
             }
             var seasons = scope.Seasons;
-            if (!whole.Key.IsMovie && scope.Only4k && seasons.Count == 0)
+            var picked = scope.Episodes ?? Array.Empty<(int Season, int Episode)>();
+            if (!whole.Key.IsMovie && scope.Only4k && seasons.Count == 0 && picked.Count == 0)
             {
                 seasons = StatusComposer.FourKOnly(facts).Copies.Where(x => x.Series != null)
                     .SelectMany(x => x.Series!.Seasons).Where(s => s.Monitored && s.SeasonNumber > 0)
@@ -426,7 +436,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     return whole with { Status = WithLiveKey(only, facts), Visible = SeerrCopy(scope, copies), Scoped = true, ArrivedAt = at };
                 }
             }
-            if (!whole.Key.IsMovie && seasons.Count > 0)
+            if (!whole.Key.IsMovie && (seasons.Count > 0 || picked.Count > 0))
             {
                 // A 4K request is followed (and "no 4K Sonarr has it" judged) through the 4K Sonarrs only.
                 if (scope.Only4k) facts = StatusComposer.FourKOnly(facts);
@@ -442,9 +452,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     if (mine.Count == 0 && shown != null) mine = new List<JfCopy> { shown };
                 }
                 var episodes = shown != null ? _view.Episodes(shown.ItemId, null, viewer, includeVirtual: false) : null;
-                var (status, arrived) = StatusComposer.RequestedSeasons(facts, whole.Status, seasons, episodes, mine, c, scope.Only4k);
+                var (status, arrived) = StatusComposer.RequestedSeasons(facts, whole.Status, seasons, episodes, mine, c, scope.Only4k, picked);
+                // A requested season read Ready without Sonarr's episode list: with no Sonarr copy while a Sonarr (that
+                // may hold it) couldn't be read ("one episode of each requested season is here"), or from a copy whose
+                // list couldn't be read (its season counts, which miss episodes it doesn't monitor yet).
+                var guessed = status.Stage == StatusStage.Ready && seasons.Count > 0
+                    && ((facts.Unreadable.Count > 0 && !facts.Copies.Any(x => x.Series != null)) || facts.Copies.Any(x => x.Series != null && x.Episodes == null));
                 // A 4K scope never falls back to the standard copy (Play would open the HD item).
-                return whole with { Status = WithLiveKey(status, facts), Visible = scope.Only4k ? shown : shown ?? whole.Visible, Scoped = true, ArrivedAt = arrived };
+                return whole with { Status = WithLiveKey(status, facts), Visible = scope.Only4k ? shown : shown ?? whole.Visible, Scoped = true, ArrivedAt = arrived, Guessed = guessed };
             }
             return whole;
         }

@@ -281,7 +281,14 @@ Settings: [*arr Settings](arr-settings.md#notifications-phase-2).
   asked for, gathered per series for 10 minutes from the first one ("Severance: 3 new episodes ready"; a whole season
   at once reads "Season 2 is ready" when Sonarr says that is all of it; only numbers, never an episode's name, so
   nothing is spoiled; a 4K request hears about the 4K copy's episodes only, and with no 4K Sonarr set up in
-  Jellyfin Enhanced only about the copy Seerr matched it to, never the standard copy); a request of yours **declined**. Following
+  Jellyfin Enhanced only about the copy Seerr matched it to, never the standard copy); a request of yours **declined**
+  (with the reason given) and, for requests Jellyfin Enhanced handles (phase 3), a request of yours **OK'd** ("Dad
+  OK'd Firefly S1E4"; "… is on its way" when someone else's request covered it). In JE mode your requests are
+  followed like Seerr requests are in Seerr mode: Ready and new episodes are told for exactly the part you asked for
+  (a single episode, not the rest of its season), each edition by its own copy (a 4K request made after the standard
+  copy arrived is told when the 4K copy arrives), and what arrived after you asked is told even when Jellyfin was
+  restarted before it first looked. Turning **Following** off for one mutes it. An OK held by
+  quiet hours isn't sent once the request was cancelled or declined meanwhile. Following
   something that is already there tells you nothing; each thing is told once (once per Jellyfin item, whichever id it
   is known by), even across restarts, and told again if you ask for it again after it was removed; a title you can
   no longer open by the time a batch goes out is left out (a series followed under two ids, even for different
@@ -821,7 +828,21 @@ discovery and search row stay as they are, and neither of these appears.
   "Because you watched …" (recommendations for up to three titles you watched lately; the row is left out when there
   are none). Rows scroll sideways on wider screens and become a two-column grid on phones; **More** loads the next page.
 - **Not in your library** row on Jellyfin's search page: while you type, the titles you don't have yet are shown after
-  Jellyfin's own Movies and Shows rows. It only appears when Seerr's search row is off.
+  Jellyfin's own Movies and Shows rows. In JE mode it replaces Seerr's search row, so it shows even when Seerr's
+  search results are switched on (Seerr's row isn't drawn then, and there is never a second row).
+
+**Seerr's request buttons in JE mode.** Seerr no longer takes requests once Jellyfin Enhanced handles them, so every
+Seerr-style **Request** control Jellyfin Enhanced draws opens Jellyfin Enhanced's own request sheet for that title
+instead: search and Discover cards, the request buttons and season picker of Seerr's details window, the
+recommendation, collection and person rows, and Home Screen Sections' discover cards. Movies are asked for with one
+tap unless the sheet is needed (the button then reads *Asked!*); series open the sheet with their seasons and
+episodes (afterwards the button reads **Request more** and opens the sheet again for the rest); the 4K buttons and
+the 4K menu ask for the 4K copy. A collection's **Request** lists the collection's movies (the ones already in your
+library can't be ticked) and asks Jellyfin Enhanced for each ticked one, then says what happened ("Asked
+for 2 · 1 waits for Dad's OK"). Up to 20 can be asked for at a time: with more than that missing, the first 20 are
+ticked, a note says so, and no more can be ticked until one is unticked. Seerr's own request windows (with its servers, profiles and folders) are never shown
+in JE mode, and Seerr's "only Seerr results" search filter (double-tap on its icon) does nothing there. In Seerr mode
+every Seerr control behaves as before.
 
 Each card shows the poster, title and year, a state chip (**In your library**, **Asked!**, **Waiting for OK** or
 **Someone asked**, always with an icon and words) and a **Request** button. People whose asks wait for an OK
@@ -861,7 +882,8 @@ lists requests made through Jellyfin Enhanced.
 - **Approvals** shows one card per request waiting for an OK on titles the approver can see: poster, title, who asked
   and when, what they asked for (Movie, Season 2, S2E8), their role and how much of their request limit they have used.
   For someone with a parental limit the card shows the title's rating against it ("G · within Leo's limit"). It also
-  lists who else wants the title, an **Over quota** chip, a size estimate when one is known, the free space where it
+  lists who else asked for the same part (an episode of another season doesn't count), where that part already is
+  when it is on its way or here through someone else's request, an **Over quota** chip, a size estimate when one is known, the free space where it
   would land ("Movies drive: 1.2 TB free": the Jellyfin library name, never a folder) and **Already in 4K** when a 4K
   copy is already there (administrators see which 4K Radarr/Sonarr has it). **Approve** and
   **Decline** are always buttons. Decline offers reasons ("Not for kids", "We have something similar", "Too big right
@@ -873,11 +895,23 @@ lists requests made through Jellyfin Enhanced.
   for Admins ("Stuck · their access changed since the OK"); the reason code is under the card's **Details**. A Manager who can't approve a card (such as a Seerr-mode Manager without Seerr's request-management
   permission) sees it read-only.
 - **Household** lists the people who share at least one library with a Manager (everyone, for Admins), each with
-  their role, request use and open requests. Admins can also set each person's role and request limit, the house rules
+  their role, request use and open requests, each saying where it has got to (*Downloading 45%*, *Almost ready*, ...). Admins can also set each person's role and request limit, the house rules
   (who needs an OK, the role for everyone else, the household limit and per-role limits) and see who may ask for 4K.
   **Save** asks for a confirmation first. Jellyfin administrators are always Admin; nobody can be made Admin here.
 - **My requests** adds your own requests to the list, one row per title, grouped like the existing rows. Requests not
-  sent yet have **Cancel**.
+  sent yet have **Cancel**. In JE mode each row follows where exactly the part you asked for is, the way Seerr
+  requests do in Seerr mode: *Waiting for OK*, *OK'd*, *Looking*, *Downloading 45%*, *Almost ready*, then **Ready**
+  with **Play** (and under Ready for two weeks), judged by that movie or edition, those seasons or those episodes only
+  (an episode you asked for isn't "Ready" because others of its season are). A title asked for in both editions
+  follows one at a time: the edition still waited for (the standard one first), so a 4K request after the standard
+  copy arrived reads where the 4K copy is, not Ready. **Coming soon** lists them too. Rows update live.
+- **Arrival**: once what a request asks for is in Jellyfin (for the person who asked, with their library access and
+  parental limits), the request is marked fulfilled, so it reads Ready everywhere and is never marked stale; a
+  request whose part arrives another way while it still waits for an OK is closed the same way and gives its allowance
+  back. "Just new episodes from now on" requests never end. A season is only judged with Sonarr's episode list: while
+  Sonarr or its episode list can't be read, the episodes in Jellyfin don't close a season request (it is looked at
+  again later). Every
+  open request is looked at in turn (every ten minutes, a page at a time), besides at once when its title changes.
 - **Home chip bar**: Managers and Admins see "3 need your OK · 1 stuck" above the home rows when something is
   waiting. The chips open the Approvals tab; the stuck chip shows only the stuck requests. The bar follows live
   updates and is hidden when nothing is waiting.

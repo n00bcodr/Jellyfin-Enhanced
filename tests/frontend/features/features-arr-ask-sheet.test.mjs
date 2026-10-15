@@ -218,6 +218,23 @@ test('series cards show what each costs from the quota projection', async t => {
   assert.deepEqual(h.toasts, ["Asked! We'll let you know."]);
 });
 
+test('one episode reads "1 episode", in the header and the season picker', async t => {
+  const h = setup(t);
+  h.Sheet.open({ key: 'tv:tvdb:1', kind: 'series', name: 'A Short', seasons: [{ season: 1, episodes: 1, have: 0 }], latestSeason: 1 });
+  await settle();
+  assert.equal(h.document.querySelector('.je-sheet-facts').textContent, '1 season · 1 episode');
+  h.Sheet.close();
+  h.Sheet.open({ key: 'tv:tvdb:2', kind: 'series', name: 'Two Shorts', seasons: [{ season: 1, episodes: 1, have: 0 }, { season: 2, episodes: 0, have: 0 }], latestSeason: 2 });
+  await settle();
+  assert.equal(h.document.querySelector('.je-sheet-facts').textContent, '2 seasons · 1 episode');
+  h.Sheet.close();
+  h.Sheet.open({ key: 'tv:tvdb:3', kind: 'series', name: 'Pilot', seasons: [{ season: 1, episodes: 1, have: 0 }, { season: 2, episodes: 3, have: 0 }], latestSeason: 2 });
+  await settle();
+  click(h, card(h, 'pick'));
+  assert.deepEqual([...h.document.querySelectorAll('.je-sheet-pick .je-sheet-check-facts')].map(x => x.textContent), ['1 episode', '3 episodes']);
+  h.Sheet.close();
+});
+
 test('next season, future and the pickers send the scope the card names', async t => {
   const h = setup(t, { quota: { used: 0, limit: null, remaining: null, available: true } });
   const asks = [];
@@ -652,6 +669,44 @@ const LONG_MISSING_EPISODE = {
   key: 'tv:tvdb:371980:s3:e5', itemId: 'e5', kind: 'episode', stage: 'looking', reason: { code: 'no_release_yet' }
 };
 const ADMIN_BLOCK = { variants: [{ instance: 'Sonarr', instanceId: 'son1', kind: 'Sonarr', role: 'standard', stage: 'looking', reason: { code: 'no_release_yet' }, fix: 'search_now' }] };
+
+test('a Kid\'s Search of an episode requests already sent reads plain Search and runs with no new OK', async t => {
+  const h = setup(t, {
+    html: PAGE, hash: '#/details?id=e5', me: KID,
+    routes: (method, path) => (method === 'POST' && path === '/acquire/requests/search' ? { status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searching.', found: false } } : null)
+  });
+  const page = h.document.getElementById('itemDetailPage');
+  // The missing status says a request covering it already went out.
+  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, reason: { code: 'no_release_yet', params: { sent: '1' } } }, {});
+  await settle();
+  const search = page.querySelector('.je-ask-action');
+  assert.equal(search.textContent, 'searchSearch');
+  click(h, search);
+  await settle(20);
+  assert.equal(h.searches.length, 1, 'the family Search runs');
+  assert.equal(h.posts.length, 0, 'no new ask, so nothing waits for an OK');
+  // Helper: only a caller whose asks wait for an OK, on a part nothing has gone out for, gets "Ask Dad to search".
+  assert.equal(h.JE.arrAsk.searchAsksFirst(KID, LONG_MISSING_EPISODE), true);
+  assert.equal(h.JE.arrAsk.searchAsksFirst(KID, { ...LONG_MISSING_EPISODE, reason: { code: 'no_release_yet', params: { sent: '1' } } }), false);
+  assert.equal(h.JE.arrAsk.searchAsksFirst(MEMBER, LONG_MISSING_EPISODE), false);
+});
+
+test('the request controls\' Search on a movie requests already sent reads plain Search for a Kid', async t => {
+  const h = setup(t, { me: KID });
+  const host = h.document.createElement('div');
+  h.document.body.appendChild(host);
+  const controls = h.Sheet.mount(host, { key: 'movie:tmdb:1084242', kind: 'movie', name: 'Toy Story 5' });
+  controls.update({ key: 'movie:tmdb:1084242', kind: 'movie', stage: 'looking', reason: { code: 'no_release_yet', params: { sent: '1' } } });
+  await settle(20);
+  const button = host.querySelector('.je-ask-mount-search');
+  assert.ok(button, 'a Search button');
+  assert.match(button.textContent, /Search$/);
+  assert.doesNotMatch(button.textContent, /Ask Dad/);
+  controls.update({ key: 'movie:tmdb:1084242', kind: 'movie', stage: 'looking', reason: { code: 'no_release_yet' } });
+  await settle(20);
+  assert.match(host.querySelector('.je-ask-mount-search').textContent, /Ask Dad to search/);
+  controls.destroy();
+});
 
 test('an episode missing for a long while: Search; a Kid asks Dad, a member asks, a fresh one keeps Get it', async t => {
   const h = setup(t, { html: PAGE, hash: '#/details?id=e5', me: KID });

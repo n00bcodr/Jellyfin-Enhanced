@@ -9,7 +9,7 @@
     'use strict';
 
     const CSS = `
-.je-sheet-backdrop { position: fixed; inset: 0; z-index: 1100; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; padding: 1em; }
+.je-sheet-backdrop { position: fixed; inset: 0; z-index: 12000; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; padding: 1em; }
 .je-sheet { position: relative; background: #202124; color: #eee; border-radius: 14px; width: 100%; max-width: 32em; max-height: 90vh; overflow: auto;
   padding: 1.1em 1.3em 1.2em; box-shadow: 0 10px 40px rgba(0,0,0,0.55); box-sizing: border-box; }
 .je-sheet-handle { display: none; width: 3em; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.3); margin: 0 auto 0.9em; }

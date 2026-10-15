@@ -472,7 +472,8 @@
         const seasons = seasonsOf(title);
         if (!seasons.length) return Number.isInteger(title.year) ? String(title.year) : '';
         const episodes = seasons.reduce((n, s) => n + s.episodes, 0);
-        return seasons.length === 1 ? tr('arr_sheet_series_facts_one', { episodes }) : tr('arr_sheet_series_facts', { seasons: seasons.length, episodes });
+        if (seasons.length === 1) return episodes === 1 ? tr('arr_sheet_series_facts_one_one') : tr('arr_sheet_series_facts_one', { episodes });
+        return episodes === 1 ? tr('arr_sheet_series_facts_episode_one', { seasons: seasons.length }) : tr('arr_sheet_series_facts', { seasons: seasons.length, episodes });
     }
 
     /**
@@ -549,7 +550,7 @@
             });
             label.appendChild(box);
             label.appendChild(el('span', 'je-sheet-check-label', tr('arr_sheet_season', { season: s.season })));
-            const facts = complete(s) ? tr('arr_sheet_season_all_here') : s.asked ? tr('arr_sheet_season_asked') : s.have > 0 && s.episodes > 0 ? tr('arr_sheet_season_have', { have: s.have, episodes: s.episodes }) : s.episodes > 0 ? tr('arr_sheet_season_count', { episodes: s.episodes }) : '';
+            const facts = complete(s) ? tr('arr_sheet_season_all_here') : s.asked ? tr('arr_sheet_season_asked') : s.have > 0 && s.episodes > 0 ? tr('arr_sheet_season_have', { have: s.have, episodes: s.episodes }) : s.episodes > 0 ? (s.episodes === 1 ? tr('arr_sheet_season_count_one') : tr('arr_sheet_season_count', { episodes: s.episodes })) : '';
             if (facts) label.appendChild(el('span', 'je-sheet-check-facts', facts));
             panel.appendChild(label);
         }
@@ -668,7 +669,8 @@
             state.note.appendChild(icon('hourglass_empty', 'je-sheet-note-icon'));
             const day = quota?.nextSlotAt ? JE.arrStatus.formatDate(quota.nextSlotAt) : '';
             const text = caps.backend === 'seerr' ? quotaText(quota)
-                : day ? tr('arr_sheet_over_quota', { limit: quota.limit, day }) : tr('arr_sheet_over_quota_noday', { limit: quota.limit });
+                : day ? tr(quota.limit === 1 ? 'arr_sheet_over_quota_one' : 'arr_sheet_over_quota', { limit: quota.limit, day })
+                    : tr(quota.limit === 1 ? 'arr_sheet_over_quota_noday_one' : 'arr_sheet_over_quota_noday', { limit: quota.limit });
             state.note.appendChild(el('span', null, text));
             state.note.hidden = false;
         } else if (caps.asksFirst) {
@@ -996,7 +998,9 @@
             const contact = JE.arrAsk.contact(caps);
             const b = button('je-ask-action je-ask-mount-request je-ask-mount-search');
             b.appendChild(icon('search', 'je-ask-action-icon'));
-            const label = el('span', null, caps.asksFirst ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search'));
+            // A Kid's Search of what requests already sent runs without a new OK: plain "Search" then.
+            const searchLabel = () => (JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search'));
+            const label = el('span', null, searchLabel());
             b.appendChild(label);
             b.addEventListener('click', async (e) => {
                 e.preventDefault();
@@ -1035,7 +1039,7 @@
                     local = words;
                     render();
                 } else if (!destroyed) {
-                    label.textContent = caps.asksFirst ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
+                    label.textContent = searchLabel();
                 }
             });
             return b;

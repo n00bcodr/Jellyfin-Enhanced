@@ -4,8 +4,9 @@
  * GET /JellyfinEnhanced/acquire/search (TMDB movies and series through the server, filtered for the
  * caller: Kids only get titles within their parental limits) and the titles the caller doesn't have
  * are shown as a row of the shared Discover cards (Request / "Ask {contact}" / Notify me) after
- * Jellyfin's own Movies and Shows rows. Only in JE mode, for people who may ask, and never while
- * Seerr's own search row is on; Kids don't get it when the server hides search from them
+ * Jellyfin's own Movies and Shows rows. Only in JE mode and for people who may ask. In JE mode this row
+ * replaces Seerr's search row (Seerr no longer takes requests, so JE.internals.arrAskSearch.replacesSeerr()
+ * tells the Seerr search not to draw one); Kids don't get it when the server hides search from them
  * (ArrKidsHideSearch). Every search carries an intent token (query, page, user epoch, sequence): a
  * newer keystroke aborts the older read and only the current one may draw (or clear) the row.
  * Starts itself on the first navigation once the request controls are on; JE.initializeArrAskSearch
@@ -88,15 +89,23 @@
     }
 
     /**
-     * True when this caller gets the row: JE mode, may ask, not a Kid with search hidden, and no
-     * Seerr row.
+     * True in JE mode: this row replaces Seerr's search row (the Seerr search draws none, whoever is signed in).
+     * @returns {boolean} Replaces the Seerr row.
+     */
+    function replacesSeerr() {
+        return JE.pluginConfig?.ArrRequestsJeMode === true && JE.arrAsk?.enabled?.() === true;
+    }
+
+    /**
+     * True when this caller gets the row: JE mode, may ask, and not a Kid with search hidden. Seerr's row
+     * doesn't stop it in JE mode (it isn't drawn then); a Seerr row that is somehow on the page still does.
      * @param {Object|null} caps Capabilities (JE.arrAsk.me).
      * @returns {boolean} Allowed.
      */
     function allowed(caps) {
         if (!caps || !caps.canRequest || caps.backend !== 'je') return false;
         if (caps.role === 'kid' && JE.pluginConfig?.ArrKidsHideSearch === true) return false;
-        return !seerrRowOn();
+        return replacesSeerr() ? !document.querySelector('#searchPage .jellyseerr-section') : !seerrRowOn();
     }
 
     /**
@@ -301,6 +310,6 @@
     });
 
     JE.internals = JE.internals || {};
-    JE.internals.arrAskSearch = { state, search, check, clear, allowed };
+    JE.internals.arrAskSearch = { state, search, check, clear, allowed, replacesSeerr };
     JE.initializeArrAskSearch = initialize;
 })(window.JellyfinEnhanced);

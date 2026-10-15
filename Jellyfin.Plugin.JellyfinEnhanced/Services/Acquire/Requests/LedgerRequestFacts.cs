@@ -22,14 +22,72 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public RequestFacts? For(TitleKey titleKey, StatusViewer viewer)
         {
             if (!Direct) return _seerr.For(titleKey, viewer);
-            var wants = Wants(titleKey).Where(w => w.Status != "cancelled").ToArray();
+            return FactsOf(Wants(titleKey), viewer.UserId, () => _ledger.Dispatches(Canonical(titleKey)));
+        }
+
+        /// <summary>
+        /// The request facts of some requests for one title (all of a household's, or one person's): asked, waiting
+        /// for an OK, OK'd (per edition), declined, done, and the parts that went out with when. Null when none of
+        /// them is more than cancelled.
+        /// </summary>
+        /// <param name="all">Requests for one title.</param>
+        /// <param name="viewer">Who is looking (for "asked by you").</param>
+        /// <param name="dispatches">What went out for the title (read only when one of them was sent).</param>
+        internal static RequestFacts? FactsOf(IEnumerable<RequestWant> all, Guid viewer, Func<IReadOnlyList<RequestDispatch>> dispatches)
+        {
+            var wants = all.Where(w => w.Status != "cancelled").ToArray();
             if (wants.Length == 0) return null;
             var approved = wants.Where(w => w.Status is "queued" or "sent" or "stale" or "fulfilled").ToArray();
             DateTime? At(string? variant) => approved.Where(w => variant == null || w.Input.Variant == variant).Select(w => (DateTime?)w.UpdatedAt.UtcDateTime).Min();
-            return new RequestFacts { AskedAt = wants.Min(w => w.CreatedAt).UtcDateTime, AskedByViewer = wants.Any(w => w.UserId == viewer.UserId),
+            return new RequestFacts { AskedAt = wants.Min(w => w.CreatedAt).UtcDateTime, AskedByViewer = wants.Any(w => w.UserId == viewer),
                 Pending = wants.Any(w => w.Status == "pending"), ApprovedAt = At(null), ApprovedStandardAt = At("standard"), Approved4kAt = At("4k"),
                 Declined = wants.All(w => w.Status == "declined"), StandardDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "standard"), FourKDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "4k"),
-                Sent = Sent(wants, () => _ledger.Dispatches(Canonical(titleKey))) };
+                Sent = Sent(wants, dispatches) };
+        }
+
+        /// <summary>
+        /// The part of a title some requests (one person's, for one title) ask for, as the status service scopes a
+        /// title by: the seasons (whole-season, next-season and "keep getting" asks: the season asked for), the single
+        /// episodes outside them, whether only the 4K copy was asked for, and those requests' own facts. Cancelled and
+        /// declined requests count only when nothing else is left (a row that says "said no").
+        /// </summary>
+        /// <param name="wants">Requests for one title (not empty).</param>
+        /// <param name="viewer">Whose they are.</param>
+        /// <param name="dispatches">What went out for the title.</param>
+        internal static ArrStatusService.RequestScope ScopeOf(IReadOnlyList<RequestWant> wants, Guid viewer, Func<IReadOnlyList<RequestDispatch>> dispatches)
+        {
+            var asked = wants.Where(w => w.Status is not ("cancelled" or "declined")).ToList();
+            if (asked.Count == 0) asked = wants.ToList();
+            var movie = TitleKey.Parse(asked[0].Input.Key)?.IsMovie == true;
+            var seasons = new List<int>();
+            var episodes = new List<(int Season, int Episode)>();
+            if (!movie)
+            {
+                var all = asked.Where(w => w.Input.Scope != "episodes").SelectMany(w => w.Input.Seasons).Distinct().OrderBy(n => n).ToList();
+                // Specials count only when they are all that was asked for (as the Seerr scope).
+                seasons = all.Where(n => n > 0).ToList();
+                if (seasons.Count == 0 && all.Contains(0)) seasons.Add(0);
+                episodes = asked.Where(w => w.Input.Scope == "episodes").SelectMany(w => w.Input.Episodes)
+                    .Where(e => !seasons.Contains(e.Season)).Select(e => (e.Season, e.Episode)).Distinct()
+                    .OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
+            }
+            return new ArrStatusService.RequestScope(seasons, asked.All(w => w.Input.Variant == "4k"), FactsOf(asked, viewer, dispatches), Episodes: episodes);
+        }
+
+        /// <summary>
+        /// The requests (one person's, for one title) that one status follows: one edition at a time, as each edition is
+        /// its own copy. The edition still waited for (the standard copy first when both are), else the one that arrived
+        /// last; cancelled and declined requests only when nothing else is left. So a 4K ask after the standard copy
+        /// arrived is judged by the 4K copy, not shown Ready by the standard one.
+        /// </summary>
+        /// <param name="wants">Requests for one title.</param>
+        internal static IReadOnlyList<RequestWant> EditionOf(IReadOnlyList<RequestWant> wants)
+        {
+            var asked = wants.Where(w => w.Status is not ("cancelled" or "declined")).ToList();
+            if (asked.Count == 0) return wants;
+            var open = asked.Where(w => w.Status is "pending" or "queued" or "sent" or "stale").ToList();
+            var fourK = open.Count > 0 ? open.All(w => w.Input.Variant == "4k") : asked.MaxBy(w => w.UpdatedAt)!.Input.Variant == "4k";
+            return asked.Where(w => (w.Input.Variant == "4k") == fourK).ToList();
         }
 
         private static RequestSentPart[] Sent(RequestWant[] wants, Func<IReadOnlyList<RequestDispatch>> dispatches)

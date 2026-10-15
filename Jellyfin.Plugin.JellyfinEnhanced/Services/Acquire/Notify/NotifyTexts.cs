@@ -57,6 +57,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     var headline = named ? $"{contact} said no to {title}" : $"{contact} said no to a request";
                     return new NotifyMessage(headline, reason.Length > 0 ? $"“{reason}”" : "You can still follow it to hear if it comes later.");
                 }
+                case NotifyKind.Approved:
+                {
+                    var scope = Scope(P("scope"));
+                    if (P("shared") == "1")
+                        return new NotifyMessage(named ? $"{title}{scope} is on its way" : "Something you asked for is on its way", "Someone else in your household asked for it too. You'll hear when it's ready.");
+                    return new NotifyMessage(named ? $"{contact} OK'd {title}{scope}" : $"{contact} OK'd a request", "It's on its way. You'll hear when it's ready.");
+                }
                 case NotifyKind.Approval:
                     return new NotifyMessage($"{Who(P("user"))} asked for {Fallback(title, "a title")}", "It is waiting for your OK.");
                 case NotifyKind.InstanceDown:
@@ -66,7 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 case NotifyKind.LowDisk:
                     return new NotifyMessage($"Low disk space on {P("instance")}", $"{P("path")} has {P("percent")}% free ({P("free")}).");
                 case NotifyKind.StuckDigest:
-                    return new NotifyMessage($"{P("count")} downloads need attention", hideTitles ? $"Stuck for over {P("hours")} hours. Open Jellyfin to see which." : $"Stuck for over {P("hours")} hours: {P("items")}");
+                    return new NotifyMessage(P("count") == "1" ? "1 download needs attention" : $"{P("count")} downloads need attention", hideTitles ? $"Stuck for over {P("hours")} hours. Open Jellyfin to see which." : $"Stuck for over {P("hours")} hours: {P("items")}");
                 case NotifyKind.Remind:
                     return new NotifyMessage($"{Who(P("user"))} is waiting for {Fallback(title, "a title")}", "It is taking longer than usual and they asked you to have a look.");
                 case NotifyKind.Attention:

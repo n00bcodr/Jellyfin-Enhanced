@@ -3955,6 +3955,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ArrNotificationsEnabled = Services.Acquire.Notify.NotifyFlags.Enabled(config),
                 // Phase 3 request controls (Request, Get it, request sheet): on with a request backend only.
                 ArrRequestsEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend is "je" or "seerr",
+                // Jellyfin Enhanced handles requests (JE mode): Seerr's request buttons open JE's request sheet instead.
+                ArrRequestsJeMode = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend == "je",
                 // Kids don't get the JE-mode search row (the search route refuses them too).
                 config.ArrKidsHideSearch,
 

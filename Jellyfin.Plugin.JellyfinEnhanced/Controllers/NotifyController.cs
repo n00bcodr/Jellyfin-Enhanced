@@ -42,6 +42,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Declined alerts.</summary>
         [JsonPropertyName("declined")] public bool? Declined { get; set; }
 
+        /// <summary>OK'd alerts (requests Jellyfin Enhanced handles).</summary>
+        [JsonPropertyName("approved")] public bool? Approved { get; set; }
+
         /// <summary>Administrators: admin alerts to phone/e-mail.</summary>
         [JsonPropertyName("adminAlerts")] public bool? AdminAlerts { get; set; }
 
@@ -261,6 +264,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             prefs.Ready = request.Ready ?? prefs.Ready;
             prefs.Episodes = request.Episodes ?? prefs.Episodes;
             prefs.Declined = request.Declined ?? prefs.Declined;
+            prefs.Approved = request.Approved ?? prefs.Approved;
             prefs.AdminAlerts = request.AdminAlerts ?? prefs.AdminAlerts;
             prefs.AutoFollowRequests = request.AutoFollowRequests ?? prefs.AutoFollowRequests;
             prefs.Ntfy = request.Ntfy ?? prefs.Ntfy;
@@ -582,6 +586,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     ready = prefs.Ready,
                     episodes = prefs.Episodes,
                     declined = prefs.Declined,
+                    // Only while requests go through Jellyfin Enhanced's own ledger (phase 3): null hides the switch.
+                    approved = Services.Acquire.Requests.SharedRequestFacts.Active(config) ? prefs.Approved : (bool?)null,
                     adminAlerts = IsAdmin() ? prefs.AdminAlerts : (bool?)null,
                     autoFollowRequests = prefs.AutoFollowRequests,
                     ntfy = prefs.Ntfy,

@@ -389,7 +389,8 @@
         if (JE.arrStatus.searchable?.(status)) {
             const doneKey = `${key}|s${season}e${episode}|search`;
             const instanceId = JE.arrAsk.searchInstance(caps, status, status.key);
-            const text = caps.asksFirst ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
+            // Requests already sent this episode: the Search runs with no new OK (plain "Search" for a Kid too).
+            const text = JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
             box.appendChild(action(doneKey, 'search', text, (b) => runSearch(b, doneKey, status.key, instanceId, () => ask(b, doneKey))));
         } else {
             const doneKey = `${key}|s${season}e${episode}`;

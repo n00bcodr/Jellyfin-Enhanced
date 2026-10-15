@@ -89,6 +89,28 @@ test('a Manager gets the Approvals tab with a count; the deep link waits for the
   assert.ok(h.live().some(s => s.keys.includes('req:state')));
 });
 
+test('a card shows where the part asked for already is (on its way or here), and nothing more than "waiting" otherwise', async t => {
+  const h = setupHub(t, {
+    hash: '#/requests?tab=approvals',
+    routes: (method, path) => (path === '/acquire/requests/approvals'
+      ? approvals([
+        card(1, { title: 'Firefly', kind: 'tv', key: 'tv:tvdb:1', scope: 'episodes', episodes: [{ season: 1, episode: 4 }],
+          partStatus: { key: 'tv:tvdb:1', kind: 'series', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 30 }, admin: { variants: [{ instance: 'Sonarr' }] } } }),
+        card(2, { title: 'Bluey', partStatus: { key: 'movie:tmdb:2', kind: 'movie', stage: 'asked', reason: { code: 'awaiting_approval' } } })
+      ])
+      : null)
+  });
+  h.JE.initializeArrStatus();
+  const page = h.page();
+  await until(() => page.querySelectorAll('.je-approval').length === 2);
+  const [firefly, bluey] = page.querySelectorAll('.je-approval');
+  const part = firefly.querySelector('.je-approval-part');
+  assert.ok(part, 'a part already downloading shows its status');
+  assert.match(part.textContent, /Downloading · 30%/);
+  assert.doesNotMatch(part.textContent, /Sonarr/, 'no administrators\' lines on the card');
+  assert.equal(bluey.querySelector('.je-approval-part'), null, 'waiting for an OK says nothing new');
+});
+
 test('members and kids get no Approvals or Household tab and never read them', async t => {
   const h = setupHub(t, { me: { role: 'member' }, routes: () => null });
   h.JE.initializeArrStatus();

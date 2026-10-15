@@ -150,6 +150,9 @@
             seen.add(entry.key);
             mine.push(own ? { ...entry, ledger: ledgerOf(own) } : entry);
         }
+        // A title the page already lists as Ready is that title's row (its requests' parts arrived; the ledger may
+        // not have marked them fulfilled yet): no second row with the request's own state.
+        for (const entry of view.ready || []) if (entry?.key) seen.add(entry.key);
         for (const [key, own] of byKey) {
             if (seen.has(key)) continue;
             // The most open state of the title's requests leads (waiting before on the way before said no).

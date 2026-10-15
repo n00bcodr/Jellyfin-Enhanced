@@ -140,6 +140,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             // "Keep getting new episodes": charges each new season once when a Sonarr library read shows it started.
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();
+            // Marks requests fulfilled when what they asked for is in Jellyfin (Ready; never stale).
+            serviceCollection.AddHostedService<Services.Acquire.Requests.RequestFulfilment>();
             serviceCollection.AddSingleton<Services.Acquire.AcquireDatabase>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.NotifyStore>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.INotifyUsers, Services.Acquire.Notify.JellyfinNotifyUsers>();

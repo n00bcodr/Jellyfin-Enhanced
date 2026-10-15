@@ -225,6 +225,42 @@ test('My requests merges the ledger with the page\'s entries: one row per title,
   assert.ok(!page.querySelector('.je-hub-row[data-je-arr-key="movie:tmdb:1"]'));
 });
 
+test('household rows say where each request\'s part has got to (not just "On the way")', async t => {
+  const h = setupHub(t, {
+    hash: '#/requests?tab=household',
+    routes: (m, path) => (path === '/acquire/household'
+      ? household([person(1, { name: 'Leo', role: 'kid', active: 2, requests: [
+        { id: 'r1', key: 'tv:tvdb:78874', kind: 'tv', scope: 'episodes', episodes: [{ season: 1, episode: 4 }], status: 'sent', group: 'onTheWay', title: 'Firefly',
+          partStatus: { key: 'tv:tvdb:78874', kind: 'series', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 45 } } },
+        { id: 'r2', key: 'movie:tmdb:9', kind: 'movie', scope: 'movie', status: 'sent', group: 'onTheWay', title: 'Bluey' }
+      ] })])
+      : null)
+  });
+  h.JE.initializeArrStatus();
+  const page = h.page();
+  await until(() => page.querySelectorAll('.je-household-request').length === 2);
+  const [firefly, bluey] = page.querySelectorAll('.je-household-request .je-approval-meta');
+  assert.equal(firefly.textContent, 'S1E4 · ' + translate('arr_status_downloading_pct', { pct: 45 }));
+  assert.equal(bluey.textContent, 'Movie · ' + translate('arr_household_state_on_the_way'), 'without a part status the request state stays');
+});
+
+test('JE mode: a title the page lists as Ready gets no second "OK\'d" row from the ledger before it is marked fulfilled', async t => {
+  const ready = {
+    key: 'movie:tmdb:7', kind: 'movie', tmdbId: 7, title: 'Arrived', year: 2024, request: 'approved', group: 'ready', itemId: 'f'.repeat(32), readyAt: new Date().toISOString(),
+    status: { key: 'movie:tmdb:7', kind: 'movie', stage: 'ready', reason: { code: 'ready' }, quiet: true, actions: [] }
+  };
+  const h = setupHub(t, {
+    me: { role: 'member', contact: 'Dad' },
+    hub: { contact: 'Dad', seerr: { configured: false, loaded: true, ledger: true }, mine: [], soon: [], ready: [ready] },
+    routes: (method, path) => (path === '/acquire/requests/mine' ? mine([own(7, { status: 'sent', group: 'onTheWay', canCancel: false }), own(8, { status: 'queued', group: 'onTheWay' })]) : null)
+  });
+  h.JE.initializeArrStatus();
+  const page = h.page();
+  await until(() => page.querySelectorAll('.je-hub-row').length === 1);
+  await wait(30);
+  assert.deepEqual([...page.querySelectorAll('.je-hub-row')].map(r => r.dataset.jeArrKey), ['movie:tmdb:8']);
+});
+
 test('JE mode: no "Requests aren\'t set up" note above the ledger rows; Seerr mode without a Seerr keeps it', async t => {
   for (const ledger of [true, false]) {
     const h = setupHub(t, {

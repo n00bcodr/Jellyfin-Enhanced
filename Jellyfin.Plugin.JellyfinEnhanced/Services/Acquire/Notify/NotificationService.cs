@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 using MediaBrowser.Controller.Entities;
@@ -35,6 +36,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
     /// open that weren't there before, batched per series for <c>ArrNotifyBatchMinutes</c> from the
     /// first one; a whole season arriving together reads "Season 2 is ready".</description></item>
     /// <item><description><b>Declined</b>: the requester hears that the request was declined.</description></item>
+    /// <item><description><b>Requests in Jellyfin Enhanced</b> (phase 3): the request ledger's notices tell the
+    /// requester that a request was OK'd or declined (with the reason), once each, surviving a restart; in
+    /// Jellyfin Enhanced mode the ledger's requests are interests like Seerr's (Ready and new episodes of exactly
+    /// the part asked for).</description></item>
     /// <item><description><b>Admin events</b>: a new request waiting for an OK, an instance unreachable
     /// for a while (and back), low disk, a daily digest of downloads stuck for hours, and household
     /// reminders about stuck titles.</description></item>
@@ -79,6 +84,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly Logger? _logger;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
+        private readonly RequestLedger? _ledger;
+        private readonly Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? _titleMeta;
         private readonly ConcurrentDictionary<string, byte> _dirty = new(StringComparer.Ordinal);
         private readonly RecentArrivals _recentlyAdded;
         private readonly SemaphoreSlim _round = new(1, 1);
@@ -91,6 +98,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private string? _epoch;
         private long? _cursor;
         private long _seenRequests = -1;
+        private long? _ledgerCursor;
+        private long? _storedLedgerCursor;
         private DateTimeOffset _nextSweep;
         private DateTimeOffset _nextAdmin;
         private DateTimeOffset _nextPurge;
@@ -102,8 +111,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private int _bridgeSubscribed;
 
         /// <summary>The service (DI).</summary>
-        public NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager library, Logger logger, ArrAdminHubService hub, JellyfinBridge bridge)
-            : this(store, status, requests, view, feed, arr, users, dispatcher, library, logger, null, null, hub, bridge)
+        public NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager library, Logger logger, ArrAdminHubService hub, JellyfinBridge bridge, RequestLedger ledger, RequestHubProjection projection)
+            : this(store, status, requests, view, feed, arr, users, dispatcher, library, logger, null, null, hub, bridge, ledger, projection.MetaAsync)
         {
         }
 
@@ -111,10 +120,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// A service with explicit configuration and clock (tests; no Jellyfin library events). Without
         /// <paramref name="hub"/> the administrators' checks that read the admin tools' Needs attention
         /// list (outages, low disk, manual imports, OK'd-but-not-in-an-arr, the stuck digest) are skipped;
-        /// with <paramref name="bridge"/> a targeted refresh that finds an imported file looks at its title at once.
+        /// with <paramref name="bridge"/> a targeted refresh that finds an imported file looks at its title at once;
+        /// with <paramref name="ledger"/> the request ledger's notices are delivered and, in Jellyfin Enhanced mode,
+        /// its requests are interests (<paramref name="titleMeta"/> names titles no arr holds yet).
         /// </summary>
-        internal NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager? library, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrAdminHubService? hub = null, JellyfinBridge? bridge = null)
+        internal NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager? library, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrAdminHubService? hub = null, JellyfinBridge? bridge = null, RequestLedger? ledger = null, Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? titleMeta = null)
         {
+            _ledger = ledger;
+            _titleMeta = titleMeta;
             _store = store;
             _status = status;
             _requests = requests;
@@ -216,6 +229,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             loop.Dispose();
         }
 
+        /// <summary>
+        /// A start (or the alerts switched back on): the first sweep and administrators' checks a little later,
+        /// housekeeping in five minutes, and the interest set rebuilt.
+        /// </summary>
+        internal void Begin()
+        {
+            var now = _now();
+            _nextSweep = now + FirstSweepAfter;
+            _nextAdmin = now + FirstSweepAfter;
+            _nextPurge = now + TimeSpan.FromMinutes(5);
+            RebuildInterest();
+        }
+
         private async Task LoopAsync(CancellationToken token)
         {
             while (!token.IsCancellationRequested)
@@ -233,11 +259,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     if (!_wasEnabled)
                     {
                         _wasEnabled = true;
-                        var now = _now();
-                        _nextSweep = now + FirstSweepAfter;
-                        _nextAdmin = now + FirstSweepAfter;
-                        _nextPurge = now + TimeSpan.FromMinutes(5);
-                        RebuildInterest();
+                        Begin();
                     }
                     if (_cursor == null)
                     {
@@ -331,6 +353,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     if (ScanRequests(now)) Interlocked.Exchange(ref _seenRequests, revision);
                 }
                 cancellationToken.ThrowIfCancellationRequested();
+                // Phase 3: the ledger's notices (OK'd, declined) and, in JE mode, its requests as interests.
+                if (NoticesOn) await DeliverRequestNoticesAsync(now, cancellationToken).ConfigureAwait(false);
+                if (LedgerInterest) ScanLedger();
+                else _ledgerCursor = null;
+                cancellationToken.ThrowIfCancellationRequested();
                 if (now >= _nextSweep)
                 {
                     _nextSweep = now + SweepEvery;
@@ -383,6 +410,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 if (r.RequestedBy.HasValue && r.Key is { } k) set.Add(k.Title.ToString());
                 if (r.FeedKey is { } feed) set.Add(feed);
             }
+            if (LedgerInterest)
+            {
+                foreach (var key in _ledger!.RequestedTitles())
+                {
+                    if (TitleKey.Parse(key) is { } k) set.Add(k.Title.ToString());
+                }
+            }
             foreach (var key in set.ToList())
             {
                 foreach (var alias in Aliases(TitleKey.Parse(key)!)) set.Add(alias);
@@ -418,6 +452,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             /// <summary>Series: the seasons to tell about (null: every season).</summary>
             public HashSet<int>? Seasons { get; set; }
 
+            /// <summary>Series: single episodes asked for outside <see cref="Seasons"/> (Jellyfin Enhanced requests).</summary>
+            public HashSet<(int Season, int Episode)>? Episodes { get; set; }
+
             /// <summary>Series: the user asked for it in 4K only, so only the 4K copies' episodes count.</summary>
             public bool Only4k { get; set; }
 
@@ -428,6 +465,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             public bool HasRequest { get; set; }
 
             public bool HasFollow { get; set; }
+
+            /// <summary>
+            /// Jellyfin Enhanced requests: when the first of them was asked for. A first look counts what arrived since
+            /// as an arrival (the look came late: a restart, or the part beat the first look), not as already there.
+            /// </summary>
+            public DateTimeOffset? AskedAt { get; set; }
         }
 
         private List<Interest> InterestsIn(TitleKey title, Guid? onlyUser)
@@ -435,6 +478,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var keys = new[] { title.ToString() }.Concat(Aliases(title)).Distinct(StringComparer.Ordinal).ToList();
             var follows = _store.FollowsOfTitles(keys);
             var byUser = new Dictionary<Guid, Interest>();
+            // A person's second edition of the same title (Jellyfin Enhanced requests): its own interest.
+            var extra = new List<Interest>();
             var muted = new HashSet<Guid>(follows.Where(f => f.Muted && TitleKey.Parse(f.Key)?.Season == null).Select(f => f.UserId));
             Interest For(Guid user)
             {
@@ -479,7 +524,164 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     foreach (var s in scope.Seasons) (i.Seasons ??= new HashSet<int>()).Add(s);
                 }
             }
-            return byUser.Values.ToList();
+            if (LedgerInterest)
+            {
+                // Jellyfin Enhanced mode: the request ledger's requests, judged by exactly the part each person asked for.
+                var wants = keys.SelectMany(k => _ledger!.ForTitle(k)).Where(w => w.Status is not ("cancelled" or "declined")).DistinctBy(w => w.Id).ToList();
+                foreach (var group in wants.GroupBy(w => w.UserId))
+                {
+                    if (onlyUser.HasValue && group.Key != onlyUser) continue;
+                    if (muted.Contains(group.Key)) continue;
+                    if (!_store.Prefs(group.Key).AutoFollowRequests) continue;
+                    var i = For(group.Key);
+                    i.HasRequest = true;
+                    // Each edition asked for is followed through its own copy (a 4K ask after the standard copy
+                    // arrived waits for the 4K copy); a plain follow of a series hears of every copy already.
+                    var editions = !title.IsMovie && i.HasFollow
+                        ? new List<List<RequestWant>> { group.ToList() }
+                        : group.GroupBy(w => w.Input.Variant == "4k").OrderBy(e => e.Key).Select(e => e.ToList()).ToList();
+                    foreach (var mine in editions)
+                    {
+                        var target = i;
+                        if (mine != editions[0]) extra.Add(target = new Interest { User = group.Key, Key = title, HasRequest = true, HasFollow = i.HasFollow });
+                        var scope = LedgerRequestFacts.ScopeOf(mine, group.Key, () => _ledger!.Dispatches(mine[0].Input.Key));
+                        var asked = mine.Min(w => w.CreatedAt);
+                        if (target.AskedAt == null || asked < target.AskedAt) target.AskedAt = asked;
+                        if (title.IsMovie)
+                        {
+                            target.Scope = scope;
+                            continue;
+                        }
+                        target.Only4k = scope.Only4k && !target.HasFollow;
+                        // "Keep getting new episodes": every new episode from now on.
+                        if (mine.Any(w => w.Input.Scope == "future")) target.AllSeasons = true;
+                        foreach (var s in scope.Seasons) (target.Seasons ??= new HashSet<int>()).Add(s);
+                        foreach (var e in scope.Episodes ?? Array.Empty<(int Season, int Episode)>()) (target.Episodes ??= new HashSet<(int Season, int Episode)>()).Add(e);
+                    }
+                }
+            }
+            return byUser.Values.Concat(extra).ToList();
+        }
+
+        /// <summary>Phase 3 is on with a request backend and the ledger is there: its notices are delivered.</summary>
+        private bool NoticesOn => _ledger != null && SharedRequestFacts.Active(_config()) && _ledger.Database.Available;
+
+        /// <summary>Jellyfin Enhanced handles requests: the ledger's requests are interests (Seerr's in Seerr mode).</summary>
+        private bool LedgerInterest => _ledger != null && SharedRequestFacts.LedgerAuthority(_config()) && _ledger.Database.Available;
+
+        /// <summary>
+        /// Takes the ledger's changes since the last look: the titles whose requests changed are looked at (a new
+        /// request's first look records what is already there, so only its arrival is told), and the interest set
+        /// is rebuilt so their feed changes are followed. Where the looks got to is kept in the database once every
+        /// title taken was looked at, so after a restart the requests made just before it get their first look at
+        /// once (not only at the first sweep or when what they ask for arrives, which would be recorded silently).
+        /// </summary>
+        internal void ScanLedger()
+        {
+            var first = _ledgerCursor == null;
+            if (!first && _ledgerCursor != _storedLedgerCursor && _dirty.IsEmpty) StoreLedgerCursor(_ledgerCursor!.Value);
+            var after = first ? StoredLedgerCursor() : _ledgerCursor;
+            var (cursor, titles) = _ledger!.ChangedTitles(after);
+            _ledgerCursor = cursor;
+            if (after == null)
+            {
+                // Never looked before: from now on.
+                StoreLedgerCursor(cursor);
+                RebuildInterest();
+                return;
+            }
+            if (!first && titles.Count == 0) return;
+            RebuildInterest();
+            MarkDirty(titles);
+        }
+
+        private const string LedgerCursorKey = "ledger-cursor";
+
+        private long? StoredLedgerCursor()
+        {
+            _storedLedgerCursor = long.TryParse(_store.Meta(LedgerCursorKey), NumberStyles.None, CultureInfo.InvariantCulture, out var at) ? at : null;
+            return _storedLedgerCursor;
+        }
+
+        private void StoreLedgerCursor(long cursor)
+        {
+            _store.SetMeta(LedgerCursorKey, cursor.ToString(CultureInfo.InvariantCulture));
+            _storedLedgerCursor = cursor;
+        }
+
+        /// <summary>
+        /// Delivers the request ledger's notices (phase 3): an OK (approved, or a waiting ask released by someone
+        /// else's OK) and a decline (with its reason) tell the requester, through the inbox and their phone and
+        /// e-mail like any alert (their switches, quiet hours); one notification per request and kind. Every notice
+        /// is removed in the same transaction that adds its notification, so a restart neither repeats nor loses one.
+        /// Notices nobody hears about (asks, sends, an arrival: Ready comes from the requester's interest), ones older
+        /// than a few days (a catch-up after notifications were off) and ones the request has moved past since are
+        /// removed. A new ask by someone with no other request for the title forgets what they were told about it,
+        /// so its arrival is told again (as for a Seerr request asked again).
+        /// </summary>
+        internal async Task<int> DeliverRequestNoticesAsync(DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            var told = 0;
+            // The batch is decided from the database as it is now: a restore while it is handled (between awaits)
+            // leaves the rest of it to the next round, which reads the restored notices and requests.
+            var generation = _store.Generation;
+            foreach (var n in _ledger!.Notices(200))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (_store.Generation != generation) break;
+                var want = n.Want;
+                var key = TitleKey.Parse(want.Input.Key);
+                var kind = n.Kind switch
+                {
+                    "approve" or "merged" => NotifyKind.Approved,
+                    "declined" => NotifyKind.Declined,
+                    _ => null,
+                };
+                if (n.Kind == "create" && key != null && LedgerInterest && _users.IsActive(want.UserId)
+                    && !_ledger.ForTitle(want.Input.Key).Any(w => w.Id != want.Id && w.UserId == want.UserId && w.CreatedAt <= want.CreatedAt && w.Status is not ("cancelled" or "declined")))
+                {
+                    ForgetTitle(want.UserId, key, generation);
+                }
+                var prefs = _store.Prefs(want.UserId);
+                var tell = kind != null && key != null && now - n.At <= ArrivalFreshFor && _users.IsActive(want.UserId)
+                    && (kind == NotifyKind.Declined ? want.Status == "declined" && prefs.Declined : want.Status is "queued" or "sent" or "stale" or "fulfilled" && prefs.Approved && n.Approver != want.UserId);
+                if (!tell)
+                {
+                    _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
+                    continue;
+                }
+                var p = TitleParams(key!.Title, null);
+                if (_titleMeta != null && ActiveViewer(want.UserId) is { } viewer
+                    && (await _titleMeta(new[] { key.ToString() }, viewer, cancellationToken).ConfigureAwait(false)).GetValueOrDefault(key.ToString()) is { } meta)
+                {
+                    if (!string.IsNullOrEmpty(meta.Title)) p["title"] = meta.Title!.Length > 200 ? meta.Title[..200] : meta.Title;
+                    if (meta.Year is > 1800) p["year"] = meta.Year.Value.ToString(CultureInfo.InvariantCulture);
+                    if (!string.IsNullOrEmpty(meta.Poster)) p["poster"] = meta.Poster!;
+                }
+                p["contact"] = Contact();
+                if (ScopeLabel(want.Input) is { } scope) p["scope"] = scope;
+                if (want.Input.Variant == "4k") p["variant"] = "4k";
+                // Released by someone else's request going out (no OK of its own): "on its way".
+                if (n.Kind == "merged") p["shared"] = "1";
+                if (kind == NotifyKind.Declined && !string.IsNullOrWhiteSpace(n.DeclineReason)) p["reason"] = n.DeclineReason!.Trim() is var r && r.Length > 300 ? r[..300] : r;
+                var eventKey = (kind == NotifyKind.Approved ? NotifyDispatcher.ApprovedEventPrefix : "req-no|") + want.Id;
+                if (Notify(want.UserId, kind!, eventKey, key.Title.ToString(), null, p, now, prefs, tx => tx.TakeRequestNotice(n.Id), generation)) told++;
+                else _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
+            }
+            return told;
+        }
+
+        /// <summary>The part of a series a request names, as notifications show it after the title ("S1", "S1–S3", "S1E4"); null for a movie or several episodes.</summary>
+        internal static string? ScopeLabel(MutationInput input)
+        {
+            static string N(int n) => n.ToString(CultureInfo.InvariantCulture);
+            if (input.Scope == "movie") return null;
+            if (input.Scope == "episodes")
+                return input.Episodes.Length == 1 ? "S" + N(input.Episodes[0].Season) + "E" + N(input.Episodes[0].Episode) : null;
+            var seasons = input.Seasons.OrderBy(x => x).ToArray();
+            if (seasons.Length == 0) return null;
+            if (seasons.Length == 1) return "S" + N(seasons[0]);
+            return seasons[^1] - seasons[0] == seasons.Length - 1 ? "S" + N(seasons[0]) + "–S" + N(seasons[^1]) : null;
         }
 
         // ================================================================== evaluation
@@ -539,9 +741,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 : new[] { mark };
             var now = _now();
             var watch = _store.Watch(viewer.UserId, key.ToString(), scopeName);
-            if (watch == null)
+            var arrived = composed == null ? null : composed.Scoped ? composed.ArrivedAt : composed.Visible?.DateCreated;
+            if (watch == null && !(stage == StatusStage.Ready && ArrivedSinceAsked(interest, arrived)))
             {
-                // First look: remember it; what is already ready is never announced.
+                // First look: remember it; what is already ready is never announced (for a request: what was here
+                // before it was asked for).
                 Written(key, _store.InTransaction(generation, tx =>
                 {
                     tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, stage == StatusStage.Ready ? ReadyItems(null, itemId) : null, now);
@@ -550,18 +754,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 }, false).Done);
                 return;
             }
-            if (stage != StatusStage.Ready || watch.Value.Stage == StatusStage.Ready)
+            if (watch is { } seen && (stage != StatusStage.Ready || seen.Stage == StatusStage.Ready))
             {
-                if (stage != watch.Value.Stage) Written(key, _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, watch.Value.Known, now); return true; }, false).Done);
+                if (stage != seen.Stage) Written(key, _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, seen.Known, now); return true; }, false).Done);
                 return;
             }
-            // Became ready: the new stage, the "handled" marks and the notification commit together, so
-            // a failure (or a stop) before the notification exists leaves it to the next look.
-            var arrived = composed!.Scoped ? composed.ArrivedAt : composed.Visible?.DateCreated;
+            // Became ready (or arrived after it was asked for, before its first look): the new stage, the "handled"
+            // marks and the notification commit together, so a failure (or a stop) before the notification exists
+            // leaves it to the next look.
+            var known = watch?.Known;
+            var baseline = watch?.Baseline ?? now;
             var prefs = _store.Prefs(viewer.UserId);
             bool Handle(NotifyTransaction tx)
             {
-                tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, ReadyItems(watch.Value.Known, itemId), now);
+                tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, ReadyItems(known, itemId), now);
                 var first = true;
                 foreach (var m in marks) first &= tx.TryMark(viewer.UserId, m, now);
                 return first;
@@ -576,9 +782,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (interest.HasRequest) p["requested"] = "1";
             // One event per interest: a title asked for again after it was removed (its state forgotten,
             // a new watch baseline) is a new event; the marks keep a flapping upgrade to one.
-            var eventKey = mark + "|" + watch.Value.Baseline.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+            var eventKey = mark + "|" + baseline.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
             if (!Notify(viewer.UserId, NotifyKind.Ready, eventKey, key.ToString(), itemId, p, now, prefs, Handle, generation)) Written(key, _store.Generation == generation);
         }
+
+        // A request's part that arrived after it was asked for (so a first look that came late still tells it).
+        private static bool ArrivedSinceAsked(Interest interest, DateTime? arrived)
+            => interest.AskedAt is DateTimeOffset asked && arrived is DateTime at && at > asked.UtcDateTime;
 
         // A movie's watch state keeps the Jellyfin items it was ready as (their "ready-item" marks are
         // forgotten with it: Jellyfin gives a file put back at the same path the same item id).
@@ -639,8 +849,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var known = ParseKnown(watch?.Known);
             if (watch == null)
             {
-                Written(key, _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(present.Keys), now); return true; }, false).Done);
-                return;
+                // First look: what is here is remembered, never announced; for a request, only what was here before it
+                // was asked for (what came since is its arrival: the first look came late).
+                var asked = interest.AskedAt?.UtcDateTime;
+                known = present.Where(p => asked == null || p.Value.Added is not DateTime added || added <= asked).Select(p => p.Key).ToHashSet();
+                if (known.Count == present.Count)
+                {
+                    Written(key, _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(present.Keys), now); return true; }, false).Done);
+                    return;
+                }
             }
             var arrivals = present.Where(p => !known.Contains(p.Key)).OrderBy(a => a.Key.Season).ThenBy(a => a.Key.Episode).ToList();
             if (arrivals.Count == 0) return;
@@ -658,7 +875,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 var noted = new HashSet<Guid>();
                 foreach (var (number, (id, added)) in arrivals)
                 {
-                    var inScope = interest.AllSeasons ? number.Season > 0 : interest.Seasons?.Contains(number.Season) == true;
+                    var inScope = interest.AllSeasons ? number.Season > 0 : interest.Seasons?.Contains(number.Season) == true || interest.Episodes?.Contains(number) == true;
                     if (!inScope) continue;
                     if (!tx.TryMark(viewer.UserId, markPrefix + key + ":s" + number.Season.ToString(CultureInfo.InvariantCulture) + ":e" + number.Episode.ToString(CultureInfo.InvariantCulture), now)) continue;
                     var fresh = true;
@@ -1125,7 +1342,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// every id it is known by, and the Ready marks of its Jellyfin items), so their next interest
         /// in it starts afresh and is told again when it becomes ready.
         /// </summary>
-        private void ForgetTitle(Guid user, TitleKey title)
+        private void ForgetTitle(Guid user, TitleKey title, long? generation = null)
         {
             var canonical = Canonical(title.Title);
             var keys = new[] { title.Title.ToString(), canonical.ToString() }.Concat(Aliases(canonical)).Distinct(StringComparer.Ordinal).ToList();
@@ -1137,7 +1354,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     if (TitleKey.Parse(k) is { } parsed) items.AddRange(_view.Copies(parsed, viewer, _aliases.Of(parsed)).Select(c => c.ItemId).Where(id => id != Guid.Empty));
                 }
             }
-            _store.InTransaction(tx => tx.ForgetTitle(user, keys, items));
+            // Read before a restore (generation given): not written into the restored data.
+            _store.InTransaction(generation, tx => { tx.ForgetTitle(user, keys, items); return true; }, false);
         }
 
         private void MarkDirty(IEnumerable<string> titles)
@@ -1203,7 +1421,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (on && !_status.MayFollow(viewer, key)) return "not_allowed";
             var now = _now();
             var kind = key.IsMovie ? "title" : key.Season.HasValue ? "season" : "episodes";
-            var asked = RequestsFor(key).Any(r => r.RequestedBy == viewer.UserId);
+            var asked = RequestsFor(key).Any(r => r.RequestedBy == viewer.UserId) || AskedInLedger(viewer.UserId, key);
             bool ok;
             if (on) ok = _store.SetFollow(viewer.UserId, key.ToString(), kind, muted: false, remove: false, now);
             else if (asked && !key.Season.HasValue) ok = _store.SetFollow(viewer.UserId, key.ToString(), kind, muted: true, remove: false, now);
@@ -1231,8 +1449,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var requested = prefs.AutoFollowRequests
                 ? _requests.ForUser(userId).Where(r => r.Active && r.Key != null).Select(r => r.Key!.Title.ToString()).Distinct(StringComparer.Ordinal).ToList()
                 : new List<string>();
+            if (prefs.AutoFollowRequests && LedgerInterest)
+            {
+                // Jellyfin Enhanced mode: the request ledger's requests are followed the same way.
+                requested.AddRange(_ledger!.List(userId, false).Where(w => w.Status is not ("cancelled" or "declined"))
+                    .Select(w => TitleKey.Parse(w.Input.Key)?.Title.ToString()).OfType<string>());
+                requested = requested.Distinct(StringComparer.Ordinal).ToList();
+            }
             return (_store.Follows(userId), requested);
         }
+
+        // In Jellyfin Enhanced mode: the user has a request in the ledger for the title (under any of its keys) that
+        // still stands, so turning "Notify me" off mutes it (as for a Seerr request) instead of being undone by it.
+        private bool AskedInLedger(Guid user, TitleKey key)
+            => LedgerInterest && new[] { key.Title.ToString() }.Concat(Aliases(key)).Distinct(StringComparer.Ordinal)
+                .SelectMany(_ledger!.ForTitle).Any(w => w.UserId == user && w.Status is not ("cancelled" or "declined"));
 
         // ================================================================== remind
 

@@ -41,6 +41,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly INotifyUsers? _users;
         private readonly IArrJellyfinView? _view;
         private readonly TitleAliases? _aliases;
+        private readonly Requests.RequestLedger? _ledger;
         private readonly Logger? _logger;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
@@ -50,14 +51,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private Task? _loopTask;
 
         /// <summary>The dispatcher (DI).</summary>
-        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger)
-            : this(store, ntfy, email, logger, null, null, users, view, aliases)
+        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger, Requests.RequestLedger ledger)
+            : this(store, ntfy, email, logger, null, null, users, view, aliases, ledger)
         {
         }
 
-        /// <summary>A dispatcher with explicit configuration and clock (tests).</summary>
-        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null, TitleAliases? aliases = null)
+        /// <summary>
+        /// A dispatcher with explicit configuration and clock (tests). With <paramref name="ledger"/>, an OK of a request
+        /// held (quiet hours, retries) isn't sent once the request was cancelled, declined or removed.
+        /// </summary>
+        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null, TitleAliases? aliases = null, Requests.RequestLedger? ledger = null)
         {
+            _ledger = ledger;
             _view = view;
             _aliases = aliases;
             _store = store;
@@ -68,6 +73,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
             _now = now ?? (() => DateTimeOffset.UtcNow);
         }
+
+        /// <summary>The event key prefix of "your request was OK'd" (followed by the request id).</summary>
+        internal const string ApprovedEventPrefix = "req-ok|";
 
         private long _sent;
         private long _failed;
@@ -233,7 +241,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// alert off (Ready, new episodes, declined); the recipient is gone or disabled; an
         /// administrators' alert (paths, instance names, household requests) for someone who is no
         /// longer an administrator or switched those alerts off; a Ready or new-episodes alert for a
-        /// title the recipient can no longer open (library access or parental limits changed).
+        /// title the recipient can no longer open (library access or parental limits changed); an OK of a
+        /// request that was cancelled, declined or removed since.
         /// </summary>
         private string? Suppression(DueDelivery delivery, NotifyPrefs prefs, Dictionary<string, string> payload, out string? itemId)
         {
@@ -243,9 +252,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 NotifyKind.Ready => !prefs.Ready,
                 NotifyKind.Episodes => !prefs.Episodes,
                 NotifyKind.Declined => !prefs.Declined,
+                NotifyKind.Approved => !prefs.Approved,
                 _ => false,
             };
             if (kindOff) return "The recipient switched these alerts off.";
+            // "Dad OK'd it" held until quiet hours end (or retried): not once the request was cancelled, declined or removed.
+            if (delivery.Kind == NotifyKind.Approved && _ledger != null && _ledger.Database.Available
+                && delivery.EventKey is { } ok && ok.StartsWith(ApprovedEventPrefix, StringComparison.Ordinal)
+                && _ledger.Find(ok[ApprovedEventPrefix.Length..]) is not { Status: "queued" or "sent" or "stale" or "fulfilled" })
+                return "The request was cancelled, declined or removed since it was OK'd.";
             if (_users == null) return null;
             if (!_users.IsActive(delivery.UserId)) return "The recipient no longer exists or is disabled.";
             if (NotifyKind.IsAdminKind(delivery.Kind))
@@ -353,6 +368,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         {
             NotifyKind.Ready or NotifyKind.Episodes => new[] { "tv" },
             NotifyKind.Declined => new[] { "no_entry_sign" },
+            NotifyKind.Approved => new[] { "white_check_mark" },
             NotifyKind.Approval => new[] { "raising_hand" },
             NotifyKind.InstanceDown or NotifyKind.LowDisk or NotifyKind.StuckDigest or NotifyKind.Attention => new[] { "warning" },
             NotifyKind.Remind => new[] { "bell" },

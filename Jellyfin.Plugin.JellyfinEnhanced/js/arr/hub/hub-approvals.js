@@ -552,6 +552,12 @@
         if (role || quota) body.appendChild(X.el('div', 'je-approval-meta je-approval-role', [role, quota].filter(Boolean).join(' · ')));
         const rating = ratingLine(item, who);
         if (rating) body.appendChild(rating);
+        // The part asked for may already be on its way or here (someone else's request, an arr outside JE).
+        const part = X.partPill(item.partStatus);
+        if (part) {
+            part.classList.add('je-approval-part');
+            body.appendChild(part);
+        }
         if (Array.isArray(item.alsoWanted) && item.alsoWanted.length) {
             const also = X.el('div', 'je-approval-line je-approval-also');
             also.appendChild(X.icon('group'));

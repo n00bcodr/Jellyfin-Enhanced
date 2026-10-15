@@ -515,11 +515,19 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestFulfilment.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestHubProjection.cs",
       "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestLedger.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestLedgerArrivals.cs",
       "category": "Services"
     },
     {
@@ -1128,6 +1136,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/ask/ask-search.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/ask/ask-seerr.js",
       "category": "js"
     },
     {
@@ -9389,7 +9401,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 506,
+    "files": 509,
     "routes": 243,
     "configuration_properties": 576,
     "storage_references": 81,

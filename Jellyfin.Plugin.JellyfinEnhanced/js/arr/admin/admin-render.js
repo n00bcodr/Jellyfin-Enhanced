@@ -241,7 +241,7 @@
         box.appendChild(head);
         const line = el('div', 'je-ops-line');
         line.appendChild(el('span', '', tr('arr_ops_in_queue', { n: card.queue || 0 })));
-        if (card.queueAttention) line.appendChild(el('span', 'je-ops-warn', tr('arr_ops_queue_attention', { n: card.queueAttention })));
+        if (card.queueAttention) line.appendChild(el('span', 'je-ops-warn', tr(card.queueAttention === 1 ? 'arr_ops_queue_attention_one' : 'arr_ops_queue_attention', { n: card.queueAttention })));
         // The queue shown is older than it should be (the latest read failed or is under way).
         if (card.queueAsOf) line.appendChild(el('span', card.queueExpired ? 'je-ops-bad' : 'je-ops-warn', tr(card.queueExpired ? 'arr_ops_queue_expired' : 'arr_ops_as_of', { time: when(card.queueAsOf) })));
         if (card.error) line.appendChild(el('span', 'je-ops-bad', card.error));
@@ -997,7 +997,7 @@
         seerr.appendChild(el('h2', 'je-ops-box-title', tr('arr_ops_seerr_title')));
         if (!data.seerr) seerr.appendChild(el('div', 'je-ops-empty', tr('arr_hub_not_configured_admin')));
         else {
-            seerr.appendChild(el('div', 'je-ops-line', tr('arr_ops_seerr_line', { n: data.seerrRequests || 0, last: data.seerr.lastReadAt ? when(data.seerr.lastReadAt) : '—' })));
+            seerr.appendChild(el('div', 'je-ops-line', tr(data.seerrRequests === 1 ? 'arr_ops_seerr_line_one' : 'arr_ops_seerr_line', { n: data.seerrRequests || 0, last: data.seerr.lastReadAt ? when(data.seerr.lastReadAt) : '—' })));
             if (data.seerr.lastError) seerr.appendChild(el('div', 'je-ops-msg', tr('arr_hub_admin_seerr_error', { error: data.seerr.lastError })));
             // More requests than are read: the newest are read, older ones keep what was last known.
             if (data.seerr.truncated) seerr.appendChild(el('div', 'je-ops-item-sub', tr('arr_ops_seerr_truncated', { total: data.seerr.reportedTotal || 0, n: data.seerr.readLimit || 0 })));
@@ -1048,7 +1048,7 @@
         const titles = bridge.missingTitles || {};
         const total = Object.values(titles.counts || {}).reduce((s, n) => s + n, 0);
         if (total) {
-            missing.appendChild(el('div', 'je-ops-item-sub', tr('arr_ops_missing_titles', { n: total })));
+            missing.appendChild(el('div', 'je-ops-item-sub', tr(total === 1 ? 'arr_ops_missing_titles_one' : 'arr_ops_missing_titles', { n: total })));
             missing.appendChild(table(['arr_ops_col_title', 'arr_ops_col_instance', 'arr_ops_col_problem'],
                 (titles.titles || []).map(t => [t.title + (t.year ? ` (${t.year})` : ''), t.instance, tr(`arr_ops_missing_${t.problem}`, { path: t.jellyfinPath || t.arrPath || '', library: '' })]), [2]));
         }

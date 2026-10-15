@@ -431,6 +431,19 @@
     }
 
     /**
+     * True when a Search by this caller would be a new ask that waits for an OK: their asks wait for one (a Kid,
+     * or "approve everything") and no request covering the part has gone out yet. When one has (the missing
+     * status carries `reason.params.sent`), Search runs the arr's search for it again with no new request, so no
+     * OK: the button then reads plain "Search".
+     * @param {Object|null} caps Capabilities ({@link me}).
+     * @param {Object|null} status The missing movie's or episode's status.
+     * @returns {boolean} The Search asks first.
+     */
+    function searchAsksFirst(caps, status) {
+        return !!caps?.asksFirst && status?.reason?.params?.sent !== '1';
+    }
+
+    /**
      * An administrator's Search: runs the arr's own search for exactly the title in scope on one
      * instance right away (POST /JellyfinEnhanced/arr/admin/manage/search, audited on the server)
      * and says honestly what it found: a grab ("Found a copy — downloading"), nothing ("Nothing
@@ -555,6 +568,7 @@
         episodesInput,
         seriesKey,
         searchInstance,
+        searchAsksFirst,
         adminSearch,
         familySearch,
         tmdbSeasons,

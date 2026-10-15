@@ -63,6 +63,17 @@
     }
 
     /**
+     * The Primary image of a Jellyfin item the viewer can open, or null.
+     * @param {string|undefined} itemId Item id (32 hex).
+     * @returns {string|null} URL.
+     */
+    function itemImage(itemId) {
+        if (typeof itemId !== 'string' || !/^[0-9a-f]{32}$/i.test(itemId)) return null;
+        if (typeof ApiClient === 'undefined' || typeof ApiClient.getImageUrl !== 'function') return null;
+        return ApiClient.getImageUrl(itemId, { type: 'Primary', maxHeight: 300 });
+    }
+
+    /**
      * One request row.
      * @param {Object} entry Hub entry.
      * @param {Object} ctx Response context (contact, admin).
@@ -77,7 +88,8 @@
         row.dataset.jeArrKey = entry.key || '';
         // Which control this is, so focus can come back to it after a re-render.
         row.dataset.jeFocus = `row:${entry.key || ''}`;
-        const src = posterUrl(entry.poster);
+        // TMDB's poster, else the Jellyfin item's own image (requests in JE mode name titles Jellyfin has by its item).
+        const src = posterUrl(entry.poster) || itemImage(entry.itemId);
         if (src) {
             const img = el('img', 'je-hub-poster');
             img.loading = 'lazy';
@@ -99,6 +111,10 @@
         else if (entry.askedAt) meta.push(tr('arr_hub_asked', { date: JE.arrStatus.formatDate(entry.askedAt) }));
         const seasons = seasonsText(entry.seasons);
         if (seasons) meta.push(seasons);
+        // Single episodes asked for (JE mode): "S1E3", up to three of them.
+        if (Array.isArray(entry.episodes) && entry.episodes.length > 0 && entry.episodes.length <= 3) {
+            meta.push(entry.episodes.map(e => tr('arr_approvals_scope_episode', { season: e.season, episode: e.episode })).join(', '));
+        }
         if (meta.length) body.appendChild(el('div', 'je-hub-meta', meta.join(' · ')));
         if (entry.status && !(entry.group === 'ready' && entry.status.quiet)) {
             body.appendChild(JE.arrStatus.buildPill(entry.status, ctx));

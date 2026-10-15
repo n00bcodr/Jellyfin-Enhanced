@@ -351,6 +351,7 @@
     const KIND_KEYS = {
         ready: 'arr_notify_ready',
         declined: 'arr_notify_declined',
+        approved: 'arr_notify_approved',
         approval: 'arr_notify_approval',
         instance_down: 'arr_notify_instance_down',
         instance_up: 'arr_notify_instance_up',
@@ -372,6 +373,8 @@
         if (item.kind === 'episodes') return p.mode === 'single' ? 'arr_notify_episode' : p.mode === 'season' ? 'arr_notify_season' : 'arr_notify_episodes';
         if (item.kind === 'ready' && p.variant === '4k') return 'arr_notify_ready_4k';
         if (item.kind === 'declined' && p.reason) return 'arr_notify_declined_reason';
+        if (item.kind === 'approved' && p.shared === '1') return 'arr_notify_approved_shared';
+        if ((item.kind === 'stuck_digest' || item.kind === 'summary') && String(p.count) === '1') return `${KIND_KEYS[item.kind]}_one`;
         if (item.kind === 'attention') {
             if (p.code === 'import_blocked') return 'arr_notify_attention_import_blocked';
             if (p.code === 'approved_not_in_arr') return p.variant === '4k' ? 'arr_notify_attention_approved_not_in_4k' : 'arr_notify_attention_approved_not_in_arr';
