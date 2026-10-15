@@ -1,1039 +1,950 @@
-# Features Guide
+# Enhanced Features
 
-Jellyfin Enhanced bundles dozens of features into one convenient plugin. This guide covers all available features and how to use them.
+Use Jellyfin Enhanced's shortcuts, browsing tools, and player controls to make Jellyfin fit the way you watch. You can also catch up on unwatched titles, see server activity, and add information to detail pages.
 
----
+!!! note "Client requirements"
+
+    These controls need a client running JE's injected web scripts. Server-side hidden-content filtering can also affect supported list responses in native clients. See [Compatibility](../getting-started/compatibility.md).
+
+**Open your personal settings:**
+
+1. Press ++question++ outside a text field to open the Enhanced panel. You can also choose **Enhanced Panel** under the **Jellyfin Enhanced** drawer heading, **Jellyfin Enhanced** in Jellyfin 12's avatar menu, or **Jellyfin Enhanced - User Settings** in user preferences. During playback in mobile or TV web layouts, use the tune button titled **Jellyfin Enhanced** when the player controls are available. Desktop layouts hide this button.
+2. Use **Search settings…** or select the section named in the feature below. On phones, use the back arrow to return to the section list.
+3. Close with ×, ++escape++, or ++question++.
+
+**Open admin settings:** Go to **Dashboard → Plugins → Jellyfin Enhanced**. Tables below show stock defaults for a new installation.
+
+??? note "Personal defaults and saving changes"
+
+    Where an admin setting supplies a personal default, existing users keep their saved choices. Personal settings and shortcut overrides save automatically on the server for each account. Reload another open client to load changes.
+
+    See [Enhanced Settings](enhanced-settings.md) and [Settings Overview](../getting-started/settings-overview.md) for the default/override workflow, including **Overview → Quick Actions → Overwrite everyone's personal settings**.
+
+??? note "Choose where JE pages appear"
+
+    Choose either a native Home tab or Custom Tabs; Plugin Pages can coexist with either. Native tabs need no companion plugin and are recommended for Jellyfin 12's experimental layout. Plugin Pages and Custom Tabs require their respective plugins.
+
+    Plugin Pages 3.0+ applies integration changes without a server restart. Older versions need a restart after first enabling integration.
+
+    Native Home links combine an allocated `tab` index with `jeTab=bookmarks`, `jeTab=hidden-content`, `jeTab=activity`, or `jeTab=catchup`. Use JE's generated links rather than a fixed tab number. See [JE Pages & Tabs](../getting-started/pages-and-tabs.md) for complete placement instructions.
 
 ## Header Shortcuts
 
-JE shortcuts share a single header row with Jellyfin's controls. Random gets first priority, and other enabled shortcuts stay visible while there is room. Tap **More (•••)** for the remaining shortcuts. As the window widens, shortcuts return to the header automatically.
+JE shortcuts share a single header row with Jellyfin's controls, so you can reach common actions quickly. Shortcuts that do not fit move into a menu and return as you widen the window.
 
-The More menu uses labeled buttons. On short screens, previous/next buttons show the remaining actions without scrolling. Close it by choosing an action, clicking outside, or pressing Escape.
+![Enhanced shortcuts beside Jellyfin desktop controls](../images/enhanced/header-desktop.webp)
 
-![JE shortcuts fitting beside Jellyfin's native controls](../images/header-shortcuts.png)
+**How to use:**
 
-![Remaining shortcuts in the More menu on a phone](../images/header-shortcuts-more.png)
+1. Click the ••• button, **More from Jellyfin Enhanced**, to open **More from JE**.
+2. Choose a labeled action. On short screens, use **Previous page** and **Next page** to see the remaining actions.
+3. Close with the close button, by choosing an action, clicking outside, or pressing ++escape++.
 
-![Live header resizing from desktop to a small phone](../images/header-desktop-to-phone.gif)
+![More from JE menu on a phone](../images/enhanced/header-phone.webp)
+
+There is no separate setting for this automatic layout. Each shortcut follows its feature's availability. Random gets first priority; other enabled shortcuts stay visible while there is room.
+
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Header shortcuts move into More from JE as the screen narrows">
+    <source src="../../images/enhanced/header-resize.mp4" type="video/mp4">
+  </video>
+  <figcaption>Header shortcuts move into More from JE as the screen narrows.</figcaption>
+</figure>
 
 ### Random Button
 
-![Random button picking a title](../images/readme/random.webp)
+Use the dice button to pick a random title when you cannot decide what to watch. It opens the title's detail page without starting playback.
 
-The dice button (or `R`) opens a random movie or show from your library. In the Enhanced panel's **Random Button** tab you can limit it to unwatched items, choose whether movies and/or shows are eligible, and narrow the pool under **Random Source**:
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Random button opens two library titles">
+    <source src="../../images/enhanced/random-pick.mp4" type="video/mp4">
+  </video>
+  <figcaption>Random button opens two library titles.</figcaption>
+</figure>
 
-- **Use the playlist or collection I'm viewing** - on a playlist or collection page, the pick comes from that container's items (movies, shows or episodes) instead of the whole library.
-- **Everywhere else, pick from** - pin one of your playlists or collections so every press draws from it, whatever page you are on.
+**How to use:**
 
-If the chosen source has nothing eligible (empty, all watched, or deleted), the button falls back to the whole library and says so in a toast. The admin default for the "current playlist/collection" behaviour is under **Random Button** on the plugin configuration page.
+1. Open **Random Button Settings** to choose item types and a source. Keep at least one of **Movies** and **Shows** selected.
+2. Click the dice button or press the stock ++r++ shortcut outside the player. Inside the player, ++r++ resets playback speed.
 
----
+Personal settings in **Random Button Settings**:
+
+![Random source and unwatched selection settings](../images/enhanced/random-source.webp)
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Enable Random Button** | On | Shows the dice button. |
+| **Unwatched Only** | Off | Includes unplayed movies/episodes and shows with unplayed episodes. |
+| **Movies** | On | Includes movies. |
+| **Shows** | On | Includes series and, inside playlists/collections, episodes. |
+| **Use the playlist or collection I'm viewing** | Off | Gives the open playlist/collection detail page priority over a pinned source. |
+| **Everywhere else, pick from** | **Whole library** | Under **Random Source**, pins an accessible playlist or collection for other pages. This choice is personal only. |
+
+Matching initial defaults are under admin **Display → Random Button**:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Enable Random Button** | On | Initial button visibility. |
+| **Show unwatched only** | Off | Initial watched-state filter. |
+| **Include movies** | On | Initial movie selection. |
+| **Include shows** | On | Initial show selection. |
+| **Scope to the current playlist or collection** | Off | Starting behavior for the playlist or collection you are viewing. |
+
+??? info "How random selection works"
+
+    JE samples up to 100 randomly ordered candidates, then applies the unwatched filter. Playlists and collections supply only their direct children; the whole-library query includes nested items.
+
+    If a pinned source is unavailable or a playlist/collection sample has no eligible titles, JE falls back directly to the library and shows a toast. It bypasses any other pinned source. An empty eligible library sample shows an error. An empty sample does not mean every item in the source is ineligible.
 
 ## Content Management
 
+Keep titles you do not want to see out of your browsing lists, or clear individual home rows without changing your playback progress.
+
 ### Hidden Content System
 
-![Hidden content management panel](../images/hidden-content-panel.png)
+Hide titles from the browsing lists whose filters you enable. Your hidden list follows your account across devices.
 
-Per-user content hiding with server-side storage and granular filtering controls.
+!!! note "Hiding does not restrict access"
 
-**Features:**
+    You can still open hidden titles directly and play them. “Everywhere” means only the browsing areas whose filters are enabled.
 
-- Hide specific movies/series from all browsing surfaces
-- Hidden state stored server-side per-user
-- Survives browser/device changes
-- Management panel with search and bulk operations
-- Granular filter toggles for different surfaces
-- Undo functionality with toast notifications
+**How to hide:**
 
-**Surfaces with Filtering:**
+1. Ask an administrator to enable **Pages → Hidden Content → Enable Hidden Content**.
+2. Open a movie, series, season, or episode detail page and click the open-eye **Hide** button. Movies, series, and seasons use a standard confirmation. An episode with a known series offers **Hide this episode everywhere** or **Hide entire show everywhere**.
 
-- Library views
-- Discovery pages
-- Search results
-- Calendar view
-- Next Up section
-- Continue Watching section
-- Recommendations
-- Requests page
+![Detail-page Hide confirmation with a global hide and a 15-minute confirmation bypass](../images/enhanced/hide-confirm.webp)
 
-**How to Hide Content:**
+If **Show in Library Views** is on, you can also use card eye buttons. In **Continue Watching** or **Next Up**, their choice dialog can limit a hide to that row: **Remove from Continue Watching** or **Hide from Next Up only**. These choices are separate from detail-page hiding.
 
-1. Navigate to any item detail page
-2. Click the hide button (visibility_off icon)
-3. Choose hide scope:
-   - **Global** - Hide everywhere
-   - **Episode** - Hide this episode only
-   - **Show** - Hide entire series
-   - **Next Up** - Hide from Next Up only
-   - **Continue Watching** - Hide from Continue Watching only
-4. Confirm the action
+![Hide choices from a Next Up episode and a Continue Watching movie](../images/enhanced/hide-confirm-scoped.webp)
 
-**Management Panel:**
+An already-hidden item shows a crossed-out eye; use it to **Unhide**. After a hide, the **Undo** toast lasts eight seconds. A new hide replaces the previous toast.
 
-Access via:
-- Enhanced panel → Settings → Hidden Content
-- Sidebar navigation (if enabled; Jellyfin 12: user profile menu instead)
-- Custom tab (if configured)
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Hiding a library movie and restoring it with Undo">
+    <source src="../../images/enhanced/hide-undo-flow.mp4" type="video/mp4">
+  </video>
+  <figcaption>Hiding a library movie and restoring it with Undo.</figcaption>
+</figure>
 
-**Management Features:**
+**How to manage:** Open **Hidden Content** through its configured entry, or choose **Manage Hidden Content** in the personal section. The page presents **Movies**, expandable **Series** groups, and **Cast / Actors**.
 
-- View all hidden items
-- Search hidden content
-- Unhide individual items
-- Unhide all items at once
-- Group by series/movies
-- Filter by scope
+![Hidden Content page with grouped items and Scoped only filter](../images/enhanced/hidden-page.webp)
 
-**Configuration:**
+- **Search hidden items…** matches item and series names.
+- **Scoped only** shows non-global entries, rather than selecting a particular scope. Badges distinguish **Continue Watching only**, **Next Up only**, and **Home sections only**.
+- **Expand All** / **Collapse All** opens or closes series groups.
+- **Unhide** restores an entry; **Add back to Continue Watching** restores a Continue Watching-only entry. **Unhide All for This Show** clears a series group.
+- **Unhide All** clears the entire list, even if search or **Scoped only** currently shows a subset.
 
-1. Open Enhanced panel (press `?`)
-2. Go to Settings tab
-3. Find Hidden Content section
-4. Enable/disable the feature
-5. Configure filter toggles:
-   - Show hide buttons on Seerr items
-   - Show hide buttons in library views
-   - Show hide buttons on detail pages
-   - Filter library views
-   - Filter discovery pages
-   - Filter search results
-   - Filter calendar
-   - Filter Next Up
-   - Filter Continue Watching
-   - Filter recommendations
-   - Filter requests page
-6. Choose integration method:
-   - Plugin Pages (requires Plugin Pages plugin; Jellyfin 12: user profile menu instead of sidebar)
-   - Custom Tabs (requires Custom Tabs plugin)
+Personal settings in the Enhanced panel's **Hidden Content** section start from admin **Pages → Hidden Content** defaults. The table includes matching admin labels. Button visibility and filtering are separate:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Enable Content Hiding** | On | Enables personal filtering without deleting entries when turned off. Admin: **Hidden Content enabled by default**. |
+| **Show Hide Buttons** | On | Shows eye buttons; turning it off preserves filtering. Admin: **Show "Hide" buttons by default**. |
+| **Show Confirmation Dialog** | On | Confirms standard hides. Admin: **Show confirmation dialog before hiding**. |
+| **Show on Seerr Items** | On | Shows eye buttons on supported Seerr results. Admin: **Show "Hide" button on Seerr search results**. |
+| **Show in Library Views** | Off | Shows eye buttons on library/home cards. Admin: **Show "Hide" button on library / home cards**. |
+| **Show on Detail Pages** | On | Shows eye buttons on supported media detail pages. Admin: **Show "Hide" button on item details pages**. |
+| **Show on Cast/Actors** | Off | Adds hiding on cast cards and person detail pages. Admin: **Show "Hide" button on cast / actor cards**. |
+| **Filter Library** | On | Filters library lists and supported detail-page lists. Admin: **Filter Library & details pages**. |
+| **Filter Search** | Off | Filters supported Jellyfin and Seerr search results. Admin: **Filter Search results**. |
+| **Filter Continue Watching** | On | Filters that home row, including row-specific hides. |
+| **Filter Next Up** | On | Filters that home row, including row-specific hides. |
+| **Filter Upcoming** | On | Filters upcoming episodes. Admin: **Filter Upcoming episodes**. |
+| **Filter Recommendations** | On | Filters supported suggestions/recommendation results. Admin: **Filter Suggestions / recommendations**. |
+| **Filter Discovery** | On | Filters JE's Seerr discovery results. |
+| **Filter Calendar** | On | Filters JE's Calendar. |
+| **Filter Requests** | On | Filters JE's Requests page. Admin: **Filter Requests page**. |
+| **Hide Collections & Libraries** | Off | Experimental: allows hiding My Media libraries, collections, and playlists with library-card buttons enabled, without recursively hiding every child. Admin: **Allow hiding collections, libraries, and playlists (experimental)**. |
+
+Admin settings in **Pages → Hidden Content**:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Enable Hidden Content** | Off | Loads the full feature, personal section, and management page. |
+| **Add Hidden Content as a native Home tab** | Off | Adds a built-in Home tab; its shortcut is available when the tab button is hidden. |
+| **Use Plugin Pages for Hidden Content** | Off | Adds the page to Plugin Pages. |
+| **Use Custom Tabs for Hidden Content** | Off | Uses a Custom Tabs entry instead of a native tab. |
+| **Add the Custom Tabs entry for me** | Off | Creates/manages the JE-owned entry on save. |
+
+??? info "Hidden Content details"
+
+    Plugin Pages uses `/JellyfinEnhanced/hiddenContentPage`. For manual Custom Tabs setup, use:
+
+    ```html
+    <div class="jellyfinenhanced hidden-content"></div>
+    ```
+
+    Standard confirmation offers **Don't ask again for 15 minutes**. This preference is local to your browser and specific to your account. **Show Confirmation Dialog** controls the persistent preference. Episode/show and home-row choice dialogs still appear when you need to choose an action.
+
+    The other filter labels are identical in the personal and admin interfaces. Hidden Content preferences are saved with your per-account list on the server in `hidden-content.json`, separately from ordinary personal settings. The standalone `#/hidden-content` route opens only with native Home tab and Custom Tabs placement off and no detected Plugin Pages integration for Hidden Content. See the [standalone-route table](../getting-started/pages-and-tabs.md#reach-the-pages-on-desktop-and-phone) for navigation conditions.
+
+    Cast hiding saves the person as a hidden item; it does not hide every movie or show featuring that person. A series hide can suppress its episodes and seasons through their series ID.
+
+    Server filtering also affects clients consuming covered Jellyfin list endpoints, even if they cannot show JE's eye buttons. Native filtering matches Jellyfin item/series IDs; Seerr filtering matches TMDB IDs. A Seerr-only hide does not guarantee hiding a later-added library item.
+
+    Calendar filtering also matches normalized names, which can collide. Deleting a library item removes entries for its Jellyfin ID. Home Screen Sections' synthetic discovery/upcoming results are not equivalent to JE's integration results.
 
 ### Remove from Continue Watching / Next Up
 
-A lightweight, **non-destructive** way to tidy the home screen. It adds a **Remove** option to an item's "⋯" action-sheet menu for items in the **Continue Watching** and **Next Up** rows, hiding the item from that row without touching your playback position or watched state.
+Remove an item from a home row while preserving its playback position and watched state. Row-specific hides are stored server-side for your account.
 
-![The Remove option in an item's menu](../images/remove-from-row.png)
+![Remove from Continue Watching and Remove from Next Up actions in item menus](../images/enhanced/remove-menu.webp)
 
-**How It Works:**
+**How to use:**
 
-1. Open an item's "⋯" menu in the Continue Watching or Next Up row
-2. Click **Remove from Continue Watching** / **Remove from Next Up**
-3. The item disappears from that row — your progress is left untouched
+1. Open an item's ⋯ menu, right-click menu, or long-press/multi-select menu in **Continue Watching** or **Next Up**.
+2. Choose **Remove from Continue Watching** or **Remove from Next Up**. Mixed selections from removable rows use **Remove**; selections from one row use its specific label.
 
-**Highlights:**
+![Multi-select menu with JE Remove for selected Home items](../images/enhanced/remove-multiselect-menu.webp)
 
-- Works on both **Continue Watching** and **Next Up** items, each removed from its own row
-- Also appears in Jellyfin's **long-press / multi-select menu**, so touch devices with no "⋯" button can remove items. Selecting a mix of rows (and other items) only ever removes the Continue Watching / Next Up ones
-- Removing several at once shows a confirmation listing each item and the row it will be removed from
-- Hidden state is stored **server-side, per-user**, so it applies across all your devices and survives reloads
-- **Undoable:** removed items appear in the **Hidden Content** management page with an "Add back" button, and simply resuming a hidden item unhides it automatically
-- Works on its own — it does not require the full Hidden Content feature to be enabled
-- Also applies to home screens rendered by the [Home Screen Sections](https://github.com/IAmParadox27/jellyfin-plugin-home-sections) plugin, including its combined *Continue Watching / Next Up* row
+For multiple removable items, confirm the list of titles and rows. A single removable item needs no bulk confirmation.
 
-![Bulk removal confirmation listing each item and its row](../images/remove-confirm.png)
+![Bulk removal confirmation lists selected items and their rows](../images/enhanced/remove-confirmation.webp)
 
-**Enable it:**
+| Setting | Default | What it does |
+|---|---|---|
+| **Enable "Remove from Continue Watching"** — admin **Display** | Off | Enables server row filtering and supplies the initial personal removal-button default. |
+| **Add Remove from Continue Watching & Next Up Buttons** — personal **UI Settings** | Off | Adds the menu actions. Turning it off retains earlier hides. |
 
-- Open the Enhanced panel (press `?`) → **Settings** → **Add Remove from Continue Watching & Next Up Buttons**
+To restore entries manually, enable the full Hidden Content feature and use its management page: **Add back to Continue Watching** for Continue Watching-only entries, **Unhide** for Next Up or combined entries. Confirm with **Unhide** in the dialog.
 
----
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Removing an in-progress movie and adding it back without losing progress">
+    <source src="../../images/enhanced/remove-flow.mp4" type="video/mp4">
+  </video>
+  <figcaption>Remove a movie, restore it through Hidden Content, and return to its saved playback progress.</figcaption>
+</figure>
+
+!!! note "Keep removed items out of the row"
+
+    Lasting filtering needs the server's removal setting or **Enable Hidden Content**, plus personal **Enable Content Hiding** and the relevant **Filter Continue Watching** / **Filter Next Up** setting.
+
+??? info "Row removal and restoration"
+
+    With both server features off, a personal button can save the hide and remove the current card, but later server responses are not filtered. First-time removal enables personal filtering; existing Hidden Content preferences are retained.
+
+    Items outside removable rows are ignored, although a card carrying a playback position can be recognized as Continue Watching. Requests run separately, so a batch can partly succeed. Canceling or total failure preserves the selection. Successful removals also hide empty home sections. Home Screen Sections rows, including its combined Continue Watching/Next Up row, are supported.
+
+    Removing the same item from both rows combines the hide; global and already-combined hides are preserved.
+
+    Resuming clears a matching Continue Watching-only hide. A combined hide becomes Next Up-only, restoring Continue Watching visibility. Next Up-only and global hides remain until removed manually. Episode playback can also match a hide saved against its series.
 
 ### Admin: Other Users' Hidden Content
 
-![Admin viewing another user's hidden content](../images/hidden-content-admin.png)
+As an administrator, you can review and manage other users' hidden lists from the same **Hidden Content** page.
 
-Administrators can review (and optionally manage) what other users have hidden, from the same Hidden Content page. Admin-only and enforced server-side; regular users never see it.
+![Administrator viewing and editing another user's hidden list](../images/enhanced/hidden-admin.webp)
 
-**Features:**
+**How to use:**
 
-- User-filter dropdown to switch between *My hidden content* and any user who has hidden something
-- Another user's list is read-only by default, with a "Viewing: OtherUser" badge
-- An **Edit** toggle (when enabled) to unhide items for that user, or add new ones
-- Add items by searching the library *and* Seerr, so you can hide titles that aren't in the library yet
-- An admin never overwrites an item the user hid themselves
+1. Select a user from **View user's hidden content**. The picker appears when another user has hidden entries. **My hidden content** returns to your own list.
+2. Choose **Edit** to restore entries, or **Add items** to search for titles. Enter at least two characters. **In library** and **Discover** distinguish sources.
+3. Click **Hide** to add a global hide. **Already hidden** entries are skipped, preserving the user's existing hide.
+4. Choose **Done** to return to read-only mode. **Unhide All** in edit mode clears the selected user's entire list.
 
-**Configuration:**
+Admin **Pages → Hidden Content → Admin Controls**:
 
-In **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Pages** → **Hidden Content** → **Admin Controls**, the **Let admins view and manage other users' hidden content** toggle enables the whole feature (the user-filter dropdown and the Edit toggle). On by default; turn it off to keep hidden lists private.
+| Setting | Default | What it does |
+|---|---|---|
+| **Let admins view and manage other users' hidden content** | On | Enables both cross-user viewing and editing when Hidden Content is enabled. Turn it off to disable these controls. |
 
----
+??? note "Cross-user access and search"
+
+    Access is checked server-side. Switching users clears search/scoped filtering and opens a read-only list with **Viewing: {userName}**.
+
+    JE requests up to 24 library matches using the admin's library access and also searches Seerr when available.
 
 ## Playback & Controls
 
+Use shortcuts, bookmarks, and player preferences to make watching more comfortable.
+
 ### Advanced Keyboard Shortcuts
 
-Comprehensive hotkeys for navigation, playback control, and more.
+Navigate Jellyfin and control local video playback without opening menus. Admin bindings supply defaults; you can override or disable individual JE actions for your account.
 
-![Shortcuts](../images/enhanced-panel-shortcuts.png)
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Opening shortcut help over the player and returning to playback">
+    <source src="../../images/enhanced/shortcut-overlay.mp4" type="video/mp4">
+  </video>
+  <figcaption>Opening shortcut help over the player and returning to playback.</figcaption>
+</figure>
 
-**Default Shortcuts:**
+**How to use:** Press the keys below outside text input fields. To customize them:
 
-**Global:**
+1. Open **Shortcuts** in the Enhanced panel.
+2. Click or focus a binding to show **Waiting…**, then press a key combination.
+3. While listening, use ++backspace++ to restore the current admin default, or ++delete++ or the disable control to mark the action **Disabled**. Re-enabling restores the admin default.
 
- - `/` - Open Search
- - `Shift+H` - Go to Home
- - `D` - Go to Dashboard
- - `Q` - Quick Connect
- - `R` - Play Random Item
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Changing, disabling and resetting a keyboard shortcut">
+    <source src="../../images/enhanced/shortcut-edit-flow.mp4" type="video/mp4">
+  </video>
+  <figcaption>Changing, disabling and resetting a keyboard shortcut.</figcaption>
+</figure>
 
-**Player:**
+![Current global and player shortcut help](../images/enhanced/shortcut-help.webp)
 
- - `A` - Cycle Aspect Ratio
- - `I` - Show Playback Info
- - `S` - Subtitle Menu
- - `C` - Cycle Subtitle Tracks
- - `V` - Cycle Audio Tracks
- - `+` - Increase Playback Speed
- - `-` - Decrease Playback Speed
- - `R` - Reset Playback Speed
- - `B` - Bookmark Current Time
- - `P` - Open Episode Preview
- - `O` - Skip Intro/Outro
+| Global action | Stock key | What it does |
+|---|---|---|
+| **Open Search** | ++slash++ | Opens search. |
+| **Go to Home** | ++shift+h++ | Opens Home. |
+| **Go to Dashboard** | ++d++ | Opens the dashboard; Jellyfin permissions still apply. |
+| **Quick Connect** | ++q++ | Opens Quick Connect. |
+| **Play Random Item** | ++r++ | Opens random item details when the dice button is available. |
 
+| Player action | Stock key | What it does |
+|---|---|---|
+| **Cycle Aspect Ratio** | ++a++ | Cycles **Auto → Cover → Fill**. |
+| **Show Playback Info** | ++i++ | Toggles JE's statistics overlay. |
+| **Subtitle Menu** | ++s++ | Opens the subtitle menu. |
+| **Cycle Subtitle Tracks** | ++c++ | Cycles tracks, including **Off**. |
+| **Cycle Audio Tracks** | ++v++ | Cycles audio tracks, without an Off option. |
+| **Increase Playback Speed** | ++plus++ | Steps up through 0.25×, 0.5×, 0.75×, 1×, 1.25×, 1.5×, 1.75×, and 2×. |
+| **Decrease Playback Speed** | ++minus++ | Steps down through those speeds. |
+| **Reset Playback Speed** | ++r++ | Returns to 1×. |
+| **Bookmark Current Time** | ++b++ | Opens **Add Bookmark** when Bookmarks is enabled. |
+| **Open Episode Preview** | ++p++ | Clicks the existing preview button; requires the separate InPlayerEpisodePreview plugin. |
+| **Skip Intro/Outro** | ++o++ | Skips the current segment. |
+| **Step Back One Frame** | ++comma++ | Pauses and seeks back one estimated frame. |
+| **Step Forward One Frame** | ++period++ | Pauses and seeks forward one estimated frame. |
+| **Jump to Last Position** | ++z++ | Returns once to the position saved before the last seek. |
+| **Jump to % of video** | ++0++–++9++ | Seeks to 0%, 10%, … 90%. Can be disabled but not rebound. |
 
-**Customization:**
+| Setting | Default | What it does |
+|---|---|---|
+| **Disable Keyboard Shortcuts** — admin **Keyboard** | Off | Disables ordinary JE shortcuts and hides **Shortcuts**. The ++question++ panel shortcut still works outside text fields. |
+| **Shortcuts Panel Autoclose Delay (ms)** — admin **Playback** | 15000 | Closes the panel after the configured delay while the pointer is outside it. |
 
-1. Press `?` to open the Enhanced panel
-2. Go to **Shortcuts** tab
-3. Click on any key to set a custom shortcut
-4. Changes save automatically per user
+??? info "Shortcut behavior and admin bindings"
+
+    Modifier-only presses are ignored. Conflicts and reserved native player bindings are rejected with a red shake; a dot marks personal overrides. Changes save in your server-side `shortcuts.json`.
+
+    Administrators can set server bindings in **Keyboard → Keyboard Config** using its recorder, then **Save Settings**. While recording there, ++delete++ disables an action and ++backspace++ restores its stock binding. Existing personal overrides still take precedence.
+
+    Held ++c++ or ++v++ does not repeatedly cycle tracks. Frame stepping uses media frame-rate metadata. When it is missing, JE falls back to 24 fps and shows a notice.
+
+    **Cycle Aspect Ratio** stores Jellyfin's aspect ratio in this browser and adjusts graphical-subtitle canvases. **Show Playback Info** refreshes the statistics overlay every second while open. **Skip Intro/Outro** seeks past the segment containing the current position, including other segment types, and falls back to an available native skip button. It is independent of auto-skip settings.
 
 ### Smart Bookmarks
 
-![Bookmark markers on the video timeline](../images/readme/player-bookmarks.webp)
+Save moments in a video and return to them from timeline markers or a library-wide page. Your bookmarks are personal and stored on the server.
 
-Save timestamps and jump to specific moments with visual timeline markers.
+![Bookmark markers and jump controls on the player timeline](../images/enhanced/bookmark-timeline.webp)
 
-**Features:**
+**How to use:**
 
-- Create bookmarks during playback with `B` key
-- Visual markers on video timeline
-- Add custom labels to bookmarks
-- Sync bookmarks across duplicate items (same TMDB/TVDB ID)
-- Manage all bookmarks from Custom Tabs interface
-- Export/import bookmark data
+1. During playback, press ++b++ or click the bookmark-add player button.
+2. In **Add Bookmark**, **Time** is captured when opening begins and is read-only. Enter **Label (optional)**, up to 100 characters.
+3. Click **Add Bookmark** to save. Click its timeline marker to jump there. **Existing Bookmarks** also offers jump and delete controls.
+4. Open **Bookmarks** through its navigation entry. Use **Movies**, **Series**, or **Others**; the last group covers items outside Movie/Episode groupings. Click a timestamp/play icon to start there. Edit a time in seconds or `HH:MM:SS` and change its label.
 
-**Usage:**
+![Add Bookmark dialog with time and label fields](../images/enhanced/bookmark-modal.webp)
 
-1. While watching, press `B` at any moment
-2. Add an optional label (e.g., "Epic scene")
-3. Bookmark appears as marker on timeline
-4. Click marker to jump to that timestamp
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Saving a bookmark and jumping back to it during playback">
+    <source src="../../images/enhanced/bookmark-add-jump.mp4" type="video/mp4">
+  </video>
+  <figcaption>Saving a bookmark and jumping back to it during playback.</figcaption>
+</figure>
 
-**Bookmark Management:**
+Admin **Pages → Bookmarks**:
 
-- Access via Custom Tabs plugin
-- View all bookmarks across library
-- Clean up orphaned bookmarks
-- Detect and merge duplicates
-- Adjust time offsets for synced bookmarks
+| Setting | Default | What it does |
+|---|---|---|
+| **Enable Bookmarks Feature** | On | Enables creation, timeline markers, and management. |
+| **Add Bookmarks as a native Home tab** | Off | Adds a built-in Home tab and a shortcut when its tab button is hidden. |
+| **Use Plugin Pages for Bookmarks Library** | Off | Adds the page to Plugin Pages. |
+| **Use Custom Tabs for Bookmarks** | Off | Uses Custom Tabs instead of a native tab. |
+| **Add the Custom Tabs entry for me** | Off | Manages the entry on save. |
+
+??? info "Bookmark storage and matching"
+
+    Plugin Pages uses `/JellyfinEnhanced/bookmarksPage`. For manual Custom Tabs setup, use:
+
+    ```html
+    <div class="sections bookmarks"></div>
+    ```
+
+    Your bookmarks are stored in `bookmark.json`. The standalone `#/bookmarks` route opens only with native Home tab and Custom Tabs placement off and no detected Plugin Pages integration for Bookmarks. See the [standalone-route table](../getting-started/pages-and-tabs.md#reach-the-pages-on-desktop-and-phone) for navigation conditions.
+
+    Markers for the exact item are cyan. If that item has no exact bookmarks, matching TMDB/TVDB IDs can provide orange fallback markers with **File may have changed since bookmark was created**.
+
+    Episode matching checks saved season/episode identity when present. Legacy records without it can match by provider ID alone. Timestamps are reused without adjusting for different edits of the video.
+
+??? tip "Merge duplicates, adjust timing, or recover a replaced file"
+
+    **Find Duplicates → Merge to Primary** copies matching bookmarks to the first item key in the stored duplicate group. “Primary” is not a detected preferred Jellyfin version. Originals remain; repeated merges can create copies. Episode duplicate/replacement matching preserves available season/episode identity.
+
+    On the resulting item, use **Adjust Offset**, enter positive or negative **Time Offset (seconds)**, then **Apply Offset**. Only copied records still marked as synchronized are shifted, with times clamped at zero. Successful updates clear their synchronization markers; a zero offset clears markers without shifting times.
+
+    For an **Orphaned** item, use **Find Replacement**, select a matching library item, then **Migrate Bookmarks**. Migration moves records and removes the old ones after a successful save. The replacement button needs a saved TMDB ID; matching can also use TVDB. Search checks at most the newest 500 candidates, so an older replacement may not appear.
+
+    Failed saves show feedback and roll back changes; a failed migration preserves the original records. Bookmark writes are serialized within the client.
+
+!!! warning
+
+    Individual deletion is immediate. **Delete All** asks for confirmation and has no undo. Recover replacements before **Cleanup Orphaned**: cleanup treats failed item lookups as missing, so network or access failures can cause unintended deletion. There is no bookmark export/import control.
 
 ### Custom Pause Screen
 
-Beautiful overlay with media info when you pause a video.
+After you pause and stop interacting, JE can display artwork and media information over the video.
 
-![Pause Screen](../images/readme/pause-screen.webp)
+![Custom pause screen with artwork, synopsis and progress](../images/enhanced/pause-screen.webp)
 
-**Displays:**
+**How to use:**
 
-- Media title and logo
-- Year, rating, runtime
-- Plot/description
-- Current progress with time remaining
-- Spinning disc animation
-- Blurred backdrop
+1. Enable **Custom Pause Screen** in **Playback Settings**.
+2. Pause and wait for the idle delay. Interaction postpones its appearance; moving the pointer after it appears leaves the overlay visible.
+3. Press ++space++ / ++enter++ or click/tap the background to resume. × dismisses without resuming and prevents another overlay during that pause.
 
-!!! tip
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Pause screen appears after a delay and disappears on resume">
+    <source src="../../images/enhanced/pause-appearance.mp4" type="video/mp4">
+  </video>
+  <figcaption>Pause screen appears after a delay and disappears on resume.</figcaption>
+</figure>
 
-    [Custom CSS available](../advanced/css-customization.md)
+| Setting | Default | What it does |
+|---|---|---|
+| **Enable Custom Pause Screen** — admin **Playback → Playback & Tab Switch** | On | Supplies the initial personal default. |
+| **Custom Pause Screen** — personal **Playback Settings** | On | Enables the overlay; reload after changing enablement. |
+| **Delay before showing (seconds):** — personal **Playback Settings** | 5 | Idle delay while paused; accepts integers from 1–60 and updates the running delay. |
+
+The overlay shows the year, official age rating, runtime, description, elapsed/total time, watched percentage, and estimated **Ends at** time. See [CSS Customization](../advanced/css-customization.md) for styling.
+
+![Custom pause screen in a phone viewport](../images/enhanced/phone-pause.webp)
+
+??? note "Pause-screen artwork and layout"
+
+    Logo, disc, and blurred backdrop depend on available item/parent/series artwork. A missing logo does not guarantee a text-title fallback. Disc art hides on narrow layouts, can return in short landscape layouts, and stops rotating with reduced-motion preferences.
 
 ### Smart Playback
 
-Intelligent playback features for better viewing experience.
+Manage tab-switch playback, temporary speed boosts, and automatic intro/outro skipping in the browser player.
 
-**Features:**
+![Playing movie with Enhanced player controls](../images/enhanced/player-osd.webp)
+*The player also shows rating chips, a bookmark button, and the optional Playback Info overlay.*
 
-- **Auto-pause** - Pause when switching browser tabs
-- **Auto-resume** - Resume when returning to tab
-- **Auto-skip intros/outros** - Seamless binge-watching, driven by Jellyfin's own media segments (requires a segment provider such as Intro Skipper)
-- **Playback speed control** - Adjust speed with keyboard shortcuts
-- **Auto Picture-in-Picture** - Enter PiP mode when switching tabs and leave it when you come back. Browsers that open their own automatic PiP on tab switch (such as Edge and Chrome) keep control of that window; JE only closes a PiP window it opened itself
+**How to use:** Open **Playback Settings** for tab-switch and hold controls, or **Auto-Skip Settings** for intros/outros. Admin defaults are under **Playback → Playback & Tab Switch** and **Playback → Auto-Skip**.
 
-**Configuration:**
-Enable/disable in Enhanced panel → Settings tab
+- For continuous Picture-in-Picture playback, turn off **Auto-pause**.
+- For temporary 2× speed, hold the video background with the left mouse button or touch for 500 ms. Release or cancel to restore the previous speed. Hold only on the video background.
 
-**How auto-skip works:**
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Holding the video temporarily increases playback to twice normal speed">
+    <source src="../../images/enhanced/long-press-speed.mp4" type="video/mp4">
+  </video>
+  <figcaption>Holding the video temporarily increases playback to twice normal speed.</figcaption>
+</figure>
 
-Auto-skip reads the media segments Jellyfin already stores for the item (the same
-data the native **Skip Intro** button uses) and seeks straight to the segment's
-end boundary.
+For auto-skip, you need Jellyfin's stored media segments from a provider such as Intro Skipper.
 
-- It skips to the **exact** end of the intro/outro segment, honouring the offsets
-  the segment provider detected.
-- It works in **every language** — nothing depends on the skip button's English label.
-- It works even with Jellyfin's own media-segment action set to **None**, where no
-  skip button ever appears.
-- If you seek **back** into an intro you just skipped, it stays put instead of
-  yanking you forward again. Rewind to before the segment and play through it and
-  it skips again, matching Jellyfin's native behaviour.
+![Auto-Skip Settings and Intro-Skipper dependency notice](../images/enhanced/panel-auto-skip.webp)
 
-!!! note
+| Setting | Default | What it does |
+|---|---|---|
+| **Auto-pause** — personal; **Auto-pause on tab switch** — admin | On | Pauses playing video when the browser tab is hidden. |
+| **Auto-resume** — personal; **Auto-resume on tab switch** — admin | Off | Resumes only when JE recorded that it paused on leaving; does not resume a video already paused manually. |
+| **Auto Picture-in-Picture** — personal; **Auto Picture-in-Picture on tab switch** — admin | Off | Requests PiP when leaving and closes the PiP window JE opened when returning. |
+| **Long Press for 2x Speed (β)** — personal; **Long press/hold for 2x speed β** — admin | Off | Temporarily boosts speed while holding. Reload after first enabling. |
+| **Automatically Skip Intro** — personal; **Auto-skip Intro** — admin | Off | Seeks to the end of stored Intro segments. |
+| **Automatically Skip Outro** — personal; **Auto-skip Outro** — admin | Off | Seeks to the end of stored Outro segments. |
 
-    Recap, Preview and Commercial segments are left to Jellyfin's own
-    per-segment-type actions (**Playback** settings), which can prompt or skip them
-    independently. The Enhanced toggles only cover intros and outros. Jellyfin
-    stores media segments **per item, not per version**, so an item with multiple
-    versions whose timings differ may see boundaries taken from the primary version.
+??? info "Playback behavior and limits"
+
+    **Picture-in-Picture:** Auto-pause pauses playing video when the document is hidden. Auto-pause and PiP can run on the same visibility change. PiP needs browser support, loaded video metadata, and browser permission/activation. A request can be refused. Edge/Chrome may open their own automatic PiP; JE closes only the window it opened itself.
+
+    **Temporary 2× speed:** A speed indicator appears during the boost. Activation on a paused video attempts playback. Moving more than ten pixels before activation cancels the pending hold. OSD controls and the pause overlay are excluded, but the Enhanced panel is not reliably excluded.
+
+    **Auto-skip:** JE seeks to the exact stored segment end. It does not depend on an English button label or require Jellyfin's segment action to display a skip button. Segments need start/end boundaries and must last at least one second.
+
+    Seeking back inside a segment just skipped leaves you there. Seek before its start and play through it to skip again. **Recap**, **Preview**, and **Commercial** actions remain Jellyfin's responsibility; JE's automatic toggles cover only intros/outros. Outro skipping does not implement a separate auto-next feature; Jellyfin controls next-episode autoplay.
+
+    Failed segment retrieval or ambiguous playing-item identity can leave skipping inactive. Jellyfin stores segments per item, so multiple versions with different timings can use boundaries from the primary version.
+
+!!! note "Auto-skip uses a local seek"
+
+    Direct play/direct stream and HLS are suitable. Progressive transcoding can stall beyond produced data, and SyncPlay peers do not follow this local seek.
 
 ### Customizable Subtitles
 
-Fine-tune subtitle appearance with presets and custom colors.
+Style text subtitles with presets, colors, effects, and a live position preview. These preferences do not change Jellyfin's saved subtitle appearance settings.
 
-**Presets:**
+**How to use:**
 
-- Multiple font families
-- Size options (small, medium, large, extra large)
-- Background opacity
-- Text effect: **Auto**, **None**, **Shadow**, **Outline** or **Outline + Shadow**
-- Position adjustments
+1. During playback, open **Subtitle Settings**.
+2. Choose presets or edit **Text** / **Background**, and preview the result. Changes apply to supported text tracks.
+3. For positioning, set Jellyfin's **Subtitle styling** to **Custom** in user subtitle preferences, then click or drag the **Position** grid.
 
-**Custom Colors:**
+![Subtitle style, color and position controls with a preview](../images/enhanced/subtitle-preview.webp)
 
-- User-configurable text color with alpha support
-- User-configurable background color with alpha support
-- Live preview in settings
-- Per-user customization
+Personal **Subtitle Settings**, with initial defaults from admin **Playback → Subtitles**:
 
-**Text effect:**
+![Administrator subtitle style defaults](../images/admin/subtitle-defaults.webp)
 
-- **Auto** (default) keeps the long-standing behaviour: a soft shadow when the background is transparent, nothing when a background box is shown.
-- **None**, **Shadow**, **Outline** and **Outline + Shadow** apply that effect regardless of background. The outline is a black stroke that scales with the font size.
-- Admins can pick the default for new users with **Default Subtitle Text Effect** in the plugin settings.
-- The text effect takes the place of Jellyfin's own **Drop shadow** subtitle setting, so the two never stack. To use Jellyfin's drop shadow instead, turn on **Disable Custom Subtitle Styles**.
-
-**Usage:**
-
-1. Open Enhanced panel → Settings
-2. Find Subtitle Presets section
-3. Select your preferred preset options
-4. Or use Custom Colors section:
-   - Choose text color
-   - Adjust text alpha
-   - Choose background color
-   - Adjust background alpha
-   - Preview changes live
-5. Changes apply immediately
-
-**How it applies**
-
-Jellyfin draws text subtitles in one of two ways, decided by its **Subtitle styling** setting (in Jellyfin **User Preferences** → **Subtitles**). Jellyfin Enhanced styles both.
-
-| Jellyfin **Subtitle styling** | What Jellyfin uses | What Jellyfin Enhanced applies |
+| Setting | Default | What it does |
 |---|---|---|
-| **Custom** | Its own subtitle element | Text color, background, size, font, text effect and position |
-| **Native** | The browser's built-in captions | Text color, background, size, font and text effect. Position is not available |
-| **Auto** | Custom on Firefox, Safari (including the iOS app), Edge and TV platforms (Tizen 5+, webOS, PS4). Native on Chrome | The same as whichever mode Auto picks |
+| **Style** | **Clean White** | Sets preset text/background colors; admin **Default Subtitle Style**. |
+| **Size** | **Normal** | Selects size; admin **Default Subtitle Size**. |
+| **Font** | **Default** | Selects font; admin **Default Subtitle Font**. |
+| **Text Effect** | **Auto** | Selects shadow/outline; admin **Default Subtitle Text Effect**. Auto uses a shadow with the transparent preset or `#00000000`; a visible box, including a semi-transparent one, has no Auto shadow. |
+| **Text** | White, `#FFFFFFFF` | Custom text color/alpha. |
+| **Background** | Transparent, `#00000000` | Custom background color/alpha. |
+| **Position** | Horizontal 50%, vertical 85% for server-created settings | Places the stack's lower edge; grid range is 2–98% on both axes. |
+| **Disable Custom Styles** | Off | Leaves styling to Jellyfin after reload; admin **Disable Custom Subtitle Styles by default**. |
 
-- The position grid only takes effect in **Custom** mode, because the browser's native captions cannot be repositioned. The Enhanced panel shows a note when **Subtitle styling** is not set to Custom.
-- A **secondary subtitle** track is styled the same way as the primary one. Both share one position and stay stacked without overlapping. Near the top of the screen, two lines take more height, so keep the position below the top edge.
-- Styling behaves the same on Jellyfin 10.11 and 12. The only difference is how VobSub subtitles are handled, described below.
+- **Style:** **Clean White**, **Classic Black Box**, **Netflix Style**, **Cinema Yellow**, **Soft Gray**, **High Contrast**.
+- **Size:** **Tiny**, **Small**, **Normal**, **Large**, **Extra Large**, **Gigantic**.
+- **Font:** **Default**, **Noto Sans**, **Sans Serif**, **Typewriter**, **Roboto** (Roboto Mono).
+- **Text Effect:** **Auto**, **None**, **Shadow**, **Outline**, **Outline + Shadow**.
 
-**Subtitle formats that cannot be styled**
+For white text on a semi-transparent black box like the example below, set **Text** to `#FFFFFFFF` and **Background** to `#00000080`. The last two digits set opacity.
 
-Jellyfin Enhanced can only style subtitles that Jellyfin draws as text. These formats are drawn as images or by Jellyfin's own renderer, so their look comes from the subtitle track itself and Jellyfin Enhanced cannot change it. Jellyfin's own **Subtitle Appearance** settings do not apply to them either:
+![Custom-styled subtitle on a semi-transparent box during playback](../images/enhanced/subtitle-live.webp)
 
-| Format | Why it cannot be styled |
-|---|---|
-| **ASS / SSA** | Jellyfin renders these on a canvas using the fonts, colors, size and position written in the subtitle file |
-| **PGS** (Blu-ray) | Bitmap images. There is no text to restyle |
-| **VobSub / DVD subtitles** | Bitmap images. Jellyfin 12 draws them in the browser; Jellyfin 10.11 has the server burn them into the video |
-| **Burned-in subtitles** | Drawn into the video by the server (for example when a transcode is needed), so they cannot be changed in the browser |
+To stop styling, turn on personal **Disable Custom Styles** and reload. To change the starting preference for everyone, save admin **Disable Custom Subtitle Styles by default**. Use **Overwrite everyone's personal settings** only if you intend to replace existing personal preferences.
 
-If styling does not apply, check which subtitle track is playing. Choosing a text-based track (for example SRT) restores full styling. The Enhanced panel shows a warning when the current video uses one of these formats.
+!!! note "Choose a supported text track"
 
-**Turning it off**
+    **ASS / SSA**, **PGS**, **VobSub / DVD**, **DVB bitmap**, and burned-in subtitles do not pass through the text element JE can restyle. Choose a text track such as SRT if you need these controls.
 
-- **For yourself:** in the Enhanced panel → Settings, enable **Disable Custom Subtitle Styles**, then reload the page. Jellyfin Enhanced then leaves subtitles alone and your Jellyfin **User Preferences** → **Subtitles** settings apply unchanged. Jellyfin Enhanced never changes those saved settings. It only styles the subtitles while a video plays.
-- **For all users:** in the plugin settings, enable **Disable Custom Subtitle Styles by default**, save, then use **Overwrite everyone's personal settings** in Quick Actions. The default only applies when a user's settings are first created, so users who already have saved settings keep their own value until you overwrite them.
+??? info "Subtitle colors, positioning, and support checks"
 
----
+    Color alpha spans 0–255 using `#RRGGBBAA`. Editing colors enables custom colors. Choosing **Style** replaces both colors and returns to preset colors. **Clean White** stores its preset background as `transparent`. JE's custom text styling resets weight, italics, small-caps, and primary-track margins.
+
+    The position grid's client fallback and reset use `(50,95)`.
+
+    | Renderer | Supported styling |
+    |---|---|
+    | Jellyfin custom text element | Color, background, size, font, effect, and position. Primary/secondary tracks share a position and stack together. |
+    | Browser native captions | Color, background, size, font, and effect. No position grid, custom padding, or rounded box. |
+
+    The panel checks format when opened, using the first controllable session with a playing item and its primary subtitle stream. Reopen after changing tracks. It may reflect another session or miss a secondary track, so no warning is not proof of support.
+
+### Player Ratings
+
+See Jellyfin's community/critic scores in the player or briefly show age-rating information when playback starts. These are admin controls, independent of poster-tag switches.
+
+**How to use:** Start playback to see the optional startup badge; reveal the player controls to see score chips beside the time information.
+
+Admin **Display → Media Tags** and **Playback → Playback & Tab Switch**, respectively:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Show Rating in Video Player** | On | Adds community/critic score chips to the player controls using Jellyfin rating fields. |
+| **Show Age Rating When Playback Starts** | Off | Shows official age rating, up to three recognized advisory tags, and up to three genres for five seconds. |
+
+??? note "Rating metadata and visibility"
+
+    Available metadata determines what appears. Episodes can use series data for missing age rating/genres and incorporate series advisory tags. These controls have no personal-panel toggle. [Spoiler Guard](../spoiler-guard/spoiler-guard-features.md) can suppress protected information.
 
 ## Discovery & Integration
 
+Find missing media through connected services, share reviews, and see what others are watching.
+
 ### Seerr Search Integration
 
-Search, request, and discover media directly from Jellyfin's search interface.
+Search and request missing media from Jellyfin with Seerr.
 
-![Seerr search results](../images/jellyseerr.png)
+**How to use:**
 
-**Features:**
+1. Turn on admin **Seerr → Enable Seerr integration** (off by default).
+2. Configure and **Test** the connection, then link/import users.
 
-- Search Seerr from Jellyfin search bar
-- Further result pages load ahead as you scroll the row (see [Seamless Scrolling](../seerr/seerr-features.md#seamless-scrolling))
-- Results respect each user's parental controls (see [Parental Ratings](../seerr/seerr-features.md#parental-ratings))
-- Request movies and TV shows
-- View request status (pending, approved, available)
-- Auto-add requested media to watchlist
-- Sync Seerr watchlist to Jellyfin
+![Seerr connection setup and successful test](../images/admin/seerr.webp)
 
-**Setup:**
+Follow [Seerr Features](../seerr/seerr-features.md), [Seerr Settings](../seerr/seerr-settings.md), and [Permission Audit](../seerr/permission-audit.md) for requirements, search, request permissions, quotas, and watchlist options.
 
-1. Open plugin settings → **Seerr** tab
-2. Check "Show Seerr Results in Search"
-3. Enter Seerr URL(s) (one per line)
-4. Enter Seerr API Key (from Seerr Settings → General)
-5. Click "Test Connection"
-6. Enable optional features:
-   - Add Requested Media to Watchlist
-   - Sync Seerr Watchlist to Jellyfin
-7. Click **Save**
+??? tip "Existing setup illustrations"
 
-**Requirements:**
+    ![External Jellyfin sign-in settings in Seerr or Jellyseerr](../images/jellyfin-signin.png)
+    *Illustrative external settings capture; its version is unknown. Its annotations do not establish JE's current account-import requirements.*
 
-- Seerr instance with API access
-- "Enable Jellyfin Sign-In" enabled in Seerr
-- Jellyfin users imported into Seerr
+    These external icon illustrations show active, unlinked-user, and disabled styling. JE loads its own icons through its asset service; an active connection still requires request permission for request actions.
 
-![Jellyfin Sign-In](../images/jellyfin-signin.png)
-
-**Icon States:**
-
-| **Icon** | **State** | **Description** |
-| :---: | :--- | :--- |
-|<img alt="active" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:drop-shadow(2px 2px 6px #000);" /> | **Active** | Seerr is successfully connected, and the current Jellyfin user is correctly linked to a Seerr user. <br> Results from Seerr will load along with Jellyfin and requests can be made. |
-| <img alt="noaccess" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:hue-rotate(125deg) brightness(100%);" /> | **User Not Found** | Seerr is successfully connected, but the current Jellyfin user is not linked to a Seerr account. <br>Ensure the user has been imported into Seerr from Jellyfin. Results will not load. |
-| <img alt="offline" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:grayscale(1);opacity:.8;" /> | **Offline** | The plugin could not connect to any of the configured Seerr URLs. <br> Check your plugin settings and ensure Seerr is running and accessible. Results will not load. |
+    <img alt="Active Seerr icon illustration" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:drop-shadow(2px 2px 6px #000);" />
+    <img alt="Unlinked Seerr user icon illustration" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:hue-rotate(125deg) brightness(100%);" />
+    <img alt="Disabled Seerr icon illustration" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" style="width:30px;height:50px;filter:grayscale(1);opacity:.8;" />
 
 ### Seerr Item Details
 
-![Seerr recommendations and similar items on a detail page](../images/readme/recommendations.webp)
+Seerr adds similar/recommended rows, discovery, request actions, and a **More Info** modal. You can control these features separately.
 
-View recommendations and similar items on detail pages.
+**How to use:** See [Seerr Features](../seerr/seerr-features.md) and [Seerr Settings](../seerr/seerr-settings.md) for detail-page controls, collection discovery, exclusions, the standalone Recommendations page, and setup.
 
-**Features:**
-
-- Recommended items section
-- Similar items section
-- Request directly from recommendations
-- Exclude items already in library
-- Real-time request status indicators
-- Support for 4K requests
-- TV season selection
-
-**Setup:**
-
-1. Configure Seerr integration (see above)
-2. Check "Show Seerr Recommendations and Similar items"
-3. Optional: Enable "Exclude already in library items"
-4. Click **Save**
-
-**Discovery Pages:**
-
-- Genre-based discovery
-- Network-based discovery
-- Person-based discovery (actors, directors)
-- Tag-based discovery
-- All with TV/Movies/All filtering
+![Seerr Recommendations page with Trending and Popular rows](../images/seerr/recommendations-page.webp)
+*The standalone page is separate from similar/recommended rows on item details.*
 
 ### .arr Links Integration
 
-![ARR links on an item detail page](../images/arr-links-item.png)
+As an administrator, you can open matched titles in Sonarr, Radarr, or Bazarr. Synced Jellyfin tag links are a separate feature.
 
-Quick access to Sonarr, Radarr, and Bazarr (admin only).
+**How to use:** See [*arr Features](../arr/arr-features.md) and [*arr Settings](../arr/arr-settings.md) for service setup, multiple instances, status badges, tag filters, and synchronization tasks.
 
-**Features:**
-
-- Direct links to item pages in Sonarr/Radarr
-- Bazarr subtitle management links
-- Display *arr tags as clickable links
-- Filter and customize tag display
+![Radarr instance dropdown with status and file size](../images/arr/dropdown.webp)
 
 ### Streaming Provider Lookup
 
-See where else your media is available to stream.
+Elsewhere shows subscription streaming providers for a title in your region, including supported per-season lookups.
 
-![Elsewhere](../images/elsewhere.png)
+**How to use:**
 
-**Features:**
+1. An administrator configures **Enable Elsewhere** and **TMDB API Key** under **Elsewhere**.
+2. Choose regions/providers in a title's Elsewhere controls.
 
-- Multi-region support
-- Buy, rent, and stream options
-- Provider logos and links
-- Powered by TMDB data
+See [Elsewhere Features](../elsewhere/elsewhere-features.md) and [Elsewhere Settings](../elsewhere/elsewhere-settings.md) for defaults and limits.
 
-**Usage:**
-
-1. Enable in Enhanced panel → Settings
-2. Select your region
-3. View providers on item detail pages
+![Streaming providers for a movie in the selected region](../images/elsewhere/providers-available.webp)
 
 ### User Reviews
 
-![User reviews section on an item detail page](../images/user-reviews.png)
-
-Jellyfin users can write their own reviews for movies, series, seasons, and episodes. Reviews are stored server-side and visible to all users.
-
-**Features:**
-
-- Write a review with a star rating (1-5) and optional text, or just a rating with no text
-- Reviews appear in a dedicated "Reviews" section on item detail pages, listed before TMDB reviews
-- Edit or delete your own review at any time
-- Average user rating chip displayed next to TMDB/RT ratings in the item media info bar
-- Average user rating also shown as a poster tag (`person_heart` icon) on library cards when rating tags are enabled
-- Admin moderation — admins can delete any user's review
-- Optional: star ratings given in a review can also be saved as the user's Jellyfin rating on the item, so scrobblers and Letterboxd/Trakt-style sync tools that read Jellyfin user data pick them up
-
-**How to write a review:**
-
-1. Open any movie, series, season, or episode detail page
-2. Scroll to the **Reviews** section
-3. Click **Add Review**
-4. Select a star rating (optional) and write your review text (optional — a rating alone is valid)
-5. Click the save icon
-
-**Setup (admin):**
-
-1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
-2. Navigate to the **Enhanced Settings** tab
-3. Enable **"Show User Reviews"**
-4. Optionally enable **"Show User Rating on Posters"** to display the average rating as a poster tag
-5. Optionally disable **"Show User Rating Dash"** to hide the `—` placeholder on posters when no ratings exist yet
-6. Optionally enable **"Also save review star ratings as the user's Jellyfin rating"** to mirror each review's 1-5 star rating (scaled to Jellyfin's 0-10) onto the user's Jellyfin rating for that movie or series. Off by default because it overwrites a rating the user may have set elsewhere. Deleting a review (or removing its stars) clears the Jellyfin rating only if it still matches the review's rating, so a rating changed elsewhere in the meantime is kept. Season/episode reviews are not mirrored
-7. Click **Save**
-
-!!! note
-    The poster tag requires the user to also have **Rating Tags** enabled in the Enhanced panel (Settings tab).
-
-**Admin moderation:**
-
-Admins see a delete button on all reviews, not just their own. A confirmation dialog is shown before deletion. The action is logged and the section refreshes automatically.
-
----
+Share text reviews and star ratings for movies, series, seasons, and episodes with viewers on your server. See [User Reviews](../elsewhere/elsewhere-features.md#user-reviews) for writing and moderation, and [User Reviews settings](../elsewhere/elsewhere-settings.md#user-reviews) for author visibility, poster averages, and Jellyfin rating mirroring.
 
 ### Activity Feed
 
-![Activity Feed page](../images/readme/activity.webp)
+See recently watched, favorited, and reviewed titles across the server, with an optional live session section.
 
-Shows recently watched, favorited, and reviewed titles across the server, so users can see what others are up to. Each viewer only ever sees activity for items they themselves have library access to - someone else's activity on a library you can't see never appears.
+![Activity Feed with active streams, watch history, favorites and reviews](../images/enhanced/activity-page.webp)
 
-Administrators can enable **"Non-admins only see their own activity"** to limit regular users to their own entries; admins still see everyone.
+**How to use:**
 
-**Features:**
+1. Open **Activity** through the configured Home tab or Plugin Pages entry.
+2. Click titles/artwork to open details, or read stars/text previews. **Watch History** shows progress for partial watches and **completed watching** for completed ones. Favorites and reviews share the **Reviews** section.
+3. Use **Refresh** for an update.
 
-- Recently watched (full playback completions)
-- Recently favorited
-- Recently reviewed (see [User Reviews](#user-reviews) above)
-- Optional live "who's watching now" section, powered by the same data as the [Active Streams Widget](../other/other-features.md#active-streams-widget)
-- Per-viewer filtering: hidden or disabled review authors are excluded the same way they are in the Reviews section
-- Reachable as a sidebar page (Plugin Pages; Jellyfin 12: user profile menu instead), a home-page tab (native or Custom Tabs), or both
+Admin **Pages → Activity Feed**:
 
-**Setup:**
+| Setting | Default | What it does |
+|---|---|---|
+| **Enable Activity Feed** | Off | Enables the page and watched/favorite collection. |
+| **Show recently watched** | On | Records and shows qualifying playback stops. |
+| **Show recently favorited** | On | Records and shows favorites. |
+| **Show recently reviewed** | On | Includes current review-store entries. |
+| **Non-admins only see their own activity** | Off | Regular users only see their own watched, favorited and reviewed entries; administrators still see everyone. |
+| **Show Active Streams section** | On | Adds live sessions when Active Streams is enabled and the viewer is allowed. |
+| **Add Activity as a native Home tab** | Off | Adds a built-in Home tab. |
+| **Use Plugin Pages** | Off | Adds the page to Plugin Pages. |
+| **Use Custom Tabs** | Off | Uses Custom Tabs instead of a native tab. |
+| **Add the Custom Tabs entry for me** | Off | Manages the entry on save. |
 
-1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
-2. Navigate to the **Extras** tab
-3. Enable **"Enable Activity Feed"**
-4. Choose what to show: **Show recently watched**, **Show recently favorited**, **Show recently reviewed**, **Show Active Streams section**
-5. Choose how it's reachable - pick one or more:
-   - **Add Activity as a native Home tab** - no external plugin needed
-   - **Use Plugin Pages** - adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages); Jellyfin 12: user profile menu instead)
-   - **Use Custom Tabs** - adds a home-page tab via [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) instead of the native one
-6. Click **Save**
+The live section also requires admin **Extras → UI Tweaks → Active Streams Header Widget**. Non-admins need **Show widget to non-admins**.
 
-!!! note
-    Turning the feature off does not delete any recorded activity - it just stops recording and stops showing the feed. Turning it back on picks up from where it left off.
+??? info "Activity collection, access, and refresh"
 
----
+    Plugin Pages uses `/JellyfinEnhanced/activityPage`. For manual Custom Tabs setup, use:
+
+    ```html
+    <div class="jellyfinenhanced activity"></div>
+    ```
+
+    **Watch History** includes playback stopped at a position of at least 5% of known runtime, plus playback Jellyfin marks completed. This measures position, not time spent watching.
+
+    Only the live section polls every 15 seconds while visible, skipping hidden browser tabs. Stored history/review/favorite entries respect viewer library access and the review-author filters, with admin/self author exceptions. Live sessions use the separate Active Streams permission policy and can include titles outside the viewer's library access.
+
+    A standard feed request returns up to 50 merged entries without UI pagination. Watched/favorite storage in `activity.json` is capped at 500 entries, one per user/item/type. Rewatches update time while preserving highest progress and completion. Unfavoriting removes its entry.
+
+    Turning the feed off hides it and stops watched/favorite collection without deleting history. User Reviews continues independently, so reviews written while the feed is off can appear after re-enabling it.
 
 ### Catch Up
 
-A card-deck page for quickly sorting the library: each unwatched movie or show appears as a poster card and one gesture records what the viewer thinks of it. It is a fast way to find out which titles people have already seen.
+Sort unwatched movies and shows with a card deck. Touch, mouse, and keyboard actions update your own Jellyfin account.
 
-| Gesture | Keyboard | What it does |
+**How to use:**
+
+1. Open **Catch Up** through the configured Home tab or Plugin Pages entry.
+2. Choose **Movies** or **Shows**.
+3. Use the gestures or keys below to sort your deck.
+
+| Gesture/control | Keyboard | What it does |
 |---|---|---|
-| Swipe right | `→` | Marks the title **watched** |
-| Swipe left | `←` | **Dismisses** it (hidden from that viewer's deck in this browser) |
-| Swipe up | `↑` | Adds it to the **watchlist** - sets the title's **Likes** flag, the same flag [Seerr watchlist sync](../seerr/seerr-settings.md) uses |
-| Swipe down | `↓` | **Opens** the title's details page |
-| Rewind button | `Backspace` / `Z` | Undoes the last action, including un-marking watched and removing the watchlist flag |
+| Swipe right | ++arrow-right++ | Marks watched. |
+| Swipe left | ++arrow-left++ | Dismisses from your deck in this browser. |
+| Swipe up | ++arrow-up++ | Adds to your watchlist using Jellyfin's Likes flag. |
+| Swipe down | ++arrow-down++ | Opens details. |
+| **Rewind (Backspace)** | ++backspace++ / ++z++ | Reverses the last watched, dismiss, or watchlist action in the current deck. |
 
-**Features:**
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Dismissing a Catch Up card and restoring it with Rewind">
+    <source src="../../images/enhanced/catchup-swipe.mp4" type="video/mp4">
+  </video>
+  <figcaption>Dismissing a Catch Up card and restoring it with Rewind.</figcaption>
+</figure>
 
-- Separate **Movies** and **Shows** decks, newest random batch first
-- Swiping right on a show asks **which seasons were watched**: tapping a later season selects every earlier one, and any individual season can be unticked before confirming
-- Works with touch, mouse and keyboard
-- Optional activity log: records who swiped what (title, action, time). Administrators see it in an **Activity** panel on the page itself - docked beside the deck on wide screens - with a feed (filter by user, one or more actions, or title), a per-user summary and the most watched / dismissed / watchlisted titles. Non-admins never see the panel, and the endpoints refuse them
-- Each viewer only sees titles they have library access to; watched and watchlist changes are written to that viewer's own Jellyfin account
+For a show with at least two regular seasons, swiping right opens a season picker. Selecting a later season selects earlier ones; select a selected season again to untick just that season. Choose **Mark {n} season(s) watched** to confirm. Specials are not listed. Fewer regular seasons mark the whole series directly.
 
-**Setup:**
+![Catch Up season picker with earlier seasons selected automatically](../images/enhanced/catchup-season-picker.webp)
 
-1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
-2. Navigate to the **Extras** tab
-3. Enable **"Enable Catch Up"**
-4. Leave **"Record Catch Up activity"** on if you want the admin Activity panel, or turn it off to record nothing
-5. Choose how it's reachable - pick one or more:
-   - **Add Catch Up as a native Home tab** - no external plugin needed
-   - **Use Plugin Pages** - adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages); Jellyfin 12: user profile menu instead)
-   - **Use Custom Tabs** - adds a home-page tab via [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) instead of the native one
-6. Click **Save**
+Admin **Pages → Catch Up**:
 
-!!! note
-    The activity log is stored as `catchup-log.jsonl` in the plugin's configuration folder and is size-bounded (about 5 MB per file, two files kept). Item names in the log are looked up from the library on the server, never taken from the browser.
+| Setting | Default | What it does |
+|---|---|---|
+| **Enable Catch Up** | Off | Enables the deck page. |
+| **Record Catch Up activity** | On | Records new actions when Catch Up is enabled; turning it off retains readable history and the admin panel. |
+| **Add Catch Up as a native Home tab** | Off | Adds a built-in Home tab. |
+| **Use Plugin Pages** | Off | Adds the page to Plugin Pages. |
+| **Use Custom Tabs** | Off | Uses Custom Tabs instead of a native tab. |
+| **Add the Custom Tabs entry for me** | Off | Manages the entry on save. |
 
----
+!!! note "Rewind does not restore earlier ratings or watched state"
+
+    Rewind reverses the action rather than restoring a saved snapshot. It does not preserve previous watched/liked/disliked state. A failed action can still remove the card and show **Failed: {error}**; rewind can also fail.
+
+??? info "Deck selection, browser preferences, and rewind"
+
+    Plugin Pages uses `/JellyfinEnhanced/catchUpPage`. For manual Custom Tabs setup, use:
+
+    ```html
+    <div class="jellyfinenhanced catchup"></div>
+    ```
+
+    Decks use random batches of 40 unwatched accessible items, filtering dismissed, already-seen, and imageless cards. **Nothing more to show here.** can mean the sample yielded no new eligible cards.
+
+    Dismissals and the **Movies**/**Shows** choice are browser-local per-user preferences, separate from Hidden Content. Reloading retains dismissals; rewind or clearing the relevant browser storage removes them. Switching/restarting a deck clears its queue, seen set, and undo history.
+
+    The swipe-up Likes flag is the watchlist flag used by Seerr watchlist sync. Swiping down does not add an undo-history entry. Selecting all regular seasons writes the series ID; a subset writes selected season IDs.
+
+    Watched undo removes PlayedItems state, and watchlist undo removes the Likes rating.
+
+**For administrators:**
+
+1. Open **Activity**, then **Feed** or **Summary**.
+2. In **Feed**, choose **All users** or a user, select action chips, or enter **Search titles**. No selected action chips means all actions. The feed shows up to 300 matching events.
+3. Use **Refresh** or **Hide** to update or close the panel.
+
+![Administrator Catch Up activity Feed and Summary](../images/enhanced/catchup-admin-activity.webp)
+*On wide screens, Activity docks beside the deck; on narrower screens, it opens as a modal.*
+
+??? note "Catch Up admin activity"
+
+    **Summary** counts distinct successful user/title actions after corresponding recorded undos. **Most watched**, **Most dismissed**, and **Most watchlisted** each show up to 15 titles. Feed filters do not affect Summary.
+
+    The open panel refreshes every ten seconds. It docks beside the deck at widths of at least 1100 pixels and opens as a modal on narrower screens. Non-admins cannot read these endpoints.
+
+    Logs include open, undo, and failed actions. They are client reports, not proof of viewing. Item names are resolved server-side. `catchup-log.jsonl` is bounded to about 5 MB per file with two files retained.
 
 ### TMDB Reviews
 
-Display user reviews from TMDB on item pages.
-
-**Features:**
-
-- Full review text
-- Author information
-- Rating scores
-- Review dates
-- Expandable/collapsible reviews
-
-**Setup:**
-Enable **"Show TMDB Reviews"** in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Elsewhere Settings** tab.
-
-See [Elsewhere Features](../elsewhere/elsewhere-features.md#tmdb-reviews) for full details.
-
----
+Read TMDB reviews alongside local reviews on movie and series detail pages. See [TMDB Reviews](../elsewhere/elsewhere-features.md#tmdb-reviews) for setup, expansion, ordering, and fetching limits.
 
 ## Visual Enhancements
 
-### Quality Tags
+Add quality, genre, language, score, age-rating, and people information to cards with optional tags. All six tag families start off; detail-page information and awards are independent features.
 
-![Quality, genre, language, age rating and score badges on posters](../images/readme/library-tags.webp)
+**How to use:** See [Tags](tags.md) for controls, prerequisites, caches, styles, native poster rendering, and audio-language tag synchronization.
 
-Display quality information (4K, HDR, Atmos) directly on posters.
+![Library posters with quality, genre, language and rating tags](../images/tags/library-tags.webp)
+*This example enables all poster tag groups.*
 
-**Supported Tags:**
+### Watch Progress
 
-- **Resolution:** 8K, 4K, 1080p, 720p, 480p, LOW-RES
-- **Video Format:** AV1, HEVC, H265, VP9, H264
-- **Video Features:** HDR, Dolby Vision, HDR10+, 3D
-- **Audio:** ATMOS, DTS-X, TRUEHD, DTS, Dolby Digital+, 7.1, 5.1
-- **Media Stubs:** BluRay, HD DVD, DVD, VHS, HDTV, Physical (for physical media files)
+See how much you have watched on a title's detail page. You can check movies, series, seasons, episodes, collections, and playlists.
 
-**Preferred audio language:**
+**How to use:**
 
-By default the sound tag describes the best audio track in the file. Set a
-preferred language (admin default under Media Tags, or per user in the Enhanced
-panel's Quality Tags options) and it describes the best track *in that language*
-instead — a film whose English track is Atmos but whose German dub is plain AC3
-reads AC3 for a German-preferring user. Titles with no audio in the language fall
-back to their best track. Admins can also let the tag follow each user's Jellyfin
-audio language preference, and users can pick "My Jellyfin audio language"
-themselves.
+1. Enable **Show Watch Progress** in **UI Settings**.
+2. Open details and click the progress chip to cycle **Percentage → Time Watched → Time Remaining**. The selected mode saves for your account.
 
-### Genre Tags
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Watch progress cycles through percentage and time displays">
+    <source src="../../images/enhanced/watch-progress.mp4" type="video/mp4">
+  </video>
+  <figcaption>Watch progress cycles through percentage and time displays.</figcaption>
+</figure>
 
-![Genre tags on posters](../images/genre-tags.png)
+| Setting | Default | What it does |
+|---|---|---|
+| **Show watch progress** — admin **Display**; **Show Watch Progress** — personal **UI Settings** | Off | Shows the detail-page chip. |
+| **Watch Progress Default** — admin **Display** | **Percentage** | Initial mode: **Percentage**, **Time Watched**, or **Time Remaining**; personal choices are in **UI Settings**. |
+| **Watch Progress Time Format** — admin **Display** | **h:m** | Initial duration format; personal **h:m** / **y:mo:d:h:m** choices are in **UI Settings**. |
 
-Identify genres with themed icons on posters.
+??? note "Watch-progress calculation"
 
-**Features:**
+    For containers, progress adds together accessible leaf items. It depends on runtime metadata and ignores media-version selection.
 
-- Material Design icons for each genre
-- Circular badges that expand on hover
-- Show up to 3 genres per item
-- Customizable position
+### File Size and Audio Languages
 
-### Language Tags
+See total file size and available audio languages in a title's detail information. These controls are independent of poster tags.
 
-![Language tags (country flags) on posters](../images/language-tags.png)
+![File size and available audio languages in item details](../images/enhanced/file-audio-info.webp)
 
-Display available audio languages as country flags on posters.
+**How to use:**
 
-**Features:**
+1. Open **UI Settings** and enable the chip you want.
+2. Open a detail page. Selecting another media version changes its size and audio-language data.
 
-- Country flag icons from flagcdn.com
-- Show up to 3 unique languages
-- Positioned bottom-left by default
-- Also displays on item detail pages
-- Series and season cards show every language found across their episodes.
-  A language that is missing from some episodes (a dub that only covers part
-  of the show) is drawn dimmed with a dashed outline, and its flag's title/alt
-  text adds "not on all episodes"; a plain flag means every episode has that
-  audio. Full-series languages are listed first. Specials don't count against
-  a series' full languages, and tracks without a language tag are ignored.
-  Differently tagged copies of one language (`eng` / `en`, `fre` / `fr-FR`)
-  count as the same dub; two regional variants that sit side by side in one
-  episode (`es-419` and `es-ES`) are judged separately. Requires the
-  server-side tag cache (on by default); in the legacy per-page mode the card
-  reflects one representative episode as before
-- Regional variants get their own flag when the audio track is explicitly
-  tagged with a region: `pt-BR` shows the Brazilian flag while `pt` / `pt-PT`
-  keep the Portuguese one, `es-419` / `es-MX` (Latin-American Spanish) show
-  the Mexican flag, `zh-Hant` maps to the Taiwanese flag, and so on. Media
-  tagged with just a base language (`pt`, `es`, `zh`) keeps its default flag —
-  a regional variant is never guessed
+| Setting | Default | What it does |
+|---|---|---|
+| **Show file sizes** — admin **Display**; **Show File Sizes** — personal **UI Settings** | Off | Shows total file size. |
+| **Show available audio languages on item detail page** — admin **Display**; **Show Audio Languages** — personal **UI Settings** | On | Shows detail-page audio-language chips. |
 
-!!! note "Tagging matters"
-    Region detection relies on the language tag stored in your media file
-    (`pt-BR`, `es-MX`, `pob`…). Tracks tagged with only a base language code
-    can't be told apart, so they show the language's default flag.
+??? note "Supported items and audio-language links"
 
-### Audio Language Links
+    File size supports movies, series, seasons, episodes, collections, and playlists. Container sizes add together accessible leaf items. Audio languages supports movies, series, seasons, and episodes. Missing usable values display a dash.
 
-Audio languages on item detail pages link to Jellyfin's list of items with that language.
+    When audio-language tag synchronization/linking is configured, a chip can open its matching Jellyfin tag page: regional tag first, base-language tag second, otherwise plain text. See [Tags](tags.md) for that separate admin setup and task.
 
-**Features:**
+### Release and Air Dates
 
-- Backed by Jellyfin tags written by the **Sync Audio Language Tags to Jellyfin** scheduled task (movies and series)
-- A regional track gets two tags: a base tag (`JE Language: English`) and a regional tag (`JE Language: English (United States)`)
-- A regional language links to its regional tag; a base language links to the base tag
-- Series use the union of languages across their episodes
-- A language without a matching tag on the item is shown as plain text
-- Tags for languages an item no longer has are removed on each sync
-
-### Rating Tags
-
-Show TMDB and Rotten Tomatoes ratings on posters and in player.
-
-![Ratings](../images/ratings.png)
-
-**Features:**
-
-- TMDB star ratings
-- Rotten Tomatoes critic scores (fresh/rotten icons)
-- Stacked vertically on posters
-- Optional OSD display during playback
-- Color-coded by rating value
-- Choose where they appear, per item type (movies, series, seasons, episodes) and per home row (Continue Watching, Next Up). Untick **Episodes** to keep ratings off every episode card, including Next Up and Continue Watching; untick a row to hide them only in that row (on the home screen, and the Next Up shelf on a series page). Rating chips and your own review chip are hidden together on an excluded card. Admins set the defaults; each user can change them under *Show Rating Tags* in the Enhanced panel.
-
-### Age Rating Tags
-
-Show the item's parental / age rating (PG-13, R, TV-MA, FSK 12, BBFC 15, ...) as a badge on posters.
-
-**Features:**
-
-- Reads the rating Jellyfin already has for the item (no extra lookups)
-- Episodes and seasons fall back to their series' rating
-- Colour-coded per rating board, using the same colour table as [Colored Ratings](#colored-ratings)
-- Customizable position; defaults to the bottom-right corner and stacks with Rating Tags when both share a corner
-- Off by default — enable it per user in the Enhanced panel (Settings tab), or set the admin default under Display → Media Tags
-
-!!! note
-    Spoiler Guard keeps the badge: a series' or movie's age rating reveals nothing about the plot, and the details page shows it regardless. While Spoiler Guard is hiding ratings, unwatched episodes (and unstarted seasons) of a guarded series show the series' rating rather than their own, since an episode rated higher than its show can hint at what happens in it.
-
-
-### Native Poster Tags (Experimental)
-
-Show your Media Tags in native Jellyfin apps that can't run Jellyfin Enhanced's web overlays, such as the official Android TV app. The server draws each user's tags into the poster images it sends to those apps, so they appear without any change to the app.
-
-<!-- Screenshot placeholder: Android TV home row with native poster tags (native-poster-tags-androidtv.png) -->
-<!-- Screenshot placeholder: same poster on the web (overlay) and on Android TV (drawn in) side by side (native-poster-tags-compare.png) -->
-
-**What gets drawn:**
-
-- Quality, genre, language, rating (with the user-review chip) and age rating tags, matching the web look as closely as a static image allows
-- Movies, series, seasons, episodes, collections and videos, on their primary images (posters, and episode thumbnails in landscape layout)
-- Each user's own tag choices, corners, quality categories and order, preferred audio language, priority languages and rating item-type scope, the same settings the web overlays use
-- Spoiler Guard is respected: guarded items use the same spoiler-safe tag data as the web, and tags are drawn on top of the blurred image
-
-**Which apps:**
-
-- Native apps, for example Jellyfin for Android TV, Jellyfin for Tizen, Swiftfin, Findroid and Streamyfin
-- Apps that already run Jellyfin Enhanced's web overlays keep the original posters so tags are never drawn twice: Jellyfin Web, Jellyfin Media Player, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android (the phone app). Admins can add more names in the settings
-- An app that builds poster addresses without Jellyfin's image tag, or asks Jellyfin to draw its own watched or unplayed-count indicator into the image, keeps the original posters
-
-**Setup:**
-
-1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Display** → **Media Tags**
-2. Turn on **Enable Native Poster Tags (Experimental)** at the bottom
-3. Click **Save**
-4. Every user now gets their tags in native apps; anyone who doesn't want them can turn off *Show Tags in Native Clients* in the Enhanced panel's UI Settings
-5. Reopen the library, or restart the app, on the TV or phone
-
-See [Enhanced Settings - Native Poster Tags](enhanced-settings.md#native-poster-tags-experimental) for every setting.
-
-**Limitations:**
-
-- **Static layout.** There is no hover, so hover-only details (genre names, Hide Tags on Hover) don't apply. Tag size follows the poster's width rather than the size the app displays it at
-- **No row or page context.** The server only sees an image request, not where it is shown. The Continue Watching and Next Up rating scopes are not applied (the per-item-type scopes are), Disable Tags on Search Page has no effect, and the tags also appear wherever the app reuses the poster, such as its details page
-- **Posters are re-downloaded after a change.** Turning the feature on, changing your tag settings, or a change to an item's tag data gives its posters a new address, so the app downloads them again
-- **First-view CPU cost.** Each poster is drawn the first time it is viewed at a given size, which uses some server CPU; a big home screen on a fresh cache can mean a short burst of work. Drawn posters are cached in memory and in Jellyfin's cache folder
-- **Apps may need a refresh.** Native apps cache poster addresses, so a change shows after reopening the library or restarting the app
-- **With Server-Side Tag Cache off**, changed tag data can take up to an hour to show on a poster an app has already downloaded
-- Original artwork files are never modified
-
-### People Tags
-
-![People tags on cast cards](../images/readme/cast-tags.webp)
-
-Display age and birthplace information for cast members.
-
-**Features:**
-
-- Current age or age at death
-- Age at item release
-- Birthplace with country flag
-- Deceased indicator (grayscale + cross)
-- Caching for performance
-
-**Displays:**
-
-- Age chips (top-left of cast cards)
-- Birthplace banner (bottom of cast cards)
-- Deceased styling (grayscale filter)
+See movie cinema, digital, and physical release dates or television air dates beside the item's metadata. See [Release Dates](../elsewhere/elsewhere-features.md#release-dates) for setup, region fallback, and date-selection rules.
 
 ### Awards
 
-![Expanded awards panel listing wins and nominations](../images/readme/awards.webp)
+Expand an awards banner on detail pages to see Wikidata wins and nominations with categories, years, and recipients.
 
-Show award wins and nominations on item detail pages and person pages, sourced from [Wikidata](https://www.wikidata.org/) by TMDB id.
+![Expanded awards and nominations for Oppenheimer](../images/enhanced/awards-expanded.webp)
 
-**Features:**
+**How to use:**
 
-- Expandable banner below the Reviews section, showing total wins and nominations
-- Full per-category breakdown when expanded: award name, Won/Nominated, year, and who it went to (or which title it was for, on a person's page)
-- Recognized award-body icons (Oscars, Golden Globes, BAFTA, Emmys, SAG, Critics' Choice, National Board of Review, Saturn Award, Kids' Choice Awards, Toronto Film Critics, Cannes/Palme d'Or) shown next to each entry — anything not in that list still shows correctly, just without a logo
-- Works on movies, TV shows, and person (cast/crew) pages — a person's page shows their full career award history, not just one title's
-- No API key required — Wikidata's public data endpoint is free and keyless
+1. Enable **Show Awards Banner** in admin **Display → Awards**, save, and reload.
+2. Click the banner to expand it. Reviews do not need to be enabled.
 
-**Setup:**
+Admin **Display → Awards**:
 
-1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
-2. Navigate to the **Display** tab
-3. Enable **"Show Awards Banner"**
-4. Click **Save**
+| Setting | Default | What it does |
+|---|---|---|
+| **Show Awards Banner** | Off | Enables Wikidata award lookups and display. |
 
-!!! note
-    Coverage depends entirely on what's recorded in Wikidata for that title or person — very well-covered for major releases and prestige awards, thinner for obscure titles or lesser-known award bodies. A title/person with no award data on Wikidata simply shows no banner.
+??? info "Award sources, grouping, and caching"
 
----
+    Movies and people use their own TMDB identity. Series use their series identity; seasons/episodes show their parent series' awards.
+
+    Entries sort newest year first, with wins before nominations within a year. Redundant nominations for a winning category/year are merged with recipients/work. Totals therefore count grouped entries rather than raw statements.
+
+    Wikidata coverage varies and is not exhaustive. No banner may mean no data or a failed lookup. The server's `awards.json` caches successful results for 180 days, confirmed empty results for 30 days, and failures for one hour.
 
 ## Personal Scripts
 
-These are optional scripts from the developer's personal collection.
+These optional extras are bundled with Jellyfin Enhanced, so you do not need a separate script installation. Despite this section's name, they are server switches.
 
-### 📡 Active Streams Widget
+**How to use:** As an administrator, enable them under **Extras → UI Tweaks**, save, and reload. See [Other Features](../other/other-features.md) and [Other Settings](../other/other-settings.md) for the broader extras guide.
 
-A live stream counter in the Jellyfin header that shows who is currently playing and what they're watching.
+### Active Streams Widget
 
-**Features:**
+Check playing and paused sessions from the header, and send a broadcast message as an administrator. See [Active Streams Widget](../other/other-features.md#active-streams-widget) for setup, session details, refresh behavior, non-admin access, and broadcasts.
 
-- Stream counter icon in the header, colour-coded by state
-- Click to open a panel listing every active session
-- Poster thumbnails and user avatars per session
-- Direct Play vs Transcoding badges with codec and bitrate details
-- Playback progress bar with current position and total duration
-- Playing / Paused state badge per session
-- Clickable title links to the item detail page
-- Admin-only broadcast button to message all active sessions
-- Polls every 15 seconds; updates automatically while the panel is open
+### Colored Activity Icons
 
-**Header icon states:**
+Add predefined colors and icons to the Activity list on Jellyfin's dashboard home to make events easier to scan.
 
-| Icon | State |
-|---|---|
-| `play_circle` (no badge) | No active streams |
-| `person` + badge `1` | One stream playing |
-| `group` + badge count | Multiple streams |
-| `pause_circle` + badge count | All streams paused |
-| Red icon | Failed to fetch sessions |
+![Color-coded icons in Jellyfin dashboard activity](../images/other/activity-icons.webp)
 
-**Session card details:**
+**How to use:** Enable **Colored Dashboard Icons**, save/reload, and open the dashboard.
 
-Each card in the panel shows:
-
-- Poster thumbnail (series poster for episodes, movie poster for films)
-- Title and episode info (S01E01 · Episode Name)
-- Playing / Paused badge
-- Progress bar with elapsed / total time
-- Playback badges: `Direct Play` or `Transcoding`, video codec, bitrate, resolution, framerate
-- Transcode reason (e.g., "Video Codec Not Supported") when applicable
-- User avatar, username, client name, and device name
-- IP address (admins only)
-
-**Broadcast (admin only):**
-
-Admins see a megaphone icon (📣) in the panel header. Click it to open the broadcast form:
-
-| Field | Required | Notes |
+| Setting | Default | What it does |
 |---|---|---|
-| **Title** | No | May not display on all clients (web UI typically ignores it) |
-| **Message** | Yes | Always visible; sent to every active session |
-| **Timeout** | Yes | Seconds before the notification auto-dismisses (default: 10) |
+| **Colored Dashboard Icons** — admin **Extras → UI Tweaks** | Off | Styles supported dashboard events. |
 
-**Setup:**
+??? note "Dashboard icon limits"
 
-1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
-2. Navigate to the **Other Settings** tab
-3. Enable **"Active Streams Widget"**
-4. Optional: Enable **"Show to all users"** to make the widget visible to non-admin users
+    Unmatched events keep their existing appearance. There is no color editor. This feature is separate from JE's Activity Feed.
 
-!!! note
-    By default the widget is admin-only. Non-admin users see a read-only view (no broadcast button, no IP addresses) when "Show to all users" is enabled.
+### Colored Ratings
 
-### 🎨 Colored Activity Icons
+Color official parental/age classifications on detail pages, including supported international boards, US TV descriptors, and ESRB labels.
 
-Replace default activity icons with Material Design icons.
+![Color-coded parental classifications on real detail pages](../images/other/classification-colors.webp)
 
-![Colored Activity Icons](../images/colored-activity-icons.png)
+**How to use:** Enable **Colored Ratings Backgrounds**, save/reload, and open a classified title.
 
-**Features:**
+| Setting | Default | What it does |
+|---|---|---|
+| **Colored Ratings Backgrounds** — admin **Extras → UI Tweaks** | Off | Applies predefined classification colors. |
 
-- Custom colors for each activity type
-- Material Design icon set
-- Better visual distinction
+??? note "Classification colors"
 
-**Configuration:**
+    The capture shows colored G, PG-13, and R badges on Toy Story, The Dark Knight, and Oppenheimer detail pages. Supported classifications extend beyond these examples. This feature does not style numeric review scores.
 
-Enable in Enhanced panel → Settings → Extras
+### Login Image Display
 
-### 🎪 Colored Ratings
+Show a public user's avatar above the password field on the manual-login form. When the avatar is available, the name input is visually hidden.
 
-Color-coded backgrounds for ratings on detail pages.
+![Selected user's avatar above the Jellyfin password field](../images/other/login-avatar.webp)
 
-![Colored Ratings](../images/ratings.png)
+**How to use:**
 
-**Features:**
+1. Enable **Profile Picture on Login**.
+2. Select a public user on the login page, or enter a name matching an existing public user card.
 
-- Different colors per rating type
-- Value-based color gradients
-- Supports TMDB, IMDb, Rotten Tomatoes
+| Setting | Default | What it does |
+|---|---|---|
+| **Profile Picture on Login** — admin **Extras → UI Tweaks** | Off | Adds the avatar to the manual-login form. |
 
-**Configuration:**
-Enable in Enhanced panel → Settings → Extras
+??? note "When no avatar appears"
 
-### 🖼️ Login Image Display
+    No matching card/image or an image-load failure leaves or restores the name input. This does not discover hidden accounts through another lookup.
 
-Show user profile images on manual login page.
+### Plugin Icons
 
-![Login Image](../images/login-image.png)
+Add Material icons and image logos to supported dashboard plugin links, plus optional links to other configuration pages.
 
-**Features:**
+**How to use:**
 
-- Display user avatars
-- Cleaner login interface
-- Automatic fallback to text
+1. Enable **Custom Plugin Menu Icons** and save/reload.
+2. For additional links, fill in **Sidebar Custom Links** using the format below.
+3. Use **Test Links** to preview temporary sidebar entries until refresh. **Save Settings** persists them.
 
-**Configuration:**
+![Dashboard plugin icons and custom-link configuration](../images/other/plugin-icons.webp)
 
-Enable in Enhanced panel → Settings → Extras
+| Setting | Default | What it does |
+|---|---|---|
+| **Custom Plugin Menu Icons** — admin **Extras → UI Tweaks** | Off | Enables bundled plugin icon mappings and custom links. |
+| **Sidebar Custom Links** — admin **Extras → External Links** | Empty | Adds configuration-page links using the format below. |
 
-### 🧩 Plugin Icons
+??? note "Custom sidebar link format"
 
-Replace default plugin icons with Material Design icons.
+    Enter one decoded exact configuration-page name and Material icon per line, for example:
 
-![Plugin Icons](../images/plugin-icons.png)
+    ```text
+    Configuration Page Name | Material Icon Name
+    ```
 
-**Features:**
+    Preview requires the icon script to have initialized after enabling it.
 
-- Custom icons for popular plugins
-- Add custom config page links
-- Improved dashboard aesthetics
+See [Other Features](../other/other-features.md) for supported plugin mappings.
 
-**Configuration:**
-Enable in Enhanced panel → Settings → Extras
+### Theme Selector
 
-### 🎭 Theme Selector
+Choose a Jellyfish color variant from the **Theme** row in Jellyfin user preferences.
 
-Choose from multiple Jellyfin theme color variants.
+!!! note "Jellyfish installation required"
 
-![Theme Selector](../images/theme-selector.png)
+    Jellyfish must be installed natively. The admin guidance excludes the KefinTweaks installation method.
 
-**Features:**
+![Theme selector in Jellyfin User Preferences](../images/other/theme-selector.webp)
 
-- Multiple color palettes (Aurora, Jellyblue, Ocean, etc.)
-- Randomize theme daily option
-- Quick theme switching
+**How to use:**
 
-**Configuration:**
+1. After an administrator enables the selector, open Jellyfin user preferences.
+2. Select a variant. Selection fades and reloads the page. **Default** removes the variant override.
+3. To enable **Daily**, click the shuffle button titled **Random daily theme**.
 
-1. Enable in Enhanced panel → Settings → Extras
-2. Select theme from dropdown
-3. Optional: Enable "Randomize Daily"
+| Setting | Default | What it does |
+|---|---|---|
+| **Theme Selector (Jellyfish)** — admin **Extras → UI Tweaks** | Off | Adds the Theme row. |
+| **Random daily theme** — user preferences **Theme** | Off | Enables daily variant selection. |
 
----
+??? note "Theme storage and daily timing"
+
+    Variant/daily choices are stored per user in this browser, rather than in server-synced Enhanced settings. Daily mode chooses a variant during initialization when the saved UTC calendar date differs. It is not a midnight timer.
 
 ## Customization
 
-### 🎨 Custom Styling with CSS
+Adjust Jellyfin's appearance and choose the language for JE's interface.
 
-Extensive CSS customization options. See [CSS Customization Guide](../advanced/css-customization.md) for more details.
+### Custom Styling with CSS
 
-**Available Customizations:**
+Customize the pause screen, Enhanced panel, player score chips, tag overlays, and synced *arr tag links with Jellyfin custom CSS.
 
-- Pause Screen CSS
-- Quality Tags CSS
-- Genre Tags CSS
-- Language Tags CSS
-- Rating Tags CSS
-- Rating Tag OSD CSS
-- People Tags CSS
-- ARR Tag Links CSS
-- Enhanced Panel CSS
+**How to use:** See [CSS Customization](../advanced/css-customization.md) for selectors and examples, and [Tags](tags.md) for JE's built-in Tag Styles controls.
 
+### Custom Branding
 
-### 🖼️ Custom Branding
+Replace Jellyfin's logos, banners, favicon, and touch icon with your own uploads, or show your logo during startup. See [Custom Branding](../other/other-features.md#custom-branding) for uploads and storage, [Splash Screen](../other/other-features.md#splash-screen) for the loading overlay, and [branding settings](../other/other-settings.md#custom-branding) for asset slots and filenames.
 
-Upload your own logos, banners, and favicon.
+### Internationalization
 
-**Features:**
-
-- Custom Jellyfin logo (header)
-- Custom splash banners (light/dark themes)
-- Custom favicon (browser tab icon)
-- Files stored in plugin config folder
-- Survives Jellyfin updates
-
-**Setup:**
-
-1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
-2. Navigate to **Other Settings** tab
-3. Find **Custom Branding** section
-4. Upload your custom images:
-   - Icon Transparent (header logo)
-   - Banner Light (dark theme splash)
-   - Banner Dark (light theme splash)
-   - Favicon (browser icon)
-5. Click **Save**
-6. Force refresh browser ++ctrl+f5++
-
-**Requirements:**
-
-- Requires [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
-- Recommended image formats: PNG, SVG
-- Files stored in: `/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/custom_branding/`
-
-### 🌍 Internationalization
-
-Multi-language support with community translations and automatic caching.
-
-**Supported Languages:**
-
-<p align="left">
-  <a href="https://hosted.weblate.org/engage/jellyfinenhanced/">
-    <img src="https://hosted.weblate.org/widget/jellyfinenhanced/multi-auto.svg" alt="Translation status" />
-  </a>
-</p>
-
-**How It Works:**
-
-- Automatically detects Jellyfin user profile language
-- Fetches latest translations from GitHub on first load
-- Caches translations for 24 hours in localStorage
-- Per-version caching with automatic cleanup
-- Falls back to bundled translations if offline
-- Language code normalization (including region variants)
-
-**Translation Cache Refresh:**
-
-- Server-side scheduled task runs on plugin startup
-- Automatically signals all clients to clear cached translations
-- Ensures fresh translations after plugin updates
-- No manual intervention required
-
-**Manual Cache Refresh:**
-
-1. Open Enhanced panel (press `?`)
-2. Go to Settings tab
-3. Find translation settings
-4. Click "Refresh Translation Cache" button
-
-**Contributing Translations:**
-
-See the [Contributing Translations](../faq-support/contributing-translations.md) section for details.
+Open **Language Settings** → **Display Language** and choose a language or **Auto**; your choice saves and reloads the page. Use **Clear Translation Cache** in the same section to clear this browser's translations and reload. See [Internationalization](../other/other-features.md#internationalization) for language precedence, loading, and server invalidation, and [language settings](../other/other-settings.md#default-ui-language) for defaults.

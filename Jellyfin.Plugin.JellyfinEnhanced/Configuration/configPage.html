@@ -2014,6 +2014,10 @@
                             <div class="je-setting-description" data-desc-for="jellyseerrShowAdvanced">
                                 <div class="fieldDescription je-field-desc-xl">Lets users choose the Server, Quality and Path while requesting. Only shown to users with the Advanced Requests (or Manage Requests) permission in Seerr. <br/> Note: This will disregard any Override Rules set in Seerr.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="jellyseerrSingleSeasonRequestOnly" is="emby-checkbox" type="checkbox"/><span>Only allow requesting one season at a time</span></label></div>
+                            <div class="je-setting-description" data-desc-for="jellyseerrSingleSeasonRequestOnly">
+                                <div class="fieldDescription je-field-desc-xl">Removes "Select All" and lets users pick only one season per request. Requires "Partial requests" to be enabled in Seerr; otherwise Seerr itself requires all seasons.</div>
+                            </div>
                             <div class="checkboxContainer"><label><input id="jellyseerrShowQuotaInfo" is="emby-checkbox" type="checkbox"/><span>Show request quota info</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrShowQuotaInfo">
                                 <div class="fieldDescription je-field-desc-xl">When enabled, request modals display a chip showing the user's request usage and when their next slot frees up. Quota errors get a detailed dialog instead of a vanishing toast.</div>
@@ -6552,6 +6556,7 @@
                 document.querySelector('#jellyseerrUseMoreInfoModal').checked = !!config.JellyseerrUseMoreInfoModal;
                 document.querySelector('#jellyseerrAvailablePosterLinksToJellyfin').checked = !!config.JellyseerrAvailablePosterLinksToJellyfin;
                 document.querySelector('#jellyseerrShowAdvanced').checked = config.JellyseerrShowAdvanced;
+                document.querySelector('#jellyseerrSingleSeasonRequestOnly').checked = config.JellyseerrSingleSeasonRequestOnly === true;
                 document.querySelector('#jellyseerrShowQuotaInfo').checked = config.JellyseerrShowQuotaInfo !== false;
                 document.querySelector('#jellyseerrShowSimilar').checked = config.JellyseerrShowSimilar !== false;
                 document.querySelector('#jellyseerrShowRecommended').checked = config.JellyseerrShowRecommended !== false;
@@ -7121,6 +7126,7 @@
             config.JellyseerrUseMoreInfoModal = document.querySelector('#jellyseerrUseMoreInfoModal').checked;
             config.JellyseerrAvailablePosterLinksToJellyfin = document.querySelector('#jellyseerrAvailablePosterLinksToJellyfin').checked;
             config.JellyseerrShowAdvanced = document.querySelector('#jellyseerrShowAdvanced').checked;
+            config.JellyseerrSingleSeasonRequestOnly = document.querySelector('#jellyseerrSingleSeasonRequestOnly').checked;
             config.JellyseerrShowQuotaInfo = document.querySelector('#jellyseerrShowQuotaInfo').checked;
             config.JellyseerrShowSimilar = document.querySelector('#jellyseerrShowSimilar').checked;
             config.JellyseerrShowRecommended = document.querySelector('#jellyseerrShowRecommended').checked;

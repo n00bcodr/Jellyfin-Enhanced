@@ -4149,6 +4149,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "JellyseerrSingleSeasonRequestOnly",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "JellyseerrShowQuotaInfo",
       "type": "bool",
       "initializer": null,
@@ -7630,7 +7638,7 @@
     "build_targets": 2,
     "files": 352,
     "routes": 173,
-    "configuration_properties": 522,
+    "configuration_properties": 523,
     "storage_references": 65,
     "scheduled_tasks": 13,
     "locales": 33

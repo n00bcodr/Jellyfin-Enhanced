@@ -1,240 +1,100 @@
 # Related Projects
 
-Other projects by n00bcodr for Jellyfin customization and enhancement.
+Explore companion plugins, scripts and themes by n00bcodr. For Jellyfin Enhanced itself, start at the [documentation index](../index.md) or [installation guide](../installation/installation.md).
 
-## Jellyfin Plugins
-
-### Jellyfin Enhanced
-**Type:** Plugin
-**Repository:** [github.com/n00bcodr/Jellyfin-Enhanced](https://github.com/n00bcodr/Jellyfin-Enhanced)
-
-The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
-
-**Features:**
-
-- Keyboard shortcuts and playback controls
-- Seerr integration
-- Visual tags (quality, genre, language, rating)
-- Custom pause screen
-- Bookmarks and timestamps
-- ARR integration
-- And much more...
-
-**Status:** ✅ Active Development
-
----
+## Jellyfin plugins
 
 ### Jellyfin Tweaks
-**Type:** Plugin
-**Repository:** [github.com/n00bcodr/JellyfinTweaks](https://github.com/n00bcodr/JellyfinTweaks)
 
-Additional tweaks and enhancements for Jellyfin that complement Jellyfin Enhanced.
-
-**Features:**
-
-- Additional UI tweaks
-- Performance optimizations
-- Extra customization options
-- Complementary to Jellyfin Enhanced
-
-**Status:** ✅ Active Development
-
----
+[Jellyfin Tweaks](https://github.com/n00bcodr/JellyfinTweaks) adds controls for Jellyfin playback, display and user defaults. Use its own documentation to decide which settings to manage alongside JE. Check its [releases](https://github.com/n00bcodr/JellyfinTweaks/releases) for current compatibility.
 
 ### Jellyfin JavaScript Injector
-**Type:** Plugin
-**Repository:** [github.com/n00bcodr/Jellyfin-JavaScript-Injector](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector)
 
-Inject custom JavaScript into Jellyfin web interface without modifying core files.
+[JavaScript Injector](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector) lets you add your own JavaScript to Jellyfin's web interface. Use it for standalone customizations and script testing. Follow that project's setup instructions and [release requirements](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector/releases).
 
-**Features:**
+!!! note
 
-- Safe JavaScript injection
-- No core file modifications
-- Easy script management
-- Perfect for custom scripts
+    JE already loads its own scripts as the server serves the web interface. You do not need JavaScript Injector to install JE. Avoid loading another copy of JE's client through an injector.
 
-**Use Cases:**
-
-- Testing custom scripts
-- Running standalone enhancements
-- Prototyping new features
-- Custom integrations
-
-**Status:** ✅ Active Development
-
----
-
-## Standalone Scripts
+## Standalone scripts
 
 ### Jellyfin Elsewhere
-**Type:** JavaScript
-**Repository:** [github.com/n00bcodr/Jellyfin-Elsewhere](https://github.com/n00bcodr/Jellyfin-Elsewhere)
 
-Standalone version of the Elsewhere feature for streaming provider lookup.
+[Jellyfin Elsewhere](https://github.com/n00bcodr/Jellyfin-Elsewhere) is the standalone streaming-provider lookup project. JE includes Elsewhere functionality with regional and per-season provider lookup; use the [JE Elsewhere guide](../elsewhere/elsewhere-features.md) when running the plugin.
 
-**Features:**
+Consult the standalone repository for its maintenance status, setup and limits.
 
-- Discover where media is available to stream
-- Multi-region support
-- Buy, rent, and stream options
-- TMDB integration
+!!! note
 
-**Use Cases:**
-
-- Use without full Jellyfin Enhanced plugin
-- Lighter alternative
-- Custom implementations
-- Testing and development
-
-**Status:** ❌ Inactive
-
-**Note:** Functionality is now a part of Jellyfin Enhanced plugin.
-
----
+    Do not run both versions of Elsewhere on the same web interface.
 
 ## Themes
 
 ### Jellyfish
-**Type:** CSS Theme
-**Repository:** [github.com/n00bcodr/Jellyfish](https://github.com/n00bcodr/Jellyfish/)
 
-A beautiful, modern theme for Jellyfin with multiple color variants.
+[Jellyfish](https://github.com/n00bcodr/Jellyfish/) is a Jellyfin CSS theme with color stylesheets. JE's color selector lets you choose a color in the web interface.
 
-**Features:**
+**How to use:**
 
-- Clean, modern design
-- Multiple color palettes
-- Responsive layout
-- Optimized for readability
-- Custom animations
-- Enhanced visual hierarchy
+1. Follow Jellyfish's [installation instructions](https://github.com/n00bcodr/Jellyfish/#installation) for the base theme and any optional components.
+2. Open JE's administrator configuration and select **Extras**.
+3. Turn on **Theme Selector (Jellyfish)** and save. Users can then choose a color from the web interface.
 
-**Color Variants:**
+Administrator setting:
 
-- Aurora
-- Jellyblue
-- Ocean
-- Sunset
-- Forest
-- And more...
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Theme Selector (Jellyfish)** | Off | Adds a Jellyfish color selector. |
 
-**Installation:**
+??? info "How it works"
 
-1. Go to **Dashboard** → **General** → **Custom CSS**
-2. Add Jellyfish CSS URL
-3. Save and refresh
+    The selector loads color CSS through JE's local CDN route. Your choice is saved in browser storage under your Jellyfin user ID and does not synchronize across devices. The random daily color preference starts off.
 
-**Status:** ✅ Active Development
+See [customization & extras](../other/other-features.md) and [settings](../other/other-settings.md).
 
-**Compatibility:** Works great with Jellyfin Enhanced!
+!!! note
 
----
+    Turning on the color selector does not install the base Jellyfish theme. CSS themes and custom rules can change the appearance of JE. Check the theme's own compatibility guidance, and use the [CSS customization guide](../advanced/css-customization.md) when adjusting JE's styles.
 
-## Installation Guide
+## Installing plugins
 
-### Installing Plugins
+Install JE, Jellyfin Tweaks and JavaScript Injector from the shared repository.
 
-**From Repository:**
+1. Open **Dashboard → Plugins → Repositories** and click **➕**.
+2. Enter a name, paste this repository URL, then save:
 
-1. Go to **Dashboard** → **Plugins** → **Catalog** → ⚙️
-2. Add repository URL
-3. Install desired plugin
-4. Restart Jellyfin server
+    ```text
+    https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/manifest.json
+    ```
 
-**Repository URL:** Unified Manifest for all plugins
+3. Open **Catalog**, select the desired plugin and click **Install**.
+4. Restart Jellyfin and refresh the web interface.
 
-```
-https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/manifest.json
-```
-
-### Installing Themes
-
-**Jellyfish Theme:**
-
-1. Go to **Dashboard** → **General** → **Custom CSS**
-2. Add theme CSS URL from repository
-3. Save and refresh browser
-
-
----
+See [JE installation](../installation/installation.md) for the full workflow and [compatibility](../getting-started/compatibility.md) for dependencies. Install File Transformation when an optional companion requires it; JE itself does not need it.
 
 ## Compatibility
 
-### Plugin Compatibility
+Choose the JE build for your Jellyfin version. Current builds target Jellyfin 12.x and 10.11.x.
 
-| Plugin | Jellyfin 10.11 | Jellyfin 10.10 | Notes |
-|--------|----------------|----------------|-------|
-| Jellyfin Enhanced | ✅ | ✅ (frozen at 10.11.1.0) | One manifest for all lines |
-| Jellyfin Tweaks | ✅ | ✅ | |
-| JS Injector | ✅ | ✅ |  |
+| Project | Jellyfin 12.x | Jellyfin 10.11.x | Older servers |
+| --- | --- | --- | --- |
+| Jellyfin Enhanced | Current build | Current build | 10.10: archived at JE 10.11.1.0 |
+| Jellyfin Tweaks | Check [release requirements](https://github.com/n00bcodr/JellyfinTweaks/releases) | Check release requirements | Use that project's release information |
+| JavaScript Injector | Check [release requirements](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector/releases) | Check release requirements | Use that project's release information |
+| Jellyfish | Check [theme documentation](https://github.com/n00bcodr/Jellyfish/#installation) | Check theme documentation | Use the theme's own compatibility guidance |
 
-### Theme Compatibility
+??? note "Details"
 
-| Theme | Jellyfin Enhanced | Notes |
-|-------|-------------------|-------|
-| Jellyfish | ✅ Recommended | Designed to work together |
-| Other Themes | ✅ Compatible | May need adjustments |
+    The shared manifest contains separate builds; one DLL does not serve every Jellyfin version. The Jellyfin 10.10 build is archived at JE 10.11.1.0.
 
----
+## Support & community
 
-## Support & Community
+Report a problem to the project that owns the feature:
 
-### Getting Help
+- [Jellyfin Enhanced issues](../faq-support/report-issues.md).
+- [Jellyfin Tweaks issues](https://github.com/n00bcodr/JellyfinTweaks/issues).
+- [JavaScript Injector issues](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector/issues).
+- [Jellyfish issues](https://github.com/n00bcodr/Jellyfish/issues).
+- [Discord community](https://discord.gg/EYNFf7y4CG).
 
-**For Jellyfin Enhanced:**
-
-- [GitHub Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
-- [Discord Community](https://discord.gg/EYNFf7y4CG)
-- [Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-
-**For Jellyfin Tweaks:**
-
-- [GitHub Issues](https://github.com/n00bcodr/JellyfinTweaks/issues)
-- [Discord Community](https://discord.gg/EYNFf7y4CG)
-
-**For JavaScript Injector:**
-
-- [GitHub Issues](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector/issues)
-- [Discord Community](https://discord.gg/EYNFf7y4CG)
-
-
-
-### Contributing
-
-Contributions welcome on all projects!
-
-**Ways to Contribute:**
-
-- Report bugs
-- Suggest features
-- Submit pull requests
-- Add translations
-- Improve documentation
-- Share feedback
-
-**Before Contributing:**
-
-1. Check existing issues
-2. Read contribution guidelines
-3. Test your changes
-4. Follow code style
-5. Submit detailed PR
-
----
-
-## Stay Updated
-
-### Follow Development
-
-- **GitHub:** Watch repositories for updates
-- **Discord:** Join community for announcements
-- **Releases:** Check release notes for changes
-
----
-
-## License
-
-All projects are open source under GPL-3.0 license unless otherwise specified.
-
-See individual repositories for detailed license information.
+Use each project's releases for updates and its contribution guide before submitting changes. JE is GPL-3.0; consult each companion repository's own license rather than assuming they all share the same license.

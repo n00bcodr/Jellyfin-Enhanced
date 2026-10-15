@@ -1,0 +1,48 @@
+{#-
+  Jellyfin Enhanced docs theme ("Enhanced panel").
+  - Browser tab titles name the area: "Features · Spoiler Guard - Jellyfin Enhanced".
+  - A section bar above each page title shows the area and its pages as chips
+    (one tap between Features and Settings without opening the drawer).
+    CSS hides it on wide screens, where the left sidebar shows the same list.
+-#}
+{% extends "base.html" %}
+{% import "partials/je-icons.html" as je %}
+
+{% block htmltitle %}
+  {% set je_title = page.meta.title if page.meta and page.meta.title else (page.title | striptags if page.title else "") %}
+  {% if je_title and not page.is_homepage %}
+    {% if page.parent and page.parent.title %}
+      <title>{{ je_title }} · {{ page.parent.title | striptags }} - {{ config.site_name }}</title>
+    {% else %}
+      <title>{{ je_title }} - {{ config.site_name }}</title>
+    {% endif %}
+  {% else %}
+    <title>{{ config.site_name }}</title>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  {% if page.parent and page.parent.children and not page.is_homepage %}
+    {% set section = page.parent %}
+    {% set first = section.children | first %}
+    {% set section_icon = je.icon_for(section) | trim %}
+    <nav class="je-sectionbar" aria-label="{{ section.title }} pages">
+      <a class="je-sectionbar__area" href="{{ first.url | url }}">
+        {% if section_icon %}{% include ".icons/" ~ section_icon ~ ".svg" %}{% endif %}
+        <span>{{ section.title }}</span>
+      </a>
+      {% if section.children | length > 1 %}
+        <ul class="je-sectionbar__pages">
+          {% for item in section.children %}
+            {% if item.url %}
+              <li>
+                <a class="je-chip{% if item == page %} je-chip--active{% endif %}" href="{{ item.url | url }}"{% if item == page %} aria-current="page"{% endif %}>{{ item.title }}</a>
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </nav>
+  {% endif %}
+  {{ super() }}
+{% endblock %}
