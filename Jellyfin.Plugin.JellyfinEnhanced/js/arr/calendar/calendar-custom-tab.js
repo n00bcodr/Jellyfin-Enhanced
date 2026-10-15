@@ -27,7 +27,7 @@
   }
 
   if (useNativeTab) {
-    window.JellyfinEnhanced.nativeTabs.register('calendar', 'Calendar', function (panel) {
+    window.JellyfinEnhanced.nativeTabs.register('calendar', window.JellyfinEnhanced.t('calendar_title') || 'Calendar', function (panel) {
       var marker = document.createElement('div');
       marker.className = 'jellyfinenhanced calendar';
       panel.appendChild(marker);
