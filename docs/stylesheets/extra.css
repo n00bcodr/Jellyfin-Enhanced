@@ -69,7 +69,6 @@
   --je-kbd-bg: rgba(255, 255, 255, .08);
   --je-tabbed-bg: #1b1b1b;
   --je-kbd-border: rgba(255, 255, 255, .24);
-  --je-brand-text: linear-gradient(100deg, #c387d8 0%, #33b8e8 85%);
   --je-ok-text: #81c784;
   --je-warn-text: #ffb74d;
   --je-err-text: #ef9a9a;
@@ -158,7 +157,6 @@
   --je-kbd-bg: #fff;
   --je-tabbed-bg: #f9fafb;
   --je-kbd-border: rgba(0, 0, 0, .28);
-  --je-brand-text: linear-gradient(100deg, #8e44ad 0%, #00729c 85%);
   --je-ok-text: #2e7d32;
   --je-warn-text: #b45309;
   --je-err-text: #c62828;
