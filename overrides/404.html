@@ -1,0 +1,50 @@
+{#- The site-wide 404 page: one panel card without the empty section list, with clear ways back -#}
+{% extends "main.html" %}
+{# mkdocs-glightbox injects only in on_post_page, which never runs for the 404 template.
+   Keep these styles and initialization options in sync with the glightbox block in mkdocs.yml. #}
+{% block extrahead %}
+  {{ super() }}
+  <link href="{{ 'assets/stylesheets/glightbox.min.css' | url }}" rel="stylesheet">
+  <script src="{{ 'assets/javascripts/glightbox.min.js' | url }}"></script>
+  <style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style>
+{% endblock %}
+{% block scripts %}
+  {{ super() }}
+  <script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": false, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script>
+{% endblock %}
+{% block site_nav %}
+  {# Keep navigation in the mobile drawer; hidden removes the empty desktop section list. #}
+  {% if nav %}
+    <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden>
+      <div class="md-sidebar__scrollwrap">
+        <div class="md-sidebar__inner">
+          {% include "partials/nav.html" %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+{% block content %}
+  {% set home = config.extra.homepage | d(nav.homepage.url, true) | url %}
+  <div class="je-404">
+    <h1>Page not found</h1>
+    <p>This address does not match a documentation page. The page may have moved, or the link may contain a typo. Try the site search or one of the links below.</p>
+    <p class="je-actions">
+      <a class="md-button md-button--primary" href="{{ home }}">Back to documentation home</a>
+      <a class="md-button" href="{{ 'getting-started/' | url }}">Quick start</a>
+      <a class="md-button" href="{{ 'faq-support/faq/' | url }}">FAQ</a>
+    </p>
+  </div>
+{% endblock %}
