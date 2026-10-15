@@ -138,7 +138,7 @@ public class PrivacyCacheTests
     private static void Seed(JE.Tests.ApiPluginFixture f, Dictionary<string, TagCacheEntry> items)
     {
         Directory.CreateDirectory(f.Core.ConfigRoot);
-        // Schema 7 fixture exercises the persisted contract consumed across process restarts.
-        File.WriteAllText(SnapshotPath(f), JsonSerializer.Serialize(new { SchemaVersion = 7, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = items }));
+        // Schema 8 fixture exercises the persisted contract consumed across process restarts.
+        File.WriteAllText(SnapshotPath(f), JsonSerializer.Serialize(new { SchemaVersion = 8, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = items }));
     }
 }
