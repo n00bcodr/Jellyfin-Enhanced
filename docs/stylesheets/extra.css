@@ -1528,10 +1528,7 @@ body {
   line-height: 1.05;
   margin: 0 0 .35em;
   letter-spacing: -.03em;
-  background: var(--je-brand-text);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--je-accent);
 }
 .md-typeset .je-hero h1::after { display: none; }
 .md-typeset .je-hero h1 .headerlink { display: none; }
