@@ -106,7 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
 
             if (settings.LanguageTagsEnabled
-                && LanguageFlagRules.Resolve(entry.AudioLanguages, entry.PartialAudioLanguages, settings.LanguagePriorityTerms, settings.LanguagePriorityStrict) is { } flags)
+                && LanguageFlagRules.Resolve(entry.AudioLanguages, entry.PartialAudioLanguages, settings.LanguagePriorityTerms, settings.LanguagePriorityStrict, settings.LanguageMergeRegions) is { } flags)
             {
                 var tags = new List<PosterTag>(flags.Count);
                 foreach (var flag in flags)

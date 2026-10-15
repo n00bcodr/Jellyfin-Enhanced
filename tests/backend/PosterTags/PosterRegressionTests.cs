@@ -99,6 +99,17 @@ public class PosterRegressionTests
         Assert.Contains(tags, t => t.FlagCode == "gb" && !t.Partial);
     }
 
+    [Theory]
+    [InlineData(false, new[] { "gb", "us" })]
+    [InlineData(true, new[] { "gb" })]
+    public void Language_flags_merge_regional_variants_when_enabled(bool merge, string[] expected)
+    {
+        var settings = PosterTagSettings.FromSettingsJson("{languageTagsEnabled:true}", new PluginConfiguration { LanguageTagsMergeRegions = merge });
+        var result = PosterTagResolver.Resolve(new() { AudioLanguages = ["en", "en-US"] }, settings, Context(), false)!;
+        var flags = result.Groups.SelectMany(g => g.Tags).Cast<LanguageTag>().Select(t => t.FlagCode).ToArray();
+        Assert.Equal(expected, flags);
+    }
+
     private static PosterTagLayout Layout(PosterTagCorner corner = PosterTagCorner.TopLeft) => new([new(PosterTagGroup.Quality, corner, [new QualityTag("4K", "resolution")])], false, false);
     private static SKBitmap Poster() { var b = new SKBitmap(180, 270); b.Erase(SKColors.Navy); return b; }
 

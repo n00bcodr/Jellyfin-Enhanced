@@ -129,6 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             LanguageTagsPosition = "bottom-left";
             LanguageTagsPriority = string.Empty;
             LanguageTagsPriorityStrict = false;
+            LanguageTagsMergeRegions = false;
             QualityTagsPreferredAudioLanguage = string.Empty;
             QualityTagsAudioLanguageFromUser = false;
             RatingTagsPosition = "bottom-right";
@@ -689,6 +690,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// is empty.
         /// </summary>
         public bool LanguageTagsPriorityStrict { get; set; }
+        /// <summary>
+        /// When true, regional and script variants of a language (en-GB, pt-BR, zh-Hant)
+        /// share the flag of the base language, so tracks Jellyfin lists as one language
+        /// show a single flag. When false (default) each variant keeps its own flag.
+        /// </summary>
+        public bool LanguageTagsMergeRegions { get; set; }
         /// <summary>
         /// Language whose audio tracks decide the sound tag (Atmos, DTS, 5.1, ...)
         /// on poster cards, as an ISO 639 code (de, deu, pt-BR). Empty (default)

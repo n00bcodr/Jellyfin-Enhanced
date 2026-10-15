@@ -167,12 +167,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// media-language.js resolveFlag({ name, code }). Returns null when the web returns null; a
         /// broken token (leading NUL) for the Object.prototype quirk.
         /// </summary>
-        internal static string? ResolveFlag(string code, string name)
+        internal static string? ResolveFlag(string code, string name, bool mergeRegions = false)
         {
             if (Parse(code, out var parsed))
             {
                 string? baseFlag = null;
                 if (parsed.Base is not null) BaseLanguageFlags.TryGetValue(parsed.Base, out baseFlag);
+                if (mergeRegions && baseFlag is not null) return baseFlag;
                 if (baseFlag == NoDialogueToken) return baseFlag;
                 if (parsed.Region is not null && baseFlag is not null)
                 {
@@ -228,7 +229,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// most three flags in display order. Null when the web renders no language container
         /// (nothing resolved, or the web would throw while building it).
         /// </summary>
-        internal static List<FlagInfo>? Resolve(string?[]? codes, string?[]? partialCodes, IReadOnlyList<string> priorityTerms, bool strict)
+        internal static List<FlagInfo>? Resolve(string?[]? codes, string?[]? partialCodes, IReadOnlyList<string> priorityTerms, bool strict, bool mergeRegions = false)
         {
             if (codes is null || codes.Length == 0) return null;
 
@@ -246,11 +247,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             {
                 if (code!.Length == 0) continue;
                 var info = Describe(code);
+                var flag = mergeRegions ? info.MergedFlag : info.Flag;
                 if (codes.Length > 1 && !(seen ??= new HashSet<string>(StringComparer.Ordinal)).Add(info.DedupeKey)) continue;
 
                 var partial = partialCodes is not null && Array.IndexOf(partialCodes, code) >= 0;
                 var name = info.Name;
-                var countryCode = info.Flag;
+                var countryCode = flag;
                 if (countryCode is null) continue;
                 var existing = flags.Find(f => f.CountryCode == countryCode);
                 if (existing is null)
@@ -283,7 +285,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         {
             if (Memo.TryGetValue(code, out var cached)) return cached;
             var name = LanguageNames.Of(code) ?? JsText.ToUpper(code);
-            var info = new CodeInfo(name, JsText.ToLower(code) + "|" + JsText.ToLower(name), ResolveFlag(code, name));
+            var info = new CodeInfo(name, JsText.ToLower(code) + "|" + JsText.ToLower(name), ResolveFlag(code, name), ResolveFlag(code, name, mergeRegions: true));
             if (Memo.Count < MaxMemoEntries) Memo.TryAdd(code, info);
             return info;
         }
@@ -292,7 +294,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         private static readonly ConcurrentDictionary<string, CodeInfo> Memo = new(StringComparer.Ordinal);
 
-        private sealed record CodeInfo(string Name, string DedupeKey, string? Flag);
+        private sealed record CodeInfo(string Name, string DedupeKey, string? Flag, string? MergedFlag);
 
         /// <summary>The model flag code for a resolved country code.</summary>
         internal static string ToFlagCode(string countryCode) => countryCode == NoDialogueToken ? NoDialogueFlagCode : countryCode;

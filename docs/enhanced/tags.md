@@ -185,6 +185,7 @@ Administrators can favor particular languages under **Priority languages**.
 | Admin: **Enable Language Tags** / personal: **Show Language Tags** | Off | Shows up to three distinct flags/symbols on supported cards |
 | Admin: **Priority Languages** | Empty | Comma-separated language names or codes; use names such as `English, Japanese` to avoid differences between two- and three-letter codes. Matching flags appear first in list order |
 | Admin: **Only Show Priority Languages** | Off | With a nonempty priority list, removes flags that do not match; an item can show fewer than three or none |
+| Admin: **Merge Regional Variants** | Off | Regional and script variants such as `en-GB`, `pt-BR` or `zh-Hant` share their base language's flag, so tracks Jellyfin lists as one language show one flag |
 
 ### Grouping, regions, and partial dubs
 

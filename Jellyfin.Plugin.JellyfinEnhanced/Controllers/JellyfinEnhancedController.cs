@@ -3695,6 +3695,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.LanguageTagsPosition,
                 config.LanguageTagsPriority,
                 config.LanguageTagsPriorityStrict,
+                config.LanguageTagsMergeRegions,
                 config.QualityTagsPreferredAudioLanguage,
                 config.QualityTagsAudioLanguageFromUser,
                 config.RatingTagsPosition,

@@ -182,6 +182,9 @@
     /**
      * Resolve the flag code for a language entry.
      *
+     * When the admin Merge Regional Variants setting is on, every tag with a
+     * known base language resolves straight to that base flag.
+     *
      * Resolution order:
      *  1. Explicit, VALID region subtag → that country's flag (`pt-BR` → br),
      *     after alias/convention normalization (`en-UK` → gb, `es-LA` → mx,
@@ -206,6 +209,7 @@
         const parsed = parseLanguageTag(code);
         if (parsed) {
             const baseFlag = baseLanguageFlags[parsed.base] || null;
+            if (JE.pluginConfig?.LanguageTagsMergeRegions && baseFlag) return baseFlag;
             // A synthetic token is not a country and cannot be refined by a
             // region or script: `zxx-US` still means "no dialogue", not US.
             if (baseFlag && specialFlags[baseFlag]) return baseFlag;
