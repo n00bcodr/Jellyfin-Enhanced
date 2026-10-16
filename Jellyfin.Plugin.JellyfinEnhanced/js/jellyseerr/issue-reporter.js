@@ -29,7 +29,7 @@
     /**
      * Checks if issue reporting is available.
      * Resolves TMDB via parent series or fallback for Season/Episode items.
-     * Returns: 'available', 'no-tmdb', 'no-jellyseerr', or 'no-both'
+     * Returns: 'available', 'no-tmdb', 'no-jellyseerr', 'no-both', or 'no-account' (no Seerr account)
      * @returns {Promise<string>}
      */
     issueReporter.checkReportingAvailability = async function (item) {
@@ -69,6 +69,13 @@
                 return 'no-tmdb';
             } else if (!jellyseerrActive) {
                 return 'no-jellyseerr';
+            }
+
+            // Issues are read and reported as the viewer's own Seerr account: without one (Jellyfin
+            // Enhanced request mode lets such viewers in) every issue call would be refused.
+            const userStatus = await JE.jellyseerrAPI?.checkUserStatus?.();
+            if (userStatus && userStatus.active && userStatus.userFound === false) {
+                return 'no-account';
             }
 
             // Both available
@@ -888,7 +895,7 @@
             // Jellyseerr being down, so there's nothing useful to report on this
             // item; skip silently rather than cluttering the page with a disabled
             // button that always explains the same permanent limitation.
-            if (availability === 'no-tmdb' || availability === 'no-both') {
+            if (availability === 'no-tmdb' || availability === 'no-both' || availability === 'no-account') {
                 console.debug(`${logPrefix} Skipping ${item.Name}: no TMDB ID available, nothing to report against`);
                 return false;
             }

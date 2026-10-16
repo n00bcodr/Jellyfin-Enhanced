@@ -462,7 +462,11 @@
 
         // Only keep a list fetched for the identity it was keyed under.
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-        const data = await fetchWithManagedRequest(`/JellyfinEnhanced/tmdb/genres/${mediaType}`, 'genre', options);
+        // Without a Seerr account the list comes from the server's native route (same TMDB genres).
+        const path = options.native
+            ? `/JellyfinEnhanced/native-details/genres/${mediaType === 'tv' ? 'tv' : 'movie'}`
+            : `/JellyfinEnhanced/tmdb/genres/${mediaType}`;
+        const data = await fetchWithManagedRequest(path, 'genre', { signal: options.signal });
         if (storageKey && Array.isArray(data) && data.length > 0
             && (!JE.session || JE.session.isCurrent(requestEpoch))) {
             try {
@@ -1107,6 +1111,18 @@
         document.head.appendChild(style);
     }
 
+    /**
+     * True when a library page's discovery row should read the server's native feeds (filtered there
+     * for the viewer, read with Jellyfin Enhanced's own Seerr key) instead of Seerr as the viewer: the
+     * viewer has no Seerr account (Jellyfin Enhanced request mode lets them in) and native details
+     * pages are on. Viewers with an account keep Seerr's own answers.
+     * @param {any} status The viewer's Seerr status (JE.jellyseerrAPI.checkUserStatus()).
+     * @returns {boolean}
+     */
+    function useNativeFeeds(status) {
+        return !!status?.active && status.userFound === false && !!JE.titleDetails?.available?.();
+    }
+
     // Inject styles on load
     injectFilterStyles();
 
@@ -1131,6 +1147,7 @@
         // Shared utilities
         fetchWithManagedRequest,
         fetchTmdbGenreList,
+        useNativeFeeds,
         createSessionCache,
         createCardsFragment,
         appendCards,

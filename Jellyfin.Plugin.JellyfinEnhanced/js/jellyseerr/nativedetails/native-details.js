@@ -736,6 +736,24 @@
     }
 
     /**
+     * The title's public details for the page's extras, from the server's native route (read with
+     * Jellyfin Enhanced's own Seerr key under this page's rule, so viewers without a Seerr account get
+     * them too; no per-account part), or null.
+     * @param {Object} state Page state.
+     * @param {string} [suffix] '' for the details, '/ratings' for the ratings.
+     * @returns {Promise<Object|null>} Details or ratings.
+     */
+    async function nativeTitleData(state, suffix = '') {
+        const path = `/native-details/title/${state.mediaType === 'movie' ? 'movie' : 'tv'}/${state.parts.tmdbId}${suffix}`;
+        try {
+            if (JE.core?.api?.plugin) return await JE.core.api.plugin(path, { skipCache: true });
+            return await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`JellyfinEnhanced${path}`), dataType: 'json' });
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Adds what the modal shows and the native layout has no place for: ratings (TMDB, IMDb, Rotten
      * Tomatoes, independent of MDBList), the information panel (production status, dates, revenue,
      * budget, original language, production countries, studios, streaming providers and the
@@ -749,7 +767,7 @@
         if (parts.kind !== 'movie' && parts.kind !== 'series') return;
         const internal = JE.internals?.moreInfoModal;
         if (!internal?.buildRightPanel) return;
-        const data = await titleData(state);
+        const data = await nativeTitleData(state);
         if (!data || state.aborted || current !== state) return;
         const mediaType = state.mediaType;
         // A copy is offered by Open only (checked for this viewer by the server), never from Seerr's link.
@@ -788,8 +806,10 @@
         state.extras = extras;
         host.appendChild(extras);
         // Ratings: the modal's endpoints and logos, under the controls.
-        if (internal.fetchRatings && internal.buildRatingLogos) {
-            const ratings = await internal.fetchRatings(parts.tmdbId, mediaType).catch(() => null);
+        if (internal.buildRatingLogos) {
+            // Series ratings are Rotten Tomatoes only, kept under `rt` as the modal does.
+            const raw = await nativeTitleData(state, '/ratings');
+            const ratings = raw && mediaType === 'tv' ? { rt: raw } : raw;
             if (state.aborted || current !== state) return;
             const mount = state.container?.querySelector('.je-native-absent-ratings');
             if (mount && ratings) {

@@ -1598,7 +1598,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!string.IsNullOrEmpty(jellyseerrUserId))
             {
                 var seerrUser = await GetJellyseerrUser(jellyfinUserId!);
-                return Ok(LinkedSeerrUserStatus(jellyseerrUserId, CanRequestAdvanced(IsAdminUser(), seerrUser)));
+                return Ok(LinkedSeerrUserStatus(jellyseerrUserId, CanRequestAdvanced(IsAdminUser(), seerrUser), CanViewIssues(IsAdminUser(), seerrUser)));
             }
 
             // User not found — could be server unreachable, HTML challenge from
@@ -1654,15 +1654,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // canRequestAdvanced: an admin always may; anyone else needs their
             // Seerr user (permissions), which must already be in the user cache
             // for this answer to need no Seerr round trip.
-            if (isAdmin) return LinkedSeerrUserStatus(cachedId, true);
+            if (isAdmin) return LinkedSeerrUserStatus(cachedId, true, true);
             return TryGetCachedJellyseerrUser(jellyfinUserId, out var seerrUser)
-                ? LinkedSeerrUserStatus(cachedId, CanRequestAdvanced(false, seerrUser))
+                ? LinkedSeerrUserStatus(cachedId, CanRequestAdvanced(false, seerrUser), CanViewIssues(false, seerrUser))
                 : null;
         }
 
         /// <summary>The <c>jellyseerr/user-status</c> answer for a linked user.</summary>
-        private static object LinkedSeerrUserStatus(string jellyseerrUserId, bool canRequestAdvanced)
-            => new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked", canRequestAdvanced };
+        private static object LinkedSeerrUserStatus(string jellyseerrUserId, bool canRequestAdvanced, bool canViewIssues)
+            => new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked", canRequestAdvanced, canViewIssues };
+
+        /// <summary>
+        /// Whether the issue reads may be made for the user: a Jellyfin administrator always (the proxy lets them),
+        /// anyone else needs Seerr's VIEW_ISSUES or MANAGE_ISSUES (or Seerr ADMIN), as the proxy checks.
+        /// </summary>
+        private static bool CanViewIssues(bool isAdmin, JellyseerrUser? seerrUser)
+            => isAdmin || (seerrUser != null && JellyseerrPermissionHelper.HasAnyPermission(seerrUser.Permissions,
+                JellyseerrPermission.ADMIN | JellyseerrPermission.VIEW_ISSUES | JellyseerrPermission.MANAGE_ISSUES));
 
         /// <summary>
         /// Whether the request modals may offer the advanced options (server,

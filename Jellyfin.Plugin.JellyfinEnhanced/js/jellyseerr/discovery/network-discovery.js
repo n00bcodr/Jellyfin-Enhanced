@@ -237,6 +237,9 @@
         if (signal.aborted) return null;
 
         if (!status?.active || !studioInfo?.name) return null;
+        // No Seerr account (Jellyfin Enhanced request mode): the server's native feeds, filtered there.
+        const nativeFeeds = !!JE.discoveryFilter.useNativeFeeds?.(status);
+        if (status.userFound === false && !nativeFeeds && !syntheticStudio(studioId)) return null;
 
         // TV network IDs are different from company IDs in TMDB
         // Always use name lookup for TV networks
@@ -260,7 +263,7 @@
             tvId: tvNetworkId || (tvByCompany ? companyId : null),
             movieId: companyId,
             tvSource: tvNetworkId ? 'network' : 'company',
-            native: !!syntheticStudio(studioId),
+            native: !!syntheticStudio(studioId) || nativeFeeds,
             title: JE.t('discovery_more_from_studio', { studio: studioInfo.name })
         };
     }
@@ -277,7 +280,7 @@
         pageKey: (id) => `${id}-${window.location.hash}`,
         resolveFeeds,
         buildDiscoverPath: (kind, id, feeds) => {
-            // A synthetic studio's or network's page: the server filters its feeds for the viewer.
+            // A synthetic studio's or network's page, or a viewer without a Seerr account: the server filters the feeds for the viewer.
             if (feeds?.native) {
                 if (kind !== 'tv') return `/JellyfinEnhanced/native-details/discover/movie/studio/${id}`;
                 return `/JellyfinEnhanced/native-details/discover/tv/${feeds.tvSource === 'company' ? 'company' : 'network'}/${id}`;

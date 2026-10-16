@@ -82,6 +82,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         Task<SourceAnswer> CompanySeriesAsync(int company, int page, string? sortBy, Guid viewer, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
 
         /// <summary>
+        /// Seerr's ratings of a title (movies: RT and IMDb combined; series: RT), or why there are none
+        /// (<see cref="SourceAnswer.Busy"/> as for <see cref="PersonCreditsAsync"/>).
+        /// </summary>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="tmdb">TMDB id.</param>
+        /// <param name="viewer">The viewer whose read budget an upstream read comes out of.</param>
+        /// <param name="ct">Cancellation.</param>
+        Task<SourceAnswer> RatingsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+
+        /// <summary>
+        /// Seerr's TMDB keyword search (id, name), or why there is none (<see cref="SourceAnswer.Busy"/> as
+        /// for <see cref="PersonCreditsAsync"/>).
+        /// </summary>
+        /// <param name="query">The keyword (1-100 characters).</param>
+        /// <param name="viewer">The viewer whose read budget an upstream read comes out of.</param>
+        /// <param name="ct">Cancellation.</param>
+        Task<SourceAnswer> KeywordsAsync(string query, Guid viewer, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+
+        /// <summary>
         /// True when the Jellyfin user has a linked Seerr account, false when not, null when it can't
         /// be told (Seerr unreachable and no earlier answer): the page then fails over to the modal
         /// instead of refusing.
@@ -232,9 +251,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <inheritdoc />
         public Task<SourceAnswer> DiscoverAsync(bool movie, string filter, int id, int page, string? sortBy, Guid viewer, CancellationToken ct)
         {
-            if (filter is not ("genre" or "studio" or "network") || id <= 0 || page is < 1 or > 500) return Task.FromResult(SourceAnswer.Missing);
+            if (filter is not ("genre" or "studio" or "network" or "keywords") || id <= 0 || page is < 1 or > 500) return Task.FromResult(SourceAnswer.Missing);
             var path = $"/api/v1/discover/{(movie ? "movies" : "tv")}?page={page}&{filter}={id}";
             if (!string.IsNullOrEmpty(sortBy)) path += "&sortBy=" + Uri.EscapeDataString(sortBy);
+            return FeedAsync(path, viewer, () => FetchAndStoreAsync(path), ct);
+        }
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> RatingsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct)
+        {
+            if (tmdb <= 0) return Task.FromResult(SourceAnswer.Missing);
+            var path = movie ? $"/api/v1/movie/{tmdb}/ratingscombined" : $"/api/v1/tv/{tmdb}/ratings";
+            return FeedAsync(path, viewer, () => FetchAndStoreAsync(path), ct);
+        }
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> KeywordsAsync(string query, Guid viewer, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(query) || query.Length > 100) return Task.FromResult(SourceAnswer.Missing);
+            var path = "/api/v1/search/keyword?query=" + Uri.EscapeDataString(query.Trim().ToLowerInvariant());
             return FeedAsync(path, viewer, () => FetchAndStoreAsync(path), ct);
         }
 

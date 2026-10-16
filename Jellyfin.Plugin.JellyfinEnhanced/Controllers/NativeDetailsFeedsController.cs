@@ -52,12 +52,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// One page of a discovery feed (<c>{ page, totalPages, results }</c>): <paramref name="type"/>
-        /// <c>movie</c> by <c>genre</c> or <c>studio</c>, or <c>tv</c> by <c>genre</c>, <c>network</c>
-        /// or <c>company</c>, filtered for the caller and admitted like <see cref="Filmography"/>.
+        /// <c>movie</c> by <c>genre</c>, <c>studio</c> or <c>keyword</c>, or <c>tv</c> by <c>genre</c>,
+        /// <c>network</c>, <c>company</c> or <c>keyword</c>, filtered for the caller and admitted like
+        /// <see cref="Filmography"/>.
         /// </summary>
         /// <param name="type">movie or tv.</param>
-        /// <param name="source">genre, studio, network or company.</param>
-        /// <param name="feedId">The TMDB genre, company or network id.</param>
+        /// <param name="source">genre, studio, network, company or keyword.</param>
+        /// <param name="feedId">The TMDB genre, company, network or keyword id.</param>
         /// <param name="page">Page (1-500).</param>
         /// <param name="sortBy">Sort (e.g. popularity.desc), or none.</param>
         /// <param name="ct">Cancellation.</param>
@@ -69,6 +70,63 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Caller(out var refusal) is not { } viewer) return refusal!;
             if (type is not ("movie" or "tv")) return BadRequest(new { code = "invalid_feed" });
             return Answer(await _feeds.DiscoverAsync(viewer, type == "movie", source, feedId, page, sortBy, ct).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// A movie's or series' public details for the extras of its native page (information panel,
+        /// trailers, collection), without Seerr's per-account part, for any viewer the page opens for (no
+        /// Seerr account needed). 404 when refused or unknown, 503 when the source can't answer.
+        /// </summary>
+        /// <param name="type">movie or tv.</param>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The details.</returns>
+        [HttpGet("native-details/title/{type}/{tmdbId}")]
+        [Authorize]
+        public async Task<IActionResult> Title([FromRoute] string type, [FromRoute] int tmdbId, CancellationToken ct)
+        {
+            if (Caller(out var refusal) is not { } viewer) return refusal!;
+            if (type is not ("movie" or "tv")) return BadRequest(new { code = "invalid_feed" });
+            return Answer(await _feeds.TitleAsync(viewer, type == "movie", tmdbId, ct).ConfigureAwait(false));
+        }
+
+        /// <summary>A title's ratings for its native page, under <see cref="Title"/>'s rule, admitted like <see cref="Filmography"/>.</summary>
+        /// <param name="type">movie or tv.</param>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The ratings.</returns>
+        [HttpGet("native-details/title/{type}/{tmdbId}/ratings")]
+        [Authorize]
+        public async Task<IActionResult> Ratings([FromRoute] string type, [FromRoute] int tmdbId, CancellationToken ct)
+        {
+            if (Caller(out var refusal) is not { } viewer) return refusal!;
+            if (type is not ("movie" or "tv")) return BadRequest(new { code = "invalid_feed" });
+            return Answer(await _feeds.RatingsAsync(viewer, type == "movie", tmdbId, ct).ConfigureAwait(false));
+        }
+
+        /// <summary>The TMDB keywords matching a tag (<c>{ results: [{ id, name }] }</c>), admitted like <see cref="Filmography"/>.</summary>
+        /// <param name="query">The tag.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The keywords.</returns>
+        [HttpGet("native-details/keywords")]
+        [Authorize]
+        public async Task<IActionResult> Keywords([FromQuery] string? query, CancellationToken ct)
+        {
+            if (Caller(out var refusal) is not { } viewer) return refusal!;
+            return Answer(await _feeds.KeywordsAsync(viewer, query, ct).ConfigureAwait(false));
+        }
+
+        /// <summary>TMDB's movie or series genres (<c>[{ id, name }]</c>), under the viewer-level rule (no Seerr account needed).</summary>
+        /// <param name="type">movie or tv.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The genres.</returns>
+        [HttpGet("native-details/genres/{type}")]
+        [Authorize]
+        public async Task<IActionResult> Genres([FromRoute] string type, CancellationToken ct)
+        {
+            if (Caller(out var refusal) is not { } viewer) return refusal!;
+            if (type is not ("movie" or "tv")) return BadRequest(new { code = "invalid_feed" });
+            return Answer(await _feeds.GenresAsync(viewer, type == "movie", ct).ConfigureAwait(false));
         }
 
         /// <summary>The caller (a real, enabled user; never an API key), or the refusal when the feature is off or there is none.</summary>

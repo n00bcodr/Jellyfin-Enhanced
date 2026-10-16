@@ -272,6 +272,19 @@
 
         if (!status?.active || !personInfo?.name) return null;
 
+        // No Seerr account (Jellyfin Enhanced request mode): the server's filmography, filtered there
+        // for the viewer. The person's TMDB id comes from the library (searching needs Seerr).
+        if (status.userFound === false) {
+            const tmdb = parseInt(personInfo.tmdbId, 10);
+            if (!JE.discoveryFilter.useNativeFeeds?.(status) || !(tmdb > 0)) return null;
+            const results = await fetchFilmography(tmdb, signal);
+            if (signal.aborted || !results) return null;
+            return {
+                items: results.filter(item => item?.id && item?.mediaType),
+                title: JE.t('discovery_more_from_person', { person: personInfo.name })
+            };
+        }
+
         // Get TMDB person ID
         const tmdbPersonId = personInfo.tmdbId
             ? parseInt(personInfo.tmdbId)

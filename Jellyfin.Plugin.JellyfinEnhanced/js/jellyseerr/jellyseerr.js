@@ -1017,10 +1017,12 @@
                     // Prefetch TMDB genres in the background for instant discovery
                     // (no request when this tab already keeps fresh copies in
                     // sessionStorage, e.g. after a reload)
-                    if (isJellyseerrActive && JE.pluginConfig?.JellyseerrShowGenreDiscovery !== false) {
+                    // A viewer without a Seerr account reads them from the native route (or not at all).
+                    const nativeGenres = !!JE.discoveryFilter?.useNativeFeeds?.(status);
+                    if (isJellyseerrActive && (jellyseerrUserFound || nativeGenres) && JE.pluginConfig?.JellyseerrShowGenreDiscovery !== false) {
                         Promise.all([
-                            JE.discoveryFilter?.fetchTmdbGenreList?.('tv', {})?.catch(() => {}),
-                            JE.discoveryFilter?.fetchTmdbGenreList?.('movie', {})?.catch(() => {})
+                            JE.discoveryFilter?.fetchTmdbGenreList?.('tv', { native: nativeGenres })?.catch(() => {}),
+                            JE.discoveryFilter?.fetchTmdbGenreList?.('movie', { native: nativeGenres })?.catch(() => {})
                         ]).catch(() => {});
                     }
                 } else if (Date.now() - startTime > timeout) {

@@ -4228,6 +4228,42 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/native-details/title/{type}/{tmdbId}",
+      "method": "Title",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/native-details/title/{type}/{tmdbId}/ratings",
+      "method": "Ratings",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/native-details/keywords",
+      "method": "Keywords",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/native-details/genres/{type}",
+      "method": "Genres",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/acquire/notify/inbox",
       "method": "GetInbox",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
@@ -9535,8 +9571,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 528,
-    "routes": 247,
+    "files": 529,
+    "routes": 251,
     "configuration_properties": 578,
     "storage_references": 82,
     "scheduled_tasks": 14,

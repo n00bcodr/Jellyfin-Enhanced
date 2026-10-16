@@ -129,7 +129,9 @@ public class ApiNativeDetailsTests
         private static JsonElement J(string json) => JsonDocument.Parse(json).RootElement.Clone();
         private SourceAnswer Answer(bool known, string json) => Down ? SourceAnswer.Unavailable : known ? SourceAnswer.Of(J(json)) : SourceAnswer.Missing;
         public Task<SourceAnswer> MovieAsync(int tmdb, CancellationToken ct) { Calls++; return Task.FromResult(Answer(tmdb == 693134, MovieJson)); }
-        public Task<SourceAnswer> SeriesAsync(int tmdb, CancellationToken ct) { Calls++; return Task.FromResult(Answer(tmdb == 83867, SeriesJson)); }
+        /// <summary>The series details answered for Andor (null: <see cref="SeriesJson"/>).</summary>
+        public string? Series { get; set; }
+        public Task<SourceAnswer> SeriesAsync(int tmdb, CancellationToken ct) { Calls++; return Task.FromResult(Answer(tmdb == 83867, Series ?? SeriesJson)); }
         public Task<SourceAnswer> SeasonAsync(int tmdb, int season, CancellationToken ct) { Calls++; return Task.FromResult(SeasonsDown ? SourceAnswer.Unavailable : Answer(tmdb == 83867 && KnownSeasons.Contains(season), SeasonJson.Replace("\"seasonNumber\":1", "\"seasonNumber\":" + season, StringComparison.Ordinal))); }
         public Task<JsonElement?> RecommendationsAsync(bool movie, int tmdb, CancellationToken ct) { Calls++; return Task.FromResult<JsonElement?>(J(Recs)); }
         public Task<string?> LogoPathAsync(bool movie, int tmdb, CancellationToken ct) { Calls++; return Task.FromResult<string?>("/logo.png"); }
@@ -176,6 +178,22 @@ public class ApiNativeDetailsTests
             FeedCalls.Add(key + (sortBy == null ? string.Empty : "?" + sortBy));
             if (Busy) return Task.FromResult(SourceAnswer.Throttled);
             return Task.FromResult(Answer(Feeds.ContainsKey(key), Feeds.GetValueOrDefault(key) ?? "{}"));
+        }
+
+        public List<string> RatingCalls { get; } = new();
+        public Task<SourceAnswer> RatingsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct)
+        {
+            Calls++;
+            RatingCalls.Add((movie ? "movie:" : "tv:") + tmdb.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (Busy) return Task.FromResult(SourceAnswer.Throttled);
+            return Task.FromResult(Answer(movie ? tmdb == 693134 : tmdb == 83867, movie ? """{"rt":{"criticsScore":92},"imdb":{"criticsScore":8.5}}""" : """{"criticsScore":96}"""));
+        }
+
+        public Task<SourceAnswer> KeywordsAsync(string query, Guid viewer, CancellationToken ct)
+        {
+            Calls++;
+            if (Busy) return Task.FromResult(SourceAnswer.Throttled);
+            return Task.FromResult(Answer(true, """{"page":1,"results":[{"id":161919,"name":"adult animation","extra":"x"},{"id":0,"name":"bad"},{"id":5,"name":null}]}"""));
         }
 
         /// <summary>Seerr can't tell who is linked (unreachable, no earlier answer).</summary>
@@ -330,6 +348,7 @@ public class ApiNativeDetailsTests
     {
         ObjectResult o => o.StatusCode ?? 200,
         StatusCodeResult s => s.StatusCode,
+        ContentResult c => c.StatusCode ?? 200,
         FileContentResult => 200,
         null => -1,
         _ => throw new InvalidOperationException(result.GetType().Name),
@@ -1556,7 +1575,8 @@ public class ApiNativeDetailsTests
         var forUnlinked = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(unlinked), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result);
         Assert.Equal(new[] { "Science Fiction=library", "Adventure=Genre:12" }, forUnlinked.GenreItems.Select(g => g.Name + "=" + Where(g.Id)));
         Assert.Equal(new[] { "Legendary Pictures=Studio:923", "Tiny Co=Studio:99" }, forUnlinked.Studios.Select(g => g.Name + "=" + Where(g.Id)));
-        Assert.Empty(forUnlinked.Tags);
+        // Tags lead to the tag page, whose row reads the native keyword feeds without an account.
+        Assert.Equal(new[] { "desert", "sandworm" }, forUnlinked.Tags);
         // The linked viewer in the same mode gets the discovery pages (Science Fiction shows them nothing in the library now).
         Assert.Equal(new[] { "Science Fiction=Genre:878", "Adventure=Genre:12" }, (await Page(SyntheticId.Movie(693134))).GenreItems.Select(g => g.Name + "=" + Where(g.Id)));
     }
@@ -1752,7 +1772,7 @@ public class ApiNativeDetailsTests
         Assert.Equal("private, no-store", controller.Response.Headers.CacheControl.ToString());
         Assert.Equal(404, Status(await For(Me(viewer)).Filmography(77, CancellationToken.None)));
         Assert.Equal(400, Status(await For(Me(viewer)).Discover("person", "genre", 878)));
-        Assert.Equal(400, Status(await For(Me(viewer)).Discover("movie", "keyword", 878)));
+        Assert.Equal(400, Status(await For(Me(viewer)).Discover("movie", "person", 878)));
         // An API key (no user) or the feature off: refused before anything is read.
         var calls = rig.Source.Calls;
         Assert.Equal(403, Status(await For(new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity("Custom"))).Filmography(3810, CancellationToken.None)));
@@ -1811,7 +1831,7 @@ public class ApiNativeDetailsTests
         // Only the feeds these pages have, with a sane page and sort.
         foreach (var (movie, source, id, page, sort) in new (bool, string, int, int, string?)[]
         {
-            (true, "network", 2739, 1, null), (false, "studio", 99, 1, null), (true, "keyword", 1, 1, null), (true, "genre", 0, 1, null),
+            (true, "network", 2739, 1, null), (false, "studio", 99, 1, null), (true, "company", 1, 1, null), (true, "genre", 0, 1, null),
             (true, "genre", 878, 0, null), (true, "genre", 878, 501, null), (true, "genre", 878, 1, "popularity.desc&x=1"),
         })
         {
@@ -1937,6 +1957,94 @@ public class ApiNativeDetailsTests
 
         Assert.Equal(new[] { "438631" }, Titles(Body(film)));
         Assert.Equal(new[] { "603" }, Titles(Body(genre)));
+    }
+    [Fact]
+    public async Task AnAbsentTitlesExtrasAndRatingsComeFromTheServerForEveryViewerItsPageOpensFor()
+    {
+        using var rig = new Rig();
+        var unlinked = rig.Person(linked: false);
+        // Seerr mode: the page (and so its extras) needs the viewer's Seerr account.
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.TitleAsync(unlinked, true, 693134, CancellationToken.None)).Outcome);
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.RatingsAsync(unlinked, true, 693134, CancellationToken.None)).Outcome);
+        Assert.Empty(rig.Source.RatingCalls);
+        var config = rig.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = true;
+        config.ArrPhase1Enabled = true;
+        config.ArrPhase3Enabled = true;
+        config.ArrRequestBackend = "je";
+        // Jellyfin Enhanced mode: the page opens without an account, and so do its extras, read with JE's key.
+        var movie = Body(await rig.Feeds.TitleAsync(unlinked, true, 693134, CancellationToken.None));
+        Assert.Equal("Dune: Part Two", movie.GetProperty("title").GetString());
+        Assert.True(movie.TryGetProperty("relatedVideos", out _));
+        Assert.False(movie.TryGetProperty("mediaInfo", out _));                   // Seerr's per-account part stays behind
+        Assert.DoesNotContain("someone else", movie.GetRawText(), StringComparison.Ordinal);
+        Assert.Equal("Andor", Body(await rig.Feeds.TitleAsync(unlinked, false, 83867, CancellationToken.None)).GetProperty("name").GetString());
+        Assert.Equal(92, Body(await rig.Feeds.RatingsAsync(unlinked, true, 693134, CancellationToken.None)).GetProperty("rt").GetProperty("criticsScore").GetInt32());
+        Assert.Equal(96, Body(await rig.Feeds.RatingsAsync(unlinked, false, 83867, CancellationToken.None)).GetProperty("criticsScore").GetInt32());
+        // Unknown, invalid, busy and down answer like the other feeds.
+        Assert.Equal(FeedOutcome.NotFound, (await rig.Feeds.TitleAsync(unlinked, true, 77, CancellationToken.None)).Outcome);
+        Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.TitleAsync(unlinked, true, 0, CancellationToken.None)).Outcome);
+        rig.Source.Busy = true;
+        Assert.Equal(FeedOutcome.Busy, (await rig.Feeds.RatingsAsync(unlinked, true, 693134, CancellationToken.None)).Outcome);
+        rig.Source.Busy = false;
+        rig.Source.Down = true;
+        Assert.Equal(FeedOutcome.Unavailable, (await rig.Feeds.TitleAsync(unlinked, true, 693134, CancellationToken.None)).Outcome);
+        rig.Source.Down = false;
+
+        // Routes: the caller only, JSON, never kept; a bad type is 400.
+        Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsFeedsController For(System.Security.Claims.ClaimsPrincipal user) => new(rig.Feeds, rig.Callers.Users.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = user } },
+        };
+        var controller = For(Me(unlinked));
+        var ok = Assert.IsType<ContentResult>(await controller.Title("movie", 693134, CancellationToken.None));
+        Assert.DoesNotContain("mediaInfo", ok.Content, StringComparison.Ordinal);
+        Assert.Equal("private, no-store", controller.Response.Headers.CacheControl.ToString());
+        Assert.Equal(200, Status(await For(Me(unlinked)).Ratings("tv", 83867, CancellationToken.None)));
+        Assert.Equal(400, Status(await For(Me(unlinked)).Title("person", 693134, CancellationToken.None)));
+        Assert.Equal(404, Status(await For(Me(unlinked)).Title("movie", 77, CancellationToken.None)));
+        Assert.Equal(403, Status(await For(new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity("Custom"))).Title("movie", 693134, CancellationToken.None)));
+    }
+
+    [Fact]
+    public async Task ATagsKeywordAndALibraryGenresTmdbGenreAreFoundWithoutASeerrAccount()
+    {
+        using var rig = new Rig();
+        var unlinked = rig.Person(linked: false);
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.KeywordsAsync(unlinked, "adult animation", CancellationToken.None)).Outcome);
+        var config = rig.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = true;
+        config.ArrPhase1Enabled = true;
+        config.ArrPhase3Enabled = true;
+        config.ArrRequestBackend = "je";
+        // Only id and name of real keywords leave the server.
+        Assert.Equal("""{"results":[{"id":161919,"name":"adult animation"}]}""", (await rig.Feeds.KeywordsAsync(unlinked, "adult animation", CancellationToken.None)).Json);
+        Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.KeywordsAsync(unlinked, " ", CancellationToken.None)).Outcome);
+        Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.KeywordsAsync(unlinked, new string('a', 101), CancellationToken.None)).Outcome);
+        var genres = JsonDocument.Parse((await rig.Feeds.GenresAsync(unlinked, false, CancellationToken.None)).Json!).RootElement;
+        Assert.Equal(new[] { "10765=Sci-Fi & Fantasy", "18=Drama" }, genres.EnumerateArray().Select(g => g.GetProperty("id").GetInt32() + "=" + g.GetProperty("name").GetString()));
+        // The keyword's feeds, filtered like the other discovery feeds.
+        rig.Source.Feeds["movie:keywords:161919:1"] = """{"page":1,"totalPages":3,"results":[{"id":438631,"mediaType":"movie","title":"Dune"}]}""";
+        Assert.Equal(new[] { "438631" }, Titles(Body(await rig.Feeds.DiscoverAsync(unlinked, true, "keyword", 161919, 1, null, CancellationToken.None))));
+        Assert.Contains("movie:keywords:161919:1", rig.Source.FeedCalls);
+        Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.DiscoverAsync(unlinked, true, "keywords", 161919, 1, null, CancellationToken.None)).Outcome);
+    }
+
+    [Fact]
+    public async Task SeasonAndEpisodePagesNameTheSeriesGenresAndRegularCastButTheirCardsDont()
+    {
+        using var rig = new Rig();
+        rig.Source.Series = SeriesJson.Replace("\"credits\":{\"cast\":[],\"crew\":[]}",
+            "\"credits\":{\"cast\":[{\"id\":11,\"name\":\"Diego Luna\",\"character\":\"Cassian\",\"order\":0}],\"crew\":[]}", StringComparison.Ordinal);
+        var viewer = rig.Person();
+        foreach (var id in new[] { SyntheticId.SeasonOf(83867, 1), SyntheticId.EpisodeOf(83867, 1, 2) })
+        {
+            var dto = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = Id(id) })).Result);
+            Assert.Equal(new[] { "Drama" }, dto.Genres);
+            var person = Assert.Single(dto.People);
+            Assert.Equal(("Diego Luna", "Cassian"), (person.Name, person.Role));
+            Assert.DoesNotContain(dto.People, p => p.Name == "Tony Gilroy");   // the series' creators stay on the series page
+        }
     }
 }
 
@@ -2336,6 +2444,7 @@ public class NativeDetailsSourceTests
         // The joiner was never charged: its whole budget is still there.
         for (var page = 1; page <= SeerrNativeDetailsSource.FeedBurst; page++) Assert.NotNull((await Page(52, page, joiner).WaitAsync(limit)).Data);
     }
+
 
 }
 #endif

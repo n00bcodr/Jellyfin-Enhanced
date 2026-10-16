@@ -20,6 +20,7 @@ const LIBRARY_ID = '0123456789abcdef0123456789abcdef';
  */
 function moduleSpec(t, file, { responses = {}, item, genres = { movie: [], tv: [] }, config = {} } = {}) {
   const requests = [];
+  const genreReads = [];
   const items = [];
   let spec = null;
   const h = createHarness({
@@ -31,7 +32,8 @@ function moduleSpec(t, file, { responses = {}, item, genres = { movie: [], tv: [
       discoveryFilter: {
         createSessionCache: () => { const map = new Map(); return { scope: () => map }; },
         fetchWithManagedRequest: async path => { requests.push(path); const answer = responses[path.replace(/\?.*$/, '')]; return typeof answer === 'function' ? answer(path) : answer ?? null; },
-        fetchTmdbGenreList: async type => genres[type],
+        fetchTmdbGenreList: async (type, options = {}) => { genreReads.push(`${type}${options.native ? ':native' : ''}`); return genres[type]; },
+        useNativeFeeds: status => !!status?.active && status.userFound === false,
       },
       discoveryBase: {
         createDiscovery: s => { spec = s; return { start: () => {} }; },
@@ -45,7 +47,7 @@ function moduleSpec(t, file, { responses = {}, item, genres = { movie: [], tv: [
   h.load('jellyseerr/nativedetails/native-details.js');
   h.load(`jellyseerr/discovery/${file}`);
   const signal = new h.window.AbortController().signal;
-  return { ...h, spec, requests, items, signal };
+  return { ...h, spec, requests, genreReads, items, signal };
 }
 
 const FILMOGRAPHY = '/JellyfinEnhanced/native-details/person/3810/filmography';
@@ -302,4 +304,92 @@ test('the discovery base renders on a page its spec enables even with the switch
   } finally {
     controller.cleanup();
   }
+});
+
+// Library pages' discovery rows for a viewer without a Seerr account (Jellyfin Enhanced request mode):
+// the server's native feeds, filtered there for the viewer, instead of Seerr as the viewer (which
+// refuses them). Viewers with an account keep Seerr's own answers.
+const LIB_PERSON = '29c5c1c5e8aec2ff7ab3f8d9d8c69c26';
+const UNLINKED = { active: true, userFound: false, reason: 'unlinked' };
+const LINKED = { active: true, userFound: true };
+
+test('a library person row for a viewer without a Seerr account is their server-filtered filmography', async t => {
+  const film = '/JellyfinEnhanced/native-details/person/52139/filmography';
+  const proxy = '/JellyfinEnhanced/jellyseerr/person/52139/combined_credits';
+  const fixtures = {
+    item: { Id: LIB_PERSON, Type: 'Person', Name: 'Seth MacFarlane' },
+    responses: {
+      [`/JellyfinEnhanced/person/${LIB_PERSON}`]: { name: 'Seth MacFarlane', tmdbId: '52139' },
+      [film]: { results: [{ id: 1, mediaType: 'movie', title: 'Ted' }, { id: 2, mediaType: 'tv', name: 'The Orville' }] },
+      [proxy]: { cast: [{ id: 9, mediaType: 'movie', title: 'From Seerr' }], crew: [] },
+    },
+  };
+  const unlinked = moduleSpec(t, 'person-discovery.js', fixtures);
+  unlinked.JE.jellyseerrAPI.checkUserStatus = async () => UNLINKED;
+  const row = await unlinked.spec.resolveItems({ id: LIB_PERSON, signal: unlinked.signal });
+  assert.deepEqual(Array.from(row.items, i => i.id), [1, 2]);
+  assert.equal(row.title, 'discovery_more_from_person:{"person":"Seth MacFarlane"}');
+  assert.ok(unlinked.requests.includes(film));
+  assert.ok(!unlinked.requests.includes(proxy));
+  // The library row keeps the exclude-library-items setting (only a synthetic person's page keeps them).
+  assert.equal(unlinked.spec.keepLibraryItems(LIB_PERSON), false);
+
+  const linked = moduleSpec(t, 'person-discovery.js', fixtures);
+  linked.JE.jellyseerrAPI.checkUserStatus = async () => LINKED;
+  assert.deepEqual(Array.from((await linked.spec.resolveItems({ id: LIB_PERSON, signal: linked.signal })).items, i => i.id), [9]);
+  assert.ok(!linked.requests.includes(film));
+
+  // Without native details pages there is nothing to read for them: no row, and Seerr isn't asked.
+  const off = moduleSpec(t, 'person-discovery.js', { ...fixtures, config: { NativeAbsentDetails: { Enabled: false, ContractVersion: 1 } } });
+  off.JE.jellyseerrAPI.checkUserStatus = async () => UNLINKED;
+  off.JE.discoveryFilter.useNativeFeeds = status => !!status?.active && status.userFound === false && !!off.JE.titleDetails?.available?.();
+  assert.equal(await off.spec.resolveItems({ id: LIB_PERSON, signal: off.signal }), null);
+  assert.ok(!off.requests.includes(proxy) && !off.requests.includes(film));
+});
+
+test('library genre, studio and tag rows read the native feeds for a viewer without a Seerr account', async t => {
+  const GENRE = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const STUDIO = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const genres = { movie: [{ id: 16, name: 'Animation' }], tv: [{ id: 16, name: 'Animation' }] };
+  const genreFixtures = { genres, responses: { [`/JellyfinEnhanced/genre/${GENRE}`]: { name: 'Animation' } } };
+  for (const [status, native] of [[UNLINKED, true], [LINKED, false]]) {
+    const g = moduleSpec(t, 'genre-discovery.js', genreFixtures);
+    g.JE.jellyseerrAPI.checkUserStatus = async () => status;
+    const feeds = await g.spec.resolveFeeds({ id: GENRE, signal: g.signal });
+    assert.equal(feeds.native, native);
+    assert.ok(g.genreReads.includes(native ? 'tv:native' : 'tv'));
+    assert.equal(g.spec.buildDiscoverPath('tv', 16, feeds), native ? '/JellyfinEnhanced/native-details/discover/tv/genre/16' : '/JellyfinEnhanced/jellyseerr/discover/tv/genre/16');
+    assert.equal(g.spec.buildDiscoverPath('movie', 16, feeds), native ? '/JellyfinEnhanced/native-details/discover/movie/genre/16' : '/JellyfinEnhanced/jellyseerr/discover/movies/genre/16');
+
+    const n = moduleSpec(t, 'network-discovery.js', { responses: { [`/JellyfinEnhanced/studio/${STUDIO}`]: { name: '20th Century Fox', tmdbId: '25' } } });
+    n.JE.jellyseerrAPI.checkUserStatus = async () => status;
+    const studio = await n.spec.resolveFeeds({ id: STUDIO, signal: n.signal });
+    assert.equal(studio.native, native);
+    assert.equal(n.spec.buildDiscoverPath('tv', studio.tvId, studio), native ? '/JellyfinEnhanced/native-details/discover/tv/network/19' : '/JellyfinEnhanced/jellyseerr/discover/tv/network/19');
+    assert.equal(n.spec.buildDiscoverPath('movie', 25, studio), native ? '/JellyfinEnhanced/native-details/discover/movie/studio/25' : '/JellyfinEnhanced/jellyseerr/discover/movies/studio/25');
+
+    const keywords = native ? '/JellyfinEnhanced/native-details/keywords' : '/JellyfinEnhanced/tmdb/search/keyword';
+    const tag = moduleSpec(t, 'tag-discovery.js', { responses: { [keywords]: { results: [{ id: 161919, name: 'adult animation' }] } } });
+    tag.JE.jellyseerrAPI.checkUserStatus = async () => status;
+    const tagFeeds = await tag.spec.resolveFeeds({ id: 'adult animation', signal: tag.signal });
+    assert.equal(tagFeeds.movieId, 161919);
+    assert.deepEqual(tag.requests, [`${keywords}?query=adult%20animation`]);
+    assert.equal(tag.spec.buildDiscoverPath('tv', 161919, tagFeeds), native ? '/JellyfinEnhanced/native-details/discover/tv/keyword/161919' : '/JellyfinEnhanced/jellyseerr/discover/tv/keyword/161919');
+  }
+});
+
+test('the native-feeds choice: no Seerr account, Seerr reachable, native details on', t => {
+  const h = createHarness({
+    JE: { pluginConfig: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1 } }, t: key => key },
+    apiClient: { serverId: () => SERVER },
+  });
+  t.after(() => h.close());
+  h.load('jellyseerr/nativedetails/native-details.js');
+  h.load('jellyseerr/discovery/discovery-filter-utils.js');
+  const use = h.JE.discoveryFilter.useNativeFeeds;
+  assert.equal(use(UNLINKED), true);
+  assert.equal(use(LINKED), false);
+  assert.equal(use({ active: false, userFound: false }), false);   // Seerr unreachable: not a reason to switch
+  h.JE.pluginConfig.NativeAbsentDetails.Enabled = false;
+  assert.equal(use(UNLINKED), false);
 });

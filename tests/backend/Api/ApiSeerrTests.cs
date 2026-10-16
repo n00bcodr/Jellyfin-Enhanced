@@ -514,4 +514,26 @@ public class ApiSeerrTests
         Assert.DoesNotContain(hidden.Id.ToString("N"), body, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(2, JsonSerializer.Deserialize<JsonElement>(body).GetProperty("requests").GetArrayLength());   // the request itself stays
     }
+
+    [Theory]
+    [InlineData(JellyseerrPermission.REQUEST, false, false)]
+    [InlineData(JellyseerrPermission.REQUEST | JellyseerrPermission.VIEW_ISSUES, false, true)]
+    [InlineData(JellyseerrPermission.MANAGE_ISSUES, false, true)]
+    [InlineData(JellyseerrPermission.ADMIN, false, true)]
+    [InlineData(JellyseerrPermission.REQUEST, true, true)]
+    public async Task TheUserStatusSaysWhetherIssuesMayBeReadSoTheClientDoesntAskForA403(JellyseerrPermission permissions, bool jellyfinAdmin, bool canView)
+    {
+        using var f = new SeerrFixture { Permissions = permissions };
+        f.SetUser(f.UserId, jellyfinAdmin);
+        f.Reply = request => IntegrationTransport.Response("{}");
+        foreach (var round in new[] { "lookup", "cached" })
+        {
+            var status = Body(JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(await f.Controller.GetJellyseerrUserStatus()).Value));
+            Assert.True(status.GetProperty("userFound").GetBoolean(), round);
+            Assert.Equal(canView, status.GetProperty("canViewIssues").GetBoolean());
+        }
+        // And the proxy agrees: an issue read is refused exactly when the status says so.
+        var read = await f.Controller.GetJellyseerrIssues(null);
+        Assert.Equal(canView, read is not ObjectResult { StatusCode: 403 });
+    }
 }

@@ -160,7 +160,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <returns>The answer.</returns>
         public async Task<FeedAnswer> DiscoverAsync(User viewer, bool movie, string? source, int id, int page, string? sortBy, CancellationToken ct)
         {
-            var known = movie ? source is "genre" or "studio" : source is "genre" or "network" or "company";
+            var known = movie ? source is "genre" or "studio" or "keyword" : source is "genre" or "network" or "company" or "keyword";
             if (!known || id <= 0 || page is < 1 or > 500 || (!string.IsNullOrEmpty(sortBy) && !SeerrSort.IsMatch(sortBy)))
             {
                 return new FeedAnswer(FeedOutcome.Invalid, null);
@@ -179,14 +179,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var company = source == "company";
             var answer = company
                 ? await _source.CompanySeriesAsync(id, page, sortBy, viewer.Id, ct).ConfigureAwait(false)
-                : await _source.DiscoverAsync(movie, source!, id, page, sortBy, viewer.Id, ct).ConfigureAwait(false);
+                : await _source.DiscoverAsync(movie, source == "keyword" ? "keywords" : source!, id, page, sortBy, viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is not { } data) return Failed(answer);
             var number = id.ToString(CultureInfo.InvariantCulture);
             var pageText = page.ToString(CultureInfo.InvariantCulture);
             // The path the parental filter knows these lists by (the Seerr-proxied feeds' own).
             var path = company
                 ? "/api/v1/discover/tv?studio=" + number + "&page=" + pageText
-                : "/api/v1/discover/" + (movie ? "movies" : "tv") + "?page=" + pageText + "&" + source + "=" + number;
+                : "/api/v1/discover/" + (movie ? "movies" : "tv") + "?page=" + pageText + "&" + (source == "keyword" ? "keywords" : source) + "=" + number;
             var (outcome, filtered) = await ParentalAsync(data, path, viewer, ct).ConfigureAwait(false);
             if (outcome != FeedOutcome.Ok) return new FeedAnswer(outcome, null);
 
@@ -211,6 +211,107 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 ["totalPages"] = total,
                 ["results"] = results,
             }.ToJsonString());
+        }
+
+        /// <summary>
+        /// A movie's or series' public details for its native page's extras (the information panel,
+        /// trailers, collection, Spoiler Guard's switch), under that page's own rule (<see
+        /// cref="NativeDetailsPolicy.SeeAsync"/>): read with Jellyfin Enhanced's Seerr key, so a viewer
+        /// without a Seerr account gets them too. Seerr's per-account part (<c>mediaInfo</c>: requests,
+        /// library links, downloads) is left out.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="tmdb">TMDB id.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The answer.</returns>
+        public async Task<FeedAnswer> TitleAsync(User viewer, bool movie, int tmdb, CancellationToken ct)
+        {
+            if (tmdb <= 0) return new FeedAnswer(FeedOutcome.Invalid, null);
+            var access = await ViewerAsync(_policy.SeeAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
+            if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
+            var answer = movie ? await _source.MovieAsync(tmdb, ct).ConfigureAwait(false) : await _source.SeriesAsync(tmdb, ct).ConfigureAwait(false);
+            if (answer.Data is not { } data) return Failed(answer);
+            if (JsonNode.Parse(data.GetRawText()) is not JsonObject body) return new FeedAnswer(FeedOutcome.Unavailable, null);
+            body.Remove("mediaInfo");
+            return new FeedAnswer(FeedOutcome.Ok, body.ToJsonString());
+        }
+
+        /// <summary>
+        /// A title's ratings (Seerr's shape) for its native page, under <see cref="TitleAsync"/>'s rule; an
+        /// upstream read comes out of the viewer's feed budget.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="tmdb">TMDB id.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The answer.</returns>
+        public async Task<FeedAnswer> RatingsAsync(User viewer, bool movie, int tmdb, CancellationToken ct)
+        {
+            if (tmdb <= 0) return new FeedAnswer(FeedOutcome.Invalid, null);
+            var access = await ViewerAsync(_policy.SeeAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
+            if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
+            var answer = await _source.RatingsAsync(movie, tmdb, viewer.Id, ct).ConfigureAwait(false);
+            return answer.Data is { } data ? new FeedAnswer(FeedOutcome.Ok, data.GetRawText()) : Failed(answer);
+        }
+
+        /// <summary>
+        /// The TMDB keywords matching a tag (<c>{ results: [{ id, name }] }</c>), so a tag's discovery
+        /// row can find its keyword without a Seerr account. The viewer-level rule applies.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="query">The tag.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The answer.</returns>
+        public async Task<FeedAnswer> KeywordsAsync(User viewer, string? query, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(query) || query.Trim().Length > 100) return new FeedAnswer(FeedOutcome.Invalid, null);
+            var access = await ViewerAsync(_policy.ViewerAccessAsync(viewer, ct)).ConfigureAwait(false);
+            if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
+            var answer = await _source.KeywordsAsync(query.Trim(), viewer.Id, ct).ConfigureAwait(false);
+            if (answer.Data is not { } data) return Failed(answer);
+            var results = new JsonArray();
+            if (data.ValueKind == JsonValueKind.Object && data.TryGetProperty("results", out var rows) && rows.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var row in rows.EnumerateArray())
+                {
+                    if (row.ValueKind == JsonValueKind.Object && NativeDetailsDtos.Int(row, "id") is int id && id > 0 && NativeDetailsDtos.Str(row, "name") is { } name)
+                    {
+                        results.Add(new JsonObject { ["id"] = id, ["name"] = name });
+                    }
+                }
+            }
+
+            return new FeedAnswer(FeedOutcome.Ok, new JsonObject { ["results"] = results }.ToJsonString());
+        }
+
+        /// <summary>
+        /// TMDB's movie or series genres (<c>[{ id, name }]</c>), so a library genre's discovery row can
+        /// find its TMDB genre without a Seerr account. The viewer-level rule applies.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="movie">Movie genres (else series).</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The answer.</returns>
+        public async Task<FeedAnswer> GenresAsync(User viewer, bool movie, CancellationToken ct)
+        {
+            var access = await ViewerAsync(_policy.ViewerAccessAsync(viewer, ct)).ConfigureAwait(false);
+            if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
+            var answer = await _source.GenresAsync(movie, ct).ConfigureAwait(false);
+            if (answer.Data is not { } data) return Failed(answer);
+            var genres = new JsonArray();
+            if (data.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var row in data.EnumerateArray())
+                {
+                    if (row.ValueKind == JsonValueKind.Object && NativeDetailsDtos.Int(row, "id") is int id && id > 0 && NativeDetailsDtos.Str(row, "name") is { } name)
+                    {
+                        genres.Add(new JsonObject { ["id"] = id, ["name"] = name });
+                    }
+                }
+            }
+
+            return new FeedAnswer(FeedOutcome.Ok, genres.ToJsonString());
         }
 
         private static async Task<FeedOutcome> ViewerAsync(Task<NativeDetailsPolicy.Access> access)

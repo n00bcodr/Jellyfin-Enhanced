@@ -141,9 +141,15 @@ library title:
   that you can open (with the genre or network discovery row below, when it's on); otherwise a discovery page with
   just that row (no Seerr account needed in Requests & downloads' own request mode). **Tags** open the tag's list
   with its discovery row.
-- A name that would lead to an empty page isn't a link: with a discovery row turned off (or, for tags in Requests &
-  downloads' own request mode, for an account without a Seerr account) only the genres, studios and tags your library
-  has for you stay links.
+- A name that would lead to an empty page isn't a link: with a discovery row turned off only the genres, studios and
+  tags your library has for you stay links.
+- **Without a Seerr account** (Requests & downloads' own request mode): the page's ratings, *Information*, trailers
+  and collection come from the server, read with Jellyfin Enhanced's own Seerr key, so they show for everyone the page
+  opens for. The same goes for the discovery rows on library pages (a person's *More with …*, a genre's, studio's,
+  network's or tag's *More …* row): they read the same server-filtered feeds as the pages above. People with a Seerr
+  account keep Seerr's own answers. The *Report issue* button needs a Seerr account and isn't shown without one.
+- Season and episode pages show the series' genres and its regular cast (Seerr has no cast list per season or
+  episode).
 - Your parental limits and library access apply on every one of these pages. The filmography and the discovery pages'
   rows are filtered on the server before they reach the browser: a title the library has but hides from you, a title
   in a library you can't open, and a title not in the library whose own page you couldn't open are not sent at all.

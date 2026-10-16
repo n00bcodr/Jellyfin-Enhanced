@@ -28,8 +28,9 @@
      * Fetches TMDB genre lists and caches them. Normally already prefetched at
      * startup or kept in sessionStorage (JE.discoveryFilter.fetchTmdbGenreList).
      * @param {AbortSignal} [signal] - Optional abort signal
+     * @param {boolean} [native] - Read them from the server's native route (no Seerr account)
      */
-    async function fetchTmdbGenres(signal) {
+    async function fetchTmdbGenres(signal, native = false) {
         if (tmdbGenreCache) return tmdbGenreCache;
 
         try {
@@ -37,7 +38,7 @@
                 throw new DOMException('Aborted', 'AbortError');
             }
 
-            const fetchOptions = { signal };
+            const fetchOptions = { signal, native };
             const [tvResponse, movieResponse] = await Promise.all([
                 JE.discoveryFilter.fetchTmdbGenreList('tv', fetchOptions).catch(() => []),
                 JE.discoveryFilter.fetchTmdbGenreList('movie', fetchOptions).catch(() => [])
@@ -48,19 +49,21 @@
             }
 
             // Build lookup map by genre name (lowercase for matching)
-            tmdbGenreCache = {};
+            const cache = {};
             (tvResponse || []).forEach(g => {
                 const key = g.name.toLowerCase();
-                if (!tmdbGenreCache[key]) tmdbGenreCache[key] = { tv: null, movie: null };
-                tmdbGenreCache[key].tv = g.id;
+                if (!cache[key]) cache[key] = { tv: null, movie: null };
+                cache[key].tv = g.id;
             });
             (movieResponse || []).forEach(g => {
                 const key = g.name.toLowerCase();
-                if (!tmdbGenreCache[key]) tmdbGenreCache[key] = { tv: null, movie: null };
-                tmdbGenreCache[key].movie = g.id;
+                if (!cache[key]) cache[key] = { tv: null, movie: null };
+                cache[key].movie = g.id;
             });
 
-            return tmdbGenreCache;
+            // An empty answer (a list that couldn't be read) is not kept: the next page asks again.
+            if (Object.keys(cache).length) tmdbGenreCache = cache;
+            return cache;
         } catch (error) {
             if (error.name === 'AbortError') throw error;
             return {};
@@ -116,11 +119,12 @@
      * Gets TMDB genre IDs from genre name (fetches from TMDB API)
      * @param {string} genreName
      * @param {AbortSignal} [signal]
+     * @param {boolean} [native] - Genre lists from the server's native route
      * @returns {Promise<{tv: number|null, movie: number|null}|null>} Genre IDs or null
      */
-    async function getTmdbGenreIds(genreName, signal) {
+    async function getTmdbGenreIds(genreName, signal, native = false) {
         const cacheKey = genreName.toLowerCase().trim();
-        const genres = await fetchTmdbGenres(signal);
+        const genres = await fetchTmdbGenres(signal, native);
 
         // Start with exact match result (if any)
         const result = { tv: null, movie: null };
@@ -152,26 +156,27 @@
      * @returns {Promise<{tvId: number|null, movieId: number|null, title: string}|null>}
      */
     async function resolveFeeds({ id: genreId, signal }) {
-        // Fetch genre info, user status and TMDB genres in parallel
+        // Fetch genre info and user status in parallel
         const genreInfoPromise = getGenreInfo(genreId, signal);
         const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
-        const tmdbGenresPromise = fetchTmdbGenres(signal);
 
-        const [genreInfo, status] = await Promise.all([genreInfoPromise, statusPromise, tmdbGenresPromise]);
+        const [genreInfo, status] = await Promise.all([genreInfoPromise, statusPromise]);
 
         if (signal.aborted) return null;
 
         if (!status?.active || !genreInfo?.name) return null;
+        // No Seerr account (Jellyfin Enhanced request mode): the server's native feeds, filtered there.
+        const nativeFeeds = !!JE.discoveryFilter.useNativeFeeds?.(status);
+        if (status.userFound === false && !nativeFeeds && !syntheticGenreTmdb(genreId)) return null;
 
-        // TMDB genres are already cached from the parallel fetch above
-        let tmdbGenreIds = await getTmdbGenreIds(genreInfo.name, signal);
+        let tmdbGenreIds = await getTmdbGenreIds(genreInfo.name, signal, nativeFeeds || !!syntheticGenreTmdb(genreId) && status.userFound === false);
         if (signal.aborted) return null;
 
         // A synthetic genre names its TMDB id: that id for the media type whose list has it
         // (both when the lists can't be read: a feed of the other type's id is just empty).
         const direct = syntheticGenreTmdb(genreId);
         if (direct) {
-            const known = Object.values(await fetchTmdbGenres(signal) || {});
+            const known = Object.values(await fetchTmdbGenres(signal, status.userFound === false) || {});
             const movie = known.some(g => g.movie === direct) ? direct : null;
             const tv = known.some(g => g.tv === direct) ? direct : null;
             tmdbGenreIds = known.length === 0
@@ -184,7 +189,7 @@
         return {
             tvId: tmdbGenreIds.tv,
             movieId: tmdbGenreIds.movie,
-            native: !!direct,
+            native: !!direct || nativeFeeds,
             title: JE.t('discovery_more_with_genre', { genre: genreInfo.name })
         };
     }
@@ -197,7 +202,7 @@
         getIdFromUrl: JE.discoveryBase.idFromListParam('genreId'),
         resolveFeeds,
         buildDiscoverPath: (kind, id, feeds) => {
-            // A synthetic genre's page: the server filters its feeds for the viewer.
+            // A synthetic genre's page, or a viewer without a Seerr account: the server filters the feeds for the viewer.
             if (feeds?.native) return `/JellyfinEnhanced/native-details/discover/${kind === 'tv' ? 'tv' : 'movie'}/genre/${id}`;
             return kind === 'tv'
                 ? `/JellyfinEnhanced/jellyseerr/discover/tv/genre/${id}`

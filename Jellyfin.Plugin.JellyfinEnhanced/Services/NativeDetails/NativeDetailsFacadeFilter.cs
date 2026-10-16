@@ -307,16 +307,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// genre, studio or network discovery page reads its titles through Jellyfin Enhanced's own Seerr
         /// key, filtered for the viewer (<see cref="NativeDetailsFeeds"/>), so it needs no Seerr account.
         /// A tag leads to the library's tag page, whose discovery row reads Seerr with the viewer's own
-        /// account: in Jellyfin Enhanced mode (where the page's own rule doesn't ask for one) that row
-        /// counts only for a linked viewer.
+        /// account, or the same native feeds (by TMDB keyword) for a viewer without one, so it needs
+        /// none either.
         /// </summary>
-        private async Task<LinkDiscovery> DiscoveryAsync(User viewer, CancellationToken ct)
+        private Task<LinkDiscovery> DiscoveryAsync(User viewer, CancellationToken ct)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !NativeDetailsPolicy.SeerrConfigured(config)) return LinkDiscovery.None;
-            var tags = config.JellyseerrShowTagDiscovery
-                && (!NativeDetailsPolicy.JeMode(config) || await _source.IsSeerrLinkedAsync(viewer.Id, ct).ConfigureAwait(false) == true);
-            return new LinkDiscovery(config.JellyseerrShowGenreDiscovery, config.JellyseerrShowNetworkDiscovery, tags);
+            if (config == null || !NativeDetailsPolicy.SeerrConfigured(config)) return Task.FromResult(LinkDiscovery.None);
+            return Task.FromResult(new LinkDiscovery(config.JellyseerrShowGenreDiscovery, config.JellyseerrShowNetworkDiscovery, config.JellyseerrShowTagDiscovery));
         }
 
         /// <summary>
@@ -384,12 +382,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     // page fails up front (retryable, the modal once) instead of showing a season with no episodes.
                     var seasonData = await _source.SeasonAsync(title.TmdbId, title.Season, ct).ConfigureAwait(false);
                     if (seasonData.Data == null) return Failed(seasonData);
-                    return Ok(dtos.Season(title, s, summary, await logo.ConfigureAwait(false)));
+                    return Ok(dtos.WithSeriesNames(dtos.Season(title, s, summary, await logo.ConfigureAwait(false)), s));
                 case SyntheticKind.Episode:
                     var season = await _source.SeasonAsync(title.TmdbId, title.Season, ct).ConfigureAwait(false);
                     if (season.Data is not { } se) return Failed(season);
                     var episode = NativeDetailsDtos.Episodes(se).FirstOrDefault(e => NativeDetailsDtos.Int(e, "episodeNumber") == title.Episode);
-                    return episode.ValueKind == JsonValueKind.Object ? Ok(dtos.Episode(title, s, se, episode, await logo.ConfigureAwait(false))) : new NotFoundResult();
+                    return episode.ValueKind == JsonValueKind.Object ? Ok(dtos.WithSeriesNames(dtos.Episode(title, s, se, episode, await logo.ConfigureAwait(false)), s)) : new NotFoundResult();
                 default:
                     return new NotFoundResult();
             }

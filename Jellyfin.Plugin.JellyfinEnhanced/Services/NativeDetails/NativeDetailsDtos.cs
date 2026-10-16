@@ -171,6 +171,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>
+        /// Gives a season or episode page the series' genres and regular cast: Seerr's season data has no
+        /// credits or genres of its own. Pages only (cards and rows don't show them).
+        /// </summary>
+        /// <param name="dto">The season or episode page.</param>
+        /// <param name="series">Seerr's series details.</param>
+        /// <returns>The same page.</returns>
+        public BaseItemDto WithSeriesNames(BaseItemDto dto, JsonElement series)
+        {
+            Genres(dto, series);
+            dto.People = People(series, movie: false, withCreators: false);
+            return dto;
+        }
+
+        /// <summary>
         /// A person page DTO (a cast or crew member Jellyfin has no page for): photo, name, biography,
         /// birth and death dates, birthplace and, as the tagline, the department TMDB knows them for.
         /// No library filmography: the page's titles come from Jellyfin Enhanced's person discovery row.
@@ -321,7 +335,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (Grant(seriesGuid, ImageType.Primary, 0, Str(series, "posterPath")) is { } p) dto.SeriesPrimaryImageTag = p;
         }
 
-        private BaseItemPerson[] People(JsonElement title, bool movie)
+        private BaseItemPerson[] People(JsonElement title, bool movie, bool withCreators = true)
         {
             var people = new List<BaseItemPerson>();
             var credits = Obj(title, "credits");
@@ -348,7 +362,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 }
             }
 
-            if (!movie && Obj(title, "createdBy") is { ValueKind: JsonValueKind.Array } creators)
+            if (!movie && withCreators && Obj(title, "createdBy") is { ValueKind: JsonValueKind.Array } creators)
             {
                 foreach (var c in creators.EnumerateArray().Take(6))
                 {

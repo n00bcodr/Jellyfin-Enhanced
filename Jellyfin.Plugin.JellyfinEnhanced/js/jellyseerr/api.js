@@ -63,6 +63,9 @@
         movieCollections.set(tmdbId, { collection, at: Date.now() });
     }
 
+    // Set once Seerr refuses this account's issue reads (no VIEW_ISSUES, or no account); cleared on a user switch.
+    let issuesRefused = false;
+
     /**
      * Internal fetch helper — delegates to the shared core API client, which
      * owns the auth headers, retry/backoff, in-flight dedup, response cache
@@ -86,9 +89,6 @@
         const cacheKey = options.skipCache ? null : `tmdb:${path}`;
         return managedFetch(url, { ...options, cacheKey });
     }
-
-    // Seerr answered 403 to this user's issue list (no permission to view issues): not asked again until the user changes.
-    let issuesForbidden = false;
 
     /**
      * Performs a GET request to the Seerr proxy endpoint.
@@ -724,8 +724,9 @@
      */
     api.fetchIssuesForMedia = async function(tmdbId, mediaType, options = {}) {
         const { take = 20, skip = 0, filter = 'open', sort = 'added' } = options;
-        // Seerr doesn't let this person view issues: nothing to show, and no point asking again on every page.
-        if (issuesForbidden) return { results: [], forbidden: true };
+        // A viewer whose Seerr account may not view issues (said by their status, or by Seerr once): nothing to
+        // show, and no call, so no point asking again on every page.
+        if (issuesRefused || cachedUserStatus?.canViewIssues === false) return { results: [], forbidden: true };
         try {
             const query = new URLSearchParams({
                 take: String(take),
@@ -746,10 +747,11 @@
 
             return { ...res, results: filtered };
         } catch (error) {
-            if (error?.status === 403) {
-                // No permission to view issues in Seerr (the proxy says so with a 403): an expected answer, not an error.
-                issuesForbidden = true;
-                console.debug(`${logPrefix} Seerr doesn't let this user view issues; the issue list stays hidden.`);
+            // Seerr's own permission (VIEW_ISSUES) is missing (403), or there is no Seerr account (404): an
+            // expected answer, not an error.
+            if (error?.status === 403 || error?.status === 404) {
+                issuesRefused = true;
+                console.debug(`${logPrefix} Issues aren't available to this account (${error.status}); the issue list stays hidden.`);
                 return { results: [], forbidden: true };
             }
             console.error(`${logPrefix} Failed to fetch issues for ${mediaType} ${tmdbId}:`, error);
@@ -1047,7 +1049,7 @@
     // per-Jellyfin-user; a sticky success cached for user A must not answer
     // for user B after an SPA user switch.
     JE.session?.onUserChange('jellyseerr-api', () => {
-        issuesForbidden = false;
+        issuesRefused = false;
         cachedUserStatus = null;
         cachedUserStatusAt = 0;
         cachedOverrideRules = null;

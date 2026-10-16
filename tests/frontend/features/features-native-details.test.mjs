@@ -153,12 +153,22 @@ test('series and seasons leave Request to the smart actions; the request feature
 
 test('the modal\'s information, trailers, ratings, collection and spoiler switch are drawn on the page by its own builders', async t => {
   const item = { Id: MOVIE, Type: 'Movie', Name: 'Dune: Part Two', ProviderIds: { Tmdb: '693134' } };
+  // The page's own server routes (JE's Seerr key, this page's rule): no Seerr account needed.
+  const details = { id: 693134, status: 'Released', budget: 190000000, releaseDate: '2024-02-27', relatedVideos: [{ type: 'Trailer' }], mediaInfo: { jellyfinMediaId: 'abc' } };
   const h = setup(t, {
     html: PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`, getItem: async () => item,
-    modalData: { status: 'Released', budget: 190000000, releaseDate: '2024-02-27', relatedVideos: [{ type: 'Trailer' }], mediaInfo: { jellyfinMediaId: 'abc' } },
+    modalData: { status: 'From the proxy' },
+    resolve: path => (path === '/native-details/title/movie/693134' ? details : path === '/native-details/title/movie/693134/ratings' ? { rt: { criticsScore: 92 } } : null),
   });
+  const proxied = [];
+  h.JE.internals.moreInfoModal.fetchMediaDetails = async () => { proxied.push('details'); return { status: 'From the proxy' }; };
+  h.JE.internals.moreInfoModal.fetchRatings = async () => { proxied.push('ratings'); return null; };
   await h.JE.internals.nativeDetails.onView();
   await wait(20);
+  assert.ok(h.resolved.includes('/native-details/title/movie/693134'));
+  assert.ok(h.resolved.includes('/native-details/title/movie/693134/ratings'));
+  // The per-user Seerr proxy (which refuses viewers without a Seerr account) isn't asked for the extras.
+  assert.deepEqual(proxied.filter(p => p === 'ratings'), []);
   const extras = h.document.querySelector('.je-native-absent-extras');
   assert.ok(extras);
   // Seerr's own library id is never offered as Open: only the server-checked copy is.
@@ -591,4 +601,21 @@ test('a discovery list page (a synthetic genre, studio or network) hides the emp
     await h.JE.internals.nativeDetails.onView();
     assert.equal(list.classList.contains('je-native-absent-list'), false, hash);
   }
+});
+
+test('a series page\'s ratings come from its native route and are drawn as Rotten Tomatoes', async t => {
+  const ratings = [];
+  let id = '';
+  const h = setup(t, {
+    modalData: {},
+    getItem: async () => ({ Id: id, Type: 'Series', Name: 'Andor', ProviderIds: { Tmdb: '83867' } }),
+    resolve: path => (path === '/native-details/title/tv/83867' ? { id: 83867, name: 'Andor' } : path === '/native-details/title/tv/83867/ratings' ? { criticsScore: 96 } : null),
+  });
+  id = h.td.syntheticId('series', 83867);
+  h.document.body.innerHTML = PAGE;
+  h.window.location.hash = `#/details?id=${id}&serverId=${SERVER}`;
+  h.JE.internals.moreInfoModal.buildRatingLogos = r => { ratings.push(r); return '<span class="je-rating">96%</span>'; };
+  await h.JE.internals.nativeDetails.onView();
+  await wait(20);
+  assert.deepEqual(JSON.parse(JSON.stringify(ratings)), [{ rt: { criticsScore: 96 } }]);
 });
