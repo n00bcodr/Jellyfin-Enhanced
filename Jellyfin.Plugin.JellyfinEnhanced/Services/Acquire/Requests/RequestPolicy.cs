@@ -25,13 +25,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     }
     /// <summary>
     /// Current policy facts, evaluated again after every asynchronous prerequisite. <c>SeerrWholeSeries</c> (Seerr mode):
-    /// Seerr takes a request for the whole series only (its partial-request setting is off).
+    /// Seerr takes a request for the whole series only (its partial-request setting is off). <c>SeerrUnlinked</c> (Seerr
+    /// mode): Seerr answered and no Seerr account is linked to the person.
     /// </summary>
     public sealed record RequestPolicyFacts(Guid UserId, string Role, bool CanCreate, bool CanApprove, bool Can4k,
         bool Visible, string Revision, string Backend, string InstanceId, string ConnectionGeneration,
         int? Limit, int WindowDays, double GbLimit, string ParentalSignature,
         string? Refusal = null, string? SeerrSource = null, int? SeerrUser = null, long SeerrPermissions = 0, QuotaProjection? BackendQuota = null,
-        RequestDiskFacts? Disk = null, bool SeerrWholeSeries = false);
+        RequestDiskFacts? Disk = null, bool SeerrWholeSeries = false, bool SeerrUnlinked = false);
     /// <summary>
     /// The drive a request would land on is below the low-disk threshold (refusal <c>low_disk</c>): which instance,
     /// the folder measured (the folder named, the title's own folder, or the default root folder), and the drive's
@@ -261,7 +262,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 seerrMode ? string.Empty : instanceId, seerrMode ? string.Empty : generation,
                 limit, config.ArrRequestBackend == "seerr" ? Math.Clamp(binding.QuotaWindowDays, 1, 365) : Math.Clamp(config.ArrRequestQuotaWindowDays, 1, 365),
                 Math.Max(0, settings.QuotaGb ?? defaults.QuotaGb ?? config.ArrRequestQuotaGb), JsonSerializer.Serialize(signature),
-                refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota, disk, seerrMode && binding.SeerrWholeSeries);
+                refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota, disk, seerrMode && binding.SeerrWholeSeries, seerrMode && binding.SeerrUnlinked);
         }
         /// <summary>
         /// The low-disk pause of a request like <paramref name="input"/> on <paramref name="instance"/>, or null. JE mode

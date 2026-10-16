@@ -18,7 +18,7 @@
     /** How long the caller's capabilities are reused before asking the server again. */
     const ME_TTL_MS = 60000;
     /** Reasons of an accepted ask that mean "waits for an OK". */
-    const WAITING = new Set(['awaiting_approval', 'over_quota', 'seerr_whole_series_only', 'authorization_changed', 'identity_changed', 'configuration_changed']);
+    const WAITING = new Set(['awaiting_approval', 'over_quota', 'seerr_whole_series_only', 'authorization_changed', 'identity_changed', 'configuration_changed', 'seerr_user_unlinked']);
 
     let meState = null; // { at, epoch, promise, value }
     /** @type {Map<string, string>} input fingerprint -> clientRequestId kept until a definitive answer */

@@ -1144,7 +1144,12 @@ Enhanced's key), so Seerr's own permissions, quotas, approval rules and override
 - The person's Seerr quota (used, limit, remaining, window) is read from Seerr; the next free slot is worked out from
   the request list only when it holds exactly the requests Seerr counts. When Seerr doesn't say who the person is,
   the request waits and is retried, and once it does, the request goes out as that account after every check is made
-  again with its permissions. Right before each request is sent, a fresh read confirms that the Seerr account is still
+  again with its permissions. When Seerr answers that no Seerr account is linked to the person, the request is held
+  (`seerr_user_unlinked`: "Stuck · needs a Seerr account linked to them" on an administrator's approval card, waiting
+  for an OK in the person's own list) and checked again once an hour, with one audit entry for the hold rather than
+  one per check. It goes out by itself, once, as soon as Jellyfin Enhanced next reads who the person is in Seerr and
+  finds the link (for example when they open Jellyfin after an administrator links or imports their account), else at
+  the next hourly check; an OK on the card checks it at once. Right before each request is sent, a fresh read confirms that the Seerr account is still
   linked to the person who asked; if Seerr can't confirm it, nothing is sent and the request is retried. An account
   linked to someone else or deleted, a different Seerr account than the one it was approved for, or a changed Seerr
   address or key holds it (`identity_changed`). Changing a Sonarr or Radarr connection doesn't affect requests sent

@@ -11,10 +11,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>
     /// Uncached backend identity/capability facts. Missing facts never grant a permission. <c>SeerrWholeSeries</c>:
     /// Seerr's partial-request setting is off (or not a real on/off), so Seerr takes a request for the whole series only.
+    /// <c>SeerrUnlinked</c>: Seerr answered and no Seerr account is linked to the person (not "Seerr didn't answer").
     /// </summary>
     public sealed record RequestBackendBinding(string? Source = null, int? UserId = null, long Permissions = 0,
         bool FourKEnabled = false, bool Can4k = false, bool CanManage = false, QuotaProjection? Quota = null, int QuotaWindowDays = 7, bool CanRequest = false,
-        bool SeerrWholeSeries = false);
+        bool SeerrWholeSeries = false, bool SeerrUnlinked = false);
     /// <summary>Transport outcome with explicit retry and read-back certainty.</summary>
     /// <remarks><c>RetryAfter</c>: a retryable result's own wait before the next attempt (instead of the short backoff).</remarks>
     public sealed record RequestBackendResult(RequestOutcome Outcome, bool Confirmed = false, bool Retryable = false, bool Parked = false, bool VerifiedNotSent = false, TimeSpan? RetryAfter = null)
@@ -94,6 +95,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>Durable outbox executor. Startup recovery reads uncertain actions before any resend.</summary>
     public sealed class RequestOutbox : BackgroundService
     {
+        /// <summary>
+        /// How long a Seerr-mode request whose person has no Seerr account linked waits before it is checked again
+        /// (sooner as soon as the link shows up: see <see cref="RequestLedger.WakeUnlinked"/>).
+        /// </summary>
+        internal static readonly TimeSpan UnlinkedRecheck = TimeSpan.FromHours(1);
         private readonly RequestLedger _ledger;
         private readonly IRequestPolicy _policy;
         private readonly IRequestBackend _backend;
@@ -167,6 +173,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         if (_ledger.ExceedsGbCapAtSend(requester, _now())) return "quota_exceeded";
                         if (RequestPolicy.Check(requester, approver, job.Input, approver != null) != null || _ledger.NeedsApprovalAtSend(job, requester, _policy, _now())) return "authorization_changed";
                         if (job.Authorization.Edited && approver?.Role != "Admin" && (job.Input.ProfileId != null || job.Input.RootFolder != null || job.Input.InstanceId != null)) return "authorization_changed";
+                        // Seerr answered that no Seerr account is linked to the person (not "Seerr didn't answer"): nothing can be
+                        // sent as them, so the request is held with that reason and checked again now and then, not every pass.
+                        if (requester.Backend == "seerr" && requester.SeerrUser == null && requester.SeerrUnlinked) return "seerr_user_unlinked";
                         if (requester.Backend == "seerr" && requester.BackendQuota?.Available != true && job.State != "maybe_sent") return "backend_unavailable";
                         if (requester.Backend == "seerr" && (requester.SeerrUser == null || requester.SeerrSource == null)) return "backend_unavailable";
                         // A changed revision is evaluated above; it is not itself a refusal.
@@ -181,9 +190,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         else if (result.VerifiedNotSent && !result.Confirmed)
                             result = result with { Retryable = true, Parked = false };
                     }
-                    else if (Guard() is { } refusal) result = refusal == "backend_unavailable"
-                        ? new RequestBackendResult(RequestOutcome.Refused(refusal, 503, "unavailable"), Retryable: true, VerifiedNotSent: true)
-                        : RequestBackendResult.Hold(refusal);
+                    else if (Guard() is { } refusal) result = refusal switch
+                    {
+                        "backend_unavailable" => new RequestBackendResult(RequestOutcome.Refused(refusal, 503, "unavailable"), Retryable: true, VerifiedNotSent: true),
+                        "seerr_user_unlinked" => BackendResults.Later(refusal, "The person has no Seerr account linked; the request goes out once they have one.", UnlinkedRecheck),
+                        _ => RequestBackendResult.Hold(refusal),
+                    };
                     else
                     {
                         transportStarted = true;
@@ -213,6 +225,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (completed) _feed.Bump(new[] { job.Input.Key, ArrTitleKey.UserRequests(job.Authorization.Requester), ArrTitleKey.RequestsState });
                 if (completed && result.Confirmed) _events?.RaiseConfirmed(job);
                 if (!completed && !transportStarted && job.State != "maybe_sent") continue;
+                // The same wait again (still no Seerr account, a season still not listed): one audit row for it, not one per check.
+                if (completed && RequestLedger.RepeatsWait(job, result)) continue;
                 _audit.Append(new ArrAuditEntry { Id = job.Id, Time = _now(), UserId = _ledger.AuditActor(job.Authorization.Approver ?? job.Authorization.Requester), Action = "request.dispatch", Tier = 2,
                     InstanceId = job.Authorization.InstanceId, Target = job.Input.Key, Outcome = result.Outcome.Certainty.ToString().ToLowerInvariant(), Error = result.Outcome.Reason, Message = result.Outcome.Message });
             }

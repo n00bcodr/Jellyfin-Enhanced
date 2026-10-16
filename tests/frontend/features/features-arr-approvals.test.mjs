@@ -477,6 +477,18 @@ test('a stuck card says why in plain words; the reason code is only in an admini
   assert.equal(m.page().querySelector('details.je-approval-admin'), null, 'no Details for managers');
 });
 
+test('a request held because its asker has no Seerr account says so to an administrator, neutrally to a manager', async t => {
+  const items = [card(1, { stuck: true, reason: 'seerr_user_unlinked', admin: { reason: 'seerr_user_unlinked', jobs: [] } })];
+  const h = setupHub(t, { hash: '#/requests?tab=approvals', me: { role: 'admin' }, routes: (m, path) => (path === '/acquire/requests/approvals' ? approvals(items) : null) });
+  h.JE.initializeArrStatus();
+  await until(() => h.page().querySelectorAll('.je-approval').length === 1);
+  assert.match(h.page().querySelector('.je-approval-chip-stuck').textContent, /Stuck · needs a Seerr account linked to them$/);
+  const m = setupHub(t, { hash: '#/requests?tab=approvals', me: { role: 'manager', contact: 'Jake' }, routes: (x, path) => (path === '/acquire/requests/approvals' ? approvals([card(1, { stuck: true, reason: 'seerr_user_unlinked' })]) : null) });
+  m.JE.initializeArrStatus();
+  await until(() => m.page().querySelectorAll('.je-approval').length === 1);
+  assert.match(m.page().querySelector('.je-approval-chip-stuck').textContent, /Stuck · needs a look$/);
+});
+
 // ------------------------------------------------------------------ review round 2
 
 test('an approve, decline or bulk answer that arrives after someone else signed in is dropped', async t => {

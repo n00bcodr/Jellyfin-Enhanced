@@ -529,6 +529,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // The same job goes on with the approval's authority: same scope and reservation, certainty still unknown (no
             // cancel or refund meanwhile). As after a restart, a fresh read of what is there comes first; then a guarded
             // send writes only what is missing.
+            // A job waiting for something only a person can fix (a Seerr account) is checked again at once.
+            Exec(c, t, "UPDATE jobs SET next_attempt=$at WHERE want_id=$id AND state='retry' AND next_attempt>$at", ("$at", Ms(now)), ("$id", id));
             foreach (var resume in held)
                 Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at,authorization_context=$auth,updated_at=$at WHERE id=$j",
                     ("$auth", JsonSerializer.Serialize(Authorize(requester, approver, resume.Input, edits != null) with { SeerrUser = resume.Authorization.SeerrUser ?? requester.SeerrUser, SeerrSeasons = resume.Authorization.SeerrSeasons })), ("$at", Ms(now)), ("$j", resume.Id));
@@ -779,7 +781,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (deletedNotSent) state = "cancelled";
                 var next = result.Retryable && result.RetryAfter is { } wait && wait > TimeSpan.Zero ? now + wait : now.AddSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(job.Attempts, 6))));
                 if (Exec(c, t, "UPDATE jobs SET state=$state,reason=$reason,outcome=$outcome,next_attempt=$next,updated_at=$at WHERE id=$id AND state='sending'", ("$state", state), ("$reason", result.Outcome.Reason), ("$outcome", JsonSerializer.Serialize(result.Outcome)), ("$next", Ms(next)), ("$at", Ms(now)), ("$id", job.Id)) == 0) return false;
-                Exec(c, t, "UPDATE wants SET status=$state,reason=$r,updated_at=$at WHERE id=$id AND target_key=$target", ("$state", result.Confirmed ? "sent" : state is "parked" or "failed" ? "pending" : "queued"), ("$r", result.Outcome.Reason), ("$at", Ms(now)), ("$id", job.WantId), ("$target", TargetKey(job.Authorization)));
+                // The same wait again changes nothing anyone sees: no new audit row, notice or event.
+                if (!deletedNotSent && RepeatsWait(job, result)) return true;
+                // A wait only a person can end (no Seerr account linked yet) shows as held for them, while its job is still
+                // checked again now and then and goes out by itself once it can.
+                var held = state is "parked" or "failed" || (state == "retry" && HeldWaits.Contains(result.Outcome.Reason));
+                Exec(c, t, "UPDATE wants SET status=$state,reason=$r,updated_at=$at WHERE id=$id AND target_key=$target", ("$state", result.Confirmed ? "sent" : held ? "pending" : "queued"), ("$r", result.Outcome.Reason), ("$at", Ms(now)), ("$id", job.WantId), ("$target", TargetKey(job.Authorization)));
                 if (state is "parked" or "failed")
                     DemoteUncoveredFollowers(c, t, Wants(c, t, "id=$id", ("$id", job.WantId)).Single().AcquisitionId, TargetKey(job.Authorization), result.Outcome.Reason, now);
                 if (result.Confirmed)
@@ -817,6 +824,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return true;
             }, false).Result;
         }
+        /// <summary>
+        /// Waits a person has to end (the asker has no Seerr account linked): the want shows as held (pending, with the
+        /// reason) while its job is retried at the wait's own long interval, not parked.
+        /// </summary>
+        internal static readonly IReadOnlySet<string> HeldWaits = new HashSet<string>(StringComparer.Ordinal) { "seerr_user_unlinked" };
+        /// <summary>
+        /// True when <paramref name="result"/> is the same wait the job's last attempt ended in (a retry with its own wait
+        /// and the same reason): the job's next check is moved on, and nothing else is recorded.
+        /// </summary>
+        internal static bool RepeatsWait(RequestJob job, RequestBackendResult result)
+            => !result.Confirmed && result.Retryable && result.RetryAfter != null && result.Outcome.Reason == job.Reason;
+        /// <summary>
+        /// Seerr now links an account to <paramref name="user"/>: their requests waiting for one
+        /// (<c>seerr_user_unlinked</c>) are checked at once instead of at their next long interval. The same jobs, so
+        /// nothing is sent twice. Returns how many were woken.
+        /// </summary>
+        public int WakeUnlinked(Guid user, DateTimeOffset now) => !_db.Available ? 0 : _db.Write((c, t) =>
+            Exec(c, t, "UPDATE jobs SET next_attempt=$at WHERE state='retry' AND reason='seerr_user_unlinked' AND next_attempt>$at AND json_extract(authorization_context,'$.Requester')=$guid",
+                ("$at", Ms(now)), ("$guid", user.ToString())));
         /// <summary>Purges a deleted person's intent and all personal outbox contexts in one transaction.</summary>
         public void PurgeUser(Guid user) => _db.Write((c, t) => PurgeUser(c, t, user));
         internal static int PurgeUser(SqliteConnection c, SqliteTransaction t, Guid user)

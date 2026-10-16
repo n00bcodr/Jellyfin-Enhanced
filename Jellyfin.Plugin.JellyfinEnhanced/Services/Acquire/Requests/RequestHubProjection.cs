@@ -66,6 +66,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public static readonly IReadOnlySet<string> StuckReasons = new HashSet<string>(StringComparer.Ordinal)
         {
             "authorization_changed", "identity_changed", "configuration_changed", "instance_changed", "seerr_whole_series_only",
+            "seerr_user_unlinked",
         };
 
         private static readonly Regex PosterPath = new("^/[A-Za-z0-9_.-]{1,80}$", RegexOptions.CultureInvariant);

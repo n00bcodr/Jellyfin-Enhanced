@@ -1134,6 +1134,68 @@ public class IntegrationRequestBackendsTests
     }
 
 
+    [Fact]
+    public async Task APersonWithNoSeerrAccountIsHeldWithThatReasonCheckedHourlyWithOneAuditRowAndSentOnceLinked()
+    {
+        using var lab = new SeerrLab();
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        rig.Policy.Configuration.ArrRequestBackend = "seerr";
+        var source = lab.Source;
+        var woken = 0;
+        var backend = new SeerrBackend(lab.Seerr.Transport, lab.Model, null, () => lab.Config, () => rig.Now, rig.Ledger.BindSeerrSend, user => woken += rig.Ledger.WakeUnlinked(user, rig.Now));
+        // The policy's Seerr facts are the backend's, prepared before every check (as in production).
+        rig.Policy.Before = (user, input) => backend.PrepareAsync(user, input, default);
+        rig.Policy.Adjust = (user, input, facts) =>
+        {
+            var b = backend.Binding(user, input);
+            return facts with { SeerrSource = source, SeerrUser = b.UserId, SeerrUnlinked = b.SeerrUnlinked, BackendQuota = b.Quota };
+        };
+        // Seerr answers, and no Seerr account is linked to the person (not "Seerr didn't answer").
+        await backend.PrepareAsync(rig.Admin, Movie(22596), default);
+        var unlinked = backend.Binding(rig.Admin, Movie(22596));
+        Assert.Equal(((int?)null, true), (unlinked.UserId, unlinked.SeerrUnlinked));
+        var ask = await rig.Create(rig.Admin, Movie(22596));
+        Assert.Equal("queued_outage", ask.Reason);
+        var asked = rig.Now;
+        await rig.Runner(backend).TickAsync(default);
+        var job = rig.Ledger.ForWant(ask.RequestId!).Single();
+        Assert.Equal(("retry", "seerr_user_unlinked", 1), (job.State, job.Reason, job.Attempts));
+        Assert.Equal(asked + RequestOutbox.UnlinkedRecheck, job.NextAttempt);
+        // Held for a person, with a reason that says what is wrong (shown as stuck on the approval card).
+        var want = rig.Ledger.Find(ask.RequestId!)!;
+        Assert.Equal(("pending", "seerr_user_unlinked"), (want.Status, want.Reason));
+        Assert.Contains(want.Reason, RequestHubProjection.StuckReasons);
+        // Not hammered: no check before the hour is up; each later check still finds no account and records nothing new.
+        for (var i = 0; i < 6; i++)
+        {
+            rig.Now = rig.Now.AddMinutes(30);
+            await rig.Runner(backend).TickAsync(default);
+        }
+        job = rig.Ledger.ForWant(ask.RequestId!).Single();
+        Assert.Equal(("retry", "seerr_user_unlinked", 4), (job.State, job.Reason, job.Attempts));
+        var rows = rig.Ledger.Database.Read(c =>
+        {
+            using var cmd = RequestLedger.Cmd(c, null, "SELECT COUNT(*) FROM request_audit WHERE want_id=$w AND action='dispatch'", ("$w", ask.RequestId));
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        });
+        Assert.Equal(1, rows);
+        Assert.Single(rig.Audit.ReadRecent(100), e => e.Action == "request.dispatch");
+        Assert.Empty(lab.Seerr.Posts);
+        Assert.Equal(0, woken);
+        // Seerr links an account to them (an import, or an admin links it): the next read of who they are wakes the
+        // same job at once, and it goes out once, as that account.
+        lab.Seerr.Users.Add(new JsonObject { ["id"] = 9, ["jellyfinUserId"] = rig.Admin.ToString("N"), ["permissions"] = 2, ["displayName"] = "Admin" });
+        rig.Now = rig.Now.AddMinutes(2);
+        await backend.PrepareAsync(rig.Admin, Movie(22596), default);
+        Assert.Equal(1, woken);
+        Assert.Contains(rig.Ledger.Due(rig.Now), j => j.Id == job.Id);
+        await rig.Runner(backend).TickAsync(default);
+        await rig.Runner(backend).TickAsync(default);
+        Assert.Equal("succeeded", rig.Ledger.ForWant(ask.RequestId!).Single().State);
+        Assert.Equal("sent", rig.Ledger.Find(ask.RequestId!)!.Status);
+        Assert.Equal("9", Assert.Single(lab.Seerr.Posts).ApiUser);
+    }
+
     // ------------------------------------------------------------------ review round 1 (Seerr)
 
     [Fact]

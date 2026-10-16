@@ -58,21 +58,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
         private readonly Func<string, int, int[], bool>? _bind;
+        private readonly Action<Guid>? _linked;
         private readonly ConcurrentDictionary<Guid, Prepared> _prepared = new();
         private readonly ConcurrentDictionary<string, (int? Id, DateTimeOffset At)> _ids = new(StringComparer.Ordinal);
         private SettingsRead? _settings;
 
-        /// <summary>Creates the backend (DI); each send is bound on its ledger job before it leaves.</summary>
-        public SeerrBackend(IHttpClientFactory http, SeerrRequestReadModel model, TitleAliases aliases, RequestLedger ledger)
-            : this(http, model, aliases, () => JellyfinEnhanced.Instance?.Configuration, () => DateTimeOffset.UtcNow, ledger.BindSeerrSend)
+        /// <summary>
+        /// Creates the backend (DI); each send is bound on its ledger job before it leaves, and a person's requests waiting
+        /// for a Seerr account are woken (and the outbox signalled) as soon as Seerr links one to them.
+        /// </summary>
+        public SeerrBackend(IHttpClientFactory http, SeerrRequestReadModel model, TitleAliases aliases, RequestLedger ledger, RequestOutboxSignal signal)
+            : this(http, model, aliases, () => JellyfinEnhanced.Instance?.Configuration, () => DateTimeOffset.UtcNow, ledger.BindSeerrSend, user => Wake(ledger, signal, user))
         {
+        }
+
+        // Wakes a person's requests waiting for a Seerr account. Never fails the read that noticed the link: a wake that
+        // doesn't happen (the database is being restored) leaves them to their next hourly check.
+        private static void Wake(RequestLedger ledger, RequestOutboxSignal signal, Guid user)
+        {
+            try
+            {
+                if (ledger.WakeUnlinked(user, DateTimeOffset.UtcNow) > 0) signal.Pulse();
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException or IOException)
+            {
+                // Checked again at the next interval.
+            }
         }
 
         /// <summary>
         /// Creates the backend over explicit configuration and time (tests). <paramref name="bind"/> records a job's
         /// account and seasons before its POST (see <see cref="RequestLedger.BindSeerrSend"/>); null: not recorded.
+        /// <paramref name="linked"/> hears of a person Seerr now links an account to after it didn't (or for the first
+        /// time since a start).
         /// </summary>
-        internal SeerrBackend(IHttpClientFactory http, SeerrRequestReadModel model, TitleAliases? aliases, Func<PluginConfiguration?> config, Func<DateTimeOffset> now, Func<string, int, int[], bool>? bind = null)
+        internal SeerrBackend(IHttpClientFactory http, SeerrRequestReadModel model, TitleAliases? aliases, Func<PluginConfiguration?> config, Func<DateTimeOffset> now, Func<string, int, int[], bool>? bind = null, Action<Guid>? linked = null)
         {
             _http = http;
             _model = model;
@@ -80,6 +100,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _config = config;
             _now = now;
             _bind = bind;
+            _linked = linked;
         }
 
         private sealed record SettingsRead(string Source, SeerrRequestSettings Settings, DateTimeOffset At);
@@ -146,7 +167,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     id = null;
                 }
             }
+            var before = _prepared.TryGetValue(user, out var held) && held.Source == source ? held : null;
             _prepared[user] = new Prepared(source, id, permissions, settings, movie, movieDays, tv, tvDays, _now());
+            // Seerr links an account to the person now (it didn't, or nothing was known since a start): requests that
+            // were waiting for one are checked at once.
+            if (id != null && before?.SeerrUser == null) _linked?.Invoke(user);
         }
 
         /// <inheritdoc />
@@ -165,8 +190,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var fourKEnabled = p.Settings != null && (movie ? p.Settings.Movie4k : p.Settings.Series4k);
             // Partial requests off, or not a real on/off: only a request for the whole series is sent (see SendAsync).
             var wholeSeries = p.Settings is { Partial: not true };
+            // Prepared facts say who the person is: no account means Seerr answered that none is linked to them.
             return new RequestBackendBinding(source, p.SeerrUser, p.SeerrUser == null ? 0 : p.Permissions, fourKEnabled, can4k, canManage,
-                movie ? p.Movie : p.Tv, movie ? p.MovieDays : p.TvDays, canRequest, wholeSeries);
+                movie ? p.Movie : p.Tv, movie ? p.MovieDays : p.TvDays, canRequest, wholeSeries, SeerrUnlinked: p.SeerrUser == null);
         }
 
         // Seerr's quota for one media type; "used" must be a real number or nothing is known. The next free
@@ -251,7 +277,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // who the person is, the account Seerr links to them now (the outbox guard has made every check again with
             // that account's permissions).
             if ((job.Authorization.SeerrUser ?? PreparedAccount(job.Authorization.Requester, source)) is not int seerrUser)
-                return BackendResults.Retry("backend_unavailable", "The person's Seerr account isn't known.");
+                return PreparedUnlinked(job.Authorization.Requester, source)
+                    ? BackendResults.Later("seerr_user_unlinked", "The person has no Seerr account linked; the request goes out once they have one.", RequestOutbox.UnlinkedRecheck)
+                    : BackendResults.Retry("backend_unavailable", "The person's Seerr account isn't known.");
             var input = job.Input;
             if (RequestLedger.HasRouting(input))
                 return BackendResults.Hold("invalid_defaults", "Instance, profile and folder choices can't be sent to Seerr; Seerr picks its own server.");
@@ -526,6 +554,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // The account prepared for a person (fresh, same Seerr), or null.
         private int? PreparedAccount(Guid user, string source)
             => _prepared.TryGetValue(user, out var p) && p.Source == source && _now() - p.At <= PreparedFor ? p.SeerrUser : null;
+
+        // Fresh prepared facts (same Seerr) say Seerr links no account to the person.
+        private bool PreparedUnlinked(Guid user, string source)
+            => _prepared.TryGetValue(user, out var p) && p.Source == source && _now() - p.At <= PreparedFor && p.SeerrUser == null;
 
         // The account isn't (or is no longer) the person's: forget the mapping and hold the request for a person.
         private RequestBackendResult Unlinked(Guid user, string source, string message)

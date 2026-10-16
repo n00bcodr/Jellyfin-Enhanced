@@ -220,7 +220,8 @@
         identity_changed: 'arr_approvals_stuck_identity',
         configuration_changed: 'arr_approvals_stuck_settings',
         instance_changed: 'arr_approvals_stuck_connection',
-        seerr_whole_series_only: 'arr_approvals_stuck_whole_series'
+        seerr_whole_series_only: 'arr_approvals_stuck_whole_series',
+        seerr_user_unlinked: 'arr_approvals_stuck_seerr_account'
     };
 
     /**
