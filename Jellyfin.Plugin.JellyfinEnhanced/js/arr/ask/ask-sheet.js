@@ -270,8 +270,8 @@
 
     /**
      * The series cards: each with its id, icon, label and the mutation input it asks for (null for
-     * the pickers until something is picked), for one copy. "Just new episodes from now on" only where
-     * it is honoured: Seerr can't keep getting new seasons (it would get the whole current season once).
+     * the pickers until something is picked), for one copy. "Just new episodes from now on" in Seerr mode too:
+     * Seerr doesn't follow new seasons itself, so Jellyfin Enhanced asks Seerr for each one as it starts.
      * Seerr mode: no "Pick episodes…" (Seerr takes whole seasons); with Seerr's partial requests off, one card for
      * the whole series (every season, whatever is here: Seerr leaves out what it already has).
      * @param {Object} title Title.
@@ -311,7 +311,7 @@
         }
         if (seasons.length > 1) cards.push({ id: 'pick', icon: 'checklist', label: tr('arr_sheet_card_pick'), input: null });
         if (seasons.some(s => s.episodes > 0) && !JE.arrAsk.seasonsOnly?.(caps)) cards.push({ id: 'episodes', icon: 'format_list_numbered', label: tr('arr_sheet_card_episodes'), input: null });
-        if (latest != null && caps?.backend !== 'seerr') {
+        if (latest != null) {
             cards.push({ id: 'future', icon: 'update', label: tr('arr_sheet_card_future'), input: (variant) => ({ ...JE.arrAsk.seasonsInput(title.key, [latest], variant), scope: 'future' }) });
         }
         return cards;

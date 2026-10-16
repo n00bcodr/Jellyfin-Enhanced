@@ -392,6 +392,9 @@ public class IntegrationSeerrReadModelTests
         Assert.All(ctor.GetParameters().Where(p => p.ParameterType != typeof(System.Net.Http.IHttpClientFactory)),
             p => Assert.Contains(registered, d => d.ServiceType == p.ParameterType && d.Lifetime == ServiceLifetime.Singleton));
         Assert.Contains(ctor.GetParameters(), p => p.ParameterType == typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestOutboxEvents));
+        // So does the keep-getting follower (Seerr mode reads Seerr's series and wakes the outbox).
+        var follower = Assert.Single(typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.FutureSeasonCharges).GetConstructors());
+        Assert.All(follower.GetParameters(), p => Assert.Contains(registered, d => d.ServiceType == p.ParameterType && d.Lifetime == ServiceLifetime.Singleton));
 
         IServiceCollection services = new ServiceCollection();
         services.AddSingleton(_ => rig.Model);

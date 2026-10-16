@@ -848,9 +848,10 @@ profiles, folders or tags.
   when the weekly allowance is nearly used, when the person's asks wait for an OK, or when they may choose 4K.
 - **The request sheet** is a bottom sheet on phones, a dialog on desktop and a full-screen panel on TV (Back closes
   it). For a series it offers large cards: *Everything*, *Just the latest season*, *Next season only*, *Pick
-  seasons…*, *Pick episodes…* and *Just new episodes from now on* (Jellyfin Enhanced mode only: Seerr can't keep
-  getting new seasons, so with Seerr handling requests the card isn't offered; nor is *Pick episodes…*, since Seerr
-  takes whole seasons, see [Missing episodes](#missing-episodes-get-it-and-search-phase-3)). Each card shows what it costs ("Uses 2 of your 4
+  seasons…*, *Pick episodes…* and *Just new episodes from now on* (with Seerr handling requests Jellyfin Enhanced
+  asks Seerr for each new season as it starts, see [Sending requests](#sending-requests-phase-3); *Pick episodes…*
+  isn't offered there, since Seerr takes whole seasons, see [Missing episodes](#missing-episodes-get-it-and-search-phase-3);
+  with Seerr's partial requests off only *The whole series* is). Each card shows what it costs ("Uses 2 of your 4
   this week"); with no weekly limit there is no cost line. A Standard / 4K choice appears only for people who may
   ask for 4K. Seasons already in Jellyfin (in any quality) or already asked for are not offered again for the
   standard copy; for 4K every season stays offered, since Jellyfin's count doesn't say which copies are 4K.
@@ -1103,8 +1104,17 @@ Enhanced's key), so Seerr's own permissions, quotas, approval rules and override
   the request controls ask for their season instead, saying so (see
   [Missing episodes](#missing-episodes-get-it-and-search-phase-3)); one recorded before the switch to Seerr mode
   waits with that reason. The capabilities (`GET acquire/requests/me`) carry `seerrWholeSeries` when Seerr's partial
-  requests are off or unknown, so the controls offer only the whole series. "Keep getting new episodes" sends the
-  current season (the request sheet doesn't offer it in Seerr mode).
+  requests are off or unknown, so the controls offer only the whole series.
+- "Keep getting new episodes" sends the current season; Seerr doesn't follow new seasons itself, so Jellyfin Enhanced
+  does: soon after start and then every 6 hours it reads Seerr's details of each followed series (one read per series
+  and copy, nothing else) and, for every season after the one asked for that has started (episodes listed, first air
+  date passed) and that nobody has requested for that copy in Seerr, nor Seerr declined, sends one request for that
+  season as the owner, with the approval the request went out with (a Kid's OK'd request needs no new OK). Each season
+  is asked for once, also across restarts; the owner is charged 1 for it once (an overdraft is allowed; off with
+  *Charge future seasons when they start*); people who asked for the same follow for free, and a season someone else
+  asked for in Jellyfin Enhanced is theirs. When Seerr refuses one (over its quota, a permission, partial requests
+  off), the request waits for an OK with Seerr's reason, and approving it sends that season again (the charge stays as
+  it was).
 - Seerr's request permissions are per kind: someone who may ask only for series (or only for movies) in Seerr gets the
   request controls for that kind only.
 - Requests go to the first Seerr address only, and the account check before the POST and the reads that confirm it are

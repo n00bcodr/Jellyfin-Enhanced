@@ -1479,6 +1479,168 @@ public class IntegrationRequestBackendsTests
         Assert.Null(router.Binding(lab.User, Movie()).UserId);
     }
 
+    // ------------------------------------------------------------------ Seerr mode: following new seasons
+
+    // A series in Seerr with six seasons: 1–2 aired long ago, 3–5 started this autumn, 6 not out yet. Sam (account 8)
+    // asked for season 4, and Seerr declined Sam's season 5.
+    private static void FollowedShow(FakeSeerr seerr)
+    {
+        static JsonObject Season(int n, string? aired, int episodes = 8) => new() { ["seasonNumber"] = n, ["episodeCount"] = episodes, ["airDate"] = aired };
+        seerr.Shows[1731] = new JsonObject
+        {
+            ["id"] = 1731,
+            ["seasons"] = new JsonArray(Season(0, "2019-01-01", 2), Season(1, "2020-01-01"), Season(2, "2022-01-01"), Season(3, "2026-09-01"), Season(4, "2026-09-20"), Season(5, "2026-10-01"), Season(6, "2027-03-01"), Season(7, null, 0)),
+            ["mediaInfo"] = new JsonObject
+            {
+                ["status"] = 2, ["status4k"] = 1, ["seasons"] = new JsonArray(),
+                ["requests"] = new JsonArray(
+                    new JsonObject { ["id"] = 501, ["status"] = 2, ["is4k"] = false, ["type"] = "tv", ["requestedBy"] = new JsonObject { ["id"] = 8 }, ["seasons"] = new JsonArray(new JsonObject { ["seasonNumber"] = 4 }) },
+                    new JsonObject { ["id"] = 502, ["status"] = 3, ["is4k"] = false, ["type"] = "tv", ["requestedBy"] = new JsonObject { ["id"] = 8 }, ["seasons"] = new JsonArray(new JsonObject { ["seasonNumber"] = 5 }) }),
+            },
+        };
+    }
+
+    private static int FollowCharges(IntegrationRequestLedgerTests.Rig rig, string wantId) => rig.Db.Read(c =>
+    {
+        using var cmd = RequestLedger.Cmd(c, null, "SELECT COUNT(*) FROM reservations WHERE want_id=$w AND scope LIKE 's%' AND state='charged'", ("$w", wantId));
+        return Convert.ToInt32(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+    });
+
+    [Fact]
+    public async Task InSeerrModeKeepGettingAsksSeerrOnceForEachNewStartedSeasonNobodyHasAndChargesItsOwnerOnce()
+    {
+        using var lab = new SeerrLab();
+        var (r, backend) = SeerrLedger(lab);
+        using var rig = r;
+        var source = lab.Source;
+        lab.Seerr.Users.Add(new JsonObject { ["id"] = 12, ["jellyfinUserId"] = rig.Member.ToString("N"), ["permissions"] = 32, ["displayName"] = "Member" });
+        // As in production, Seerr-mode facts carry no instance or connection (Seerr picks its own server).
+        rig.Policy.Adjust = (user, _, facts) => facts with { InstanceId = string.Empty, ConnectionGeneration = string.Empty, SeerrSource = source, SeerrUser = user == rig.Member ? 12 : 9, BackendQuota = new QuotaProjection(0, null, null, null, 0) };
+        rig.Now = lab.Now;
+        FollowedShow(lab.Seerr);
+        // The Member asks to keep getting new episodes from season 2; it goes to Seerr as their account (season 2 only).
+        var ask = await rig.Create(rig.Member, new MutationInput { Key = "tv:tmdb:1731", Scope = "future", Seasons = new[] { 2 } });
+        Assert.Equal("queued_outage", ask.Reason);
+        await rig.Runner(backend).TickAsync(default);
+        Assert.Equal("sent", rig.Ledger.Find(ask.RequestId!)!.Status);
+        Assert.Equal("2", string.Join(",", Assert.Single(lab.Seerr.Posts).Body["seasons"]!.AsArray().Select(n => (int)n!)));
+        // Someone else asking for the same follows it for free; a Kid's keep-getting that waits for an OK isn't followed.
+        var follower = rig.Add("Member");
+        Assert.Equal("merged", (await rig.Create(follower, new MutationInput { Key = "tv:tmdb:1731", Scope = "future", Seasons = new[] { 2 } })).Outcome);
+        var kid = await rig.Create(rig.Kid, new MutationInput { Key = "tv:tmdb:1732", Scope = "future", Seasons = new[] { 1 } });
+        Assert.Equal("awaiting_approval", kid.Reason);
+
+        // The check: season 3 started and nobody has it (one request, as the owner, charged once); 4 is Sam's, 5 Seerr
+        // declined, 6 hasn't started, 7 is only announced.
+        var signal = new RequestOutboxSignal();
+        var follow = new FutureSeasonCharges(lab.Arr.Store, rig.Ledger, rig.Policy, lab.Arr.Arr.Factory, rig.Feed, null, null, () => rig.Now, backend, lab.Model, signal);
+        Assert.Equal(1, await follow.FollowSeerrAsync(default));
+        var jobs = rig.Ledger.ForWant(ask.RequestId!);
+        var season3 = Assert.Single(jobs, j => j.State == "queued");
+        Assert.Equal(("seasons", "3", rig.Member), (season3.Input.Scope, string.Join(",", season3.Input.Seasons), season3.Authorization.Requester));
+        Assert.Equal(1, FollowCharges(rig, ask.RequestId!));
+        Assert.Empty(rig.Ledger.ForTitle("tv:tmdb:1732").SelectMany(w => rig.Ledger.ForWant(w.Id)));
+        // Checked again (or after a restart) before it went out: nothing more.
+        Assert.Equal(0, await follow.FollowSeerrAsync(default));
+        rig.Reopen();
+        var again = new FutureSeasonCharges(lab.Arr.Store, rig.Ledger, rig.Policy, lab.Arr.Arr.Factory, rig.Feed, null, null, () => rig.Now, backend, lab.Model, signal);
+        Assert.Equal(0, await again.FollowSeerrAsync(default));
+        // It goes out as the Member's account, for season 3 only; the request stays sent.
+        backend = new SeerrBackend(lab.Seerr.Transport, lab.Model, null, () => lab.Config, () => lab.Now, rig.Ledger.BindSeerrSend);
+        await rig.Runner(backend).TickAsync(default);
+        var (_, user, body) = lab.Seerr.Posts.Last();
+        Assert.Equal(("12", "3"), (user, string.Join(",", body["seasons"]!.AsArray().Select(n => (int)n!))));
+        Assert.Equal("sent", rig.Ledger.Find(ask.RequestId!)!.Status);
+        Assert.Equal(0, await again.FollowSeerrAsync(default));
+        Assert.Equal(2, lab.Seerr.Posts.Count);
+        Assert.Equal(1, FollowCharges(rig, ask.RequestId!));
+        // Charging future seasons off: season 6 starts and is still asked for, without a charge.
+        rig.Policy.Configuration.ArrRequestChargeFutureSeasons = false;
+        lab.Seerr.Shows[1731]["seasons"]!.AsArray()[6]!["airDate"] = "2026-10-10";
+        Assert.Equal(1, await again.FollowSeerrAsync(default));
+        Assert.Equal(1, FollowCharges(rig, ask.RequestId!));
+        // Jellyfin Enhanced mode: nothing is asked of Seerr.
+        rig.Policy.Configuration.ArrRequestBackend = "je";
+        lab.Seerr.Shows[1731]["seasons"]!.AsArray()[7]!["airDate"] = "2026-10-11";
+        lab.Seerr.Shows[1731]["seasons"]!.AsArray()[7]!["episodeCount"] = 3;
+        Assert.Equal(0, await again.FollowSeerrAsync(default));
+        // As a hosted service the check waits a few minutes after start; stopping ends it at once.
+        await again.StartAsync(default);
+        var stop = again.StopAsync(default);
+        Assert.Same(stop, await Task.WhenAny(stop, Task.Delay(5000)));
+    }
+
+    [Fact]
+    public async Task InSeerrModeAFollowedSeasonSeerrRefusesIsHeldAndApprovingTheRequestSendsItAgainWithoutASecondCharge()
+    {
+        using var lab = new SeerrLab();
+        var (r, backend) = SeerrLedger(lab);
+        using var rig = r;
+        var source = lab.Source;
+        rig.Policy.Adjust = (_, _, facts) => facts with { InstanceId = string.Empty, ConnectionGeneration = string.Empty, SeerrSource = source, SeerrUser = 9, BackendQuota = new QuotaProjection(0, null, null, null, 0) };
+        rig.Now = lab.Now;
+        FollowedShow(lab.Seerr);
+        // The administrator's keep-getting for the 4K copy: Sam's standard season 4 and declined season 5 aren't the 4K copy's.
+        var ask = await rig.Create(rig.Admin, new MutationInput { Key = "tv:tmdb:1731", Scope = "future", Seasons = new[] { 2 }, Variant = "4k" });
+        await rig.Runner(backend).TickAsync(default);
+        Assert.Equal("sent", rig.Ledger.Find(ask.RequestId!)!.Status);
+        var follow = new FutureSeasonCharges(lab.Arr.Store, rig.Ledger, rig.Policy, lab.Arr.Arr.Factory, rig.Feed, null, null, () => rig.Now, backend, lab.Model);
+        Assert.Equal(3, await follow.FollowSeerrAsync(default));
+        Assert.Equal(new[] { "3", "4", "5" }, rig.Ledger.ForWant(ask.RequestId!).Where(j => j.State == "queued").Select(j => string.Join(",", j.Input.Seasons)).Order().ToArray());
+        Assert.All(rig.Ledger.ForWant(ask.RequestId!).Where(j => j.State == "queued"), j => Assert.Equal("4k", j.Input.Variant));
+
+        // Seerr refuses (over its quota): held with that reason, and the request waits for an OK.
+        lab.Seerr.OnPost = b => (int)b["seasons"]![0]! == 3 ? IntegrationTransport.Response("{\"message\":\"Series Quota exceeded.\"}", 403) : null;
+        rig.Now = rig.Now.AddMinutes(1);
+        await rig.Runner(backend).TickAsync(default);
+        var parked = Assert.Single(rig.Ledger.ForWant(ask.RequestId!), j => j.State == "parked");
+        Assert.Equal(("3", "quota_exceeded"), (string.Join(",", parked.Input.Seasons), parked.Reason));
+        var held = rig.Ledger.Find(ask.RequestId!)!;
+        Assert.Equal("pending", held.Status);
+        // Nothing is asked again behind the hold.
+        Assert.Equal(0, await follow.FollowSeerrAsync(default));
+        Assert.Equal(3, FollowCharges(rig, ask.RequestId!));
+
+        // Seerr's limit of 4 with 4 used: approving can't make it fit. With 3 used (seasons 2, 4 and 5, which went out and
+        // aren't counted again here) season 3 fits.
+        QuotaProjection? seerrQuota = new(4, 4, 0, null, 0);
+        rig.Policy.Adjust = (_, _, facts) => facts with { InstanceId = string.Empty, ConnectionGeneration = string.Empty, SeerrSource = source, SeerrUser = 9, BackendQuota = seerrQuota };
+        var refused = await rig.Service.ApproveAsync(ask.RequestId!, rig.Admin, null, default);
+        Assert.Equal((429, "over_quota", "pending"), (refused.HttpStatus, refused.Reason, rig.Ledger.Find(ask.RequestId!)!.Status));
+        seerrQuota = new(3, 4, 1, null, 0);
+        // Approving sends season 3 again (only it), with the same charge.
+        lab.Seerr.OnPost = null;
+        Assert.Equal(200, (await rig.Service.ApproveAsync(ask.RequestId!, rig.Admin, null, default)).HttpStatus);
+        var resent = Assert.Single(rig.Ledger.ForWant(ask.RequestId!), j => j.State == "queued");
+        Assert.Equal("3", string.Join(",", resent.Input.Seasons));
+        Assert.Equal("cancelled", rig.Ledger.Job(parked.Id)!.State);
+        Assert.Equal(3, FollowCharges(rig, ask.RequestId!));
+        rig.Now = rig.Now.AddMinutes(1);
+        var posts = lab.Seerr.Posts.Count;
+        await rig.Runner(backend).TickAsync(default);
+        Assert.Equal(posts + 1, lab.Seerr.Posts.Count);
+        Assert.Equal("sent", rig.Ledger.Find(ask.RequestId!)!.Status);
+        Assert.Equal(0, await follow.FollowSeerrAsync(default));
+
+        // Season 6 starts and Seerr's answer can't be taken for success: it waits for an OK; once approved and sent, the
+        // request is sent again (the failed attempt doesn't keep it waiting).
+        lab.Seerr.Shows[1731]["seasons"]!.AsArray()[6]!["airDate"] = "2026-10-10";
+        Assert.Equal(1, await follow.FollowSeerrAsync(default));
+        lab.Seerr.OnPost = _ => IntegrationTransport.Response("<html>conflict</html>", 409, "text/html");
+        rig.Now = rig.Now.AddMinutes(1);
+        await rig.Runner(backend).TickAsync(default);
+        var stuck = Assert.Single(rig.Ledger.ForWant(ask.RequestId!), j => j.Input.Seasons.SequenceEqual(new[] { 6 }));
+        Assert.Contains(stuck.State, new[] { "failed", "parked" });
+        Assert.Equal("pending", rig.Ledger.Find(ask.RequestId!)!.Status);
+        lab.Seerr.OnPost = null;
+        Assert.Equal(200, (await rig.Service.ApproveAsync(ask.RequestId!, rig.Admin, null, default)).HttpStatus);
+        rig.Now = rig.Now.AddMinutes(1);
+        await rig.Runner(backend).TickAsync(default);
+        Assert.Contains(rig.Ledger.ForWant(ask.RequestId!), j => j.Input.Seasons.SequenceEqual(new[] { 6 }) && j.State == "succeeded");
+        Assert.Equal("sent", rig.Ledger.Find(ask.RequestId!)!.Status);
+        Assert.Equal(4, FollowCharges(rig, ask.RequestId!));
+    }
+
     private static ArrAddService AddService(Lab lab, IntegrationRequestLedgerTests.Rig rig)
         => new(lab.Store, lab.Arr.Factory, rig.Service, () => lab.Config);
 

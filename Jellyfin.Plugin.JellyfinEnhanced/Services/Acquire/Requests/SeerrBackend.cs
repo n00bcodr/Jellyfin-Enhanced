@@ -22,6 +22,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <param name="Series4k">A 4K Sonarr is set up in Seerr.</param>
     public sealed record SeerrRequestSettings(bool? Partial, bool Specials, bool Movie4k, bool Series4k);
 
+    /// <summary>A series' seasons as Seerr describes them (see <see cref="SeerrBackend.SeasonFactsAsync"/>).</summary>
+    /// <param name="Started">Regular seasons that have started, ascending.</param>
+    /// <param name="Covered">Seasons already requested by anyone (not declined), processing or available in the edition.</param>
+    /// <param name="Declined">Seasons a request for the edition named and Seerr declined, and nothing covers.</param>
+    public sealed record SeerrSeasonFacts(IReadOnlyList<int> Started, IReadOnlySet<int> Covered, IReadOnlySet<int> Declined);
+
     /// <summary>
     /// Seerr request mode: sends each approved request to Seerr as the person who asked
     /// (<c>X-Api-User</c> with JE's key), so Seerr's own permissions, quotas, approvals and override rules
@@ -448,6 +454,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (own == null) return (all, reason, false);
             var theirs = created != null ? mine.Count > 0 : mine.Any(r => SeasonsOf(r).Any(seasons.Contains));
             return (all && theirs, reason, theirs);
+        }
+
+        /// <summary>
+        /// A series' seasons as Seerr describes them right now (one fresh read of its details, never the cached request
+        /// list), for following new seasons of "Keep getting new episodes" requests: the regular seasons that have
+        /// started (episodes listed and a first air date on or before today), those that are already covered in
+        /// <paramref name="variant"/>'s edition (requested by anyone and not declined, or processing or available), and
+        /// those Seerr declined for it (never asked for again behind its back).
+        /// Null when Seerr isn't configured, the series' TMDB id isn't known, or Seerr couldn't be read.
+        /// </summary>
+        /// <param name="titleKey">The series' title key.</param>
+        /// <param name="variant">standard or 4k.</param>
+        /// <param name="ct">Cancellation.</param>
+        internal async Task<SeerrSeasonFacts?> SeasonFactsAsync(string titleKey, string variant, CancellationToken ct)
+        {
+            var config = _config();
+            if (config == null || _model.SourceOf(config) == null) return null;
+            if (TitleKey.Parse(titleKey) is not { IsMovie: false } key || TmdbOf(key) is not int tmdb) return null;
+            if (await GetAsync(config, "/api/v1/tv/" + tmdb.ToString(CultureInfo.InvariantCulture), ct).ConfigureAwait(false) is not { } tv) return null;
+            var today = _now().UtcDateTime.Date;
+            var started = new SortedSet<int>();
+            if (tv.TryGetProperty("seasons", out var seasons) && seasons.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var season in seasons.EnumerateArray())
+                {
+                    if (Int(season, "seasonNumber") is not int n || n <= 0 || Int(season, "episodeCount") is not > 0) continue;
+                    if (Str(season, "airDate") is { } aired && DateTime.TryParse(aired, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var first) && first.Date <= today)
+                        started.Add(n);
+                }
+            }
+            var is4k = variant == "4k";
+            var covered = new HashSet<int>();
+            var declined = new HashSet<int>();
+            if (tv.TryGetProperty("mediaInfo", out var media) && media.ValueKind == JsonValueKind.Object)
+            {
+                if (media.TryGetProperty("requests", out var list) && list.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var request in list.EnumerateArray().Where(r => (r.TryGetProperty("is4k", out var k) && k.ValueKind == JsonValueKind.True) == is4k && Int(r, "status") is int))
+                        (Int(request, "status") == Declined ? declined : covered).UnionWith(SeasonsOf(request));
+                }
+                if (media.TryGetProperty("seasons", out var mediaSeasons) && mediaSeasons.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var season in mediaSeasons.EnumerateArray())
+                    {
+                        if (Int(season, is4k ? "status4k" : "status") is >= 3 and <= 5 && Int(season, "seasonNumber") is int n) covered.Add(n);
+                    }
+                }
+            }
+            declined.ExceptWith(covered);
+            return new SeerrSeasonFacts(started.ToArray(), covered, declined);
         }
 
         private static IEnumerable<int> SeasonsOf(JsonElement request)

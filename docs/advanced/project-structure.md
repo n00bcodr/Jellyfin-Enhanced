@@ -428,7 +428,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   `Notify/NotificationService.cs`); `RequestFulfilment.cs` notices when what a request asks for is in Jellyfin and
   marks it fulfilled (Ready, never stale).
   `FutureSeasonCharges.cs` charges the owner of a "Keep getting new episodes" request once per new season a Sonarr
-  library read shows started.
+  library read shows started; in Seerr mode it also asks Seerr for each new started season every few hours (Seerr
+  doesn't follow new seasons itself).
   `AcquireRequestsController.cs` exposes the authenticated server API.
   `SeerrMigrationReader.cs` reads every Seerr request complete-or-nothing (with a digest and Seerr's requesting state) and
   `SeerrMigration.cs` runs the admin dry run, the import into `RequestLedgerImport.cs` (import batches, rollback by batch,

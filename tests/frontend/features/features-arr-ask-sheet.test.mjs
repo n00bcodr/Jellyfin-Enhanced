@@ -1225,23 +1225,17 @@ test('seasons the caller already asked for are not offered again for the standar
 
 // ------------------------------------------------------------------ combined review (phase 3)
 
-test('Seerr mode: no "Pick episodes…" (Seerr takes whole seasons) and no "Just new episodes from now on"', async t => {
+test('Seerr mode: no "Pick episodes…" (Seerr takes whole seasons); "Just new episodes from now on" asks to keep getting them', async t => {
   const h = setup(t, { me: { ...MEMBER, backend: 'seerr' } });
   const pending = h.Sheet.open(SERIES);
   await settle();
   const cards = [...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice);
-  assert.deepEqual(cards, ['everything', 'latest', 'next', 'pick']);
-  key(h, 'Escape');
-  assert.equal(await pending, null);
-  // Jellyfin Enhanced mode keeps it.
-  h.state.me = MEMBER;
-  h.JE.arrAsk.me(true);
-  await settle();
-  const again = h.Sheet.open(SERIES);
-  await settle();
-  assert.ok(card(h, 'future'));
-  key(h, 'Escape');
-  await again;
+  assert.deepEqual(cards, ['everything', 'latest', 'next', 'pick', 'future']);
+  click(h, card(h, 'future'));
+  click(h, primary(h));
+  await settle(20);
+  same(h.posts.at(-1).body.input, { key: 'tv:tvdb:393199', scope: 'future', variant: 'standard', seasons: [3], episodes: [] });
+  await pending;
 });
 
 test('per-kind capabilities: a TV-only Seerr account gets the series sheet and controls but no movie asks', async t => {

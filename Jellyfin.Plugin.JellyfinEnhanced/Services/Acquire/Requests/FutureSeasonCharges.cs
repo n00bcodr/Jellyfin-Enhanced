@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,9 +16,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// season after the one asked for that is monitored and has started (an aired episode or a file) on a series
     /// a Keep-getting request went to, the request's owner is charged 1 for it, once. Sonarr is already fetching
     /// it by then, so an overdraft is allowed (it counts against the next window and shows in Household). Only
-    /// requests Jellyfin Enhanced sent itself (Seerr-mode Keep getting sends the current season only), only on
-    /// the instance and connection they went to, only while phase 3 is on and the setting allows it; followers
+    /// requests Jellyfin Enhanced sent to Sonarr itself (Seerr mode: see below), only on the instance and connection they
+    /// went to, only while phase 3 is on and the setting allows it; followers
     /// are free, and a season someone else asked for explicitly is theirs to pay for.
+    /// Seerr mode: Seerr doesn't follow new seasons, so every few hours (one read of Seerr's series details per
+    /// followed title) each sent Keep-getting request on the current Seerr gets one request to Seerr, as its owner,
+    /// for each season after the one asked for that has started and that nobody has requested in its edition yet
+    /// (not one Seerr declined): charged once as above, held with Seerr's reason when Seerr refuses (the request then
+    /// waits for an OK, and approving it sends the season again). See <see cref="FollowSeerrAsync"/>.
     /// </summary>
     public sealed class FutureSeasonCharges : IHostedService
     {
@@ -29,17 +35,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly TitleAliases? _aliases;
         private readonly Logger? _logger;
         private readonly Func<DateTimeOffset> _now;
+        private readonly SeerrBackend? _seerr;
+        private readonly SeerrRequestReadModel? _seerrModel;
+        private readonly RequestOutboxSignal? _signal;
         private readonly object _gate = new();
+        private readonly SemaphoreSlim _following = new(1, 1);
         private int _subscribed;
+        private CancellationTokenSource? _loop;
+        private Task? _loopTask;
+
+        /// <summary>How often Seerr is asked about the seasons of followed series (Seerr mode).</summary>
+        internal static readonly TimeSpan SeerrFollowEvery = TimeSpan.FromHours(6);
+
+        /// <summary>How long after start the first Seerr-mode check runs (the server settles first).</summary>
+        internal static readonly TimeSpan SeerrFollowFirst = TimeSpan.FromMinutes(5);
 
         /// <summary>The charger (DI).</summary>
-        public FutureSeasonCharges(ArrStateStore store, RequestLedger ledger, IRequestPolicy policy, ArrClientFactory clients, ArrChangeFeed feed, TitleAliases aliases, Logger logger)
-            : this(store, ledger, policy, clients, feed, aliases, logger, () => DateTimeOffset.UtcNow)
+        public FutureSeasonCharges(ArrStateStore store, RequestLedger ledger, IRequestPolicy policy, ArrClientFactory clients, ArrChangeFeed feed, TitleAliases aliases, Logger logger,
+            SeerrBackend seerr, SeerrRequestReadModel seerrModel, RequestOutboxSignal signal)
+            : this(store, ledger, policy, clients, feed, aliases, logger, () => DateTimeOffset.UtcNow, seerr, seerrModel, signal)
         {
         }
 
         /// <summary>The charger with an explicit clock (tests).</summary>
-        internal FutureSeasonCharges(ArrStateStore store, RequestLedger ledger, IRequestPolicy policy, ArrClientFactory clients, ArrChangeFeed? feed, TitleAliases? aliases, Logger? logger, Func<DateTimeOffset> now)
+        internal FutureSeasonCharges(ArrStateStore store, RequestLedger ledger, IRequestPolicy policy, ArrClientFactory clients, ArrChangeFeed? feed, TitleAliases? aliases, Logger? logger, Func<DateTimeOffset> now,
+            SeerrBackend? seerr = null, SeerrRequestReadModel? seerrModel = null, RequestOutboxSignal? signal = null)
         {
             _store = store;
             _ledger = ledger;
@@ -49,6 +69,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _aliases = aliases;
             _logger = logger;
             _now = now;
+            _seerr = seerr;
+            _seerrModel = seerrModel;
+            _signal = signal;
         }
 
         /// <summary>Test seam: the background check started for a library change (null when none started).</summary>
@@ -58,14 +81,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public Task StartAsync(CancellationToken cancellationToken)
         {
             Subscribe();
+            if (_seerr != null && _seerrModel != null && _loop == null)
+            {
+                _loop = new CancellationTokenSource();
+                var token = _loop.Token;
+                _loopTask = Task.Run(() => FollowLoopAsync(token), CancellationToken.None);
+            }
             return Task.CompletedTask;
         }
 
         /// <inheritdoc />
-        public Task StopAsync(CancellationToken cancellationToken)
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
             if (Interlocked.Exchange(ref _subscribed, 0) == 1) _store.SnapshotChanged -= OnSnapshotChanged;
-            return Task.CompletedTask;
+            var loop = Interlocked.Exchange(ref _loop, null);
+            if (loop == null) return;
+            await loop.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                if (_loopTask != null) await _loopTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Stopping.
+            }
+            finally
+            {
+                loop.Dispose();
+            }
+        }
+
+        // Seerr mode: a check soon after start, then every few hours. Each check reads Seerr only for followed titles.
+        private async Task FollowLoopAsync(CancellationToken ct)
+        {
+            var wait = SeerrFollowFirst;
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(wait, ct).ConfigureAwait(false);
+                    if (await FollowSeerrAsync(ct).ConfigureAwait(false) > 0) _signal?.Pulse();
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _logger?.Warning($"Requests: following new seasons of Keep getting requests in Seerr failed ({ex.GetType().Name}).");
+                }
+
+                wait = SeerrFollowEvery;
+            }
         }
 
         /// <summary>Starts following the store's library reads (tests call it directly).</summary>
@@ -127,6 +194,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
             }
             return charged;
+        }
+
+        /// <summary>
+        /// Seerr mode: asks Seerr for the new seasons of the sent Keep-getting requests on the Seerr Jellyfin Enhanced
+        /// points at now (one fresh read of Seerr's series details per followed title and edition): each season after the
+        /// one asked for that has started, isn't covered in the request's edition (requested by anyone and not declined,
+        /// processing or available) and that Seerr didn't decline, gets one request to Seerr as the owner
+        /// (<see cref="RequestLedger.FollowFutureSeason"/>: once, charged once; followers free). A season someone else
+        /// asked for in Jellyfin Enhanced is theirs. Returns how many were queued.
+        /// </summary>
+        internal async Task<int> FollowSeerrAsync(CancellationToken ct)
+        {
+            var config = _policy.Configuration;
+            if (_seerr == null || _seerrModel == null || config is not { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true, ArrRequestBackend: "seerr" } || !_ledger.Database.Available) return 0;
+            if (_seerrModel.CurrentSource is not { } source) return 0;
+            if (!await _following.WaitAsync(0, ct).ConfigureAwait(false)) return 0;
+            try
+            {
+                var target = RequestLedger.SeerrTargetKey(source);
+                var queued = 0;
+                foreach (var title in _ledger.FutureWants(target).Where(w => w.Input.Seasons.Length > 0).GroupBy(w => (w.Input.Key, w.Input.Variant)))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (await _seerr.SeasonFactsAsync(title.Key.Key, title.Key.Variant, ct).ConfigureAwait(false) is not { } seasons) continue;
+                    var others = _ledger.ForTitle(title.Key.Key);
+                    // One request per season for the title, even when two people's Keep-getting requests follow it.
+                    var taken = new HashSet<int>(seasons.Covered);
+                    taken.UnionWith(seasons.Declined);
+                    foreach (var want in title)
+                    {
+                        var current = want.Input.Seasons.Max();
+                        var asked = others
+                            .Where(w => w.Id != want.Id && w.TargetKey == want.TargetKey && w.Input.Variant == want.Input.Variant && w.Input.Scope is "seasons" or "next_season" && w.Status is "pending" or "queued" or "sent" or "stale")
+                            .SelectMany(w => w.Input.Seasons).ToHashSet();
+                        foreach (var season in seasons.Started.Where(n => n > current && !taken.Contains(n) && !asked.Contains(n)))
+                        {
+                            // Asked for now, or already (a request held by Seerr is sent again when approved): not again.
+                            taken.Add(season);
+                            if (!_ledger.FollowFutureSeason(want.Id, season, _policy, _now())) continue;
+                            queued++;
+                            _feed?.Bump(new[] { want.Input.Key, ArrTitleKey.UserRequests(want.UserId), ArrTitleKey.RequestsState });
+                        }
+                    }
+                }
+
+                return queued;
+            }
+            finally
+            {
+                _following.Release();
+            }
         }
 
         // The series in a Sonarr library a title key (or one of its aliases) names.

@@ -158,12 +158,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => Scalar(c, t, "SELECT user_hash FROM request_deleted_users WHERE lower(substr(user_hash,1,32))=$u", ("$u", Id(user))) != null;
         private static void Supersede(SqliteConnection c, SqliteTransaction t, string job, string reason)
         {
+            // A followed new season's charge (scope "s<n>") is charged once and stays, as in Jellyfin Enhanced mode.
             if (Exec(c, t, "UPDATE jobs SET state='cancelled',reason=$r WHERE id=$j AND state IN ('queued','retry','parked') AND " + KnownUnsent, ("$j", job), ("$r", reason)) == 1)
-                Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id=$j", ("$j", job));
+                Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id=$j AND scope NOT LIKE 's%'", ("$j", job));
         }
         private static List<QuotaCharge> Charges(SqliteConnection c, SqliteTransaction? t, Guid user, bool unsentOnly = false)
         {
-            using var cmd = Cmd(c, t, "SELECT cost,charged_at,estimated_gb,want_id FROM reservations WHERE user_id=$u AND state='charged'" + (unsentOnly ? " AND want_id IN (SELECT id FROM wants WHERE status IN ('queued','pending'))" : ""), ("$u", Id(user)));
+            using var cmd = Cmd(c, t, "SELECT cost,charged_at,estimated_gb,want_id FROM reservations WHERE user_id=$u AND state='charged'" + (unsentOnly ? " AND want_id IN (SELECT id FROM wants WHERE status IN ('queued','pending')) AND (job_id IS NULL OR job_id NOT IN (SELECT id FROM jobs WHERE state='succeeded'))" : ""), ("$u", Id(user)));
             using var r = cmd.ExecuteReader();
             var list = new List<QuotaCharge>();
             while (r.Read()) list.Add(new(r.GetInt32(0), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(1)), r.GetDouble(2), r.GetString(3)));
@@ -425,15 +426,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => Exec(c, t, "INSERT INTO request_inputs VALUES($u,$client,$f,$w)", ("$u", Id(user)), ("$client", client), ("$f", fingerprint), ("$w", wantId));
         private static void Reserve(SqliteConnection c, SqliteTransaction t, string id, Guid user, int cost, double gb, string state, DateTimeOffset now, string scope)
             => Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count) VALUES($id,$w,$u,$cost,$gb,$state,$at,$scope,COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$w AND $scope='initial'),0))", ("$id", NewId()), ("$w", id), ("$u", Id(user)), ("$cost", cost), ("$gb", gb), ("$state", state), ("$at", Ms(now)), ("$scope", scope));
+        // The request for a new season a keep-getting request follows; its charge (if any) goes with the latest one, so it
+        // counts as unsent until that one is sent (Seerr's quota), and stays charged when it is replaced (see Supersede).
+        private static void FollowJob(SqliteConnection c, SqliteTransaction t, string wantId, MutationInput season, RequestAuthorization auth, DateTimeOffset now)
+        {
+            var job = AddJob(c, t, wantId, season, auth, now, linkReservation: false);
+            Exec(c, t, "UPDATE reservations SET job_id=$job WHERE want_id=$w AND scope=$s", ("$job", job), ("$w", wantId), ("$s", "s" + season.Seasons.Single().ToString(CultureInfo.InvariantCulture)));
+        }
+        // The requests for new seasons a keep-getting request followed (Seerr mode) that Seerr refused (known unsent), for
+        // seasons no later request of it is sending or sent.
+        private static IReadOnlyList<RequestJob> HeldFollows(SqliteConnection c, SqliteTransaction t, RequestWant want)
+        {
+            if (want.Input.Scope != "future") return Array.Empty<RequestJob>();
+            var follows = Jobs(c, t, "want_id=$id", ("$id", want.Id)).Where(j => j.Input.Scope == "seasons" && !j.Input.Seasons.Intersect(want.Input.Seasons).Any()).ToList();
+            var going = follows.Where(j => j.State is not ("parked" or "failed" or "cancelled")).SelectMany(j => j.Input.Seasons).ToHashSet();
+            return follows.Where(j => j.State is "parked" or "failed" && !j.Uncertain && !j.Input.Seasons.Any(going.Contains)).ToList();
+        }
         private static RequestAuthorization Authorize(RequestPolicyFacts facts, RequestPolicyFacts? approver, MutationInput input, bool edited)
             => new(facts.UserId, approver?.UserId, "request", input.Scope, input.Variant, facts.Backend, facts.InstanceId, facts.ConnectionGeneration,
                 facts.Revision, facts.SeerrSource, facts.SeerrUser, facts.SeerrPermissions, edited);
-        private void AddJob(SqliteConnection c, SqliteTransaction t, string wantId, MutationInput input, RequestAuthorization auth, DateTimeOffset now)
+        // linkReservation: the job carries the want's latest unlinked ask or approval charge (a followed new season's
+        // charge, scope "s<n>", goes with that season's own job instead: see FollowJob).
+        private static string AddJob(SqliteConnection c, SqliteTransaction t, string wantId, MutationInput input, RequestAuthorization auth, DateTimeOffset now, bool linkReservation = true)
         {
             var id = NewId();
             Exec(c, t, "INSERT INTO jobs(id,want_id,action,instance_id,connection_generation,mutation_input,idempotency_key,fingerprint,authorization_context,state,next_attempt,reason,created_at,updated_at) VALUES($id,$w,'request',$instance,$generation,$input,$key,$f,$auth,'queued',$at,'queued_outage',$at,$at)",
                 ("$id", id), ("$w", wantId), ("$instance", auth.InstanceId), ("$generation", auth.ConnectionGeneration), ("$input", input.Canonical), ("$key", "request:" + id), ("$f", input.Fingerprint), ("$auth", JsonSerializer.Serialize(auth)), ("$at", Ms(now)));
-            Exec(c, t, "UPDATE reservations SET job_id=$job WHERE id=(SELECT id FROM reservations WHERE want_id=$w AND state='charged' AND job_id IS NULL AND (scope='initial' OR scope LIKE 'approval:%') ORDER BY rowid DESC LIMIT 1)", ("$job", id), ("$w", wantId));
+            if (linkReservation)
+                Exec(c, t, "UPDATE reservations SET job_id=$job WHERE id=(SELECT id FROM reservations WHERE want_id=$w AND state='charged' AND job_id IS NULL AND (scope='initial' OR scope LIKE 'approval:%') ORDER BY rowid DESC LIMIT 1)", ("$job", id), ("$w", wantId));
+            return id;
         }
         /// <summary>Approves one pending row with fresh requester and approver checks in the transaction.</summary>
         public RequestOutcome Approve(string id, Guid actor, MutationInput? edits, IRequestPolicy policy, DateTimeOffset now)
@@ -479,6 +500,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$id AND state IN ('queued','retry'))", ("$id", id));
                 Exec(c, t, "UPDATE jobs SET state='cancelled',reason='request_changed' WHERE want_id=$id AND state IN ('queued','retry')", ("$id", id));
             }
+            // A "keep getting new episodes" request held while a new season it follows was being sent (over Seerr's quota,
+            // say): approving sends that season again, with this approval's authority (its charge stays as it was).
+            var followed = edits == null && !targetChanged
+                ? HeldFollows(c, t, want).Select(j => j.Input).DistinctBy(i => i.Fingerprint).ToArray()
+                : Array.Empty<MutationInput>();
             foreach (var parked in Jobs(c, t, "want_id=$id AND state='parked' AND " + KnownUnsent, ("$id", id)))
                 Supersede(c, t, parked.Id, "request_changed");
             // The same job goes on with the approval's authority: same scope and reservation, certainty still unknown (no
@@ -497,7 +523,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (OverGbCap(requester, Charges(c, t, want.UserId).Where(charge => existingJobs.Count > 0 || charge.WantId != id).ToArray(), gb, now)) return RequestOutcome.Refused("quota_exceeded", 429, "quota_exceeded");
             // Explicit approval grants soft quota/series excess, while hard limits and visibility remain enforced.
             if (requester.Backend == "seerr" && OverQuota(requester, Charges(c, t, want.UserId, requester.Backend == "seerr"), cost, gb, now)) return RequestOutcome.Refused("over_quota", 429, "quota_exceeded");
-            var confirmedScope = extra == null && ConfirmedScope(c, t, input, covered.Append(want).ToArray(), requester);
+            var confirmedScope = extra == null && followed.Length == 0 && ConfirmedScope(c, t, input, covered.Append(want).ToArray(), requester);
             var stored = input;
             var priorCost = existingJobs.Count == 0 ? 0 : int.Parse(Scalar(c, t, "SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=$id AND state='charged'", ("$id", id))!, CultureInfo.InvariantCulture);
             var acquisition = want.AcquisitionId;
@@ -517,6 +543,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Fault?.Invoke("reservation");
             var auth = Authorize(requester, approver, extra ?? stored, edits != null);
             if (extra != null) AddJob(c, t, id, extra, auth, now);
+            foreach (var season in followed) FollowJob(c, t, id, season, Authorize(requester, approver, season, false), now);
             Approval(c, t, want, actor, "approve", null, edits, auth, now);
             Record(c, t, id, null, actor, "approve", "accepted", "queued_outage", stored.Key, now);
             if (edits != null && input.Fingerprint != want.Input.Fingerprint)
@@ -656,6 +683,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return true;
             });
         }
+        /// <summary>
+        /// Seerr mode (Seerr doesn't follow new seasons itself): queues one request to Seerr for a new season of a sent
+        /// "keep getting new episodes" request, as its owner with the approval it was sent with, and charges the owner
+        /// for it once (D16; an overdraft is allowed, as Sonarr would fetch it in Jellyfin Enhanced mode) unless charging
+        /// future seasons is off or the season was charged already. Once per season and request, whatever became of the
+        /// first (a held one is sent again when the request is approved): false when one exists, the request isn't a
+        /// sent keep-getting request on the Seerr the requester's asks go to now, or the season is the one asked for.
+        /// </summary>
+        /// <param name="wantId">The keep-getting request.</param>
+        /// <param name="season">The new season.</param>
+        /// <param name="policy">Current policy.</param>
+        /// <param name="now">Now.</param>
+        public bool FollowFutureSeason(string wantId, int season, IRequestPolicy policy, DateTimeOffset now)
+        {
+            if (season < 1 || season > 10000) return false;
+            return _db.Write((c, t) =>
+            {
+                var want = Wants(c, t, "id=$id", ("$id", wantId)).SingleOrDefault();
+                if (want == null || want.Input.Scope != "future" || want.Status is not ("sent" or "stale") || want.Input.Seasons.Contains(season)) return false;
+                var input = new MutationInput { Key = want.Input.Key, Scope = "seasons", Variant = want.Input.Variant, Seasons = new[] { season } }.Normalize();
+                if (input == null) return false;
+                var requester = policy.Evaluate(want.UserId, input);
+                if (requester.Backend != "seerr" || TargetKey(requester) != want.TargetKey) return false;
+                var jobs = Jobs(c, t, "want_id=$id", ("$id", wantId));
+                if (jobs.Any(j => j.Input.Scope == "seasons" && j.Input.Seasons.Contains(season))) return false;
+                // The approval the request went out with covers what it follows (a Kid's OK'd keep-getting needs no new OK).
+                var approver = jobs.Where(j => j.State == "succeeded").Select(j => j.Authorization.Approver).LastOrDefault(a => a != null);
+                var scope = "s" + season.ToString(CultureInfo.InvariantCulture);
+                if (want.Cost > 0 && policy.Configuration.ArrRequestChargeFutureSeasons && Scalar(c, t, "SELECT id FROM reservations WHERE want_id=$id AND scope=$s", ("$id", wantId), ("$s", scope)) == null)
+                    Reserve(c, t, wantId, want.UserId, 1, EstimateGb(want.Input) / Math.Max(1, want.Input.Seasons.Length), "charged", now, scope);
+                FollowJob(c, t, wantId, input, Authorize(requester, approver is Guid a ? policy.Evaluate(a, input) : null, input, false), now);
+                Record(c, t, wantId, null, want.UserId, "future_season", "accepted", "queued_outage", want.Input.Key, now);
+                return true;
+            });
+        }
         private static List<RequestJob> Jobs(SqliteConnection c, SqliteTransaction? t, string where, params (string, object?)[] args)
         {
             using var cmd = Cmd(c, t, "SELECT id,want_id,mutation_input,authorization_context,state,attempts,next_attempt,reason,idempotency_key,fingerprint,COALESCE(json_extract(outcome,'$.certainty')='Unknown',0) FROM jobs WHERE " + where + " ORDER BY next_attempt,id LIMIT 100", args);
@@ -720,6 +782,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             Record(c, t, follower.Id, job.Id, job.Authorization.Approver ?? job.Authorization.Requester, "shared_dispatch", result.Outcome.Outcome, result.Outcome.Reason, job.Input.Key, now);
                     }
                 }
+                // A keep-getting request with a followed new season Seerr refused waits for an OK (which sends that season
+                // again), whatever else of it went out meanwhile.
+                if (result.Confirmed && HeldFollows(c, t, storedWant).FirstOrDefault() is { } heldFollow)
+                    Exec(c, t, "UPDATE wants SET status='pending',reason=$r WHERE id=$id AND status='sent'", ("$r", heldFollow.Reason), ("$id", job.WantId));
                 if (deletedNotSent)
                 {
                     Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id=$j", ("$j", job.Id));
