@@ -218,6 +218,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public bool Declined { get; init; }
 
         /// <summary>
+        /// Every OK'd request waits because Sonarr doesn't list the season or episode asked for yet (JE request ledger: queued,
+        /// reason <c>not_aired</c>; it is checked again on its own). It reads "Not aired yet", not "OK'd! Getting started".
+        /// </summary>
+        public bool NotListed { get; init; }
+
+        /// <summary>
         /// The parts of the title that requests on their way cover (sent to Sonarr/Radarr by Jellyfin
         /// Enhanced, or OK'd in Seerr), each with when that happened. "Nothing grabbed for a long while"
         /// counts from then: an episode asked for today in a series the arr has listed for years is

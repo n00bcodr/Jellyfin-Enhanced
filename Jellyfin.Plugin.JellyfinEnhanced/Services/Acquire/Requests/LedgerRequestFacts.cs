@@ -68,7 +68,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Declined = wants.All(w => w.Status == "declined"),
                 Fulfilled = wants.Any(w => w.Status == "fulfilled") && wants.All(w => w.Status is "fulfilled" or "declined"),
                 StandardDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "standard"), FourKDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "4k"),
-                Sent = Sent(wants, dispatches) };
+                Sent = Sent(wants, dispatches),
+                NotListed = approved.Length > 0 && approved.All(w => w.Status == "queued" && w.Reason == "not_aired") };
         }
 
         /// <summary>

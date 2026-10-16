@@ -646,6 +646,11 @@ public class ApiArrStatusTests
         requests.Seasons[1] = new RequestFacts { ApprovedAt = now.AddHours(-1), AskedAt = now.AddHours(-2), AskedByViewer = true };
         requests.Revision++;
         Assert.Equal("approved", (await Status(Season(1, today.AddDays(-7)))).GetProperty("stage").GetString());
+        // OK'd but Sonarr doesn't list the season yet (checked again on its own): "Not aired yet", not "Getting started".
+        requests.Seasons[1] = new RequestFacts { ApprovedAt = now.AddHours(-1), AskedAt = now.AddHours(-2), AskedByViewer = true, NotListed = true };
+        requests.Revision++;
+        var notListed = await Status(Season(1, today.AddDays(-7)));
+        Assert.Equal(("approved", "not_aired"), (notListed.GetProperty("stage").GetString(), notListed.GetProperty("reason").GetProperty("code").GetString()));
         requests.Seasons[1] = new RequestFacts { Declined = true, AskedAt = now.AddHours(-2), AskedByViewer = true };
         requests.Revision++;
         Assert.Equal(("notHere", "declined"), ((await Status(Season(1, today.AddDays(-7)))).GetProperty("stage").GetString(), (await Status(Season(1, today.AddDays(-7)))).GetProperty("reason").GetProperty("code").GetString()));

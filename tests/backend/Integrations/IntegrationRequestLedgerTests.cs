@@ -698,6 +698,8 @@ public class IntegrationRequestLedgerTests
         Assert.Empty(r.Ledger.Due(r.Now.AddHours(5)));
         Assert.Single(r.Ledger.Due(r.Now.AddHours(6)));
         Assert.Equal("queued", r.Ledger.Find(want.RequestId!)!.Status);   // still on its way, nobody has to look at it
+        // Its facts say so: the status reads "Not aired yet" instead of "OK'd! Getting started".
+        Assert.True(LedgerRequestFacts.FactsOf(new[] { r.Ledger.Find(want.RequestId!)! }, r.Member, () => Array.Empty<RequestDispatch>())!.NotListed);
     }
     [Fact]
     public async Task RestartMidSendReadbacksInsteadOfPostingAgainAndKeepsReservation()

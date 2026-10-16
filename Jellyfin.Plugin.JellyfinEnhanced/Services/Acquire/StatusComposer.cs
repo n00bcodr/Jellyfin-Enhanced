@@ -1649,6 +1649,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (request.Pending) return new CopyState(StatusStage.Asked, StatusReasonCode.AwaitingApproval, Since: request.AskedAt);
                 if (request.ApprovedAt is DateTime approved)
                 {
+                    // Sonarr doesn't list what was asked for yet: nothing can be fetched before it does.
+                    if (request.NotListed) return new CopyState(StatusStage.Approved, StatusReasonCode.NotAired, Since: approved);
                     return HandoffOverdueSince(state, request, c, facts) is DateTime overdue
                         ? new CopyState(StatusStage.Approved, StatusReasonCode.ApprovedNotInArr, Attention: true, Since: overdue)
                         : new CopyState(StatusStage.Approved, StatusReasonCode.Approved, Since: approved);

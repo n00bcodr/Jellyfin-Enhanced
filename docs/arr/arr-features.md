@@ -1060,7 +1060,7 @@ folder or path.
   | Seasons | the series and those seasons monitored, with all their episodes | Sonarr's search on add, or *Season search* per season |
   | Single episodes | the series monitored and exactly those episodes | *Episode search* for those episodes |
   | Keep getting new episodes | the current season as above, plus new seasons monitored (`monitorNewItems`) | as for a season |
-  | Next season | that season as above; until Sonarr lists it the request waits (`not_aired`): Sonarr refreshes the series and it is checked again every 6 hours, with nothing to approve | as for a season |
+  | Next season | that season as above; until Sonarr lists it the request waits (`not_aired`, shown as "Not aired yet"): Sonarr refreshes the series and it is checked again every 6 hours, with nothing to approve | as for a season |
 - **Confirmed by a fresh read.** The request counts as sent only when a fresh read shows exactly what was asked for
   (title present and monitored; the seasons flagged and their episodes monitored; the episodes monitored; new-season
   monitoring on) and its search was accepted. If an answer is lost (a timeout or a dropped connection after sending)
