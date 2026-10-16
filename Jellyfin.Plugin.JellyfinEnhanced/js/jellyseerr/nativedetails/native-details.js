@@ -630,8 +630,9 @@
 
     /**
      * Request for the page's title. With the request feature on, a movie gets the shared mount
-     * (Request / Ask {contact} / Search, the request sheet; its Notify me is left to the details
-     * surface's button) and a series gets Get Season N and Request from the smart actions. With it
+     * (Request / Ask {contact} / Search, the request sheet; its Notify me and its request state are left to
+     * the details surface's button and status pill) and a series gets Get Season N and Request from the
+     * smart actions. With it
      * off, Request opens the modal over the page, where Seerr's request choices live.
      * @param {Object} state Page state.
      * @param {Object} item Item DTO.
@@ -648,7 +649,7 @@
                 kind: 'movie',
                 name: item.Name,
                 year: item.ProductionYear || undefined
-            }, { notify: !statusOn() });
+            }, { notify: !statusOn(), state: !statusOn() });
             if (!statusOn()) {
                 // Without the details surface nothing else reads the status: follow it here.
                 JE.arrStatus?.fetchKey?.(state.key).then((data) => {

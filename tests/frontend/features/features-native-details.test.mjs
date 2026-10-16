@@ -110,8 +110,8 @@ test('a synthetic movie page hides native actions and holds the request controls
   assert.deepEqual(h.resolved, [`/native-details/resolve?id=${MOVIE}`]);
   assert.equal(h.mounts.length, 1);
   assert.deepEqual({ ...h.mounts[0].title }, { key: 'movie:tmdb:693134', kind: 'movie', name: 'Dune: Part Two', year: 2024 });
-  // The details surface has its own Notify me button and reads the status: the mount leaves both to it.
-  assert.deepEqual({ ...h.mounts[0].options }, { notify: false });
+  // The details surface has its own Notify me button and status pill and reads the status: the mount leaves them to it.
+  assert.deepEqual({ ...h.mounts[0].options }, { notify: false, state: false });
   assert.deepEqual(h.fetched, []);
   const actions = page.querySelector('.je-native-absent-actions');
   assert.ok(actions && actions.parentElement.classList.contains('detailSection') && actions === actions.parentElement.firstElementChild);
@@ -128,7 +128,7 @@ test('without the details surface the mount reads and follows the status itself,
   const h = setup(t, { status: false, html: PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`, getItem: async () => item });
   await h.JE.internals.nativeDetails.onView();
   await wait(10);
-  assert.deepEqual({ ...h.mounts[0].options }, { notify: true });
+  assert.deepEqual({ ...h.mounts[0].options }, { notify: true, state: true });
   assert.deepEqual(h.fetched, ['movie:tmdb:693134']);
   assert.equal(h.mounts[0].updates[0].stage, 'notHere');
 });

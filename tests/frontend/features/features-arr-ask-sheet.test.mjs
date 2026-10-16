@@ -535,6 +535,37 @@ test('mount API: the current request state replaces Request; Watchers get Notify
   off.destroy();
 });
 
+test('mount API on a page with its own status pill (state: false): after an ask the pill alone says where it stands', async t => {
+  const h = setup(t, { html: '<div id="a"></div><div id="b"></div>' });
+  const a = h.document.getElementById('a');
+  const controls = h.Sheet.mount(a, MOVIE, { notify: false, state: false });
+  await settle();
+  const notHere = { key: MOVIE.key, kind: 'movie', stage: 'notHere', reason: { code: 'not_in_arr' } };
+  controls.update(notHere);
+  click(h, a.querySelector('.je-ask-mount-request'));
+  await settle(20);
+  same(h.posts[0].body.input, { key: MOVIE.key, scope: 'movie', variant: 'standard', seasons: [], episodes: [] });
+  // Until the status catches up the mount says what happened (nothing else on the page does yet).
+  assert.equal(a.querySelector('.je-arr-chip').textContent, 'Asked!');
+  // The status (and so the page's pill) now says it: the mount adds no second chip.
+  controls.update({ key: MOVIE.key, kind: 'movie', stage: 'looking', reason: { code: 'searching' } });
+  assert.equal(a.querySelector('.je-arr-chip'), null);
+  assert.equal(a.querySelector('.je-ask-mount-request'), null);
+  controls.update({ key: MOVIE.key, kind: 'movie', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 42 } });
+  assert.equal(a.querySelector('.je-arr-chip'), null);
+  controls.update(notHere);
+  assert.ok(a.querySelector('.je-ask-mount-request'), 'Request is back when it can be asked for again');
+  controls.destroy();
+
+  // Without a pill on the page (the default) the mount keeps saying it.
+  const b = h.document.getElementById('b');
+  const own = h.Sheet.mount(b, MOVIE, { notify: false });
+  await settle();
+  own.update({ key: MOVIE.key, kind: 'movie', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 42 } });
+  assert.equal(b.querySelector('.je-arr-chip').textContent, 'Downloading · 42%');
+  own.destroy();
+});
+
 test('mount API: a redraw keeps the keyboard focus on the control (or its stand-in)', async t => {
   const h = setup(t, { html: '<div id="a"></div>' });
   const a = h.document.getElementById('a');

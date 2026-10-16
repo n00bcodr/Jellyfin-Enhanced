@@ -26,12 +26,13 @@
  *   close() → void   closes the sheet (its promise resolves with null).
  *
  * Request controls mount API (for pages that show a title JE draws itself):
- *   const controls = JE.arrAskSheet.mount(container, { key, kind, name, year, poster, seasons }, { notify });
+ *   const controls = JE.arrAskSheet.mount(container, { key, kind, name, year, poster, seasons }, { notify, state });
  *   controls.update(status);   // the title's status (JE.arrStatus item) or null when unknown
  *   controls.destroy();        // removes everything and stops listening
  *   Renders Request (or "Ask {contact}" when the caller's asks wait for an OK), Notify me (when
  *   JE.arrNotify offers following the key, unless options.notify is false because the page has its
- *   own Notify me button) and the current request state into the container; a
+ *   own Notify me button) and the current request state into the container (unless options.state is false
+ *   because the page shows the title's status pill, which says the same: then the controls give way to it); a
  *   title missing for a long while (JE.arrStatus.searchable) gets Search instead (an administrator's
  *   runs the arr's search at once). The title is checked first (JE.arrAsk.check, once per title, the controls
  *   wait for it): when it can't be asked for now (e.g. "Paused: storage full", its drive is nearly full) the
@@ -970,11 +971,13 @@
      * Renders a title's request controls into a container (see the file comment).
      * @param {HTMLElement} container Where the controls go.
      * @param {{key: string, kind: string, name?: string, year?: number, poster?: string, seasons?: Array}} title Title.
-     * @param {{notify?: boolean}} [options] notify: false leaves Notify me out (the page has its own).
+     * @param {{notify?: boolean, state?: boolean}} [options] notify: false leaves Notify me out (the page has its own);
+     *     state: false leaves the request state chip out once the status says it (the page's status pill does).
      * @returns {{update: (status: Object|null) => void, destroy: () => void}} Controls.
      */
     function mount(container, title, options) {
         const withNotify = options?.notify !== false;
+        const withState = options?.state !== false;
         const host = el('div', 'je-ask-mount');
         host.dataset.jeAskKey = title?.key || '';
         container.appendChild(host);
@@ -1074,8 +1077,8 @@
                 if (!words || JE.arrAsk.searchInstance(caps, status, status?.key || title.key)) row.appendChild(searchButton());
                 if (words) row.appendChild(JE.arrAsk.pausedNote(words));
             } else if (!requestable()) {
-                const chip = el('span', `je-arr-chip je-arr-tone-${status.attention ? 'attention' : status.stage}`, JE.arrStatus.familyText(status, { contact: caps?.contact || '' }));
-                row.appendChild(chip);
+                // Where it stands (the page's own status pill says so when it has one: no second chip).
+                if (withState) row.appendChild(el('span', `je-arr-chip je-arr-tone-${status.attention ? 'attention' : status.stage}`, JE.arrStatus.familyText(status, { contact: caps?.contact || '' })));
             } else if (JE.arrAsk.canAsk(caps, kind)) {
                 const contact = JE.arrAsk.contact(caps);
                 // This title can't be asked for now: the button says so instead of Request, and opens the sheet, which

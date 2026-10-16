@@ -894,7 +894,8 @@ With Seerr's experimental **Open titles that aren't in the library on Jellyfin's
 title you don't have opens on a Jellyfin details page, and the request controls above sit on it exactly as on a
 library page: the status pill and journey (or the season's pill), *Notify me*, *Manage* for administrators, and
 
-- **movies**: *Request* (one tap, or the sheet when it's needed), turning into the request's state or *Search*;
+- **movies**: *Request* (one tap, or the sheet when it's needed), turning into *Search*, or giving way to the status
+  pill once it says where the request stands (one chip, not a second one beside the pill);
 - **series**: **Get Season N** and **Request** (the sheet with every season);
 - **seasons**: **Get Season N**, and the episodes as rows with *Missing* and **Get it** (or *Search*) when the person
   shows missing episodes, otherwise the *Missing: E1…* banner (it leaves asking for the whole season to Get Season N);
