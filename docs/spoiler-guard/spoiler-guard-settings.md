@@ -188,7 +188,7 @@ For movies, this is a **progressive strip**: only chapters whose start position 
 
 ### Hide air date
 
-**Default: On.** A multi-month gap before an episode can imply "season finale" or "long-anticipated reveal" via release-date scheduling. Hidden by null.
+**Default: On.** A multi-month gap before an episode can imply "season finale" or "long-anticipated reveal" via release-date scheduling. Hidden by null, and the Jellyfin Enhanced release-date chip in the details header doesn't look the date up on TMDB instead (unwatched episodes, and seasons after the first with nothing watched, of a guarded show).
 
 ### Replace episode titles
 

@@ -137,6 +137,30 @@
         return data?.air_date ? [{ date: data.air_date, icon: 'tv_guide', titleKey: 'calendar_episode', type: 'episode' }] : [];
     }
 
+    /**
+     * True when Spoiler Guard keeps this season's or episode's air date from the viewer: the series is guarded, the
+     * admin and the viewer both have "hide air dates" on, and the server left the item without a PremiereDate (it
+     * strips it from unwatched episodes and from seasons after the first with nothing watched). The date is then
+     * never looked up on TMDB instead. Fails closed while Spoiler Guard's state can't be read.
+     * @param {object} item Season or Episode DTO.
+     * @returns {Promise<boolean>} The air date is hidden.
+     */
+    async function airDateGuarded(item) {
+        const config = JE.pluginConfig || {};
+        if (config.SpoilerBlurEnabled !== true || config.SpoilerStripPremiereDate === false) return false;
+        if (typeof item?.PremiereDate === 'string' && item.PremiereDate) return false;
+        if (item?.Type === 'Season' && !(Number(item.IndexNumber) > 1)) return false;
+        if (item?.Type === 'Episode' && item.UserData?.Played === true) return false;
+        const sg = JE.spoilerBlur;
+        if (!sg || typeof sg.isEnabledFor !== 'function' || !item?.SeriesId) return false;
+        try {
+            await sg.whenLoaded?.();
+        } catch { /* judged below as not loaded */ }
+        if (typeof sg.isLoadOk === 'function' && sg.isLoadOk() !== true) return true;
+        if (sg.getUserPrefs?.()?.HideAirDate === false) return false;
+        return sg.isEnabledFor(item.SeriesId) === true;
+    }
+
     async function resolveReleaseInfo(item, userId) {
         const mediaType = item?.Type;
 
@@ -165,17 +189,24 @@
             }
             if (!seriesTmdbId) return [];
 
-            if (mediaType === 'Season') {
-                return item?.IndexNumber != null ? getSeasonReleaseInfo(seriesTmdbId, item.IndexNumber) : [];
-            }
+            // What the viewer sees depends on their Spoiler Guard state: not kept with the user-independent answers.
+            const perUser = (infos) => {
+                if (JE.pluginConfig?.SpoilerBlurEnabled === true) Object.defineProperty(infos, 'perUser', { value: true });
+                return infos;
+            };
             // Resolve Epiosde release info from the episode's own PremiereDate if present, fallback to TMDB if not.
             const premiere = typeof item?.PremiereDate === 'string' ? item.PremiereDate.slice(0, 10) : '';
-            if (/^\d{4}-\d{2}-\d{2}$/.test(premiere)) {
+            if (mediaType === 'Episode' && /^\d{4}-\d{2}-\d{2}$/.test(premiere)) {
                 return [{ date: premiere, icon: 'tv_guide', titleKey: 'calendar_episode', type: 'episode' }];
             }
-            return (item?.ParentIndexNumber != null && item?.IndexNumber != null)
-                ? getEpisodeReleaseInfo(seriesTmdbId, item.ParentIndexNumber, item.IndexNumber)
-                : [];
+            // Spoiler Guard took the date away: TMDB would print it back into the header.
+            if (await airDateGuarded(item)) return perUser([]);
+            if (mediaType === 'Season') {
+                return perUser(item?.IndexNumber != null ? await getSeasonReleaseInfo(seriesTmdbId, item.IndexNumber) : []);
+            }
+            return perUser((item?.ParentIndexNumber != null && item?.IndexNumber != null)
+                ? await getEpisodeReleaseInfo(seriesTmdbId, item.ParentIndexNumber, item.IndexNumber)
+                : []);
         }
 
         return [];
@@ -239,7 +270,7 @@
                         return lookupNow();
                     })
                     : await entry.promise;
-                releaseDateCache.set(itemId, { infos, ts: now });
+                if (!infos.perUser) releaseDateCache.set(itemId, { infos, ts: now });
                 if (releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
                 // The chips' small DOM write lands with the next frame's own
                 // layout pass instead of forcing an extra one.

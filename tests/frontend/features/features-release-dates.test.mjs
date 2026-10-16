@@ -151,3 +151,30 @@ test('the chip\'s own lookup failing after a user switch is logged and cached as
  h.api.displayReleaseDate('movie',h.container);await h.settle();
  assert.equal(h.container.children.length,0);assert.deepEqual(h.counts(),{itemCalls:1,fetchCalls:0},'cached: no new lookup');
 });
+// Spoiler Guard: a date the server stripped is not printed back from TMDB.
+const guardedSeries=(over={})=>({pluginConfig:{DEFAULT_REGION:'AU',SpoilerBlurEnabled:true,...(over.config||{})},spoilerBlur:{isEnabledFor:id=>id==='series',whenLoaded:async()=>{},isLoadOk:()=>over.loadOk!==false,getUserPrefs:()=>over.prefs||{}}});
+const seriesThen=child=>async(_user,id)=>id==='series'?{Type:'Series',ProviderIds:{Tmdb:'42'}}:child;
+test('Spoiler Guard: an unwatched guarded episode whose air date the server stripped gets no chip and no TMDB lookup',async t=>{
+ const h=setup(t,{getItem:seriesThen({Type:'Episode',SeriesId:'series',ParentIndexNumber:2,IndexNumber:3,UserData:{Played:false}}),data:{air_date:'2025-02-03'},JE:guardedSeries()});
+ h.api.displayReleaseDate('episode',h.container);await h.settle();
+ assert.equal(h.container.children.length,0);assert.equal(h.counts().fetchCalls,0);
+ // Not kept: once the guard is off (or the episode is watched) the next visit looks it up.
+ h.JE.spoilerBlur.isEnabledFor=()=>false;h.api.displayReleaseDate('episode',h.container);await h.settle();
+ assert.equal(h.container.children.length,1);assert.equal(h.counts().fetchCalls,1);
+});
+test('Spoiler Guard: a later season with its date stripped gets none; season 1, a watched episode and the air-date opt-out still look up',async t=>{
+ const s2=setup(t,{getItem:seriesThen({Type:'Season',SeriesId:'series',IndexNumber:2}),data:{episodes:[{air_date:'2025-03-03'}]},JE:guardedSeries()});
+ s2.api.displayReleaseDate('season2',s2.container);await s2.settle();assert.equal(s2.container.children.length,0);assert.equal(s2.counts().fetchCalls,0);
+ const s1=setup(t,{getItem:seriesThen({Type:'Season',SeriesId:'series',IndexNumber:1}),data:{episodes:[{air_date:'2025-03-03'}]},JE:guardedSeries()});
+ s1.api.displayReleaseDate('season1',s1.container);await s1.settle();assert.equal(s1.container.children.length,1);
+ const watched=setup(t,{getItem:seriesThen({Type:'Episode',SeriesId:'series',ParentIndexNumber:2,IndexNumber:3,UserData:{Played:true}}),data:{air_date:'2025-02-03'},JE:guardedSeries()});
+ watched.api.displayReleaseDate('ep',watched.container);await watched.settle();assert.equal(watched.container.children.length,1);
+ const optOut=setup(t,{getItem:seriesThen({Type:'Episode',SeriesId:'series',ParentIndexNumber:2,IndexNumber:3}),data:{air_date:'2025-02-03'},JE:guardedSeries({prefs:{HideAirDate:false}})});
+ optOut.api.displayReleaseDate('ep',optOut.container);await optOut.settle();assert.equal(optOut.container.children.length,1);
+ const adminOff=setup(t,{getItem:seriesThen({Type:'Episode',SeriesId:'series',ParentIndexNumber:2,IndexNumber:3}),data:{air_date:'2025-02-03'},JE:guardedSeries({config:{SpoilerStripPremiereDate:false}})});
+ adminOff.api.displayReleaseDate('ep',adminOff.container);await adminOff.settle();assert.equal(adminOff.container.children.length,1);
+});
+test('Spoiler Guard: while its state cannot be read the stripped date stays hidden (fails closed)',async t=>{
+ const h=setup(t,{getItem:seriesThen({Type:'Episode',SeriesId:'series',ParentIndexNumber:2,IndexNumber:3}),data:{air_date:'2025-02-03'},JE:guardedSeries({loadOk:false})});
+ h.api.displayReleaseDate('episode',h.container);await h.settle();assert.equal(h.container.children.length,0);assert.equal(h.counts().fetchCalls,0);
+});
