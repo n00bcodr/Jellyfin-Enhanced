@@ -246,7 +246,8 @@ not **Missing**. Fresh ones keep "Looking for it"; ones Sonarr/Radarr isn't fetc
 **Low disk warning below** (the admin tools' setting, 10% by default), asks are paused, and every place that would
 offer **Get it**, **Get them**, **Request** or a **Search** that is really an ask says so instead: *Paused: storage
 full* on the episode's row, one line for the season above its episodes (or on the *Missing* line), on series, movie
-and episode pages, in the request sheet, on Discover and search cards, on collection pages and in My requests. Family
+and episode pages (also the pages of titles that aren't in the library, where a season page says it once, on its
+episodes), in the request sheet, on Discover and search cards, on collection pages and in My requests. Family
 members read a plain sentence ("There's no room for new downloads right now, so asking is paused. Dad can free up
 some space."); administrators read which Sonarr/Radarr, which folder and how much is free ("Sonarr: /tv/Firefly
 has 1.2 TB free (3%), under the 10% low-disk limit"). In JE mode the drive measured is the one the download would be

@@ -1325,6 +1325,37 @@ test('storage full on an episode page: an administrator keeps Search and is told
   same([member.posts, member.searches], [[], []]);
 });
 
+test('storage full on the native page of a title that isn\'t in the library: checked by the page\'s keys, Get Season N gives way to the paused line, said once on a season page', async t => {
+  const SERIES_PAGE = '4a45ad120001479b00000000c8f267bc';
+  const SEASON_PAGE = '4a45ad130001479b0001000092805890';
+  const absent = {
+    key: 'tv:tmdb:83867', itemId: SERIES_PAGE, kind: 'series', stage: 'notHere', reason: { code: 'not_in_arr' },
+    seasons: [{ season: 1, itemId: SEASON_PAGE, stage: 'notHere', summary: { aired: 12, ready: 0 } }]
+  };
+  const season = { key: 'tv:tmdb:83867:s1', itemId: SEASON_PAGE, kind: 'season', stage: 'notHere', reason: { code: 'not_in_arr' }, summary: { aired: 12, ready: 0 }, episodes: [] };
+  for (const [me, blocked, text] of [[MEMBER, FULL, PAUSED_TEXT], [ADMIN, { ...FULL_ADMIN, folder: '/tv' }, 'Sonarr: /tv has 2 GB free (0%), under the 10% low-disk limit. Requests are paused; Search still runs for you.']]) {
+    const seen = [];
+    const h = setup(t, { html: PAGE, hash: `#/details?id=${SERIES_PAGE}`, me, routes: checkRoute(blocked, seen) });
+    h.JE.titleDetails = { isSynthetic: id => String(id || '').startsWith('4a45ad1') };
+    const page = h.document.getElementById('itemDetailPage');
+    h.JE.internals.arrAskActions.attachDetails(page, absent, { contact: 'Dad' });
+    await settle(20);
+    let box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+    // Request (the title's More…) stays: the sheet it opens says why in full.
+    same([...box.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['Request']);
+    same([box.querySelector('.je-ask-paused-title').textContent, box.querySelector('.je-ask-paused-text').textContent], ['Paused: storage full', text]);
+    if (me === MEMBER) assert.doesNotMatch(box.textContent, ARR_WORDS);
+    // Its season page: Get Season N gives way, and the season's rows (or Missing banner) say why right below, so
+    // the box doesn't say it a second time.
+    h.JE.internals.arrAskActions.attachDetails(page, season, { contact: 'Dad' });
+    await settle(20);
+    assert.equal(page.querySelector('.je-ask-actions[data-je-ask-surface="details"]'), null);
+    assert.equal(page.querySelector('.je-ask-paused-note'), null);
+    same(seen, ['/acquire/requests/check?key=tv%3Atmdb%3A83867&variant=standard', '/acquire/requests/check?key=tv%3Atmdb%3A83867%3As1&variant=standard']);
+    same(h.posts, []);
+  }
+});
+
 test('a title that can be asked for keeps its buttons; a check that can\'t be read changes nothing', async t => {
   const h = setup(t, { html: PAGE, hash: '#/details?id=series1', routes: checkRoute(null) });
   const page = h.document.getElementById('itemDetailPage');

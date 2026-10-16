@@ -368,6 +368,44 @@ public class IntegrationRequestLowDiskTests
         Assert.Equal((403, "blocked", "low_disk"), (refused.HttpStatus, refused.Outcome, refused.Reason));
     }
 
+    [Fact]
+    public async Task TheNativePagesOfTitlesNotInTheLibraryArePausedLikeLibraryPages()
+    {
+        // A title that isn't in the library opens on Jellyfin's own details page (Jellyfin 12): its season rows and
+        // the title check take that page's keys (movie by TMDB, series by TVDB or TMDB, the page's season or episode).
+        using var lab = new Lab();
+        await lab.LoadAsync();
+        using var db = new AcquireDatabase(Path.Combine(lab.Arr.Plugin.Core.Root, "lowdisk-" + Guid.NewGuid().ToString("N") + ".db"));
+        var ledger = new RequestLedger(db);
+        var rows = new SeasonRowsService(lab.View, ledger, lab.Policy, null, (_, _, _, _) => Task.FromResult<string?>(null));
+        var service = new RequestService(ledger, lab.Policy, lab.View, new ArrChangeFeed(), new TitleAliases(lab.Store, null));
+
+        // Season rows of an absent season page: why, and where and how much only for the administrator.
+        AbsentTitle Page(string key) => new() { PageId = Guid.NewGuid(), Kind = "season", Title = TitleKey.Parse(key)!, TmdbId = 1437, Season = 1, SeriesPageId = Guid.NewGuid() };
+        var member = (await rows.ForAbsentSeasonAsync(lab.View.Users[lab.Member.UserId], Page(Firefly), null, default))!;
+        Assert.Equal((false, "{\"reason\":\"low_disk\"}"), (member.CanRequest, JsonSerializer.Serialize(member.Blocked)));
+        var admin = (await rows.ForAbsentSeasonAsync(lab.View.Users[lab.Admin.UserId], Page(Firefly), null, default))!;
+        Assert.Equal(("low_disk", "/tv/Firefly (2002)"), (admin.Blocked!.Reason, admin.Blocked.Folder));
+        var fresh = (await rows.ForAbsentSeasonAsync(lab.View.Users[lab.Admin.UserId], Page("tv:tmdb:1437"), null, default))!;
+        Assert.Equal(("low_disk", "/tv"), (fresh.Blocked!.Reason, fresh.Blocked.Folder));
+
+        // The title check (and its route) for each key the page sends.
+        var controller = new AcquireRequestsController(service) { ControllerContext = new() { HttpContext = new DefaultHttpContext() } };
+        foreach (var (key, folder) in new[] { ("movie:tmdb:604", "/movies"), ("tv:tmdb:1437", "/tv"), (Firefly, "/tv/Firefly (2002)"), (Firefly + ":s1", "/tv/Firefly (2002)"), (Firefly + ":s1:e3", "/tv/Firefly (2002)") })
+        {
+            var check = (await service.CheckAsync(lab.Admin.UserId, key, null, default))!;
+            Assert.Equal((false, "low_disk", folder), (check.CanRequest, check.Blocked!.Reason, check.Blocked.Folder));
+            controller.HttpContext.User = TestCallers.Principal(lab.Member.UserId, false);
+            var body = JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(await controller.Check(key, "standard", default)).Value);
+            Assert.Contains("\"blocked\":{\"reason\":\"low_disk\"}", body, StringComparison.Ordinal);
+        }
+
+        // Room again: the same pages can be asked for.
+        lab.Config.ArrLowDiskPercent = 0;
+        Assert.Null((await rows.ForAbsentSeasonAsync(lab.View.Users[lab.Member.UserId], Page("tv:tmdb:1437"), null, default))!.Blocked);
+        Assert.True((await service.CheckAsync(lab.Member.UserId, "movie:tmdb:604", null, default))!.CanRequest);
+    }
+
     // ------------------------------------------------------------------ review round 2: lists answer title by title
 
     /// <summary>

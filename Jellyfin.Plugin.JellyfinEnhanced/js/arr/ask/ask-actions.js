@@ -166,7 +166,7 @@
                 clear(page);
                 return;
             }
-            const box = status.kind === 'series' ? await seriesActions(page, status, ctx, caps, gen)
+            let box = status.kind === 'series' ? await seriesActions(page, status, ctx, caps, gen)
                 : status.kind === 'episode' ? episodeActions(status, caps)
                     : status.kind === 'season' ? await seasonActions(status, caps, gen)
                         : await movieActions(page, status, caps, gen);
@@ -177,7 +177,12 @@
             if (box && box.querySelector('[data-je-ask-kind="ask"], [data-je-ask-kind="search"]')) {
                 const check = JE.arrAsk.check ? await JE.arrAsk.check(status.key, box.dataset.jeAskVariant || 'standard') : null;
                 if (gen !== generation) return;
-                if (check && !check.canRequest && check.blocked) pause(box, check.blocked, caps);
+                if (check && !check.canRequest && check.blocked) {
+                    pause(box, check.blocked, caps);
+                    // A season that isn't in the library: its episode rows (or Missing banner) say the same right
+                    // below, as on a library season page, so a box left with nothing to press would only repeat it.
+                    if (absentSeason && !box.querySelector('.je-ask-action')) box = null;
+                }
             }
             place(page, box);
         });
