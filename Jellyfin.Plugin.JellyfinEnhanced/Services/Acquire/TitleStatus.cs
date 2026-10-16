@@ -199,6 +199,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Episodes with a problem.</summary>
         public int Attention { get; init; }
 
+        /// <summary>
+        /// Of <see cref="Missing"/>, the episodes missing for a long while (monitored, aired and nothing grabbed for
+        /// longer than ArrStatusLookingHours: reason no_release_yet). When every missing episode is, and none is ready
+        /// or on its way, the series or season reads "Missing" with a Search button too.
+        /// </summary>
+        public int LongMissing { get; init; }
+
+        /// <summary>Server-side only: the earliest "missing since" of the <see cref="LongMissing"/> episodes.</summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public DateTime? LongMissingSince { get; init; }
+
+        /// <summary>
+        /// Server-side only: of <see cref="LongMissing"/>, the episodes a request already sent (so a household Search
+        /// runs without a new request).
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public int LongMissingSent { get; init; }
+
         /// <summary>Next air time (UTC).</summary>
         public DateTime? NextAir { get; set; }
 

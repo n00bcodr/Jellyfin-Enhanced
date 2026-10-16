@@ -308,6 +308,71 @@ public class IntegrationArrStatusTests
     }
 
     [Fact]
+    public void ASeriesSeasonOrRequestWhoseMissingEpisodesAreAllMissingForALongWhileReadsMissing()
+    {
+        // Season 2's three aired, monitored episodes have had nothing grabbed for weeks (each reads "Missing" on its
+        // episode page). The season, the series (nothing of it here) and a request for Season 2 (the Household card)
+        // read "Missing" too, not "Looking for it", with the earliest "missing since".
+        var series = new ArrSeriesEntry
+        {
+            Id = 3, TvdbId = 279121, Title = "Show", Monitored = true, Added = Now.AddDays(-100),
+            Seasons = new[] { new ArrSeasonEntry { SeasonNumber = 2, Monitored = true, TotalEpisodeCount = 3 } },
+        };
+        var list = new[]
+        {
+            new ArrEpisodeEntry { Id = 21, SeasonNumber = 2, EpisodeNumber = 1, AirDateUtc = Now.AddDays(-30), Monitored = true },
+            new ArrEpisodeEntry { Id = 22, SeasonNumber = 2, EpisodeNumber = 2, AirDateUtc = Now.AddDays(-23), Monitored = true },
+            new ArrEpisodeEntry { Id = 23, SeasonNumber = 2, EpisodeNumber = 3, AirDateUtc = Now.AddDays(-16), Monitored = true },
+        };
+        TitleFacts Facts(IReadOnlyList<ArrEpisodeEntry> episodes, RequestFacts? request = null, IReadOnlyList<ArrQueueEntry>? queue = null)
+        {
+            var f = new TitleFacts(ShowKey) { Request = request };
+            f.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = new ArrEpisodesSnapshot(3, episodes), Queue = queue ?? Array.Empty<ArrQueueEntry>() });
+            return f;
+        }
+        var seriesItem = new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey };
+        var seasonItem = new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = ShowKey.WithSeason(2), SeriesId = SeriesItem, Season = 2 };
+        var copies = new[] { new JfCopy { ItemId = SeriesItem, Visible = true, Path = "/data/tv/Show" } };
+        var jf = new List<JfEpisode>();
+        var facts = Facts(list);
+        var whole = StatusComposer.Series(facts, seriesItem, jf, null, Ctx(), detail: true);
+        var season = StatusComposer.Season(facts, seasonItem, jf, Ctx(), detail: false);
+        var (requested, _) = StatusComposer.RequestedSeasons(facts, whole, new[] { 2 }, jf, copies, Ctx());
+        var (single, _) = StatusComposer.RequestedSeasons(facts, whole, Array.Empty<int>(), jf, copies, Ctx(), episodes: new[] { (2, 2) });
+        foreach (var status in new[] { whole, season, requested, single })
+        {
+            Assert.Equal((StatusStage.Looking, StatusReasonCode.NoReleaseYet, false), Of(status));
+            Assert.False(status.Reason.Params?.ContainsKey("sent") == true);
+        }
+        Assert.Equal((StatusStage.Looking, 3), (Assert.Single(whole.Seasons!).Stage, whole.Seasons![0].Summary.LongMissing));
+        Assert.Equal(("2026-09-12T12:00:00Z", 3), (whole.Reason.Params!["since"], whole.Summary!.LongMissing));
+        Assert.Equal("2026-09-19T12:00:00Z", single.Reason.Params!["since"]);
+        using (var json = JsonDocument.Parse(Json(requested)))
+            Assert.Equal(3, json.RootElement.GetProperty("summary").GetProperty("longMissing").GetInt32());
+
+        // A request that went out for all of them more than the looking hours ago: plain Search (sent), as on the
+        // episode page. One that sent only some: a Search would ask for the rest, so no `sent`.
+        var sentAll = new RequestFacts { Sent = new[] { new RequestSentPart(false, 2, null, Now.AddHours(-30)) } };
+        Assert.Equal("1", StatusComposer.RequestedSeasons(Facts(list, sentAll), whole, new[] { 2 }, jf, copies, Ctx()).Status.Reason.Params!["sent"]);
+        Assert.Equal("1", StatusComposer.Season(Facts(list, sentAll), seasonItem, jf, Ctx(), detail: false).Reason.Params!["sent"]);
+        var sentOne = new RequestFacts { Sent = new[] { new RequestSentPart(false, 2, 1, Now.AddHours(-30)) } };
+        Assert.False(StatusComposer.Season(Facts(list, sentOne), seasonItem, jf, Ctx(), detail: false).Reason.Params!.ContainsKey("sent"));
+
+        // One of them is still fresh (a request for it went out an hour ago): the scope is still "Looking for it".
+        var fresh = new RequestFacts { Sent = new[] { new RequestSentPart(false, 2, 3, Now.AddHours(-1)) } };
+        Assert.Equal(StatusReasonCode.Looking, StatusComposer.Season(Facts(list, fresh), seasonItem, jf, Ctx(), detail: false).Reason.Code);
+        Assert.Equal(StatusReasonCode.Looking, StatusComposer.RequestedSeasons(Facts(list, fresh), whole, new[] { 2 }, jf, copies, Ctx()).Status.Reason.Code);
+        // One downloading: Downloading, never Missing.
+        var downloading = Facts(list, queue: new[] { Row(episodeId: 21, season: 2, episode: 1) });
+        Assert.Equal(StatusStage.Downloading, StatusComposer.Season(downloading, seasonItem, jf, Ctx(), detail: false).Stage);
+        // Some of it here: the scope as a whole isn't missing ("Some episodes here"); the missing episodes' own states say Missing.
+        jf.Add(new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 1, DateCreated = Now.AddDays(-1) });
+        Assert.Equal(StatusReasonCode.Partial, StatusComposer.Season(facts, seasonItem, jf, Ctx(), detail: false).Reason.Code);
+        Assert.Equal(StatusReasonCode.Partial, StatusComposer.Series(facts, seriesItem, jf, null, Ctx(), detail: false).Reason.Code);
+        Assert.Equal(StatusReasonCode.Partial, StatusComposer.RequestedSeasons(facts, whole, new[] { 2 }, jf, copies, Ctx()).Status.Reason.Code);
+    }
+
+    [Fact]
     public void ASeriesWhoseDownloadsCantBeCheckedIsServiceDownNotPartial()
     {
         // Sonarr's queue expired: its six aired, wanted episodes that aren't here can't be checked;

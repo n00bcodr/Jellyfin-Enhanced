@@ -560,6 +560,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 Aired = total.Aired, Ready = total.Ready, Downloading = total.Downloading, AlmostReady = total.AlmostReady,
                 Missing = total.Missing, Unknown = total.Unknown, Attention = total.Attention,
+                LongMissing = total.LongMissing, LongMissingSince = total.LongMissingSince, LongMissingSent = total.LongMissingSent,
                 NextAir = total.NextAir ?? (copy.Series!.NextAiring is DateTime n && n > c.Now ? n : null),
                 NextAirIsDay = total.NextAir.HasValue && total.NextAirIsDay,
                 NextSeason = total.NextSeason, NextEpisode = total.NextEpisode,
@@ -584,7 +585,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 ItemId = Id(item.ItemId),
                 Kind = "series",
                 Stage = stage,
-                Reason = new StatusReason { Code = SummaryReason(total) },
+                Reason = Reason(Overall(stage, total)),
                 Attention = total.Attention > 0 || otherProblems,
                 Quiet = quiet && !otherProblems && (!c.Viewer.IsAdmin || facts.Unreadable.Count == 0),
                 Progress = progress.Count == 1 ? progress[0] : null,
@@ -651,7 +652,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 ItemId = Id(item.ItemId),
                 Kind = "season",
                 Stage = stage,
-                Reason = new StatusReason { Code = SummaryReason(summary) },
+                Reason = Reason(Overall(stage, summary)),
                 Attention = summary.Attention > 0 || otherProblems,
                 Quiet = quiet && !otherProblems,
                 Progress = progress.Count == 1 ? progress[0] : null,
@@ -897,8 +898,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     state = stage is StatusStage.None or StatusStage.Ready
                         // Nothing monitored, queued or aired there yet: the request says where it is.
                         ? ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored), facts.Request)
-                        : new CopyState(stage, SummaryReason(summary), Attention: summary.Attention > 0, Date: summary.NextAir, DateIsDay: summary.NextAirIsDay,
-                            Progress: stage == StatusStage.Downloading && downloads.Count == 1 ? downloads[0] : null);
+                        : Overall(stage, summary) with
+                        {
+                            Attention = summary.Attention > 0, Date = summary.NextAir, DateIsDay = summary.NextAirIsDay,
+                            Progress = stage == StatusStage.Downloading && downloads.Count == 1 ? downloads[0] : null,
+                        };
                 }
             }
             var status = new TitleStatus
@@ -1187,8 +1191,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private static StatusSummary Summarize(List<(CopyState State, ArrEpisodeEntry? Arr, int Season, int Episode)> episodes, ComposeContext c)
         {
-            int aired = 0, ready = 0, downloading = 0, almost = 0, missing = 0, attention = 0, unknown = 0;
-            DateTime? next = null;
+            int aired = 0, ready = 0, downloading = 0, almost = 0, missing = 0, attention = 0, unknown = 0, longMissing = 0, longSent = 0;
+            DateTime? next = null, longSince = null;
             var nextIsDay = false;
             int? nextSeason = null, nextEpisode = null;
             foreach (var (state, arr, season, episode) in episodes)
@@ -1219,11 +1223,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                             missing++;
                             // Its downloads can't be checked now: not known to be missing.
                             if (state.Reason == StatusReasonCode.ServiceDown) unknown++;
+                            // Missing for a long while (shown as Missing with a Search button).
+                            if (state.Reason == StatusReasonCode.NoReleaseYet && !state.Attention)
+                            {
+                                longMissing++;
+                                if (state.Since is DateTime since && (longSince == null || since < longSince)) longSince = since;
+                                if (state.Params?.TryGetValue("sent", out var sent) == true && sent == "1") longSent++;
+                            }
                         }
                         break;
                 }
             }
-            return new StatusSummary { Aired = aired, Ready = ready, Downloading = downloading, AlmostReady = almost, Missing = missing, Unknown = unknown, Attention = attention, NextAir = next, NextAirIsDay = next.HasValue && nextIsDay, NextSeason = nextSeason, NextEpisode = nextEpisode };
+            return new StatusSummary { Aired = aired, Ready = ready, Downloading = downloading, AlmostReady = almost, Missing = missing, Unknown = unknown, Attention = attention, LongMissing = longMissing, LongMissingSince = longSince, LongMissingSent = longSent, NextAir = next, NextAirIsDay = next.HasValue && nextIsDay, NextSeason = nextSeason, NextEpisode = nextEpisode };
         }
 
         /// <summary>A season from Sonarr's statistics (when its episodes are not in memory: poster cards).</summary>
@@ -1255,6 +1266,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 Aired = seasons.Sum(s => s.Aired), Ready = seasons.Sum(s => s.Ready), Downloading = seasons.Sum(s => s.Downloading),
                 AlmostReady = seasons.Sum(s => s.AlmostReady), Missing = seasons.Sum(s => s.Missing), Unknown = seasons.Sum(s => s.Unknown), Attention = seasons.Sum(s => s.Attention),
+                LongMissing = seasons.Sum(s => s.LongMissing), LongMissingSent = seasons.Sum(s => s.LongMissingSent),
+                LongMissingSince = seasons.Where(s => s.LongMissingSince.HasValue).Select(s => s.LongMissingSince).DefaultIfEmpty(null).Min(),
                 NextAir = next?.NextAir, NextAirIsDay = next?.NextAirIsDay == true, NextSeason = next?.NextSeason, NextEpisode = next?.NextEpisode,
             };
         }
@@ -1269,8 +1282,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return s.Ready > 0 ? StatusStage.Ready : StatusStage.None;
         }
 
-        /// <summary>The copy-level admin line of a series or season: its overall state (problems get their own lines).</summary>
-        private static CopyState Overall(string stage, StatusSummary s) => new(stage, SummaryReason(s));
+        /// <summary>
+        /// The overall state of a series or season (its headline, and the copy-level admin line: problems get their own
+        /// lines). Missing for a long while carries the earliest "missing since" and, when a request already sent every
+        /// one of those episodes, <c>sent</c> (as an episode's own state does).
+        /// </summary>
+        private static CopyState Overall(string stage, StatusSummary s)
+        {
+            var reason = SummaryReason(s);
+            if (reason != StatusReasonCode.NoReleaseYet) return new CopyState(stage, reason);
+            return new CopyState(stage, reason, Since: s.LongMissingSince, Params: s.LongMissingSent >= s.LongMissing ? Params(("sent", "1")) : null);
+        }
 
         private static string SummaryReason(StatusSummary s)
         {
@@ -1278,8 +1300,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (s.AlmostReady > 0) return StatusReasonCode.LibraryPending;
             // Every episode still to come is on an instance whose downloads can't be checked now.
             if (s.Missing > 0 && s.Unknown >= s.Missing) return StatusReasonCode.ServiceDown;
-            // "Some episodes here" only when some are.
-            if (s.Missing > 0) return s.Ready > 0 ? StatusReasonCode.Partial : StatusReasonCode.Looking;
+            // "Some episodes here" only when some are (also when the rest is missing for a long while: the scope as a
+            // whole isn't missing, and its seasons and episodes say which parts are).
+            if (s.Missing > 0 && s.Ready > 0) return StatusReasonCode.Partial;
+            // Every episode still to come is missing for a long while: "Missing", with a Search button.
+            if (s.Missing > 0 && s.LongMissing >= s.Missing) return StatusReasonCode.NoReleaseYet;
+            if (s.Missing > 0) return StatusReasonCode.Looking;
             if (s.Aired == 0 && s.NextAir.HasValue) return StatusReasonCode.NotAired;
             return StatusReasonCode.Ready;
         }
@@ -1737,11 +1763,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// Monitored, out, no file and nothing under way: "looking" while it is fresh, "no release yet"
         /// (shown as Missing with a Search button) once nothing was grabbed for longer than LookingHours.
         /// <paramref name="lastSearch"/> is when the arr last searched for it (admin line), if it says.
-        /// </summary>
-        /// <summary>
-        /// Wanted and nothing grabbed yet: "looking", or missing for a long while (no release yet). <paramref name="sent"/>:
-        /// a request covering it already went out, so a household Search runs without a new request (and so without a new
-        /// OK): the missing state then says so in its <c>sent</c> parameter and the Search buttons read plain "Search".
+        /// <paramref name="sent"/>: a request covering it already went out, so a household Search runs without a new
+        /// request (and so without a new OK): the missing state then says so in its <c>sent</c> parameter and the Search
+        /// buttons read plain "Search".
         /// </summary>
         private static CopyState Looking(DateTime? since, ComposeContext c, DateTime? lastSearch = null, bool sent = false)
         {
