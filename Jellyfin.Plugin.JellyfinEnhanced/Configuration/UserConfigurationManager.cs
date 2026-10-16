@@ -503,6 +503,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         }
 
         /// <summary>
+        /// Removes a deleted Jellyfin user's own folder (their settings, hidden content, bookmarks, Spoiler Guard
+        /// state). Only that user's canonical folder is touched; shared files (reviews, activity) stay as they are.
+        /// </summary>
+        /// <param name="userId">The deleted user.</param>
+        /// <returns>True when a folder was removed.</returns>
+        public bool DeleteUserData(Guid userId)
+        {
+            if (userId == Guid.Empty) return false;
+            var userDir = Path.Combine(_configBaseDir, userId.ToString("N"));
+            try
+            {
+                if (!Directory.Exists(userDir)) return false;
+                Directory.Delete(userDir, recursive: true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not remove the settings of deleted user {userId:N}: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Gets all canonical user IDs that have configuration directories.
         /// Filters out non-user folders (e.g., <c>.migrated-{ts}</c> forensic
         /// backups, <c>.case-rename-{ts}</c> in-flight rename artifacts)

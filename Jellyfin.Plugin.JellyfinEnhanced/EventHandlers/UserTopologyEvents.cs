@@ -34,6 +34,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
         }
     }
 
+    // A deleted user's own Jellyfin Enhanced folder (settings, hidden content, bookmarks, Spoiler Guard state)
+    // goes with them; Jellyfin never reuses a user id, so nothing would ever read it again.
+    public sealed class UserDeletedSettingsRemover : IEventConsumer<UserDeletedEventArgs>
+    {
+        private readonly Configuration.UserConfigurationManager _settings;
+
+        public UserDeletedSettingsRemover(Configuration.UserConfigurationManager settings)
+        {
+            _settings = settings;
+        }
+
+        public Task OnEvent(UserDeletedEventArgs eventArgs)
+        {
+            if (eventArgs?.Argument is { } user) _settings.DeleteUserData(user.Id);
+            return Task.CompletedTask;
+        }
+    }
+
     public sealed class UserDeletedIdentityInvalidator : IEventConsumer<UserDeletedEventArgs>
     {
         private readonly RequestIdentityService _identity;

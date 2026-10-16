@@ -22,6 +22,25 @@ public class CorePersistenceTests
         Assert.NotSame(f.Manager.GetUserFileLock(User, "settings.json"), reopened.GetUserFileLock(User, "other.json"));
     }
 
+    [Fact]
+    public async Task ADeletedUsersOwnFolderGoesWithThemAndNobodyElsesDoes()
+    {
+        using var f = new CoreFixture();
+        var gone = Guid.Parse(User);
+        var other = Guid.NewGuid();
+        f.Manager.SaveUserConfiguration(User, "settings.json", new UserSettings { DisplayLanguage = "de" });
+        f.Manager.SaveUserConfiguration(User, "hidden-content.json", new UserSettings());
+        f.Manager.SaveUserConfiguration(other.ToString("N"), "settings.json", new UserSettings { DisplayLanguage = "fr" });
+        var user = new Jellyfin.Database.Implementations.Entities.User("gone", "default", "default") { Id = gone };
+        await new Jellyfin.Plugin.JellyfinEnhanced.EventHandlers.UserDeletedSettingsRemover(f.Manager).OnEvent(new Jellyfin.Data.Events.Users.UserDeletedEventArgs(user));
+        Assert.DoesNotContain(User, f.Manager.GetAllUserIds());
+        Assert.Contains(other.ToString("N"), f.Manager.GetAllUserIds());
+        Assert.Equal("fr", f.Manager.GetUserConfiguration<UserSettings>(other.ToString("N"), "settings.json").DisplayLanguage);
+        // Nothing left to remove (already gone) or a user that never saved anything: no error.
+        Assert.False(f.Manager.DeleteUserData(gone));
+        Assert.False(f.Manager.DeleteUserData(Guid.Empty));
+    }
+
     [Theory]
     [InlineData("")][InlineData(" ")][InlineData("null")][InlineData("{broken")]
     public void CorruptReadsAreLenientButStrictReadsQuarantineExactlyOnce(string content)

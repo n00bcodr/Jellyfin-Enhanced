@@ -41,6 +41,8 @@ Access user-configured settings via the Enhanced panel:
 - Settings saved to browser localStorage
 - Per-user configuration
 - Sync across devices (same browser profile)
+- Deleting a Jellyfin user also removes their Jellyfin Enhanced settings, hidden content, bookmarks and Spoiler Guard
+  state from the server (reviews they wrote stay)
 
 
 # Enhanced Settings — Admin configuration
