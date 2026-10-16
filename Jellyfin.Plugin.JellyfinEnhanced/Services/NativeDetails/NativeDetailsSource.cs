@@ -121,7 +121,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
     /// already running read costs nothing; a new one comes out of the viewer's budget
     /// (<see cref="FeedBurst"/>, then <see cref="FeedPerSecond"/>) and waits for one of
     /// <see cref="FeedConcurrency"/> upstream slots, with at most <see cref="FeedQueue"/> more queued
-    /// server-wide; otherwise it isn't started (<see cref="SourceAnswer.Busy"/>).
+    /// server-wide and <see cref="FeedPerViewer"/> outstanding per viewer, slots handed to the
+    /// waiting viewers in turn; otherwise it isn't started (<see cref="SourceAnswer.Busy"/>).
     /// </summary>
     public sealed class SeerrNativeDetailsSource : INativeDetailsSource
     {
@@ -136,6 +137,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         /// <summary>Feed reads that may wait for an upstream slot, server-wide.</summary>
         internal const int FeedQueue = 40;
+
+        /// <summary>
+        /// Feed reads one viewer may have outstanding (running or queued, until the read ends): two
+        /// tabs' worth of the client's four parallel requests, and a sixth of the server's room, so one
+        /// account can't fill the queue for everyone else.
+        /// </summary>
+        internal const int FeedPerViewer = 8;
 
         private const int MaxEntries = 400;
         private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(15);
@@ -157,8 +165,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly SemaphoreSlim _linkLock = new(1, 1);
         private readonly Func<DateTime> _now;
         private readonly ViewerBudget _feedBudget;
-        private readonly SemaphoreSlim _feedSlots = new(FeedConcurrency);
-        private int _feedReads;
+        private readonly FeedScheduler _feeds = new(FeedConcurrency, FeedQueue, FeedPerViewer);
         private HashSet<string>? _linked;
         private string? _linkedFrom;
         private DateTime _linkedAt;
@@ -184,7 +191,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         internal int InFlightCount => _inFlight.Count;
 
         /// <summary>Feed reads started upstream and not finished, running or queued (for tests).</summary>
-        internal int FeedReadsPending => Volatile.Read(ref _feedReads);
+        internal int FeedReadsPending => _feeds.Outstanding;
+
+        /// <summary>A viewer's feed reads started upstream and not finished (for tests).</summary>
+        /// <param name="viewer">The viewer.</param>
+        /// <returns>Their running and queued reads.</returns>
+        internal int FeedReadsOf(Guid viewer) => _feeds.OutstandingOf(viewer);
+
+        /// <summary>Viewers with a feed read outstanding (for tests: none is kept once its reads end).</summary>
+        internal int FeedViewersTracked => _feeds.ViewersTracked;
 
         /// <inheritdoc />
         public Task<SourceAnswer> MovieAsync(int tmdb, CancellationToken ct) => GetAsync($"/api/v1/movie/{tmdb}", ct);
@@ -401,50 +416,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         /// <summary>
         /// A feed read: answered from the cache or a running read of the same path for free; else
-        /// started only when the server's queue has room and the viewer's budget a token (else
-        /// <see cref="SourceAnswer.Throttled"/>). The upstream slot is held by the read itself, not by
-        /// the caller, so a caller that gives up doesn't free it while the read still runs.
+        /// started only when the server's queue and the viewer's share of it have room and the viewer's
+        /// budget a token (else <see cref="SourceAnswer.Throttled"/>). The place and the upstream slot
+        /// are held by the read itself, not by the caller, so a caller that gives up doesn't free them
+        /// while the read still runs.
         /// </summary>
         private Task<SourceAnswer> FeedAsync(string path, Guid viewer, Func<Task<SourceAnswer>> fetch, CancellationToken ct)
         {
             if (TryCached(path, out var hit)) return Task.FromResult(hit);
             if (_inFlight.TryGetValue(path, out var running)) return running.Value.WaitAsync(ct);
-            if (Interlocked.Increment(ref _feedReads) > FeedConcurrency + FeedQueue)
-            {
-                Interlocked.Decrement(ref _feedReads);
-                return Task.FromResult(SourceAnswer.Throttled);
-            }
-
+            if (!_feeds.TryAdmit(viewer)) return Task.FromResult(SourceAnswer.Throttled);
             if (!_feedBudget.Take(viewer))
             {
-                Interlocked.Decrement(ref _feedReads);
+                _feeds.Leave(viewer, false);
                 return Task.FromResult(SourceAnswer.Throttled);
             }
 
             var mine = Shared(path, async () =>
             {
+                var ran = false;
                 try
                 {
-                    await _feedSlots.WaitAsync().ConfigureAwait(false);
-                    try
-                    {
-                        return await fetch().ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        _feedSlots.Release();
-                    }
+                    await _feeds.TurnAsync(viewer).ConfigureAwait(false);
+                    ran = true;
+                    return await fetch().ConfigureAwait(false);
                 }
                 finally
                 {
-                    Interlocked.Decrement(ref _feedReads);
+                    _feeds.Leave(viewer, ran);
                 }
             });
             var shared = _inFlight.GetOrAdd(path, mine);
             if (!ReferenceEquals(shared, mine))
             {
                 // Another caller started the same read a moment ago: join it, nothing was started.
-                Interlocked.Decrement(ref _feedReads);
+                _feeds.Leave(viewer, false);
                 _feedBudget.Refund(viewer);
             }
 

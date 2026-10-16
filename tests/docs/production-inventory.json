@@ -863,6 +863,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/FeedScheduler.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsAllowlist.cs",
       "category": "Services"
     },
@@ -9515,7 +9519,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 526,
+    "files": 527,
     "routes": 247,
     "configuration_properties": 577,
     "storage_references": 82,

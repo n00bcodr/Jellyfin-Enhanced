@@ -2229,5 +2229,113 @@ public class NativeDetailsSourceTests
         Assert.NotNull((await source.DiscoverAsync(false, "network", 49, 400, null, Guid.NewGuid(), none)).Data);
     }
 
+    [Fact]
+    public async Task OneViewerCantFillTheFeedQueueAndWaitingViewersTakeTurns()
+    {
+        // A slow upstream: every read waits until the test lets it (or everything) answer.
+        var holds = new System.Collections.Concurrent.ConcurrentDictionary<string, TaskCompletionSource>();
+        var all = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        TaskCompletionSource Hold(string key) => holds.GetOrAdd(key, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+        using var seerr = new IntegrationTransport(async (req, _) =>
+        {
+            var key = req.RequestUri!.PathAndQuery;
+            started.Enqueue(key);
+            await Task.WhenAny(Hold(key).Task, all.Task);
+            return IntegrationTransport.Response("""{"page":1,"totalPages":500,"results":[]}""");
+        });
+        var (plugin, _, tmdb) = Make(seerr);
+        using var _p = plugin;
+        using var _t = tmdb;
+        // The clock stands still: no budget comes back, and none is needed (every viewer stays far inside it).
+        var now = new DateTime(2026, 10, 16, 12, 0, 0, DateTimeKind.Utc);
+        var source = new SeerrNativeDetailsSource(seerr, tmdb, plugin.Core.Logger, () => now);
+        var none = CancellationToken.None;
+        var share = SeerrNativeDetailsSource.FeedPerViewer;
+        var slots = SeerrNativeDetailsSource.FeedConcurrency;
+        // The scenario: one viewer's share fills every upstream slot, and is a small part of the server's room.
+        Assert.Equal(slots, share);
+        Assert.True(3 * share <= slots + SeerrNativeDetailsSource.FeedQueue);
+        static string Key(int network, int page) => $"/api/v1/discover/tv?page={page}&network={network}";
+        Task<SourceAnswer> Page(int network, int page, Guid who) => source.DiscoverAsync(false, "network", network, page, null, who, none);
+        // Every wait is bounded: a read wrongly held back fails the test instead of hanging it.
+        var limit = TimeSpan.FromSeconds(10);
+        async Task StartedAsync(int count)
+        {
+            for (var i = 0; i < 500 && started.Count < count; i++) await Task.Delay(10);
+            await Task.Delay(30);
+            Assert.Equal(count, started.Count);
+        }
+
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var third = Guid.NewGuid();
+        var joiner = Guid.NewGuid();
+        try
+        {
+            // The first viewer keeps distinct uncached pages coming: its share runs, every upstream slot busy.
+            var firstReads = Enumerable.Range(1, share).Select(page => Page(49, page, first)).ToList();
+            await StartedAsync(slots);
+            // It can't go past its share, though its budget has tokens left and the server has room.
+            for (var page = share + 1; page <= slots + SeerrNativeDetailsSource.FeedQueue; page++)
+            {
+                Assert.True((await Page(49, page, first).WaitAsync(limit)).Busy, $"page {page}");
+            }
+
+            Assert.Equal(share, source.FeedReadsOf(first));
+            Assert.Equal(share, source.FeedReadsPending);
+            // Other viewers' uncached reads are still taken: the second fills its own share (queued), the third queues one after it.
+            var secondReads = Enumerable.Range(1, share).Select(page => Page(50, page, second)).ToList();
+            var thirdRead = Page(51, 1, third);
+            await StartedAsync(slots);
+            Assert.All(secondReads.Append(thirdRead), r => Assert.False(r.IsCompleted));
+            Assert.Equal(share, source.FeedReadsOf(second));
+            Assert.Equal(1, source.FeedReadsOf(third));
+            Assert.True((await Page(50, share + 1, second).WaitAsync(limit)).Busy);
+            // Joining a read already running is free, and lets nobody past a share: a viewer with
+            // nothing outstanding and one at its share both join the first viewer's page 3.
+            var joined = Page(49, 3, joiner);
+            var joinedAtShare = Page(49, 3, second);
+            Assert.Equal(0, source.FeedReadsOf(joiner));
+            Assert.Equal(share, source.FeedReadsOf(second));
+            Assert.Equal(share, source.FeedReadsOf(first));
+            Assert.Equal(2 * share + 1, source.FeedReadsPending);
+            Assert.Equal(slots, started.Count);
+
+            // Slots go to the waiting viewers in turn: the first freed one to the second viewer, the
+            // next to the third, not to the second viewer's next read.
+            Hold(Key(49, 1)).SetResult();
+            Assert.NotNull((await firstReads[0].WaitAsync(limit)).Data);
+            await StartedAsync(slots + 1);
+            Assert.Equal(Key(50, 1), started.Last());
+            Hold(Key(49, 2)).SetResult();
+            Assert.NotNull((await firstReads[1].WaitAsync(limit)).Data);
+            await StartedAsync(slots + 2);
+            Assert.Equal(Key(51, 1), started.Last());
+            // A read that ended gave its place back: the first viewer may start (queue) new ones again, up to its share.
+            Assert.Equal(share - 2, source.FeedReadsOf(first));
+            var again = new[] { Page(49, 100, first), Page(49, 101, first) };
+            Assert.All(again, r => Assert.False(r.IsCompleted));
+            Assert.True((await Page(49, 102, first).WaitAsync(limit)).Busy);
+            Assert.Equal(share, source.FeedReadsOf(first));
+
+            all.SetResult();
+            var answers = await Task.WhenAll(firstReads.Concat(secondReads).Concat(again).Append(thirdRead).Append(joined).Append(joinedAtShare)).WaitAsync(limit);
+            Assert.All(answers, r => Assert.NotNull(r.Data));
+            Assert.Equal(2 * share + 3, seerr.Calls);
+            // Nothing is left counted or tracked once the reads end.
+            Assert.Equal(0, source.FeedReadsPending);
+            Assert.Equal(0, source.FeedViewersTracked);
+            Assert.Equal(0, source.InFlightCount);
+        }
+        finally
+        {
+            all.TrySetResult();
+        }
+
+        // The joiner was never charged: its whole budget is still there.
+        for (var page = 1; page <= SeerrNativeDetailsSource.FeedBurst; page++) Assert.NotNull((await Page(52, page, joiner).WaitAsync(limit)).Data);
+    }
+
 }
 #endif
