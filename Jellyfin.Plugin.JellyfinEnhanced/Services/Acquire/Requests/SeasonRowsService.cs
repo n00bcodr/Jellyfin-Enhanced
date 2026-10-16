@@ -253,7 +253,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         /// <summary>
-        /// What one want means to the viewer: waiting (for an OK), asked (recorded or sent), declined
+        /// What one want means to the viewer: waiting (for an OK, here or in Seerr), asked (recorded or sent), declined
         /// (their own, only while the decline still blocks asking again, as the ledger does), household
         /// (someone else's open ask), or null.
         /// </summary>
@@ -262,6 +262,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var state = want.Status switch
             {
                 "pending" => "waiting",
+                // Sent to Seerr, where it waits for an OK (Seerr mode): still waiting, not asked-and-on-its-way.
+                "sent" when want.Reason == "awaiting_approval" => "waiting",
                 "queued" or "sent" or "stale" => "asked",
                 "declined" => "declined",
                 _ => null,

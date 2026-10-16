@@ -196,6 +196,18 @@ public class IntegrationRequestSeasonRowsTests
     }
 
     [Fact]
+    public void AnAskSentToSeerrThatWaitsForAnOkThereStillReadsWaiting()
+    {
+        // Seen live in Seerr mode: Get Season 1 went to Seerr, which holds it for an OK; the rows said "asked", so the
+        // episode Sonarr doesn't fetch yet offered Get Season 1 again.
+        var viewer = Guid.NewGuid();
+        var want = new RequestWant("w1", "q", viewer, "c1", "f", new MutationInput { Key = "tv:tvdb:76924", Scope = "seasons", Seasons = new[] { 1 } }, "sent", "awaiting_approval", 0, "null", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        Assert.Equal("waiting", SeasonRowsService.StateOf(want, viewer, DateTimeOffset.UtcNow, 7));
+        Assert.Equal("asked", SeasonRowsService.StateOf(want with { Reason = "looking" }, viewer, DateTimeOffset.UtcNow, 7));
+        Assert.Equal("household", SeasonRowsService.StateOf(want, Guid.NewGuid(), DateTimeOffset.UtcNow, 7));
+    }
+
+    [Fact]
     public async Task TheSeriesAllowanceSaysHowManySingleEpisodesAreChargedThisWindow()
     {
         using var s = new Setup();
