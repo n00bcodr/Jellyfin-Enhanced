@@ -552,8 +552,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// started (<see cref="ManageSearchResult.Found"/>), so the page can say "Found a copy" or
         /// "Nothing found yet" honestly.
         /// </summary>
-        public async Task<ManageSearchResult> SearchCheckedAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string idempotencyKey, CancellationToken cancellationToken)
+        public Task<ManageSearchResult> SearchCheckedAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string idempotencyKey, CancellationToken cancellationToken)
+            => SearchCoreAsync(viewer, userName, instanceId, key, null, idempotencyKey, cancellationToken);
+
+        /// <summary>
+        /// <see cref="SearchCheckedAsync"/> for exactly these episodes of the series (or season) in <paramref name="key"/>:
+        /// one EpisodeSearch command with their Sonarr ids (the ones the instance doesn't list are left out; none left:
+        /// refused). <see cref="ManageSearchResult.Found"/> is a grab of any of them since the command started.
+        /// </summary>
+        /// <param name="viewer">The caller.</param>
+        /// <param name="userName">The caller's name for the audit log, if known.</param>
+        /// <param name="instanceId">The Sonarr instance.</param>
+        /// <param name="key">The series or season key in scope (audit, feed).</param>
+        /// <param name="episodeIds">Sonarr episode ids to search.</param>
+        /// <param name="idempotencyKey">One per press.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>The outcome and whether the search grabbed one of them.</returns>
+        public Task<ManageSearchResult> SearchEpisodesCheckedAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, IReadOnlyList<int> episodeIds, string idempotencyKey, CancellationToken cancellationToken)
+            => SearchCoreAsync(viewer, userName, instanceId, key, episodeIds, idempotencyKey, cancellationToken);
+
+        private async Task<ManageSearchResult> SearchCoreAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, IReadOnlyList<int>? episodeIds, string idempotencyKey, CancellationToken cancellationToken)
         {
+            if (episodeIds != null && (key.IsMovie || key.Episode != null || episodeIds.Count == 0))
+                return new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, "invalid_input", "Choose episodes of a series or season.") };
             var instance = _store.Registry.Get(instanceId);
             if (instance == null || !instance.Usable || instance.Kind != (key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr))
                 return new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, "wrong_instance", "That instance can't search for this title.") };
@@ -566,7 +587,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             object command;
             string action;
             string target;
-            int? episodeId = null;
+            IReadOnlyCollection<int>? episodeSet = null;
             int? seasonNumber = key.Season;
             bool? found = null;
             if (key.IsMovie)
@@ -575,6 +596,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 action = "movie.search";
                 target = "movie:" + arrId.Value.ToString(CultureInfo.InvariantCulture);
             }
+            else if (episodeIds != null)
+            {
+                var episodes = await _store.GetEpisodesAsync(instance, arrId.Value, cancellationToken).ConfigureAwait(false);
+                var listed = episodes.Value?.Episodes.Select(e => e.Id).ToHashSet() ?? new HashSet<int>();
+                var ids = episodeIds.Where(listed.Contains).Distinct().OrderBy(x => x).ToArray();
+                if (ids.Length == 0)
+                    return new ManageSearchResult { Outcome = Refuse(viewer, userName, instance.Id, key, "no_such_episode", $"{instance.Name} doesn't list those episodes of this series.") };
+                command = new { name = "EpisodeSearch", episodeIds = ids };
+                episodeSet = ids;
+                action = "episode.search";
+                target = "episode-of:" + arrId.Value.ToString(CultureInfo.InvariantCulture) + ":" + string.Join(",", ids.Select(x => x.ToString(CultureInfo.InvariantCulture)));
+            }
             else if (key.Episode is int episode && key.Season is int season)
             {
                 var episodes = await _store.GetEpisodesAsync(instance, arrId.Value, cancellationToken).ConfigureAwait(false);
@@ -582,7 +615,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (match == null)
                     return new ManageSearchResult { Outcome = Refuse(viewer, userName, instance.Id, key, "no_such_episode", $"{instance.Name} doesn't list S{season:00}E{episode:00} of this series.") };
                 command = new { name = "EpisodeSearch", episodeIds = new[] { match.Id } };
-                episodeId = match.Id;
+                episodeSet = new[] { match.Id };
                 action = "episode.search";
                 target = "episode-of:" + arrId.Value.ToString(CultureInfo.InvariantCulture) + ":" + match.Id.ToString(CultureInfo.InvariantCulture);
             }
@@ -638,7 +671,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     if (last == null) return new ArrReadBack { Confirmed = null, Summary = "Could not check the search." };
                     var message = string.IsNullOrWhiteSpace(last.Message) ? null : last.Message!.Trim();
                     if (string.Equals(last.Status, "completed", StringComparison.OrdinalIgnoreCase))
-                        found = await GrabbedSinceAsync(client.Value!, key.IsMovie, arrId.Value, seasonNumber, episodeId, ArrDates.Parse(last.Started), ct).ConfigureAwait(false);
+                        found = await GrabbedSinceAsync(client.Value!, key.IsMovie, arrId.Value, seasonNumber, episodeSet, ArrDates.Parse(last.Started), ct).ConfigureAwait(false);
                     return (last.Status?.ToLowerInvariant()) switch
                     {
                         "completed" => new ArrReadBack { Confirmed = true, Summary = "Search finished" + (message != null && !string.Equals(message, "Completed", StringComparison.OrdinalIgnoreCase) ? ": " + Cap(message) : ".") },
@@ -663,11 +696,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// True when the arr's history of the movie (or of the series, narrowed to the season or
-        /// episode in scope) holds a grab since <paramref name="since"/> (the search command's start,
+        /// episodes in scope) holds a grab since <paramref name="since"/> (the search command's start,
         /// as the arr reports it); false when it holds none; null when it can't be read or the start
         /// time is unknown.
         /// </summary>
-        private static async Task<bool?> GrabbedSinceAsync(ArrClient client, bool movie, int arrId, int? season, int? episodeId, DateTime? since, CancellationToken ct)
+        private static async Task<bool?> GrabbedSinceAsync(ArrClient client, bool movie, int arrId, int? season, IReadOnlyCollection<int>? episodeIds, DateTime? since, CancellationToken ct)
         {
             if (since is not DateTime start) return null;
             var query = new List<KeyValuePair<string, string?>>
@@ -680,7 +713,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // The arrs write whole seconds: a grab in the command's first second counts.
             var from = start.AddSeconds(-1);
             return read.Value.Any(h => string.Equals(h.EventType, "grabbed", StringComparison.OrdinalIgnoreCase)
-                && (episodeId == null || h.EpisodeId == episodeId)
+                && (episodeIds == null || (h.EpisodeId is int id && episodeIds.Contains(id)))
                 && ArrDates.Parse(h.Date) is DateTime at && at >= from);
         }
 

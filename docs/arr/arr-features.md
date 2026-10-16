@@ -232,19 +232,25 @@ rest" (its seasons and episodes say which parts are missing).
   searched ("Sonarr · Monitored; still nothing grabbed · since 2 Jan · last searched 3 h ago").
 - **Everyone else who may ask**: when a request already went out for that episode or movie (theirs or someone
   else's in the household), **Search** runs Sonarr's or Radarr's search for it again, with no new request: nothing is
-  charged and no OK is needed, since the request already was. Only the standard copy the request went to is searched
-  (never a 4K copy), and with Seerr handling requests only once Seerr has OK'd the request (a request still waiting
-  for an OK in Seerr is asked for as usual instead). It says what happened the same way (*Found a copy —
-  downloading*, *Nothing found yet · searched just now*). The household gets one such search per episode or movie per
-  "still looking" period; pressing it again sooner says "Searched for it a little while ago. We'll keep looking." From
-  the *Missing* line, each episode a request sent is searched (at most ten), and the others are asked for. For
-  anything no request sent yet, **Search** asks for it like **Get it** (Kids: *Waiting for OK*; the request limit
-  applies), and the request goes to Sonarr/Radarr as a search for what they already monitor.
+  charged and no OK is needed, since the request already was. The same goes for a series or season page's **Search**
+  (and the request controls of a series, and the *Missing* line of a season): when requests already sent every
+  episode there that is missing for a long while, Sonarr searches again for exactly those (at most 50 at a time,
+  leaving out the specials of a whole series, episodes already here, and ones Jellyfin hides from that person), in
+  one search; this works for a series that isn't in the library yet too. Only the standard copy the request went to
+  is searched (never a 4K copy), and with Seerr handling requests only once Seerr has OK'd the request (a request
+  still waiting for an OK in Seerr is asked for as usual instead). It says what happened the same way (*Found a copy
+  — downloading*, *Nothing found yet · searched just now*). The household gets one such search per episode or movie
+  per "still looking" period, whichever page it was pressed on: a series Search right after a season's searches only
+  the episodes left, and pressing it again when none are says "Searched for it a little while ago. We'll keep
+  looking." When some of those episodes were never sent, the *Missing* line searches each episode a request sent (at
+  most ten) and asks for the others, and a series page asks for its seasons. For anything no request sent yet,
+  **Search** asks for it like **Get it** (Kids: *Waiting for OK*; the request limit applies), and the request goes to
+  Sonarr/Radarr as a search for what they already monitor.
   The route is `POST acquire/requests/search` with `{"key": "tv:tvdb:78874:s1:e4", "idempotencyKey": "…"}` (a movie
-  key, or a series key with one season and episode). It answers `{found}` (true, false, or null while unknown);
-  outcome `skipped` with `not_requested` (nothing was sent for it: ask instead) or `not_searchable` (not missing for
-  long enough) when there is nothing for it to search; 429 `searched_recently`, 502 `search_failed`, and the request
-  API's own refusals (Watchers, parental limits).
+  key, or a series key, alone, with a season, or with a season and episode). It answers `{found}` (true, false, or
+  null while unknown); outcome `skipped` with `not_requested` (nothing was sent for it: ask instead) or
+  `not_searchable` (not missing for long enough) when there is nothing for it to search; 429 `searched_recently`, 502
+  `search_failed`, and the request API's own refusals (Watchers, parental limits).
 
 **Paused: storage full, never a bare "Missing".** When the drive a download would land on has less free space than
 **Low disk warning below** (the admin tools' setting, 10% by default), asks are paused, and every place that would
@@ -781,7 +787,7 @@ Bulk approval returns 207 when some rows fail, with a separate checked outcome f
 | GET | `acquire/requests/me` | Any person (Watchers too); own role, whether they may ask or approve, 4K, the household contact word, and `pausedMovies` / `pausedSeries` when new titles of that kind are paused for storage (`{"reason": "low_disk"}`; administrators also get `instance`, `folder`, `free`, `freePercent`, `limitPercent`) |
 | GET | `acquire/requests/check?key=&variant=` | Any person; whether they may ask for one title (`standard` or `4k`) now: `{canRequest, blocked}`, `blocked` as in `pausedMovies` (or `instance_changed` / `invalid_instance` / `invalid_defaults`) |
 | GET | `acquire/requests/season/{itemId}` | A season item the caller can open; their request state per episode, the metadata of episodes with no file, and `blocked` (why they can't ask now, as in the check) |
-| POST | `acquire/requests/search` | `requests.create`; search again for a movie or one episode a request already sent and that is missing for a long while (no new request; see [Get it and Search](#missing-episodes-get-it-and-search-phase-3)) |
+| POST | `acquire/requests/search` | `requests.create`; search again for a movie, one episode, or a series' or season's episodes that a request already sent and that are missing for a long while (no new request; see [Get it and Search](#missing-episodes-get-it-and-search-phase-3)) |
 | POST | `acquire/requests/{id}/cancel` | Owner, or visible Admin; before the outgoing write |
 | POST | `acquire/requests/{id}/approve` | Approver; optional `input` edits scope/edition; instance/profile/folder edits require Admin |
 | POST | `acquire/requests/{id}/decline` | Approver; plain-text `reason`, at most 500 characters |

@@ -1105,9 +1105,10 @@
 
         /**
          * Search for a title missing for a long while (monitored, nothing grabbed): an
-         * administrator's runs the arr's search right away; so does anyone's for a movie requests
-         * already sent; a movie is otherwise asked for with one tap, a series opens the sheet (the
-         * request backend turns an ask for a monitored scope into a search).
+         * administrator's runs the arr's search right away; so does anyone's for a movie, or a series'
+         * episodes missing for a long while, that requests already sent; a movie is otherwise asked for
+         * with one tap, a series opens the sheet (the request backend turns an ask for a monitored scope
+         * into a search).
          * @returns {HTMLButtonElement} Button.
          */
         function searchButton() {
@@ -1133,8 +1134,8 @@
                         const result = await JE.arrAsk.adminSearch(status?.key || title.key, instanceId);
                         JE.arrAsk.toast(result.text);
                         words = result.chip ? { chip: result.chip, tone: result.tone } : null;
-                    } else if (kind === 'movie' && (searched = await JE.arrAsk.familySearch(status?.key || title.key))) {
-                        // Requests already sent this movie: search for it again instead of asking.
+                    } else if ((searched = await JE.arrAsk.familySearch(status?.key || title.key))) {
+                        // Requests already sent it: search for it again instead of asking.
                         JE.arrAsk.toast(searched.text);
                         words = searched.chip ? { chip: searched.chip, tone: searched.tone } : null;
                     } else {

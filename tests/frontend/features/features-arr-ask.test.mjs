@@ -553,6 +553,23 @@ test('rows: someone else\'s Search on an episode a request already sent searches
   same(h.posts[0].body.input.episodes, [{ season: 1, episode: 4 }]);
 });
 
+test('banner: someone else\'s Search searches the season again when requests sent all of it, with no new request', async t => {
+  const h = setup(t, {
+    status: longMissing(),
+    server: {
+      rows: () => rowsBody({ displayMissing: false }),
+      search: () => ({ status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched for it.', found: false } })
+    }
+  });
+  await h.open();
+  h.document.querySelector('.je-arr-banner .je-ask-get').click();
+  await settle(30);
+  same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1'], 'one search for the season, not one per episode');
+  same(h.posts, [], 'not a request');
+  assert.equal(h.document.querySelector('.je-arr-banner .je-ask-searched').textContent, 'Nothing found yet · searched just now');
+  same(h.toasts, ['Nothing found yet · searched just now']);
+});
+
 test('banner: someone else\'s Search searches again each episode a request sent and asks for the others', async t => {
   const h = setup(t, {
     status: longMissing(),
@@ -564,7 +581,8 @@ test('banner: someone else\'s Search searches again each episode a request sent 
   await h.open();
   h.document.querySelector('.je-arr-banner .je-ask-get').click();
   await settle(30);
-  same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1:e2', 'tv:tvdb:1:s1:e4']);
+  // The season as a whole first (not every episode was sent), then episode by episode.
+  same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1', 'tv:tvdb:1:s1:e2', 'tv:tvdb:1:s1:e4']);
   assert.equal(h.posts.length, 1, 'one ask, for the episode no request sent');
   same(h.posts[0].body.input.episodes, [{ season: 1, episode: 4 }]);
   assert.ok(h.toasts.includes('Found a copy — downloading'));

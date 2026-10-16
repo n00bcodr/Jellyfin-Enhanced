@@ -600,17 +600,17 @@
 
     /**
      * Search for someone who doesn't manage the arrs (POST /JellyfinEnhanced/acquire/requests/search):
-     * when requests already sent the movie or the episode in scope and it has been missing for a long
-     * while since, the server runs the arr's search for it again (no new request, nothing charged, no
-     * OK needed) and says what it found. Resolves null when that doesn't apply (nothing was sent for it
-     * yet, it isn't missing for long enough, or the caller may not): the caller then asks for it
-     * instead, as before.
-     * @param {string} key Title key in scope (a movie key, or a series key ending :sN:eN).
+     * when requests already sent the movie, the episode, or every episode of the series or season in
+     * scope that has been missing for a long while, the server runs the arr's search for exactly those
+     * again (no new request, nothing charged, no OK needed) and says what it found. Resolves null when
+     * that doesn't apply (nothing was sent for it yet, it isn't missing for long enough, or the caller
+     * may not): the caller then asks for it instead, as before.
+     * @param {string} key Title key in scope (a movie key, or a series key, alone or ending :sN or :sN:eN).
      * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string}|null>} Result, or null to ask instead.
      */
     async function familySearch(key) {
         const k = String(key || '');
-        if (!(k.startsWith('movie:') ? !/:s\d+/.test(k) : /^tv:[^:]+:[^:]+:s\d+:e\d+$/.test(k))) return null;
+        if (!(k.startsWith('movie:') ? !/:s\d+/.test(k) : /^tv:[^:]+:[^:]+(:s\d+(:e\d+)?)?$/.test(k))) return null;
         let answer;
         try {
             answer = await call('/acquire/requests/search', { method: 'POST', body: { key: k, idempotencyKey: newClientId() } });

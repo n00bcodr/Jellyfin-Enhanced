@@ -369,9 +369,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// For a family Search: the instance whose standard copy of the movie or episode in <paramref name="key"/>
         /// has been missing for a long while (monitored, out, nothing grabbed for longer than the "still looking"
-        /// hours, a request going out restarting that clock); null when none is, the viewer can't see the series or
-        /// Jellyfin hides that episode from them. Only the standard edition is searched (the one a family Search
-        /// checked a sent request for): never a 4K copy, and only <paramref name="instanceId"/>'s copy when one is
+        /// hours, a request going out restarting that clock); null when none is, the viewer may not search the series
+        /// (<see cref="SeriesSearchView"/>: a series not in Jellyfin yet included), already has the episode, or Jellyfin
+        /// hides it from them. Only the standard edition is searched (the one a family Search checked a sent request for): never a 4K copy, and only <paramref name="instanceId"/>'s copy when one is
         /// named (the request target). <c>Sent</c>: the request facts say a request covering that part went out
         /// (in Seerr mode: an OK'd Seerr request, not one still waiting there).
         /// </summary>
@@ -391,10 +391,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             else
             {
-                if (CopiesOf(title, viewer).FirstOrDefault(x => x.Visible) is not { } series) return (null, sent);
-                if (HiddenFromViewer(facts, series.ItemId, viewer)?.Hides(key.Season!.Value, key.Episode!.Value) == true) return (null, sent);
-                if (_view.Episodes(series.ItemId, key.Season!.Value, viewer, includeVirtual: false)
-                    .Any(e => !e.Hidden && new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(key.Episode!.Value))) return (null, sent);
+                if (SeriesSearchView(viewer, title) is not { } view) return (null, sent);
+                if (view.Hidden?.Hides(key.Season!.Value, key.Episode!.Value) == true || view.Have.Contains((key.Season!.Value, key.Episode!.Value))) return (null, sent);
             }
             foreach (var copy in facts.Copies.Where(x => x.Instance.Role != "4k" && (string.IsNullOrEmpty(instanceId) || x.Instance.Id == instanceId)))
             {
@@ -404,6 +402,66 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (state?.Reason == StatusReasonCode.NoReleaseYet) return (copy.Instance.Id, sent);
             }
             return (null, sent);
+        }
+
+        /// <summary>
+        /// Jellyfin's side of a family Search of a series' episodes: the episodes the viewer already has (nothing to
+        /// search) and the seasons and episodes Jellyfin hides from them (never searched, whatever the queue holds).
+        /// A series Jellyfin doesn't have yet has neither, when the viewer may ask about it by key. Null when they may
+        /// not search it: Jellyfin has the series but not in a copy they can open, or they may not ask about it.
+        /// </summary>
+        private (EpisodeCoverage Have, HiddenParts? Hidden)? SeriesSearchView(StatusViewer viewer, TitleKey title)
+        {
+            var copies = CopiesOf(title, viewer);
+            if (copies.FirstOrDefault(x => x.Visible) is { } series)
+            {
+                var jf = _view.Episodes(series.ItemId, null, viewer, includeVirtual: false);
+                var hidden = viewer.IsAdmin || !viewer.HasParentalLimit ? null : StatusComposer.SplitHidden(jf, _view.Seasons(series.ItemId, viewer)).Hidden;
+                return (new EpisodeCoverage(jf.Where(e => !e.Hidden)), hidden);
+            }
+            if (copies.Count > 0 || !MayAskByKey(viewer, title, copies)) return null;
+            return (new EpisodeCoverage(Array.Empty<JfEpisode>()), null);
+        }
+
+        /// <summary>One standard Sonarr copy's episodes a family Search of a series or season would search.</summary>
+        /// <param name="InstanceId">The Sonarr instance.</param>
+        /// <param name="Episodes">Its episodes missing for a long while in scope (season, episode, Sonarr id), in order.</param>
+        /// <param name="Sent">The request facts say a request covering every one of them went out (Seerr mode: OK'd there).</param>
+        internal sealed record SearchableEpisodes(string InstanceId, IReadOnlyList<(int Season, int Episode, int Id)> Episodes, bool Sent);
+
+        /// <summary>
+        /// For a family Search of a series or season (<paramref name="key"/> without an episode; a series leaves out the
+        /// specials, as its status does): per standard (never 4K) Sonarr copy, its monitored, aired episodes in scope that have been missing for a long while (as each episode's
+        /// own status says: nothing grabbed for longer than the "still looking" hours, a request going out restarting that
+        /// clock), leaving out episodes the viewer already has in Jellyfin and ones Jellyfin hides from them; at most
+        /// <paramref name="max"/> per copy, in episode order. Copies with none are left out; empty when the viewer may not
+        /// search the series (<see cref="SeriesSearchView"/>: a series not in Jellyfin yet included).
+        /// </summary>
+        internal async Task<IReadOnlyList<SearchableEpisodes>> SearchableEpisodesAsync(StatusViewer viewer, TitleKey key, int max, CancellationToken cancellationToken)
+        {
+            var result = new List<SearchableEpisodes>();
+            if (key.IsMovie || key.Episode != null) return result;
+            var title = key.Title;
+            if (SeriesSearchView(viewer, title) is not { } view) return result;
+            var gather = await GatherAsync(viewer, new[] { title }, loadEpisodes: new[] { title }, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            ApplyRequests(gather, viewer);
+            if (!gather.Facts.TryGetValue(title, out var facts)) return result;
+            var c = Context(viewer);
+            foreach (var copy in facts.Copies.Where(x => x.Instance.Role != "4k" && x.Series != null && x.Episodes != null))
+            {
+                var found = new List<(int Season, int Episode, int Id)>();
+                var sent = true;
+                foreach (var arr in copy.Episodes!.Episodes.Where(e => key.Season is int only ? e.SeasonNumber == only : e.SeasonNumber > 0).OrderBy(e => e.SeasonNumber).ThenBy(e => e.EpisodeNumber))
+                {
+                    if (found.Count >= max) break;
+                    if (view.Hidden?.Hides(arr.SeasonNumber, arr.EpisodeNumber) == true || view.Have.Contains((arr.SeasonNumber, arr.EpisodeNumber))) continue;
+                    if (StatusComposer.EpisodeFromArr(copy, arr.SeasonNumber, arr.EpisodeNumber, arr, c, facts.Request).Reason != StatusReasonCode.NoReleaseYet) continue;
+                    found.Add((arr.SeasonNumber, arr.EpisodeNumber, arr.Id));
+                    sent &= facts.Request?.SentFor(false, arr.SeasonNumber, arr.EpisodeNumber) != null;
+                }
+                if (found.Count > 0) result.Add(new SearchableEpisodes(copy.Instance.Id, found, sent));
+            }
+            return result;
         }
 
         /// <summary>

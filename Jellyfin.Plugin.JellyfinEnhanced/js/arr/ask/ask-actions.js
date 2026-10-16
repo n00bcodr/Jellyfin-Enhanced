@@ -471,17 +471,19 @@
                 (b) => run(b, doneKey, () => missingInput(key, plan.partial), 'tv'), plan.nextSeason != null));
             if (!firstCost) firstCost = { scope: 'episodes', episodes: new Array(plan.missing).fill(0) };
         }
-        // The whole series is monitored and still has nothing, long after it was added: Search. An
-        // administrator's runs the arr's search for it right away; everyone else asks for the
-        // seasons that aren't here (the request backend turns that into a search).
+        // Every episode still to come is monitored and missing for a long while: Search. An administrator's
+        // runs the arr's search for it right away; everyone else's runs it again for those episodes when
+        // requests already sent them (no new request, no OK), otherwise they ask for the seasons that
+        // aren't here (the request backend turns that into a search).
         if (JE.arrStatus.searchable?.(status)) {
             const searchFrom = JE.arrAsk.searchInstance(caps, status, key);
             const wanted = plan.seasons.filter(s => s.episodes > 0 && s.have < s.episodes).map(s => s.season);
             if (searchFrom || wanted.length) {
                 const doneKey = `${key}|search`;
-                const label = !searchFrom && ask ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
-                box.appendChild(action(doneKey, 'search', label, (b) => (searchFrom ? runSearch(b, doneKey, key, searchFrom)
-                    : run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, wanted), 'tv')), plan.nextSeason != null || plan.missing > 0, searchFrom ? 'search' : 'ask'));
+                const label = !searchFrom && JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
+                const askSeasons = (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, wanted), 'tv');
+                box.appendChild(action(doneKey, 'search', label, (b) => runSearch(b, doneKey, key, searchFrom, () => askSeasons(b)),
+                    plan.nextSeason != null || plan.missing > 0, searchFrom ? 'search' : 'ask'));
             }
         }
         // A series that isn't in the library (native details): the sheet is its Request (it says why when the

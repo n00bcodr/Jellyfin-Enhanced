@@ -48,9 +48,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Reply(await _service.CreateAsync(viewer!.UserId, body, ct).ConfigureAwait(false));
         }
         /// <summary>
-        /// Search again for a movie or one episode that requests already sent and that has been missing for
-        /// a long while (anyone who may ask; no new request, no charge, no OK needed). <c>found</c> says
-        /// whether the search grabbed a copy (null: not known). Outcome <c>skipped</c> (<c>not_requested</c>,
+        /// Search again for a movie, one episode, or a series' or season's episodes that requests already sent
+        /// and that have been missing for a long while (anyone who may ask; no new request, no charge, no OK
+        /// needed). <c>found</c> says whether the search grabbed a copy (null: not known). Outcome <c>skipped</c> (<c>not_requested</c>,
         /// <c>not_searchable</c>): nothing was searched; ask for it instead.
         /// </summary>
         [Authorize]

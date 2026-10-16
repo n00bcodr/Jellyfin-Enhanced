@@ -1000,8 +1000,9 @@
      * Search from the banner for the season's episodes missing for a long while. An administrator's
      * Search runs the arr's search for that episode (one) or the season (several: the season search
      * looks for exactly its monitored missing episodes) and shows what it found in the banner.
-     * Everyone else's searches again for the episodes requests already sent (one by one, at most
-     * ten) and asks for the rest like Get them.
+     * Everyone else's searches again for the season's episodes missing for a long while when requests
+     * already sent every one of them (one search, no new request); otherwise for the ones requests
+     * already sent (one by one, at most ten), and asks for the rest like Get them.
      * @param {Array<Object>} eps Episode statuses.
      * @param {Object} status Season status.
      * @param {HTMLButtonElement} button The button pressed.
@@ -1024,8 +1025,11 @@
             if (instanceId) {
                 result = await JE.arrAsk.adminSearch(key, instanceId);
             } else {
-                const done = [];
-                for (const [i, ep] of eps.entries()) {
+                // The whole season first: one search for all of them when requests sent every one.
+                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key) : null;
+                if (JE.arrAsk.epoch() !== started) return;
+                const done = whole ? [whole] : [];
+                for (const [i, ep] of (whole ? [] : eps).entries()) {
                     const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key) : null;
                     if (JE.arrAsk.epoch() !== started) return;
                     if (one) done.push(one);

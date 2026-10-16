@@ -1076,6 +1076,8 @@ test('a series missing for a long while: Search for everyone who may ask (member
   same(texts(), ['Ask Dad for Season 1', 'Ask Dad for the missing episodes', 'Ask Dad to search', 'More…']);
   click(h, [...page.querySelectorAll('.je-ask-actions .je-ask-action')].find(b => b.textContent.endsWith('Ask Dad to search')));
   await settle(20);
+  // The family search goes first; nothing was sent for the series yet, so it asks for the seasons.
+  same(h.searches.map(s => s.body.key), ['tv:tvdb:371980']);
   same(h.posts.map(p => p.path), ['/acquire/requests']);
   same(h.posts[0].body.input, { key: 'tv:tvdb:371980', scope: 'seasons', variant: 'standard', seasons: [1, 2], episodes: [] });
 
@@ -1089,6 +1091,50 @@ test('a series missing for a long while: Search for everyone who may ask (member
   h.JE.internals.arrAskActions.attachDetails(page, { ...SERIES_NOTHING, key: 'tv:tvdb:2', reason: { code: 'looking' } }, { contact: 'Dad' });
   await settle();
   same(texts(), ['Get Season 1', 'Get missing episodes', 'More…']);
+});
+
+test('a whole-series Search of episodes requests already sent searches them again: no new ask, no OK (series page and request controls)', async t => {
+  const h = setup(t, {
+    html: PAGE + '<div id="m"></div>', hash: '#/details?id=series1', me: KID,
+    routes: (method, path) => (method === 'POST' && path === '/acquire/requests/search' ? { body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched for it.', found: false } } : null)
+  });
+  const page = h.document.getElementById('itemDetailPage');
+  // Every episode still to come is missing for a long while, and a request already sent every one of them.
+  const sent = { ...SERIES_NOTHING, reason: { code: 'no_release_yet', params: { sent: '1' } } };
+  h.JE.internals.arrAskActions.attachDetails(page, sent, { contact: 'Dad' });
+  await settle();
+  const search = [...page.querySelectorAll('.je-ask-actions .je-ask-action')].find(b => b.textContent === 'searchSearch');
+  assert.ok(search, 'plain Search for a Kid: nothing new to OK');
+  click(h, search);
+  await settle(20);
+  same(h.searches.map(s => s.body.key), ['tv:tvdb:371980']);
+  same(h.posts, [], 'no new request for the seasons');
+  assert.equal(page.querySelector('.je-ask-actions .je-arr-chip').textContent, 'Nothing found yet · searched just now');
+  same(h.toasts, ['Nothing found yet · searched just now']);
+
+  // The request controls of a series (the Seerr modal, an absent series' page): the same search, no sheet.
+  const m = h.document.getElementById('m');
+  const controls = h.Sheet.mount(m, { key: 'tv:tvdb:371980', kind: 'series', name: 'Severance' });
+  await settle();
+  controls.update({ key: 'tv:tvdb:371980', kind: 'series', stage: 'looking', reason: { code: 'no_release_yet', params: { sent: '1' } } });
+  await settle(20);
+  const mounted = m.querySelector('.je-ask-mount-search');
+  assert.match(mounted.textContent, /Search$/);
+  assert.doesNotMatch(mounted.textContent, /Ask Dad/);
+  click(h, mounted);
+  await settle(20);
+  same(h.searches.map(s => s.body.key), ['tv:tvdb:371980', 'tv:tvdb:371980']);
+  same(h.posts, []);
+  assert.equal(sheetEl(h), null, 'no sheet: nothing to ask for');
+  assert.equal(m.querySelector('.je-arr-chip').textContent, 'Nothing found yet · searched just now');
+  controls.destroy();
+
+  // Helper: series and season keys are searched too; anything else is asked for.
+  h.searches.length = 0;
+  assert.ok(await h.JE.arrAsk.familySearch('tv:tvdb:371980:s2'));
+  assert.equal(await h.JE.arrAsk.familySearch('tv:tvdb:371980:e2'), null);
+  assert.equal(await h.JE.arrAsk.familySearch('movie:tmdb:1:s1'), null);
+  same(h.searches.map(s => s.body.key), ['tv:tvdb:371980:s2']);
 });
 
 test('an ask prepared before a sign-out is not sent as the next person (one tap and the series page)', async t => {

@@ -1319,8 +1319,13 @@ public class ApiArrRequestsHubTests
         var watcher = await Press(rig.Sam, E4, "p4");
         Assert.Equal((403, "requests_create_required"), (watcher.Status, watcher.Body.GetProperty("reason").GetString()));
         Assert.Equal(403, (await Press(null, E4, "p5")).Status);
-        // A season or series key isn't a single part; a movie nobody's request sent is asked for instead.
-        Assert.Equal(400, (await Press(rig.Emma, "tv:tvdb:78874:s1", "p6")).Status);
+        // A season or series key searches its episodes missing for a long while: E4 (its only one) was just
+        // searched, so nothing is left to search in this period. An episode 0 isn't a part; a movie nobody's
+        // request sent is asked for instead.
+        foreach (var whole in new[] { "tv:tvdb:78874:s1", "tv:tvdb:78874" })
+            Assert.Equal((429, "searched_recently"), ((await Press(rig.Emma, whole, "p6-" + whole)).Status, (await Press(rig.Emma, whole, "p6b-" + whole)).Body.GetProperty("reason").GetString()));
+        Assert.Equal(1, Searches());
+        Assert.Equal(400, (await Press(rig.Emma, "tv:tvdb:78874:s1:e0", "p6")).Status);
         Assert.Equal("not_requested", (await Press(rig.Emma, "movie:tmdb:693134", "p7")).Body.GetProperty("reason").GetString());
 
         // The next looking period: the kid (who may see Firefly) may search again.
@@ -1401,6 +1406,110 @@ public class ApiArrRequestsHubTests
         var searched = await Press("tv:tvdb:78874:s1:e4", "e2");
         Assert.Equal(("accepted", "searched"), (searched.GetProperty("outcome").GetString(), searched.GetProperty("reason").GetString()));
         Assert.Equal(1, Commands(rig.Sonarr));
+    }
+
+    [Fact]
+    public async Task FamilySearchOfASeriesOrSeasonSearchesExactlyItsSentEpisodesMissingForALongWhile()
+    {
+        // Firefly in Sonarr: S1E1 here; S1E2, S1E4 and S2E1 monitored, out for years, nothing grabbed; S1E3 not
+        // monitored; a special (S0E1) missing too. Seerr's OK of season 1 was two days ago. A 4K Sonarr holds Firefly
+        // too, with S1E2 missing there. Jellyfin hides season 2 from the kid.
+        FakeArr.Host? fourK = null;
+        using var rig = await Ready(r =>
+        {
+            fourK = Roles(r, radarr4k: true, sonarr4k: true)!;
+            JsonObject Ep(int id, int season, int episode, bool monitored = true, bool hasFile = false)
+                => new() { ["id"] = id, ["seriesId"] = 1, ["seasonNumber"] = season, ["episodeNumber"] = episode, ["airDateUtc"] = $"{2002 + season}-10-{10 + episode}T00:00:00Z", ["hasFile"] = hasFile, ["monitored"] = monitored };
+            r.Sonarr.Episodes.Add(Ep(101, 1, 1, hasFile: true));
+            r.Sonarr.Episodes.Add(Ep(102, 1, 2));
+            r.Sonarr.Episodes.Add(Ep(103, 1, 3, monitored: false));
+            r.Sonarr.Episodes.Add(Ep(201, 2, 1));
+            r.Sonarr.Episodes.Add(Ep(1, 0, 1));
+            var row = FakeArr.SeriesRow(1, 78874, "Firefly");
+            row["path"] = "/data/tv4k/Firefly";
+            fourK.Series.Add(row);
+            fourK.Episodes.Add(Ep(902, 1, 2));
+            r.View.AddSeason(r.Firefly, new JfSeason { ItemId = Guid.NewGuid(), Season = 1 });
+            r.View.AddSeason(r.Firefly, new JfSeason { ItemId = Guid.NewGuid(), Season = 2 }, r.Admin.UserId, r.Emma.UserId);
+            r.Sonarr.Series.Add(FakeArr.SeriesRow(2, 81189, "Breaking Bad"));
+            r.Sonarr.Episodes.Add(new JsonObject { ["id"] = 301, ["seriesId"] = 2, ["seasonNumber"] = 1, ["episodeNumber"] = 1, ["airDateUtc"] = "2008-01-20T00:00:00Z", ["hasFile"] = false, ["monitored"] = true });
+        });
+        rig.Arr.Plugin.Plugin.Configuration.ArrPhase3Enabled = true;
+        rig.Sonarr.CommandStarted = rig.Arr.Now.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
+        var policy = new IntegrationRequestLedgerTests.Policy();
+        foreach (var viewer in new[] { rig.Emma, rig.Kid })
+            policy.People[viewer.UserId] = new(viewer.UserId, "Member", true, false, false, true, "r1", "je", "", "", 7, 7, 0, "null");
+        using var db = new AcquireDatabase(Path.Combine(rig.Arr.Plugin.Core.Root, "family-search-series.db"));
+        var ledger = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(db);
+        var requests = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService(ledger, policy, rig.View, rig.Feed, () => rig.Arr.Now);
+        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, rig.Manage, () => rig.Arr.Now);
+        async Task<(int Status, JsonElement Body)> Press(StatusViewer viewer, string key, string idem)
+        {
+            var c = new AcquireRequestsController(requests, null, search) { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
+            c.HttpContext.User = TestCallers.Principal(viewer.UserId, viewer.IsAdmin);
+            var reply = await Send(c, () => c.Search(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchBody(key, idem), default));
+            return (reply.Status, Root(reply));
+        }
+        static (int, string?, string?) Said((int Status, JsonElement Body) r) => (r.Status, r.Body.GetProperty("outcome").GetString(), r.Body.GetProperty("reason").GetString());
+        List<int[]> Searched() => rig.Sonarr.Writes.Where(w => w.Path == "/api/v3/command").Select(w => JsonNode.Parse(w.Body)!)
+            .Where(c => (string?)c["name"] == "EpisodeSearch").Select(c => c["episodeIds"]!.AsArray().Select(i => (int)i!).ToArray()).ToList();
+        const string Series = "tv:tvdb:78874";
+        const string Season1 = "tv:tvdb:78874:s1";
+
+        // Nothing went out through a request yet: the caller asks for the season instead (no arr call).
+        Assert.Equal((200, "skipped", "not_requested"), Said(await Press(rig.Emma, Season1, "a1")));
+        Assert.Empty(Searched());
+
+        // Emma's ask for seasons 1 and 2 goes out.
+        var input = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput { Key = Series, Scope = "seasons", Seasons = new[] { 1, 2 } };
+        Assert.Equal(201, (await requests.CreateAsync(rig.Emma.UserId, new("ask-s12", input), default)).HttpStatus);
+        await new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestOutbox(ledger, policy, new IntegrationRequestLedgerTests.Backend(),
+            new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestTitleLocks(), rig.Feed, rig.Audit, () => rig.Arr.Now).TickAsync(default);
+        Assert.Equal("sent", ledger.List(rig.Emma.UserId, false).Single().Status);
+
+        // Season 1's episodes are still fresh in a 30-day "still looking" period (Seerr's OK two days ago): nothing to search.
+        rig.Arr.Plugin.Plugin.Configuration.ArrStatusLookingHours = 720;
+        Assert.Equal((200, "skipped", "not_searchable"), Said(await Press(rig.Emma, Season1, "a2")));
+        Assert.Empty(Searched());
+        rig.Arr.Plugin.Plugin.Configuration.ArrStatusLookingHours = 24;
+
+        // The kid's Search of the whole series: one EpisodeSearch for exactly the episodes missing for a long while
+        // that they can see (S1E2, S1E4): not the one here, the unmonitored one, the special, the hidden season 2,
+        // nor the 4K copy. No new request, nothing charged.
+        var kid = await Press(rig.Kid, Series, "a3");
+        Assert.Equal((200, "accepted", "searched"), Said(kid));
+        Assert.Equal(new[] { 102, 104 }, Assert.Single(Searched()));
+        Assert.Empty(fourK!.Writes);
+        Assert.Contains(rig.Audit.ReadRecent(20), a => a.Action == "episode.search" && a.Target == "episode-of:1:102,104" && a.UserId == rig.Kid.UserId.ToString("N"));
+        // Nor can they search the hidden episode by its own key (nothing in Sonarr's queue for it either).
+        Assert.Equal((200, "skipped", "not_searchable"), Said(await Press(rig.Kid, "tv:tvdb:78874:s2:e1", "a3b")));
+        Assert.Single(Searched());
+
+        // Emma's Search of the series right after: only what nobody searched in this period (S2E1).
+        Assert.Equal((200, "accepted", "searched"), Said(await Press(rig.Emma, Series, "a4")));
+        Assert.Equal(new[] { 201 }, Searched().Last());
+        // Nothing left: the series, season 1 and its episodes were all searched a little while ago.
+        foreach (var key in new[] { Series, Season1, "tv:tvdb:78874:s1:e2" })
+            Assert.Equal((429, "blocked", "searched_recently"), Said(await Press(rig.Emma, key, "a5" + key)));
+        Assert.Equal(2, Searched().Count);
+        Assert.Single(ledger.List(rig.Emma.UserId, false));
+        Assert.Empty(ledger.List(rig.Kid.UserId, false));
+
+        // The next looking period: season 1 alone searches S1E2 and S1E4 again.
+        rig.Arr.Now += TimeSpan.FromHours(25);
+        Assert.Equal((200, "accepted", "searched"), Said(await Press(rig.Emma, Season1, "a6")));
+        Assert.Equal(new[] { 102, 104 }, Searched().Last());
+        Assert.Empty(fourK.Writes);
+
+        // A series Jellyfin doesn't have yet (Breaking Bad: Sonarr has it, nothing grabbed for years): once Emma's ask
+        // for it went out, her Search of the series searches its episodes the same way.
+        Assert.Equal((200, "skipped", "not_requested"), Said(await Press(rig.Emma, "tv:tvdb:81189", "b1")));
+        var absent = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput { Key = "tv:tvdb:81189", Scope = "seasons", Seasons = new[] { 1 } };
+        Assert.Equal(201, (await requests.CreateAsync(rig.Emma.UserId, new("ask-bb", absent), default)).HttpStatus);
+        await new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestOutbox(ledger, policy, new IntegrationRequestLedgerTests.Backend(),
+            new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestTitleLocks(), rig.Feed, rig.Audit, () => rig.Arr.Now).TickAsync(default);
+        Assert.Equal((200, "accepted", "searched"), Said(await Press(rig.Emma, "tv:tvdb:81189", "b2")));
+        Assert.Equal(new[] { 301 }, Searched().Last());
     }
 
     [Fact]
