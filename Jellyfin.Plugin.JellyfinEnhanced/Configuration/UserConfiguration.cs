@@ -259,6 +259,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool SeasonProviders { get; set; } = true;
     }
 
+    /// <summary>Per-user DoesTheDogDie trigger picks (topic ids), stored in ddd-triggers.json.</summary>
+    public class DddSettings
+    {
+        public List<int> Triggers { get; set; } = new List<int>();
+    }
+
     public class PendingWatchlistItem
     {
         public int TmdbId { get; set; }

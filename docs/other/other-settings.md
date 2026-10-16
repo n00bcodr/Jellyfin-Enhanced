@@ -10,7 +10,7 @@ Use these controls to personalize Jellyfin and manage your server. Unless marked
 
     | Admin tab | Settings covered here |
     |---|---|
-    | **Display** | **Icons & Theme**, **Default Language**, **MDBList Ratings**, client tag-cache clearing |
+    | **Display** | **Icons & Theme**, **Default Language**, **MDBList Ratings**, **Content Warnings**, client tag-cache clearing |
     | **Playback** | **Shortcuts Panel & Toast Timing** |
     | **Extras** | **UI Tweaks**, **External Links**, **Custom Image Assets** |
     | **Pages** | Hidden Content and Activity Feed — links to their canonical guides below |
@@ -279,6 +279,27 @@ All four sync selectors offer **TMDB**, **RT Critic**, **RT Audience**, **IMDb**
     The default order prioritizes TMDB, RT Critic, RT Audience, IMDb, Trakt, and Metascore, then the others. A nonempty list selects only those sources in that order.
 
 See [MDBList Ratings](other-features.md#mdblist-ratings) for batching, expiry, quota safeguards, and troubleshooting.
+
+## Content Warnings
+
+Show community content warnings from DoesTheDogDie on movie and series pages. See the [feature guide](other-features.md#content-warnings) for what users see and how the request budget works.
+
+### How to use
+
+1. Open admin **Display** → **Content Warnings (DoesTheDogDie)** and turn on **Show Content Warnings**.
+2. Enter **DoesTheDogDie API Key**, from your account profile on doesthedogdie.com.
+3. Click **Save Settings** and reload.
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Show Content Warnings** | Off | Master switch. Needs a saved key to take effect. |
+| **DoesTheDogDie API Key** | Empty | Used by the server only. Never sent to clients. |
+
+These controls are server-wide. Each user picks their own triggers from the gear icon on the section, so there is no admin trigger list.
+
+!!! warning "Free tier limits"
+
+    The free API tier is for non-commercial use and allows 5,000 requests a month and 30 per minute for the whole server. A commercial server needs their Commercial tier. Results are cached for weeks, so usage depends mostly on how many different titles are opened.
 
 ## Hidden Content
 

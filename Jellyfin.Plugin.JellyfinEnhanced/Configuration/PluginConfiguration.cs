@@ -81,6 +81,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HideReviewsFromDisabledUsers = true;
             MirrorReviewRatingsToJellyfin = false;
             ShowAwards = false;
+            DoesTheDogDieEnabled = false;
+            DoesTheDogDieApiKey = "";
             MdblistApiKey = "";
             MdblistRatingsEnabled = false;
             MdblistRatingsShowOnItemDetails = true;
@@ -551,6 +553,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// are touched (season/episode reviews have no reliable TMDB-keyed item).</summary>
         public bool MirrorReviewRatingsToJellyfin { get; set; }
         public bool ShowAwards { get; set; }
+        /// <summary>Shows a content-warnings section (DoesTheDogDie votes) on item-details pages.</summary>
+        public bool DoesTheDogDieEnabled { get; set; }
+        /// <summary>DoesTheDogDie API key. Server-side only, never sent to clients.</summary>
+        public string DoesTheDogDieApiKey { get; set; } = string.Empty;
         /// <summary>MDBList API key (mdblist.com). Never exposed to clients;
         /// see GetPublicConfig()'s MdblistEnabled boolean. Used server-side
         /// only, by MdblistService.</summary>

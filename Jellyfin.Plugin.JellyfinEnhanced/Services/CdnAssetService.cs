@@ -182,6 +182,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     ["favicon.ico"] = "https://mdblist.com/static/favicon.ico"
                 }),
+            // DoesTheDogDie favicon for the config page legend (one fixed file).
+            ["ddd-static"] = new("https://www.doesthedogdie.com", Types("image/x-icon", "image/vnd.microsoft.icon"),
+                FixedPaths: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["favicon.ico"] = "https://www.doesthedogdie.com/favicon.ico"
+                }),
         };
 
         private static HashSet<string> Types(params string[] t) => new(t, StringComparer.OrdinalIgnoreCase);
@@ -252,6 +258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("mdblist-logos", "metacritic.png"),
             ("mdblist-logos", "metacritic_audience.png"),
             ("mdblist-static", "favicon.ico"),
+            ("ddd-static", "favicon.ico"),
         };
 
         /// <summary>True when <paramref name="source"/> is a registered upstream.</summary>

@@ -150,7 +150,7 @@ This table maps server settings, per-user documents and the configuration UI to 
 | `Configuration/whats-new-seed.json` | Fallback baseline for detecting new admin controls; this is a historical baseline, not current defaults or a feature count. |
 | `js/enhanced/config.js` | Resolves effective values from server-stored user settings, admin defaults and client fallbacks; serializes per-user saves to the server in order. It does not store user settings in localStorage. |
 
-Per-user files live under `<PluginsPath>/configurations/Jellyfin.Plugin.JellyfinEnhanced/<normalized-user-id>/`. IDs are lowercase with hyphens removed. Bootstrap loads `settings.json`, `shortcuts.json`, `bookmark.json`, `elsewhere.json` and `hidden-content.json`; Spoiler Guard additionally uses `spoilerblur.json`.
+Per-user files live under `<PluginsPath>/configurations/Jellyfin.Plugin.JellyfinEnhanced/<normalized-user-id>/`. IDs are lowercase with hyphens removed. Bootstrap loads `settings.json`, `shortcuts.json`, `bookmark.json`, `elsewhere.json` and `hidden-content.json`; Spoiler Guard additionally uses `spoilerblur.json`, and Content Warnings stores its trigger picks in `ddd-triggers.json`, loaded on demand rather than at bootstrap.
 
 Shared `reviews.json` and `activity.json` live in the parent plugin configuration directory, as do `catchup-log.jsonl` and its rotated `catchup-log.1.jsonl`. `UserConfigurationManager` owns the shared review/activity stores; `CatchUpLogService` owns the Catch Up log.
 
