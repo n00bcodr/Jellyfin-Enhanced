@@ -498,6 +498,32 @@ test('a request that arrived and was removed since says so in its own group, and
   assert.equal(h.toasts[0], translate('arr_ask_toast_asked'));
 });
 
+test('Seerr mode: a removed request with single episodes is asked for again as their seasons, and the button names them', async t => {
+  const posts = [];
+  const h = setupHub(t, {
+    me: { role: 'member', canRequest: true, contact: 'Dad', asksFirst: false, backend: 'seerr' },
+    hub: ledgerHub(goneEntry()),
+    routes: (method, path, body) => {
+      if (path === '/acquire/requests/mine') return mine([]);
+      if (method === 'POST' && path === '/acquire/requests') {
+        posts.push(body.input);
+        return { status: 201, body: { outcome: 'accepted', reason: 'queued_outage', certainty: 'Succeeded', message: 'Asked!', requestId: 'r'.repeat(31) + posts.length } };
+      }
+      return null;
+    }
+  });
+  h.JE.initializeArrStatus();
+  const page = h.page();
+  await until(() => page.querySelector('.je-hub-again'));
+  const again = page.querySelector('.je-hub-again');
+  assert.equal(again.textContent, 'replayGet Seasons 1, 2', 'says it asks for whole seasons before it is pressed');
+  again.click();
+  await until(() => h.toasts.length === 1);
+  assert.deepEqual(posts.map(i => ({ key: i.key, scope: i.scope, seasons: i.seasons, episodes: i.episodes })), [
+    { key: 'tv:tvdb:7', scope: 'seasons', seasons: [1, 2], episodes: [] }
+  ]);
+});
+
 test('a removed request: Kids ask Dad again; while new titles of its kind are paused for storage it says so; Watchers get nothing to press', async t => {
   const kid = setupHub(t, { me: { role: 'kid', canRequest: true, contact: 'Dad', asksFirst: true }, hub: ledgerHub(goneEntry()), routes: (m, path) => (path === '/acquire/requests/mine' ? mine([]) : null) });
   kid.JE.initializeArrStatus();

@@ -157,8 +157,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var can4k = p.SeerrUser != null && (admin || Has(JellyseerrPermission.REQUEST_4K) || Has(movie ? JellyseerrPermission.REQUEST_4K_MOVIE : JellyseerrPermission.REQUEST_4K_TV));
             var canManage = p.SeerrUser != null && (admin || Has(JellyseerrPermission.MANAGE_REQUESTS));
             var fourKEnabled = p.Settings != null && (movie ? p.Settings.Movie4k : p.Settings.Series4k);
+            // Partial requests off, or not a real on/off: only a request for the whole series is sent (see SendAsync).
+            var wholeSeries = p.Settings is { Partial: not true };
             return new RequestBackendBinding(source, p.SeerrUser, p.SeerrUser == null ? 0 : p.Permissions, fourKEnabled, can4k, canManage,
-                movie ? p.Movie : p.Tv, movie ? p.MovieDays : p.TvDays, canRequest);
+                movie ? p.Movie : p.Tv, movie ? p.MovieDays : p.TvDays, canRequest, wholeSeries);
         }
 
         // Seerr's quota for one media type; "used" must be a real number or nothing is known. The next free

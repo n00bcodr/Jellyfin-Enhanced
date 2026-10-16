@@ -1225,12 +1225,12 @@ test('seasons the caller already asked for are not offered again for the standar
 
 // ------------------------------------------------------------------ combined review (phase 3)
 
-test('Seerr mode: "Just new episodes from now on" is not offered (Seerr would get the current season once)', async t => {
+test('Seerr mode: no "Pick episodes…" (Seerr takes whole seasons) and no "Just new episodes from now on"', async t => {
   const h = setup(t, { me: { ...MEMBER, backend: 'seerr' } });
   const pending = h.Sheet.open(SERIES);
   await settle();
   const cards = [...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice);
-  assert.deepEqual(cards, ['everything', 'latest', 'next', 'pick', 'episodes']);
+  assert.deepEqual(cards, ['everything', 'latest', 'next', 'pick']);
   key(h, 'Escape');
   assert.equal(await pending, null);
   // Jellyfin Enhanced mode keeps it.
@@ -1608,4 +1608,72 @@ test('mount API, storage full on a title missing for a long while: an administra
   assert.ok(m3.querySelector('.je-ask-mount-search'));
   assert.equal(m3.querySelector('.je-ask-paused-note'), null);
   c3.destroy();
+});
+
+// ------------------------------------------------------------------ Seerr mode: Seerr takes whole seasons
+
+const SEERR_MEMBER = { ...MEMBER, backend: 'seerr' };
+
+test('Seerr mode: an episode page offers its season by name with the reason, and asks for the season', async t => {
+  const h = setup(t, { html: PAGE, hash: '#/details?id=e5', me: SEERR_MEMBER });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, reason: { code: 'looking' } }, {});
+  await settle();
+  const box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+  assert.deepEqual([...box.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['Get Season 3']);
+  assert.equal(box.querySelector('.je-ask-action-note').textContent, 'Seerr takes whole seasons, so this asks for all of Season 3.');
+  click(h, box.querySelector('.je-ask-action'));
+  await settle(20);
+  same(h.posts.map(p => p.body.input), [{ key: 'tv:tvdb:371980', scope: 'seasons', variant: 'standard', seasons: [3], episodes: [] }]);
+  // A Kid's reads "Ask Dad for Season 3"; long missing with nothing sent for it yet (a Search would ask), the same.
+  h.state.me = { ...SEERR_MEMBER, role: 'kid', asksFirst: true };
+  await h.JE.arrAsk.me(true);
+  // (Season 3 was just asked for: its episodes show that instead.)
+  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, key: 'tv:tvdb:371980:s3:e6' }, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-actions .je-arr-chip').textContent, 'Asked!');
+  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, key: 'tv:tvdb:371980:s4:e6' }, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-action .je-ask-action-text').textContent, 'Ask Dad for Season 4');
+  // A request already went out for it: Search searches again (no ask, no rounding).
+  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, key: 'tv:tvdb:371980:s3:e7', reason: { code: 'no_release_yet', params: { sent: '1' } } }, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-action .je-ask-action-text').textContent, 'Search');
+  assert.equal(page.querySelector('.je-ask-action-note'), null);
+});
+
+test('Seerr mode: the series page\'s "Get missing episodes" names the seasons it asks for', async t => {
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', me: SEERR_MEMBER, quota: { used: 2, limit: null, remaining: null, available: true } });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, { contact: 'Dad' });
+  await settle();
+  const box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+  assert.deepEqual([...box.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['Get Season 2', 'Get Season 3', 'More…']);
+  assert.equal(box.querySelector('.je-ask-action-note').textContent, 'Seerr takes whole seasons, so this asks for all of Season 3.');
+  click(h, box.querySelectorAll('.je-ask-action')[1]);
+  await settle(20);
+  same(h.posts.map(p => p.body.input), [{ key: 'tv:tvdb:371980', scope: 'seasons', variant: 'standard', seasons: [3], episodes: [] }]);
+  assert.ok(!h.statusCalls.some(p => p.includes('/acquire/status/item/s3')), 'no episode reads: the season is asked for');
+});
+
+test('Seerr with partial requests off: one "Get the whole series" on the series page, one whole-series card in the sheet', async t => {
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', me: { ...SEERR_MEMBER, seerrWholeSeries: true } });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, { contact: 'Dad' });
+  await settle();
+  const box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+  assert.deepEqual([...box.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['Get the whole series', 'More…']);
+  assert.equal(box.querySelector('.je-ask-action-note').textContent, 'Seerr takes whole series only, so this asks for every season.');
+  click(h, box.querySelector('.je-ask-action'));
+  await settle(20);
+  same(h.posts.map(p => p.body.input), [{ key: 'tv:tvdb:371980', scope: 'seasons', variant: 'standard', seasons: [1, 2, 3], episodes: [] }]);
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  assert.deepEqual([...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice), ['everything']);
+  assert.match(card(h, 'everything').textContent, /The whole series \(3 seasons\)/);
+  click(h, card(h, 'everything'));
+  click(h, primary(h));
+  await settle(20);
+  same(h.posts.at(-1).body.input.seasons, [1, 2, 3]);
+  await pending;
 });

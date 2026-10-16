@@ -441,7 +441,8 @@
      * A missing episode's own page (Jellyfin's row for a missing episode opens it; on TV that is how
      * an episode is asked for): Get it, or Ask {contact}. Missing for a long while (monitored, nothing
      * grabbed): Search instead (an administrator's runs the arr's search; everyone else's too when
-     * requests already sent the episode, otherwise they ask).
+     * requests already sent the episode, otherwise they ask). In Seerr mode (Seerr takes whole seasons) the ask is
+     * for the episode's season, and the button says so ("Get Season 2", with the reason under it).
      * @param {Object} status Episode status.
      * @param {Object} caps Capabilities.
      * @returns {HTMLElement|null} Box, or null when the episode isn't simply missing.
@@ -455,13 +456,21 @@
         const episode = Number(m[3]);
         const box = actionsBox(caps);
         const contact = JE.arrAsk.contact(caps);
-        const ask = (b, doneKey) => run(b, doneKey, async () => JE.arrAsk.episodesInput(key, [{ season, episode }]), 'tv');
-        if (JE.arrStatus.searchable?.(status)) {
+        const roundedUp = !!JE.arrAsk.seasonsOnly?.(caps);
+        const ask = (b, doneKey) => run(b, doneKey, async () => (roundedUp ? required(JE.arrAsk.roundedInput(key, caps, [season])) : JE.arrAsk.episodesInput(key, [{ season, episode }])), 'tv');
+        const instanceId = JE.arrStatus.searchable?.(status) ? JE.arrAsk.searchInstance(caps, status, status.key) : null;
+        // Seerr mode: someone else's Search that would be an ask (nothing sent for the episode yet) is the season's ask.
+        if (JE.arrStatus.searchable?.(status) && !(roundedUp && !instanceId && status.reason?.params?.sent !== '1')) {
             const doneKey = `${key}|s${season}e${episode}|search`;
-            const instanceId = JE.arrAsk.searchInstance(caps, status, status.key);
             // Requests already sent this episode: the Search runs with no new OK (plain "Search" for a Kid too).
             const text = JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
-            box.appendChild(action(doneKey, 'search', text, (b) => runSearch(b, doneKey, status.key, instanceId, () => ask(b, doneKey)), false, instanceId ? 'search' : 'ask'));
+            // Seerr mode: a Search that turns out not to apply never asks for the season behind a "Search" label.
+            const fallback = (b) => (roundedUp ? async () => JE.arrAsk.toast(tr('arr_ask_toast_seerr_season')) : () => ask(b, doneKey));
+            box.appendChild(action(doneKey, 'search', text, (b) => runSearch(b, doneKey, status.key, instanceId, fallback(b)), false, instanceId ? 'search' : 'ask'));
+        } else if (roundedUp) {
+            const doneKey = JE.arrAsk.wholeSeriesOnly(caps) ? `${key}|series` : `${key}|season:${season}`;
+            box.appendChild(action(doneKey, 'download', JE.arrAsk.roundedLabel(caps, [season], caps.asksFirst), (b) => ask(b, doneKey)));
+            box.appendChild(JE.arrStatus.el('span', 'je-ask-action-cost je-ask-action-note', JE.arrAsk.roundedNote(caps, [season])));
         } else {
             const doneKey = `${key}|s${season}e${episode}`;
             const text = caps.asksFirst ? tr('arr_actions_ask_episode', { contact }) : tr('arr_ask_get_it');
@@ -487,13 +496,33 @@
         const box = actionsBox(caps);
         const key = JE.arrAsk.seriesKey(status.key);
         let firstCost = null;
-        if (plan.nextSeason != null) {
+        let note = '';
+        const whole = !!JE.arrAsk.wholeSeriesOnly?.(caps);
+        const roundedUp = !!JE.arrAsk.seasonsOnly?.(caps);
+        if (whole && (plan.nextSeason != null || plan.missing > 0)) {
+            // Seerr takes a request for the whole series only (partial requests off): one button that says so.
+            const doneKey = `${key}|series`;
+            const known = plan.seasons.map(s => s.season);
+            box.appendChild(action(doneKey, 'download', JE.arrAsk.roundedLabel(caps, known, ask),
+                (b) => run(b, doneKey, () => required(JE.arrAsk.wholeSeriesInput(key, 'standard', known)), 'tv')));
+            firstCost = JE.arrAsk.seasonsInput(key, known);
+            note = JE.arrAsk.roundedNote(caps, known);
+        }
+        if (!whole && plan.nextSeason != null) {
             const doneKey = `${key}|season:${plan.nextSeason}`;
             box.appendChild(action(doneKey, 'download', ask ? tr('arr_actions_ask_season', { contact, season: plan.nextSeason }) : tr('arr_actions_get_season', { season: plan.nextSeason }),
                 (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, [plan.nextSeason]), 'tv')));
             firstCost = JE.arrAsk.seasonsInput(key, [plan.nextSeason]);
         }
-        if (plan.missing > 0) {
+        if (!whole && roundedUp && plan.missing > 0) {
+            // Seerr mode: the missing episodes are asked for as their seasons, and the button names them.
+            const doneKey = `${key}|missing`;
+            const seasons = plan.partial.map(s => s.season);
+            box.appendChild(action(doneKey, 'playlist_add', JE.arrAsk.roundedLabel(caps, seasons, ask),
+                (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, seasons), 'tv'), plan.nextSeason != null));
+            if (!firstCost) firstCost = JE.arrAsk.seasonsInput(key, seasons);
+            note = JE.arrAsk.roundedNote(caps, seasons);
+        } else if (!whole && plan.missing > 0) {
             const doneKey = `${key}|missing`;
             box.appendChild(action(doneKey, 'playlist_add', ask ? tr('arr_actions_ask_missing', { contact }) : tr('arr_actions_get_missing'),
                 (b) => run(b, doneKey, () => missingInput(key, plan.partial), 'tv'), plan.nextSeason != null));
@@ -526,6 +555,7 @@
             const line = JE.internals?.arrAskSheet?.costLine?.(firstCost, caps, allowance);
             if (line?.text) box.appendChild(JE.arrStatus.el('span', 'je-ask-action-cost', line.text));
         }
+        if (note) box.appendChild(JE.arrStatus.el('span', 'je-ask-action-cost je-ask-action-note', note));
         box.dataset.sig = signature(box);
         return box;
     }
@@ -557,15 +587,32 @@
         const season = Number(m[2]);
         const contact = JE.arrAsk.contact(caps);
         const box = actionsBox(caps);
-        const doneKey = `${key}|season:${season}`;
-        box.appendChild(action(doneKey, 'download', caps.asksFirst ? tr('arr_actions_ask_season', { contact, season }) : tr('arr_actions_get_season', { season }),
-            (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, [season]), 'tv')));
+        // Seerr with partial requests off takes the whole series only: the button says so.
+        const whole = !!JE.arrAsk.wholeSeriesOnly?.(caps);
+        const doneKey = whole ? `${key}|series` : `${key}|season:${season}`;
+        const label = whole ? JE.arrAsk.roundedLabel(caps, [season], caps.asksFirst)
+            : caps.asksFirst ? tr('arr_actions_ask_season', { contact, season }) : tr('arr_actions_get_season', { season });
+        box.appendChild(action(doneKey, 'download', label,
+            (b) => run(b, doneKey, async () => (whole ? required(JE.arrAsk.wholeSeriesInput(key)) : JE.arrAsk.seasonsInput(key, [season])), 'tv')));
+        if (whole) box.appendChild(JE.arrStatus.el('span', 'je-ask-action-cost je-ask-action-note', JE.arrAsk.roundedNote(caps, [season])));
         const allowance = await quota('tv');
         if (gen !== generation) return null;
         const line = JE.internals?.arrAskSheet?.costLine?.(JE.arrAsk.seasonsInput(key, [season]), caps, allowance);
         if (line?.text) box.appendChild(JE.arrStatus.el('span', 'je-ask-action-cost', line.text));
         box.dataset.sig = signature(box);
         return box;
+    }
+
+    /**
+     * The input of an ask that must name something (the whole series, its seasons read first): when they can't be
+     * read the ask fails ("Couldn't ask right now") instead of reading as nothing left to get.
+     * @param {Promise<Object|null>} pending The input being prepared.
+     * @returns {Promise<Object>} Input.
+     */
+    async function required(pending) {
+        const input = await pending;
+        if (!input) throw new Error('the series\' seasons could not be read');
+        return input;
     }
 
     /**

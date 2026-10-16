@@ -1051,3 +1051,90 @@ test('a refusal for storage is said in plain words: the ask\'s toast, and a Sear
   assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-searched').textContent, 'Paused: storage full');
   same(h.toasts, ["Paused: storage full. There's no room for new downloads right now."]);
 });
+
+// ------------------------------------------------------------------ Seerr mode: Seerr takes whole seasons
+
+const SEERR_MEMBER = { role: 'member', canRequest: true, contact: 'Dad', asksFirst: false, backend: 'seerr' };
+
+test('Seerr mode: an episode\'s Get it reads "Get Season 1" and says why, asks for the whole season, and every missing episode of it shows the answer', async t => {
+  const h = setup(t, { server: { me: SEERR_MEMBER } });
+  await h.open();
+  await settle();
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  const btn = two.querySelector('.je-ask-get');
+  assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get Season 1', 'the button says what it asks for before it is pressed');
+  assert.equal(btn.getAttribute('aria-label'), 'Get Season 1. Seerr takes whole seasons, so this asks for all of Season 1.');
+  assert.equal(btn.title, 'Seerr takes whole seasons, so this asks for all of Season 1.');
+  btn.click();
+  await settle(20);
+  assert.equal(h.posts.length, 1);
+  same(h.posts[0].body.input, { key: 'tv:tvdb:1', scope: 'seasons', variant: 'standard', seasons: [1], episodes: [] });
+  for (const n of [2, 4]) {
+    const r = h.list().querySelector(`.je-ask-row[data-je-ask-episode="${n}"]`);
+    assert.equal(r.querySelector('.je-arr-chip').textContent, 'Waiting for OK', `E${n} is part of the season asked for`);
+    assert.equal(r.querySelector('.je-ask-get'), null);
+  }
+  // The episode dialog says it too, above its button.
+  const h2 = setup(t, { server: { me: SEERR_MEMBER } });
+  await h2.open();
+  await settle();
+  h2.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-row-title').click();
+  const dialog = h2.document.querySelector('.je-ask-dialog');
+  assert.equal(dialog.querySelector('.je-ask-dialog-note').textContent, 'Seerr takes whole seasons, so this asks for all of Season 1.');
+  assert.equal(dialog.querySelector('.je-ask-get .je-ask-get-text').textContent, 'Get Season 1');
+});
+
+test('Seerr mode: the banner\'s Get them reads "Get Season 1" and asks for the season', async t => {
+  const h = setup(t, { server: { me: SEERR_MEMBER, rows: () => rowsBody({ displayMissing: false }) } });
+  await h.open();
+  await settle();
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-banner-action .je-ask-get');
+  assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get Season 1');
+  assert.equal(btn.getAttribute('aria-label'), 'Get Season 1. Seerr takes whole seasons, so this asks for all of Season 1.');
+  btn.click();
+  await settle(20);
+  same(h.posts.map(p => p.body.input), [{ key: 'tv:tvdb:1', scope: 'seasons', variant: 'standard', seasons: [1], episodes: [] }]);
+});
+
+test('Seerr with partial requests off: the episode\'s button reads "Get the whole series" and asks for every season', async t => {
+  const h = setup(t, { server: { me: { ...SEERR_MEMBER, seerrWholeSeries: true } } });
+  h.JE.core.api.plugin = async (path) => (String(path).startsWith('/acquire/status?keys=')
+    ? { items: [{ key: 'tv:tvdb:1', kind: 'series', seasons: [{ season: 0 }, { season: 1 }, { season: 2 }] }] }
+    : { contact: 'Dad', items: [season()] });
+  await h.open();
+  await settle();
+  const btn = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
+  assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get the whole series');
+  assert.equal(btn.title, 'Seerr takes whole series only, so this asks for every season.');
+  btn.click();
+  await settle(30);
+  same(h.posts.map(p => p.body.input), [{ key: 'tv:tvdb:1', scope: 'seasons', variant: 'standard', seasons: [1, 2], episodes: [] }]);
+});
+
+test('Seerr mode: a button that did not say "Season" (drawn before the capabilities arrived, or a Search that would ask) never asks for the season', async t => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const h = setup(t, { server: { me: SEERR_MEMBER, meGate: () => gate } });
+  await h.open();
+  const btn = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
+  assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get it', 'capabilities not known yet');
+  btn.click();
+  release();
+  await settle(30);
+  assert.equal(h.posts.length, 0, 'nothing is asked behind a "Get it" label');
+  assert.equal(h.toasts.at(-1), "Seerr takes whole seasons, so single episodes can't be asked for. Ask for the season instead.");
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get .je-ask-get-text').textContent, 'Get Season 1', 'drawn again with the season on it');
+  // Someone else's Search on an episode nothing was sent for yet is the season's ask in Seerr mode (it would ask).
+  const s = setup(t, { status: longMissing(), server: { me: SEERR_MEMBER } });
+  await s.open();
+  await settle();
+  const two = s.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
+  assert.equal(two.querySelector('.je-ask-get-text').textContent, 'Get Season 1');
+});
+
+test('Seerr mode: a server refusal of single episodes reads in plain words', t => {
+  const h = setup(t);
+  const refused = h.JE.arrAsk.interpret(409, { outcome: 'blocked', reason: 'seerr_whole_season_only' });
+  assert.equal(refused.state, 'blocked', 'not "busy": asking again would be refused the same way');
+  assert.equal(h.JE.arrAsk.describe(refused, SEERR_MEMBER, null).text, "Seerr takes whole seasons, so single episodes can't be asked for. Ask for the season instead.");
+});

@@ -272,6 +272,8 @@
      * The series cards: each with its id, icon, label and the mutation input it asks for (null for
      * the pickers until something is picked), for one copy. "Just new episodes from now on" only where
      * it is honoured: Seerr can't keep getting new seasons (it would get the whole current season once).
+     * Seerr mode: no "Pick episodes…" (Seerr takes whole seasons); with Seerr's partial requests off, one card for
+     * the whole series (every season, whatever is here: Seerr leaves out what it already has).
      * @param {Object} title Title.
      * @param {string} [variant] 'standard' (default) or '4k'.
      * @param {Object|null} [caps] Capabilities (backend).
@@ -283,6 +285,17 @@
         const latest = Number.isInteger(title.latestSeason) ? title.latestSeason : (seasons.length ? seasons[seasons.length - 1].season : null);
         const latestEntry = seasons.find(s => s.season === latest);
         const cards = [];
+        if (JE.arrAsk.wholeSeriesOnly?.(caps)) {
+            const all = seasons.map(s => s.season);
+            if (wanted.length) {
+                cards.push({
+                    id: 'everything', icon: 'library_add',
+                    label: all.length === 1 ? tr('arr_sheet_card_series_one') : tr('arr_sheet_card_series', { n: all.length }),
+                    input: (variant) => JE.arrAsk.seasonsInput(title.key, all, variant)
+                });
+            }
+            return cards;
+        }
         if (wanted.length) {
             cards.push({
                 id: 'everything', icon: 'library_add',
@@ -297,7 +310,7 @@
             cards.push({ id: 'next', icon: 'skip_next', label: tr('arr_sheet_card_next'), input: (variant) => ({ ...JE.arrAsk.seasonsInput(title.key, [title.nextSeason], variant), scope: 'next_season' }) });
         }
         if (seasons.length > 1) cards.push({ id: 'pick', icon: 'checklist', label: tr('arr_sheet_card_pick'), input: null });
-        if (seasons.some(s => s.episodes > 0)) cards.push({ id: 'episodes', icon: 'format_list_numbered', label: tr('arr_sheet_card_episodes'), input: null });
+        if (seasons.some(s => s.episodes > 0) && !JE.arrAsk.seasonsOnly?.(caps)) cards.push({ id: 'episodes', icon: 'format_list_numbered', label: tr('arr_sheet_card_episodes'), input: null });
         if (latest != null && caps?.backend !== 'seerr') {
             cards.push({ id: 'future', icon: 'update', label: tr('arr_sheet_card_future'), input: (variant) => ({ ...JE.arrAsk.seasonsInput(title.key, [latest], variant), scope: 'future' }) });
         }

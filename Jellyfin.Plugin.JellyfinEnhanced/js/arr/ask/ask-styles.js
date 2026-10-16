@@ -56,6 +56,7 @@
 .je-ask-dialog-facts { opacity: 0.75; margin-bottom: 0.8em; }
 .je-ask-dialog .je-arr-status { margin: 0 0 0.8em; }
 .je-ask-dialog-overview { line-height: 1.45; opacity: 0.9; }
+.je-ask-dialog-note { line-height: 1.45; opacity: 0.85; font-size: 0.9em; margin: 0.6em 0 0; }
 .je-ask-dialog-actions { display: flex; flex-wrap: wrap; gap: 0.6em; justify-content: flex-end; margin-top: 1em; }
 .je-ask-dialog-close { font: inherit; color: inherit; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.25); border-radius: 8px;
   min-height: 2.75em; min-width: 2.75em; padding: 0.3em 1.1em; cursor: pointer; }

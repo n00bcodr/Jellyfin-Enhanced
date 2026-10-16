@@ -8,9 +8,13 @@ using Microsoft.Extensions.Hosting;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 {
-    /// <summary>Uncached backend identity/capability facts. Missing facts never grant a permission.</summary>
+    /// <summary>
+    /// Uncached backend identity/capability facts. Missing facts never grant a permission. <c>SeerrWholeSeries</c>:
+    /// Seerr's partial-request setting is off (or not a real on/off), so Seerr takes a request for the whole series only.
+    /// </summary>
     public sealed record RequestBackendBinding(string? Source = null, int? UserId = null, long Permissions = 0,
-        bool FourKEnabled = false, bool Can4k = false, bool CanManage = false, QuotaProjection? Quota = null, int QuotaWindowDays = 7, bool CanRequest = false);
+        bool FourKEnabled = false, bool Can4k = false, bool CanManage = false, QuotaProjection? Quota = null, int QuotaWindowDays = 7, bool CanRequest = false,
+        bool SeerrWholeSeries = false);
     /// <summary>Transport outcome with explicit retry and read-back certainty.</summary>
     /// <remarks><c>RetryAfter</c>: a retryable result's own wait before the next attempt (instead of the short backoff).</remarks>
     public sealed record RequestBackendResult(RequestOutcome Outcome, bool Confirmed = false, bool Retryable = false, bool Parked = false, bool VerifiedNotSent = false, TimeSpan? RetryAfter = null)

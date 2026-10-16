@@ -84,7 +84,7 @@
 
     /**
      * The caller's own request capabilities ({role, canRequest, canRequestMovies, canRequestSeries,
-     * canApprove, asksFirst, can4kMovies, can4kSeries, backend, contact, freeEpisodes}), cached for a
+     * canApprove, asksFirst, can4kMovies, can4kSeries, backend, seerrWholeSeries, contact, freeEpisodes}), cached for a
      * minute per user (see canAsk for one kind); null when the
      * feature is off or the server can't say.
      * @param {boolean} [force] Ask the server again.
@@ -177,6 +177,107 @@
     }
 
     /**
+     * True when single episodes can't be asked for: in Seerr mode Seerr takes whole seasons, so an episode is asked
+     * for as its season (said on the control before anything is sent, never rounded up behind the person's back).
+     * @param {Object|null} caps Capabilities ({@link me}).
+     * @returns {boolean} Seasons only.
+     */
+    function seasonsOnly(caps) {
+        return caps?.backend === 'seerr';
+    }
+
+    /**
+     * True when Seerr takes a request for the whole series only (its partial-request setting is off): the controls
+     * then offer the whole series.
+     * @param {Object|null} caps Capabilities ({@link me}).
+     * @returns {boolean} Whole series only.
+     */
+    function wholeSeriesOnly(caps) {
+        return seasonsOnly(caps) && caps?.seerrWholeSeries === true;
+    }
+
+    /**
+     * What a control that would ask for single episodes is called in Seerr mode, so it says what it asks for before
+     * it is pressed: "Get Season 2", "Get Seasons 1, 3", or "Get the whole series" (partial requests off in Seerr);
+     * "Ask Dad for Season 2" and so on when the caller's asks wait for an OK and the control says so.
+     * @param {Object|null} caps Capabilities ({@link me}).
+     * @param {number[]} seasons The seasons of the episodes.
+     * @param {boolean} [asks] Name the contact (the control's other labels do).
+     * @returns {string} Label.
+     */
+    function roundedLabel(caps, seasons, asks) {
+        if (wholeSeriesOnly(caps)) return asks ? tr('arr_ask_ask_series', { contact: contact(caps) }) : tr('arr_ask_get_series');
+        return seasonsLabel(caps, seasons, asks);
+    }
+
+    /**
+     * A control's label naming the seasons it asks for: "Get Season 2", "Get Seasons 1, 3" ("Ask Dad for Season 2"
+     * when the control names the contact).
+     * @param {Object|null} caps Capabilities ({@link me}).
+     * @param {number[]} seasons Seasons.
+     * @param {boolean} [asks] Name the contact.
+     * @returns {string} Label.
+     */
+    function seasonsLabel(caps, seasons, asks) {
+        const who = contact(caps);
+        const sorted = [...new Set(seasons || [])].sort((a, b) => a - b);
+        if (sorted.length === 1) return asks ? tr('arr_actions_ask_season', { contact: who, season: sorted[0] }) : tr('arr_actions_get_season', { season: sorted[0] });
+        const list = sorted.join(', ');
+        return asks ? tr('arr_ask_ask_seasons', { contact: who, list }) : tr('arr_ask_get_seasons', { list });
+    }
+
+    /**
+     * Why a control asks for more than the episode in Seerr mode ("Seerr takes whole seasons, so this asks for all of
+     * Season 2."), for its explanatory line and its accessible name.
+     * @param {Object|null} caps Capabilities ({@link me}).
+     * @param {number[]} seasons The seasons of the episodes.
+     * @returns {string} Sentence.
+     */
+    function roundedNote(caps, seasons) {
+        return wholeSeriesOnly(caps) ? tr('arr_ask_seerr_series_note') : tr('arr_ask_seerr_season_note', { seasons: seasonsWords(seasons) });
+    }
+
+    /**
+     * The ask of a control that would ask for single episodes, as Seerr takes it: their seasons, or the whole series
+     * (partial requests off in Seerr). Null when the series' seasons can't be read.
+     * @param {string} key Series (or season/episode) key.
+     * @param {Object|null} caps Capabilities ({@link me}).
+     * @param {number[]} seasons The seasons of the episodes.
+     * @param {string} [variant] standard or 4k.
+     * @returns {Promise<Object|null>} Input.
+     */
+    async function roundedInput(key, caps, seasons, variant) {
+        return wholeSeriesOnly(caps) ? wholeSeriesInput(key, variant) : seasonsInput(key, seasons, variant);
+    }
+
+    /**
+     * The whole series as one ask (Seerr with partial requests off): every season it has, specials left out, from
+     * the season numbers given, else the series' own status, else TMDB's season list. Null when they can't be read.
+     * @param {string} key Series (or season/episode) key.
+     * @param {string} [variant] standard or 4k.
+     * @param {number[]} [known] Season numbers already known.
+     * @returns {Promise<Object|null>} Input.
+     */
+    async function wholeSeriesInput(key, variant, known) {
+        const series = seriesKey(key);
+        const pick = list => [...new Set((list || []).filter(n => Number.isInteger(n) && n > 0))];
+        let seasons = pick(known);
+        if (!seasons.length && JE.arrStatus?.fetchKey) {
+            try {
+                const read = await JE.arrStatus.fetchKey(series);
+                seasons = pick((read?.items?.[0]?.seasons || []).map(s => s?.season));
+            } catch {
+                seasons = [];
+            }
+        }
+        if (!seasons.length) {
+            const tmdb = /^tv:tmdb:(\d{1,10})$/.exec(series)?.[1];
+            if (tmdb) seasons = pick((await tmdbSeasons(tmdb)).seasons.map(s => s.season));
+        }
+        return seasons.length ? seasonsInput(series, seasons, variant) : null;
+    }
+
+    /**
      * The series key of a series, season or episode key.
      * @param {string} key Title key.
      * @returns {string} Series key.
@@ -207,6 +308,7 @@
             else if (reason === 'declined') state = 'declined';
             else state = 'asked';
         } else if (status === 429) state = 'quota';
+        else if (status === 409 && reason === 'seerr_whole_season_only') state = 'blocked';
         else if (status === 409) state = reason === 'idempotency_conflict' ? 'changed' : 'busy';
         else if (status === 503) state = 'unavailable';
         else if (status === 400) state = 'invalid';
@@ -331,7 +433,8 @@
                 return {
                     chip: '',
                     text: result.reason === 'decline_cooldown' ? tr('arr_ask_toast_cooldown', { contact: who })
-                        : result.reason === 'low_disk' ? tr('arr_ask_toast_storage') : tr('arr_ask_toast_blocked'),
+                        : result.reason === 'low_disk' ? tr('arr_ask_toast_storage')
+                            : result.reason === 'seerr_whole_season_only' ? tr('arr_ask_toast_seerr_season') : tr('arr_ask_toast_blocked'),
                     tone: 'attention'
                 };
             case 'denied': return { chip: '', text: tr('arr_ask_toast_denied'), tone: 'attention' };
@@ -690,6 +793,13 @@
         movieInput,
         seasonsInput,
         episodesInput,
+        seasonsOnly,
+        wholeSeriesOnly,
+        roundedLabel,
+        seasonsLabel,
+        roundedNote,
+        roundedInput,
+        wholeSeriesInput,
         seriesKey,
         searchInstance,
         searchAsksFirst,

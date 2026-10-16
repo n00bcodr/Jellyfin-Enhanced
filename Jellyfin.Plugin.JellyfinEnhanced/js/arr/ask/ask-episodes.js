@@ -165,6 +165,25 @@
     }
 
     /**
+     * True when an ask from this page goes for whole seasons (Seerr mode: Seerr takes whole seasons, so Get it asks
+     * for the episode's season and says so on the button).
+     * @returns {boolean} Rounded up.
+     */
+    function rounded() {
+        return !!JE.arrAsk?.seasonsOnly?.(season?.caps);
+    }
+
+    /**
+     * The words of a button that asks for this season in Seerr mode ("Get Season 2", or "Get the whole series"), and
+     * why ("Seerr takes whole seasons, so this asks for all of Season 2.").
+     * @returns {{label: string, note: string}} Words.
+     */
+    function roundedWords() {
+        const seasons = [season?.rows?.season].filter(Number.isInteger);
+        return { label: JE.arrAsk.roundedLabel(season?.caps, seasons), note: JE.arrAsk.roundedNote(season?.caps, seasons) };
+    }
+
+    /**
      * The words of the season's request block (the viewer's role may ask, the policy can't take an ask
      * now: "Paused: storage full"), or null.
      * @returns {{reason: string, chip: string, text: string, detail: string}|null} Words.
@@ -425,7 +444,7 @@
             if (existing && !busy.has(Number(existing.dataset.jeAskEpisode))) existing.remove();
             return;
         }
-        if (existing && existing.previousElementSibling === chipEl && existing.dataset.mode === modeOf(ep)) {
+        if (existing && existing.previousElementSibling === chipEl && existing.dataset.mode === modeOf(ep) && existing.dataset.label === labelOf(modeOf(ep))) {
             setBusyLook(existing, busy.has(ep.episode));
             return;
         }
@@ -440,7 +459,21 @@
      * @returns {'get'|'search'} Mode.
      */
     function modeOf(ep) {
-        return JE.arrStatus?.searchable?.(ep) ? 'search' : 'get';
+        if (!JE.arrStatus?.searchable?.(ep)) return 'get';
+        // Seerr mode: someone else's Search that would turn into an ask (nothing sent for the episode yet) asks for the
+        // season instead, and its button says so.
+        if (rounded() && !adminSearchable(ep) && ep?.reason?.params?.sent !== '1') return 'get';
+        return 'search';
+    }
+
+    /**
+     * The label of an episode's button: Search, Get it, or (Seerr mode) the season it asks for.
+     * @param {'get'|'search'} mode Mode.
+     * @returns {string} Label.
+     */
+    function labelOf(mode) {
+        if (mode === 'search') return tr('arr_ask_search');
+        return rounded() ? roundedWords().label : tr('arr_ask_get_it');
     }
 
     /**
@@ -514,13 +547,21 @@
         btn.dataset.jeAskEpisode = String(ep.episode);
         btn.dataset.jeFocus = `ask-get-${ep.episode}`;
         btn.dataset.mode = mode;
-        btn.dataset.label = mode === 'search' ? tr('arr_ask_search') : tr('arr_ask_get_it');
+        btn.dataset.label = labelOf(mode);
         if (mode === 'search') btn.dataset.busyLabel = tr('arr_ask_searching');
         btn.appendChild(S.icon(mode === 'search' ? 'search' : 'add', 'je-ask-get-icon'));
         btn.appendChild(S.el('span', 'je-ask-get-text', btn.dataset.label));
         const meta = metaOf(ep.episode);
         const title = meta?.title || tr('arr_ask_episode_title', { episode: ep.episode });
-        btn.setAttribute('aria-label', tr(mode === 'search' ? 'arr_ask_search_label' : 'arr_ask_get_it_label', { episode: ep.episode, title }));
+        if (mode === 'get' && rounded()) {
+            // Seerr mode: the button says it asks for the whole season (never rounded up behind the person's back).
+            const words = roundedWords();
+            btn.dataset.rounded = '1';
+            btn.title = words.note;
+            btn.setAttribute('aria-label', `${words.label}. ${words.note}`);
+        } else {
+            btn.setAttribute('aria-label', tr(mode === 'search' ? 'arr_ask_search_label' : 'arr_ask_get_it_label', { episode: ep.episode, title }));
+        }
         // The button asks for this season's episode only, even if another season is shown by the
         // time it is pressed (a dialog left open across a navigation).
         const scope = season?.itemId || null;
@@ -615,17 +656,29 @@
         if (!rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
         const place = button?.closest('.listItem, .je-arr-banner') || null;
         const placeEpisode = place?.classList.contains('je-ask-row') ? place.dataset.jeAskEpisode : null;
-        episodes.forEach(n => busy.add(n));
+        // Seerr mode: the button asks for the whole season, so every episode of it waits for the answer.
+        const affected = rounded() ? [...new Set([...episodes, ...(rows.episodes || []).map(e => e.episode)])] : episodes;
+        affected.forEach(n => busy.add(n));
         JE.internals?.arrStatusEpisodes?.apply?.();
-        const input = JE.arrAsk.episodesInput(rows.series, episodes.map(episode => ({ season: rows.season, episode })));
-        let result;
+        const started = JE.arrAsk.epoch();
+        let result = null;
         try {
-            result = await JE.arrAsk.ask(input);
+            const caps = await JE.arrAsk.me();
+            let input = JE.arrAsk.episodesInput(rows.series, episodes.map(episode => ({ season: rows.season, episode })));
+            if (JE.arrAsk.seasonsOnly?.(caps)) {
+                if (season === target && !target.caps) target.caps = caps;
+                // Seerr takes whole seasons: only a button that said so asks for the season; any other (a Search that
+                // would turn into an ask, a button drawn before the caller's capabilities were known) asks for nothing
+                // and says why, and the page's buttons are drawn again with the season on them.
+                input = button?.dataset.rounded === '1' ? await JE.arrAsk.roundedInput(rows.series, caps, [rows.season]) : null;
+                if (!input) result = { ok: false, state: button?.dataset.rounded === '1' ? 'failed' : 'blocked', reason: 'seerr_whole_season_only' };
+            }
+            if (!result && JE.arrAsk.epoch() === started) result = await JE.arrAsk.ask(input);
         } finally {
-            episodes.forEach(n => busy.delete(n));
+            affected.forEach(n => busy.delete(n));
         }
         // Answered after a sign-out: the next person is not told about it.
-        if (result.stale) return;
+        if (!result || result.stale || JE.arrAsk.epoch() !== started) return;
         const caps = await JE.arrAsk.me();
         const allowance = result.state === 'quota' ? await JE.arrAsk.quota('tv') : null;
         const words = JE.arrAsk.describe(result, caps, allowance);
@@ -633,7 +686,7 @@
         const stillHere = !!season && season.itemId === target.itemId;
         if (result.ok || result.state === 'unknown') {
             const shown = result.state === 'waiting' ? 'waiting' : result.state === 'nothing' ? null : result.state === 'declined' ? 'declined' : 'asked';
-            if (shown && stillHere) episodes.forEach(n => local.set(n, { state: shown, at: Date.now(), search: !!search }));
+            if (shown && stillHere) affected.forEach(n => local.set(n, { state: shown, at: Date.now(), search: !!search }));
         }
         announce(words.text);
         JE.arrAsk.toast(words.text);
@@ -977,7 +1030,9 @@
         const offerEps = canAsk() ? openEps : openEps.filter(adminSearchable);
         const offer = offerEps.map(ep => ep.episode);
         // Every episode offered is monitored and missing for a long while: the button searches.
-        const search = offer.length > 0 && offerEps.every(ep => !!S.searchable?.(ep));
+        const search = offer.length > 0 && offerEps.every(ep => modeOf(ep) === 'search');
+        // Seerr mode: Get them asks for the whole season, and says so.
+        const seasonWords = !search && rounded() ? roundedWords() : null;
         if (bannerSearched && (bannerSearched.itemId !== normalize(status.itemId) || Date.now() - bannerSearched.at > SEARCHED_TTL_MS)) bannerSearched = null;
         const outcome = search ? bannerSearched : null;
         // Asking can't be done now: the banner says why (administrators: where and how much is free).
@@ -987,7 +1042,7 @@
         const wholeSeason = !search && !asked.length && open.length > 0 && open.length === (status.summary?.aired || -1)
             && !!JE.titleDetails?.isSynthetic?.(status.itemId);
         let action = banner.querySelector('.je-ask-banner-action');
-        const signature = `${open.join(',')}|${looking.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}`;
+        const signature = `${open.join(',')}|${looking.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}|${seasonWords?.label || ''}`;
         if (action && action.dataset.sig === signature) return;
         if (action) action.remove();
         if (!missing.length) return;
@@ -1011,13 +1066,21 @@
             if (search) {
                 btn.dataset.label = offer.length === 1 ? tr('arr_ask_search_one', { episode: offer[0] }) : tr('arr_ask_search');
                 btn.dataset.busyLabel = tr('arr_ask_searching');
+            } else if (seasonWords) {
+                btn.dataset.label = seasonWords.label;
+                btn.dataset.rounded = '1';
             } else {
                 btn.dataset.label = offer.length === 1 ? tr('arr_ask_get_one', { episode: offer[0] }) : tr('arr_ask_get_them');
             }
             btn.appendChild(S.icon(search ? 'search' : 'download', 'je-ask-get-icon'));
             btn.appendChild(S.el('span', 'je-ask-get-text', btn.dataset.label));
             const list = offer.map(n => `E${n}`).join(', ');
-            btn.setAttribute('aria-label', search ? tr('arr_ask_search_them_label', { list }) : tr('arr_ask_get_them_label', { list }));
+            if (seasonWords) {
+                btn.title = seasonWords.note;
+                btn.setAttribute('aria-label', `${seasonWords.label}. ${seasonWords.note}`);
+            } else {
+                btn.setAttribute('aria-label', search ? tr('arr_ask_search_them_label', { list }) : tr('arr_ask_get_them_label', { list }));
+            }
             const scope = normalize(status.itemId);
             btn.addEventListener('click', () => (search ? searchBanner(offerEps, status, btn) : getEpisodes(offer, btn, false, scope)));
             setBusyLook(btn, offer.some(n => busy.has(n)));
@@ -1139,6 +1202,8 @@
         }
         if (offerable(ep) && offered(ep) && !shownState(ep) && !searchedOutcome(ep.episode)) {
             const get = getItButton(ep);
+            // Seerr mode: why the button asks for the whole season, in words above it.
+            if (get.dataset.rounded === '1') dialog.appendChild(S.el('p', 'je-ask-dialog-note', roundedWords().note));
             get.classList.add('je-ask-get-large');
             get.addEventListener('click', () => close());
             actions.appendChild(get);

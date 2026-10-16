@@ -171,6 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Can4kSeries = series4k.Can4k,
                 Backend = backend,
                 Contact = (config.ArrHouseholdContactName ?? string.Empty).Trim(),
+                SeerrWholeSeries = backend == "seerr" && series.SeerrWholeSeries,
                 PausedMovies = Can(movie) ? RequestBlock.Storage(_policy.AddPause(true), movie.Role == "Admin") : null,
                 PausedSeries = Can(series) ? RequestBlock.Storage(_policy.AddPause(false), series.Role == "Admin") : null,
             };

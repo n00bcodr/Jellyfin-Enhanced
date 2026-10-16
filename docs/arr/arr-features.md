@@ -207,6 +207,17 @@ ask fetch the episodes that are missing, one tap each:
   another person in the household already asked for it. Anything else (over the week's allowance, not allowed,
   couldn't ask right now) shows as a short message and **Get it** stays.
 - An episode that is downloading shows the download ring on its thumbnail next to its *Downloading 60%* label.
+- **With Seerr handling requests** single episodes can't be asked for: Seerr takes whole seasons. Every control that
+  would ask for episodes (a row's **Get it**, the line's **Get them**, the episode's own page and its details window,
+  a series page's **Get missing episodes**, **Get it again** for removed episodes) asks for the episode's season
+  instead and says so on the button before it is pressed: **Get Season 2** (Kids: "Ask Dad for Season 2"), with
+  "Seerr takes whole seasons, so this asks for all of Season 2." next to it, and every missing episode of that season
+  then shows the answer. The request sheet has no *Pick episodes…* there. With Seerr's *partial requests* setting off,
+  Seerr takes a request for the whole series only: those buttons read **Get the whole series** and the sheet offers
+  *The whole series* alone. Someone else's **Search** stays only for an episode a request already went out for. A
+  single-episode ask sent to the server anyway is refused before anything is recorded (409
+  `seerr_whole_season_only`, "Seerr takes whole seasons, so single episodes can't be asked for. Ask for the season
+  instead."); approving an older single-episode ask made in Jellyfin Enhanced mode is refused the same way.
 
 **Search instead of "Still looking".** An episode (or movie) that is monitored in Sonarr/Radarr, has aired or come
 out, and has had nothing grabbed for longer than the "still looking" hours (`ArrStatusLookingHours`, 24 by default)
@@ -838,7 +849,8 @@ profiles, folders or tags.
 - **The request sheet** is a bottom sheet on phones, a dialog on desktop and a full-screen panel on TV (Back closes
   it). For a series it offers large cards: *Everything*, *Just the latest season*, *Next season only*, *Pick
   seasons…*, *Pick episodes…* and *Just new episodes from now on* (Jellyfin Enhanced mode only: Seerr can't keep
-  getting new seasons, so with Seerr handling requests the card isn't offered). Each card shows what it costs ("Uses 2 of your 4
+  getting new seasons, so with Seerr handling requests the card isn't offered; nor is *Pick episodes…*, since Seerr
+  takes whole seasons, see [Missing episodes](#missing-episodes-get-it-and-search-phase-3)). Each card shows what it costs ("Uses 2 of your 4
   this week"); with no weekly limit there is no cost line. A Standard / 4K choice appears only for people who may
   ask for 4K. Seasons already in Jellyfin (in any quality) or already asked for are not offered again for the
   standard copy; for 4K every season stays offered, since Jellyfin's count doesn't say which copies are 4K.
@@ -1087,8 +1099,12 @@ Enhanced's key), so Seerr's own permissions, quotas, approval rules and override
   real true/false). Only *on* sends some seasons; with *off* or *unknown*, only a request covering every season is
   sent, and a request for some seasons waits (`seerr_whole_series_only`). Specials are sent only when Seerr's specials
   setting is on (a missing setting counts as off). The seasons sent are always among those confirmed. Single episodes
-  can't be sent to Seerr (`seerr_whole_season_only`); "Keep getting new episodes" sends the current season (the
-  request sheet doesn't offer it in Seerr mode).
+  can't be sent to Seerr: an ask for them is refused before anything is recorded (409 `seerr_whole_season_only`) and
+  the request controls ask for their season instead, saying so (see
+  [Missing episodes](#missing-episodes-get-it-and-search-phase-3)); one recorded before the switch to Seerr mode
+  waits with that reason. The capabilities (`GET acquire/requests/me`) carry `seerrWholeSeries` when Seerr's partial
+  requests are off or unknown, so the controls offer only the whole series. "Keep getting new episodes" sends the
+  current season (the request sheet doesn't offer it in Seerr mode).
 - Seerr's request permissions are per kind: someone who may ask only for series (or only for movies) in Seerr gets the
   request controls for that kind only.
 - Requests go to the first Seerr address only, and the account check before the POST and the reads that confirm it are

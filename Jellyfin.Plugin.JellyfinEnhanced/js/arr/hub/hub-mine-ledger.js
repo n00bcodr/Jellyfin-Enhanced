@@ -227,7 +227,7 @@
         if (!on() || !entry?.key || (entry.group !== 'removed' && entry.status?.reason?.code !== 'removed')) return;
         const caps = X.capabilities();
         const kind = entry.kind === 'movie' ? 'movie' : 'series';
-        if (!caps || !JE.arrAsk.canAsk(caps, kind) || !againInputs(entry).length) return;
+        if (!caps || !JE.arrAsk.canAsk(caps, kind) || !againInputs(entry, caps).length) return;
         const block = entry.is4k ? null : JE.arrAsk.paused?.(caps, kind);
         const words = block ? JE.arrAsk.blockWords(block, caps) : null;
         if (words) {
@@ -237,7 +237,10 @@
         }
         const id = `again:${entry.key}`;
         const busy = state.busy.has(id);
-        const label = busy ? X.tr('arr_ask_asking') : caps.asksFirst ? X.tr('arr_mine_again_ask', { contact: JE.arrAsk.contact(caps) }) : X.tr('arr_mine_again');
+        // Seerr mode: single episodes are asked for again as their seasons, and the button names them.
+        const seasons = roundsUp(entry, caps) ? againInputs(entry, caps)[0].seasons : null;
+        const label = busy ? X.tr('arr_ask_asking') : seasons ? JE.arrAsk.seasonsLabel(caps, seasons, caps.asksFirst)
+            : caps.asksFirst ? X.tr('arr_mine_again_ask', { contact: JE.arrAsk.contact(caps) }) : X.tr('arr_mine_again');
         const again = X.button('je-hub-btn je-hub-again', label, 'replay', id);
         again.setAttribute('aria-label', X.tr('arr_mine_again_label', { title: X.titleText(entry) }));
         X.busy(again, busy);
@@ -250,14 +253,30 @@
     }
 
     /**
+     * True when asking for a removed request's part again asks for more than it named: in Seerr mode (Seerr takes
+     * whole seasons) its single episodes are asked for as their seasons.
+     * @param {Object} entry Row entry.
+     * @param {Object|null} caps Capabilities.
+     * @returns {boolean} Rounded up.
+     */
+    function roundsUp(entry, caps) {
+        return entry.kind !== 'movie' && !!JE.arrAsk.seasonsOnly?.(caps) && Array.isArray(entry.episodes) && entry.episodes.length > 0;
+    }
+
+    /**
      * The asks that ask for a removed request's part again: the movie (its edition), the whole seasons and the
-     * single episodes the row names.
+     * single episodes the row names (in Seerr mode the episodes' seasons, in one ask with the seasons).
      * @param {Object} entry Row entry ({key, kind, is4k, seasons, episodes}).
+     * @param {Object|null} [caps] Capabilities.
      * @returns {Object[]} Mutation inputs.
      */
-    function againInputs(entry) {
+    function againInputs(entry, caps) {
         const variant = entry.is4k ? '4k' : 'standard';
         if (entry.kind === 'movie') return [JE.arrAsk.movieInput(entry.key, variant)];
+        if (roundsUp(entry, caps)) {
+            const seasons = (Array.isArray(entry.seasons) ? entry.seasons : []).concat(entry.episodes.map(e => e?.season)).filter(Number.isInteger);
+            return seasons.length ? [JE.arrAsk.seasonsInput(entry.key, seasons, variant)] : [];
+        }
         const inputs = [];
         if (Array.isArray(entry.seasons) && entry.seasons.length) inputs.push(JE.arrAsk.seasonsInput(entry.key, entry.seasons, variant));
         const episodes = Array.isArray(entry.episodes) ? entry.episodes.filter(e => Number.isInteger(e?.season) && Number.isInteger(e?.episode)) : [];
@@ -272,7 +291,7 @@
      */
     async function askAgain(entry) {
         const id = `again:${entry.key}`;
-        const inputs = againInputs(entry);
+        const inputs = againInputs(entry, X.capabilities());
         if (state.busy.has(id) || !inputs.length) return;
         state.busy.add(id);
         if (H.state?.visible) H.render?.();

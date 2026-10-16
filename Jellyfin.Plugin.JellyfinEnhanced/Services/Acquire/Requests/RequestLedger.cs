@@ -257,6 +257,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (!policy.IsAdmin(user) && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
             var facts = policy.Evaluate(user, normalized);
             if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : "denied");
+            if (SeerrEpisodes(facts, normalized) is { } seerrOnly) return seerrOnly;
             if (facts.Role != "Admin" && (normalized.InstanceId != null || normalized.ProfileId != null || normalized.RootFolder != null)) return RequestOutcome.Refused("admin_required");
             // An approver's matching ask authorises the shared pending scope, without moving its charge.
             // Automation never approves someone else's pending ask on a person's behalf.
@@ -329,6 +330,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return RequestOutcome.Accepted(id, reason, 200) with { Outcome = "merged", Message = "Someone in your household already asked, we'll tell you both." };
             return RequestOutcome.Accepted(id, reason);
         }
+        /// <summary>
+        /// Seerr takes whole seasons only: single episodes are refused in Seerr mode before anything is recorded (the
+        /// request controls ask for the episode's season instead, said before the person confirms), so a job that could
+        /// only ever be held at send is never created. Null when the ask isn't single episodes in Seerr mode.
+        /// </summary>
+        private static RequestOutcome? SeerrEpisodes(RequestPolicyFacts facts, MutationInput input)
+            => facts.Backend == "seerr" && input.Scope == "episodes"
+                ? RequestOutcome.Refused("seerr_whole_season_only", 409, "blocked") with { Message = "Seerr takes whole seasons only; ask for the season." }
+                : null;
         /// <summary>
         /// A Member's ask (JE mode, no blanket approval preset) that crosses the household's series threshold: the seasons
         /// that still fit under it go ahead as one request and only the excess waits for an OK as a second one (S1–S3
@@ -442,6 +452,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var requester = policy.Evaluate(want.UserId, input);
             var approver = policy.Evaluate(actor, input);
             if (RequestPolicy.Check(requester, approver, input, true) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: "blocked");
+            if (SeerrEpisodes(requester, input) is { } seerrOnly) return seerrOnly;
             if (approver.Role != "Admin" && (input.InstanceId != want.Input.InstanceId || input.ProfileId != want.Input.ProfileId || input.RootFolder != want.Input.RootFolder)) return RequestOutcome.Refused("admin_required");
             if (want.Status != "pending") return RequestOutcome.Refused("request_changed", 409);
             // A job held after part of it was written (parked, certainty unknown) isn't in flight: approving resumes it.

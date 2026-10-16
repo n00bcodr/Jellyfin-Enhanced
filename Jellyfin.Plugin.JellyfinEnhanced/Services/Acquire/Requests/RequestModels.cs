@@ -180,6 +180,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         [JsonPropertyName("backend")] public string Backend { get; init; } = "seerr";
         /// <summary>What the household calls the person who OKs requests (empty: the client's neutral word).</summary>
         [JsonPropertyName("contact")] public string Contact { get; init; } = string.Empty;
+        /// <summary>
+        /// Seerr mode: Seerr takes a request for the whole series only (its partial-request setting is off), so the request
+        /// controls offer the whole series. Single episodes are never sent to Seerr: they are asked for as their seasons.
+        /// </summary>
+        [JsonPropertyName("seerrWholeSeries")] public bool SeerrWholeSeries { get; init; }
         /// <summary>Episodes a Member gets free per window before each five count as one request.</summary>
         [JsonPropertyName("freeEpisodes")] public int FreeEpisodes { get; init; } = 5;
         /// <summary>Asking for a new movie is paused for storage (null: it isn't); see <see cref="RequestBlock"/>.</summary>

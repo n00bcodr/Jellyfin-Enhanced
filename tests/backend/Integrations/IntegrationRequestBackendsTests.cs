@@ -1030,6 +1030,57 @@ public class IntegrationRequestBackendsTests
     }
 
     [Fact]
+    public async Task SeerrModeRefusesSingleEpisodesBeforeRecordingAnythingAndApprovingALegacyOneIsRefusedToo()
+    {
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        var episodes = new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(2, 3) } };
+        // Asked in Jellyfin Enhanced mode by a Kid: waits for an OK. Then the household switches to Seerr.
+        var legacy = await rig.Create(rig.Kid, episodes);
+        Assert.Equal("awaiting_approval", legacy.Reason);
+        rig.Policy.Configuration.ArrRequestBackend = "seerr";
+        foreach (var who in new[] { rig.Member, rig.Kid, rig.Admin })
+        {
+            var refused = await rig.Create(who, episodes with { Episodes = new[] { new RequestEpisode(1, 1) } });
+            Assert.Equal((409, "seerr_whole_season_only", "blocked"), (refused.HttpStatus, refused.Reason, refused.Outcome));
+            Assert.Null(refused.RequestId);
+        }
+        Assert.Single(rig.Ledger.ForTitle("tv:tvdb:78874"));
+        Assert.Empty(rig.Ledger.Due(rig.Now));
+        var approve = await rig.Service.ApproveAsync(legacy.RequestId!, rig.Admin, null, default);
+        Assert.Equal((409, "seerr_whole_season_only"), (approve.HttpStatus, approve.Reason));
+        Assert.Equal("pending", rig.Ledger.Find(legacy.RequestId!)!.Status);
+        Assert.Empty(rig.Ledger.Due(rig.Now));
+        // The season is what's asked for instead, and it is recorded.
+        var season = await rig.Create(rig.Member, IntegrationRequestLedgerTests.Seasons(2));
+        Assert.Equal(201, season.HttpStatus);
+        // Jellyfin Enhanced mode keeps single episodes.
+        rig.Policy.Configuration.ArrRequestBackend = "je";
+        Assert.Equal(201, (await rig.Create(rig.Member, episodes)).HttpStatus);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task SeerrsPartialRequestSettingTellsTheControlsWhetherOnlyTheWholeSeriesCanBeAsked(bool partial, bool wholeSeries)
+    {
+        using var lab = new SeerrLab();
+        lab.Seerr.Settings["partialRequestsEnabled"] = partial;
+        await lab.Backend.PrepareAsync(lab.User, Show(1), default);
+        Assert.Equal(wholeSeries, lab.Backend.Binding(lab.User, Show(1)).SeerrWholeSeries);
+        // Not a real on/off: only the whole series is sent, so the controls offer only that.
+        lab.Seerr.Settings["partialRequestsEnabled"] = "yes";
+        lab.Now = lab.Now.AddHours(1);
+        await lab.Backend.PrepareAsync(lab.User, Show(1), default);
+        Assert.True(lab.Backend.Binding(lab.User, Show(1)).SeerrWholeSeries);
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        rig.Policy.Configuration.ArrRequestBackend = "seerr";
+        rig.Policy.Adjust = (_, _, facts) => facts with { SeerrWholeSeries = wholeSeries };
+        Assert.Equal(wholeSeries, rig.Service.Me(rig.Member).SeerrWholeSeries);
+        rig.Policy.Configuration.ArrRequestBackend = "je";
+        Assert.False(rig.Service.Me(rig.Member).SeerrWholeSeries);
+    }
+
+    [Fact]
     public async Task SeerrHoldsWhatItCannotTakeWithoutSendingAnything()
     {
         using var lab = new SeerrLab();
