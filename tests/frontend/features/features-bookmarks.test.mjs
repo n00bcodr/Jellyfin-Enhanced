@@ -358,3 +358,29 @@ test('library and player delete buttons are disabled while their delete is in fl
   assert.deepEqual(h.toasts,['toast_bookmark_deleted','toast_bookmark_delete_failed']);
   assert.equal(player.disabled,false);assert.equal(saves.calls.length,2);
 });
+
+test('the bookmarks page takes over when Jellyfin answers its own #/bookmarks route with another page',async t=>{
+  let ready;const wired=new Promise(resolve=>{ready=resolve;});
+  const h=createHarness({html:'<div class="mainAnimatedPages"><div id="home" class="mainAnimatedPage">home</div></div>',JE:{t:key=>key,pluginConfig:{BookmarksEnabled:true},userConfig:{},bookmarks:{},
+    helpers:{onSidebarRebuilt:()=>()=>{},observeTabContainers:()=>()=>{}},
+    core:{lifecycle:{register:()=>({addListener:(target,type,fn,capture)=>target.addEventListener(type,fn,capture)})},
+      // The real onViewPage hands each viewshow's raw event to the handler.
+      navigation:{onNavigate:()=>()=>{},onViewPage:fn=>{h.document.addEventListener('viewshow',e=>fn(null,e.target,h.window.location.hash,null,e));ready();}}}}});
+  t.after(()=>h.close());
+  Object.assign((h.JE.internals={}).bookmarksLibrary={},{renderIfSectionExists:()=>{},hookViewEvents:()=>{}});
+  h.load('enhanced/bookmarks/bookmarks-library-page.js');h.load('enhanced/bookmarks/bookmarks-library-init.js');
+  await wired;
+  const show=el=>el.dispatchEvent(new h.window.CustomEvent('viewshow',{bubbles:true}));
+  // A hash change to #/bookmarks inside the app: Jellyfin's router shows its own "Page not found" page.
+  const home=h.document.getElementById('home');h.window.history.replaceState(null,'','#/bookmarks');
+  const notFound=h.document.createElement('div');notFound.className='mainAnimatedPage';notFound.textContent='Page not found';
+  home.after(notFound);home.classList.add('hide');show(notFound);
+  const page=h.document.getElementById('je-bookmarks-standalone-page');
+  assert.ok(page&&!page.classList.contains('hide'),'the bookmarks page shows');assert.ok(notFound.classList.contains('hide'));
+  // The router showing its page again on the same route is hidden again; ours stays.
+  notFound.classList.remove('hide');show(notFound);
+  assert.ok(notFound.classList.contains('hide'));assert.equal(page.classList.contains('hide'),false);
+  // Another route's page still hides it as before.
+  h.window.history.replaceState(null,'','#/home');home.classList.remove('hide');show(home);
+  assert.ok(page.classList.contains('hide'));
+});

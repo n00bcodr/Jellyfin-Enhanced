@@ -82,3 +82,24 @@ test('titles that are not in the library (native details synthetic ids) never be
  api.hideItem({itemId:REAL,name:'Real',type:'Movie'});
  assert.deepEqual(Object.keys(api.getHiddenData().items),[REAL]);
 });
+test('the hidden content page takes over when Jellyfin answers its own #/hidden-content route with another page',t=>{
+ const h=createHarness({html:'<div class="mainAnimatedPages"><div id="home" class="mainAnimatedPage">home</div></div>',JE:{t:k=>k,pluginConfig:{HiddenContentEnabled:true},hiddenContent:{},helpers:{onSidebarRebuilt:()=>()=>{}}}});
+ t.after(()=>h.close());
+ h.load('enhanced/hiddencontent/hidden-content-page-state.js');
+ Object.assign(h.JE.internals.hiddenContentPage,{injectStyles:()=>{},renderPage:()=>{}});
+ h.load('enhanced/hiddencontent/hidden-content-page-nav.js');h.load('enhanced/hiddencontent/hidden-content-page-init.js');
+ h.JE.hiddenContentPage.initialize();
+ const show=el=>el.dispatchEvent(new h.window.CustomEvent('viewshow',{bubbles:true}));
+ // A hash change to #/hidden-content inside the app: Jellyfin's router shows its own "Page not found" page.
+ const home=h.document.getElementById('home');h.window.history.replaceState(null,'','#/hidden-content');
+ const notFound=h.document.createElement('div');notFound.className='mainAnimatedPage';notFound.textContent='Page not found';
+ home.after(notFound);home.classList.add('hide');show(notFound);
+ const page=h.document.getElementById('je-hidden-content-page');
+ assert.ok(page&&!page.classList.contains('hide'),'the hidden content page shows');assert.ok(notFound.classList.contains('hide'));
+ // The router showing its page again on the same route is hidden again; ours stays.
+ notFound.classList.remove('hide');show(notFound);
+ assert.ok(notFound.classList.contains('hide'));assert.equal(page.classList.contains('hide'),false);
+ // Another route's page still hides it as before.
+ h.window.history.replaceState(null,'','#/home');home.classList.remove('hide');show(home);
+ assert.ok(page.classList.contains('hide'));
+});
