@@ -6,7 +6,11 @@
 // this module keeps the TMDB person resolution and the credits fetch.
 // On the person page of someone the library doesn't have (native details,
 // a synthetic person id) the row is the page's filmography: it renders
-// whatever the person-discovery switch says, most popular titles first.
+// whatever the person-discovery switch says, most popular titles first. It
+// comes from the server's filmography route, filtered there for the viewer
+// (library copies they can open, absent titles whose page would open for
+// them; no Seerr account needed), and keeps its library titles whatever the
+// exclude-library-items setting says.
 (function(JE) {
     'use strict';
 
@@ -210,6 +214,28 @@
     }
 
     /**
+     * The filmography of someone the library doesn't have, from the server's
+     * native-details route (filtered there for the viewer: library copies
+     * carry the Jellyfin id the viewer can open). Null when the person isn't
+     * for this viewer (404): no section rather than a retry that can't help.
+     * Other failures throw, so the discovery base offers a retry.
+     * @param {number} tmdbId
+     * @param {AbortSignal} [signal]
+     * @returns {Promise<Array<any>|null>}
+     */
+    async function fetchFilmography(tmdbId, signal) {
+        try {
+            const response = await fetchWithManagedRequest(`/JellyfinEnhanced/native-details/person/${tmdbId}/filmography`, { signal });
+            if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+            return Array.isArray(response?.results) ? response.results : [];
+        } catch (error) {
+            if (error?.name === 'AbortError') throw error;
+            if (error?.status === 404) return null;
+            throw error;
+        }
+    }
+
+    /**
      * Resolves the full deduped credits list + section title for the base.
      * @param {{id: string, signal: AbortSignal}} ctx
      * @returns {Promise<{items: Array<any>, title: string}|null>}
@@ -221,9 +247,23 @@
         if (!isPerson) return null;
 
         const synthetic = syntheticPersonTmdb(itemId);
-        const personInfoPromise = synthetic
-            ? syntheticPersonInfo(itemId, synthetic, signal).catch((error) => { if (error?.name === 'AbortError') throw error; return null; })
-            : getPersonInfo(itemId, signal);
+        if (synthetic) {
+            // The server decides who gets this list (no Seerr account needed in
+            // Jellyfin Enhanced request mode) and which of its titles they see.
+            const [personInfo, results] = await Promise.all([
+                syntheticPersonInfo(itemId, synthetic, signal).catch((error) => { if (error?.name === 'AbortError') throw error; return null; }),
+                fetchFilmography(synthetic, signal)
+            ]);
+            if (signal.aborted || !personInfo?.name || !results) return null;
+            console.debug(`${logPrefix} Filmography of ${personInfo.name}: ${results.length} titles`);
+            // What they are known for first (most voted), talk shows, news, reality and appearances
+            // as themselves after their roles (the server's order; kept if it is ever missing).
+            const ordered = results.filter(item => item?.id && item?.mediaType)
+                .sort((a, b) => (appearance(a) - appearance(b)) || ((Number(b?.voteCount) || 0) - (Number(a?.voteCount) || 0)));
+            return { items: ordered, title: JE.t('native_details_filmography') };
+        }
+
+        const personInfoPromise = getPersonInfo(itemId, signal);
         const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
 
         const [personInfo, status] = await Promise.all([personInfoPromise, statusPromise]);
@@ -257,13 +297,6 @@
 
         console.debug(`${logPrefix} Fetched ${dedupedResults.length} credits for ${personInfo.name}`);
 
-        if (synthetic) {
-            // The page's filmography: what they are known for first (most voted), talk shows, news,
-            // reality and appearances as themselves after their roles.
-            dedupedResults.sort((a, b) => (appearance(a) - appearance(b)) || ((Number(b?.voteCount) || 0) - (Number(a?.voteCount) || 0)));
-            return { items: dedupedResults, title: JE.t('native_details_filmography') };
-        }
-
         return {
             items: dedupedResults,
             title: JE.t('discovery_more_from_person', { person: personInfo.name })
@@ -276,8 +309,10 @@
         logLabel: 'Person Discovery',
         configKey: 'JellyseerrShowPersonDiscovery',
         getIdFromUrl: JE.discoveryBase.idFromDetailUrl,
-        // A synthetic person page has no other titles: its filmography is this row.
+        // A synthetic person page has no other titles: its filmography is this row,
+        // library titles included.
         enabledFor: (id) => syntheticPersonTmdb(id) > 0,
+        keepLibraryItems: (id) => syntheticPersonTmdb(id) > 0,
         pageSize: 40,
         resolveItems
     });

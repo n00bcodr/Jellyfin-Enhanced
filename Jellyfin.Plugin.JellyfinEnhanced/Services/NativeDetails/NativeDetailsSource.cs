@@ -45,6 +45,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>Seerr's details of a TV network, or why there are none.</summary>
         Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
 
+        /// <summary>Seerr's combined credits of a person (cast and crew, every title), or why there are none.</summary>
+        Task<SourceAnswer> PersonCreditsAsync(int tmdb, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+
+        /// <summary>
+        /// One page of Seerr's movie or series discovery filtered by a genre, studio (movies) or network
+        /// (series), in Seerr's discover shape, or why there is none.
+        /// </summary>
+        /// <param name="movie">Movies (else series).</param>
+        /// <param name="filter">Seerr's filter: <c>genre</c>, <c>studio</c> or <c>network</c>.</param>
+        /// <param name="id">The TMDB genre, company or network id.</param>
+        /// <param name="page">Page (1-500).</param>
+        /// <param name="sortBy">Seerr's sort, or null for its default.</param>
+        /// <param name="ct">Cancellation.</param>
+        Task<SourceAnswer> DiscoverAsync(bool movie, string filter, int id, int page, string? sortBy, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+
+        /// <summary>
+        /// One page of the series a TMDB company produced (TMDB's discover, JE's TMDB key: Seerr filters
+        /// series by network only), in Seerr's discover shape, or why there is none.
+        /// </summary>
+        /// <param name="company">TMDB company id.</param>
+        /// <param name="page">Page (1-500).</param>
+        /// <param name="sortBy">TMDB sort, or null for its default.</param>
+        /// <param name="ct">Cancellation.</param>
+        Task<SourceAnswer> CompanySeriesAsync(int company, int page, string? sortBy, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+
         /// <summary>
         /// True when the Jellyfin user has a linked Seerr account, false when not, null when it can't
         /// be told (Seerr unreachable and no earlier answer): the page then fails over to the modal
@@ -138,6 +163,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         /// <inheritdoc />
         public Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) => GetAsync($"/api/v1/network/{tmdb}", ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> PersonCreditsAsync(int tmdb, CancellationToken ct) => GetAsync($"/api/v1/person/{tmdb}/combined_credits", ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> DiscoverAsync(bool movie, string filter, int id, int page, string? sortBy, CancellationToken ct)
+        {
+            if (filter is not ("genre" or "studio" or "network") || id <= 0 || page is < 1 or > 500) return Task.FromResult(SourceAnswer.Missing);
+            var path = $"/api/v1/discover/{(movie ? "movies" : "tv")}?page={page}&{filter}={id}";
+            if (!string.IsNullOrEmpty(sortBy)) path += "&sortBy=" + Uri.EscapeDataString(sortBy);
+            return GetAsync(path, ct);
+        }
+
+        /// <inheritdoc />
+        public async Task<SourceAnswer> CompanySeriesAsync(int company, int page, string? sortBy, CancellationToken ct)
+        {
+            var key = JellyfinEnhanced.Instance?.Configuration?.GetTmdbApiKey();
+            if (string.IsNullOrWhiteSpace(key) || company <= 0 || page is < 1 or > 500) return SourceAnswer.Unavailable;
+            var query = $"?with_companies={company}&page={page}";
+            if (TmdbCompanyTvDiscover.IsValidSort(sortBy)) query += "&sort_by=" + sortBy;
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(FetchTimeout);
+                // The TMDB response cache keeps (and coalesces) these itself.
+                var response = await _tmdb.GetAsync("discover/tv", query, key, timeout.Token).ConfigureAwait(false);
+                if (!response.IsSuccess) return response.StatusCode == 404 ? SourceAnswer.Missing : SourceAnswer.Unavailable;
+                using var doc = JsonDocument.Parse(TmdbCompanyTvDiscover.ToSeerrShape(response.Content, new Dictionary<int, string>()));
+                return SourceAnswer.Of(doc.RootElement.Clone());
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                _logger.Debug($"Native details: TMDB series of company {company} failed: {ex.Message}");
+                return SourceAnswer.Unavailable;
+            }
+        }
 
         /// <inheritdoc />
         public async Task<JsonElement?> RecommendationsAsync(bool movie, int tmdb, CancellationToken ct)

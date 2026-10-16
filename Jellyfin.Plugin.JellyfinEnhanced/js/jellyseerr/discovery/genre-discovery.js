@@ -7,6 +7,8 @@
 // A genre the viewer's library doesn't offer (linked from a native details
 // page of a title not in the library) has a synthetic id that carries its
 // TMDB genre id; its list page holds nothing else, the row is its content.
+// Its feeds come from the server's native-details discovery route, filtered
+// there for the viewer (no Seerr account needed).
 (function(JE) {
     'use strict';
 
@@ -165,13 +167,16 @@
         let tmdbGenreIds = await getTmdbGenreIds(genreInfo.name, signal);
         if (signal.aborted) return null;
 
-        // A synthetic genre names its TMDB id: that id for the media type whose list has it.
+        // A synthetic genre names its TMDB id: that id for the media type whose list has it
+        // (both when the lists can't be read: a feed of the other type's id is just empty).
         const direct = syntheticGenreTmdb(genreId);
         if (direct) {
             const known = Object.values(await fetchTmdbGenres(signal) || {});
             const movie = known.some(g => g.movie === direct) ? direct : null;
             const tv = known.some(g => g.tv === direct) ? direct : null;
-            tmdbGenreIds = { movie: movie || tmdbGenreIds?.movie || null, tv: tv || tmdbGenreIds?.tv || null };
+            tmdbGenreIds = known.length === 0
+                ? { movie: direct, tv: direct }
+                : { movie: movie || tmdbGenreIds?.movie || null, tv: tv || tmdbGenreIds?.tv || null };
         }
 
         if (!tmdbGenreIds || (!tmdbGenreIds.tv && !tmdbGenreIds.movie)) return null;
@@ -179,6 +184,7 @@
         return {
             tvId: tmdbGenreIds.tv,
             movieId: tmdbGenreIds.movie,
+            native: !!direct,
             title: JE.t('discovery_more_with_genre', { genre: genreInfo.name })
         };
     }
@@ -190,9 +196,13 @@
         configKey: 'JellyseerrShowGenreDiscovery',
         getIdFromUrl: JE.discoveryBase.idFromListParam('genreId'),
         resolveFeeds,
-        buildDiscoverPath: (kind, id) => kind === 'tv'
-            ? `/JellyfinEnhanced/jellyseerr/discover/tv/genre/${id}`
-            : `/JellyfinEnhanced/jellyseerr/discover/movies/genre/${id}`
+        buildDiscoverPath: (kind, id, feeds) => {
+            // A synthetic genre's page: the server filters its feeds for the viewer.
+            if (feeds?.native) return `/JellyfinEnhanced/native-details/discover/${kind === 'tv' ? 'tv' : 'movie'}/genre/${id}`;
+            return kind === 'tv'
+                ? `/JellyfinEnhanced/jellyseerr/discover/tv/genre/${id}`
+                : `/JellyfinEnhanced/jellyseerr/discover/movies/genre/${id}`;
+        }
     });
 
     discovery.start();

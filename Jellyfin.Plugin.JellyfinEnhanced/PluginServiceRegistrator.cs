@@ -328,6 +328,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 sp.GetService<MediaBrowser.Controller.Drawing.IImageProcessor>(),
                 () => sp.GetRequiredService<Services.Acquire.IArrJellyfinView>().Revision));
             serviceCollection.AddSingleton<Services.NativeDetails.NativeDetailsFacadeFilter>();
+            // The filmographies and discovery feeds of those pages, filtered for the viewer on the server.
+            serviceCollection.AddSingleton<Services.NativeDetails.NativeDetailsFeeds>();
             // The Requests & downloads routes (status, season rows) answer for synthetic page ids by key.
             serviceCollection.AddSingleton<Services.Acquire.IAbsentTitlePages, Services.NativeDetails.NativeDetailsPages>();
 #endif

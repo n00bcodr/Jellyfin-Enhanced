@@ -48,31 +48,109 @@ function moduleSpec(t, file, { responses = {}, item, genres = { movie: [], tv: [
   return { ...h, spec, requests, items, signal };
 }
 
-test('a person page of someone the library lacks: the row is their filmography, whatever the switch says, best known first', async t => {
-  const credits = {
-    cast: [
-      { id: 1, mediaType: 'tv', name: 'A Talk Show', genreIds: [10767], voteCount: 9000, character: 'Self' },
-      { id: 2, mediaType: 'movie', title: 'Small Film', voteCount: 10, character: 'Lead' },
-      { id: 3, mediaType: 'movie', title: 'No Country for Old Men', voteCount: 5000, character: 'Anton' },
-      { id: 4, mediaType: 'movie', title: 'Premiere Guest', voteCount: 8000, character: 'Himself' },
-      { id: 3, mediaType: 'movie', title: 'No Country for Old Men', voteCount: 5000, character: 'Anton (again)' },
-    ],
-    crew: [{ id: 5, mediaType: 'movie', title: 'Produced', voteCount: 700, job: 'Producer' }],
-  };
+const FILMOGRAPHY = '/JellyfinEnhanced/native-details/person/3810/filmography';
+
+test('a person page of someone the library lacks: the row is their filmography from the server, whatever the switch says, best known first', async t => {
+  // The server's filmography: filtered for the viewer there (library copies they can open carry their id).
+  const results = [
+    { id: 1, mediaType: 'tv', name: 'A Talk Show', genreIds: [10767], voteCount: 9000, character: 'Self' },
+    { id: 2, mediaType: 'movie', title: 'Small Film', voteCount: 10, character: 'Lead' },
+    { id: 3, mediaType: 'movie', title: 'No Country for Old Men', voteCount: 5000, character: 'Anton', mediaInfo: { status: 5, jellyfinMediaId: LIBRARY_ID } },
+    { id: 4, mediaType: 'movie', title: 'Premiere Guest', voteCount: 8000, character: 'Himself' },
+    { id: 5, mediaType: 'movie', title: 'Produced', voteCount: 700, job: 'Producer' },
+  ];
   const h = moduleSpec(t, 'person-discovery.js', {
     item: { Id: PERSON, Type: 'Person', Name: 'Javier Bardem' },
-    responses: { '/JellyfinEnhanced/jellyseerr/person/3810/combined_credits': credits },
+    responses: { [FILMOGRAPHY]: { results } },
     config: { JellyseerrShowPersonDiscovery: false },
   });
-  // Rendered on that page even with person discovery off; a library person's page follows the switch.
+  // Rendered on that page even with person discovery off, library titles kept; a library person's page follows the switches.
   assert.equal(h.spec.enabledFor(PERSON), true);
+  assert.equal(h.spec.keepLibraryItems(PERSON), true);
   assert.equal(h.spec.enabledFor(LIBRARY_ID), false);
+  assert.equal(h.spec.keepLibraryItems(LIBRARY_ID), false);
   assert.equal(h.spec.enabledFor(h.JE.titleDetails.syntheticId('movie', 3810)), false);
   const result = await h.spec.resolveItems({ id: PERSON, signal: h.signal });
   assert.equal(result.title, 'native_details_filmography');
   assert.deepEqual(Array.from(result.items, i => i.id), [3, 5, 2, 1, 4]);
-  // Name from the page's own item, TMDB id from the page id: JE's library person route isn't asked.
-  assert.deepEqual(h.requests, ['/JellyfinEnhanced/jellyseerr/person/3810/combined_credits']);
+  // Name from the page's own item, TMDB id from the page id: neither JE's library person route nor the
+  // per-user Seerr proxy (which needs a linked Seerr account) is asked.
+  assert.deepEqual(h.requests, [FILMOGRAPHY]);
+});
+
+test('a filmography needs no Seerr account, and one the server refuses is no section rather than a retry', async t => {
+  // Jellyfin Enhanced request mode, a viewer without a Seerr account: Seerr is reachable, the user isn't found.
+  const unlinked = moduleSpec(t, 'person-discovery.js', {
+    item: { Id: PERSON, Type: 'Person', Name: 'Javier Bardem' },
+    responses: {
+      [FILMOGRAPHY]: { results: [{ id: 3, mediaType: 'movie', title: 'No Country for Old Men', voteCount: 5000 }] },
+      '/JellyfinEnhanced/jellyseerr/person/3810/combined_credits': () => { throw Object.assign(new Error('HTTP 404'), { status: 404 }); },
+    },
+  });
+  unlinked.JE.jellyseerrAPI.checkUserStatus = async () => ({ active: true, userFound: false });
+  const shown = await unlinked.spec.resolveItems({ id: PERSON, signal: unlinked.signal });
+  assert.deepEqual(Array.from(shown.items, i => i.id), [3]);
+  assert.deepEqual(unlinked.requests, [FILMOGRAPHY]);
+
+  const refused = moduleSpec(t, 'person-discovery.js', {
+    item: { Id: PERSON, Type: 'Person', Name: 'Javier Bardem' },
+    responses: { [FILMOGRAPHY]: () => { throw Object.assign(new Error('HTTP 404'), { status: 404 }); } },
+  });
+  assert.equal(await refused.spec.resolveItems({ id: PERSON, signal: refused.signal }), null);
+  // An outage is still a failure the discovery base offers a retry for.
+  const down = moduleSpec(t, 'person-discovery.js', {
+    item: { Id: PERSON, Type: 'Person', Name: 'Javier Bardem' },
+    responses: { [FILMOGRAPHY]: () => { throw Object.assign(new Error('HTTP 503'), { status: 503 }); } },
+  });
+  await assert.rejects(down.spec.resolveItems({ id: PERSON, signal: down.signal }), /HTTP 503/);
+});
+
+test('with library titles excluded (the default), a filmography of someone the library lacks still shows its library titles, through the real discovery base and card filter', async t => {
+  // 45 library titles (best known) ahead of one absent title: one page of 40 would be all library cards.
+  const results = Array.from({ length: 45 }, (_, i) => ({
+    id: i + 1, mediaType: 'movie', title: `In the library ${i + 1}`, voteCount: 1000 - i,
+    mediaInfo: { status: 5, jellyfinMediaId: String(i + 1).padStart(32, '0') },
+  }));
+  results.push({ id: 999, mediaType: 'movie', title: 'Not in the library', voteCount: 1 });
+  const requests = [];
+  const h = createHarness({
+    html: '<main id="detail"></main>',
+    url: `http://jellyfin.test/web/index.html#/details?id=${PERSON}`,
+    JE: {
+      pluginConfig: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1 }, JellyseerrExcludeLibraryItems: true, JellyseerrExcludeBlocklistedItems: true },
+      t: key => key,
+      jellyseerrAPI: { checkUserStatus: async () => ({ active: true, userFound: false }) },
+      helpers: { getItemCached: async id => ({ Id: id, Type: 'Person', Name: 'Javier Bardem' }) },
+      seerrStatus: { MEDIA: { BLOCKED: 6 } },
+    },
+    apiClient: { serverId: () => SERVER },
+  });
+  t.after(() => h.close());
+  h.JE.jellyseerrUI = { createJellyseerrCard: item => Object.assign(h.document.createElement('div'), { className: 'card', textContent: String(item.id) }) };
+  h.load('jellyseerr/nativedetails/native-details.js');
+  h.load('jellyseerr/discovery/discovery-filter-utils.js');
+  const filter = h.JE.discoveryFilter;
+  filter.waitForPageReady = async () => h.document.querySelector('#detail');
+  filter.setupInfiniteScroll = () => {};
+  filter.cleanupScrollObserver = () => {};
+  filter.fetchWithManagedRequest = async path => { requests.push(path); return path === FILMOGRAPHY ? { results } : null; };
+  h.load('jellyseerr/discovery/discovery-base.js');
+  const create = h.JE.discoveryBase.createDiscovery;
+  let controller = null;
+  h.JE.discoveryBase.createDiscovery = spec => { controller = create(spec); return { ...controller, start: () => {} }; };
+  h.load('jellyseerr/discovery/person-discovery.js');
+  try {
+    await controller.render();
+    const cards = Array.from(h.document.querySelectorAll('.jellyseerr-person-discovery-section .card'), c => c.textContent);
+    assert.equal(cards.length, 40, 'the first page is all there, library cards included');
+    assert.deepEqual(cards.slice(0, 3), ['1', '2', '3']);
+    assert.deepEqual(requests, [FILMOGRAPHY]);
+    // Every other discovery row keeps the setting: library titles out, the absent one in.
+    assert.equal(filter.createCardsFragment(results, { cardClass: 'portraitCard' }).childNodes.length, 1);
+    assert.equal(filter.createCardsFragment(results, { cardClass: 'portraitCard', keepLibraryItems: true }).childNodes.length, 46);
+  } finally {
+    controller.cleanup();
+  }
 });
 
 test('a library person keeps JE\'s person lookup and its "More with" row', async t => {
@@ -98,6 +176,9 @@ test('a genre the library lacks: its page id names the TMDB genre; the name fill
   const id = h.JE.titleDetails.syntheticId('genre', 10765);
   const feeds = await h.spec.resolveFeeds({ id, signal: h.signal });
   assert.deepEqual({ tvId: feeds.tvId, movieId: feeds.movieId }, { tvId: 10765, movieId: 14 });
+  // Its feeds are the server's, filtered there for the viewer (not the per-user Seerr proxy).
+  assert.equal(h.spec.buildDiscoverPath('tv', feeds.tvId, feeds), '/JellyfinEnhanced/native-details/discover/tv/genre/10765');
+  assert.equal(h.spec.buildDiscoverPath('movie', feeds.movieId, feeds), '/JellyfinEnhanced/native-details/discover/movie/genre/14');
   assert.equal(feeds.title, 'discovery_more_with_genre:{"genre":"Sci-Fi & Fantasy"}');
   // The name comes from the page's item; JE's library genre route isn't asked.
   assert.deepEqual(h.requests, []);
@@ -106,6 +187,10 @@ test('a genre the library lacks: its page id names the TMDB genre; the name fill
   const h2 = moduleSpec(t, 'genre-discovery.js', { item: { Name: 'Science Fiction' }, genres });
   const sciFi = await h2.spec.resolveFeeds({ id: h2.JE.titleDetails.syntheticId('genre', 878), signal: h2.signal });
   assert.equal(sciFi.movieId, 878);
+  // TMDB's genre lists can't be read: both feeds by that id (the server answers an empty feed for the other type).
+  const h3 = moduleSpec(t, 'genre-discovery.js', { item: { Name: 'Science Fiction' }, genres: { movie: null, tv: null } });
+  const unknown = await h3.spec.resolveFeeds({ id: h3.JE.titleDetails.syntheticId('genre', 878), signal: h3.signal });
+  assert.deepEqual({ tvId: unknown.tvId, movieId: unknown.movieId, native: unknown.native }, { tvId: 878, movieId: 878, native: true });
 });
 
 test('a library genre keeps JE\'s genre lookup', async t => {
@@ -115,6 +200,8 @@ test('a library genre keeps JE\'s genre lookup', async t => {
   });
   const feeds = await h.spec.resolveFeeds({ id: LIBRARY_ID, signal: h.signal });
   assert.deepEqual({ tvId: feeds.tvId, movieId: feeds.movieId }, { tvId: 18, movieId: 18 });
+  assert.equal(h.spec.buildDiscoverPath('tv', 18, feeds), '/JellyfinEnhanced/jellyseerr/discover/tv/genre/18');
+  assert.equal(h.spec.buildDiscoverPath('movie', 18, feeds), '/JellyfinEnhanced/jellyseerr/discover/movies/genre/18');
   assert.deepEqual(h.requests, [`/JellyfinEnhanced/genre/${LIBRARY_ID}`]);
   assert.deepEqual(h.items, []);
 });
@@ -128,6 +215,7 @@ test('a network or studio the library lacks: its page id names the TMDB network 
   // The network feed is the id itself; no movie company for a "+" brand without an exact match.
   assert.deepEqual({ tvId: disney.tvId, movieId: disney.movieId, tvSource: disney.tvSource }, { tvId: 2739, movieId: null, tvSource: 'network' });
   assert.equal(network.requests.some(p => p.startsWith('/JellyfinEnhanced/studio/')), false);
+  assert.equal(network.spec.buildDiscoverPath('tv', 2739, disney), '/JellyfinEnhanced/native-details/discover/tv/network/2739');
 
   const studio = moduleSpec(t, 'network-discovery.js', { item: { Name: 'Tiny Co' }, config: { TmdbEnabled: true } });
   const tiny = await studio.spec.resolveFeeds({ id: studio.JE.titleDetails.syntheticId('studio', 99), signal: studio.signal });
@@ -135,6 +223,12 @@ test('a network or studio the library lacks: its page id names the TMDB network 
   assert.deepEqual({ tvId: tiny.tvId, movieId: tiny.movieId, tvSource: tiny.tvSource }, { tvId: 99, movieId: 99, tvSource: 'company' });
   assert.equal(tiny.title, 'discovery_more_from_studio:{"studio":"Tiny Co"}');
   assert.deepEqual(studio.requests, [], 'no company search: the id is known');
+  assert.equal(studio.spec.buildDiscoverPath('movie', 99, tiny), '/JellyfinEnhanced/native-details/discover/movie/studio/99');
+  assert.equal(studio.spec.buildDiscoverPath('tv', 99, tiny), '/JellyfinEnhanced/native-details/discover/tv/company/99');
+  // A library studio keeps the per-user Seerr feeds, as before.
+  const library = { tvId: 99, movieId: 99, tvSource: 'company' };
+  assert.equal(studio.spec.buildDiscoverPath('movie', 99, library), '/JellyfinEnhanced/jellyseerr/discover/movies/studio/99');
+  assert.equal(studio.spec.buildDiscoverPath('tv', 99, library), '/JellyfinEnhanced/jellyseerr/discover/tv/studio/99');
 });
 
 test('the discovery base renders on a page its spec enables even with the switch off; other pages follow the switch', async t => {

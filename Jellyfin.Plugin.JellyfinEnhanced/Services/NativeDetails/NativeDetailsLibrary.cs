@@ -28,6 +28,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>Every library copy of the title (any library, whoever may see it).</summary>
         public IReadOnlyList<Guid> Copies { get; init; } = Array.Empty<Guid>();
 
+        /// <summary>The copies the viewer can open (Jellyfin's own check for them), in library order.</summary>
+        public IReadOnlyList<Guid> Shown { get; init; } = Array.Empty<Guid>();
+
         /// <summary>Copies exist and the viewer can open none of them.</summary>
         public bool Hidden { get; init; }
 
@@ -91,10 +94,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public PhysicalTitle Read(User viewer, string viewerRevision, bool movie, int tmdb, int? season, bool everySeason = false)
         {
             everySeason &= season == null && !movie;
-            var key = string.Join('|', viewer.Id.ToString("N", CultureInfo.InvariantCulture), viewerRevision, movie ? "m" : "t", tmdb.ToString(CultureInfo.InvariantCulture), season?.ToString(CultureInfo.InvariantCulture) ?? (everySeason ? "*" : "-"));
+            return Cached(viewer, viewerRevision, movie, tmdb, season?.ToString(CultureInfo.InvariantCulture) ?? (everySeason ? "*" : "-"), () => Compute(viewer, movie, tmdb, season, everySeason));
+        }
+
+        /// <summary>
+        /// The title's copies only (<see cref="PhysicalTitle.Copies"/>, <see cref="PhysicalTitle.Shown"/>,
+        /// <see cref="PhysicalTitle.Hidden"/>; no season or episode facts), for lists of many titles.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="viewerRevision">The viewer's policy revision (part of the cache key).</param>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="tmdb">TMDB id.</param>
+        /// <returns>The physical title, without season or episode facts.</returns>
+        public PhysicalTitle ReadCopies(User viewer, string viewerRevision, bool movie, int tmdb)
+            => Cached(viewer, viewerRevision, movie, tmdb, "c", () => Copies(viewer, movie, tmdb).Title);
+
+        private PhysicalTitle Cached(User viewer, string viewerRevision, bool movie, int tmdb, string part, Func<PhysicalTitle> compute)
+        {
+            var key = string.Join('|', viewer.Id.ToString("N", CultureInfo.InvariantCulture), viewerRevision, movie ? "m" : "t", tmdb.ToString(CultureInfo.InvariantCulture), part);
             var revision = _revision?.Invoke();
             if (revision is long r && _cache.TryGetValue(key, out var hit) && hit.Revision == r && DateTime.UtcNow - hit.At < Ttl) return hit.Value;
-            var value = Compute(viewer, movie, tmdb, season, everySeason);
+            var value = compute();
             if (revision is long now)
             {
                 if (_cache.Count >= MaxEntries) _cache.Clear();
@@ -104,10 +124,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return value;
         }
 
-        private PhysicalTitle Compute(User viewer, bool movie, int tmdb, int? season, bool everySeason)
+        /// <summary>Every copy of the title in any library (no user on the query), and which of them the viewer can open.</summary>
+        private (PhysicalTitle Title, HashSet<Guid> Shown) Copies(User viewer, bool movie, int tmdb)
         {
             var key = TitleKey.Parse((movie ? "movie" : "tv") + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture));
-            if (key == null || tmdb <= 0) return PhysicalTitle.None;
+            if (key == null || tmdb <= 0) return (PhysicalTitle.None, new HashSet<Guid>());
             var aliases = _aliases?.Of(key) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>();
             var copies = new List<BaseItem>();
             var seen = new HashSet<Guid>();
@@ -128,11 +149,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 }
             }
 
-            if (copies.Count == 0) return PhysicalTitle.None;
+            if (copies.Count == 0) return (PhysicalTitle.None, new HashSet<Guid>());
             var ids = copies.Select(c => c.Id).ToArray();
-            var shown = ids.Where(id => CanOpen(id, viewer)).ToHashSet();
-            if (shown.Count == 0) return new PhysicalTitle { Copies = ids, Hidden = true };
-            if (movie) return new PhysicalTitle { Copies = ids };
+            var shownInOrder = ids.Where(id => CanOpen(id, viewer)).ToArray();
+            var shown = shownInOrder.ToHashSet();
+            return (new PhysicalTitle { Copies = ids, Shown = shownInOrder, Hidden = shown.Count == 0 }, shown);
+        }
+
+        private PhysicalTitle Compute(User viewer, bool movie, int tmdb, int? season, bool everySeason)
+        {
+            var (title, shown) = Copies(viewer, movie, tmdb);
+            if (title.Copies.Count == 0 || title.Hidden || movie) return title;
+            var ids = title.Copies.ToArray();
 
             // Without parental rules a season or episode is visible exactly when its series is (it sits in
             // that series' library); with them, Jellyfin's own check per item (rating, custom rating,
@@ -186,7 +214,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 else hiddenSeriesEpisodes.UnionWith(hidden);
             }
 
-            return new PhysicalTitle { Copies = ids, HiddenSeasons = hiddenSeasons, HiddenEpisodes = hiddenEpisodes, HiddenSeriesEpisodes = hiddenSeriesEpisodes };
+            return new PhysicalTitle { Copies = ids, Shown = title.Shown, HiddenSeasons = hiddenSeasons, HiddenEpisodes = hiddenEpisodes, HiddenSeriesEpisodes = hiddenSeriesEpisodes };
         }
 
         private bool CanOpen(Guid id, User viewer) => _library.GetItemById<BaseItem>(id, viewer) != null;

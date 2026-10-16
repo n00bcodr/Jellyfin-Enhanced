@@ -654,10 +654,15 @@
      * content, duplicates within the batch and (when the admin excludes them)
      * library and blocklisted items are dropped.
      * @param {Array} results - Array of items
+     * @param {object} [options]
+     * @param {boolean} [options.keepLibraryItems=false] - Keep library items
+     *   whatever the exclude setting says (a list that is the page's only
+     *   list of titles, such as the filmography of someone the library
+     *   doesn't have: its library cards open the library copy)
      * @returns {Array} The items to create cards for
      */
-    function filterCardResults(results) {
-        const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
+    function filterCardResults(results, options = {}) {
+        const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true && !options.keepLibraryItems;
         const excludeBlocklistedItems = JE.pluginConfig?.JellyseerrExcludeBlocklistedItems === true;
         const seen = new Set();
         const items = [];
@@ -731,12 +736,13 @@
      * @param {Array} results - Array of items to create cards for
      * @param {object} [options] - Options
      * @param {string} [options.cardClass] - Card class to use ('portraitCard' or 'overflowPortraitCard')
+     * @param {boolean} [options.keepLibraryItems] - See filterCardResults
      * @returns {DocumentFragment}
      */
     function createCardsFragment(results, options = {}) {
         const { cardClass = 'portraitCard' } = options;
         const fragment = document.createDocumentFragment();
-        for (const item of filterCardResults(results)) {
+        for (const item of filterCardResults(results, options)) {
             const card = createDiscoveryCard(item, cardClass);
             if (card) fragment.appendChild(card);
         }
@@ -914,11 +920,12 @@
      * @param {object} [options]
      * @param {string} [options.cardClass='portraitCard'] - Card class
      * @param {function(): boolean} [options.isCurrent] - See appendInSlices
+     * @param {boolean} [options.keepLibraryItems] - See filterCardResults
      * @returns {Promise<number>} Number of cards appended
      */
     function appendCards(container, results, options = {}) {
         const { cardClass = 'portraitCard', isCurrent } = options;
-        const items = filterCardResults(results);
+        const items = filterCardResults(results, options);
         if (items.length === 0) return Promise.resolve(0);
         return appendInSlices(container, items, item => createDiscoveryCard(item, cardClass), {
             syncCount: cardsInView(container),

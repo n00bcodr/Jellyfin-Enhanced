@@ -123,6 +123,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NotifyController.cs",
       "category": "Controllers"
     },
@@ -872,6 +876,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsFacadeFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsFeeds.cs",
       "category": "Services"
     },
     {
@@ -4180,6 +4188,24 @@
       "path": "/JellyfinEnhanced/native-details/resolve",
       "method": "Resolve",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/native-details/person/{tmdbId}/filmography",
+      "method": "Filmography",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/native-details/discover/{type}/{source}/{feedId}",
+      "method": "Discover",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
       "following_attributes": [
         "Authorize"
       ]
@@ -9485,8 +9511,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 523,
-    "routes": 245,
+    "files": 525,
+    "routes": 247,
     "configuration_properties": 577,
     "storage_references": 82,
     "scheduled_tasks": 14,

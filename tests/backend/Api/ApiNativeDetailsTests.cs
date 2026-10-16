@@ -152,6 +152,28 @@ public class ApiNativeDetailsTests
 
         public Task<SourceAnswer> StudioAsync(int tmdb, CancellationToken ct) { Calls++; return Task.FromResult(Answer(tmdb == 99, """{"id":99,"name":"Tiny Co"}""")); }
         public Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) { Calls++; return Task.FromResult(Answer(tmdb == 2739, """{"id":2739,"name":" Disney+ "}""")); }
+        /// <summary>The combined credits of Bardem (and of <see cref="AdultPerson"/>).</summary>
+        public string Credits { get; set; } = """{"cast":[],"crew":[]}""";
+        public Task<SourceAnswer> PersonCreditsAsync(int tmdb, CancellationToken ct) { Calls++; return Task.FromResult(Answer(tmdb == 3810 || tmdb == AdultPerson, Credits)); }
+        /// <summary>Discovery pages by "movie|tv:filter:id:page" (company series: "tv:company:id:page"); others are unknown.</summary>
+        public Dictionary<string, string> Feeds { get; } = new();
+        public List<string> FeedCalls { get; } = new();
+        public Task<SourceAnswer> DiscoverAsync(bool movie, string filter, int id, int page, string? sortBy, CancellationToken ct)
+        {
+            Calls++;
+            var key = $"{(movie ? "movie" : "tv")}:{filter}:{id}:{page}";
+            FeedCalls.Add(key + (sortBy == null ? string.Empty : "?" + sortBy));
+            return Task.FromResult(Answer(Feeds.ContainsKey(key), Feeds.GetValueOrDefault(key) ?? "{}"));
+        }
+
+        public Task<SourceAnswer> CompanySeriesAsync(int company, int page, string? sortBy, CancellationToken ct)
+        {
+            Calls++;
+            var key = $"tv:company:{company}:{page}";
+            FeedCalls.Add(key + (sortBy == null ? string.Empty : "?" + sortBy));
+            return Task.FromResult(Answer(Feeds.ContainsKey(key), Feeds.GetValueOrDefault(key) ?? "{}"));
+        }
+
         /// <summary>Seerr can't tell who is linked (unreachable, no earlier answer).</summary>
         public bool LinkUnknown { get; set; }
         public Task<bool?> IsSeerrLinkedAsync(Guid userId, CancellationToken ct) => Task.FromResult<bool?>(LinkUnknown ? null : Linked.Contains(userId));
@@ -173,6 +195,7 @@ public class ApiNativeDetailsTests
         public NativeDetailsArtwork Artwork { get; private set; } = null!;
         public NativeDetailsPolicy Policy { get; private set; } = null!;
         public NativeDetailsFacadeFilter Filter { get; private set; } = null!;
+        public NativeDetailsFeeds Feeds { get; private set; } = null!;
         public Mock<MediaBrowser.Controller.Drawing.IImageProcessor> ImageTags { get; } = new();
         public string Rating { get; set; } = "PG-13";
         private readonly string? _stateDir;
@@ -239,6 +262,7 @@ public class ApiNativeDetailsTests
             Policy = new NativeDetailsPolicy(_parental, Source, Libraries, null, _stateDir, new NativeDetailsLibrary(Library.Object, null, LibraryRevision));
             Filter = new NativeDetailsFacadeFilter(Callers.Users.Object, Library.Object, Dto.Object, _host.Object, _server.Object, Source, Policy, Artwork, _parental, Plugin.Core.Manager, _strip, _spoilerUsers,
                 new NativeDetailsLinks(Library.Object, ImageTags.Object, LibraryRevision));
+            Feeds = new NativeDetailsFeeds(Source, Policy, _parental, Library.Object);
         }
 
         /// <summary>The id Jellyfin derives for a genre or studio name (a stand-in: stable per kind and name).</summary>
@@ -1500,7 +1524,10 @@ public class ApiNativeDetailsTests
         sciFiShown = false;
         Assert.Empty((await Page(SyntheticId.Movie(693134))).GenreItems);
 
-        // Jellyfin Enhanced mode: the page needs no Seerr account, the discovery rows do.
+        // Jellyfin Enhanced mode: the page needs no Seerr account, and neither do the genre, studio and
+        // network discovery pages (their feeds are read with JE's own key, filtered for the viewer: see
+        // NativeDetailsFeeds); a tag's row on the library's tag page reads Seerr as the viewer, so only
+        // a linked viewer gets tags that lead to that row alone.
         config.JellyseerrShowGenreDiscovery = true;
         config.JellyseerrShowNetworkDiscovery = true;
         config.JellyseerrShowTagDiscovery = true;
@@ -1511,8 +1538,8 @@ public class ApiNativeDetailsTests
         var unlinked = rig.Person(linked: false);
         LibraryName(rig, unlinked, "genre", "Science Fiction", true, () => true);
         var forUnlinked = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(unlinked), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result);
-        Assert.Equal(new[] { "Science Fiction" }, forUnlinked.GenreItems.Select(g => g.Name));
-        Assert.Empty(forUnlinked.Studios);
+        Assert.Equal(new[] { "Science Fiction=library", "Adventure=Genre:12" }, forUnlinked.GenreItems.Select(g => g.Name + "=" + Where(g.Id)));
+        Assert.Equal(new[] { "Legendary Pictures=Studio:923", "Tiny Co=Studio:99" }, forUnlinked.Studios.Select(g => g.Name + "=" + Where(g.Id)));
         Assert.Empty(forUnlinked.Tags);
         // The linked viewer in the same mode gets the discovery pages (Science Fiction shows them nothing in the library now).
         Assert.Equal(new[] { "Science Fiction=Genre:878", "Adventure=Genre:12" }, (await Page(SyntheticId.Movie(693134))).GenreItems.Select(g => g.Name + "=" + Where(g.Id)));
@@ -1552,6 +1579,233 @@ public class ApiNativeDetailsTests
         Assert.Equal(404, Status((await Call(rig, "Library", "GetSimilarItems", me, new() { ["itemId"] = Id(SyntheticId.Studio(99)) })).Result));
         // Not linked to Seerr: refused like any page.
         Assert.Equal(404, Status((await Call(rig, "UserLibrary", "GetItem", Me(rig.Person(linked: false)), new() { ["itemId"] = Id(SyntheticId.Genre(878)) })).Result));
+    }
+
+    // ---- Review follow-ups: the lists on those pages are filtered for the viewer on the server --------
+
+    /// <summary>
+    /// A library copy of a title, found by its TMDB id with no user on the query (what the library holds),
+    /// and opened by Jellyfin's own check for each viewer in <paramref name="openFor"/> only.
+    /// </summary>
+    private static MediaBrowser.Controller.Entities.BaseItem Copy(Rig rig, bool movie, int tmdb, string name, User[] openFor, params User[] closedFor)
+    {
+        MediaBrowser.Controller.Entities.BaseItem item = movie
+            ? new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid(), Name = name }
+            : new MediaBrowser.Controller.Entities.TV.Series { Id = Guid.NewGuid(), Name = name };
+        var kind = movie ? BaseItemKind.Movie : BaseItemKind.Series;
+        var key = tmdb.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        rig.Library.Setup(l => l.GetItemList(It.Is<MediaBrowser.Controller.Entities.InternalItemsQuery>(q => q.User == null && q.IncludeItemTypes.Contains(kind) && q.HasAnyProviderId != null && q.HasAnyProviderId.ContainsKey("Tmdb") && q.HasAnyProviderId["Tmdb"] == key)))
+            .Returns(new List<MediaBrowser.Controller.Entities.BaseItem> { item });
+        rig.Library.Setup(l => l.GetItemById(item.Id)).Returns(item);
+        foreach (var viewer in openFor) rig.Library.Setup(l => l.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(item.Id, viewer)).Returns(item);
+        foreach (var viewer in closedFor) rig.Library.Setup(l => l.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(item.Id, viewer)).Returns((MediaBrowser.Controller.Entities.BaseItem?)null);
+        return item;
+    }
+
+    private static JsonElement Body(FeedAnswer answer)
+    {
+        Assert.Equal(FeedOutcome.Ok, answer.Outcome);
+        return JsonDocument.Parse(answer.Json!).RootElement.Clone();
+    }
+
+    private static string[] Titles(JsonElement body)
+        => body.GetProperty("results").EnumerateArray().Select(r => r.GetProperty("id").GetInt32() + (r.TryGetProperty("mediaInfo", out var m) && m.TryGetProperty("jellyfinMediaId", out var jf) ? "=" + jf.GetString() : string.Empty)).ToArray();
+
+    /// <summary>A viewer who can open the Movies library only (not Shows).</summary>
+    private static User MoviesOnly(Rig rig, bool linked = true)
+    {
+        var viewer = rig.Person(linked: linked);
+        viewer.SetPermission(PermissionKind.EnableAllFolders, false);
+        viewer.SetPreference(PreferenceKind.EnabledFolders, [MoviesLib.ToString("N")]);
+        return viewer;
+    }
+
+    [Fact]
+    public async Task AFilmographyHoldsOnlyWhatTheViewerMayOpenBeforeItLeavesTheServer()
+    {
+        using var rig = new Rig();
+        var viewer = MoviesOnly(rig);
+        var admin = rig.Person(admin: true);
+        // Seerr names a copy of 11 the viewer can open and one of 12 they can't; 13 is a copy only the
+        // library knows (no Seerr id); 1400 is a series in the Shows library the viewer can't open;
+        // 1399 and 438631 aren't in the library at all; 14 is an appearance (a talk show).
+        var inside = Copy(rig, true, 11, "Kids copy", new[] { viewer, admin });
+        var outside = Copy(rig, true, 12, "Adults copy", new[] { admin }, viewer);
+        var found = Copy(rig, true, 13, "Found by TMDB", new[] { viewer, admin });
+        var locked = Copy(rig, false, 1400, "Locked Show", new[] { admin }, viewer);
+        // 15: a movie copy only the library knows, which Jellyfin hides from the viewer (a rating, a tag).
+        var rated = Copy(rig, true, 15, "Hidden by rating", new[] { admin }, viewer);
+        rig.Source.Credits = $$$"""
+        {"cast":[
+          {"id":11,"mediaType":"movie","title":"Kids copy","character":"Lead","voteCount":50,"posterPath":"/k.jpg","genreIds":[18],
+           "mediaInfo":{"status":5,"jellyfinMediaId":"{{{inside.Id:N}}}","requests":[{"requestedBy":{"displayName":"someone else"}}],"downloadStatus":[{"title":"dl"}]}},
+          {"id":12,"mediaType":"movie","title":"Adults copy","voteCount":900,"mediaInfo":{"status":5,"jellyfinMediaId":"{{{outside.Id:N}}}"}},
+          {"id":1399,"mediaType":"tv","name":"Game of Thrones","voteCount":5000},
+          {"id":1400,"mediaType":"tv","name":"Locked Show","voteCount":4000},
+          {"id":438631,"mediaType":"movie","title":"Dune","voteCount":3000,"posterPath":"javascript:alert(1)","character":"Stilgar","mediaInfo":{"status":2}},
+          {"id":13,"mediaType":"movie","title":"Found by TMDB","voteCount":10},
+          {"id":15,"mediaType":"movie","title":"Hidden by rating","voteCount":20},
+          {"id":5,"mediaType":"person","name":"Not a title"},
+          {"id":438631,"mediaType":"movie","title":"Dune","character":"again"}],
+         "crew":[{"id":14,"mediaType":"movie","title":"Talk","genreIds":[10767],"voteCount":99999,"job":"Producer"}]}
+        """;
+
+        var answer = await rig.Feeds.FilmographyAsync(viewer, 3810, CancellationToken.None);
+        var body = Body(answer);
+        // Best known first, the appearance last; library cards carry the copy this viewer can open.
+        Assert.Equal(new[] { "438631", $"11={inside.Id:N}", $"13={found.Id:N}", "14" }, Titles(body));
+        // What the viewer may not open is not in the answer at all (not just hidden by the browser):
+        // no hidden copy, no series of a library they can't open, no title of a library they can't reach.
+        foreach (var leak in new[] { "Adults copy", outside.Id.ToString("N"), outside.Id.ToString("D"), "Game of Thrones", "Locked Show", locked.Id.ToString("N"), "Hidden by rating", rated.Id.ToString("N"), "someone else", "requests", "downloadStatus", "javascript" })
+        {
+            Assert.DoesNotContain(leak, answer.Json!, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var dune = body.GetProperty("results")[0];
+        Assert.Equal(("Dune", "Stilgar", 2), (dune.GetProperty("title").GetString(), dune.GetProperty("character").GetString(), dune.GetProperty("mediaInfo").GetProperty("status").GetInt32()));
+        Assert.False(dune.TryGetProperty("posterPath", out _));
+        Assert.Equal(5, body.GetProperty("results")[1].GetProperty("mediaInfo").GetProperty("status").GetInt32());
+
+        // The administrator, who can open every library and copy, gets them all.
+        var all = Body(await rig.Feeds.FilmographyAsync(admin, 3810, CancellationToken.None));
+        Assert.Equal(new[] { "1399", $"1400={locked.Id:N}", "438631", $"12={outside.Id:N}", $"11={inside.Id:N}", $"15={rated.Id:N}", $"13={found.Id:N}", "14" }, Titles(all));
+
+        // The person page's own rule: unknown 404, outage retryable, an adult performer refused to a
+        // viewer with a parental limit, unlinked (Seerr mode) refused.
+        Assert.Equal(FeedOutcome.NotFound, (await rig.Feeds.FilmographyAsync(viewer, 77, CancellationToken.None)).Outcome);
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.FilmographyAsync(MoviesOnly(rig, linked: false), 3810, CancellationToken.None)).Outcome);
+        rig.Source.AdultPerson = 4242;
+        var kid = rig.Person();
+        kid.MaxParentalRatingScore = 10;
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.FilmographyAsync(kid, 4242, CancellationToken.None)).Outcome);
+        Assert.Equal(FeedOutcome.Ok, (await rig.Feeds.FilmographyAsync(viewer, 4242, CancellationToken.None)).Outcome);
+        rig.Source.Down = true;
+        Assert.Equal(FeedOutcome.Unavailable, (await rig.Feeds.FilmographyAsync(viewer, 3810, CancellationToken.None)).Outcome);
+    }
+
+    [Fact]
+    public async Task AFilmographyAppliesTheViewersParentalLimitBeforeTheLibraryCheck()
+    {
+        using var rig = new Rig();
+        rig.Source.Credits = """{"cast":[{"id":438631,"mediaType":"movie","title":"Dune","voteCount":3000},{"id":1399,"mediaType":"tv","name":"Game of Thrones","voteCount":5000}],"crew":[]}""";
+        // Every title here is rated PG-13 by the rig's rating source.
+        var kid = rig.Person();
+        kid.MaxParentalRatingScore = 10;
+        Assert.Empty(Titles(Body(await rig.Feeds.FilmographyAsync(kid, 3810, CancellationToken.None))));
+        var teen = rig.Person();
+        teen.MaxParentalRatingScore = 13;
+        Assert.Equal(new[] { "1399", "438631" }, Titles(Body(await rig.Feeds.FilmographyAsync(teen, 3810, CancellationToken.None))));
+    }
+
+    [Fact]
+    public async Task InJellyfinEnhancedModeAFilmographyNeedsNoSeerrAccount()
+    {
+        using var rig = new Rig();
+        rig.Source.Credits = """{"cast":[{"id":438631,"mediaType":"movie","title":"Dune","voteCount":3000}],"crew":[]}""";
+        var unlinked = rig.Person(linked: false);
+        // Seerr mode: the person page (and its list) needs the viewer's Seerr account.
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.FilmographyAsync(unlinked, 3810, CancellationToken.None)).Outcome);
+        var config = rig.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = true;
+        config.ArrPhase1Enabled = true;
+        config.ArrPhase3Enabled = true;
+        config.ArrRequestBackend = "je";
+        // Jellyfin Enhanced mode: the page opens without one, and so does its filmography.
+        Assert.Equal(200, Status((await Call(rig, "UserLibrary", "GetItem", Me(unlinked), new() { ["itemId"] = Id(SyntheticId.Person(3810)) })).Result));
+        Assert.Equal(new[] { "438631" }, Titles(Body(await rig.Feeds.FilmographyAsync(unlinked, 3810, CancellationToken.None))));
+        // And the genre, studio and network discovery pages' feeds.
+        rig.Source.Feeds["movie:genre:878:1"] = """{"page":1,"totalPages":1,"results":[{"id":438631,"mediaType":"movie","title":"Dune"}]}""";
+        Assert.Equal(new[] { "438631" }, Titles(Body(await rig.Feeds.DiscoverAsync(unlinked, true, "genre", 878, 1, null, CancellationToken.None))));
+    }
+
+    [Fact]
+    public async Task TheFeedRoutesAnswerTheCallerOnlyAndNeverToAnApiKey()
+    {
+        using var rig = new Rig();
+        rig.Source.Credits = """{"cast":[{"id":438631,"mediaType":"movie","title":"Dune","voteCount":3000}],"crew":[]}""";
+        var viewer = rig.Person();
+        Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsFeedsController For(System.Security.Claims.ClaimsPrincipal user) => new(rig.Feeds, rig.Callers.Users.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = user } },
+        };
+
+        var controller = For(Me(viewer));
+        var ok = Assert.IsType<ContentResult>(await controller.Filmography(3810, CancellationToken.None));
+        Assert.Equal("application/json", ok.ContentType);
+        Assert.Contains("\"id\":438631", ok.Content, StringComparison.Ordinal);
+        Assert.Equal("private, no-store", controller.Response.Headers.CacheControl.ToString());
+        Assert.Equal(404, Status(await For(Me(viewer)).Filmography(77, CancellationToken.None)));
+        Assert.Equal(400, Status(await For(Me(viewer)).Discover("person", "genre", 878)));
+        Assert.Equal(400, Status(await For(Me(viewer)).Discover("movie", "keyword", 878)));
+        // An API key (no user) or the feature off: refused before anything is read.
+        var calls = rig.Source.Calls;
+        Assert.Equal(403, Status(await For(new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity("Custom"))).Filmography(3810, CancellationToken.None)));
+        rig.Plugin.Plugin.Configuration.NativeAbsentDetailsEnabled = false;
+        Assert.Equal(403, Status(await For(Me(viewer)).Filmography(3810, CancellationToken.None)));
+        Assert.Equal(403, Status(await For(Me(viewer)).Discover("movie", "genre", 878)));
+        Assert.Equal(calls, rig.Source.Calls);
+    }
+
+    [Fact]
+    public async Task GenreStudioAndNetworkFeedsAreFilteredForTheViewerBeforeTheyLeaveTheServer()
+    {
+        using var rig = new Rig();
+        var viewer = MoviesOnly(rig);
+        var admin = rig.Person(admin: true);
+        var both = rig.Person();
+        var inside = Copy(rig, true, 11, "Kids copy", new[] { viewer, admin });
+        var outside = Copy(rig, true, 12, "Adults copy", new[] { admin }, viewer);
+        var locked = Copy(rig, false, 1400, "Locked Show", new[] { admin }, viewer, both);
+        var rated = Copy(rig, true, 15, "Hidden by rating", new[] { admin }, viewer);
+        rig.Source.Feeds["tv:network:49:1"] = """{"page":1,"totalPages":3,"results":[{"id":1400,"mediaType":"tv","name":"Locked Show"}]}""";
+        rig.Source.Feeds["movie:studio:99:1"] = $$$"""
+        {"page":1,"totalPages":7,"totalResults":140,"results":[
+          {"id":12,"mediaType":"movie","title":"Adults copy","mediaInfo":{"status":5,"jellyfinMediaId":"{{{outside.Id:N}}}"}},
+          {"id":11,"mediaType":"movie","title":"Kids copy","mediaInfo":{"status":5,"jellyfinMediaId":"{{{inside.Id:N}}}"}},
+          {"id":438631,"mediaType":"movie","title":"Dune"},{"id":15,"mediaType":"movie","title":"Hidden by rating"},{"id":1399,"mediaType":"tv","name":"Wrong kind"}]}
+        """;
+        rig.Source.Feeds["tv:network:2739:1"] = """{"page":1,"totalPages":3,"results":[{"id":1399,"mediaType":"tv","name":"Game of Thrones"},{"id":1400,"mediaType":"tv","name":"Locked Show"}]}""";
+        rig.Source.Feeds["tv:company:99:2"] = """{"page":2,"totalPages":2,"results":[{"id":1399,"mediaType":"tv","name":"Game of Thrones"}]}""";
+
+        var studio = await rig.Feeds.DiscoverAsync(viewer, true, "studio", 99, 1, "popularity.desc", CancellationToken.None);
+        Assert.Equal(new[] { $"11={inside.Id:N}", "438631" }, Titles(Body(studio)));
+        Assert.Equal(7, Body(studio).GetProperty("totalPages").GetInt32());
+        Assert.False(Body(studio).TryGetProperty("totalResults", out _), "no upstream count of what was left out");
+        Assert.DoesNotContain("Adults copy", studio.Json!, StringComparison.Ordinal);
+        Assert.DoesNotContain("Hidden by rating", studio.Json!, StringComparison.Ordinal);
+        Assert.DoesNotContain(outside.Id.ToString("N"), studio.Json!, StringComparison.Ordinal);
+        Assert.Contains("movie:studio:99:1?popularity.desc", rig.Source.FeedCalls);
+        // A page whose every title is left out is an empty page, not the end of the feed (more pages may hold titles).
+        var hiddenPage = Body(await rig.Feeds.DiscoverAsync(both, false, "network", 49, 1, null, CancellationToken.None));
+        Assert.Empty(Titles(hiddenPage));
+        Assert.Equal(3, hiddenPage.GetProperty("totalPages").GetInt32());
+        // No series library for this viewer at all: nothing of a series feed could be theirs, so it ends at
+        // once (never paged through empty) and the source isn't asked.
+        var asked = rig.Source.FeedCalls.Count;
+        var network = Body(await rig.Feeds.DiscoverAsync(viewer, false, "network", 2739, 1, null, CancellationToken.None));
+        Assert.Empty(Titles(network));
+        Assert.Equal(1, network.GetProperty("totalPages").GetInt32());
+        Assert.Empty(Titles(Body(await rig.Feeds.DiscoverAsync(viewer, false, "company", 99, 2, null, CancellationToken.None))));
+        Assert.Equal(asked, rig.Source.FeedCalls.Count);
+        // The administrator gets them.
+        Assert.Equal(new[] { "1399", $"1400={locked.Id:N}" }, Titles(Body(await rig.Feeds.DiscoverAsync(admin, false, "network", 2739, 1, null, CancellationToken.None))));
+        Assert.Equal(new[] { $"12={outside.Id:N}", $"11={inside.Id:N}", "438631", $"15={rated.Id:N}" }, Titles(Body(await rig.Feeds.DiscoverAsync(admin, true, "studio", 99, 1, null, CancellationToken.None))));
+        Assert.Equal(new[] { "1399" }, Titles(Body(await rig.Feeds.DiscoverAsync(admin, false, "company", 99, 2, null, CancellationToken.None))));
+
+        // Only the feeds these pages have, with a sane page and sort.
+        foreach (var (movie, source, id, page, sort) in new (bool, string, int, int, string?)[]
+        {
+            (true, "network", 2739, 1, null), (false, "studio", 99, 1, null), (true, "keyword", 1, 1, null), (true, "genre", 0, 1, null),
+            (true, "genre", 878, 0, null), (true, "genre", 878, 501, null), (true, "genre", 878, 1, "popularity.desc&x=1"),
+        })
+        {
+            Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.DiscoverAsync(viewer, movie, source, id, page, sort, CancellationToken.None)).Outcome);
+        }
+
+        Assert.Equal(FeedOutcome.NotFound, (await rig.Feeds.DiscoverAsync(viewer, true, "genre", 878, 1, null, CancellationToken.None)).Outcome);
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.DiscoverAsync(MoviesOnly(rig, linked: false), true, "studio", 99, 1, null, CancellationToken.None)).Outcome);
+        rig.Source.Down = true;
+        Assert.Equal(FeedOutcome.Unavailable, (await rig.Feeds.DiscoverAsync(viewer, true, "studio", 99, 1, null, CancellationToken.None)).Outcome);
     }
 }
 

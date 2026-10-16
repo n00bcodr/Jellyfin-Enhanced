@@ -9,7 +9,9 @@
 // TMDB-backed series-by-company feed for any other studio.
 // A studio or network the viewer's library doesn't offer (linked from a native
 // details page of a title not in the library) has a synthetic id that carries
-// its TMDB company or network id; its list page holds nothing else.
+// its TMDB company or network id; its list page holds nothing else. Its feeds
+// come from the server's native-details discovery route, filtered there for
+// the viewer (no Seerr account needed).
 (function(JE) {
     'use strict';
 
@@ -258,6 +260,7 @@
             tvId: tvNetworkId || (tvByCompany ? companyId : null),
             movieId: companyId,
             tvSource: tvNetworkId ? 'network' : 'company',
+            native: !!syntheticStudio(studioId),
             title: JE.t('discovery_more_from_studio', { studio: studioInfo.name })
         };
     }
@@ -274,6 +277,11 @@
         pageKey: (id) => `${id}-${window.location.hash}`,
         resolveFeeds,
         buildDiscoverPath: (kind, id, feeds) => {
+            // A synthetic studio's or network's page: the server filters its feeds for the viewer.
+            if (feeds?.native) {
+                if (kind !== 'tv') return `/JellyfinEnhanced/native-details/discover/movie/studio/${id}`;
+                return `/JellyfinEnhanced/native-details/discover/tv/${feeds.tvSource === 'company' ? 'company' : 'network'}/${id}`;
+            }
             if (kind !== 'tv') return `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${id}`;
             return feeds?.tvSource === 'company'
                 ? `/JellyfinEnhanced/jellyseerr/discover/tv/studio/${id}`

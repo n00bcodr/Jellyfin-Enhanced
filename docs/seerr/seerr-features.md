@@ -133,16 +133,19 @@ library title:
   titles). Anyone else opens a page of their own, built the same way: photo, name, biography, birth and death,
   birthplace, what they're known for and their **Filmography** (best-known titles first, with the usual All / Movies /
   Series filter and sort). Each title in it opens your library copy when you have one, otherwise its own page like
-  this one. A person TMDB marks as an adult performer isn't shown to accounts with a parental limit. The filmography
-  is read from Seerr with your Seerr account, so in Requests & downloads' own request mode an account without one
-  sees the person's page without it.
+  this one. Titles you have are always in it, whatever *Exclude library items* says, since it's the only list of
+  that person's titles. A person TMDB marks as an adult performer isn't shown to accounts with a parental limit. In
+  Requests & downloads' own request mode the filmography needs no Seerr account.
 - **Genres, studios and networks**: Jellyfin's own list of that genre or studio when your library has titles in it
   that you can open (with the genre or network discovery row below, when it's on); otherwise a discovery page with
-  just that row. **Tags** open the tag's list with its discovery row.
-- A name that would lead to an empty page isn't a link: with a discovery row turned off (or, in Requests & downloads'
-  own request mode, for an account without a Seerr account) only the genres, studios and tags your library has for
-  you stay links. Your parental limits and library access apply on every one of these pages: the discovery rows and
-  filmographies list only titles you could open.
+  just that row (no Seerr account needed in Requests & downloads' own request mode). **Tags** open the tag's list
+  with its discovery row.
+- A name that would lead to an empty page isn't a link: with a discovery row turned off (or, for tags in Requests &
+  downloads' own request mode, for an account without a Seerr account) only the genres, studios and tags your library
+  has for you stay links.
+- Your parental limits and library access apply on every one of these pages. The filmography and the discovery pages'
+  rows are filtered on the server before they reach the browser: a title the library has but hides from you, a title
+  in a library you can't open, and a title not in the library whose own page you couldn't open are not sent at all.
 
 **When it can't open.** A title your account may not see (parental limits, libraries you can't open, an account
 not linked to Seerr) shows "This title isn't available to you." with *Go back*, never the modal. If Seerr can't be

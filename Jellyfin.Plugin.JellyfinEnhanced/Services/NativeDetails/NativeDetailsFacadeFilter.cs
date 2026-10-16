@@ -303,17 +303,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>
-        /// The discovery destinations the viewer gets: Jellyfin Enhanced's genre, network and tag rows read
-        /// Seerr with the viewer's own Seerr account, so they need Seerr and that account (Seerr mode: the
-        /// page's own rule already asked for it; Jellyfin Enhanced mode doesn't, so it is asked here), and
-        /// each row's admin switch.
+        /// The discovery destinations the viewer gets, each behind its row's admin switch and Seerr. A
+        /// genre, studio or network discovery page reads its titles through Jellyfin Enhanced's own Seerr
+        /// key, filtered for the viewer (<see cref="NativeDetailsFeeds"/>), so it needs no Seerr account.
+        /// A tag leads to the library's tag page, whose discovery row reads Seerr with the viewer's own
+        /// account: in Jellyfin Enhanced mode (where the page's own rule doesn't ask for one) that row
+        /// counts only for a linked viewer.
         /// </summary>
         private async Task<LinkDiscovery> DiscoveryAsync(User viewer, CancellationToken ct)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !NativeDetailsPolicy.SeerrConfigured(config)) return LinkDiscovery.None;
-            if (NativeDetailsPolicy.JeMode(config) && await _source.IsSeerrLinkedAsync(viewer.Id, ct).ConfigureAwait(false) != true) return LinkDiscovery.None;
-            return new LinkDiscovery(config.JellyseerrShowGenreDiscovery, config.JellyseerrShowNetworkDiscovery, config.JellyseerrShowTagDiscovery);
+            var tags = config.JellyseerrShowTagDiscovery
+                && (!NativeDetailsPolicy.JeMode(config) || await _source.IsSeerrLinkedAsync(viewer.Id, ct).ConfigureAwait(false) == true);
+            return new LinkDiscovery(config.JellyseerrShowGenreDiscovery, config.JellyseerrShowNetworkDiscovery, tags);
         }
 
         /// <summary>

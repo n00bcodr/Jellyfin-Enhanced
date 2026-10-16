@@ -27,6 +27,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
     /// </summary>
     public sealed class NativeDetailsPolicy
     {
+        /// <summary>How a listed title is shown to a viewer (<see cref="Listed"/>).</summary>
+        /// <param name="Shown">True when it is shown at all.</param>
+        /// <param name="LibraryCopy">The library copy the viewer can open, when it is shown as one.</param>
+        public readonly record struct ListedTitle(bool Shown, Guid? LibraryCopy)
+        {
+            /// <summary>Left out of the list.</summary>
+            public static ListedTitle Left => default;
+
+            /// <summary>Shown as a title that isn't in the library (its native details page).</summary>
+            public static ListedTitle Absent => new(true, null);
+
+            /// <summary>Shown as the library copy the viewer can open.</summary>
+            /// <param name="id">The copy.</param>
+            /// <returns>The answer.</returns>
+            public static ListedTitle Copy(Guid id) => new(true, id);
+        }
+
         /// <summary>A viewer's access to native details.</summary>
         public enum Access
         {
@@ -337,6 +354,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (!title.IsTitle) return false;
             if (!_parental.MaySeeAbsent(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), out _)) return false;
             return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title);
+        }
+
+        /// <summary>
+        /// How a title a list names (a filmography, a discovery feed) is shown to the viewer, judged by the
+        /// library first: the library copy they can open (a library card), or, with no copy anywhere, the
+        /// absent title when its own page would open for them (<see cref="MayListAbsent"/>: the cached
+        /// parental decision, library or request visibility); otherwise nothing. A copy Jellyfin hides
+        /// from them is never shown as absent instead. No network I/O: a restricted viewer's ratings must
+        /// be in the parental cache already (the list was run through the parental filter first).
+        /// </summary>
+        /// <param name="viewer">The effective viewer (viewer-level checks already passed).</param>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="tmdb">TMDB id.</param>
+        /// <returns>The library copy to link to, an absent title, or nothing.</returns>
+        public ListedTitle Listed(User viewer, bool movie, int tmdb)
+        {
+            if (tmdb <= 0) return ListedTitle.Left;
+            PhysicalTitle copies;
+            try
+            {
+                copies = _physical?.ReadCopies(viewer, Revision(viewer), movie, tmdb) ?? PhysicalTitle.None;
+            }
+            catch (Exception)
+            {
+                // The library can't be read: nothing may stand in for what it might hide.
+                return ListedTitle.Left;
+            }
+
+            if (copies.Shown.Count > 0) return ListedTitle.Copy(copies.Shown[0]);
+            if (copies.Copies.Count > 0) return ListedTitle.Left;
+            return MayListAbsent(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb)) ? ListedTitle.Absent : ListedTitle.Left;
         }
 
         private static bool ImportBlocked(PluginConfiguration config, User viewer)

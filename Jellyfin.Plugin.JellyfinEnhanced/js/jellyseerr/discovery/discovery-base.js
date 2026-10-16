@@ -74,6 +74,10 @@
      * @property {(id: string) => boolean} [enabledFor] - Renders on this page
      *   whatever the config key says (a page whose only titles are this row's,
      *   such as the person page of someone the library doesn't have).
+     * @property {(id: string) => boolean} [keepLibraryItems] - On this page the
+     *   row keeps library titles whatever JellyseerrExcludeLibraryItems says (a
+     *   row that is the page's only list of titles; library cards open the
+     *   library copy).
      * @property {() => string|null} getIdFromUrl - URL/hash contract: returns the
      *   page's id (or name) when the module applies to the current page.
      * @property {(id: string) => string} [pageKey] - Override the processed-page
@@ -219,6 +223,8 @@
         // Bumped whenever the client-paged list is re-rendered from the top
         // (filter / sort change): a chunk still being built is dropped.
         let renderEpoch = 0;
+        // The page being rendered keeps its library titles (spec.keepLibraryItems).
+        let keepLibrary = false;
 
         /**
          * Managed fetch through the shared request manager (cache prefix = key).
@@ -386,7 +392,7 @@
          * @returns {DocumentFragment}
          */
         function createCardsFragment(results) {
-            return JE.discoveryFilter.createCardsFragment(results, { cardClass });
+            return JE.discoveryFilter.createCardsFragment(results, { cardClass, keepLibraryItems: keepLibrary });
         }
 
         /**
@@ -520,7 +526,7 @@
 
             const epoch = renderEpoch;
             const isCurrent = () => epoch === renderEpoch && !signal?.aborted;
-            await JE.discoveryFilter.appendCards(itemsContainer, nextChunk, { cardClass, isCurrent });
+            await JE.discoveryFilter.appendCards(itemsContainer, nextChunk, { cardClass, isCurrent, keepLibraryItems: keepLibrary });
             // A reset (filter / sort change) or navigation during the build owns
             // the pagination state now.
             if (!isCurrent()) return;
@@ -702,6 +708,7 @@
                     // the cards not in yet.
                     const rendering = JE.discoveryFilter.appendCards(itemsContainer, itemsToAdd, {
                         cardClass,
+                        keepLibraryItems: keepLibrary,
                         isCurrent: () => !signal?.aborted
                     });
                     ensureFilterControl(itemsContainer);
@@ -1286,6 +1293,7 @@
 
             // Set rendering key before potentially aborting
             currentRenderingPageKey = pageKey;
+            keepLibrary = typeof spec.keepLibraryItems === 'function' && !!spec.keepLibraryItems(id);
 
             // Cancel any previous requests (for different pages)
             if (currentAbortController) {
