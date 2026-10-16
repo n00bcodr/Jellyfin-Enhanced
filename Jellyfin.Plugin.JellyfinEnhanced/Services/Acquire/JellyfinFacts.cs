@@ -186,6 +186,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The viewer asked (false: someone else in the household).</summary>
         public bool AskedByViewer { get; init; }
 
+        /// <summary>
+        /// The whole seasons the viewer asked for themselves (the standard copy; requests still on, JE request ledger),
+        /// so a series page doesn't offer them again once Sonarr has them and the status no longer says "asked".
+        /// </summary>
+        public IReadOnlyList<int> ViewerSeasons { get; init; } = Array.Empty<int>();
+
         /// <summary>The request waits for an OK.</summary>
         public bool Pending { get; init; }
 

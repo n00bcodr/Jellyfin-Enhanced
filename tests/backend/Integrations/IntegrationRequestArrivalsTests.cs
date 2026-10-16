@@ -898,6 +898,35 @@ public class IntegrationRequestArrivalsTests
     }
 
     [Fact]
+    public async Task AnAskWaitingForAnOkTellsTheAdministratorsOnceAndNobodyElse()
+    {
+        using var rig = await IntegrationNotificationsTests.Started();
+        var policy = new IntegrationRequestLedgerTests.Policy();
+        var (_, requests, service) = JeMode(rig, policy);
+        using var _ = service;
+        rig.Users.Names[rig.Kid.UserId] = "Robin";
+        // The Kid's ask waits for an OK: the administrator hears about it (as for a request waiting in Seerr), the Kid doesn't.
+        Assert.Equal(201, (await requests.CreateAsync(rig.Kid.UserId, new("kid-dune", new MutationInput { Key = IntegrationNotificationsTestsDune }), default)).HttpStatus);
+        Assert.Equal(1, await service.DeliverRequestNoticesAsync(rig.Arr.Now, default));
+        var told = Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "approval");
+        Assert.Equal(IntegrationNotificationsTestsDune, told.Key);
+        Assert.Contains("\"user\":\"Robin\"", told.Payload, StringComparison.Ordinal);
+        Assert.Empty(rig.Inbox(rig.Kid));
+        // Told once.
+        Assert.Equal(0, await service.DeliverRequestNoticesAsync(rig.Arr.Now, default));
+        Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "approval");
+        // An ask OK'd before the notices went out has moved on: nobody is asked for an OK.
+        var sev = await requests.CreateAsync(rig.Kid.UserId, new("kid-sev", new MutationInput { Key = IntegrationNotificationsTestsSeverance, Scope = "seasons", Seasons = new[] { 1 } }), default);
+        Assert.Equal(200, (await requests.ApproveAsync(sev.RequestId!, rig.Admin.UserId, null, default)).HttpStatus);
+        await service.DeliverRequestNoticesAsync(rig.Arr.Now, default);
+        Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "approval");
+        // An administrator's own ask goes out without an OK: nothing to tell.
+        Assert.True((await requests.CreateAsync(rig.Admin.UserId, new("admin-604", new MutationInput { Key = "movie:tmdb:604" }), default)).HttpStatus < 300);
+        await service.DeliverRequestNoticesAsync(rig.Arr.Now, default);
+        Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "approval");
+    }
+
+    [Fact]
     public async Task ANoticeBatchReadBeforeARestoreLeavesTheRestoredNoticesForTheNextRound()
     {
         using var rig = await IntegrationNotificationsTests.Started();
@@ -958,6 +987,38 @@ public class IntegrationRequestArrivalsTests
     }
 
     [Fact]
+    public async Task ASeriesPageNamesTheSeasonsTheViewerAskedForOnceSonarrHasThem()
+    {
+        using var lab = new Lab();
+        await lab.Warm();
+        // Emma asks for season 2 and it goes out: Sonarr now holds it, so its stage is Sonarr's ("looking"), no longer "asked".
+        var s2 = await lab.Ask(lab.Emma, new MutationInput { Key = Firefly, Scope = "seasons", Seasons = new[] { 2 } });
+        await lab.Outbox.TickAsync(default);
+        Assert.Equal("sent", lab.Ledger.Find(s2)!.Status);
+        lab.View.AddItem(new JfItemRef { ItemId = lab.SeriesItem, Kind = "series", Key = TitleKey.Parse(Firefly) });
+        async Task<JsonElement> Status(StatusViewer viewer)
+        {
+            using var doc = JsonDocument.Parse((await lab.Status.ForItemAsync(viewer, lab.SeriesItem, default)).Json);
+            return doc.RootElement.GetProperty("items")[0].Clone();
+        }
+        // Her series page still names it as hers, so it isn't offered to her again; nobody else's page names it.
+        Assert.Equal(new[] { 2 }, (await Status(lab.Emma)).GetProperty("askedSeasons").EnumerateArray().Select(x => x.GetInt32()).ToArray());
+        Assert.False((await Status(lab.Kid)).TryGetProperty("askedSeasons", out _));
+        // Only her own whole seasons in the standard copy: a single episode or a 4K ask doesn't count.
+        var mine = new[]
+        {
+            Want("a", lab.Emma.UserId, new MutationInput { Key = Firefly, Scope = "seasons", Seasons = new[] { 3, 1 } }, "sent"),
+            Want("b", lab.Emma.UserId, new MutationInput { Key = Firefly, Scope = "episodes", Episodes = new[] { new RequestEpisode(4, 1) } }, "sent"),
+            Want("c", lab.Emma.UserId, new MutationInput { Key = Firefly, Scope = "seasons", Seasons = new[] { 5 }, Variant = "4k" }, "sent"),
+            Want("d", lab.Emma.UserId, new MutationInput { Key = Firefly, Scope = "next_season", Seasons = new[] { 6 } }, "pending"),
+            Want("e", lab.Emma.UserId, new MutationInput { Key = Firefly, Scope = "seasons", Seasons = new[] { 7 } }, "declined"),
+            Want("f", lab.Kid.UserId, new MutationInput { Key = Firefly, Scope = "seasons", Seasons = new[] { 8 } }, "sent"),
+        };
+        Assert.Equal(new[] { 1, 3, 6 }, LedgerRequestFacts.FactsOf(mine, lab.Emma.UserId, () => Array.Empty<RequestDispatch>())!.ViewerSeasons);
+        RequestWant Want(string id, Guid user, MutationInput input, string status) => new(id, "q", user, "c-" + id, "f", input, status, "looking", 0, "null", lab.Arr.Now, lab.Arr.Now);
+    }
+
+    [Fact]
     public async Task AnAbsentSeriesPageNeverOffersASeasonAlreadyAskedForInEitherMode()
     {
         using var lab = new Lab();
@@ -981,6 +1042,14 @@ public class IntegrationRequestArrivalsTests
         await lab.Ask(lab.Kid, new MutationInput { Key = Andor, Scope = "seasons", Seasons = new[] { 1 } });
         Assert.Equal(("asked", "asked,notHere"), await Stages(lab.Kid));
         Assert.Equal("asked,notHere", (await Stages(lab.Emma)).Seasons);
+        // The page also names the seasons its viewer asked for (kept once a Sonarr holds them and the stage is its own).
+        async Task<string?> Asked(StatusViewer viewer)
+        {
+            using var doc = JsonDocument.Parse((await lab.Status.ForAbsentAsync(viewer, page, default)).Json);
+            return doc.RootElement.GetProperty("items")[0].TryGetProperty("askedSeasons", out var asked) ? asked.ToString() : null;
+        }
+        Assert.Equal("[1]", await Asked(lab.Kid));
+        Assert.Null(await Asked(lab.Emma));
 
         // Seerr mode: Seerr's requests are the authority; Emma's season 2 there waits for an OK.
         lab.Config.ArrRequestBackend = "seerr";

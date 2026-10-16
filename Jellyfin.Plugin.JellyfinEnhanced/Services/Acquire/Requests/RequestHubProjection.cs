@@ -70,11 +70,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         };
 
         private static readonly Regex PosterPath = new("^/[A-Za-z0-9_.-]{1,80}$", RegexOptions.CultureInvariant);
+        private static readonly Regex ImdbId = new("^tt[0-9]{1,10}$", RegexOptions.CultureInvariant);
         private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
         private readonly RequestService _service;
         private readonly IHouseholdDirectory _directory;
         private readonly TitleAliases? _aliases;
         private readonly Func<string, int, CancellationToken, Task<HubTitleMeta?>> _tmdb;
+        private readonly Func<TitleKey, CancellationToken, Task<int?>>? _tmdbIdOf;
         private readonly Func<DateTimeOffset> _now;
         private readonly IRequestPlaces? _places;
         private readonly ArrStatusService? _status;
@@ -84,17 +86,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>Creates the projection over the shared TMDB cache (DI).</summary>
         public RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases aliases, TmdbResponseCache tmdb, IServerConfigurationManager serverConfig, IRequestPlaces places, ArrStatusService status)
-            : this(service, directory, aliases, (media, id, ct) => TmdbTitleAsync(tmdb, Region(serverConfig), media, id, ct), () => DateTimeOffset.UtcNow, places, status)
+            : this(service, directory, aliases, (media, id, ct) => TmdbTitleAsync(tmdb, Region(serverConfig), media, id, ct), () => DateTimeOffset.UtcNow, places, status, (title, ct) => TmdbIdOfAsync(tmdb, title, ct))
         {
         }
 
         /// <summary>Creates the projection with an explicit TMDB reader, clock, place facts and status service (tests; without one, no part statuses).</summary>
-        internal RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases? aliases, Func<string, int, CancellationToken, Task<HubTitleMeta?>> tmdb, Func<DateTimeOffset> now, IRequestPlaces? places = null, ArrStatusService? status = null)
+        /// <param name="tmdbIdOf">TMDB's id of a title known by its TVDB or IMDb id (TMDB's find), for one no Sonarr/Radarr or Seerr names yet.</param>
+        internal RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases? aliases, Func<string, int, CancellationToken, Task<HubTitleMeta?>> tmdb, Func<DateTimeOffset> now, IRequestPlaces? places = null, ArrStatusService? status = null, Func<TitleKey, CancellationToken, Task<int?>>? tmdbIdOf = null)
         {
             _service = service;
             _directory = directory;
             _aliases = aliases;
             _tmdb = tmdb;
+            _tmdbIdOf = tmdbIdOf;
             _now = now;
             _places = places;
             _status = status;
@@ -335,7 +339,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal async Task<Dictionary<string, HubTitleMeta>> MetaAsync(IEnumerable<string> keys, StatusViewer caller, CancellationToken ct)
         {
             var result = new Dictionary<string, HubTitleMeta>(StringComparer.Ordinal);
-            var lookups = new List<(string Key, string Media, int Id)>();
+            // A TMDB id known now, or (null) the title's TVDB/IMDb key to find it by first.
+            var lookups = new List<(string Key, string Media, int? Id, TitleKey Title)>();
             foreach (var raw in keys.Distinct(StringComparer.Ordinal).Take(MaxMetaTitles))
             {
                 if (TitleKey.Parse(raw) is not { } key) continue;
@@ -350,7 +355,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     ItemId = copy?.ItemId.ToString("N", CultureInfo.InvariantCulture),
                 };
                 var tmdb = key.Provider == "tmdb" ? key.NumericId : aliases.FirstOrDefault(a => a.Provider == "tmdb")?.NumericId;
-                if (copy == null && tmdb is > 0) lookups.Add((raw, key.IsMovie ? "movie" : "tv", tmdb.Value));
+                if (copy == null && tmdb is > 0) lookups.Add((raw, key.IsMovie ? "movie" : "tv", tmdb.Value, key));
+                // Nothing names its TMDB id yet (a series asked for from its own page before any Sonarr has it): found by its id.
+                else if (copy == null && tmdb == null && _tmdbIdOf != null && key.Provider is "tvdb" or "imdb") lookups.Add((raw, key.IsMovie ? "movie" : "tv", null, key));
             }
             if (lookups.Count == 0) return result;
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -368,7 +375,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
                 try
                 {
-                    return (l.Key, await _tmdb(l.Media, l.Id, budget.Token).ConfigureAwait(false));
+                    var id = l.Id ?? await _tmdbIdOf!(l.Title, budget.Token).ConfigureAwait(false);
+                    return (l.Key, id is int found and > 0 ? await _tmdb(l.Media, found, budget.Token).ConfigureAwait(false) : null);
                 }
                 catch (Exception) when (!ct.IsCancellationRequested)
                 {
@@ -455,6 +463,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         /// <summary>Title, year, poster and certification of a TMDB title through the shared cache (server key).</summary>
+        /// <summary>TMDB's id of a title known by its TVDB or IMDb id (TMDB's find, through the shared cache), or null.</summary>
+        internal static async Task<int?> TmdbIdOfAsync(TmdbResponseCache tmdb, TitleKey title, CancellationToken ct)
+        {
+            var key = JellyfinEnhanced.Instance?.Configuration.GetTmdbApiKey();
+            var source = title.Provider switch { "tvdb" => "tvdb_id", "imdb" => "imdb_id", _ => null };
+            if (string.IsNullOrEmpty(key) || source == null || string.IsNullOrWhiteSpace(title.Id)) return null;
+            if (title.Provider == "tvdb" ? title.NumericId is not > 0 : !ImdbId.IsMatch(title.Id)) return null;
+            var found = await tmdb.GetAsync("find/" + Uri.EscapeDataString(title.Id), "?external_source=" + source, key, ct, bundle: true).ConfigureAwait(false);
+            return found.IsSuccess ? FoundTmdbId(found.Content, title.IsMovie) : null;
+        }
+
+        /// <summary>The first TMDB id of the kind asked for in a TMDB find answer, or null.</summary>
+        internal static int? FoundTmdbId(string answer, bool movie)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(answer);
+                if (!doc.RootElement.TryGetProperty(movie ? "movie_results" : "tv_results", out var results) || results.ValueKind != JsonValueKind.Array) return null;
+                foreach (var r in results.EnumerateArray())
+                {
+                    if (r.TryGetProperty("id", out var id) && id.TryGetInt32(out var found) && found > 0) return found;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+            return null;
+        }
+
         private static async Task<HubTitleMeta?> TmdbTitleAsync(TmdbResponseCache tmdb, string region, string media, int id, CancellationToken ct)
         {
             var key = JellyfinEnhanced.Instance?.Configuration.GetTmdbApiKey();

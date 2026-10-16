@@ -308,7 +308,8 @@
         if (latest != null && !(latestEntry && settled(latestEntry)) && wanted.length !== 1) {
             cards.push({ id: 'latest', icon: 'filter_1', label: tr('arr_sheet_card_latest'), input: (variant) => JE.arrAsk.seasonsInput(title.key, [latest], variant) });
         }
-        if (Number.isInteger(title.nextSeason) && title.nextSeason > 0) {
+        const nextEntry = seasons.find(s => s.season === title.nextSeason);
+        if (Number.isInteger(title.nextSeason) && title.nextSeason > 0 && !(nextEntry && settled(nextEntry))) {
             cards.push({ id: 'next', icon: 'skip_next', label: tr('arr_sheet_card_next'), input: (variant) => ({ ...JE.arrAsk.seasonsInput(title.key, [title.nextSeason], variant), scope: 'next_season' }) });
         }
         if (seasons.length > 1) cards.push({ id: 'pick', icon: 'checklist', label: tr('arr_sheet_card_pick'), input: null });

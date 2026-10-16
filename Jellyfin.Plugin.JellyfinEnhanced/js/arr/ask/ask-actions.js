@@ -144,20 +144,23 @@
      * What a series page offers: the season to get whole, the seasons with missing episodes, and
      * the request sheet's view of the seasons.
      * @param {Object} status Series status.
-     * @returns {{nextSeason: number|null, partial: Array<Object>, missing: number, seasons: Array, latestSeason: number|null, upcomingSeason: number|null}} Plan.
+     * @returns {{nextSeason: number|null, partial: Array<Object>, missing: number, seasons: Array, latestSeason: number|null, upcomingSeason: number|null, askedSeasons: Array<number>}} Plan.
      */
     function seriesPlan(status) {
         const seasons = (status.seasons || []).filter(s => Number.isInteger(s?.season) && s.season > 0).sort((a, b) => a.season - b.season);
+        // Seasons the viewer already asked for (still "looking" once Sonarr has them) aren't offered again.
+        const asked = new Set(Array.isArray(status.askedSeasons) ? status.askedSeasons : []);
         const whole = seasons.find((s) => {
             const m = s.summary || {};
             // Nothing of it here or on its way: simply not fetched (unmonitored) or missing for a long while; a
             // season the arr is looking for right now has nothing to ask for.
             return m.aired > 0 && !m.ready && !m.downloading && !m.almostReady && !m.attention && !(m.unknown > 0) && !['asked', 'approved'].includes(s.stage)
-                && seasonOfferable(m);
+                && !asked.has(s.season) && seasonOfferable(m);
         });
         // Seasons partly here with episodes nobody is fetching (missing for a long while: Search; looked for now: nothing).
-        const partial = seasons.filter(s => s !== whole && s.itemId && notFetchedOf(s.summary) > 0);
-        // Seasons with episodes missing for a long while: Search (never Get: a request may already have sent them).
+        const partial = seasons.filter(s => s !== whole && !asked.has(s.season) && s.itemId && notFetchedOf(s.summary) > 0);
+        // Seasons with episodes missing for a long while: Search (never Get: a request may already have sent them),
+        // asked-for seasons included.
         const searchable = seasons.filter(s => longMissingOf(s.summary) > 0);
         const aired = seasons.filter(s => (s.summary?.aired || 0) > 0);
         const owned = seasons.filter(s => (s.summary?.ready || 0) > 0 || (s.summary?.downloading || 0) > 0 || (s.summary?.almostReady || 0) > 0);
@@ -171,7 +174,8 @@
             searchSeasons: searchable.map(s => s.season),
             seasons: seasons.map(s => ({ season: s.season, episodes: s.summary?.aired || 0, have: s.summary?.ready || 0, status: s.stage })),
             latestSeason: aired.length ? aired[aired.length - 1].season : null,
-            upcomingSeason: upcoming ? upcoming.season : (lastOwned > 0 ? lastOwned + 1 : null)
+            upcomingSeason: upcoming ? upcoming.season : (lastOwned > 0 ? lastOwned + 1 : null),
+            askedSeasons: [...asked]
         };
     }
 
@@ -691,7 +695,8 @@
             poster: posterOf(item),
             seasons,
             latestSeason: latest,
-            nextSeason: upcoming
+            nextSeason: upcoming,
+            askedSeasons: plan.askedSeasons
         }, { opener: button });
         if (result) quotas.clear();
     }

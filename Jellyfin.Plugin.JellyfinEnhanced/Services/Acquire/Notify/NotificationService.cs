@@ -652,6 +652,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 {
                     ForgetTitle(want.UserId, key, generation);
                 }
+                // A new ask that waits for an OK tells the administrators (not the asker), as a request waiting in
+                // Seerr does; not one held back at sending (Requests shows it as stuck) or one that moved on since.
+                if (n.Kind == "create" && key != null && want.Status == "pending" && want.Reason is ("awaiting_approval" or "over_quota")
+                    && now - n.At <= ArrivalFreshFor && _users.Admins().Where(a => a != want.UserId && _users.IsActive(a)).ToList() is { Count: > 0 } approvers)
+                {
+                    var ask = TitleParams(key.Title, null);
+                    if (_titleMeta != null && ActiveViewer(want.UserId) is { } asker
+                        && (await _titleMeta(new[] { key.ToString() }, asker, cancellationToken).ConfigureAwait(false)).GetValueOrDefault(key.ToString()) is { } askMeta)
+                    {
+                        if (!string.IsNullOrEmpty(askMeta.Title)) ask["title"] = askMeta.Title!.Length > 200 ? askMeta.Title[..200] : askMeta.Title;
+                        if (askMeta.Year is > 1800) ask["year"] = askMeta.Year.Value.ToString(CultureInfo.InvariantCulture);
+                        if (!string.IsNullOrEmpty(askMeta.Poster)) ask["poster"] = askMeta.Poster!;
+                    }
+                    ask["user"] = _users.Name(want.UserId) ?? string.Empty;
+                    if (want.Input.Seasons.Length > 0) ask["seasons"] = string.Join(", ", want.Input.Seasons.Order());
+                    if (want.Input.Variant == "4k") ask["variant"] = "4k";
+                    var drafts = approvers.Select(a => Draft(a, NotifyKind.Approval, "approval|je|" + want.Id, key.Title.ToString(), null, ask, now, null)).ToList();
+                    var created = _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) ? drafts.Where(d => d.Add(tx) != null).ToList() : new List<NotificationDraft>(), new List<NotificationDraft>()).Result;
+                    foreach (var d in created) Announce(d);
+                    told += created.Count;
+                    continue;
+                }
                 var prefs = _store.Prefs(want.UserId);
                 var tell = kind != null && key != null && now - n.At <= ArrivalFreshFor && _users.IsActive(want.UserId)
                     && (kind == NotifyKind.Declined ? want.Status == "declined" && prefs.Declined : want.Status is "queued" or "sent" or "stale" or "fulfilled" && prefs.Approved && n.Approver != want.UserId);

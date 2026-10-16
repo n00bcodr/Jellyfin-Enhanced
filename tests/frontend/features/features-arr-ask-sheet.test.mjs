@@ -753,6 +753,34 @@ test('series page for a kid: "Ask Dad for Season 2"; Watchers and the feature of
   assert.equal(page.querySelector('.je-ask-actions'), null);
 });
 
+test('seasons the viewer already asked for (Sonarr now looking for them) are not offered again on the series page or in its sheet', async t => {
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', item: { Id: 'series1', Name: 'Severance', ProductionYear: 2022 } });
+  const page = h.document.getElementById('itemDetailPage');
+  // The viewer asked for seasons 2 and 3: Sonarr holds them now, so their stage is its own ("looking").
+  h.JE.internals.arrAskActions.attachDetails(page, { ...SERIES_STATUS, askedSeasons: [2, 3] }, {});
+  await settle();
+  const texts = () => [...page.querySelectorAll('.je-ask-actions .je-ask-action-text')].map(n => n.textContent);
+  assert.deepEqual(texts(), ['More…']);
+  click(h, [...page.querySelectorAll('.je-ask-action')].find(b => b.textContent.includes('More…')));
+  await settle(20);
+  assert.equal(card(h, 'everything'), null, 'nothing left to ask for as a whole');
+  key(h, 'Escape');
+  await settle();
+  // Only season 2 asked: season 3's missing episodes are still offered, season 2 isn't.
+  h.JE.internals.arrAskActions.attachDetails(page, { ...SERIES_STATUS, askedSeasons: [2] }, {});
+  await settle();
+  assert.deepEqual(texts(), ['Get missing episodes', 'More…']);
+  // The next season to get is one they asked for: "Next season only" isn't offered for it.
+  const next = { ...SERIES_STATUS, seasons: SERIES_STATUS.seasons.slice(0, 2), askedSeasons: [2] };
+  h.JE.internals.arrAskActions.attachDetails(page, next, {});
+  await settle();
+  click(h, [...page.querySelectorAll('.je-ask-action')].find(b => b.textContent.includes('More…')));
+  await settle(20);
+  assert.equal(card(h, 'next'), null);
+  key(h, 'Escape');
+  await settle();
+});
+
 test('More… opens the sheet with the series seasons and returns focus to it', async t => {
   const h = setup(t, { html: PAGE, hash: '#/details?id=series1', item: { Id: 'series1', Name: 'Severance', ProductionYear: 2022, ImageTags: { Primary: 'tag1' } } });
   const page = h.document.getElementById('itemDetailPage');

@@ -451,6 +451,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Per season (series details only).</summary>
         public IReadOnlyList<SeasonStatus>? Seasons { get; init; }
 
+        /// <summary>Series: the whole seasons the viewer asked for themselves (see <see cref="RequestFacts.ViewerSeasons"/>); null when none.</summary>
+        public IReadOnlyList<int>? AskedSeasons { get; set; }
+
         /// <summary>Per episode (season details only).</summary>
         public IReadOnlyList<EpisodeStatus>? Episodes { get; init; }
 

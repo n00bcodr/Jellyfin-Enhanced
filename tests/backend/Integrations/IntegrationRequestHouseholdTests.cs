@@ -52,6 +52,8 @@ public class IntegrationRequestHouseholdTests
         public FakeDirectory Directory { get; } = new();
         public Dictionary<int, HubTitleMeta?> Tmdb { get; } = new();
         public List<(string Media, int Id)> TmdbCalls { get; } = new();
+        public Dictionary<string, int> Found { get; } = new();
+        public List<string> FindCalls { get; } = new();
         public int Saves { get; private set; }
         public RequestHubProjection Projection { get; }
         public HouseholdService Household { get; }
@@ -63,7 +65,11 @@ public class IntegrationRequestHouseholdTests
                 lock (TmdbCalls) TmdbCalls.Add((media, id));
                 if (!Tmdb.TryGetValue(id, out var meta)) throw new HttpRequestException("TMDB unavailable");
                 return Task.FromResult(meta);
-            }, () => R.Now, Places);
+            }, () => R.Now, Places, tmdbIdOf: (title, ct) =>
+            {
+                lock (FindCalls) FindCalls.Add(title.ToString());
+                return Task.FromResult(Found.TryGetValue(title.ToString(), out var id) ? (int?)id : null);
+            });
             Household = new HouseholdService(Projection, R.Feed, _ => Saves++);
             Name(R.Member, "Emma");
             Name(R.Kid, "Leo");
@@ -184,6 +190,32 @@ public class IntegrationRequestHouseholdTests
         var plain = Json(await h.As(r.Manager).Approvals(default)).GetProperty("items").EnumerateArray().Single(i => i.GetProperty("id").GetString() == leo.RequestId);
         Assert.False(plain.TryGetProperty("space", out _));
         Assert.False(plain.TryGetProperty("already4k", out _));
+    }
+
+    [Fact]
+    public async Task ASeriesNoSonarrHoldsYetIsNamedOnItsCardThroughTmdbsFindByItsTvdbId()
+    {
+        using var h = new Hub();
+        var r = h.R;
+        // Asked for from its own page: the ask names the series by its TVDB id, and nothing else names its TMDB id yet.
+        var cheers = await r.Create(r.Kid, new MutationInput { Key = "tv:tvdb:77623", Scope = "seasons", Seasons = new[] { 1, 2 } });
+        var unknown = await r.Create(r.Kid, new MutationInput { Key = "tv:tvdb:999999", Scope = "seasons", Seasons = new[] { 1 } });
+        h.Found["tv:tvdb:77623"] = 141;
+        h.Tmdb[141] = new HubTitleMeta { Title = "Cheers", Year = 1982, Poster = "/cheers.jpg" };
+        var items = Json(await h.As(r.Admin).Approvals(default)).GetProperty("items").EnumerateArray().ToList();
+        var card = items.First(i => i.GetProperty("id").GetString() == cheers.RequestId);
+        Assert.Equal("Cheers", card.GetProperty("title").GetString());
+        Assert.Equal("/cheers.jpg", card.GetProperty("poster").GetString());
+        // TMDB doesn't know it: no title, and no details read for a guessed id.
+        var nameless = items.First(i => i.GetProperty("id").GetString() == unknown.RequestId);
+        Assert.False(nameless.TryGetProperty("title", out var title) && title.ValueKind == System.Text.Json.JsonValueKind.String);
+        Assert.Contains("tv:tvdb:999999", h.FindCalls);
+        Assert.Equal(new[] { 141 }, h.TmdbCalls.Select(c => c.Id).Distinct().ToArray());
+        // TMDB's find answer: the first id of the kind asked for.
+        Assert.Equal(141, RequestHubProjection.FoundTmdbId("{\"movie_results\":[{\"id\":5}],\"tv_results\":[{\"id\":141},{\"id\":7}]}", movie: false));
+        Assert.Equal(5, RequestHubProjection.FoundTmdbId("{\"movie_results\":[{\"id\":5}],\"tv_results\":[]}", movie: true));
+        Assert.Null(RequestHubProjection.FoundTmdbId("{\"tv_results\":[]}", movie: false));
+        Assert.Null(RequestHubProjection.FoundTmdbId("not json", movie: false));
     }
 
     [Fact]

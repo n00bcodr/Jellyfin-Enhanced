@@ -190,6 +190,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     break;
                 case "series":
                     status = StatusComposer.Series(facts, item, _view.Episodes(item.ItemId, null, viewer, includeVirtual: false), _view.Seasons(item.ItemId, viewer), c, detail: true, seriesCopies);
+                    status.AskedSeasons = AskedSeasons(facts);
                     break;
                 case "season":
                     status = StatusComposer.Season(facts, item, item.SeriesId is Guid sid ? _view.Episodes(sid, item.Season, viewer, includeVirtual: viewer.DisplayMissingEpisodes) : Array.Empty<JfEpisode>(), c, detail: true, seriesCopies);
@@ -288,6 +289,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return Cache.Put(cacheKey, Serialize(status == null ? Array.Empty<TitleStatus>() : new[] { status }));
         }
 
+        /// <summary>The whole seasons the viewer asked for themselves, for a series page (null when none).</summary>
+        private static IReadOnlyList<int>? AskedSeasons(TitleFacts facts) => facts.Request?.ViewerSeasons is { Count: > 0 } asked ? asked : null;
+
         private TitleStatus? ComposeAbsent(StatusViewer viewer, AbsentTitle page, Gathered gather, RequestFacts? episodeRequests)
         {
             var title = page.Title.Title;
@@ -313,6 +317,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     status = facts.Copies.Any(x => x.Series != null)
                         ? StatusComposer.Series(facts, item, hiddenEpisodes, seasons, c, detail: true)
                         : StatusComposer.AbsentSeries(facts, page, c, number => _requests.ForSeason(title, number, viewer));
+                    status.AskedSeasons = AskedSeasons(facts);
                     break;
                 case "season":
                     var rows = page.Rows
