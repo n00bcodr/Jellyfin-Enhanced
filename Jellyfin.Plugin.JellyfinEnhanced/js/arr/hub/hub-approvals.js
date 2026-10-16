@@ -555,7 +555,9 @@
         const rating = ratingLine(item, who);
         if (rating) body.appendChild(rating);
         // The part asked for may already be on its way or here (someone else's request, an arr outside JE).
-        const part = X.partPill(item.partStatus);
+        // A request held after its OK: the stuck chip says why; "OK'd! Getting started" would contradict it.
+        const heldAfterOk = item.okd === true && item.stuck === true && ['approved', 'asked'].includes(item.partStatus?.stage);
+        const part = heldAfterOk ? null : X.partPill(item.partStatus);
         if (part) {
             part.classList.add('je-approval-part');
             body.appendChild(part);
@@ -598,7 +600,8 @@
         if (busy) node.appendChild(X.el('div', 'je-approval-working', X.tr('arr_approvals_working')));
 
         if (!item.canApprove) {
-            node.appendChild(X.el('div', 'je-approval-readonly', X.tr('arr_approvals_read_only', { contact: X.contact() })));
+            // Already OK'd and held (a 4K copy nothing can take now, say): nothing waits for anyone's OK.
+            if (item.okd !== true) node.appendChild(X.el('div', 'je-approval-readonly', X.tr('arr_approvals_read_only', { contact: X.contact() })));
             return node;
         }
         const actions = X.el('div', 'je-approval-actions');

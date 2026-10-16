@@ -208,6 +208,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     reason = w.Reason,
                     overQuota = w.Reason == "over_quota",
                     stuck,
+                    // Already OK'd (on its way, or held after its OK): nothing here waits for an OK any more.
+                    okd = w.Status is not "pending",
                     cost = w.Cost,
                     title = title.Title,
                     year = title.Year,

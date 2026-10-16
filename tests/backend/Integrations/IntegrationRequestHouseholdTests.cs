@@ -140,6 +140,7 @@ public class IntegrationRequestHouseholdTests
         Assert.Equal(8, card.GetProperty("estimateGb").GetDouble());
         Assert.True(card.GetProperty("canApprove").GetBoolean());
         Assert.False(card.GetProperty("stuck").GetBoolean());
+        Assert.False(card.GetProperty("okd").GetBoolean());   // still waiting for an OK
         // Mia has no parental limit: no rating line on her card. Nothing about where it would land.
         var mia = Json(answer).GetProperty("items").EnumerateArray().First(i => i.GetProperty("id").GetString() != leo.RequestId);
         Assert.False(mia.TryGetProperty("rating", out _));

@@ -486,6 +486,17 @@ test('a request held because its asker has no Seerr account, or nothing can take
   const [unlinked, fourK] = h.page().querySelectorAll('.je-approval');
   assert.match(unlinked.querySelector('.je-approval-chip-stuck').textContent, /Stuck · needs a Seerr account linked to them$/);
   assert.match(fourK.querySelector('.je-approval-chip-stuck').textContent, /Stuck · nothing can take the 4K copy now$/);
+  // Seen live: the administrator's own 4K request, OK'd and sent before the 4K Radarr went away, read
+  // "OK'd! Getting started" and "Needs Dad to OK" next to the stuck chip. Neither shows on a card held after its OK.
+  const held = setupHub(t, { hash: '#/requests?tab=approvals', me: { role: 'admin', contact: 'Dad' }, routes: (x, path) => (path === '/acquire/requests/approvals'
+    ? approvals([card(3, { stuck: true, okd: true, canApprove: false, reason: 'no_4k_instance', variant: '4k', admin: { reason: 'no_4k_instance', jobs: [] },
+      partStatus: { key: 'movie:tmdb:3', kind: 'movie', stage: 'approved', reason: { code: 'approved' }, actions: [] } })]) : null) });
+  held.JE.initializeArrStatus();
+  await until(() => held.page().querySelectorAll('.je-approval').length === 1);
+  const heldCard = held.page().querySelector('.je-approval');
+  assert.equal(heldCard.querySelector('.je-approval-part'), null);
+  assert.equal(heldCard.querySelector('.je-approval-readonly'), null);
+  assert.match(heldCard.querySelector('.je-approval-chip-stuck').textContent, /nothing can take the 4K copy now$/);
   const m = setupHub(t, { hash: '#/requests?tab=approvals', me: { role: 'manager', contact: 'Jake' }, routes: (x, path) => (path === '/acquire/requests/approvals' ? approvals([card(1, { stuck: true, reason: 'seerr_user_unlinked' })]) : null) });
   m.JE.initializeArrStatus();
   await until(() => m.page().querySelectorAll('.je-approval').length === 1);
