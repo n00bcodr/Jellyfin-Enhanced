@@ -597,17 +597,19 @@ test('mount API: a redraw keeps the keyboard focus on the control (or its stand-
 const PAGE = '<div id="itemDetailPage"><div class="detailPagePrimaryContent"><div class="detailSection"><h3 class="itemName">Severance</h3></div></div></div>';
 const SERIES_STATUS = {
   key: 'tv:tvdb:371980', itemId: 'series1', kind: 'series', stage: 'looking', reason: { code: 'partial' },
-  summary: { aired: 28, ready: 18, missing: 12, longMissing: 11 },
+  summary: { aired: 26, ready: 12, downloading: 1, missing: 2, longMissing: 0 },
   seasons: [
     { season: 1, itemId: 's1', stage: 'ready', summary: { aired: 9, ready: 9, missing: 0 } },
-    { season: 2, itemId: null, stage: 'looking', summary: { aired: 10, ready: 0, missing: 10, longMissing: 10 } },
-    { season: 3, itemId: 's3', stage: 'looking', summary: { aired: 6, ready: 4, missing: 2, longMissing: 1 } }
+    // Not monitored in Sonarr: nobody fetches it (Get Season 2).
+    { season: 2, itemId: null, stage: 'none', summary: { aired: 10, ready: 0, missing: 0 } },
+    // E1–E4 here (three counted), E5 and E8 being looked for, E6 not in the arr (Get missing episodes), E7 downloading.
+    { season: 3, itemId: 's3', stage: 'looking', summary: { aired: 7, ready: 3, downloading: 1, missing: 2, longMissing: 0 } }
   ]
 };
-/** Season 3: E5 missing for a long while (Search), E6 not in the arr, E8 being looked for right now (nothing to ask). */
+/** Season 3: E5 and E8 being looked for right now (nothing to ask), E6 not in the arr, E7 downloading. */
 const SEASON3 = { items: [{ key: 'tv:tvdb:371980:s3', kind: 'season', episodes: [
   { episode: 1, stage: 'ready', reason: { code: 'ready' } },
-  { episode: 5, stage: 'looking', reason: { code: 'no_release_yet' } },
+  { episode: 5, stage: 'looking', reason: { code: 'looking' } },
   { episode: 6, stage: 'notHere', reason: { code: 'not_in_arr' } },
   { episode: 7, stage: 'downloading', reason: { code: 'downloading' } },
   { episode: 8, stage: 'looking', reason: { code: 'looking' } }
@@ -639,7 +641,7 @@ test('series page: Get Season 2, Get missing episodes, More… and the cost line
   assert.ok(h.statusCalls.some(p => p.includes('/acquire/status/item/s3')), 'reads the season with missing episodes');
   const input = h.posts[1].body.input;
   assert.equal(input.scope, 'episodes');
-  assert.deepEqual(input.episodes.map(e => `${e.season}x${e.episode}`), ['3x5', '3x6']);
+  assert.deepEqual(input.episodes.map(e => `${e.season}x${e.episode}`), ['3x6']);
 
   // A later status read draws the states again (the page remembers its asks).
   h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, { contact: 'Dad' });
@@ -730,7 +732,7 @@ test('More… opens the sheet with the series seasons and returns focus to it', 
   click(h, more);
   await settle(20);
   assert.equal(h.document.querySelector('.je-sheet-title').textContent, 'Get Severance');
-  assert.equal(h.document.querySelector('.je-sheet-facts').textContent, '3 seasons · 25 episodes');
+  assert.equal(h.document.querySelector('.je-sheet-facts').textContent, '3 seasons · 26 episodes');
   assert.equal(card(h, 'everything').querySelector('.je-sheet-card-label').textContent, 'Everything (2 seasons)');
   assert.ok(h.document.querySelector('img.je-sheet-poster').src.startsWith('http://jellyfin.test/Items/series1/Images/Primary'));
   key(h, 'Escape');
@@ -1110,7 +1112,8 @@ test('a series missing for a long while: Search for everyone who may ask (member
   h.JE.internals.arrAskActions.attachDetails(page, SERIES_NOTHING, { contact: 'Dad' });
   await settle();
   const texts = () => [...page.querySelectorAll('.je-ask-actions .je-ask-action-text')].map(n => n.textContent);
-  same(texts(), ['Ask Dad for Season 1', 'Ask Dad for the missing episodes', 'Ask Dad to search', 'More…']);
+  // Missing for a long while: Search only (never Get Season N / Get missing episodes: requests may have sent them).
+  same(texts(), ['Ask Dad to search', 'More…']);
   click(h, [...page.querySelectorAll('.je-ask-actions .je-ask-action')].find(b => b.textContent.endsWith('Ask Dad to search')));
   await settle(20);
   // The family search goes first; nothing was sent for the series yet, so it asks for the seasons.
@@ -1122,7 +1125,21 @@ test('a series missing for a long while: Search for everyone who may ask (member
   await h.JE.arrAsk.me(true);
   h.JE.internals.arrAskActions.attachDetails(page, { ...SERIES_NOTHING, key: 'tv:tvdb:1' }, { contact: 'Dad' });
   await settle();
-  same(texts(), ['Get Season 1', 'Get missing episodes', 'Search', 'More…']);
+  same(texts(), ['Search', 'More…']);
+  // Seen live (Black Books): S1 partly here, S2–S3 asked, sent and missing for a long while, the series reading
+  // "partial": Search for them, no Get Season 2 / Get missing episodes.
+  const partly = { ...SERIES_NOTHING, key: 'tv:tvdb:76924', reason: { code: 'partial' }, summary: { aired: 18, ready: 5, missing: 13, longMissing: 13 }, seasons: [
+    { season: 1, itemId: 's1', stage: 'looking', summary: { aired: 6, ready: 5, missing: 1, longMissing: 1 } },
+    { season: 2, itemId: null, stage: 'looking', summary: { aired: 6, ready: 0, missing: 6, longMissing: 6 } },
+    { season: 3, itemId: null, stage: 'looking', summary: { aired: 6, ready: 0, missing: 6, longMissing: 6 } }
+  ] };
+  page.querySelectorAll('.je-ask-actions').forEach(n => n.remove());   // another series' page
+  h.JE.internals.arrAskActions.attachDetails(page, partly, { contact: 'Dad' });
+  await settle();
+  same(texts(), ['Search', 'More…']);
+  click(h, [...page.querySelectorAll('.je-ask-actions .je-ask-action')].find(b => b.textContent.endsWith('Search')));
+  await settle(20);
+  assert.equal(h.searches[h.searches.length - 1]?.body?.key, 'tv:tvdb:76924');
 
   // Still fresh (Sonarr is looking for every episode right now): nothing to ask for, no Search; More… only.
   const fresh = { ...SERIES_NOTHING, key: 'tv:tvdb:2', reason: { code: 'looking' }, summary: { aired: 16, ready: 0, missing: 16 },

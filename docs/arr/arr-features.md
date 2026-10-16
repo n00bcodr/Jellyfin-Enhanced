@@ -234,9 +234,11 @@ nothing; a request moved from Seerr while Seerr was already fetching it counts f
 OK'd in Seerr in Seerr mode. An episode asked for today in a series Sonarr has had for years reads "Looking for it",
 not **Missing**. Fresh ones keep "Looking for it" and offer nothing to press (Sonarr is already on them): no **Get it**
 on their row, in their details or on their page, the *Missing* line names them with *Looking for it* (one chip when
-every episode there is), **Get missing episodes** on a series page counts only the episodes missing for a long while,
-and a season whose every episode is still fresh gets no **Get Season N**. Ones Sonarr/Radarr isn't fetching keep "Not
-being fetched" with **Get it**.
+every episode there is), and a season whose every episode is still fresh gets no **Get Season N**. Ones Sonarr/Radarr
+isn't fetching keep "Not being fetched" with **Get it**. On a series page, **Get Season N** and **Get missing episodes**
+ask only for episodes nobody is fetching; seasons with episodes missing for a long while get **Search** instead (also
+when other parts of the series are here), so a season a request already sent is searched again rather than asked for
+again.
 A season, a series, or a request's card (Household, My requests, approvals) reads **Missing** too when every episode
 still to come there is missing like that and none of it is here, downloading or on its way; one still fresh keeps the
 whole scope at "Looking for it", and a scope with some episodes already here keeps "Some episodes here, looking for the
@@ -867,9 +869,9 @@ profiles, folders or tags.
   requests, Seerr's limit applies and the sheet says so instead of sending.
 - **Kids** (and everyone under *Approve everything*) see "Ask {contact}" instead of "Request", and the toast says
   "Asked! {contact} will take a look."
-- **Series pages** get **Get Season N** (the first season with aired episodes and none of it here), **Get missing
-  episodes** (aired episodes missing from seasons that are partly here) and **More…** (the sheet), with the cost of
-  the first one. After an ask the button shows where it stands: *Waiting for OK* or *Asked!*.
+- **Series pages** get **Get Season N** (the first season with aired episodes nobody is fetching and none of it here),
+  **Get missing episodes** (aired episodes nobody is fetching in seasons that are partly here), **Search** (seasons with
+  episodes missing for a long while) and **More…** (the sheet), with the cost of the first one. After an ask the button shows where it stands: *Waiting for OK* or *Asked!*.
 - **Movies in the library** get **Get 4K** for people who may ask for 4K, when no 4K copy is there yet.
 - **Collection pages** say "You have 4 of 6." and offer **Get the 2 missing** with a cost preview ("Uses 2 of your 5
   this week; 1 need {contact}'s OK"). Movies that aren't out yet are listed but not asked for; movies someone has

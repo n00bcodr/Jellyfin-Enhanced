@@ -97,6 +97,18 @@
     }
 
     /**
+     * True when a missing episode can be asked for with Get: nobody is fetching it (see
+     * JE.internals.arrAskEpisodes.askable).
+     * @param {Object} ep Episode status.
+     * @returns {boolean} Askable.
+     */
+    function askable(ep) {
+        const shared = JE.internals?.arrAskEpisodes?.askable;
+        if (typeof shared === 'function') return shared(ep);
+        return isMissing(ep) && ep.stage === 'notHere';
+    }
+
+    /**
      * Missing aired episodes of a season summary that are missing for a long while (monitored, nothing grabbed
      * long after they were wanted: Search). Episodes the arr is looking for right now don't count.
      * @param {Object} summary Season summary.
@@ -107,15 +119,25 @@
     }
 
     /**
-     * True when a season with nothing of it here has something to ask for: aired episodes nobody is fetching
-     * (not monitored, or not in the arr: they don't count as missing), or episodes missing for a long while. A
-     * season whose every episode the arr is looking for right now has nothing.
+     * Aired episodes of a season summary nobody is fetching (not monitored, or not in the arr at all): the ones Get
+     * asks for. Monitored ones are missing (Search once missing for a long while) or on their way.
+     * @param {Object} summary Season summary.
+     * @returns {number} Count.
+     */
+    function notFetchedOf(summary) {
+        const m = summary || {};
+        return Math.max(0, (m.aired || 0) - (m.ready || 0) - (m.downloading || 0) - (m.almostReady || 0) - (m.missing || 0));
+    }
+
+    /**
+     * True when a season with nothing of it here has something to get: aired episodes nobody is fetching. Episodes
+     * missing for a long while get Search instead (a request may already have sent them), and a season the arr is
+     * looking for right now has nothing.
      * @param {Object} summary Season summary.
      * @returns {boolean} Offerable.
      */
     function seasonOfferable(summary) {
-        const aired = summary?.aired || 0;
-        return aired > (summary?.missing || 0) || longMissingOf(summary) > 0;
+        return notFetchedOf(summary) > 0;
     }
 
     /**
@@ -133,8 +155,10 @@
             return m.aired > 0 && !m.ready && !m.downloading && !m.almostReady && !m.attention && !(m.unknown > 0) && !['asked', 'approved'].includes(s.stage)
                 && seasonOfferable(m);
         });
-        // Seasons partly here with episodes missing for a long while (the ones being looked for now are left alone).
-        const partial = seasons.filter(s => s !== whole && s.itemId && longMissingOf(s.summary) > 0);
+        // Seasons partly here with episodes nobody is fetching (missing for a long while: Search; looked for now: nothing).
+        const partial = seasons.filter(s => s !== whole && s.itemId && notFetchedOf(s.summary) > 0);
+        // Seasons with episodes missing for a long while: Search (never Get: a request may already have sent them).
+        const searchable = seasons.filter(s => longMissingOf(s.summary) > 0);
         const aired = seasons.filter(s => (s.summary?.aired || 0) > 0);
         const owned = seasons.filter(s => (s.summary?.ready || 0) > 0 || (s.summary?.downloading || 0) > 0 || (s.summary?.almostReady || 0) > 0);
         const lastOwned = owned.length ? owned[owned.length - 1].season : 0;
@@ -142,7 +166,9 @@
         return {
             nextSeason: whole ? whole.season : null,
             partial,
-            missing: partial.reduce((n, s) => n + longMissingOf(s.summary), 0),
+            missing: partial.reduce((n, s) => n + notFetchedOf(s.summary), 0),
+            longMissing: searchable.reduce((n, s) => n + longMissingOf(s.summary), 0),
+            searchSeasons: searchable.map(s => s.season),
             seasons: seasons.map(s => ({ season: s.season, episodes: s.summary?.aired || 0, have: s.summary?.ready || 0, status: s.stage })),
             latestSeason: aired.length ? aired[aired.length - 1].season : null,
             upcomingSeason: upcoming ? upcoming.season : (lastOwned > 0 ? lastOwned + 1 : null)
@@ -532,9 +558,10 @@
         // runs the arr's search for it right away; everyone else's runs it again for those episodes when
         // requests already sent them (no new request, no OK), otherwise they ask for the seasons that
         // aren't here (the request backend turns that into a search).
-        if (JE.arrStatus.searchable?.(status)) {
+        // A series partly here gets it too for its seasons with episodes missing for a long while.
+        if (JE.arrStatus.searchable?.(status) || plan.longMissing > 0) {
             const searchFrom = JE.arrAsk.searchInstance(caps, status, key);
-            const wanted = plan.seasons.filter(s => s.episodes > 0 && s.have < s.episodes).map(s => s.season);
+            const wanted = plan.searchSeasons.length ? plan.searchSeasons : plan.seasons.filter(s => s.episodes > 0 && s.have < s.episodes).map(s => s.season);
             if (searchFrom || wanted.length) {
                 const doneKey = `${key}|search`;
                 const label = !searchFrom && JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
@@ -617,8 +644,8 @@
 
     /**
      * The input of "Get missing episodes": reads the seasons with missing episodes (their own
-     * status) and names every missing aired episode that can be asked for or searched (not the ones
-     * the arr is looking for right now).
+     * status) and names every missing aired episode nobody is fetching (not monitored, or not in the
+     * arr); monitored ones are searched by the Search button or looked for right now.
      * @param {string} key Series key.
      * @param {Array<Object>} seasons Seasons with missing episodes (with item ids).
      * @returns {Promise<Object|null>} Input, or null when nothing turned out to be missing.
@@ -629,7 +656,8 @@
         reads.forEach((data, i) => {
             const season = seasons[i].season;
             for (const ep of data?.items?.[0]?.episodes || []) {
-                if (offerable(ep)) episodes.push({ season, episode: ep.episode });
+                // Nobody fetches it (missing for a long while: the Search button; looked for now: nothing).
+                if (askable(ep)) episodes.push({ season, episode: ep.episode });
             }
         });
         return episodes.length ? JE.arrAsk.episodesInput(key, episodes) : null;
