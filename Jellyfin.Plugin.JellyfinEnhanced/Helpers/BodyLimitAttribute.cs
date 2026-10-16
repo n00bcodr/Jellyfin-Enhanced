@@ -14,7 +14,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
     /// (<c>[RequestSizeLimit]</c>) can't be used for this: its 413 is an exception that Jellyfin's
     /// exception middleware turns into a 500. A declared <c>Content-Length</c> over the cap is refused
     /// without reading anything; a body without one (chunked) is read up to the cap and refused at the
-    /// first byte past it. The bytes read are handed to model binding unchanged.
+    /// first byte past it. The bytes read are handed to model binding unchanged. A caller that goes away
+    /// while sending gets no answer and leaves no error in the log.
     /// </summary>
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
     public sealed class BodyLimitAttribute : Attribute, IAsyncResourceFilter, IOrderedFilter
@@ -65,6 +66,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 {
                     // The server's own (larger) limit: still the structured answer, never a 500.
                     body = null;
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or IOException && context.HttpContext.RequestAborted.IsCancellationRequested)
+                {
+                    // The caller went away while sending (a closed tab, a replaced poll): nobody to answer, and
+                    // not an error for Jellyfin's log.
+                    context.Result = new EmptyResult();
+                    return;
                 }
                 if (body == null)
                 {

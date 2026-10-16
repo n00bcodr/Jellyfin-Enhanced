@@ -291,6 +291,39 @@ public class ApiArrBodyLimitTests
         Assert.Equal(0, body.Reads);
     }
 
+    [Fact]
+    public async Task ACallerThatGoesAwayWhileSendingGetsNoAnswerAndNoError()
+    {
+        // A closed tab or a replaced poll: the body read is cancelled with the request. No answer, nothing for
+        // Jellyfin's error log, the action never runs.
+        using var gone = new CancellationTokenSource();
+        gone.Cancel();
+        foreach (var failure in new Exception[] { new OperationCanceledException(gone.Token), new IOException("The client reset the request stream.") })
+        {
+            var http = new DefaultHttpContext { RequestAborted = gone.Token };
+            http.Request.Body = new FailingStream(failure);
+            http.Request.ContentLength = 40;
+            var context = new ResourceExecutingContext(new ActionContext(http, new RouteData(), new ActionDescriptor()), new List<IFilterMetadata>(), new List<IValueProviderFactory>());
+            var ran = false;
+            await new BodyLimitAttribute().OnResourceExecutionAsync(context, () => { ran = true; return Task.FromResult<ResourceExecutedContext>(null!); });
+            Assert.IsType<EmptyResult>(context.Result);
+            Assert.False(ran);
+        }
+
+        // A read failure while the caller is still there is not swallowed.
+        var live = new DefaultHttpContext();
+        live.Request.Body = new FailingStream(new IOException("disk"));
+        live.Request.ContentLength = 40;
+        var still = new ResourceExecutingContext(new ActionContext(live, new RouteData(), new ActionDescriptor()), new List<IFilterMetadata>(), new List<IValueProviderFactory>());
+        await Assert.ThrowsAsync<IOException>(() => new BodyLimitAttribute().OnResourceExecutionAsync(still, () => Task.FromResult<ResourceExecutedContext>(null!)));
+    }
+
+    private sealed class FailingStream(Exception failure) : MemoryStream
+    {
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) => throw failure;
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) => throw failure;
+    }
+
     private sealed class CountingStream(byte[] data) : MemoryStream(data)
     {
         public int Reads;
