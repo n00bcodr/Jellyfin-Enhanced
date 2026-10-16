@@ -96,7 +96,7 @@ public class IntegrationRequestJoinedTests
         Assert.Equal(("sent", "awaiting_approval"), (ledger.Find(ask.RequestId!)!.Status, ledger.Find(ask.RequestId!)!.Reason));
         var created = lab.Seerr.Shows[1437]["mediaInfo"]!["requests"]!.AsArray().Single()!;
         Assert.Equal(10, (int)created["requestedBy"]!["id"]!);
-        Assert.Equal("asked", await Row());
+        Assert.Equal("waiting", await Row());
 
         // Two hours ago: requesting is turned off in Seerr and the requests move to Jellyfin Enhanced. Seerr still holds
         // Emma's for an OK, so it waits in Approvals here.
