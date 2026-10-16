@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness, deferred, jsonResponse, plain } from '../helpers/harness.mjs';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { createHarness, deferred, jsonResponse, plain, jsRoot } from '../helpers/harness.mjs';
 
 function setup(t, options = {}, modules = ['navigation', 'session', 'api-client']) {
   const h = createHarness(options); t.after(() => h.close());
@@ -239,4 +241,24 @@ test('subscribing during priority dispatch does not revisit the current subscrib
  const {JE,document}=setup(t,{},['dom-observer']);let calls=0;
  JE.core.dom.onBodyMutation('first',()=>{calls++;if(calls===1)JE.core.dom.onBodyMutation('new',()=>{}, {priority:2});},{priority:1});
  document.body.append(document.createElement('div'));await Promise.resolve();assert.equal(calls,1);
+});
+
+test("JE's toasts sit above every window, sheet and panel JE opens, and below Jellyfin's own toasts", t => {
+  const { JE, document } = setup(t, {}, ['ui-kit']);
+  const layer = JE.core.ui.TOAST_LAYER;
+  JE.toast('Paused: storage full', 10);
+  assert.equal(Number(document.querySelector('.jellyfin-enhanced-toast').style.zIndex), layer);
+  const source = file => readFileSync(resolve(jsRoot, file), 'utf8');
+  const layers = file => [...source(file).matchAll(/z-?[iI]ndex:\s*'?(\d+)/g)].map(m => Number(m[1])).filter(z => z !== layer);
+  // The more-info window, the request sheet, Seerr's request windows, the Manage drawer, the bell's panel, the
+  // admin tools, the hidden-content manager and the settings panel.
+  for (const file of ['jellyseerr/moreinfo/more-info-modal-styles.js', 'arr/ask/ask-sheet-styles.js', 'arr/ask/ask-styles.js', 'jellyseerr/ui/ui-styles.js',
+    'arr/manage/manage-styles.js', 'arr/notify/notify-styles.js', 'arr/admin/admin-styles.js', 'enhanced/hiddencontent/hidden-content-styles.js', 'enhanced/settingspanel/ui-panel.js']) {
+    assert.ok(layers(file).every(z => z < layer), `${file}: ${Math.max(...layers(file))} vs toasts ${layer}`);
+  }
+  // The notification toasts and the hidden-content undo toast share the layer.
+  assert.match(source('arr/notify/notify-styles.js'), new RegExp(`\\.je-notify-toasts \\{[^}]*z-index: ${layer};`));
+  assert.match(source('enhanced/hiddencontent/hidden-content-styles.js'), new RegExp(`\\.je-undo-toast \\{[^}]*z-index: ${layer};`));
+  // Jellyfin's dialogs (999999) stay under every toast; Jellyfin's own toasts (9999999) stay on top.
+  assert.ok(layer > 999999 && layer < 9999999);
 });

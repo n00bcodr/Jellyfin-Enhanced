@@ -91,7 +91,7 @@
                 color: #fff;
                 padding: 12px 16px;
                 border-radius: 8px;
-                z-index: 99999;
+                z-index: 9999990;
                 font-size: clamp(13px, 2vw, 16px);
                 font-weight: 500;
                 text-shadow: -1px -1px 10px black;

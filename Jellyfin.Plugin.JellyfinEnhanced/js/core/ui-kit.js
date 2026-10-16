@@ -68,6 +68,15 @@
     }
 
     /**
+     * The stacking layer of Jellyfin Enhanced's toasts (JE.toast and the notification toasts): above every
+     * window, sheet and panel Jellyfin Enhanced opens (the more-info window, the request sheet, the settings
+     * panel, Jellyfin's own dialogs at 999999), and just below Jellyfin's own toasts (9999999), so a toast
+     * raised while one of them is open is never hidden under it.
+     * @type {number}
+     */
+    const TOAST_LAYER = 9999990;
+
+    /**
      * Displays a short-lived toast notification (moved from enhanced/ui.js).
      * NOTE: renders via innerHTML — escape user-controlled content with
      * JE.core.ui.escapeHtml before passing it in.
@@ -94,7 +103,7 @@
             color: '#fff',
             padding: '10px 14px',
             borderRadius: '8px',
-            zIndex: 99999,
+            zIndex: TOAST_LAYER,
             fontSize: 'clamp(13px, 2vw, 16px)',
             textShadow: '-1px -1px 10px black',
             fontWeight: '500',
@@ -274,6 +283,7 @@
     JE.core.ui = {
         escapeHtml,
         toast,
+        TOAST_LAYER,
         injectCss,
         removeCss,
         addTouchTapListener,

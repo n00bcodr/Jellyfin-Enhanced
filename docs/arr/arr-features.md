@@ -850,6 +850,9 @@ profiles, folders or tags.
 
 - **Movies** are asked for with one tap and a toast ("Asked! We'll let you know."). A short sheet appears first only
   when the weekly allowance is nearly used, when the person's asks wait for an OK, or when they may choose 4K.
+  Jellyfin Enhanced's toasts (these, the notification toasts and the hidden-content undo toast) always show above
+  its own windows and sheets (the request sheet, Seerr's more-info window, the settings panel) and Jellyfin's
+  dialogs; Jellyfin's own toasts stay on top of them.
 - **The request sheet** is a bottom sheet on phones, a dialog on desktop and a full-screen panel on TV (Back closes
   it). For a series it offers large cards: *Everything*, *Just the latest season*, *Next season only*, *Pick
   seasons…*, *Pick episodes…* and *Just new episodes from now on* (with Seerr handling requests Jellyfin Enhanced

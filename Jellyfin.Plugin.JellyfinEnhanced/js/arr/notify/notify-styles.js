@@ -39,7 +39,7 @@
 .je-notify-foot-text { flex: 1; display: inline-flex; align-items: center; gap: 6px; }
 .je-notify-foot-text .material-icons { font-size: 16px; }
 .je-notify-settings .material-icons { font-size: 20px; }
-.je-notify-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 10700; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); pointer-events: none; }
+.je-notify-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 9999990; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); pointer-events: none; }
 .je-notify-toast { pointer-events: auto; display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; background: var(--jf-palette-background-paper, #262626); color: #fff; border: 1px solid rgba(255,255,255,.14); border-left: 3px solid #6c5ce7; border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.5); animation: je-notify-in .18s ease-out; }
 .je-notify-toast-text { flex: 1; background: none; border: none; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 2px; line-height: 1.35; }
 .je-notify-toast-play { padding: 6px 10px; border: none; border-radius: 6px; background: #6c5ce7; color: #fff; font: inherit; font-size: .85em; font-weight: 600; cursor: pointer; }
