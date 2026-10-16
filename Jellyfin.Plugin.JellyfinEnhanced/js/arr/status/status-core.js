@@ -353,7 +353,12 @@
         if (s.almostReady > 0) pieces.push({ text: tr('arr_summary_almost_ready', { n: s.almostReady }), tone: 'almostReady', icon: 'hourglass_bottom' });
         const missing = s.missing || 0;
         const unknown = s.unknown == null && status.reason?.code === 'service_down' ? missing : Math.min(missing, s.unknown || 0);
-        if (missing - unknown > 0) pieces.push({ text: tr('arr_summary_missing', { n: missing - unknown }), tone: 'looking', icon: 'search' });
+        // Missing for a long while (Search) apart from the ones the arr is looking for right now (a server that doesn't
+        // say counts every one as missing, as before).
+        const known = missing - unknown;
+        const long = typeof s.longMissing === 'number' ? Math.min(known, Math.max(0, s.longMissing)) : known;
+        if (known - long > 0) pieces.push({ text: tr('arr_summary_looking', { n: known - long }), tone: 'looking', icon: 'search' });
+        if (long > 0) pieces.push({ text: tr('arr_summary_missing', { n: long }), tone: 'looking', icon: 'search' });
         const attention = (s.attention || 0) + unknown;
         if (attention > 0) pieces.push({ text: tr('arr_summary_attention', { n: attention }), tone: 'attention', icon: 'schedule' });
         return pieces;

@@ -817,6 +817,7 @@
     "arr_summary_downloading": "{n} downloading",
     "arr_summary_almost_ready": "{n} almost ready",
     "arr_summary_missing": "{n} missing",
+    "arr_summary_looking": "Looking for {n}",
     "arr_summary_attention": "{n} taking longer than usual",
     "arr_chip_ready": "Ready",
     "arr_chip_upgrading": "Ready · better copy coming",

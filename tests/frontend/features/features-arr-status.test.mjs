@@ -249,6 +249,14 @@ test('series and season summaries read like "Seasons 1–2 ready · Season 3 air
   assert.equal(h.S.buildSummary({ kind: 'season', summary: {} }), null);
 });
 
+test('summaries tell episodes the arr is looking for right now apart from ones missing for a long while', t => {
+  const h = setup(t);
+  // Black Books seen live: S2–S3 asked a moment ago read "Looking for 12", not "12 missing".
+  same(h.S.summaryPieces({ kind: 'series', summary: { readySeasons: [1], aired: 18, ready: 6, missing: 12, longMissing: 0, unknown: 0 } }).map(p => p.text), ['Season 1 ready', 'Looking for 12']);
+  same(h.S.summaryPieces({ kind: 'season', summary: { aired: 10, ready: 4, missing: 6, longMissing: 4, unknown: 0 } }).map(p => p.text), ['4 of 10 ready', 'Looking for 2', '4 missing']);
+  same(h.S.summaryPieces({ kind: 'season', summary: { aired: 10, ready: 4, missing: 6, longMissing: 6 } }).map(p => p.text), ['4 of 10 ready', '6 missing']);
+});
+
 test('summary episodes whose downloads cannot be checked read as taking longer, not missing', t => {
   const h = setup(t);
   const status = { kind: 'season', reason: { code: 'service_down' }, summary: { aired: 10, ready: 4, missing: 6, unknown: 6 } };

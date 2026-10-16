@@ -43,7 +43,7 @@ own message ("Manual Import required") and what would fix it.
 **Where it shows**
 
 - **Details pages**: a pill under the title (tap it for the journey: asked, OK'd, downloading, … with dates);
-  series and season pages get a summary ("Season 1 ready · 1 downloading"); seasons get episode chips and a
+  series and season pages get a summary ("Season 1 ready · 1 downloading"; episodes Sonarr is still looking for read "Looking for 3", ones missing for a long while "2 missing"); seasons get episode chips and a
   "Missing: E5, E6" line. Episodes whose downloads can't be checked count as "taking longer than usual"
   in the series or season summary.
 - **Posters**: a small badge while something downloads, is almost ready or takes longer than usual.
