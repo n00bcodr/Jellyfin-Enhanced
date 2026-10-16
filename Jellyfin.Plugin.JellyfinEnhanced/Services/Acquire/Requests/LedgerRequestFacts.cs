@@ -10,30 +10,116 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly RequestLedger _ledger;
         private readonly SeerrRequestReadModel _seerr;
         private readonly TitleAliases _aliases;
+        private readonly Func<DateTimeOffset> _now;
+        /// <summary>
+        /// How long a request Jellyfin Enhanced sent Seerr counts as held here while Seerr's request list doesn't show it
+        /// yet: the list is read about a second after a confirmed send (and again within a minute when a read fails), so
+        /// past this the list (or its absence) is what's true. Bounds an ask Seerr later dropped or merged into another.
+        /// </summary>
+        internal static readonly TimeSpan SentUnseenFor = TimeSpan.FromMinutes(15);
         /// <summary>Creates the authority-selecting reader; it does no network I/O.</summary>
         public LedgerRequestFacts(RequestLedger ledger, SeerrRequestReadModel seerr, TitleAliases aliases)
-        { _ledger = ledger; _seerr = seerr; _aliases = aliases; }
+            : this(ledger, seerr, aliases, null)
+        {
+        }
+        /// <summary>The reader with an explicit clock (tests).</summary>
+        internal LedgerRequestFacts(RequestLedger ledger, SeerrRequestReadModel seerr, TitleAliases aliases, Func<DateTimeOffset>? now)
+        { _ledger = ledger; _seerr = seerr; _aliases = aliases; _now = now ?? (() => DateTimeOffset.UtcNow); }
         private static bool Direct => ArrInstanceLibraries.AbsentParentalEnabled && JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend == "je";
+        // Seerr mode with Jellyfin Enhanced's request flow on: asks go through the ledger to Seerr, so some are held here first.
+        private static bool SeerrHeld => ArrInstanceLibraries.AbsentParentalEnabled && JellyfinEnhanced.Instance?.Configuration.ArrRequestBackend == "seerr";
         private string Canonical(TitleKey key) => _aliases.Canonical(key.Title).ToString();
         private RequestWant[] Wants(TitleKey key) => !_ledger.Database.Available ? Array.Empty<RequestWant>() : _ledger.ForTitle(Canonical(key)).ToArray();
+
+        /// <summary>
+        /// Seerr mode: the asks for a title Seerr can't know about yet (<see cref="Unseen"/>) on the Seerr Jellyfin
+        /// Enhanced points at now. Empty in Jellyfin Enhanced mode, with phase 3 off, or with no Seerr set up.
+        /// </summary>
+        internal IReadOnlyList<RequestWant> Held(TitleKey key)
+        {
+            if (!SeerrHeld || _seerr.CurrentSource is not { } source) return Array.Empty<RequestWant>();
+            var wants = Wants(key);
+            if (wants.Length == 0) return wants;
+            var target = RequestLedger.SeerrTargetKey(source);
+            var records = _seerr.ForTitle(key);
+            var now = _now();
+            return wants.Where(w => Unseen(w, target, records, now)).ToArray();
+        }
+
+        /// <summary>
+        /// True when a ledger ask on <paramref name="target"/> (the current Seerr) isn't in Seerr's list yet: it waits for
+        /// an OK here, it is OK'd and waits to be sent (or to be retried), or it was sent less than
+        /// <see cref="SentUnseenFor"/> ago and no Seerr request by the same person for the same edition covers what it
+        /// asks for yet (Seerr's list is read a moment later).
+        /// </summary>
+        /// <param name="want">A ledger ask.</param>
+        /// <param name="target">The current Seerr target (<see cref="RequestLedger.SeerrTargetKey"/>).</param>
+        /// <param name="records">Seerr's requests for the title.</param>
+        /// <param name="now">Now.</param>
+        internal static bool Unseen(RequestWant want, string target, IReadOnlyList<SeerrRequestRecord> records, DateTimeOffset now)
+            => want.TargetKey == target && (want.Status is "pending" or "queued"
+                || (want.Status == "sent" && now - want.UpdatedAt < SentUnseenFor && !records.Any(r => Covers(r, want))));
+
+        /// <summary>
+        /// True when a Seerr request is the one <paramref name="want"/> became: by the same person, for the same edition,
+        /// naming every season the ask names (or the whole series), and still on or changed since the ask (an old
+        /// declined request isn't a new ask's).
+        /// </summary>
+        internal static bool Covers(SeerrRequestRecord record, RequestWant want)
+            => record.RequestedBy == want.UserId && record.Is4k == (want.Input.Variant == "4k")
+               && (record.IsMovie || record.Seasons.Count == 0 || want.Input.SeasonNumbers.All(s => record.Seasons.Contains(s)))
+               && (record.Active || (record.UpdatedAt ?? record.CreatedAt ?? DateTime.MaxValue) >= want.CreatedAt.UtcDateTime);
+
+        /// <summary>
+        /// Seerr's facts with the facts of asks Seerr doesn't know about yet: asked when the first was, waiting for an OK
+        /// or asked by the viewer when either says so, OK'd (per edition) when the first was, sent parts of both, and
+        /// declined or done only when both say so (an edition Seerr has done stays done). Either alone when the other has
+        /// none; Seerr's requests that were all declined give way to a new ask (it isn't dated by them).
+        /// </summary>
+        internal static RequestFacts? Merge(RequestFacts? seerr, RequestFacts? held)
+        {
+            if (seerr == null || held == null) return seerr ?? held;
+            static DateTime? Min(DateTime? a, DateTime? b) => a == null ? b : b == null ? a : a < b ? a : b;
+            // Seerr's requests were all declined: the new ask is dated by itself, not by them.
+            var fresh = seerr.Declined && !held.Declined;
+            return new RequestFacts
+            {
+                AskedAt = fresh ? held.AskedAt : Min(seerr.AskedAt, held.AskedAt),
+                AskedByViewer = seerr.AskedByViewer || held.AskedByViewer,
+                Pending = seerr.Pending || held.Pending,
+                ApprovedAt = Min(seerr.ApprovedAt, held.ApprovedAt),
+                ApprovedStandardAt = Min(seerr.ApprovedStandardAt, held.ApprovedStandardAt),
+                Approved4kAt = Min(seerr.Approved4kAt, held.Approved4kAt),
+                StandardDone = seerr.StandardDone || held.StandardDone,
+                FourKDone = seerr.FourKDone || held.FourKDone,
+                Declined = seerr.Declined && held.Declined,
+                Fulfilled = seerr.Fulfilled && held.Fulfilled,
+                Sent = seerr.Sent.Concat(held.Sent).Distinct().ToArray(),
+            };
+        }
+
         /// <inheritdoc />
-        public long Revision => Direct ? _ledger.Revision : _seerr.Revision;
+        /// <remarks>In Seerr mode both Seerr's list and the ledger's (asks held before they reach Seerr).</remarks>
+        public long Revision => Direct ? _ledger.Revision : SeerrHeld ? unchecked((_seerr.Revision * 1_000_000_007L) + _ledger.Revision) : _seerr.Revision;
+
         /// <inheritdoc />
+        /// <remarks>Seerr mode: Seerr's requests together with the asks it doesn't know about yet (<see cref="Held"/>).</remarks>
         public RequestFacts? For(TitleKey titleKey, StatusViewer viewer)
         {
-            if (!Direct) return _seerr.For(titleKey, viewer);
+            if (!Direct) return Merge(_seerr.For(titleKey, viewer), HeldFacts(titleKey, Held(titleKey), viewer));
             return FactsOf(Wants(titleKey), viewer.UserId, () => _ledger.Dispatches(Canonical(titleKey)));
         }
 
         /// <inheritdoc />
         /// <remarks>
         /// The configured authority, as <see cref="For"/>: in Jellyfin Enhanced mode the ledger's asks for the
-        /// episode itself or a season that holds it; in Seerr mode Seerr's requests for its season.
+        /// episode itself or a season that holds it; in Seerr mode Seerr's requests for its season, with the asks for
+        /// the episode or its season Seerr doesn't know about yet.
         /// </remarks>
         public RequestFacts? ForEpisode(TitleKey seriesKey, int season, int episode, StatusViewer viewer)
         {
-            if (!Direct) return _seerr.ForEpisode(seriesKey, season, episode, viewer);
             var part = new RequestEpisode(season, episode);
+            if (!Direct) return Merge(_seerr.ForEpisode(seriesKey, season, episode, viewer), HeldFacts(seriesKey, Held(seriesKey).Where(w => w.Input.Covers(part)), viewer));
             return FactsOf(Wants(seriesKey).Where(w => w.Input.Covers(part)), viewer.UserId, () => _ledger.Dispatches(Canonical(seriesKey)));
         }
 
@@ -41,12 +127,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <remarks>
         /// The configured authority, as <see cref="For"/>: in Jellyfin Enhanced mode the ledger's asks that name
         /// the whole season (an ask for some of its episodes covers those episodes only); in Seerr mode Seerr's
-        /// requests for it.
+        /// requests for it, with the asks naming it Seerr doesn't know about yet.
         /// </remarks>
         public RequestFacts? ForSeason(TitleKey seriesKey, int season, StatusViewer viewer)
         {
-            if (!Direct) return _seerr.ForSeason(seriesKey, season, viewer);
+            if (!Direct) return Merge(_seerr.ForSeason(seriesKey, season, viewer), HeldFacts(seriesKey, Held(seriesKey).Where(w => w.Input.Seasons.Contains(season)), viewer));
             return FactsOf(Wants(seriesKey).Where(w => w.Input.Seasons.Contains(season)), viewer.UserId, () => _ledger.Dispatches(Canonical(seriesKey)));
+        }
+
+        private RequestFacts? HeldFacts(TitleKey key, IEnumerable<RequestWant> held, StatusViewer viewer)
+        {
+            var list = held as IReadOnlyCollection<RequestWant> ?? held.ToList();
+            return list.Count == 0 ? null : FactsOf(list, viewer.UserId, () => _ledger.Dispatches(Canonical(key)));
         }
 
         /// <summary>
@@ -212,13 +304,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
         }
         /// <inheritdoc />
-        public bool AskedBy(TitleKey titleKey, Guid userId) => Direct ? Wants(titleKey).Any(w => w.UserId == userId && w.Status != "cancelled") : _seerr.AskedBy(titleKey, userId);
+        public bool AskedBy(TitleKey titleKey, Guid userId) => Direct ? Wants(titleKey).Any(w => w.UserId == userId && w.Status != "cancelled") : _seerr.AskedBy(titleKey, userId) || Held(titleKey).Any(w => w.UserId == userId);
         /// <inheritdoc />
-        public bool Requested(TitleKey titleKey) => Direct ? Wants(titleKey).Any(w => w.Status != "cancelled") : _seerr.Requested(titleKey);
+        public bool Requested(TitleKey titleKey) => Direct ? Wants(titleKey).Any(w => w.Status != "cancelled") : _seerr.Requested(titleKey) || Held(titleKey).Count > 0;
         /// <inheritdoc />
-        public bool AskedLatelyBy(TitleKey titleKey, Guid userId) => Direct ? Wants(titleKey).Any(w => w.UserId == userId && (w.Status != "cancelled" || w.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-10))) : _seerr.AskedLatelyBy(titleKey, userId);
+        public bool AskedLatelyBy(TitleKey titleKey, Guid userId) => Direct ? Wants(titleKey).Any(w => w.UserId == userId && (w.Status != "cancelled" || w.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-10))) : _seerr.AskedLatelyBy(titleKey, userId) || Held(titleKey).Any(w => w.UserId == userId);
         /// <inheritdoc />
-        public bool RequestedLately(TitleKey titleKey) => Direct ? Wants(titleKey).Any(w => w.Status != "cancelled" || w.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-10)) : _seerr.RequestedLately(titleKey);
+        public bool RequestedLately(TitleKey titleKey) => Direct ? Wants(titleKey).Any(w => w.Status != "cancelled" || w.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-10)) : _seerr.RequestedLately(titleKey) || Held(titleKey).Count > 0;
     }
 
     /// <summary>

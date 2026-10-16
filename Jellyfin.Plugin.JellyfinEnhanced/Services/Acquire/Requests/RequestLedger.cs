@@ -141,6 +141,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => input.InstanceId != original.InstanceId || input.ProfileId != original.ProfileId || input.RootFolder != original.RootFolder;
         internal static string TargetKey(RequestAuthorization auth)
             => JsonSerializer.Serialize(new[] { auth.Backend, auth.InstanceId, auth.ConnectionGeneration, auth.SeerrSource });
+        /// <summary>
+        /// The target a Seerr-mode ask goes to while Jellyfin Enhanced points at the Seerr <paramref name="source"/>
+        /// (<see cref="SeerrRequestReadModel.SourceOf"/>): Seerr picks its own server, so no instance or connection.
+        /// </summary>
+        internal static string SeerrTargetKey(string? source)
+            => TargetKey(new RequestAuthorization(Guid.Empty, null, string.Empty, string.Empty, string.Empty, "seerr", string.Empty, string.Empty, string.Empty, source));
         /// <summary>The backend target an ask with these facts goes to (its backend, instance, connection and Seerr source).</summary>
         internal static string TargetKey(RequestPolicyFacts facts) => TargetKey(Authorize(facts, null, new MutationInput(), false));
         private static bool Active(RequestWant w) => w.Status is "pending" or "queued" or "sent" or "stale";

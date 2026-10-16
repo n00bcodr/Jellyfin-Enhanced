@@ -257,21 +257,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private volatile SourceCache? _sourceCache;
         private CancellationTokenSource? _loop;
         private Task? _loopTask;
+        private readonly Requests.RequestOutboxEvents? _outboxEvents;
 
-        /// <summary>The read model for a Jellyfin installation (DI).</summary>
-        public SeerrRequestReadModel(IHttpClientFactory httpClientFactory, ArrChangeFeed feed, Logger logger)
-            : this(httpClientFactory, feed, logger, null, null)
+        /// <summary>
+        /// The read model for a Jellyfin installation (DI). A request Jellyfin Enhanced sent Seerr (confirmed by the
+        /// request outbox) asks for a refresh, so Seerr's own record of it is read about a second later.
+        /// </summary>
+        public SeerrRequestReadModel(IHttpClientFactory httpClientFactory, ArrChangeFeed feed, Logger logger, Requests.RequestOutboxEvents outboxEvents)
+            : this(httpClientFactory, feed, logger, null, null, outboxEvents)
         {
         }
 
         /// <summary>A read model with explicit configuration and clock (tests).</summary>
-        internal SeerrRequestReadModel(IHttpClientFactory httpClientFactory, ArrChangeFeed? feed, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now)
+        internal SeerrRequestReadModel(IHttpClientFactory httpClientFactory, ArrChangeFeed? feed, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, Requests.RequestOutboxEvents? outboxEvents = null)
         {
             _http = httpClientFactory;
             _feed = feed;
             _logger = logger;
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
             _now = now ?? (() => DateTimeOffset.UtcNow);
+            _outboxEvents = outboxEvents;
+            if (_outboxEvents != null) _outboxEvents.Confirmed += OnRequestConfirmed;
+        }
+
+        // Seerr mode: Jellyfin Enhanced's own send to Seerr was confirmed; read Seerr's record of it soon.
+        private void OnRequestConfirmed(Requests.RequestJob job)
+        {
+            if (job.Authorization.Backend == "seerr") RequestRefresh();
         }
 
         /// <inheritdoc />
@@ -319,6 +331,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             => c is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, JellyseerrEnabled: true }
                && !string.IsNullOrWhiteSpace(c.JellyseerrUrls)
                && !string.IsNullOrWhiteSpace(c.GetJellyseerrApiKey());
+
+        /// <summary>The identity of the Seerr the current configuration points at (<see cref="SourceOf"/>), or null.</summary>
+        internal string? CurrentSource => SourceOf(_config());
 
         /// <summary>Every request held, newest first.</summary>
         public IReadOnlyList<SeerrRequestRecord> All => _snapshot.All;
@@ -509,6 +524,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             lock (_lock) _watchedAt = _now();
         }
 
+        /// <summary>When a refresh was asked for and hasn't run yet (tests).</summary>
+        internal DateTimeOffset? RequestedAt
+        {
+            get
+            {
+                lock (_lock) return _requestedAt;
+            }
+        }
+
         /// <summary>When the Requests page was last seen open (tests).</summary>
         internal DateTimeOffset? WatchedAt
         {
@@ -556,6 +580,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </remarks>
         public void Dispose()
         {
+            if (_outboxEvents != null) _outboxEvents.Confirmed -= OnRequestConfirmed;
             var loop = Interlocked.Exchange(ref _loop, null);
             if (loop != null)
             {

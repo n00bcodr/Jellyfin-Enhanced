@@ -386,6 +386,12 @@ public class IntegrationSeerrReadModelTests
         Assert.Single(forwards);
         var facts = registered.Single(d => d.ServiceType == typeof(IArrRequestFacts));
         Assert.Equal(typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts), facts.ImplementationType);
+        // The read model follows the outbox's confirmed sends: every service its one public constructor needs (but
+        // Jellyfin's own HTTP client factory) is registered, and the outbox events are one shared singleton.
+        var ctor = Assert.Single(typeof(SeerrRequestReadModel).GetConstructors());
+        Assert.All(ctor.GetParameters().Where(p => p.ParameterType != typeof(System.Net.Http.IHttpClientFactory)),
+            p => Assert.Contains(registered, d => d.ServiceType == p.ParameterType && d.Lifetime == ServiceLifetime.Singleton));
+        Assert.Contains(ctor.GetParameters(), p => p.ParameterType == typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestOutboxEvents));
 
         IServiceCollection services = new ServiceCollection();
         services.AddSingleton(_ => rig.Model);

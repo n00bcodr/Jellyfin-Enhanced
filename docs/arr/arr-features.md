@@ -1127,6 +1127,12 @@ Enhanced's key), so Seerr's own permissions, quotas, approval rules and override
   linked to someone else or deleted, a different Seerr account than the one it was approved for, or a changed Seerr
   address or key holds it (`identity_changed`). Changing a Sonarr or Radarr connection doesn't affect requests sent
   through Seerr.
+- Asks Seerr can't know about yet count in the status as Seerr's own requests do, for the title, its seasons and its
+  episodes alike, so a series' headline, its season and the episode rows say the same thing at the same time: one
+  waiting for an OK in Jellyfin Enhanced, OK'd and waiting to be sent, or sent and not yet in Seerr's request list (it
+  counts until Seerr's list shows that person's request for the same copy and seasons, and for at most 15 minutes after
+  it went out). Each confirmed send asks for Seerr's list to be read again about a second later, so the request shows as
+  Seerr's own almost at once. Asks made for another Seerr (a changed address or key) don't count.
 
 Reasons a sent request can wait with (shown to administrators; family members see "Waiting for {contact} to take
 another look" or "Taking longer than usual"):
