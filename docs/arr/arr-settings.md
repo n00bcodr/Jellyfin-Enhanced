@@ -470,8 +470,12 @@ Jellyfin user id. A missing per-user quota inherits the role quota, then the glo
 holds only a Member's asks for an OK (a Kid's always wait), so a Manager's or an Admin's allowance shows no limit and
 their cost lines (request sheet, a collection's "Get the N missing") never show the household's. An empty per-user 4K
 instance list removes that user's inherited grant. Phase 3 has its own movie/TV 4K switches under Ask for it; the older Seerr switches remain in use while phase 3 is off. Seerr mode additionally
-requires Seerr's edition setting and the user's corresponding permission. Optional GB accounting uses coarse scope
-estimates (it is not the arr's actual file size).
+requires Seerr's edition setting and the user's corresponding permission. Optional GB accounting uses estimates (it
+is not the arr's actual file size): from the files on the Radarr/Sonarr a request would go to (the default instance of
+its edition) when its library has been read, a movie counts as the median movie file there and an episode as the median
+episode file (each from at least three files of 100 MB or more), and a season as its episodes as that Sonarr lists them
+for the series (10 when it doesn't hold the series); otherwise the fixed estimates: a movie 8 GB (4K 40), a season
+10 GB (4K 40), an episode 1 GB (4K 4). The estimate is fixed when the request is recorded or approved.
 
 #### Discover and search (JE mode)
 

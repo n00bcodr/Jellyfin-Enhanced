@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,13 +27,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>
     /// Current policy facts, evaluated again after every asynchronous prerequisite. <c>SeerrWholeSeries</c> (Seerr mode):
     /// Seerr takes a request for the whole series only (its partial-request setting is off). <c>SeerrUnlinked</c> (Seerr
-    /// mode): Seerr answered and no Seerr account is linked to the person.
+    /// mode): Seerr answered and no Seerr account is linked to the person. <c>Size</c>: the typical sizes on the instance a
+    /// request like this goes to (its GB estimate), when its library is in memory.
     /// </summary>
     public sealed record RequestPolicyFacts(Guid UserId, string Role, bool CanCreate, bool CanApprove, bool Can4k,
         bool Visible, string Revision, string Backend, string InstanceId, string ConnectionGeneration,
         int? Limit, int WindowDays, double GbLimit, string ParentalSignature,
         string? Refusal = null, string? SeerrSource = null, int? SeerrUser = null, long SeerrPermissions = 0, QuotaProjection? BackendQuota = null,
-        RequestDiskFacts? Disk = null, bool SeerrWholeSeries = false, bool SeerrUnlinked = false);
+        RequestDiskFacts? Disk = null, bool SeerrWholeSeries = false, bool SeerrUnlinked = false, RequestSizeHint? Size = null);
     /// <summary>
     /// The drive a request would land on is below the low-disk threshold (refusal <c>low_disk</c>): which instance,
     /// the folder measured (the folder named, the title's own folder, or the default root folder), and the drive's
@@ -270,7 +272,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 seerrMode ? string.Empty : instanceId, seerrMode ? string.Empty : generation,
                 limit, config.ArrRequestBackend == "seerr" ? Math.Clamp(binding.QuotaWindowDays, 1, 365) : Math.Clamp(config.ArrRequestQuotaWindowDays, 1, 365),
                 Math.Max(0, settings.QuotaGb ?? defaults.QuotaGb ?? config.ArrRequestQuotaGb), JsonSerializer.Serialize(signature),
-                refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota, disk, seerrMode && binding.SeerrWholeSeries, seerrMode && binding.SeerrUnlinked);
+                refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota, disk, seerrMode && binding.SeerrWholeSeries, seerrMode && binding.SeerrUnlinked,
+                instance is { Usable: true } ? SizeHint(_store.PeekLibrary(instance.Id), _aliases.Of(key).Prepend(key)) : null);
         }
         /// <summary>
         /// The low-disk pause of a request like <paramref name="input"/> on <paramref name="instance"/>, or null. JE mode
@@ -308,6 +311,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return 100.0 * free / total < config.ArrLowDiskPercent
                 ? new RequestDiskFacts(instance.Id, instance.Name, folder, Math.Max(0, free), total, config.ArrLowDiskPercent)
                 : null;
+        }
+        /// <summary>Fewest files a median size is taken from (fewer: the fixed estimate).</summary>
+        internal const int SizeSamples = 3;
+        /// <summary>Smallest median taken as a real size (GB); below it the files are samples or placeholders.</summary>
+        internal const double SizeFloorGb = 0.1;
+        private static readonly ConditionalWeakTable<ArrLibrarySnapshot, Tuple<double?, double?>> Typical = new();
+        /// <summary>
+        /// The typical sizes on an instance (from its library index in memory; null when not read yet): the median movie
+        /// file and the median episode file (a series' size over its episode files), each from at least
+        /// <see cref="SizeSamples"/> files, and the episodes per season of the series <paramref name="keys"/> names when the
+        /// instance holds it. Worked out once per library read.
+        /// </summary>
+        /// <param name="library">The instance's library index.</param>
+        /// <param name="keys">The title asked for, under every id it is known by.</param>
+        internal static RequestSizeHint? SizeHint(ArrLibrarySnapshot? library, IEnumerable<TitleKey> keys)
+        {
+            if (library == null) return null;
+            var typical = Typical.GetValue(library, l => Tuple.Create(
+                MedianGb(l.Movies.Where(m => m.HasFile && m.SizeOnDisk > 0).Select(m => (double)m.SizeOnDisk)),
+                MedianGb(l.Series.Where(x => x.EpisodeFileCount > 0 && x.SizeOnDisk > 0).Select(x => (double)x.SizeOnDisk / x.EpisodeFileCount))));
+            IReadOnlyDictionary<int, int>? seasons = null;
+            foreach (var key in keys.Where(k => !k.IsMovie).Select(k => k.Title))
+            {
+                var series = key.Provider switch
+                {
+                    "tvdb" when key.NumericId is int tvdb => library.SeriesByTvdb(tvdb),
+                    "tmdb" when key.NumericId is int tmdb => library.SeriesByTmdb(tmdb),
+                    "imdb" => library.SeriesByImdb(key.Id),
+                    _ => null,
+                };
+                if (series == null) continue;
+                seasons = series.Seasons.Where(x => x.TotalEpisodeCount > 0).GroupBy(x => x.SeasonNumber).ToDictionary(g => g.Key, g => g.First().TotalEpisodeCount);
+                break;
+            }
+            return typical.Item1 == null && typical.Item2 == null && seasons is not { Count: > 0 } ? null : new RequestSizeHint(typical.Item1, typical.Item2, seasons is { Count: > 0 } ? seasons : null);
+        }
+        private static double? MedianGb(IEnumerable<double> bytes)
+        {
+            var sorted = bytes.OrderBy(b => b).ToList();
+            if (sorted.Count < SizeSamples) return null;
+            var mid = sorted.Count / 2;
+            var gb = (sorted.Count % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2) / 1_000_000_000d;
+            return gb < SizeFloorGb ? null : Math.Round(gb, 1);
         }
         /// <summary>The folder of a title an instance's library index holds (under any of its known ids), or null.</summary>
         private string? HeldFolder(ArrLibrarySnapshot library, TitleKey title)

@@ -278,9 +278,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Re-checks the hard estimated GB cap, including already approved reservations.</summary>
         public bool ExceedsGbCapAtSend(RequestPolicyFacts requester, DateTimeOffset now)
             => _db.Read(c => OverGbCap(requester, Charges(c, null, requester.UserId), 0, now));
-        // An estimate, never a claim about actual disk usage; backend enrichment can replace it in 3b.
+        // The fixed estimate reservations were written with before sizes came from the instance (matching old rows only).
         private static double EstimateGb(MutationInput input) => input.Variant == "4k" ? input.Scope == "movie" ? 40 : input.Scope == "episodes" ? input.Episodes.Length * 4 : input.Seasons.Length * 40
             : input.Scope == "movie" ? 8 : input.Scope == "episodes" ? input.Episodes.Length : input.Seasons.Length * 10;
+        // An estimate, never a claim about actual disk usage: from the target instance's typical sizes when known.
+        private static double EstimateGb(MutationInput input, RequestPolicyFacts facts) => RequestSizeHint.Estimate(input, facts.Size);
         /// <summary>Re-evaluates approval requirements for an automatic job under the current household rules.</summary>
         public bool NeedsApprovalAtSend(RequestJob job, RequestPolicyFacts requester, IRequestPolicy policy, DateTimeOffset now)
         {
@@ -366,7 +368,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var authorizedExtra = normalized.Extra(Coverage(c, t, covered, TargetKey(facts)));
             var auto = facts.Role is "Manager" or "Admin" || (facts.Role == "Member" && facts.Backend == "je" && !automation &&
                 policy.Configuration.ArrRequestPreset != "approve_everything" &&
-                !OverQuota(facts, Charges(c, t, user), authorizedExtra == null ? 0 : Cost(c, t, authorizedExtra, user, now, facts.WindowDays), authorizedExtra == null ? 0 : EstimateGb(authorizedExtra), now) &&
+                !OverQuota(facts, Charges(c, t, user), authorizedExtra == null ? 0 : Cost(c, t, authorizedExtra, user, now, facts.WindowDays), authorizedExtra == null ? 0 : EstimateGb(authorizedExtra, facts), now) &&
                 !OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold));
             if (!auto && !automation && SplitAtThreshold(c, t, user, request, normalized, facts, own, policy, now, origin) is { } split) return split;
             var extra = normalized.Extra(Coverage(c, t, covered, TargetKey(facts), !auto));
@@ -374,7 +376,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 "SELECT j.id FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w.title_key=$key AND w.variant=$v AND json_extract(j.authorization_context,'$.Backend')=$backend AND json_extract(j.authorization_context,'$.InstanceId')=$instance AND json_extract(j.authorization_context,'$.ConnectionGeneration')=$generation AND json_extract(j.authorization_context,'$.SeerrSource') IS $source AND (j.state IN ('sending','maybe_sent') OR json_extract(j.outcome,'$.certainty')='Unknown') LIMIT 1",
                 ("$key", normalized.Key), ("$v", normalized.Variant), ("$backend", facts.Backend), ("$instance", facts.InstanceId), ("$generation", facts.ConnectionGeneration), ("$source", facts.SeerrSource)) != null) return RequestOutcome.Refused("request_in_flight", 409);
             var cost = extra == null ? 0 : Cost(c, t, extra, user, now, facts.WindowDays);
-            var gb = extra == null ? 0 : EstimateGb(extra);
+            var gb = extra == null ? 0 : EstimateGb(extra, facts);
             if (OverGbCap(facts, Charges(c, t, user), gb, now)) return RequestOutcome.Refused("quota_exceeded", 429, "quota_exceeded");
             var over = OverQuota(facts, Charges(c, t, user, facts.Backend == "seerr"), cost, gb, now);
             var needsApproval = extra != null && (facts.Role == "Kid" || (facts.Backend == "je" && facts.Role == "Member" && (automation || policy.Configuration.ArrRequestPreset == "approve_everything" || over || OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold))));
@@ -595,7 +597,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var existingJobs = Jobs(c, t, "want_id=$id AND state IN ('queued','retry','succeeded','maybe_sent')", ("$id", id));
             var extra = input.Extra(Coverage(c, t, covered, TargetKey(requester)).Concat(existingJobs.Where(j => TargetKey(j.Authorization) == TargetKey(requester)).Select(j => j.Input)));
             var cost = extra == null ? 0 : Cost(c, t, extra, want.UserId, now, requester.WindowDays, existingJobs.Count == 0 ? id : null);
-            var gb = extra == null ? 0 : EstimateGb(extra);
+            var gb = extra == null ? 0 : EstimateGb(extra, requester);
             if (OverGbCap(requester, Charges(c, t, want.UserId).Where(charge => existingJobs.Count > 0 || charge.WantId != id).ToArray(), gb, now)) return RequestOutcome.Refused("quota_exceeded", 429, "quota_exceeded");
             // Explicit approval grants soft quota/series excess, while hard limits and visibility remain enforced.
             if (requester.Backend == "seerr" && OverQuota(requester, Charges(c, t, want.UserId, requester.Backend == "seerr"), cost, gb, now)) return RequestOutcome.Refused("over_quota", 429, "quota_exceeded");
@@ -708,7 +710,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var facts = policy.Evaluate(follower.UserId, extra);
                 var cost = Cost(c, t, extra, follower.UserId, now, facts.WindowDays);
                 Exec(c, t, "UPDATE wants SET owned_input=$input,is_follower=0,cost=$cost,updated_at=$at WHERE id=$id", ("$input", extra.Canonical), ("$cost", cost), ("$at", Ms(now)), ("$id", follower.Id));
-                Exec(c, t, "UPDATE reservations SET cost=$cost,estimated_gb=$gb WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", EstimateGb(extra)), ("$id", follower.Id));
+                Exec(c, t, "UPDATE reservations SET cost=$cost,estimated_gb=$gb WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", EstimateGb(extra, facts)), ("$id", follower.Id));
                 Record(c, t, follower.Id, null, null, "scope_restored", "accepted", follower.Reason, follower.Input.Key, now);
                 coverage.Add(follower with { OwnedInput = extra });
             }
@@ -754,7 +756,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (want == null || want.Input.Scope != "future" || want.Cost == 0 || want.Status is not ("sent" or "stale") || want.Input.Seasons.Contains(season) || !policy.Configuration.ArrRequestChargeFutureSeasons) return false;
                 var scope = "s" + season.ToString(CultureInfo.InvariantCulture);
                 if (Scalar(c, t, "SELECT id FROM reservations WHERE want_id=$id AND scope=$s", ("$id", wantId), ("$s", scope)) != null) return false;
-                Reserve(c, t, wantId, want.UserId, 1, EstimateGb(want.Input) / Math.Max(1, want.Input.Seasons.Length), "charged", now, scope);
+                var newSeason = want.Input with { Scope = "seasons", Seasons = new[] { season }, Episodes = Array.Empty<RequestEpisode>() };
+                Reserve(c, t, wantId, want.UserId, 1, EstimateGb(newSeason, policy.Evaluate(want.UserId, newSeason)), "charged", now, scope);
                 Record(c, t, wantId, null, want.UserId, "future_season", "accepted", "looking", want.Input.Key, now);
                 return true;
             });
@@ -788,7 +791,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var approver = jobs.Where(j => j.State == "succeeded").Select(j => j.Authorization.Approver).LastOrDefault(a => a != null);
                 var scope = "s" + season.ToString(CultureInfo.InvariantCulture);
                 if (want.Cost > 0 && policy.Configuration.ArrRequestChargeFutureSeasons && Scalar(c, t, "SELECT id FROM reservations WHERE want_id=$id AND scope=$s", ("$id", wantId), ("$s", scope)) == null)
-                    Reserve(c, t, wantId, want.UserId, 1, EstimateGb(want.Input) / Math.Max(1, want.Input.Seasons.Length), "charged", now, scope);
+                    Reserve(c, t, wantId, want.UserId, 1, EstimateGb(input, requester), "charged", now, scope);
                 FollowJob(c, t, wantId, input, Authorize(requester, approver is Guid a ? policy.Evaluate(a, input) : null, input, false), now);
                 Record(c, t, wantId, null, want.UserId, "future_season", "accepted", "queued_outage", want.Input.Key, now);
                 return true;

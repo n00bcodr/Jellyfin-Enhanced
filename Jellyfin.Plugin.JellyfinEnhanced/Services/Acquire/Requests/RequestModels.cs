@@ -248,6 +248,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Why not, when the controls should say so (null otherwise).</summary>
         [JsonPropertyName("blocked")] public RequestBlock? Blocked { get; init; }
     }
+    /// <summary>
+    /// What a request's size estimate (GB accounting) is worked out from, read from the library of the instance it goes to
+    /// (in memory): the median size of a movie file there, of an episode file there, and for a series that instance holds,
+    /// how many episodes each of its seasons has. A part that isn't known falls back to the fixed estimates.
+    /// </summary>
+    /// <param name="MovieGb">Median movie size on the instance (GB), when it holds enough movies with files.</param>
+    /// <param name="EpisodeGb">Median episode file size on the instance (GB), when it holds enough series with files.</param>
+    /// <param name="SeasonEpisodes">Episodes per season of the series asked for, when the instance holds it.</param>
+    public sealed record RequestSizeHint(double? MovieGb = null, double? EpisodeGb = null, IReadOnlyDictionary<int, int>? SeasonEpisodes = null)
+    {
+        /// <summary>Episodes assumed in a season nothing describes.</summary>
+        internal const int SeasonEpisodesAssumed = 10;
+
+        /// <summary>
+        /// The estimated size of <paramref name="input"/> in GB: a movie is the instance's median movie (else 8, 4K 40); an
+        /// episode its median episode (else 1, 4K 4); a season its episodes (as the instance lists them, else 10) times that.
+        /// An estimate, never a claim about actual disk use.
+        /// </summary>
+        /// <param name="input">The request (its scope and edition).</param>
+        /// <param name="size">The instance's typical sizes, or null.</param>
+        public static double Estimate(MutationInput input, RequestSizeHint? size)
+        {
+            var fourK = input.Variant == "4k";
+            var episode = size?.EpisodeGb ?? (fourK ? 4 : 1);
+            if (input.Scope == "movie") return size?.MovieGb ?? (fourK ? 40 : 8);
+            if (input.Scope == "episodes") return input.Episodes.Length * episode;
+            return input.Seasons.Sum(s => (size?.SeasonEpisodes != null && size.SeasonEpisodes.TryGetValue(s, out var n) && n > 0 ? n : SeasonEpisodesAssumed) * episode);
+        }
+    }
     /// <summary>A quota charge; expiries use a strict rolling window.</summary>
     public sealed record QuotaCharge(int Cost, DateTimeOffset At, double EstimatedGb = 0, string? WantId = null);
     /// <summary>Quota projection, including the next time a usable slot returns.</summary>

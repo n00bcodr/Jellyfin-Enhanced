@@ -187,6 +187,58 @@ public class IntegrationRequestLedgerTests
     }
 
     [Fact]
+    public async Task TheSizeEstimateComesFromTheTargetInstancesTypicalSizesAndTheGbCapUsesIt()
+    {
+        using var r = new Rig();
+        double Gb(RequestOutcome o) => r.Ledger.Database.Read(c =>
+        {
+            using var cmd = RequestLedger.Cmd(c, null, "SELECT SUM(estimated_gb) FROM reservations WHERE want_id=$w", ("$w", o.RequestId));
+            return Convert.ToDouble(cmd.ExecuteScalar());
+        });
+        // Nothing known about the instance: the fixed estimates, as before.
+        Assert.Equal(8, Gb(await r.Create(r.Member, Movie(601))));
+        Assert.Equal(20, Gb(await r.Create(r.Member, Seasons(1, 2))));
+        // The instance's files: a movie there is typically 22.5 GB, an episode 2.5 GB; the series asked for has 8
+        // episodes in season 3 (a season it doesn't describe counts as 10).
+        var size = new RequestSizeHint(22.5, 2.5, new Dictionary<int, int> { [3] = 8 });
+        r.Policy.Adjust = (_, _, facts) => facts with { Size = size };
+        Assert.Equal(22.5, Gb(await r.Create(r.Member, Movie(602))));
+        Assert.Equal(45, Gb(await r.Create(r.Member, new MutationInput { Key = "tv:tvdb:80000", Scope = "seasons", Seasons = new[] { 3, 4 } })));
+        // The hard GB cap counts the same estimates: with 10 GB left, another movie there (22.5 GB) is over it.
+        var used = r.Service.Quota(r.Member).UsedGb;
+        r.Policy.Adjust = (_, _, facts) => facts with { Size = size, GbLimit = used + 10 };
+        var over = await r.Create(r.Member, Movie(603));
+        Assert.Equal((429, "quota_exceeded"), (over.HttpStatus, over.Reason));
+        // Without a hint the fixed estimates stay what they always were (4K included).
+        Assert.Equal((8d, 40d, 10d, 40d, 3d, 12d), (RequestSizeHint.Estimate(Movie(), null), RequestSizeHint.Estimate(Movie(variant: "4k"), null),
+            RequestSizeHint.Estimate(Seasons(1), null), RequestSizeHint.Estimate(Seasons(1) with { Variant = "4k" }, null),
+            RequestSizeHint.Estimate(new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1), new RequestEpisode(1, 2), new RequestEpisode(1, 3) } }, null),
+            RequestSizeHint.Estimate(new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Variant = "4k", Episodes = new[] { new RequestEpisode(1, 1), new RequestEpisode(1, 2), new RequestEpisode(1, 3) } }, null)));
+    }
+
+    [Fact]
+    public void AnInstancesTypicalSizesAreTheMedianOfEnoughRealFilesAndItsSeasonsEpisodeCounts()
+    {
+        static ArrMovieEntry M(int id, double gb, bool file = true) => new() { Id = id, TmdbId = id, HasFile = file, SizeOnDisk = (long)(gb * 1_000_000_000) };
+        static ArrSeriesEntry S(int id, double gb, int files) => new()
+        {
+            Id = id, TvdbId = id, EpisodeFileCount = files, SizeOnDisk = (long)(gb * 1_000_000_000),
+            Seasons = new[] { new ArrSeasonEntry { SeasonNumber = 1, TotalEpisodeCount = 6 }, new ArrSeasonEntry { SeasonNumber = 2, TotalEpisodeCount = 13 }, new ArrSeasonEntry { SeasonNumber = 3 } },
+        };
+        var tags = new Dictionary<int, string>();
+        var library = new ArrLibrarySnapshot(new[] { M(1, 4), M(2, 30), M(3, 12), M(4, 90, file: false) }, new[] { S(10, 20, 10), S(11, 9, 6), S(12, 30, 10) }, tags);
+        var series = RequestPolicy.SizeHint(library, new[] { TitleKey.Parse("tv:tmdb:999")!, TitleKey.Parse("tv:tvdb:11")! })!;
+        // Movies with a file: 4, 12, 30 -> 12; episodes 2, 1.5, 3 -> 2; the series' seasons as Sonarr lists them.
+        Assert.Equal((12d, 2d), (series.MovieGb, series.EpisodeGb));
+        Assert.Equal(new Dictionary<int, int> { [1] = 6, [2] = 13 }, series.SeasonEpisodes);
+        Assert.Null(RequestPolicy.SizeHint(library, new[] { TitleKey.Parse("movie:tmdb:5")! })!.SeasonEpisodes);
+        // Too few files, or sizes no real file has (samples, placeholders): nothing is concluded.
+        Assert.Null(RequestPolicy.SizeHint(new ArrLibrarySnapshot(new[] { M(1, 4), M(2, 30) }, Array.Empty<ArrSeriesEntry>(), tags), new[] { TitleKey.Parse("movie:tmdb:1")! }));
+        Assert.Null(RequestPolicy.SizeHint(new ArrLibrarySnapshot(new[] { M(1, 0.00001), M(2, 0.00002), M(3, 0.00003) }, Array.Empty<ArrSeriesEntry>(), tags), new[] { TitleKey.Parse("movie:tmdb:1")! }));
+        Assert.Null(RequestPolicy.SizeHint(null, new[] { TitleKey.Parse("movie:tmdb:1")! }));
+    }
+
+    [Fact]
     public async Task MemberWithinQuotaAsksAutomaticallyEvenWhenAKidAlreadyHasPendingIntent()
     {
         using var r = new Rig(); var pending = await r.Create(r.Kid);
