@@ -135,6 +135,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         [JsonPropertyName("message")] public string Message { get; init; } = "Asked! We'll let you know.";
         /// <summary>Want id, when recorded.</summary>
         [JsonPropertyName("requestId")] public string? RequestId { get; init; }
+        /// <summary>
+        /// Outcome <c>split</c>: the ask crossed the household's series threshold, so the seasons that still fit under it
+        /// went ahead (<see cref="RequestId"/>) and only the rest waits for an OK as its own request (this id).
+        /// </summary>
+        [JsonPropertyName("heldRequestId"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? HeldRequestId { get; init; }
+        /// <summary>Outcome <c>split</c>: the season numbers that wait for an OK.</summary>
+        [JsonPropertyName("heldSeasons"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int[]? HeldSeasons { get; init; }
         /// <summary>HTTP status of this outcome.</summary>
         [JsonIgnore] public int HttpStatus { get; init; } = 201;
         /// <summary>Constructs a success result.</summary>

@@ -196,10 +196,12 @@
         const reason = typeof body?.reason === 'string' ? body.reason : '';
         const certainty = typeof body?.certainty === 'string' ? body.certainty : '';
         const requestId = typeof body?.requestId === 'string' ? body.requestId : null;
+        const heldSeasons = Array.isArray(body?.heldSeasons) ? body.heldSeasons.filter(n => Number.isInteger(n) && n >= 0) : [];
         let state;
         if (status === 202 || outcome === 'maybe_sent' || certainty === 'Unknown') state = 'unknown';
         else if (status >= 200 && status < 300) {
-            if (outcome === 'merged' || outcome === 'already_requested') state = 'merged';
+            if (outcome === 'split') state = 'split';
+            else if (outcome === 'merged' || outcome === 'already_requested') state = 'merged';
             else if (outcome === 'nothing_to_request' || reason === 'nothing_to_request') state = 'nothing';
             else if (WAITING.has(reason)) state = 'waiting';
             else if (reason === 'declined') state = 'declined';
@@ -212,7 +214,22 @@
         else if (status === 403) state = 'denied';
         else if (status === 404) state = 'gone';
         else state = 'failed';
-        return { ok: status >= 200 && status < 300, status, state, outcome, reason, certainty, requestId };
+        const result = { ok: status >= 200 && status < 300, status, state, outcome, reason, certainty, requestId };
+        if (state === 'split') result.heldSeasons = heldSeasons;
+        return result;
+    }
+
+    /**
+     * "Season 5" / "Seasons 5–6" / "Seasons 5, 7" for the seasons of a split ask that wait for an OK.
+     * @param {number[]} seasons Season numbers.
+     * @returns {string} Text ('' for none).
+     */
+    function seasonsWords(seasons) {
+        const sorted = [...new Set(seasons || [])].sort((a, b) => a - b);
+        if (sorted.length === 0) return '';
+        if (sorted.length === 1) return tr('arr_hub_season', { list: sorted[0] });
+        const contiguous = sorted.every((n, i) => i === 0 || n === sorted[i - 1] + 1);
+        return tr('arr_hub_seasons', { list: contiguous ? `${sorted[0]}–${sorted[sorted.length - 1]}` : sorted.join(', ') });
     }
 
     /**
@@ -302,6 +319,7 @@
                     ? { chip: tr('arr_ask_chip_waiting'), text: tr('arr_ask_toast_over_quota', { contact: who }), tone: 'asked' }
                     : { chip: tr('arr_ask_chip_waiting'), text: tr('arr_ask_toast_waiting', { contact: who }), tone: 'asked' };
             case 'asked': return { chip: tr('arr_ask_chip_asked'), text: tr('arr_ask_toast_asked'), tone: 'approved' };
+            case 'split': return { chip: tr('arr_ask_chip_asked'), text: tr('arr_ask_toast_split', { contact: who, seasons: seasonsWords(result.heldSeasons) }), tone: 'approved' };
             case 'merged': return { chip: tr('arr_ask_chip_asked'), text: tr('arr_ask_toast_merged'), tone: 'approved' };
             case 'nothing': return { chip: '', text: tr('arr_ask_toast_nothing'), tone: 'none' };
             case 'unknown': return { chip: tr('arr_ask_chip_asked'), text: tr('arr_ask_toast_unknown'), tone: 'approved' };

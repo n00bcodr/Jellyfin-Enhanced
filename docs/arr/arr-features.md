@@ -734,8 +734,11 @@ exceeded, and queued jobs re-check it before sending. Approval can grant count-q
 Overlapping asks charge only additional scope. An existing user's covered scope reuses
 their want; another user follows covered intent without a charge. Sharing requires the same backend, resolved instance,
 connection generation and Seerr source. A request for another target creates its own work. Members need approval after their cumulative scope
-passes the series threshold, even when they ask for seasons individually; currently the entire new uncovered scope
-waits for approval. If shared scope is withdrawn from a mixed request, that request shows pending with reason `removed`;
+passes the series threshold, even when they ask for seasons individually. An ask that crosses the threshold is split:
+the seasons that still fit under it go ahead and only the excess waits for approval as its own request (with S1–S3
+asked before and a threshold of 4, an S4–S6 ask queues S4 and holds S5–S6; seasons the Member already asked for stay
+free). The person is told which seasons wait. When the part under the threshold could not go ahead on its own either
+(over quota, the Approve everything preset, a Kid, or no room left), the whole ask waits as before. If shared scope is withdrawn from a mixed request, that request shows pending with reason `removed`;
 its own job and charge stay with its owner. Approval adds only missing scope, and the full ask becomes sent only when
 every part is confirmed. When approval changes the resolved target, it replaces known-unsent old-target work and
 rechecks free followers against their current policy. Eligible followers move with the new target; others return to

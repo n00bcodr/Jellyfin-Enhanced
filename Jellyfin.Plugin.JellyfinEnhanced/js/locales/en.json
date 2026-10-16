@@ -839,6 +839,7 @@
     "arr_ask_toast_waiting": "Asked! {contact} will take a look.",
     "arr_ask_toast_over_quota": "Sent to {contact} for an OK (you've used this week's requests).",
     "arr_ask_toast_asked": "Asked! We'll let you know.",
+    "arr_ask_toast_split": "Asked! The rest ({seasons}) is over the household's series limit and waits for {contact} to OK it.",
     "arr_ask_toast_merged": "Someone in your household already asked, we'll tell you both.",
     "arr_ask_toast_nothing": "That's already here or on its way.",
     "arr_ask_toast_unknown": "Asked! We'll confirm shortly.",

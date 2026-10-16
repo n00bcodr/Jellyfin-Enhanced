@@ -153,6 +153,12 @@ test('ask-core maps every request outcome to an honest family state and words', 
   assert.equal(state(201, { outcome: 'accepted', reason: 'awaiting_approval' }), 'waiting');
   assert.equal(state(201, { outcome: 'accepted', reason: 'over_quota' }), 'waiting');
   assert.equal(state(201, { outcome: 'accepted', reason: 'queued_outage' }), 'asked');
+  // An ask split at the series threshold: the part under it went ahead, the named seasons wait for an OK.
+  const split = A.interpret(201, { outcome: 'split', reason: 'queued_outage', requestId: 'a', heldRequestId: 'b', heldSeasons: [6, 5] });
+  assert.equal(split.state, 'split');
+  assert.equal(A.describe(split, { contact: 'Dad' }).chip, 'Asked!');
+  assert.equal(A.describe(split, { contact: 'Dad' }).text, "Asked! The rest (Seasons 5–6) is over the household's series limit and waits for Dad to OK it.");
+  assert.equal(A.describe(A.interpret(200, { outcome: 'split', reason: 'queued_outage', heldSeasons: [7] }), {}).text, "Asked! The rest (Season 7) is over the household's series limit and waits for the admin to OK it.");
   assert.equal(state(200, { outcome: 'merged', reason: 'looking' }), 'merged');
   assert.equal(state(200, { outcome: 'nothing_to_request', reason: 'nothing_to_request' }), 'nothing');
   assert.equal(state(202, { outcome: 'maybe_sent', certainty: 'Unknown' }), 'unknown');

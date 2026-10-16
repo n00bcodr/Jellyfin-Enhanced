@@ -484,6 +484,66 @@ public class IntegrationRequestLedgerTests
         Assert.Equal(4, r.Service.Quota(r.Member).Used); Assert.Equal("pending", r.Ledger.Find(excess.RequestId!)!.Status);
     }
     [Fact]
+    public async Task AskCrossingSeriesThresholdQueuesThePartUnderItAndHoldsOnlyTheExcess()
+    {
+        using var r = new Rig();
+        Assert.Equal("queued_outage", (await r.Create(input: Seasons(1, 2, 3))).Reason);
+        var ask = await r.Create(input: Seasons(4, 5, 6), client: "split-1");
+        Assert.Equal(201, ask.HttpStatus); Assert.Equal("split", ask.Outcome); Assert.Equal("queued_outage", ask.Reason);
+        var queued = r.Ledger.Find(ask.RequestId!)!; var held = r.Ledger.Find(ask.HeldRequestId!)!;
+        Assert.Equal("queued", queued.Status); Assert.Equal(new[] { 4 }, queued.Input.Seasons);
+        Assert.Equal(("pending", "awaiting_approval"), (held.Status, held.Reason)); Assert.Equal(new[] { 5, 6 }, held.Input.Seasons);
+        Assert.Equal(new[] { 5, 6 }, ask.HeldSeasons);
+        Assert.Equal(4, r.Service.Quota(r.Member).Used);
+        // A retry of the same tap answers as the split did; asking for the same seasons again records nothing new.
+        var retry = await r.Create(input: Seasons(4, 5, 6), client: "split-1");
+        Assert.Equal(("split", ask.RequestId, ask.HeldRequestId), (retry.Outcome, retry.RequestId, retry.HeldRequestId));
+        var again = await r.Create(input: Seasons(4, 5, 6));
+        Assert.Equal(200, again.HttpStatus); Assert.Contains(again.RequestId, new[] { ask.RequestId, ask.HeldRequestId });
+        Assert.Equal(3, r.Ledger.List(r.Member, false).Count);
+        // Approving the excess first never makes the queued part wait at send.
+        Assert.Equal(200, (await r.Service.ApproveAsync(ask.HeldRequestId!, r.Admin, null, default)).HttpStatus);
+        await r.Runner().TickAsync(default);
+        Assert.All(r.Ledger.List(r.Member, false), w => Assert.Equal("sent", w.Status));
+        Assert.Equal(3, r.Backend.Sends); Assert.Equal(6, r.Service.Quota(r.Member).Used);
+    }
+    [Fact]
+    public async Task SplitKeepsSeasonsAlreadyAskedFreeAndSplitsEpisodeAsksBySeason()
+    {
+        using var r = new Rig();
+        await r.Create(input: Seasons(1, 2));
+        // S2 was asked before (free) and S3–S4 fit under 4; only S5 waits.
+        var seasons = await r.Create(input: Seasons(2, 3, 4, 5));
+        Assert.Equal("split", seasons.Outcome);
+        Assert.Equal(new[] { 2, 3, 4 }, r.Ledger.Find(seasons.RequestId!)!.Input.Seasons);
+        Assert.Equal(new[] { 5 }, r.Ledger.Find(seasons.HeldRequestId!)!.Input.Seasons);
+        var other = r.Add("Member");
+        await r.Create(other, Seasons(1, 2, 3));
+        var episodes = await r.Create(other, new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(4, 1), new RequestEpisode(5, 1), new RequestEpisode(5, 2) } });
+        Assert.Equal("split", episodes.Outcome);
+        Assert.Equal(new[] { new RequestEpisode(4, 1) }, r.Ledger.Find(episodes.RequestId!)!.Input.Episodes);
+        Assert.Equal(new[] { new RequestEpisode(5, 1), new RequestEpisode(5, 2) }, r.Ledger.Find(episodes.HeldRequestId!)!.Input.Episodes);
+        Assert.Equal(new[] { 5 }, episodes.HeldSeasons);
+    }
+    [Theory]
+    [InlineData("quota")]
+    [InlineData("preset")]
+    [InlineData("nothing_fits")]
+    [InlineData("kid")]
+    public async Task AskOverSeriesThresholdIsHeldWholeWhenNoPartCouldGoAhead(string change)
+    {
+        using var r = new Rig();
+        var who = change == "kid" ? r.Kid : r.Member;
+        await r.Create(who, change == "nothing_fits" ? Seasons(1, 2, 3, 4) : Seasons(1, 2, 3));
+        if (change == "quota") r.Policy.People[r.Member] = r.Policy.People[r.Member] with { Limit = 3 };
+        if (change == "preset") r.Policy.Configuration.ArrRequestPreset = "approve_everything";
+        var ask = await r.Create(who, Seasons(5, 6, 7));
+        Assert.NotEqual("split", ask.Outcome); Assert.Null(ask.HeldRequestId);
+        var want = r.Ledger.Find(ask.RequestId!)!;
+        Assert.Equal("pending", want.Status); Assert.Equal(new[] { 5, 6, 7 }, want.Input.Seasons);
+        Assert.Equal(2, r.Ledger.List(who, false).Count);
+    }
+    [Fact]
     public async Task MergeChargesOnlyUncoveredSeasonsAndFutureChargesAreIdempotent()
     {
         using var r = new Rig(); await r.Create(input: Seasons(1));

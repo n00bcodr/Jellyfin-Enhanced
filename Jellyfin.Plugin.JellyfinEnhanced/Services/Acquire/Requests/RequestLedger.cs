@@ -249,6 +249,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 var existingId = Scalar(c, t, "SELECT want_id FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId))!;
                 var existing = Wants(c, t, "id=$id", ("$id", existingId)).Single();
+                // A retry of an ask that was split answers as the split did.
+                if (Wants(c, t, "user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId + SplitHeldSuffix)).SingleOrDefault() is { } heldPart)
+                    return Split(RequestOutcome.Accepted(existing.Id, existing.Reason, 200), heldPart.Id, heldPart.Input.SeasonNumbers.OrderBy(n => n).ToArray());
                 return RequestOutcome.Accepted(existing.Id, existing.Reason, 200);
             }
             if (!policy.IsAdmin(user) && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
@@ -267,7 +270,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
             }
             var own = Wants(c, t, "user_id=$u", ("$u", Id(user)));
-            var sameOwn = own.FirstOrDefault(w => Active(w) && w.TargetKey == TargetKey(facts) && w.Input.Key == normalized.Key && w.Input.Variant == normalized.Variant && normalized.Extra(new[] { w.Input }) == null);
+            var ownSame = own.Where(w => Active(w) && w.TargetKey == TargetKey(facts) && w.Input.Key == normalized.Key && w.Input.Variant == normalized.Variant).ToArray();
+            // One of the person's own asks covers it, or several together do (an ask split at the series threshold).
+            var sameOwn = ownSame.FirstOrDefault(w => normalized.Extra(new[] { w.Input }) == null)
+                ?? (ownSame.Length > 1 && normalized.Extra(ownSame.Select(w => w.Input)) == null ? ownSame.First(w => w.Input.Overlaps(normalized)) : null);
             if (sameOwn != null)
             {
                 RememberInput(c, t, user, request.ClientRequestId, normalized.Fingerprint, sameOwn.Id);
@@ -282,6 +288,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 policy.Configuration.ArrRequestPreset != "approve_everything" &&
                 !OverQuota(facts, Charges(c, t, user), authorizedExtra == null ? 0 : Cost(c, t, authorizedExtra, user, now, facts.WindowDays), authorizedExtra == null ? 0 : EstimateGb(authorizedExtra), now) &&
                 !OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold));
+            if (!auto && !automation && SplitAtThreshold(c, t, user, request, normalized, facts, own, policy, now, origin) is { } split) return split;
             var extra = normalized.Extra(Coverage(c, t, covered, TargetKey(facts), !auto));
             if (auto && (extra != null || covered.Any(w => w.Status == "pending")) && Scalar(c, t,
                 "SELECT j.id FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w.title_key=$key AND w.variant=$v AND json_extract(j.authorization_context,'$.Backend')=$backend AND json_extract(j.authorization_context,'$.InstanceId')=$instance AND json_extract(j.authorization_context,'$.ConnectionGeneration')=$generation AND json_extract(j.authorization_context,'$.SeerrSource') IS $source AND (j.state IN ('sending','maybe_sent') OR json_extract(j.outcome,'$.certainty')='Unknown') LIMIT 1",
@@ -322,6 +329,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return RequestOutcome.Accepted(id, reason, 200) with { Outcome = "merged", Message = "Someone in your household already asked, we'll tell you both." };
             return RequestOutcome.Accepted(id, reason);
         }
+        /// <summary>
+        /// A Member's ask (JE mode, no blanket approval preset) that crosses the household's series threshold: the seasons
+        /// that still fit under it go ahead as one request and only the excess waits for an OK as a second one (S1–S3
+        /// asked before, an S4–S6 ask at threshold 4: S4 is queued, S5–S6 wait). Seasons the person already asked for stay
+        /// free and go with the first part. Each part is an ordinary request with its own reservation and approval; the
+        /// client's id answers with the first. Null (nothing written) when there is nothing to split, or when the first
+        /// part would not go ahead on its own either (over quota, or something else holds it): the whole ask is then held
+        /// as before.
+        /// </summary>
+        private RequestOutcome? SplitAtThreshold(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized,
+            RequestPolicyFacts facts, IReadOnlyList<RequestWant> own, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin)
+        {
+            var threshold = policy.Configuration.ArrRequestSeriesThreshold;
+            if (facts.Role != "Member" || facts.Backend != "je" || policy.Configuration.ArrRequestPreset == "approve_everything" ||
+                normalized.Scope is not ("seasons" or "episodes") || !OverSeries(facts, normalized, own, threshold)) return null;
+            var asked = own.Where(w => w.Input.Key == normalized.Key && w.Status is not ("declined" or "cancelled")).SelectMany(w => w.Input.SeasonNumbers).ToHashSet();
+            var fresh = normalized.SeasonNumbers.Where(s => !asked.Contains(s)).Distinct().OrderBy(s => s).ToArray();
+            var room = Math.Clamp(threshold, 1, 200) - asked.Count;
+            if (room <= 0 || room >= fresh.Length) return null;
+            var first = normalized.SeasonNumbers.Where(s => asked.Contains(s)).Concat(fresh.Take(room)).ToHashSet();
+            var held = fresh.Skip(room).ToArray();
+            MutationInput Part(Func<int, bool> keep) => normalized.Scope == "episodes"
+                ? normalized with { Episodes = normalized.Episodes.Where(e => keep(e.Season)).ToArray() }
+                : normalized with { Seasons = normalized.Seasons.Where(keep).ToArray() };
+            Exec(c, t, "SAVEPOINT request_split");
+            var queued = CreateCore(c, t, user, request with { ClientRequestId = request.ClientRequestId + "|go" }, Part(first.Contains), policy, now, origin);
+            // The excess is the later part of the ask: it is ordered after the first, so the first's send-time series
+            // check never counts the excess (approved or not) against it.
+            string? Status(RequestOutcome o) => o.HttpStatus >= 400 || o.RequestId == null ? null : Wants(c, t, "id=$id", ("$id", o.RequestId)).SingleOrDefault()?.Status;
+            var waiting = Status(queued) is "queued" or "sent"
+                ? CreateCore(c, t, user, request with { ClientRequestId = request.ClientRequestId + SplitHeldSuffix }, Part(held.Contains), policy, now.AddMilliseconds(1), origin)
+                : null;
+            if (waiting == null || Status(waiting) != "pending")
+            {
+                Exec(c, t, "ROLLBACK TO request_split");
+                Exec(c, t, "RELEASE request_split");
+                return null;
+            }
+            Exec(c, t, "RELEASE request_split");
+            RememberInput(c, t, user, request.ClientRequestId, normalized.Fingerprint, queued.RequestId!);
+            return Split(queued, waiting.RequestId!, held);
+        }
+        /// <summary>The client id suffix of the part of a split ask that waits for an OK.</summary>
+        private const string SplitHeldSuffix = "|ok";
+        private static RequestOutcome Split(RequestOutcome queued, string heldId, int[] heldSeasons)
+            => queued with { Outcome = "split", HeldRequestId = heldId, HeldSeasons = heldSeasons, Message = "Asked! The rest waits for an OK." };
         private static IEnumerable<MutationInput> Coverage(SqliteConnection c, SqliteTransaction t, IEnumerable<RequestWant> wants, string target, bool includePending = false)
         {
             foreach (var want in wants.Where(w => Active(w) && w.TargetKey == target))
