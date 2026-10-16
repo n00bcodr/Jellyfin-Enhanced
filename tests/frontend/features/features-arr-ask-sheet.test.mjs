@@ -1611,7 +1611,8 @@ const SEERR_MEMBER = { ...MEMBER, backend: 'seerr' };
 test('Seerr mode: an episode page offers its season by name with the reason, and asks for the season', async t => {
   const h = setup(t, { html: PAGE, hash: '#/details?id=e5', me: SEERR_MEMBER });
   const page = h.document.getElementById('itemDetailPage');
-  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, reason: { code: 'looking' } }, {});
+  // Not being fetched (unmonitored): Get it, as its season. (One Sonarr is looking for right now offers nothing.)
+  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, stage: 'notHere', reason: { code: 'unmonitored' } }, {});
   await settle();
   const box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
   assert.deepEqual([...box.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['Get Season 3']);
