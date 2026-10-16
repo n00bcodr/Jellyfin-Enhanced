@@ -863,6 +863,35 @@ public class IntegrationArrStatusTests
     }
 
     [Fact]
+    public void ARequestHeldBackAtSendingTellsAnAdministratorItIsStuckNotWaitingForThem()
+    {
+        // The ledger's own facts: an Admin's 4K ask parked on missing add defaults is pending, but held, not waiting for an OK.
+        var movie = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput { Key = "movie:tmdb:329865", Scope = "movie", Variant = "4k" };
+        Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestWant Want(string reason)
+            => new("w-" + reason, "a", Admin.UserId, "c-" + reason, "f", movie, "pending", reason, 1, "null", Now, Now);
+        RequestFacts Facts(params string[] reasons) => Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.LedgerRequestFacts.FactsOf(reasons.Select(Want), Admin.UserId, () => [])!;
+        Assert.Equal("invalid_defaults", Facts("invalid_defaults").HeldReason);
+        Assert.Null(Facts("awaiting_approval").HeldReason);
+        Assert.Null(Facts("invalid_defaults", "awaiting_approval").HeldReason);   // someone's ask still waits for an OK
+        Assert.Null(Facts("over_quota").HeldReason);
+
+        TitleStatus With(RequestFacts r, StatusViewer viewer)
+        {
+            var facts = MovieFacts();
+            facts.Request = r;
+            return StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), Ctx(viewer), false);
+        }
+        var admin = With(Facts("invalid_defaults"), Admin);
+        Assert.Equal((StatusStage.Asked, StatusReasonCode.AwaitingApproval, true), Of(admin));
+        Assert.Equal("invalid_defaults", admin.Reason.Params!["held"]);
+        // Everyone else still reads "waiting for an OK" (the fix is an administrator's), without the reason.
+        var member = With(Facts("invalid_defaults"), Member);
+        Assert.Equal((StatusStage.Asked, StatusReasonCode.AwaitingApproval, false), Of(member));
+        Assert.Null(member.Reason.Params);
+        Assert.Null(With(Facts("awaiting_approval"), Admin).Reason.Params);
+    }
+
+    [Fact]
     public void AnUnreadableInstanceIsServiceDownNotNotHere()
     {
         var facts = MovieFacts();

@@ -839,7 +839,7 @@ Admin only. Jellyfin's own backups don't include plugin data.
 | GET | `active-streams/sessions` | Currently active playback sessions |
 | POST | `active-streams/broadcast` | Admin: broadcast a message to active sessions |
 | GET | `proxy/avatar` | Cached avatar image proxy |
-| GET | `items/by-providers` | Look up a Jellyfin item by external provider id (for a signed-in user, only an item they can open) |
+| GET | `items/by-providers` | Look up a Jellyfin item by external provider id (for a signed-in user, only an item they can open). No match answers 204 with no body; no provider id answers 400 |
 
 ### Maintenance Mode
 

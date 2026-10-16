@@ -899,7 +899,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         .Where(x => x.Stage == StatusStage.Downloading && x.Progress != null).Select(x => x.Progress!).ToList();
                     state = stage is StatusStage.None or StatusStage.Ready
                         // Nothing monitored, queued or aired there yet: the request says where it is.
-                        ? ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored), facts.Request)
+                        ? ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored), facts.Request, c)
                         : Overall(stage, summary) with
                         {
                             Attention = summary.Attention > 0, Date = summary.NextAir, DateIsDay = summary.NextAirIsDay,
@@ -973,7 +973,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var state = available
                 ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: availableAt)
-                : ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.NotInArr), request);
+                : ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.NotInArr), request, admin: whole.Admin != null);
             var status = new TitleStatus
             {
                 Key = whole.Key,
@@ -1638,7 +1638,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 ? new CopyState(StatusStage.None, StatusReasonCode.ServiceDown)
                 : new CopyState(StatusStage.NotHere, StatusReasonCode.NotInArr);
 
-        private static CopyState ApplyRequest(CopyState state, RequestFacts? request, ComposeContext? c = null, TitleFacts? facts = null)
+        private static CopyState ApplyRequest(CopyState state, RequestFacts? request, ComposeContext? c = null, TitleFacts? facts = null, bool? admin = null)
         {
             if (request == null) return state;
             // Everything asked for arrived once: no "OK'd! Getting started" again. Gone from Jellyfin and every arr
@@ -1648,7 +1648,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (state.Stage is StatusStage.NotHere or StatusStage.None)
             {
                 if (request.Declined) return new CopyState(StatusStage.NotHere, StatusReasonCode.Declined);
-                if (request.Pending) return new CopyState(StatusStage.Asked, StatusReasonCode.AwaitingApproval, Since: request.AskedAt);
+                if (request.Pending)
+                {
+                    // An administrator is the one it waits for: held back at sending, it says why (not "waiting for you").
+                    return (admin ?? c?.Viewer.IsAdmin) == true && request.HeldReason is { } held
+                        ? new CopyState(StatusStage.Asked, StatusReasonCode.AwaitingApproval, Attention: true, Since: request.AskedAt, Params: Params(("held", held)))
+                        : new CopyState(StatusStage.Asked, StatusReasonCode.AwaitingApproval, Since: request.AskedAt);
+                }
                 if (request.ApprovedAt is DateTime approved)
                 {
                     // Sonarr doesn't list what was asked for yet: nothing can be fetched before it does.

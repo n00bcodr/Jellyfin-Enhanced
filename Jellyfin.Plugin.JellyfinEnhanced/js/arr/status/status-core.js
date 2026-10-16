@@ -218,6 +218,20 @@
     }
 
     /**
+     * True when a date-only air day is already behind the viewer's local day. The server keeps an
+     * episode "not out" for a while after its air day (time zones), so for some viewers that day has
+     * passed: the text then says it aired rather than "Airs yesterday".
+     * @param {string} iso Air day.
+     * @returns {boolean}
+     */
+    function dayPassed(iso) {
+        const d = parseDate(iso);
+        if (!d) return false;
+        const now = new Date();
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() < new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    }
+
+    /**
      * "about 12 min" / "about 2 h" / "less than a minute".
      * @param {number|null|undefined} seconds Seconds left.
      * @returns {string} Text ('' when unknown).
@@ -261,12 +275,13 @@
         const date = p.date ? formatDate(p.date) : '';
         const contact = contactOf(ctx);
         switch (reason.code) {
-            case 'awaiting_approval': return tr('arr_status_awaiting_approval', { contact });
+            // Held back at sending (admins only are told): it waits for them, not for an OK.
+            case 'awaiting_approval': return p.held ? tr('arr_status_held') : tr('arr_status_awaiting_approval', { contact });
             case 'approved': return tr('arr_status_approved');
             case 'declined': return tr('arr_status_declined', { contact });
             case 'not_released': return date ? tr('arr_status_not_released_date', { date }) : tr('arr_status_not_released');
             case 'in_cinemas': return date ? tr('arr_status_in_cinemas_date', { date }) : tr('arr_status_in_cinemas');
-            case 'not_aired': return date ? tr('arr_status_not_aired_date', { date }) : tr('arr_status_not_aired');
+            case 'not_aired': return date ? tr(dayPassed(p.date) ? 'arr_status_aired_date' : 'arr_status_not_aired_date', { date }) : tr('arr_status_not_aired');
             case 'looking': return tr('arr_status_looking');
             case 'no_release_yet': return tr('arr_status_no_release_yet');
             case 'queued':
@@ -394,9 +409,9 @@
         if (ep.stage === 'almostReady') return code === 'import_blocked' ? tr('arr_chip_taking_longer') : tr('arr_chip_almost_ready');
         if (ep.stage === 'notOut') {
             const date = ep.reason?.params?.date || ep.airDate;
-            return date ? tr('arr_chip_airs', { date: formatDate(date) }) : tr('arr_chip_not_aired');
+            return date ? tr(dayPassed(date) ? 'arr_chip_aired' : 'arr_chip_airs', { date: formatDate(date) }) : tr('arr_chip_not_aired');
         }
-        if (ep.stage === 'asked') return tr('arr_chip_waiting_ok');
+        if (ep.stage === 'asked') return ep.reason?.params?.held ? tr('arr_chip_held') : tr('arr_chip_waiting_ok');
         if (code === 'failed' || code === 'service_down') return tr('arr_chip_taking_longer');
         if (code === 'unmonitored') return tr('arr_chip_not_fetched');
         // Monitored and wanted a moment ago: the arr is on it (missing for a long while reads Missing).

@@ -688,3 +688,28 @@ test('Back to a native page after leaving it (its module state ended) is hidden 
   await back;
   assert.equal(page.classList.contains('je-native-absent-checking'), false);
 });
+
+test('a discovery list page whose row is switched off says the page isn\'t available instead of staying blank', async t => {
+  const LIST = '<div class="page libraryPage" id="listPage"><div class="itemsContainer"></div></div>';
+  const h = setup(t, { html: LIST, url: `http://jellyfin.test/web/index.html#/list?genreId=PLACEHOLDER&serverId=${SERVER}` });
+  const list = h.document.getElementById('listPage');
+  const show = async (param, kind) => {
+    h.window.location.hash = `#/list?${param}=${h.td.syntheticId(kind, 878)}&serverId=${SERVER}`;
+    await h.JE.internals.nativeDetails.onView();
+    return list.querySelector('.je-native-absent-list-off');
+  };
+  // Rows on (genre discovery is on unless switched off; network discovery only when switched on): no box.
+  h.JE.pluginConfig.JellyseerrShowNetworkDiscovery = true;
+  assert.equal(await show('genreId', 'genre'), null);
+  assert.equal(await show('studioId', 'network'), null);
+  h.JE.pluginConfig.JellyseerrShowGenreDiscovery = false;
+  h.JE.pluginConfig.JellyseerrShowNetworkDiscovery = false;
+  const box = await show('genreId', 'genre');
+  assert.ok(box);
+  assert.match(box.textContent, /native_details_page_unavailable/);
+  assert.ok(await show('studioId', 'studio'));
+  assert.equal(list.querySelectorAll('.je-native-absent-list-off').length, 1);   // one box, redrawn per view
+  h.window.location.hash = '#/home';
+  await h.JE.internals.nativeDetails.onView();
+  assert.equal(list.querySelector('.je-native-absent-list-off'), null);
+});

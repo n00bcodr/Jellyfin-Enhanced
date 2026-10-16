@@ -146,7 +146,10 @@
                 anchorElement.appendChild(document.createTextNode(' '));
                 anchorElement.appendChild(createLinkButton("Letterboxd", letterboxdUrl, "letterboxd-link-icon"));
             } catch (err) {
-                console.error(`${logPrefix} Error adding Letterboxd link:`, err);
+                // The item couldn't be read (an HTTP answer such as 404/503 for a page that isn't available):
+                // nothing to link, not an error of this module.
+                if ((typeof Response !== 'undefined' && err instanceof Response) || typeof err?.status === 'number') console.debug(`${logPrefix} No Letterboxd link: item not readable (${err.status}).`);
+                else console.error(`${logPrefix} Error adding Letterboxd link:`, err);
             } finally {
                 isAddingLinks = false;
             }

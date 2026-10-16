@@ -370,3 +370,42 @@ test('the "Filter by Library Access" setting says how upcoming titles are placed
   assert.match(text, /hidden from them: set a path mapping or link libraries on the instance/);
   assert.doesNotMatch(text, /filtered based on their Sonarr\/Radarr root folder/);
 });
+
+test('the calendar takes over when Jellyfin answers its own #/calendar route with another page', t => {
+  const h = createHarness({
+    html: '<div class="mainAnimatedPage" id="homePage">home</div>',
+    url: 'http://jellyfin.test/web/index.html#/home',
+    JE: { pluginConfig: { CalendarPageEnabled: true }, t: key => key, helpers: { onSidebarRebuilt: () => () => {} }, core: { lifecycle: { register: () => ({ track: f => f, untrack: () => {} }) }, navigation: { onNavigate: () => () => {} } } },
+  });
+  t.after(() => h.close());
+  h.JE.internals = h.JE.internals || {};
+  const P = h.JE.internals.calendarPage = { state: { pageVisible: false, isLoading: true } };
+  let loads = 0;
+  Object.assign(P, {
+    injectStyles: () => {}, loadSettings: () => {}, renderPage: () => {}, loadAllData: () => { loads++; }, handleEventClick: () => {},
+    createPageContainer: () => {
+      let page = h.document.getElementById('je-calendar-page');
+      if (!page) { page = h.document.createElement('div'); page.id = 'je-calendar-page'; page.className = 'mainAnimatedPage hide'; h.document.body.appendChild(page); }
+      return page;
+    },
+  });
+  h.load('arr/calendar/calendar-page-init.js');
+  h.JE.calendarPage.initialize?.();
+  // A hash change to #/calendar inside the app: Jellyfin's router shows its own "Page not found" page.
+  h.window.history.replaceState(null, '', '#/calendar');
+  const notFound = h.document.createElement('div');
+  notFound.className = 'mainAnimatedPage';
+  notFound.textContent = 'Page not found';
+  h.document.body.appendChild(notFound);
+  h.document.getElementById('homePage').classList.add('hide');
+  notFound.dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true }));
+  const calendar = h.document.getElementById('je-calendar-page');
+  assert.ok(calendar && !calendar.classList.contains('hide'), 'the calendar shows');
+  assert.ok(notFound.classList.contains('hide'), 'Jellyfin\'s page for the route is hidden');
+  // Another route's page still hides the calendar as before.
+  h.window.history.replaceState(null, '', '#/home');
+  const home = h.document.getElementById('homePage');
+  home.classList.remove('hide');
+  home.dispatchEvent(new h.window.CustomEvent('viewshow', { bubbles: true }));
+  assert.ok(calendar.classList.contains('hide'));
+});

@@ -357,7 +357,7 @@
             // A discovery page's own list is empty by construction: no paging, play, sort or filter controls.
             + `.${LIST_CLASS} .itemsViewSettingsContainer, .${LIST_CLASS} .paging, .${LIST_CLASS} .alphaPicker { display: none !important; }\n`
             // ... and no room for that empty list above the discovery row, which becomes the page's top.
-            + `.${LIST_CLASS} > :not([class*="-discovery-section"]):not(.alphaPicker) { min-height: 0 !important; height: 0 !important; padding-top: 0 !important; padding-bottom: 0 !important; margin: 0 !important; overflow: hidden !important; }\n`
+            + `.${LIST_CLASS} > :not([class*="-discovery-section"]):not(.alphaPicker):not(.je-native-absent-refusal) { min-height: 0 !important; height: 0 !important; padding-top: 0 !important; padding-bottom: 0 !important; margin: 0 !important; overflow: hidden !important; }\n`
             + `.${LIST_CLASS} > [class*="-discovery-section"] { margin-top: 0 !important; border-top: 0 !important; }\n`
             + `.je-native-absent-refusal { padding: 3em 1.5em; text-align: center; font-size: 1.15em; }\n`
             // A refused page keeps nothing of the title on screen: a restored view's earlier content is hidden.
@@ -413,9 +413,27 @@
         const discovery = !!parts && (parts.kind === 'genre' || parts.kind === 'studio' || parts.kind === 'network');
         if (discovery) injectStyles();
         document.querySelectorAll(`.${LIST_CLASS}`).forEach(n => n.classList.remove(LIST_CLASS));
+        document.querySelectorAll('.je-native-absent-list-off').forEach(n => n.remove());
         if (!discovery) return;
         const page = document.querySelector('.page:not(.hide)');
-        if (page && page.id !== 'itemDetailPage') page.classList.add(LIST_CLASS);
+        if (!page || page.id === 'itemDetailPage') return;
+        page.classList.add(LIST_CLASS);
+        // The page's only content is its discovery row: with that row switched off (an older link, a
+        // bookmark, Back) it says so instead of staying blank.
+        const rowOn = parts.kind === 'genre'
+            ? JE.pluginConfig?.JellyseerrShowGenreDiscovery !== false
+            : JE.pluginConfig?.JellyseerrShowNetworkDiscovery === true;
+        if (rowOn) return;
+        const box = el('div', 'je-native-absent-refusal je-native-absent-list-off');
+        box.setAttribute('role', 'status');
+        box.textContent = JE.t('native_details_page_unavailable');
+        const inApp = cameFromApp();
+        const back = el('button', 'raised button-submit emby-button', JE.t(inApp ? 'native_details_back' : 'native_details_home'));
+        back.type = 'button';
+        back.addEventListener('click', () => (inApp ? history.back() : goHome()));
+        box.appendChild(document.createElement('br'));
+        box.appendChild(back);
+        page.prepend(box);
     }
 
     /**

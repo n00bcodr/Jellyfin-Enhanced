@@ -494,7 +494,8 @@
 
         try {
           const itemId = await JE.core.api.plugin(`/items/by-providers?${params.toString()}`);
-          return itemId || null;
+          // Nothing found answers 204 (no body): only an id string is an item.
+          return typeof itemId === 'string' && itemId ? itemId : null;
         } catch (error) {
           // An HTTP error (e.g. 404) means "not found" — fall through to the
           // next provider lookup, matching the pre-core `!response.ok` path.

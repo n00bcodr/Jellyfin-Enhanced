@@ -11996,7 +11996,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             if (itemIds.Count == 0)
-                return BadRequest("No provider ids supplied or no items found");
+            {
+                // Nothing supplied is a bad request; nothing found (a title not in the library, the
+                // calendar's everyday case) is an empty answer, not an error.
+                return providers == null || providers.Count == 0
+                    ? BadRequest("No provider ids supplied")
+                    : NoContent();
+            }
 
             return Ok(itemIds.FirstOrDefault());
         }

@@ -145,12 +145,15 @@ function getContentRating(data, mediaType) {
 }
 
 /**
- * Show error message
+ * Tells the viewer the modal couldn't load or refresh its title.
+ * @param {string} key Translation key of the message.
  */
-function showError(message) {
-    // You can customize this to match your error handling
-    console.error(message);
-    alert(message);
+function showError(key) {
+    // A toast, not a blocking browser dialog (an outage of Seerr is not the viewer's error).
+    const text = JE.t ? JE.t(key) : key;
+    console.warn(`${logPrefix} ${key}`);
+    if (typeof JE.toast === 'function') JE.toast(JE.escapeHtml ? JE.escapeHtml(text) : text, 5000);
+    else alert(text);
 }
 
 /**

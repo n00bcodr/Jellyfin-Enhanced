@@ -157,8 +157,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (wants.Length == 0) return null;
             var approved = wants.Where(w => w.Status is "queued" or "sent" or "stale" or "fulfilled").ToArray();
             DateTime? At(string? variant) => approved.Where(w => variant == null || w.Input.Variant == variant).Select(w => (DateTime?)w.UpdatedAt.UtcDateTime).Min();
+            // Pending is either waiting for an OK or held back at sending (parked: bad add defaults, a changed
+            // instance...); held only when nothing pending is simply waiting for an OK.
+            var pending = wants.Where(w => w.Status == "pending").ToArray();
+            var held = pending.Length > 0 && pending.All(w => w.Reason is not ("awaiting_approval" or "over_quota") && !string.IsNullOrEmpty(w.Reason)) ? pending[0].Reason : null;
             return new RequestFacts { AskedAt = wants.Min(w => w.CreatedAt).UtcDateTime, AskedByViewer = wants.Any(w => w.UserId == viewer),
-                Pending = wants.Any(w => w.Status == "pending"), ApprovedAt = At(null), ApprovedStandardAt = At("standard"), Approved4kAt = At("4k"),
+                Pending = pending.Length > 0, HeldReason = held, ApprovedAt = At(null), ApprovedStandardAt = At("standard"), Approved4kAt = At("4k"),
                 Declined = wants.All(w => w.Status == "declined"),
                 Fulfilled = wants.Any(w => w.Status == "fulfilled") && wants.All(w => w.Status is "fulfilled" or "declined"),
                 StandardDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "standard"), FourKDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "4k"),

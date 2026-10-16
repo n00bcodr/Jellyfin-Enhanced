@@ -20,7 +20,7 @@ public class IntegrationArrAdminAlertsTests
 
     private static Dictionary<string, string> Params(string payload) => JsonSerializer.Deserialize<Dictionary<string, string>>(payload)!;
 
-    private static async Task Until(Func<bool> check, int ms = 5000)
+    private static async Task Until(Func<bool> check, int ms = 15000)
     {
         var end = DateTime.UtcNow.AddMilliseconds(ms);
         while (!check() && DateTime.UtcNow < end) await Task.Delay(10);
@@ -59,10 +59,17 @@ public class IntegrationArrAdminAlertsTests
         var refresh = Assert.Single(rig.Library.Refreshes);
         Assert.Contains("/data/movies/Dune Part Two (2024)", refresh.Paths);
 
-        // No explicit look at the title: the bridge's "indexed" made it due for the next round.
-        await rig.Service.TickAsync(default, force: true);
-        rig.Service.FlushBatches(rig.Arr.Now);
-        await rig.Dispatcher.RunOnceAsync(default);
+        // No explicit look at the title: the bridge's "indexed" made it due for the next round (the
+        // bridge marks it a moment after the refresh it saw: rounds run until it arrives, a few seconds
+        // at most, so a loaded machine doesn't make this fail).
+        for (var round = 0; round < 50 && rig.Inbox(rig.Emma).Count == 0; round++)
+        {
+            await rig.Service.TickAsync(default, force: true);
+            rig.Service.FlushBatches(rig.Arr.Now);
+            await rig.Dispatcher.RunOnceAsync(default);
+            if (rig.Inbox(rig.Emma).Count == 0) await Task.Delay(100);
+        }
+
         var ready = Assert.Single(rig.Inbox(rig.Emma));
         Assert.Equal(("ready", item!.Value.ToString("N")), (ready.Kind, ready.ItemId));
         Assert.Single(rig.Pushes);

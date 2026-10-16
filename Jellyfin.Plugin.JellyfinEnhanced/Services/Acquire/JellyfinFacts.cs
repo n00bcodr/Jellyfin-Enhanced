@@ -189,6 +189,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The request waits for an OK.</summary>
         public bool Pending { get; init; }
 
+        /// <summary>
+        /// Why a pending request was held back at sending (for example <c>invalid_defaults</c>), when none of the
+        /// pending requests simply waits for an OK; null otherwise. Only administrators are told (it is theirs to fix).
+        /// </summary>
+        public string? HeldReason { get; init; }
+
         /// <summary>When it was OK'd.</summary>
         public DateTime? ApprovedAt { get; init; }
 

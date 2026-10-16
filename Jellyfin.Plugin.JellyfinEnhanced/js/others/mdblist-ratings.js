@@ -370,7 +370,10 @@
                 const entry = await fetchRatings(String(tmdbId), apiMediaType);
                 insertSection(visiblePage, entry, apiMediaType, title);
             } catch (error) {
-                console.error(`${logPrefix} Error processing page:`, error);
+                // An item the server won't hand out (an HTTP answer such as 404/503: a page that isn't available)
+                // has nothing to add to; only real failures are errors.
+                if ((typeof Response !== 'undefined' && error instanceof Response) || typeof error?.status === 'number') console.debug(`${logPrefix} Item not readable (${error.status}).`);
+                else console.error(`${logPrefix} Error processing page:`, error);
             }
         }
 

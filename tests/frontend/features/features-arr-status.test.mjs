@@ -84,6 +84,10 @@ test('every reason code reads as a plain family sentence from en.json', t => {
   assert.match(text('not_released', { params: { date: iso(40) } }), /^Not out yet, expected /);
   assert.match(text('in_cinemas', { params: { date: iso(40) } }), /^In cinemas; at home around /);
   assert.equal(text('not_aired', { params: { date: iso(1) } }), 'Airs tomorrow');
+  // The server keeps an episode "not out" for a while after its air day (time zones): a day already
+  // behind the viewer says it aired, never "Airs yesterday".
+  assert.equal(text('not_aired', { params: { date: iso(-1) } }), 'Aired yesterday');
+  assert.equal(h.S.chipText({ stage: 'notOut', reason: { code: 'not_aired', params: { date: iso(-1) } } }), 'Aired yesterday');
   assert.equal(text('importing'), 'Almost ready');
   assert.equal(text('library_pending'), 'Almost ready');
   assert.equal(text('import_blocked'), 'Taking longer than usual');
@@ -91,6 +95,10 @@ test('every reason code reads as a plain family sentence from en.json', t => {
   assert.equal(text('failed'), "That copy didn't work, finding another");
   assert.equal(text('awaiting_approval'), 'Waiting for Dad to OK it');
   assert.equal(h.S.familyText({ reason: { code: 'awaiting_approval' } }, {}), 'Waiting for the admin to OK it');
+  // Held back at sending (the server tells administrators only): stuck, not waiting for their own OK.
+  assert.equal(text('awaiting_approval', { params: { held: 'invalid_defaults' } }), 'Stuck · needs a look in Requests');
+  assert.equal(h.S.chipText({ stage: 'asked', reason: { code: 'awaiting_approval', params: { held: 'invalid_defaults' } } }), 'Stuck');
+  assert.equal(h.S.chipText({ stage: 'asked', reason: { code: 'awaiting_approval' } }), 'Waiting for OK');
   assert.equal(text('not_visible_to_user'), 'Not in the library');
   assert.equal(h.S.familyText({ stage: 'ready', reason: { code: 'ready' } }, ctx), 'Ready to watch');
   assert.equal(text('upgrading'), 'Ready · a better copy is coming');

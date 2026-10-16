@@ -1081,7 +1081,8 @@ folder or path.
 - **Add defaults.** A title the instance doesn't have yet is added with the instance's saved quality profile, root
   folder and tags (and Radarr's minimum availability or Sonarr's series type), set per instance on the settings page
   (*When Jellyfin Enhanced adds a title*). They are checked against the instance's current profile and folder list
-  right before sending: if they are missing or no longer valid the request waits for an administrator (`invalid_defaults`);
+  right before sending: if they are missing or no longer valid the request waits for an administrator (`invalid_defaults`;
+  administrators see such a held request on the title as "Stuck · needs a look in Requests", not as waiting for an OK);
   if the list can't be read just now it is tried again later. Nothing is guessed (for example "the first profile").
   It also gets the tag `je-requested` (created on the instance the first time it is needed; it never names a person),
   so you can tell in Sonarr/Radarr which titles Jellyfin Enhanced added. If the tag can't be created the title is
