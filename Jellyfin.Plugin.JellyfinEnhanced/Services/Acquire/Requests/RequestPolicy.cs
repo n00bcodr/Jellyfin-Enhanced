@@ -262,7 +262,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // so an arr's address or key changing doesn't hold it (the instance above still decides where it lands for visibility).
             var seerrMode = config.ArrRequestBackend == "seerr";
             var configuredLimit = settings.QuotaLimit ?? defaults.QuotaLimit ?? config.ArrRequestQuotaLimit;
-            int? limit = configuredLimit < 0 || config.ArrRequestPreset == "approve_everything" ? null : configuredLimit == 0 ? (config.ArrRequestPreset == "open_house" ? 15 : 7) : Math.Clamp(configuredLimit, 1, 10000);
+            // A Manager's or Admin's asks go ahead whatever they have used (only a Member's count can hold one for an OK),
+            // so their allowance has no limit: no cost line ever shows them the household's limit as theirs.
+            int? limit = configuredLimit < 0 || config.ArrRequestPreset == "approve_everything" || role is "Manager" or "Admin" ? null : configuredLimit == 0 ? (config.ArrRequestPreset == "open_house" ? 15 : 7) : Math.Clamp(configuredLimit, 1, 10000);
             if (config.ArrRequestBackend == "seerr") limit = binding.Quota?.Limit;
             return new(userId, role, role != "Watcher" && (config.ArrRequestBackend != "seerr" || binding.UserId == null || binding.CanRequest), canApprove, can4k, visible, revision, config.ArrRequestBackend,
                 seerrMode ? string.Empty : instanceId, seerrMode ? string.Empty : generation,

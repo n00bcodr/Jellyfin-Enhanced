@@ -815,6 +815,38 @@ public class IntegrationRequestBackendsTests
         Assert.Equal(lab.Instance("Radarr").Id, ((IRequestPolicy)policy).JeTarget(admin.UserId, Movie()).InstanceId);
     }
 
+    [Fact]
+    public void TheAllowanceIsEachPersonsOwnLimitAndManagersAndAdminsHaveNone()
+    {
+        using var lab = new Lab();
+        var view = new FakeJellyfinView();
+        var admin = view.AddUser(true);
+        var member = view.AddUser(false);
+        var other = view.AddUser(false);
+        var manager = view.AddUser(false);
+        lab.Config.ArrRequestDefaultRole = "Member";
+        lab.Config.ArrRequestQuotaLimit = 7;
+        lab.Config.ArrRequestRoles = "{\"Member\":{\"QuotaLimit\":5},\"Manager\":{\"QuotaLimit\":4}}";
+        lab.Config.ArrRequestUsers = JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            [member.UserId.ToString("N")] = new { QuotaLimit = 3 },
+            [manager.UserId.ToString("N")] = new { Role = "Manager", QuotaLimit = 2 },
+            [admin.UserId.ToString("N")] = new { QuotaLimit = 2 },
+        });
+        var policy = new RequestPolicy(view, lab.Store, new ArrInstanceLibraries(lab.Store, new FakeLibraryAccess()), new TitleAliases(lab.Store, null), null!, lab.Arr.Factory, new UnavailableRequestBackend());
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        var service = new RequestService(rig.Ledger, policy, view, rig.Feed, () => rig.Now);
+        // What the allowance (and so the collection picker's and the request sheet's cost lines) says: the person's own
+        // limit (their override, else their role's, else the household's), and none for a Manager or an Admin, whose
+        // asks never wait for an OK because of it.
+        Assert.Equal((int?)3, service.Quota(member.UserId).Limit);
+        Assert.Equal((int?)5, service.Quota(other.UserId).Limit);
+        Assert.Equal(((int?)null, (int?)null), (service.Quota(manager.UserId).Limit, service.Quota(manager.UserId).Remaining));
+        Assert.Equal(((int?)null, (int?)null), (service.Quota(admin.UserId).Limit, service.Quota(admin.UserId).Remaining));
+        lab.Config.ArrRequestRoles = "{}";
+        Assert.Equal((int?)7, service.Quota(other.UserId).Limit);
+    }
+
     // ------------------------------------------------------------------ Seerr
 
     internal sealed class SeerrLab : IDisposable

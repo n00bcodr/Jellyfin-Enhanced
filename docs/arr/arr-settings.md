@@ -466,7 +466,9 @@ The advanced fields are server-owned. Quota and preset settings govern JE mode; 
 | `ArrRequestUsers` | `{}` | Per-user `Role`, `QuotaLimit`, `QuotaGb` and `FourKInstances` overrides |
 
 For example, the roles JSON can be `{"Manager":{"FourKInstances":["your-4k-instance-id"]}}`; the users JSON is keyed by
-Jellyfin user id. A missing per-user quota inherits the role quota, then the global/preset quota. An empty per-user 4K
+Jellyfin user id. A missing per-user quota inherits the role quota, then the global/preset quota. In JE mode the count
+holds only a Member's asks for an OK (a Kid's always wait), so a Manager's or an Admin's allowance shows no limit and
+their cost lines (request sheet, a collection's "Get the N missing") never show the household's. An empty per-user 4K
 instance list removes that user's inherited grant. Phase 3 has its own movie/TV 4K switches under Ask for it; the older Seerr switches remain in use while phase 3 is off. Seerr mode additionally
 requires Seerr's edition setting and the user's corresponding permission. Optional GB accounting uses coarse scope
 estimates (it is not the arr's actual file size).
