@@ -6,7 +6,8 @@
  * outcomes: waiting for an OK, asked, already asked by someone, quota, blocked, couldn't ask) and
  * tells the surfaces showing the title to refresh (JE.arrStatus.refresh and JE.arrAsk.onChange).
  * Also an administrator's Search for a title missing for a long while (searchInstance, adminSearch:
- * the arr's own search through the Manage drawer's audited route; everyone else asks instead).
+ * the arr's own search through the Manage drawer's audited route; everyone else asks instead), and
+ * why a title can't be asked for right now (check, paused, blockWords: "Paused: storage full").
  * Exposes JE.arrAsk; the request controls (season rows, request sheet, smart actions, hub tabs) all
  * build on it. Everything is off unless the server's ArrRequestsEnabled flag is on.
  */
@@ -242,6 +243,7 @@
         if (started !== epoch()) return { ...result, stale: true };
         if (result.ok || result.state === 'unknown') {
             meState = null;
+            checks.clear();
             emit({ type: 'ask', key: input.key, input, result });
         }
         return result;
@@ -308,7 +310,12 @@
                 return { chip: '', text: day ? tr('arr_ask_toast_quota_day', { day }) : tr('arr_ask_toast_quota'), tone: 'attention' };
             }
             case 'blocked':
-                return { chip: '', text: result.reason === 'decline_cooldown' ? tr('arr_ask_toast_cooldown', { contact: who }) : tr('arr_ask_toast_blocked'), tone: 'attention' };
+                return {
+                    chip: '',
+                    text: result.reason === 'decline_cooldown' ? tr('arr_ask_toast_cooldown', { contact: who })
+                        : result.reason === 'low_disk' ? tr('arr_ask_toast_storage') : tr('arr_ask_toast_blocked'),
+                    tone: 'attention'
+                };
             case 'denied': return { chip: '', text: tr('arr_ask_toast_denied'), tone: 'attention' };
             case 'changed':
             case 'busy':
@@ -317,6 +324,101 @@
             case 'declined': return { chip: tr('arr_ask_chip_declined'), text: tr('arr_ask_toast_declined', { contact: who }), tone: 'attention' };
             default: return { chip: '', text: tr('arr_ask_toast_failed'), tone: 'attention' };
         }
+    }
+
+    /**
+     * Bytes as "412 GB" / "800 MB" ('' when unknown).
+     * @param {number} bytes Bytes.
+     * @returns {string} Text.
+     */
+    function size(bytes) {
+        if (typeof bytes !== 'number' || !(bytes >= 0)) return '';
+        if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(1)} TB`;
+        if (bytes >= 1e9) return `${Math.round(bytes / 1e9)} GB`;
+        return `${Math.max(1, Math.round(bytes / 1e6))} MB`;
+    }
+
+    /**
+     * The words for why someone who may ask can't ask for a title right now (a block from the season rows, a
+     * title check or the capabilities' pausedMovies / pausedSeries): the short chip that takes the place of Get it
+     * ("Paused: storage full"), the family sentence, and for administrators where and how much is free (the server
+     * sends those only to them). Null when there is no block.
+     * @param {Object|null} block Block ({reason, instance?, folder?, free?, freePercent?, limitPercent?}).
+     * @param {Object|null} [caps] Capabilities (contact word, role).
+     * @returns {{reason: string, chip: string, text: string, detail: string}|null} Words.
+     */
+    function blockWords(block, caps) {
+        const reason = typeof block?.reason === 'string' ? block.reason : '';
+        if (!reason) return null;
+        const who = contact(caps);
+        if (reason === 'low_disk') {
+            const detail = typeof block.folder === 'string' && block.folder
+                ? tr('arr_ask_paused_storage_admin', {
+                    instance: String(block.instance || ''), folder: block.folder, free: size(block.free),
+                    percent: Number.isFinite(block.freePercent) ? block.freePercent : '', limit: Number.isFinite(block.limitPercent) ? block.limitPercent : ''
+                })
+                : '';
+            return { reason, chip: tr('arr_ask_paused_storage'), text: tr('arr_ask_paused_storage_text', { contact: who }), detail };
+        }
+        return { reason, chip: tr('arr_ask_paused_other'), text: tr('arr_ask_paused_other_text', { contact: who }), detail: caps?.role === 'admin' ? tr('arr_ask_paused_other_admin', { reason }) : '' };
+    }
+
+    /**
+     * A paused line for a page or a sheet: icon, the chip words ("Paused: storage full") and the sentence (for
+     * administrators where and how much is free). Plain text only.
+     * @param {{chip: string, text: string, detail: string}} words Words ({@link blockWords}).
+     * @returns {HTMLElement} Line.
+     */
+    function pausedNote(words) {
+        const S = JE.arrStatus;
+        const note = S.el('div', 'je-ask-paused-note');
+        note.setAttribute('role', 'note');
+        note.appendChild(S.icon('storage', 'je-ask-paused-icon'));
+        const body = S.el('div', 'je-ask-paused-body');
+        body.appendChild(S.el('strong', 'je-ask-paused-title', words.chip));
+        body.appendChild(S.el('span', 'je-ask-paused-text', words.detail || words.text));
+        note.appendChild(body);
+        return note;
+    }
+
+    /**
+     * The storage pause for asking for a new title of this kind (capabilities' pausedMovies / pausedSeries), or null.
+     * @param {Object|null} caps Capabilities ({@link me}).
+     * @param {string} kind 'movie', or anything else for a series.
+     * @returns {Object|null} Block.
+     */
+    function paused(caps, kind) {
+        const block = kind === 'movie' ? caps?.pausedMovies : caps?.pausedSeries;
+        return block && typeof block.reason === 'string' ? block : null;
+    }
+
+    /** @type {Map<string, {at: number, epoch: number, promise: Promise<Object|null>}>} title checks by key|variant, briefly */
+    const checks = new Map();
+    /** How long a title check is reused. */
+    const CHECK_TTL_MS = 30000;
+
+    /**
+     * Whether the caller may ask for one title now, and if not, why (GET .../acquire/requests/check): {canRequest,
+     * blocked}. Reused for half a minute per title and edition (an ask on the page reads it again). Null when the
+     * feature is off or the server can't say (the controls then show as before).
+     * @param {string} key Title key (movie, series, season or episode key).
+     * @param {string} [variant] standard or 4k.
+     * @returns {Promise<{canRequest: boolean, blocked: Object|null}|null>} Check.
+     */
+    function check(key, variant) {
+        if (!enabled() || !key) return Promise.resolve(null);
+        const edition = variant === '4k' ? '4k' : 'standard';
+        const id = `${key}|${edition}`;
+        const now = Date.now();
+        const current = epoch();
+        const hit = checks.get(id);
+        if (hit && hit.epoch === current && now - hit.at < CHECK_TTL_MS) return hit.promise;
+        const promise = call(`/acquire/requests/check?key=${encodeURIComponent(key)}&variant=${edition}`)
+            .then(answer => (answer.status === 200 && answer.body?.check ? { canRequest: answer.body.check.canRequest === true, blocked: answer.body.check.blocked || null } : null))
+            .catch(() => null);
+        checks.set(id, { at: now, epoch: current, promise });
+        if (checks.size > 200) checks.delete(checks.keys().next().value);
+        return promise;
     }
 
     /** @type {HTMLElement|null} the one visually hidden live region request outcomes are read out from */
@@ -502,6 +604,9 @@
         let result;
         if (answer.status === 429 && body.reason === 'searched_recently') {
             result = { ok: false, state: 'recent', chip: tr('arr_search_recent_chip'), text: tr('arr_search_recent'), tone: 'looking' };
+        } else if (answer.status === 403 && body.reason === 'low_disk') {
+            // The drive its folder is on is full: the download couldn't be imported, and an ask would be refused too.
+            result = { ok: false, state: 'blocked', reason: 'low_disk', chip: tr('arr_ask_paused_storage'), text: tr('arr_ask_toast_storage'), tone: 'attention' };
         } else if (answer.status >= 500) {
             result = { ok: false, state: 'failed', chip: '', text: tr('arr_search_failed_family'), tone: 'attention' };
         } else if (answer.status !== 200 || body.outcome === 'skipped') {
@@ -545,6 +650,7 @@
     JE.session?.onUserChange?.('arr-ask', () => {
         meState = null;
         openIds.clear();
+        checks.clear();
     });
 
     JE.arrAsk = Object.freeze({
@@ -569,6 +675,10 @@
         seriesKey,
         searchInstance,
         searchAsksFirst,
+        blockWords,
+        pausedNote,
+        paused,
+        check,
         adminSearch,
         familySearch,
         tmdbSeasons,

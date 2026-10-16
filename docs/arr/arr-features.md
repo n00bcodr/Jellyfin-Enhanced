@@ -242,6 +242,33 @@ not **Missing**. Fresh ones keep "Looking for it"; ones Sonarr/Radarr isn't fetc
   long enough) when there is nothing for it to search; 429 `searched_recently`, 502 `search_failed`, and the request
   API's own refusals (Watchers, parental limits).
 
+**Paused: storage full, never a bare "Missing".** When the drive a download would land on has less free space than
+**Low disk warning below** (the admin tools' setting, 10% by default), asks are paused, and every place that would
+offer **Get it**, **Get them**, **Request** or a **Search** that is really an ask says so instead: *Paused: storage
+full* on the episode's row, one line for the season above its episodes (or on the *Missing* line), on series, movie
+and episode pages, in the request sheet, on Discover and search cards, on collection pages and in My requests. Family
+members read a plain sentence ("There's no room for new downloads right now, so asking is paused. Dad can free up
+some space."); administrators read which Sonarr/Radarr, which folder and how much is free ("Sonarr: /tv/Firefly
+has 1.2 TB free (3%), under the 10% low-disk limit"). In JE mode the drive measured is the one the download would be
+imported into: the title's own folder when Sonarr/Radarr already has the title (also when an administrator names
+another root folder: Sonarr/Radarr keeps a title it has in its folder), otherwise the root folder named or the
+instance's default root folder for adding titles (with no default root set, a new add isn't measured; it waits for
+the defaults anyway). So a full default root doesn't pause asks for a series whose folder is on a roomy drive, and a
+series whose own folder's drive is full is paused even when the default root has room. In Seerr mode (Seerr picks the
+server and folder) only the root folder named or JE's default root folder is measured, as before. This applies to
+every role. Lists of titles answer title by title the same way: a Discover or search card says *Paused: storage full*
+only when that title's own drive (or, for a title Sonarr/Radarr doesn't have, the default root's) is full, and
+pressing it opens the request sheet, which says why (a 4K **Request more** goes to another instance, so the sheet
+checks that one). On a collection page each paused movie says so in the list and is left out of **Get the N
+missing**, which asks for the others; with every movie paused, the paused line takes the button's place. Administrators keep their
+**Search** (the Manage drawer's search of Sonarr's or Radarr's own, which needs no request): Search runs as usual
+under the paused line, which tells them where and how much is free. Everyone else's Search is
+paused too (it would be an ask, or a search whose download couldn't be imported); a Search refused that way answers
+403 `low_disk` (outcome `blocked`). If the instance a request would go to can't take it for another reason (it was
+disabled, or its add defaults are invalid), the controls read *Can't ask right now* instead, and administrators are
+told to check that instance. Right after a restart (JE mode), the disks and the list of titles Sonarr/Radarr has are
+read before the first answer, so the pause is never missed or measured on the wrong drive while they load.
+
 Watchers see the rows and labels but no **Get it** or **Search**. Titles, overviews and thumbnails of missing episodes come from TMDB
 through Jellyfin Enhanced (one read per season page, using the TMDB key in the plugin settings); without a key the rows
 show the episode number and air date only. Episodes your parental limits hide from you never get a row, and Spoiler
@@ -743,8 +770,9 @@ Bulk approval returns 207 when some rows fail, with a separate checked outcome f
 | GET | `acquire/requests?view=mine` | Own requests filtered by current visibility |
 | GET | `acquire/requests?view=pending` | `requests.approve`; visible pending requests |
 | GET | `acquire/requests/quota` | Own allowance, use, estimate and next usable slot |
-| GET | `acquire/requests/me` | Any person (Watchers too); own role, whether they may ask or approve, 4K, the household contact word |
-| GET | `acquire/requests/season/{itemId}` | A season item the caller can open; their request state per episode and the metadata of episodes with no file |
+| GET | `acquire/requests/me` | Any person (Watchers too); own role, whether they may ask or approve, 4K, the household contact word, and `pausedMovies` / `pausedSeries` when new titles of that kind are paused for storage (`{"reason": "low_disk"}`; administrators also get `instance`, `folder`, `free`, `freePercent`, `limitPercent`) |
+| GET | `acquire/requests/check?key=&variant=` | Any person; whether they may ask for one title (`standard` or `4k`) now: `{canRequest, blocked}`, `blocked` as in `pausedMovies` (or `instance_changed` / `invalid_instance` / `invalid_defaults`) |
+| GET | `acquire/requests/season/{itemId}` | A season item the caller can open; their request state per episode, the metadata of episodes with no file, and `blocked` (why they can't ask now, as in the check) |
 | POST | `acquire/requests/search` | `requests.create`; search again for a movie or one episode a request already sent and that is missing for a long while (no new request; see [Get it and Search](#missing-episodes-get-it-and-search-phase-3)) |
 | POST | `acquire/requests/{id}/cancel` | Owner, or visible Admin; before the outgoing write |
 | POST | `acquire/requests/{id}/approve` | Approver; optional `input` edits scope/edition; instance/profile/folder edits require Admin |
@@ -807,16 +835,19 @@ profiles, folders or tags.
 - **Movies in the library** get **Get 4K** for people who may ask for 4K, when no 4K copy is there yet.
 - **Collection pages** say "You have 4 of 6." and offer **Get the 2 missing** with a cost preview ("Uses 2 of your 5
   this week; 1 need {contact}'s OK"). Movies that aren't out yet are listed but not asked for; movies someone has
-  already asked for show that instead. The button asks for each movie in turn (at most 20) and then says what
-  happened, for example "Asked for 2 · 1 waits for Dad's OK · 1 couldn't be asked". The list comes from the
+  already asked for show that instead; movies that can't be asked for now say *Paused: storage full* and are left
+  out. The button asks for each movie in turn (at most 20) and then says what happened, for example "Asked for 2 ·
+  1 waits for Dad's OK · 1 paused: storage full · 1 couldn't be asked". The list comes from the
   collection's TMDB entry, so it needs the server's TMDB key. Movies the person can't see in Jellyfin are left out,
   and for people with parental limits a missing movie is only listed when its rating is known and allowed.
 
 Every ask carries a client request id: a double tap or a retry after a lost answer is the same request.
 `GET acquire/requests/collection/{itemId}` (any signed-in person who can open the collection) answers
 `{outcome, reason, certainty, message, collection: {have, total, missing: [{key, title, year, poster, released,
-request}]}}`, where `request` is the person's own request state (`waiting`, `asked`, `declined`) or `household` when
-someone else asked. A collection the person can't open, or one TMDB can't describe, answers 404.
+request, blocked?}]}}`, where `request` is the person's own request state (`waiting`, `asked`, `declined`) or
+`household` when someone else asked, and `blocked` (released movies nobody asked for only) says why the person can't
+ask for it now, as in the title check (`{"reason": "low_disk"}`; where and how much is free for administrators only).
+A collection the person can't open, or one TMDB can't describe, answers 404.
 
 ### Discover and search (JE mode)
 
@@ -872,7 +903,10 @@ Routes (relative to `/JellyfinEnhanced`, a signed-in person who may ask; API key
 Each result carries the title key, kind, TMDB id, title, year, poster path, a short overview, whether you have it
 (with the Jellyfin item), whether anyone asked and your own ask's state, with what your own open asks cover
 (`mineVariants`: standard and/or 4k; `mineSeasons`: the seasons your standard asks cover whole; both left out when
-empty). Nothing about Sonarr/Radarr, paths or other people is included. TMDB being unavailable answers 503 `discover_unavailable`.
+empty), and `blocked` when the person can't ask for the title's standard copy now (as in the title check: `low_disk`
+measured on the title's own drive, else the default root's; worked out on every answer, cached pages too). Nothing
+about Sonarr/Radarr, paths or other people is included (administrators' `blocked` names the instance, folder and free
+space). TMDB being unavailable answers 503 `discover_unavailable`.
 
 ### Approvals and household
 
@@ -902,7 +936,12 @@ lists requests made through Jellyfin Enhanced.
   sent yet have **Cancel**. In JE mode each row follows where exactly the part you asked for is, the way Seerr
   requests do in Seerr mode: *Waiting for OK*, *OK'd*, *Looking*, *Downloading 45%*, *Almost ready*, then **Ready**
   with **Play** (and under Ready for two weeks), judged by that movie or edition, those seasons or those episodes only
-  (an episode you asked for isn't "Ready" because others of its season are). A title asked for in both editions
+  (an episode you asked for isn't "Ready" because others of its season are). A request whose title arrived and was
+  later removed from Jellyfin and from every Sonarr/Radarr reads *Was here, since removed* (under **Since removed**,
+  for the two weeks it would have been Ready), never *OK'd! Getting started* again, with **Get it again** (Kids:
+  **Ask Dad again**; *Paused: storage full* while new titles of its kind are paused) to ask for the same part once
+  more. Removed from Jellyfin only (Sonarr/Radarr still has it), it reads where Sonarr/Radarr has it, such as *Missing*
+  with **Search**. A title asked for in both editions
   follows one at a time: the edition still waited for (the standard one first), so a 4K request after the standard
   copy arrived reads where the 4K copy is, not Ready. **Coming soon** lists them too. Rows update live.
 - **Arrival**: once what a request asks for is in Jellyfin (for the person who asked, with their library access and

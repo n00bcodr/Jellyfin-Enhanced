@@ -4,8 +4,9 @@
  * the page's existing entries, one row per title (a title the page already lists keeps its row and
  * status; the ledger adds what is missing): waiting for an OK, on the way, said no. Rows of requests
  * not sent yet get **Cancel** (JE.arrAsk.cancel), with the honest outcome in a toast. Cancelled and
- * finished ones are left to the existing groups. Re-reads when the caller's request list changes
- * on the feed, or after an ask or cancel on this page.
+ * finished ones are left to the existing groups; one that arrived and was removed since ("Was here,
+ * since removed") gets **Get it again** for people who may ask (or says "Paused: storage full").
+ * Re-reads when the caller's request list changes on the feed, or after an ask or cancel on this page.
  */
 (function (JE) {
     'use strict';
@@ -187,12 +188,15 @@
     }
 
     /**
-     * Adds Cancel to a My requests row whose ledger requests haven't been sent yet.
+     * Adds Cancel to a My requests row whose ledger requests haven't been sent yet (and Get it again, or why not, to
+     * one removed since).
      * @param {Object} entry Row entry.
      * @param {HTMLElement} buttons The row's button box.
+     * @param {HTMLElement} [body] The row's text column (what the row says).
      * @returns {void}
      */
-    function rowExtras(entry, buttons) {
+    function rowExtras(entry, buttons, body) {
+        againButton(entry, buttons, body);
         const ids = entry?.ledger?.cancel;
         if (!Array.isArray(ids) || !ids.length || !on()) return;
         const busy = ids.some(id => state.busy.has(id));
@@ -205,6 +209,90 @@
         });
         cancel.addEventListener('keydown', e => e.stopPropagation());
         buttons.appendChild(cancel);
+    }
+
+    /**
+     * Adds Get it again to a My requests row whose request arrived and was removed since (from Jellyfin and the
+     * arrs): the same part asked for again, for people who may ask for its kind (Kids: "Ask {contact} again"). While
+     * asking for new titles of its kind is paused for storage (it was removed, so asking again adds it anew; the
+     * household pause is the standard edition's) the row says so in plain words instead, under what it says.
+     * @param {Object} entry Row entry.
+     * @param {HTMLElement} buttons The row's button box.
+     * @param {HTMLElement} [body] The row's text column.
+     * @returns {void}
+     */
+    function againButton(entry, buttons, body) {
+        if (!on() || !entry?.key || (entry.group !== 'removed' && entry.status?.reason?.code !== 'removed')) return;
+        const caps = X.capabilities();
+        const kind = entry.kind === 'movie' ? 'movie' : 'series';
+        if (!caps || !JE.arrAsk.canAsk(caps, kind) || !againInputs(entry).length) return;
+        const block = entry.is4k ? null : JE.arrAsk.paused?.(caps, kind);
+        const words = block ? JE.arrAsk.blockWords(block, caps) : null;
+        if (words) {
+            // Visible text, not a tooltip: touch, TV and screen readers get the sentence (administrators: where and how much is free).
+            (body || buttons).appendChild(JE.arrAsk.pausedNote(words));
+            return;
+        }
+        const id = `again:${entry.key}`;
+        const busy = state.busy.has(id);
+        const label = busy ? X.tr('arr_ask_asking') : caps.asksFirst ? X.tr('arr_mine_again_ask', { contact: JE.arrAsk.contact(caps) }) : X.tr('arr_mine_again');
+        const again = X.button('je-hub-btn je-hub-again', label, 'replay', id);
+        again.setAttribute('aria-label', X.tr('arr_mine_again_label', { title: X.titleText(entry) }));
+        X.busy(again, busy);
+        again.addEventListener('click', (e) => {
+            e.stopPropagation();
+            askAgain(entry);
+        });
+        again.addEventListener('keydown', e => e.stopPropagation());
+        buttons.appendChild(again);
+    }
+
+    /**
+     * The asks that ask for a removed request's part again: the movie (its edition), the whole seasons and the
+     * single episodes the row names.
+     * @param {Object} entry Row entry ({key, kind, is4k, seasons, episodes}).
+     * @returns {Object[]} Mutation inputs.
+     */
+    function againInputs(entry) {
+        const variant = entry.is4k ? '4k' : 'standard';
+        if (entry.kind === 'movie') return [JE.arrAsk.movieInput(entry.key, variant)];
+        const inputs = [];
+        if (Array.isArray(entry.seasons) && entry.seasons.length) inputs.push(JE.arrAsk.seasonsInput(entry.key, entry.seasons, variant));
+        const episodes = Array.isArray(entry.episodes) ? entry.episodes.filter(e => Number.isInteger(e?.season) && Number.isInteger(e?.episode)) : [];
+        if (episodes.length) inputs.push(JE.arrAsk.episodesInput(entry.key, episodes, variant));
+        return inputs;
+    }
+
+    /**
+     * Asks for a removed request's part again and says how it went.
+     * @param {Object} entry Row entry.
+     * @returns {Promise<void>}
+     */
+    async function askAgain(entry) {
+        const id = `again:${entry.key}`;
+        const inputs = againInputs(entry);
+        if (state.busy.has(id) || !inputs.length) return;
+        state.busy.add(id);
+        if (H.state?.visible) H.render?.();
+        const asked = X.epoch();
+        let last = null;
+        try {
+            for (const input of inputs) {
+                last = await JE.arrAsk.ask(input);
+                if (last.stale || !(last.ok || last.state === 'unknown')) break;
+            }
+        } finally {
+            state.busy.delete(id);
+        }
+        if (asked !== X.epoch() || !last || last.stale) return;
+        const caps = await JE.arrAsk.me();
+        const allowance = last.state === 'quota' ? await JE.arrAsk.quota(entry.kind === 'movie' ? 'movie' : 'tv') : null;
+        JE.arrAsk.toast(JE.arrAsk.describe(last, caps, allowance).text);
+        state.stale = true;
+        if (H.state?.visible) {
+            load();
+            H.load?.();
+        }
     }
 
     /**
@@ -234,6 +322,6 @@
 
     JE.session?.onUserChange?.('arr-mine-ledger', () => resetForUser());
 
-    H.mineLedger = { merge, load, state };
+    H.mineLedger = { merge, load, state, againInputs };
     H.rowExtras = rowExtras;
 })(window.JellyfinEnhanced);

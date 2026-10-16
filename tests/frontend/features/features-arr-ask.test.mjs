@@ -50,11 +50,11 @@ function season({ e2row = false } = {}) {
   };
 }
 
-function rowsBody({ displayMissing = true, canRequest = true, requests = {}, seasonRequest = null } = {}) {
+function rowsBody({ displayMissing = true, canRequest = true, requests = {}, seasonRequest = null, blocked = null } = {}) {
   return {
     outcome: 'accepted', reason: 'season', certainty: 'Succeeded', message: 'Season',
     rows: {
-      key: 'tv:tvdb:1:s1', series: 'tv:tvdb:1', season: 1, seriesId: 'ccccccccccccccccccccccccccccccc1', displayMissing, canRequest, seasonRequest,
+      key: 'tv:tvdb:1:s1', series: 'tv:tvdb:1', season: 1, seriesId: 'ccccccccccccccccccccccccccccccc1', displayMissing, canRequest, seasonRequest, blocked,
       episodes: [
         { episode: 1, request: requests[1] || null },
         { episode: 2, title: 'Two', overview: 'Second one.', runtime: 44, airDate: '2014-06-08', still: '/b2.jpg', request: requests[2] || null },
@@ -329,6 +329,7 @@ test('people who cannot ask see the rows and states but no Get it; with phase 3 
   await watcher.open();
   same(watcher.episodes(), ['N1', 'JE2', 'JE3', 'JE4']);
   assert.equal(watcher.document.querySelector('.je-ask-get'), null);
+  assert.equal(watcher.document.querySelector('.je-ask-paused, .je-ask-paused-note'), null, 'nothing to explain to someone whose role can\'t ask');
   assert.equal(watcher.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent, 'Missing · not being fetched', 'the phase-1 wording stays');
 
   const off = setup(t, { config: { ArrRequestsEnabled: false } });
@@ -363,6 +364,7 @@ test('the episode dialog shows the status and Get it, traps focus and gives it b
   assert.equal(dialog.getAttribute('role'), 'dialog');
   assert.equal(dialog.querySelector('.je-ask-dialog-title').textContent, '2. Two');
   assert.match(dialog.querySelector('.je-arr-pill-text').textContent, /Looking for it/);
+  assert.equal(dialog.getAttribute('aria-describedby'), null, 'nothing paused to read out');
   assert.equal(h.document.activeElement, dialog.querySelector('.je-ask-get'));
   h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.equal(h.document.querySelector('.je-ask-dialog'), null);
@@ -803,4 +805,155 @@ test('Get it and Search: at least 24 px with a mouse (the row clips the wider hi
   assert.ok(tv, 'a TV rule outside any media query (TV browsers often report a fine pointer)');
   assert.match(tv[1], /min-height:\s*48px/);
   assert.match(tv[1], /min-width:\s*48px/);
+});
+
+// ------------------------------------------------------------------ phase 3g: never a bare "Missing" with nothing to do
+
+const MEMBER_ME = { role: 'member', canRequest: true, contact: 'Dad', asksFirst: false };
+const FULL = { reason: 'low_disk' };
+const FULL_ADMIN = { reason: 'low_disk', instance: 'Sonarr', folder: '/tv/Show', free: 2e9, freePercent: 0, limitPercent: 10 };
+const ADMIN_DETAIL = 'Sonarr: /tv/Show has 2 GB free (0%), under the 10% low-disk limit. Requests are paused; Search still runs for you.';
+const FAMILY_TEXT = "There's no room for new downloads right now, so asking is paused. Dad can free up some space.";
+
+/** E2 monitored and missing for a long while (Search), E4 not monitored (Get it would ask for it). */
+function adminMixed() {
+  const status = longMissing({ admin: true });
+  const e4 = status.episodes.find(e => e.episode === 4);
+  e4.stage = 'notHere';
+  e4.reason = { code: 'unmonitored' };
+  return status;
+}
+
+test('storage full: an administrator still gets Search (the arr\'s own search, no request); the rest say "Paused: storage full" with where and how much is free', async t => {
+  const h = setup(t, {
+    status: adminMixed(),
+    config: { ArrManageDrawerEnabled: true },
+    server: {
+      me: ADMIN_ME,
+      rows: () => rowsBody({ canRequest: false, blocked: FULL_ADMIN }),
+      post: path => (path === '/arr/admin/manage/search' ? { status: 200, body: { status: 'Succeeded', found: false } } : { status: 403, body: { outcome: 'blocked', reason: 'low_disk' } })
+    }
+  });
+  await h.open();
+  const row = n => h.list().querySelector(`.je-ask-row[data-je-ask-episode="${n}"]`);
+  assert.equal(row(2).querySelector('.je-arr-chip').textContent, 'Missing');
+  assert.equal(row(2).querySelector('.je-ask-get').dataset.mode, 'search', 'Search whatever the request policy says');
+  assert.equal(row(2).querySelector('.je-ask-paused'), null);
+  assert.equal(row(4).querySelector('.je-arr-chip').textContent, 'Missing');
+  assert.equal(row(4).querySelector('.je-ask-get'), null, 'no Get it: asking is paused');
+  assert.equal(row(4).querySelector('.je-ask-paused').textContent, 'Paused: storage full');
+  assert.equal(row(4).querySelector('.je-ask-paused').title, ADMIN_DETAIL);
+  const note = h.document.querySelector('.je-ask-season-note');
+  assert.ok(note && note.nextElementSibling === h.list(), 'one line for the season, above its episodes');
+  same([note.querySelector('.je-ask-paused-title').textContent, note.querySelector('.je-ask-paused-text').textContent], ['Paused: storage full', ADMIN_DETAIL]);
+  // The dialog of an episode the administrator can search: Search stays, under the same line (the grab may not fit).
+  openDialog(h, 2);
+  let dialog = h.document.querySelector('.je-ask-dialog');
+  assert.equal(dialog.querySelector('.je-ask-get').dataset.mode, 'search');
+  assert.equal(dialog.querySelector('.je-ask-paused-note .je-ask-paused-text').textContent, ADMIN_DETAIL);
+  dialog.querySelector('.je-ask-dialog-close').click();
+  assert.equal(h.document.querySelector('.je-ask-dialog'), null);
+  row(2).querySelector('.je-ask-get').click();
+  await settle(20);
+  same(h.posts.map(p => p.path), ['/arr/admin/manage/search'], 'only the arr\'s own search, never a request');
+  same({ instanceId: h.posts[0].body.instanceId, key: h.posts[0].body.key }, { instanceId: 'son1', key: 'tv:tvdb:1:s1:e2' });
+  assert.equal(row(2).querySelector('.je-ask-searched').textContent, 'Nothing found yet · searched just now');
+  // The paused episode's dialog says why instead of offering Get it.
+  openDialog(h, 4);
+  dialog = h.document.querySelector('.je-ask-dialog');
+  assert.equal(dialog.querySelector('.je-ask-get'), null);
+  assert.equal(dialog.querySelector('.je-ask-paused-note .je-ask-paused-text').textContent, ADMIN_DETAIL);
+  // Read out with the dialog's name (focus lands on Close; the reason is plain text).
+  assert.ok(dialog.querySelector('.je-ask-paused-note').id);
+  assert.equal(dialog.getAttribute('aria-describedby'), dialog.querySelector('.je-ask-paused-note').id);
+  dialog.querySelector('.je-ask-dialog-close').click();
+});
+
+test('storage full in the banner: an administrator\'s Search for the long-missing ones and the paused line; once, not again above the list', async t => {
+  const h = setup(t, {
+    status: adminMixed(),
+    config: { ArrManageDrawerEnabled: true },
+    server: { me: ADMIN_ME, rows: () => rowsBody({ displayMissing: false, canRequest: false, blocked: FULL_ADMIN }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) }
+  });
+  await h.open();
+  const action = h.document.querySelector('.je-arr-banner .je-ask-banner-action');
+  const btn = action.querySelector('.je-ask-get');
+  same([btn.querySelector('.je-ask-get-text').textContent, btn.getAttribute('aria-label')], ['Search for E2', 'Search for the missing episodes: E2']);
+  assert.equal(action.querySelector('.je-ask-paused-note .je-ask-paused-text').textContent, ADMIN_DETAIL);
+  assert.equal(h.document.querySelector('.je-ask-season-note'), null, 'said once, in the banner');
+  btn.click();
+  await settle(20);
+  same({ path: h.posts[0].path, key: h.posts[0].body.key }, { path: '/arr/admin/manage/search', key: 'tv:tvdb:1:s1:e2' });
+  // Applying the page again keeps the banner as it is (no rebuild loop).
+  const kept = h.document.querySelector('.je-arr-banner .je-ask-banner-action');
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle();
+  assert.equal(h.document.querySelector('.je-arr-banner .je-ask-banner-action'), kept);
+});
+
+test('storage full: someone who may ask sees "Paused: storage full" and a plain sentence where Get it and Search would be, never a path', async t => {
+  const h = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody({ canRequest: false, blocked: FULL }) } });
+  await h.open();
+  for (const n of [2, 4]) {
+    const row = h.list().querySelector(`.je-ask-row[data-je-ask-episode="${n}"]`);
+    assert.equal(row.querySelector('.je-arr-chip').textContent, 'Missing', 'not the bare phase-1 chip');
+    assert.equal(row.querySelector('.je-ask-get'), null);
+    assert.equal(row.querySelector('.je-ask-paused').textContent, 'Paused: storage full');
+    assert.equal(row.querySelector('.je-ask-paused').title, FAMILY_TEXT);
+  }
+  assert.equal(h.document.querySelector('.je-ask-season-note .je-ask-paused-text').textContent, FAMILY_TEXT);
+  assert.ok(!h.document.body.textContent.includes('/tv'), 'no paths for the family');
+  same(h.posts, []);
+  same(h.searches, []);
+
+  const banner = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody({ displayMissing: false, canRequest: false, blocked: FULL }) } });
+  await banner.open();
+  const action = banner.document.querySelector('.je-arr-banner .je-ask-banner-action');
+  assert.equal(action.querySelector('.je-ask-get'), null, 'no Get them, no Search');
+  same([action.querySelector('.je-ask-paused-title').textContent, action.querySelector('.je-ask-paused-text').textContent], ['Paused: storage full', FAMILY_TEXT]);
+
+  // An administrator without the Manage drawer has no Search of their own: paused like everyone else.
+  const noDrawer = setup(t, { status: adminMixed(), server: { me: ADMIN_ME, rows: () => rowsBody({ canRequest: false, blocked: FULL_ADMIN }) } });
+  await noDrawer.open();
+  assert.equal(noDrawer.document.querySelector('.je-ask-get'), null);
+  assert.equal(noDrawer.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-paused').textContent, 'Paused: storage full');
+
+  // Room again: Get it and Search as before, nothing paused.
+  const roomy = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody() } });
+  await roomy.open();
+  same([...roomy.list().querySelectorAll('.je-ask-get')].map(b => b.dataset.mode), ['search', 'search']);
+  assert.equal(roomy.document.querySelector('.je-ask-paused, .je-ask-paused-note'), null);
+});
+
+test('other refusals the request controls explain read "Can\'t ask right now"; an administrator learns which part needs a look', async t => {
+  const member = setup(t, { status: longMissing(), server: { me: MEMBER_ME, rows: () => rowsBody({ canRequest: false, blocked: { reason: 'instance_changed' } }) } });
+  await member.open();
+  assert.equal(member.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-paused').textContent, "Can't ask right now");
+  assert.equal(member.document.querySelector('.je-ask-season-note .je-ask-paused-text').textContent, "This can't be asked for right now. Dad can sort it out.");
+  const A = member.JE.arrAsk;
+  assert.equal(A.blockWords({ reason: 'instance_changed' }, ADMIN_ME).detail, "The Sonarr/Radarr this would go to can't take it (instance_changed). Check that instance and its add defaults.");
+  assert.equal(A.blockWords(null, ADMIN_ME), null);
+  assert.equal(A.blockWords({ reason: 'low_disk' }, MEMBER_ME).detail, '', 'no detail without the server\'s administrator fields');
+  same(A.paused({ pausedMovies: FULL, pausedSeries: null }, 'movie'), FULL);
+  assert.equal(A.paused({ pausedMovies: FULL, pausedSeries: null }, 'series'), null);
+});
+
+test('a refusal for storage is said in plain words: the ask\'s toast, and a Search that would fail to import isn\'t turned into an ask', async t => {
+  const h = setup(t, {
+    status: longMissing(),
+    server: {
+      me: MEMBER_ME,
+      search: () => ({ status: 403, body: { outcome: 'blocked', reason: 'low_disk', certainty: 'Rejected', message: "This one can't be asked for here." } })
+    }
+  });
+  const A = h.JE.arrAsk;
+  assert.equal(A.interpret(403, { outcome: 'blocked', reason: 'low_disk' }).state, 'blocked');
+  assert.equal(A.describe({ state: 'blocked', reason: 'low_disk' }, MEMBER_ME).text, "Paused: storage full. There's no room for new downloads right now.");
+  await h.open();
+  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  await settle(20);
+  same(h.searches.length, 1);
+  same(h.posts, [], 'no ask after the refused Search');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-searched').textContent, 'Paused: storage full');
+  same(h.toasts, ["Paused: storage full. There's no room for new downloads right now."]);
 });

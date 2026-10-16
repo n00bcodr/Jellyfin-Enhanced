@@ -207,6 +207,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Seerr says the 4K variant is done (see <see cref="StandardDone"/>).</summary>
         public bool FourKDone { get; init; }
 
+        /// <summary>
+        /// Every request still on for it arrived (JE request ledger: all fulfilled, nothing waiting or on its way).
+        /// Such a request never reads "OK'd! Getting started" again: once the title left Jellyfin and the arrs it
+        /// reads "Was here, since removed".
+        /// </summary>
+        public bool Fulfilled { get; init; }
+
         /// <summary>The request was declined.</summary>
         public bool Declined { get; init; }
 

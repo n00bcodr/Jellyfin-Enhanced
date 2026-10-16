@@ -108,6 +108,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// period; family members only after the "still looking" hours, as "Taking longer than usual".
         /// </summary>
         public const string ApprovedNotInArr = "approved_not_in_arr";
+        /// <summary>
+        /// The request for it arrived (JE request ledger: fulfilled), and since then the title left both
+        /// Jellyfin and every Sonarr/Radarr: "Was here, since removed". It can be asked for again.
+        /// </summary>
+        public const string Removed = "removed";
     }
 
     /// <summary>Admin fix hints (what would resolve the reason). Phase 1 shows them as text only.</summary>

@@ -1437,6 +1437,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static CopyState ApplyRequest(CopyState state, RequestFacts? request, ComposeContext? c = null, TitleFacts? facts = null)
         {
             if (request == null) return state;
+            // Everything asked for arrived once: no "OK'd! Getting started" again. Gone from Jellyfin and every arr
+            // since, it says so; otherwise the copy's own state stands (not being fetched, service down, ...).
+            if (request.Fulfilled)
+                return state.Stage == StatusStage.NotHere && state.Reason == StatusReasonCode.NotInArr ? new CopyState(StatusStage.NotHere, StatusReasonCode.Removed) : state;
             if (state.Stage is StatusStage.NotHere or StatusStage.None)
             {
                 if (request.Declined) return new CopyState(StatusStage.NotHere, StatusReasonCode.Declined);

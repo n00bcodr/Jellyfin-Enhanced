@@ -38,6 +38,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// is on its way), declined (their ask was declined), household (someone else asked), or null.
         /// </summary>
         [JsonPropertyName("request")] public string? Request { get; init; }
+
+        /// <summary>
+        /// Why the viewer can't ask for this movie right now (left out when they can): <c>low_disk</c>, the drive it
+        /// would land on (its own folder when Radarr has it, else the default root) is nearly full; instance, folder
+        /// and sizes for administrators only. Only released movies nobody has asked for are checked.
+        /// </summary>
+        [JsonPropertyName("blocked"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RequestBlock? Blocked { get; init; }
     }
 
     /// <summary>What the viewer has of a collection and what is missing.</summary>
@@ -82,9 +89,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<DateTimeOffset> _now;
         private readonly Func<int> _declineCooldownDays;
         private readonly Func<Guid, string?>? _currentTarget;
+        private readonly Func<Guid, IReadOnlyList<string>, CancellationToken, Task<IReadOnlyDictionary<string, RequestBlock>>>? _pauses;
 
         /// <summary>Creates the service over the library, the shared TMDB cache and the parental filter.</summary>
-        public CollectionGapsService(IArrJellyfinView view, ILibraryManager libraryManager, RequestLedger ledger, TitleAliases aliases, TmdbResponseCache tmdb, SeerrParentalFilter parental, IRequestPolicy policy)
+        public CollectionGapsService(IArrJellyfinView view, ILibraryManager libraryManager, RequestLedger ledger, TitleAliases aliases, TmdbResponseCache tmdb, SeerrParentalFilter parental, IRequestPolicy policy, RequestService requests)
             : this(
                 view,
                 (viewer, id) => ResolveBoxSet(libraryManager, viewer, id),
@@ -94,7 +102,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 (tmdbId, user, ct) => parental.MaySeeAbsentAsync("movie", tmdbId, user.ToString("N", CultureInfo.InvariantCulture), ct),
                 () => DateTimeOffset.UtcNow,
                 () => policy.Configuration.ArrRequestDeclineCooldownDays,
-                user => RequestLedger.TargetKey(policy.Evaluate(user, new MutationInput { Key = "movie:tmdb:1" })))
+                user => RequestLedger.TargetKey(policy.Evaluate(user, new MutationInput { Key = "movie:tmdb:1" })),
+                (user, keys, ct) => requests.StoragePausesAsync(user, keys, true, ct))
         {
         }
 
@@ -108,7 +117,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Func<int, Guid, CancellationToken, Task<bool>> maySee,
             Func<DateTimeOffset> now,
             Func<int>? declineCooldownDays = null,
-            Func<Guid, string?>? currentTarget = null)
+            Func<Guid, string?>? currentTarget = null,
+            Func<Guid, IReadOnlyList<string>, CancellationToken, Task<IReadOnlyDictionary<string, RequestBlock>>>? pauses = null)
         {
             _view = view;
             _boxSet = boxSet;
@@ -119,6 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _now = now;
             _declineCooldownDays = declineCooldownDays ?? (() => 7);
             _currentTarget = currentTarget;
+            _pauses = pauses;
         }
 
         /// <summary>
@@ -154,6 +165,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var wants = _ledger?.Database.Available == true;
             var target = wants ? _currentTarget?.Invoke(viewer.UserId) : null;
             var listed = visible.Select(p => wants ? p with { Request = RequestState(p.Key, viewer.UserId, target) } : p).ToList();
+            // What "Get the N missing" would ask for, checked title by title: a movie Radarr already has is measured on
+            // its own folder's drive, a new one on the default root's (never the household's new-add pause for all).
+            var askable = listed.Where(p => p.Released && p.Request == null).Select(p => p.Key).ToList();
+            if (_pauses != null && askable.Count > 0)
+            {
+                var paused = await _pauses(viewer.UserId, askable, ct).ConfigureAwait(false);
+                if (paused.Count > 0) listed = listed.Select(p => paused.TryGetValue(p.Key, out var block) ? p with { Blocked = block } : p).ToList();
+            }
             return (new CollectionGaps { Have = have, Total = have + listed.Count, Missing = listed }, null);
         }
 

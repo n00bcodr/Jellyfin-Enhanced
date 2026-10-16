@@ -33,6 +33,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Declined (shown for 30 days).</summary>
         public const string Declined = "declined";
+
+        /// <summary>
+        /// Arrived, then removed from Jellyfin and the arrs ("Was here, since removed"; JE mode, shown for the
+        /// 14 days a Ready request would be, counted from its arrival).
+        /// </summary>
+        public const string Removed = "removed";
     }
 
     /// <summary>One of the viewer's own requests on the Requests page (one per title, all its requests merged).</summary>
@@ -374,6 +380,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (readyAt is DateTime at && now - at > ReadyFor) return null;
                 group = HubGroup.Ready;
             }
+            else if (status.Reason?.Code == StatusReasonCode.Removed)
+            {
+                // Arrived once and gone since: told honestly (never "OK'd" again), for as long as it would have been Ready.
+                var arrived = active.Where(w => w.Status == "fulfilled").Select(w => (DateTime?)w.UpdatedAt.UtcDateTime).Max() ?? active.Max(w => w.UpdatedAt.UtcDateTime);
+                if (now - arrived > ReadyFor) return null;
+                group = HubGroup.Removed;
+            }
             else
             {
                 group = status.Stage switch
@@ -514,7 +527,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             HubGroup.NeedsOk => 0,
             HubGroup.OnTheWay => 1,
             HubGroup.NotOut => 2,
-            _ => 3,
+            HubGroup.Removed => 3,
+            _ => 4,
         };
 
         /// <summary>One title's entry from its requests and status, or null when it is no longer worth showing (ready or declined long ago).</summary>

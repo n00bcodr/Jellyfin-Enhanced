@@ -27,7 +27,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     public sealed record RequestPolicyFacts(Guid UserId, string Role, bool CanCreate, bool CanApprove, bool Can4k,
         bool Visible, string Revision, string Backend, string InstanceId, string ConnectionGeneration,
         int? Limit, int WindowDays, double GbLimit, string ParentalSignature,
-        string? Refusal = null, string? SeerrSource = null, int? SeerrUser = null, long SeerrPermissions = 0, QuotaProjection? BackendQuota = null);
+        string? Refusal = null, string? SeerrSource = null, int? SeerrUser = null, long SeerrPermissions = 0, QuotaProjection? BackendQuota = null,
+        RequestDiskFacts? Disk = null);
+    /// <summary>
+    /// The drive a request would land on is below the low-disk threshold (refusal <c>low_disk</c>): which instance,
+    /// the folder measured (the folder named, the title's own folder, or the default root folder), and the drive's
+    /// free and total bytes. Paths and names are for administrators only.
+    /// </summary>
+    /// <param name="InstanceId">Instance id.</param>
+    /// <param name="Instance">Instance name.</param>
+    /// <param name="Folder">The folder measured, as the arr names it.</param>
+    /// <param name="Free">Free bytes of the drive holding it.</param>
+    /// <param name="Total">Total bytes of that drive.</param>
+    /// <param name="LimitPercent">The low-disk threshold (percent free) it is below.</param>
+    public sealed record RequestDiskFacts(string InstanceId, string Instance, string Folder, long Free, long Total, int LimitPercent)
+    {
+        /// <summary>Whole percent of the drive that is free (rounded down).</summary>
+        public int FreePercent => Total > 0 ? (int)Math.Floor(Math.Clamp(Free * 100.0 / Total, 0, 100)) : 0;
+    }
     /// <summary>Policy seam with async preparation and a synchronous final-send check.</summary>
     public interface IRequestPolicy
     {
@@ -53,6 +70,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var facts = Evaluate(userId, input);
             return (facts.InstanceId, facts.ConnectionGeneration);
         }
+        /// <summary>
+        /// Whether adding a new title of this kind is paused for storage: the drive of the default standard
+        /// instance's add root folder is below the low-disk threshold (no person, no title; null when it isn't, or
+        /// nothing is known). The household-wide answer for surfaces that list titles nobody has yet.
+        /// </summary>
+        RequestDiskFacts? AddPause(bool movie) => null;
+        /// <summary>
+        /// The low-disk guard alone for a request like <paramref name="input"/> (no person): the facts it would refuse
+        /// with, measured on the folder the download would land on for that very title, or null. Reads memory only. A
+        /// cheap screen for lists of titles: null here means <see cref="Evaluate"/> gives no <c>low_disk</c> either.
+        /// </summary>
+        RequestDiskFacts? TitlePause(MutationInput input) => null;
+        /// <summary>
+        /// Makes sure the facts the low-disk guard reads for a request like <paramref name="input"/> are in memory
+        /// (after a restart they may not be yet): starts a read of the target instance's system facts (disk space) and
+        /// library index (whether it holds the title, so which folder counts) when none is held and waits for them
+        /// briefly. JE mode only; never fails; the guard answers from what is known.
+        /// </summary>
+        Task PrepareDiskAsync(MutationInput input, CancellationToken ct) => Task.CompletedTask;
+        /// <summary>
+        /// <see cref="PrepareDiskAsync"/> for <see cref="AddPause"/>: the default standard instance's system facts only
+        /// (a new add needs no library index).
+        /// </summary>
+        Task PrepareAddPauseAsync(bool movie, CancellationToken ct) => Task.CompletedTask;
     }
     /// <summary>Central role, parental, destination, edition and disk policy.</summary>
     public sealed class RequestPolicy : IRequestPolicy
@@ -86,8 +127,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var tmdb = _aliases.Of(key).Append(key).FirstOrDefault(k => k.Provider == "tmdb")?.NumericId ?? 0;
                 await _parental.MaySeeAbsentAsync(key.IsMovie ? "movie" : "tv", tmdb, userId.ToString("N"), ct).ConfigureAwait(false);
             }
+            await PrepareDiskAsync(input, ct).ConfigureAwait(false);
             await _backend.PrepareAsync(userId, input, ct).ConfigureAwait(false);
         }
+        /// <inheritdoc />
+        public Task PrepareDiskAsync(MutationInput input, CancellationToken ct) => PrepareDiskAsync(input, true, ct);
+        /// <inheritdoc />
+        public Task PrepareAddPauseAsync(bool movie, CancellationToken ct) => PrepareDiskAsync(AddProbe(movie), false, ct);
+        private async Task PrepareDiskAsync(MutationInput input, bool library, CancellationToken ct)
+        {
+            var config = Configuration;
+            // Seerr mode: the guard reads only what is in memory, as it always has (Seerr picks its own server and folder).
+            if (config.ArrLowDiskPercent <= 0 || config.ArrRequestBackend != "je" || TitleKey.Parse(input.Key) is not { } key) return;
+            var (instance, _, _) = Target(input, key);
+            if (instance is not { Usable: true }) return;
+            var reads = new List<Task>(2);
+            if (_store.PeekSystem(instance.Id) == null && _store.WarmSystem(instance) is { } system) reads.Add(Quietly(system));
+            // Whether the instance holds the title decides the folder measured (its own, or the default root).
+            if (library && _store.PeekLibrary(instance.Id) == null) reads.Add(Quietly(_store.GetLibraryAsync(instance, ct)));
+            if (reads.Count == 0) return;
+            // Bounded: a slow or failing instance doesn't hold the caller (the guard then answers from what is known).
+            await Task.WhenAny(Task.WhenAll(reads), Task.Delay(DiskWait, ct)).ConfigureAwait(false);
+        }
+        /// <summary>Waits for a read, ignoring how it ended (the guard reads what it left in memory).</summary>
+        private static async Task Quietly(Task read)
+        {
+            try
+            {
+                await read.ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // A failed or cancelled read leaves nothing new in memory; the guard answers from what is known.
+            }
+        }
+        /// <summary>The request a new add of a movie or a series stands for (no title the instance holds).</summary>
+        private static MutationInput AddProbe(bool movie)
+            => movie ? new MutationInput { Key = "movie:tmdb:1" } : new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 } };
+        /// <summary>Longest wait for an instance's disk facts that aren't in memory yet.</summary>
+        internal TimeSpan DiskWait { get; set; } = TimeSpan.FromSeconds(5);
         /// <inheritdoc />
         public Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct)
             => _backend.PrepareAsync(userId, movie ? new MutationInput { Key = "movie:tmdb:1" } : new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 } }, ct);
@@ -167,13 +245,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (system == null || (input.ProfileId.HasValue && !system.QualityProfiles.Any(p => p.Id == input.ProfileId)) ||
                     (input.RootFolder != null && (!BridgePaths.Safe(input.RootFolder) || !system.RootFolders.Any(r => r.Path != null && BridgePaths.SamePath(r.Path, input.RootFolder))))) refusal = "invalid_defaults";
             }
-            if (refusal == null && instance != null && config.ArrLowDiskPercent > 0)
-            {
-                var root = input.RootFolder ?? instance.Defaults?.RootFolderPath;
-                var disks = _store.PeekSystem(instance.Id)?.DiskSpace;
-                var disk = disks?.Where(d => root != null && d.Path != null && BridgePaths.IsUnder(root, d.Path)).OrderByDescending(d => d.Path!.Length).FirstOrDefault();
-                if (disk?.TotalSpace > 0 && disk.FreeSpace.HasValue && 100.0 * disk.FreeSpace.Value / disk.TotalSpace.Value < config.ArrLowDiskPercent) refusal = "low_disk";
-            }
+            var disk = refusal == null && instance != null ? LowDisk(config, instance, input, key) : null;
+            if (disk != null) refusal = "low_disk";
             var revision = MutationInput.Hash(JsonSerializer.Serialize(config) + "|" + viewer?.PolicyRevision + "|" + _view.Revision + "|" + _libraries.Revision + "|" + role + "|" + binding);
             // Seerr picks its own server: a Seerr-mode request is bound to the Seerr identity, never to an arr connection,
             // so an arr's address or key changing doesn't hold it (the instance above still decides where it lands for visibility).
@@ -185,7 +258,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 seerrMode ? string.Empty : instanceId, seerrMode ? string.Empty : generation,
                 limit, config.ArrRequestBackend == "seerr" ? Math.Clamp(binding.QuotaWindowDays, 1, 365) : Math.Clamp(config.ArrRequestQuotaWindowDays, 1, 365),
                 Math.Max(0, settings.QuotaGb ?? defaults.QuotaGb ?? config.ArrRequestQuotaGb), JsonSerializer.Serialize(signature),
-                refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota);
+                refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota, disk);
+        }
+        /// <summary>
+        /// The low-disk pause of a request like <paramref name="input"/> on <paramref name="instance"/>, or null. JE mode
+        /// measures the drive holding the folder the download would be imported into: the title's own folder when the
+        /// instance already holds it (a search or a merge lands there, whatever folder is named), else the folder named
+        /// (administrators), else the instance's default root folder (a new add); with the library index not read yet
+        /// (after a restart) whether it holds the title is unknown, so there's no verdict. Seerr mode (Seerr picks the
+        /// server and folder) measures only the folder named or the default root, as it always has, and starts no reads.
+        /// Nothing is paused while the threshold is 0, no folder is known (an add with no defaults is held for them
+        /// anyway) or the instance's disk facts aren't read yet.
+        /// </summary>
+        /// <param name="config">Configuration.</param>
+        /// <param name="instance">Target instance.</param>
+        /// <param name="input">Request.</param>
+        /// <param name="key">Its title key.</param>
+        /// <param name="newAdd">A new add by definition (<see cref="AddPause"/>): the default root, no library lookup.</param>
+        internal RequestDiskFacts? LowDisk(PluginConfiguration config, ArrConnection instance, MutationInput input, TitleKey key, bool newAdd = false)
+        {
+            if (config.ArrLowDiskPercent <= 0) return null;
+            var direct = config.ArrRequestBackend == "je";
+            var system = _store.PeekSystem(instance.Id);
+            if (system == null)
+            {
+                // Not read since a restart: start the read (the next answer has it); nothing is known to be full yet.
+                if (direct) _ = _store.WarmSystem(instance);
+                return null;
+            }
+            string? folder;
+            if (!direct || newAdd) folder = input.RootFolder ?? instance.Defaults?.RootFolderPath;
+            else if (_store.PeekLibrary(instance.Id) is not { } library) return null;
+            else folder = HeldFolder(library, key.Title) ?? input.RootFolder ?? instance.Defaults?.RootFolderPath;
+            if (string.IsNullOrWhiteSpace(folder)) return null;
+            var disk = system.DiskSpace.Where(d => d.Path != null && BridgePaths.IsUnder(folder, d.Path)).OrderByDescending(d => d.Path!.Length).FirstOrDefault();
+            if (disk?.TotalSpace is not long total || total <= 0 || disk.FreeSpace is not long free) return null;
+            return 100.0 * free / total < config.ArrLowDiskPercent
+                ? new RequestDiskFacts(instance.Id, instance.Name, folder, Math.Max(0, free), total, config.ArrLowDiskPercent)
+                : null;
+        }
+        /// <summary>The folder of a title an instance's library index holds (under any of its known ids), or null.</summary>
+        private string? HeldFolder(ArrLibrarySnapshot library, TitleKey title)
+        {
+            foreach (var key in _aliases.Of(title).Prepend(title))
+            {
+                if (key.IsMovie == title.IsMovie && RequestPlaces.HeldIn(library, key) is { Path: { Length: > 0 } path }) return path;
+            }
+            return null;
+        }
+        /// <inheritdoc />
+        public RequestDiskFacts? TitlePause(MutationInput input)
+        {
+            if (TitleKey.Parse(input.Key) is not { } key) return null;
+            var (instance, _, _) = Target(input, key);
+            return instance is { Usable: true } ? LowDisk(Configuration, instance, input, key) : null;
+        }
+        /// <inheritdoc />
+        public RequestDiskFacts? AddPause(bool movie)
+        {
+            var input = AddProbe(movie);
+            var key = TitleKey.Parse(input.Key)!;
+            var (instance, _, _) = Target(input, key);
+            return instance is { Usable: true } ? LowDisk(Configuration, instance, input, key, newAdd: true) : null;
         }
         /// <inheritdoc />
         public (string InstanceId, string ConnectionGeneration) JeTarget(Guid userId, MutationInput input)

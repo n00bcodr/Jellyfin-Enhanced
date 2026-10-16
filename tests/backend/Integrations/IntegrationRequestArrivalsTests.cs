@@ -213,6 +213,85 @@ public class IntegrationRequestArrivalsTests
     }
 
     [Fact]
+    public async Task AnArrivedRequestWhoseTitleWasRemovedSaysSoAndCanBeAskedForAgainNeverOkdAgain()
+    {
+        using var lab = new Lab();
+        await lab.Warm();
+        var movie = await lab.Ask(lab.Emma, new MutationInput { Key = Matrix });
+        await lab.Outbox.TickAsync(default);
+        // It arrives and the request is fulfilled.
+        lab.Radarr.Queue.Clear();
+        lab.View.AddCopy(TitleKey.Parse(Matrix)!, new JfCopy { ItemId = Guid.NewGuid(), Path = "/media/movies/The Matrix", LibraryName = "Movies", DateCreated = lab.Arr.Now.UtcDateTime });
+        lab.View.Rev++;
+        Assert.Equal(1, await lab.Fulfilment.CheckAsync(new[] { Matrix }, default));
+        Assert.Equal("fulfilled", lab.Ledger.Find(movie)!.Status);
+
+        // Later it is removed from Jellyfin and from Radarr.
+        lab.View.CopiesByKey.Remove(Matrix);
+        lab.View.Rev++;
+        lab.Radarr.Movies.Clear();
+        Assert.True((await lab.Store.RefreshLibraryNowAsync(lab.Arr.Instance("RadarrZ"), default)).Ok);
+        lab.Store.RequestRefresh(lab.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue);
+        lab.Arr.Now += TimeSpan.FromHours(1);
+        await lab.Warm();
+
+        // Honest: "Was here, since removed" in its own group, no Play, never "OK'd! Getting started" again.
+        var row = (await lab.Page(lab.Emma))[Matrix];
+        Assert.Equal((HubGroup.Removed, StatusStage.NotHere, StatusReasonCode.Removed), Row(row));
+        Assert.False(row.TryGetProperty("itemId", out var item) && item.ValueKind != JsonValueKind.Null, "no Play");
+        // Everyone in the household reads the same status for the title (the request facts are the household's).
+        foreach (var viewer in new[] { lab.Emma, lab.Kid, lab.Admin })
+        {
+            var status = (await lab.Status.ComposeForAsync(viewer, new[] { TitleKey.Parse(Matrix)! }, null, default)).Single().Status;
+            Assert.Equal((StatusStage.NotHere, StatusReasonCode.Removed), (status.Stage, status.Reason.Code));
+        }
+
+        // Asked for again: a new request, OK'd and on its way like any new one (the removal no longer speaks for it).
+        var again = await lab.Ask(lab.Emma, new MutationInput { Key = Matrix });
+        Assert.NotEqual(movie, again);
+        await lab.Outbox.TickAsync(default);
+        Assert.Equal(("fulfilled", "sent"), (lab.Ledger.Find(movie)!.Status, lab.Ledger.Find(again)!.Status));
+        Assert.Equal(HubGroup.OnTheWay, (await lab.Page(lab.Emma))[Matrix].GetProperty("group").GetString());
+    }
+
+    [Fact]
+    public async Task ARemovedRowStaysAsLongAsAReadyOneWouldThenGoes()
+    {
+        using var lab = new Lab();
+        await lab.Warm();
+        var movie = await lab.Ask(lab.Emma, new MutationInput { Key = Matrix });
+        await lab.Outbox.TickAsync(default);
+        Assert.True(lab.Ledger.Fulfil(movie, lab.Arr.Now));
+        lab.Radarr.Movies.Clear();
+        lab.Radarr.Queue.Clear();
+        Assert.True((await lab.Store.RefreshLibraryNowAsync(lab.Arr.Instance("RadarrZ"), default)).Ok);
+        lab.Store.RequestRefresh(lab.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue);
+        lab.Arr.Now += TimeSpan.FromDays(13);
+        await lab.Warm();
+        Assert.Equal(HubGroup.Removed, (await lab.Page(lab.Emma))[Matrix].GetProperty("group").GetString());
+        lab.Arr.Now += TimeSpan.FromDays(2);
+        await lab.Warm();
+        Assert.False((await lab.Page(lab.Emma)).ContainsKey(Matrix));
+    }
+
+    [Fact]
+    public void LedgerFactsAreFulfilledOnlyWhenEveryRequestStillOnArrived()
+    {
+        var user = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero);
+        RequestWant Want(string status, string variant = "standard")
+            => new(Guid.NewGuid().ToString("N"), "a", user, "c", "f", new MutationInput { Key = Matrix, Variant = variant }.Normalize()!, status, "x", 1, "{}", now, now);
+        bool Fulfilled(params RequestWant[] wants) => LedgerRequestFacts.FactsOf(wants, user, Array.Empty<RequestDispatch>)!.Fulfilled;
+        Assert.True(Fulfilled(Want("fulfilled")));
+        Assert.True(Fulfilled(Want("fulfilled"), Want("declined")));
+        Assert.True(Fulfilled(Want("fulfilled"), Want("cancelled")));
+        Assert.False(Fulfilled(Want("fulfilled"), Want("pending", "4k")));
+        Assert.False(Fulfilled(Want("fulfilled"), Want("sent")));
+        Assert.False(Fulfilled(Want("sent")));
+        Assert.False(Fulfilled(Want("declined")));
+    }
+
+    [Fact]
     public async Task AWaitingAskWhosePartArrivesAnotherWayClosesAndGivesItsAllowanceBack()
     {
         using var lab = new Lab();

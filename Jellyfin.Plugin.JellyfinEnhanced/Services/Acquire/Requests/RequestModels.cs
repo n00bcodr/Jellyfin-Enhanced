@@ -175,6 +175,66 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         [JsonPropertyName("contact")] public string Contact { get; init; } = string.Empty;
         /// <summary>Episodes a Member gets free per window before each five count as one request.</summary>
         [JsonPropertyName("freeEpisodes")] public int FreeEpisodes { get; init; } = 5;
+        /// <summary>Asking for a new movie is paused for storage (null: it isn't); see <see cref="RequestBlock"/>.</summary>
+        [JsonPropertyName("pausedMovies")] public RequestBlock? PausedMovies { get; init; }
+        /// <summary>Asking for a new series is paused for storage (null: it isn't); see <see cref="RequestBlock"/>.</summary>
+        [JsonPropertyName("pausedSeries")] public RequestBlock? PausedSeries { get; init; }
+    }
+    /// <summary>
+    /// Why someone whose role may ask can't ask for a title right now, shown where Get it / Request would be instead
+    /// of leaving nothing to do: <c>low_disk</c> ("Paused: storage full": the drive the download would land on is
+    /// below the low-disk threshold), or the policy's refusal code when the instance it would go to can't take it
+    /// (<c>instance_changed</c>, <c>invalid_instance</c>, <c>invalid_defaults</c>). Administrators also get where
+    /// and how much is free; nobody else ever gets an instance name, a path or a size.
+    /// </summary>
+    public sealed record RequestBlock
+    {
+        /// <summary>Refusal code.</summary>
+        [JsonPropertyName("reason")] public string Reason { get; init; } = string.Empty;
+        /// <summary>Administrators: the instance name.</summary>
+        [JsonPropertyName("instance"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Instance { get; init; }
+        /// <summary>Administrators: the folder measured, as the arr names it.</summary>
+        [JsonPropertyName("folder"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Folder { get; init; }
+        /// <summary>Administrators: free bytes of the drive holding it.</summary>
+        [JsonPropertyName("free"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public long? Free { get; init; }
+        /// <summary>Administrators: whole percent of that drive that is free.</summary>
+        [JsonPropertyName("freePercent"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? FreePercent { get; init; }
+        /// <summary>Administrators: the low-disk threshold (percent free) it is below.</summary>
+        [JsonPropertyName("limitPercent"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? LimitPercent { get; init; }
+
+        /// <summary>The refusals shown in place of the request controls (anything else keeps today's behaviour).</summary>
+        private static readonly HashSet<string> Shown = new(StringComparer.Ordinal) { "low_disk", "instance_changed", "invalid_instance", "invalid_defaults" };
+
+        /// <summary>
+        /// What a person is told for policy facts that refuse a title: null when nothing refuses, the role can't
+        /// ask anyway (nothing to show), or the refusal is one the request controls don't explain (feature off, not
+        /// visible, a change under way).
+        /// </summary>
+        /// <param name="facts">The policy's facts for the title.</param>
+        public static RequestBlock? Of(RequestPolicyFacts facts)
+            => facts.Refusal is { } refusal && facts.CanCreate && Shown.Contains(refusal)
+                ? refusal == "low_disk" ? Storage(facts.Disk, facts.Role == "Admin") : new RequestBlock { Reason = refusal }
+                : null;
+
+        /// <summary>A storage pause; the instance, folder and sizes only for administrators.</summary>
+        /// <param name="disk">The low-disk facts (null: none known, no block).</param>
+        /// <param name="admin">The caller is a Jellyfin administrator.</param>
+        public static RequestBlock? Storage(RequestDiskFacts? disk, bool admin)
+            => disk == null ? null : admin
+                ? new RequestBlock { Reason = "low_disk", Instance = disk.Instance, Folder = disk.Folder, Free = disk.Free, FreePercent = disk.FreePercent, LimitPercent = disk.LimitPercent }
+                : new RequestBlock { Reason = "low_disk" };
+    }
+    /// <summary>A title's request answer for one person: may they ask for it now, and if not, why (see <see cref="RequestBlock"/>).</summary>
+    public sealed record RequestTitleCheck
+    {
+        /// <summary>Title key checked.</summary>
+        [JsonPropertyName("key")] public string Key { get; init; } = string.Empty;
+        /// <summary>Edition checked: standard or 4k.</summary>
+        [JsonPropertyName("variant")] public string Variant { get; init; } = "standard";
+        /// <summary>The caller may ask for it now.</summary>
+        [JsonPropertyName("canRequest")] public bool CanRequest { get; init; }
+        /// <summary>Why not, when the controls should say so (null otherwise).</summary>
+        [JsonPropertyName("blocked")] public RequestBlock? Blocked { get; init; }
     }
     /// <summary>A quota charge; expiries use a strict rolling window.</summary>
     public sealed record QuotaCharge(int Cost, DateTimeOffset At, double EstimatedGb = 0, string? WantId = null);

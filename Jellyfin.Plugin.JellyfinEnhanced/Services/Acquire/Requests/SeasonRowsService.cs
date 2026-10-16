@@ -61,6 +61,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>The viewer may ask for episodes of this series (role, library, rating and backend).</summary>
         [JsonPropertyName("canRequest")] public bool CanRequest { get; init; }
 
+        /// <summary>
+        /// Why the viewer can't ask for episodes of this series right now although their role may (for example
+        /// <c>low_disk</c>, "Paused: storage full"), shown in place of Get it; null when they can, or can't anyway.
+        /// </summary>
+        [JsonPropertyName("blocked")] public RequestBlock? Blocked { get; init; }
+
         /// <summary>The viewer's request state of the whole season (same values as an episode's).</summary>
         [JsonPropertyName("seasonRequest")] public string? SeasonRequest { get; init; }
 
@@ -126,11 +132,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var episode in ParseSeason(json)) meta[episode.Episode] = episode;
             }
 
-            var facts = _policy.Evaluate(viewer.UserId, new MutationInput { Key = canonical.ToString(), Scope = "episodes", Episodes = new[] { new RequestEpisode(season, 1) } });
+            var probe = new MutationInput { Key = canonical.ToString(), Scope = "episodes", Episodes = new[] { new RequestEpisode(season, 1) } };
+            await _policy.PrepareDiskAsync(probe, ct).ConfigureAwait(false);
+            var facts = _policy.Evaluate(viewer.UserId, probe);
             var (perEpisode, seasonState) = _ledger.Database.Available
                 ? RequestStates(_ledger.ForTitle(canonical.ToString()), viewer.UserId, season, _now(), _policy.Configuration.ArrRequestDeclineCooldownDays, RequestLedger.TargetKey(facts))
                 : (new Dictionary<int, string>(), null);
 
+            var canRequest = facts.Refusal == null && facts.CanCreate && facts.Backend is "je" or "seerr";
             var numbers = new SortedSet<int>(meta.Keys);
             numbers.UnionWith(perEpisode.Keys);
             numbers.UnionWith(jf.Where(e => !e.Hidden).SelectMany(Numbers));
@@ -159,7 +168,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Season = season,
                 SeriesId = seriesId.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
                 DisplayMissing = viewer.DisplayMissingEpisodes,
-                CanRequest = facts.Refusal == null && facts.CanCreate && facts.Backend is "je" or "seerr",
+                CanRequest = canRequest,
+                Blocked = canRequest ? null : RequestBlock.Of(facts),
                 SeasonRequest = seasonState,
                 Episodes = episodes,
             };

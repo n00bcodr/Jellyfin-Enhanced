@@ -1329,6 +1329,15 @@ public class ApiArrRequestsHubTests
         Assert.Equal(200, later.Status);
         Assert.Equal(2, Searches());
         Assert.Empty(ledger.List(rig.Kid.UserId, false));
+
+        // The drive of the series' own folder is nearly full: the download couldn't be imported, so the Search is
+        // refused with the storage reason (blocked, like an ask), and nothing reaches Sonarr.
+        rig.Arr.Now += TimeSpan.FromHours(25);
+        policy.Adjust = (_, _, facts) => facts with { Refusal = "low_disk" };
+        var full = await Press(rig.Emma, E4, "p9");
+        Assert.Equal((403, "blocked", "low_disk"), (full.Status, full.Body.GetProperty("outcome").GetString(), full.Body.GetProperty("reason").GetString()));
+        Assert.Equal(2, Searches());
+        policy.Adjust = null;
     }
 
     [Fact]

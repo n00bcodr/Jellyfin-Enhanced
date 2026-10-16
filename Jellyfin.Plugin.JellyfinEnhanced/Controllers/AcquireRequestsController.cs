@@ -150,9 +150,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var viewer = Person();
             if (Gate(viewer, readOnly: true) is { } refusal) return Reply(refusal);
             await _service.Policy.PrepareIdentityAsync(viewer!.UserId, true, ct).ConfigureAwait(false);
+            await _service.PreparePausesAsync(ct).ConfigureAwait(false);
             if (Gate(Person(), readOnly: true) is { } changed) return Reply(changed);
             Response.Headers["Cache-Control"] = "private, no-store";
             return Ok(new { outcome = "accepted", reason = "me", certainty = "Succeeded", message = "Your requests", me = _service.Me(viewer.UserId) });
+        }
+        /// <summary>
+        /// Whether the caller may ask for one title now (<paramref name="variant"/> standard or 4k), and if not, why
+        /// (for example <c>low_disk</c>: "Paused: storage full"; instance, folder and free space for administrators
+        /// only). For the controls of the title page and the request sheet; no network I/O.
+        /// </summary>
+        [Authorize]
+        [HttpGet("acquire/requests/check")]
+        public async Task<IActionResult> Check([FromQuery] string? key = null, [FromQuery] string? variant = null, CancellationToken ct = default)
+        {
+            var viewer = Person();
+            if (Gate(viewer, readOnly: true) is { } refusal) return Reply(refusal);
+            if (key == null || key.Length > 200 || variant is not (null or "standard" or "4k")) return Reply(RequestOutcome.Refused("invalid_input", 400));
+            if (await _service.CheckAsync(viewer!.UserId, key, variant, ct).ConfigureAwait(false) is not { } check) return Reply(RequestOutcome.Refused("invalid_input", 400));
+            Response.Headers["Cache-Control"] = "private, no-store";
+            return Ok(new { outcome = "accepted", reason = "check", certainty = "Succeeded", message = "Request check", check });
         }
         /// <summary>
         /// One season's request rows: the caller's request state per episode and the metadata of the

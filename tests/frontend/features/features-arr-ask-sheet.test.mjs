@@ -1183,3 +1183,263 @@ test('request outcomes are read out through one persistent live region that outl
   await new Promise(r => setTimeout(r, 80));
   assert.equal(live[0].textContent, "Asked! We'll let you know.");
 });
+
+// ------------------------------------------------------------------ phase 3g: storage full is said, not swallowed
+
+const FULL = { reason: 'low_disk' };
+const FULL_ADMIN = { reason: 'low_disk', instance: 'Sonarr', folder: '/tv/Severance', free: 2e9, freePercent: 0, limitPercent: 10 };
+const PAUSED_TEXT = "There's no room for new downloads right now, so asking is paused. Dad can free up some space.";
+/** A route answering the title check (GET acquire/requests/check) with `blocked`, and recording the keys asked. */
+function checkRoute(blocked, seen) {
+  return (method, path) => {
+    if (method !== 'GET' || !path.startsWith('/acquire/requests/check')) return null;
+    seen?.push(path);
+    return { body: { outcome: 'accepted', reason: 'check', check: { key: 'x', variant: 'standard', canRequest: !blocked, blocked } } };
+  };
+}
+
+test('storage full on the series page: the asks give way to "Paused: storage full" and a plain sentence; More… stays', async t => {
+  const seen = [];
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', routes: checkRoute(FULL, seen) });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, { contact: 'Dad' });
+  await settle(20);
+  const box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+  same([...box.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['More…']);
+  assert.equal(box.querySelector('.je-ask-action-cost'), null, 'no cost line for asks that can\'t be made');
+  same([box.querySelector('.je-ask-paused-title').textContent, box.querySelector('.je-ask-paused-text').textContent], ['Paused: storage full', PAUSED_TEXT]);
+  assert.doesNotMatch(box.textContent, ARR_WORDS);
+  same(seen, ['/acquire/requests/check?key=tv%3Atvdb%3A371980&variant=standard']);
+  // Read once per title for a while: the next status read draws the same box from it.
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, { contact: 'Dad' });
+  await settle(20);
+  assert.equal(seen.length, 1);
+  same(h.posts, []);
+});
+
+test('storage full on an episode page: an administrator keeps Search and is told where and how much is free; a Member gets the plain line', async t => {
+  const seen = [];
+  const admin = setup(t, {
+    html: PAGE, hash: '#/details?id=e5', me: ADMIN, config: { ArrManageDrawerEnabled: true },
+    routes: (method, path) => (method === 'POST' && path === '/arr/admin/manage/search' ? { body: { status: 'Succeeded', found: false } } : checkRoute(FULL_ADMIN, seen)(method, path))
+  });
+  const page = admin.document.getElementById('itemDetailPage');
+  admin.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, admin: ADMIN_BLOCK }, {});
+  await settle(20);
+  // An administrator's Search isn't an ask, so it stays; the title is checked all the same and the line says where
+  // and how much is free (the grab may not fit).
+  same([...page.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['Search']);
+  assert.equal(seen.length, 1);
+  assert.equal(page.querySelector('.je-ask-paused-note .je-ask-paused-text').textContent, 'Sonarr: /tv/Severance has 2 GB free (0%), under the 10% low-disk limit. Requests are paused; Search still runs for you.');
+  click(admin, page.querySelector('.je-ask-action'));
+  await settle(20);
+  same(admin.posts.map(p => p.path), ['/arr/admin/manage/search']);
+
+  // An administrator's Get it on an episode that isn't monitored is an ask: paused, with the detail.
+  const adminAsk = setup(t, { html: PAGE, hash: '#/details?id=e6', me: ADMIN, config: { ArrManageDrawerEnabled: true }, routes: checkRoute(FULL_ADMIN) });
+  const page2 = adminAsk.document.getElementById('itemDetailPage');
+  adminAsk.JE.internals.arrAskActions.attachDetails(page2, { key: 'tv:tvdb:371980:s3:e6', itemId: 'e6', kind: 'episode', stage: 'notHere', reason: { code: 'unmonitored' }, admin: ADMIN_BLOCK }, {});
+  await settle(20);
+  assert.equal(page2.querySelector('.je-ask-action'), null);
+  assert.equal(page2.querySelector('.je-ask-paused-text').textContent, 'Sonarr: /tv/Severance has 2 GB free (0%), under the 10% low-disk limit. Requests are paused; Search still runs for you.');
+
+  // A Member's Search of the same long-missing episode would be an ask (or a search the import couldn't follow): paused.
+  const member = setup(t, { html: PAGE, hash: '#/details?id=e5', routes: checkRoute(FULL) });
+  const page3 = member.document.getElementById('itemDetailPage');
+  member.JE.internals.arrAskActions.attachDetails(page3, LONG_MISSING_EPISODE, {});
+  await settle(20);
+  assert.equal(page3.querySelector('.je-ask-action'), null);
+  assert.equal(page3.querySelector('.je-ask-paused-text').textContent, PAUSED_TEXT);
+  same([member.posts, member.searches], [[], []]);
+});
+
+test('a title that can be asked for keeps its buttons; a check that can\'t be read changes nothing', async t => {
+  const h = setup(t, { html: PAGE, hash: '#/details?id=series1', routes: checkRoute(null) });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, SERIES_STATUS, { contact: 'Dad' });
+  await settle(20);
+  same([...page.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['Get Season 2', 'Get missing episodes', 'More…']);
+  assert.equal(page.querySelector('.je-ask-paused-note'), null);
+  // The default harness answers 404 for the check: as before.
+  const old = setup(t, { html: PAGE, hash: '#/details?id=series1' });
+  const page2 = old.document.getElementById('itemDetailPage');
+  old.JE.internals.arrAskActions.attachDetails(page2, SERIES_STATUS, { contact: 'Dad' });
+  await settle(20);
+  same([...page2.querySelectorAll('.je-ask-action-text')].map(n => n.textContent), ['Get Season 2', 'Get missing episodes', 'More…']);
+});
+
+test('storage full in the sheet: said before anything is picked, no Request, no costs; the 4K copy is checked on its own', async t => {
+  const seen = [];
+  let blocked4k = null;
+  const h = setup(t, {
+    me: { ...MEMBER, can4kSeries: true },
+    routes: (method, path) => (path.includes('variant=4k') ? checkRoute(blocked4k, seen)(method, path) : checkRoute(FULL, seen)(method, path))
+  });
+  const opening = h.Sheet.open(SERIES);
+  await settle(20);
+  const note = h.document.querySelector('.je-sheet-note');
+  assert.ok(note.classList.contains('je-sheet-note-paused'));
+  assert.equal(note.textContent, `storagePaused: storage full · ${PAUSED_TEXT}`);
+  // Read out with the dialog's name whatever gets the focus (the reason is plain text).
+  const dialog = h.document.querySelector('.je-sheet');
+  assert.ok(note.id);
+  assert.equal(dialog.getAttribute('aria-describedby'), note.id);
+  assert.ok(primary(h).hidden, 'nothing to send');
+  assert.match(h.document.querySelector('style#je-ask-sheet-styles, style')?.textContent || '', /\.je-sheet-primary\[hidden\]\s*\{\s*display:\s*none/);
+  assert.equal(h.document.querySelector('.je-sheet-secondary').textContent, 'Close');
+  assert.ok([...h.document.querySelectorAll('.je-sheet-card-cost')].every(c => c.hidden), 'no costs for asks that can\'t be made');
+  // The 4K copy goes to another instance (another drive): checked when chosen, and it can be asked for.
+  click(h, h.document.querySelector('.je-sheet-variant-option[data-variant="4k"]'));
+  await settle(20);
+  same(seen.map(p => p.split('variant=')[1]), ['standard', '4k']);
+  assert.ok(!primary(h).hidden);
+  assert.ok(!h.document.querySelector('.je-sheet-note').classList.contains('je-sheet-note-paused'));
+  assert.equal(dialog.getAttribute('aria-describedby'), null, 'nothing paused to read out');
+  key(h, 'Escape');
+  assert.equal(await opening, null);
+  same(h.posts, []);
+});
+
+test('storage full on a collection page: each movie the server marks is left out of the batch and said, the rest are asked for; the household\'s new-add pause decides nothing', async t => {
+  const marked = (keys, block) => ({ ...GAPS, missing: GAPS.missing.map(p => keys.includes(p.key) ? { ...p, blocked: block } : p) });
+  let gaps = marked(['movie:tmdb:12'], FULL);
+  const h = setup(t, {
+    // The household pause (default root full) is on; only the server's per-movie answer counts.
+    html: BOX_PAGE, hash: '#/details?id=box1', item: { Id: 'box1', Type: 'BoxSet' }, me: { ...MEMBER, pausedMovies: FULL },
+    routes: (method, path) => path.startsWith('/acquire/requests/collection/box1') ? { body: { outcome: 'accepted', reason: 'collection', collection: gaps } } : null,
+    answer: (input) => (input.key === 'movie:tmdb:13'
+      // Its drive filled up after the page was drawn: refused for storage, said as such.
+      ? { status: 403, body: { outcome: 'blocked', reason: 'low_disk', certainty: 'Succeeded' } }
+      : { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } })
+  });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, null);
+  await settle(20);
+  let block = page.querySelector('.je-ask-coll');
+  assert.equal(block.querySelector('.je-ask-coll-get').textContent, 'downloadGet the 2 missing');
+  same([...block.querySelectorAll('.je-ask-paused-note')].map(n => [n.querySelector('.je-ask-paused-title').textContent, n.querySelector('.je-ask-paused-text').textContent]), [['Paused: storage full', PAUSED_TEXT]]);
+  same([...block.querySelectorAll('.je-ask-coll-part')].map(li => li.textContent), ['Part Five (2008)', 'Part Six (2011)Paused: storage full', 'Part Seven (2012)', 'Part Eight (2031)Not out yet']);
+  click(h, block.querySelector('.je-ask-coll-get'));
+  await settle(60);
+  same(h.posts.map(p => p.body.input.key), ['movie:tmdb:11', 'movie:tmdb:13'], 'the paused movie is not asked for');
+  same(h.toasts, ['Asked for 1 · 1 paused: storage full']);
+
+  // Every movie paused: the line takes the button's place (once, however many movies).
+  gaps = marked(['movie:tmdb:11', 'movie:tmdb:12', 'movie:tmdb:13'], FULL);
+  h.JE.internals.arrAskActions.attachDetails(page, null);
+  await settle(20);
+  block = page.querySelector('.je-ask-coll');
+  assert.equal(block.querySelector('.je-ask-coll-get'), null);
+  assert.equal(block.querySelectorAll('.je-ask-paused-note').length, 1);
+  assert.match(block.querySelector('.je-ask-coll-have').textContent, /You have 4 of 7\./);
+  assert.equal(block.querySelectorAll('.je-ask-coll-part').length, 4, 'the missing movies are still listed');
+
+  // Nothing marked (e.g. the missing movies Radarr has sit on a roomy drive): Get the 3 missing as usual.
+  gaps = GAPS;
+  h.JE.internals.arrAskActions.attachDetails(page, null);
+  await settle(20);
+  block = page.querySelector('.je-ask-coll');
+  assert.equal(block.querySelector('.je-ask-coll-get').textContent, 'downloadGet the 3 missing');
+  assert.equal(block.querySelector('.je-ask-paused-note'), null);
+
+  // An administrator reads one line per drive, with where and how much is free.
+  const other = { ...FULL_ADMIN, instance: 'Radarr', folder: '/movies2/Part Seven', free: 3e9 };
+  const admin = setup(t, {
+    html: BOX_PAGE, hash: '#/details?id=box1', item: { Id: 'box1', Type: 'BoxSet' }, me: ADMIN,
+    routes: (method, path) => path.startsWith('/acquire/requests/collection/box1')
+      ? { body: { outcome: 'accepted', reason: 'collection', collection: { ...GAPS, missing: GAPS.missing.map(p => p.key === 'movie:tmdb:13' ? { ...p, blocked: other } : p.key === 'movie:tmdb:12' ? { ...p, blocked: { ...FULL_ADMIN, instance: 'Radarr', folder: '/movies' } } : p) } } }
+      : null
+  });
+  const page2 = admin.document.getElementById('itemDetailPage');
+  admin.JE.internals.arrAskActions.attachDetails(page2, null);
+  await settle(20);
+  same([...page2.querySelectorAll('.je-ask-paused-text')].map(n => n.textContent), [
+    'Radarr: /movies has 2 GB free (0%), under the 10% low-disk limit. Requests are paused; Search still runs for you.',
+    'Radarr: /movies2/Part Seven has 3 GB free (0%), under the 10% low-disk limit. Requests are paused; Search still runs for you.'
+  ]);
+  assert.equal(page2.querySelector('.je-ask-coll-get').textContent, 'downloadGet the missing one');
+
+  // Watchers can't ask: no paused line either.
+  const watcher = setup(t, {
+    html: BOX_PAGE, hash: '#/details?id=box1', item: { Id: 'box1', Type: 'BoxSet' }, me: WATCHER,
+    routes: (method, path) => path.startsWith('/acquire/requests/collection/box1') ? { body: { outcome: 'accepted', reason: 'collection', collection: marked(['movie:tmdb:12'], FULL) } } : null
+  });
+  const page3 = watcher.document.getElementById('itemDetailPage');
+  watcher.JE.internals.arrAskActions.attachDetails(page3, null);
+  await settle(20);
+  assert.equal(page3.querySelector('.je-ask-paused-note'), null);
+  assert.doesNotMatch(page3.querySelector('.je-ask-coll')?.textContent || '', /Paused/);
+});
+
+test('mount API: the title is checked; one that can\'t be asked for reads "Paused: storage full" and opens the sheet, which says why; the household\'s new-add pause decides nothing', async t => {
+  const seen = [];
+  const h = setup(t, { html: '<div id="m"></div>', me: MEMBER, routes: checkRoute(FULL, seen) });
+  const m = h.document.getElementById('m');
+  const controls = h.Sheet.mount(m, MOVIE);
+  await settle();
+  controls.update({ key: MOVIE.key, kind: 'movie', stage: 'notHere', reason: { code: 'not_in_arr' } });
+  await settle(20);
+  const paused = m.querySelector('.je-ask-mount-paused');
+  assert.equal(paused.tagName, 'BUTTON', 'touch, keyboard and D-pad reach it');
+  assert.equal(paused.textContent, 'storagePaused: storage full');
+  assert.equal(paused.getAttribute('aria-label'), `Paused: storage full. ${PAUSED_TEXT}`);
+  click(h, paused);
+  await settle(20);
+  // The sheet (not a one-tap ask) says why in full; the title's check is read once.
+  same(seen, ['/acquire/requests/check?key=movie%3Atmdb%3A1084242&variant=standard']);
+  assert.match(h.document.querySelector('.je-sheet-note-paused').textContent, /Paused: storage full · There's no room/);
+  same(h.posts, []);
+  controls.destroy();
+
+  // New titles are paused (default root full) but this one can be asked for (e.g. held on a roomy drive): Request.
+  const roomy = setup(t, { html: '<div id="m"></div>', me: { ...MEMBER, pausedMovies: FULL }, routes: checkRoute(null) });
+  const mr = roomy.document.getElementById('m');
+  const cr = roomy.Sheet.mount(mr, MOVIE);
+  await settle();
+  cr.update({ key: MOVIE.key, kind: 'movie', stage: 'notHere', reason: { code: 'not_in_arr' } });
+  await settle(20);
+  assert.equal(mr.querySelector('.je-ask-mount-paused'), null);
+  assert.equal(mr.querySelector('.je-ask-mount-request').textContent, 'addRequest');
+  cr.destroy();
+});
+
+test('mount API, storage full on a title missing for a long while: an administrator keeps Search with where and how much is free; a family Search gives way to the plain line', async t => {
+  const LOOKING = { key: MOVIE.key, kind: 'movie', stage: 'looking', reason: { code: 'no_release_yet' } };
+  const admin = setup(t, {
+    html: '<div id="m"></div>', me: ADMIN, config: { ArrManageDrawerEnabled: true },
+    routes: (method, path) => (method === 'POST' && path === '/arr/admin/manage/search' ? { body: { status: 'Succeeded', found: false } } : checkRoute(FULL_ADMIN)(method, path))
+  });
+  const m = admin.document.getElementById('m');
+  const c = admin.Sheet.mount(m, MOVIE);
+  await settle();
+  c.update({ ...LOOKING, admin: { variants: [{ instance: 'Radarr', instanceId: 'rad1', kind: 'Radarr', role: 'standard', stage: 'looking', reason: { code: 'no_release_yet' }, fix: 'search_now' }] } });
+  await settle(20);
+  assert.ok(m.querySelector('.je-ask-mount-search'), 'an administrator\'s Search stays');
+  assert.equal(m.querySelector('.je-ask-paused-note .je-ask-paused-text').textContent, 'Sonarr: /tv/Severance has 2 GB free (0%), under the 10% low-disk limit. Requests are paused; Search still runs for you.');
+  click(admin, m.querySelector('.je-ask-mount-search'));
+  await settle(20);
+  same(admin.posts.map(p => p.path), ['/arr/admin/manage/search']);
+  c.destroy();
+
+  const member = setup(t, { html: '<div id="m"></div>', me: MEMBER, routes: checkRoute(FULL) });
+  const m2 = member.document.getElementById('m');
+  const c2 = member.Sheet.mount(m2, MOVIE);
+  await settle();
+  c2.update(LOOKING);
+  await settle(20);
+  assert.equal(m2.querySelector('.je-ask-mount-search, .je-ask-mount-request'), null, 'no Search that would be refused');
+  same([m2.querySelector('.je-ask-paused-title').textContent, m2.querySelector('.je-ask-paused-text').textContent], ['Paused: storage full', PAUSED_TEXT]);
+  same([member.posts, member.searches], [[], []]);
+  c2.destroy();
+
+  // Roomy: the family Search is offered as before.
+  const ok = setup(t, { html: '<div id="m"></div>', me: MEMBER, routes: checkRoute(null) });
+  const m3 = ok.document.getElementById('m');
+  const c3 = ok.Sheet.mount(m3, MOVIE);
+  await settle();
+  c3.update(LOOKING);
+  await settle(20);
+  assert.ok(m3.querySelector('.je-ask-mount-search'));
+  assert.equal(m3.querySelector('.je-ask-paused-note'), null);
+  c3.destroy();
+});

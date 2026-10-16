@@ -430,3 +430,84 @@ test('chip bar reads: an older answer arriving last is dropped, and switching us
   h.switchUser();
   assert.equal(h.document.querySelector('.je-chipbar'), null);
 });
+
+// ------------------------------------------------------------------ phase 3g: arrived, then removed
+
+const goneEntry = () => ({
+  key: 'tv:tvdb:7', kind: 'tv', tmdbId: 7, title: 'Gone Show', year: 2020, poster: '/g.jpg', request: 'available', askedAt: new Date().toISOString(), group: 'removed',
+  seasons: [1], episodes: [{ season: 2, episode: 3 }],
+  status: { key: 'tv:tvdb:7', kind: 'series', stage: 'notHere', reason: { code: 'removed' }, quiet: false, actions: [] }
+});
+const ledgerHub = entry => ({ contact: 'Dad', seerr: { configured: false, loaded: true, ledger: true }, mine: [entry], soon: [], ready: [] });
+
+test('a request that arrived and was removed since says so in its own group, and Get it again asks for the same part', async t => {
+  const posts = [];
+  const h = setupHub(t, {
+    me: { role: 'member', canRequest: true, contact: 'Dad', asksFirst: false },
+    hub: ledgerHub(goneEntry()),
+    routes: (method, path, body) => {
+      if (path === '/acquire/requests/mine') return mine([]);
+      if (method === 'POST' && path === '/acquire/requests') {
+        posts.push(body.input);
+        return { status: 201, body: { outcome: 'accepted', reason: 'queued_outage', certainty: 'Succeeded', message: 'Asked!', requestId: 'r'.repeat(31) + posts.length } };
+      }
+      return null;
+    }
+  });
+  h.JE.initializeArrStatus();
+  const page = h.page();
+  await until(() => page.querySelector('.je-hub-again'));
+  assert.deepEqual([...page.querySelectorAll('.je-hub-group-title')].map(e => e.textContent), ['Since removed']);
+  const row = page.querySelector('.je-hub-row');
+  assert.equal(row.querySelector('.je-arr-pill-text').textContent, 'Was here, since removed', 'never "OK\'d! Getting started" again');
+  assert.equal(row.querySelector('.je-hub-btn-primary'), null, 'no Play');
+  assert.equal(page.querySelector('.je-hub-tab[data-tab="mine"] .je-hub-tab-count'), null, 'not an open request');
+  const again = row.querySelector('.je-hub-again');
+  assert.equal(again.textContent, 'replayGet it again');
+  assert.equal(again.getAttribute('aria-label'), 'Get Gone Show (2020) again');
+  again.click();
+  await until(() => h.toasts.length === 1);
+  assert.deepEqual(posts.map(i => ({ key: i.key, scope: i.scope, variant: i.variant, seasons: i.seasons, episodes: i.episodes })), [
+    { key: 'tv:tvdb:7', scope: 'seasons', variant: 'standard', seasons: [1], episodes: [] },
+    { key: 'tv:tvdb:7', scope: 'episodes', variant: 'standard', seasons: [], episodes: [{ season: 2, episode: 3 }] }
+  ]);
+  assert.equal(h.toasts[0], translate('arr_ask_toast_asked'));
+});
+
+test('a removed request: Kids ask Dad again; while new titles of its kind are paused for storage it says so; Watchers get nothing to press', async t => {
+  const kid = setupHub(t, { me: { role: 'kid', canRequest: true, contact: 'Dad', asksFirst: true }, hub: ledgerHub(goneEntry()), routes: (m, path) => (path === '/acquire/requests/mine' ? mine([]) : null) });
+  kid.JE.initializeArrStatus();
+  await until(() => kid.page().querySelector('.je-hub-again'));
+  assert.equal(kid.page().querySelector('.je-hub-again').textContent, 'replayAsk Dad again');
+
+  // The explanation is visible text in the row (touch, TV and screen readers get it), not a tooltip.
+  const full = setupHub(t, { me: { role: 'member', canRequest: true, contact: 'Dad', pausedSeries: { reason: 'low_disk' } }, hub: ledgerHub(goneEntry()), routes: (m, path) => (path === '/acquire/requests/mine' ? mine([]) : null) });
+  full.JE.initializeArrStatus();
+  await until(() => full.page().querySelector('.je-ask-paused-note'));
+  const note = full.page().querySelector('.je-hub-row .je-hub-body .je-ask-paused-note');
+  assert.ok(note, 'under what the row says');
+  assert.equal(note.querySelector('.je-ask-paused-title').textContent, 'Paused: storage full');
+  assert.equal(note.querySelector('.je-ask-paused-text').textContent, "There's no room for new downloads right now, so asking is paused. Dad can free up some space.");
+  assert.equal(full.page().querySelector('.je-hub-again'), null);
+
+  // An administrator reads where and how much is free.
+  const admin = setupHub(t, {
+    me: { role: 'admin', canRequest: true, contact: 'Dad', pausedSeries: { reason: 'low_disk', instance: 'Sonarr', folder: '/tv', free: 2e9, freePercent: 0, limitPercent: 10 } },
+    hub: ledgerHub(goneEntry()), routes: (m, path) => (path === '/acquire/requests/mine' ? mine([]) : null)
+  });
+  admin.JE.initializeArrStatus();
+  await until(() => admin.page().querySelector('.je-ask-paused-note'));
+  assert.equal(admin.page().querySelector('.je-ask-paused-text').textContent, 'Sonarr: /tv has 2 GB free (0%), under the 10% low-disk limit. Requests are paused; Search still runs for you.');
+
+  // The household pause is the standard edition's: a removed 4K copy is asked for again (its own instance says).
+  const fourK = setupHub(t, { me: { role: 'member', canRequest: true, contact: 'Dad', pausedSeries: { reason: 'low_disk' } }, hub: ledgerHub({ ...goneEntry(), is4k: true }), routes: (m, path) => (path === '/acquire/requests/mine' ? mine([]) : null) });
+  fourK.JE.initializeArrStatus();
+  await until(() => fourK.page().querySelector('.je-hub-again'));
+  assert.equal(fourK.page().querySelector('.je-ask-paused-note'), null);
+
+  const watcher = setupHub(t, { me: { role: 'watcher', canRequest: false, contact: 'Dad' }, hub: ledgerHub(goneEntry()), routes: (m, path) => (path === '/acquire/requests/mine' ? mine([]) : null) });
+  watcher.JE.initializeArrStatus();
+  await until(() => watcher.page().querySelector('.je-hub-row'));
+  await wait(100);
+  assert.equal(watcher.page().querySelector('.je-hub-again, .je-ask-paused-note'), null);
+});

@@ -2221,6 +2221,13 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/requests/check",
+      "method": "Check",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/acquire/requests/season/{itemId}",
       "method": "Season",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
@@ -9402,7 +9409,7 @@
   "counts": {
     "build_targets": 2,
     "files": 509,
-    "routes": 243,
+    "routes": 244,
     "configuration_properties": 576,
     "storage_references": 81,
     "scheduled_tasks": 14,

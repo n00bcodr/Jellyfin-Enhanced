@@ -32,8 +32,12 @@
  *   Renders Request (or "Ask {contact}" when the caller's asks wait for an OK), Notify me (when
  *   JE.arrNotify offers following the key) and the current request state into the container; a
  *   title missing for a long while (JE.arrStatus.searchable) gets Search instead (an administrator's
- *   runs the arr's search at once). Nothing is rendered when the request feature is off; Watchers
- *   get Notify me only.
+ *   runs the arr's search at once). The title is checked first (JE.arrAsk.check, once per title, the controls
+ *   wait for it): when it can't be asked for now (e.g. "Paused: storage full", its drive is nearly full) the
+ *   Request reads so and opens the sheet, which says why; a family Search gives way to the paused line, and an
+ *   administrator's Search stays with that line next to it (where and how much is free). Nothing is rendered when the request feature is
+ *   off; Watchers get Notify me only. The sheet itself says when a title can't be asked for now
+ *   (JE.arrAsk.check) and then offers nothing to send.
  */
 (function (JE) {
     'use strict';
@@ -337,9 +341,13 @@
             JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
             return null;
         }
-        const [quota, shown] = await Promise.all([
+        const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
+        const variant = can4k && options?.variant === '4k' ? '4k' : 'standard';
+        const [quota, shown, check] = await Promise.all([
             options && 'quota' in options ? options.quota : JE.arrAsk.quota(kind === 'movie' ? 'movie' : 'tv'),
-            kind === 'series' ? withSeasons(title) : title
+            kind === 'series' ? withSeasons(title) : title,
+            // Whether this title can be asked for now (e.g. "Paused: storage full"), said before anything is picked.
+            JE.arrAsk.check ? JE.arrAsk.check(title.key, variant) : null
         ]);
         if ((JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== epoch) return null;
         if (!shown) {
@@ -348,7 +356,32 @@
         }
         close();
         return new Promise((resolve) => {
-            current = build(shown, kind, caps, quota, options, opener, resolve);
+            current = build(shown, kind, caps, quota, { ...options, blocks: { [variant]: blockOf(check) } }, opener, resolve);
+        });
+    }
+
+    /**
+     * The block a title check names (null: the title can be asked for, or the check says nothing).
+     * @param {{canRequest: boolean, blocked: Object|null}|null} check Title check (JE.arrAsk.check).
+     * @returns {Object|null} Block.
+     */
+    function blockOf(check) {
+        return check && !check.canRequest && check.blocked ? check.blocked : null;
+    }
+
+    /**
+     * Reads whether the sheet's title can be asked for in an edition the sheet hasn't checked yet (a switch
+     * between Standard and 4K: another instance, another drive); the sheet is refreshed when it answers.
+     * @param {Object} state Sheet state.
+     * @param {string} variant standard or 4k.
+     * @returns {void}
+     */
+    function checkVariant(state, variant) {
+        if (!JE.arrAsk.check || variant in state.blocks) return;
+        state.blocks[variant] = null;
+        JE.arrAsk.check(state.key, variant).then((check) => {
+            state.blocks[variant] = blockOf(check);
+            if (!state.done && current === state) refresh(state);
         });
     }
 
@@ -370,7 +403,8 @@
         const state = {
             title, kind, caps, quota, opener, resolve, busy: false, done: false, ...returnPoints(opener),
             variant: can4k && options?.variant === '4k' ? '4k' : 'standard',
-            choice: null, picked: new Set(), episodeSeason: null, episodes: new Set(), cards: [], key: title.key
+            choice: null, picked: new Set(), episodeSeason: null, episodes: new Set(), cards: [], key: title.key,
+            blocks: { ...(options?.blocks || {}) }
         };
         const backdrop = el('div', 'je-sheet-backdrop');
         if (isTv()) backdrop.classList.add('je-sheet-tv');
@@ -412,6 +446,7 @@
         }
 
         state.note = el('div', 'je-sheet-note');
+        state.note.id = `${titleId}-note`;
         state.note.hidden = true;
         sheet.appendChild(state.note);
         state.message = el('div', 'je-sheet-message');
@@ -492,6 +527,7 @@
             b.addEventListener('click', () => {
                 if (state.variant === variant) return;
                 state.variant = variant;
+                checkVariant(state, variant);
                 if (state.kind === 'series') fillCards(state);
                 refresh(state);
             });
@@ -640,6 +676,8 @@
     function refresh(state) {
         const { caps, quota } = state;
         const contact = JE.arrAsk.contact(caps);
+        // This title can't be asked for now (e.g. the drive it would land on is nearly full): said first, nothing to send.
+        const paused = state.blocks?.[state.variant] ? JE.arrAsk.blockWords?.(state.blocks[state.variant], caps) : null;
         state.variantBox?.querySelectorAll('.je-sheet-variant-option').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.variant === state.variant)));
         for (const card of state.cards) {
             const on = card.id === state.choice;
@@ -647,7 +685,7 @@
             card.mark.textContent = on ? 'radio_button_checked' : 'radio_button_unchecked';
             if (card.panel) card.panel.hidden = !on;
             const input = card.input ? card.input(state.variant) : (on ? currentInput(state) : null);
-            const line = input ? costLine(input, caps, quota) : { text: '', over: false };
+            const line = input && !paused ? costLine(input, caps, quota) : { text: '', over: false };
             card.cost.textContent = line.text;
             card.cost.hidden = !line.text;
             card.cost.classList.toggle('je-sheet-over', line.over);
@@ -659,12 +697,23 @@
         const cost = input ? costOf(input, caps, quota) : 0;
         const over = limited(quota) && input != null && cost > quota.remaining;
         const used = limited(quota) && quota.remaining <= 0;
-        const seerrBlocked = caps.backend === 'seerr' && over;
+        const seerrBlocked = (caps.backend === 'seerr' && over) || !!paused;
 
-        // The note: over quota (amber), else "{contact} will take a look first" for asks that wait.
+        // The note: paused (amber), over quota (amber), else "{contact} will take a look first" for asks that wait.
         state.note.replaceChildren();
         state.note.className = 'je-sheet-note';
-        if (used || seerrBlocked) {
+        state.sheet?.removeAttribute('aria-describedby');
+        if (paused) {
+            state.note.classList.add('je-sheet-note-attention', 'je-sheet-note-paused');
+            state.note.appendChild(icon('storage', 'je-sheet-note-icon'));
+            const body = el('span', null);
+            body.appendChild(el('strong', null, paused.chip));
+            body.appendChild(document.createTextNode(` · ${paused.detail || paused.text}`));
+            state.note.appendChild(body);
+            state.note.hidden = false;
+            // Read out with the dialog's name: focus lands on Close, and the reason is the point of the sheet now.
+            state.sheet?.setAttribute('aria-describedby', state.note.id);
+        } else if (used || seerrBlocked) {
             state.note.classList.add('je-sheet-note-attention');
             state.note.appendChild(icon('hourglass_empty', 'je-sheet-note-icon'));
             const day = quota?.nextSlotAt ? JE.arrStatus.formatDate(quota.nextSlotAt) : '';
@@ -916,6 +965,9 @@
         let status = null;
         let caps = null;
         let local = null; // words of this page's last ask, until the status catches up
+        /** @type {Object|null|undefined} the title check (JE.arrAsk.check): undefined until it is in */
+        let check;
+        let checking = false;
         let destroyed = false;
         let busy = false;
         const kind = title?.kind === 'movie' ? 'movie' : 'series';
@@ -938,6 +990,27 @@
         }
 
         /**
+         * Whether this title can be asked for now: the words saying why not ("Paused: storage full"; where and how
+         * much is free for administrators), null when it can (or the server can't say), or undefined while the
+         * check is out (it is started here, once; the controls are drawn again when it is in).
+         * @returns {Object|null|undefined} Words ({@link JE.arrAsk.blockWords}).
+         */
+        function blocked() {
+            if (!JE.arrAsk.check || !JE.arrAsk.blockWords) return null;
+            if (check === undefined) {
+                if (!checking) {
+                    checking = true;
+                    JE.arrAsk.check(title.key, 'standard').then((value) => {
+                        check = value || null;
+                        render();
+                    });
+                }
+                return undefined;
+            }
+            return check && !check.canRequest && check.blocked ? JE.arrAsk.blockWords(check.blocked, caps) : null;
+        }
+
+        /**
          * Draws the controls for the current status and capabilities.
          * @returns {void}
          */
@@ -948,18 +1021,31 @@
             prepareStyles();
             const row = el('div', 'je-ask-mount-row');
             const search = !!status && !!JE.arrStatus?.searchable?.(status);
+            // Asks and Searches wait for this title's check (nothing that can't work is offered meanwhile).
+            const words = !local && JE.arrAsk.canAsk(caps, kind) && (search || requestable()) ? blocked() : null;
             if (local && (requestable() || search)) {
                 row.appendChild(el('span', `je-arr-chip je-arr-tone-${local.tone}`, local.chip));
+            } else if (words === undefined) {
+                // The check is out: drawn when it is in.
             } else if (search && JE.arrAsk.canAsk(caps, kind)) {
-                row.appendChild(searchButton());
+                // Can't be asked for now: an administrator's own Search stays (told where and how much is free);
+                // anyone else's would be an ask or a search whose download can't be imported, so the line says why.
+                if (!words || JE.arrAsk.searchInstance(caps, status, status?.key || title.key)) row.appendChild(searchButton());
+                if (words) row.appendChild(JE.arrAsk.pausedNote(words));
             } else if (!requestable()) {
                 const chip = el('span', `je-arr-chip je-arr-tone-${status.attention ? 'attention' : status.stage}`, JE.arrStatus.familyText(status, { contact: caps?.contact || '' }));
                 row.appendChild(chip);
             } else if (JE.arrAsk.canAsk(caps, kind)) {
                 const contact = JE.arrAsk.contact(caps);
-                const b = button('je-ask-action je-ask-mount-request');
-                b.appendChild(icon(caps.asksFirst ? 'front_hand' : 'add', 'je-ask-action-icon'));
-                b.appendChild(el('span', null, caps.asksFirst ? tr('arr_actions_ask', { contact }) : tr('arr_actions_request')));
+                // This title can't be asked for now: the button says so instead of Request, and opens the sheet, which
+                // says why in full (where and how much is free for administrators) and offers the 4K copy where it can.
+                const b = button(words ? 'je-ask-action je-ask-mount-request je-ask-mount-paused' : 'je-ask-action je-ask-mount-request');
+                b.appendChild(icon(words ? 'storage' : caps.asksFirst ? 'front_hand' : 'add', 'je-ask-action-icon'));
+                b.appendChild(el('span', null, words ? words.chip : caps.asksFirst ? tr('arr_actions_ask', { contact }) : tr('arr_actions_request')));
+                if (words) {
+                    b.title = words.detail || words.text;
+                    b.setAttribute('aria-label', `${words.chip}. ${words.detail || words.text}`);
+                }
                 b.addEventListener('click', async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -968,7 +1054,7 @@
                     b.disabled = true;
                     let result = null;
                     try {
-                        result = kind === 'movie' ? await openOrAsk(title, { opener: b }) : await open(title, { opener: b });
+                        result = kind === 'movie' && !words ? await openOrAsk(title, { opener: b }) : await open(title, { opener: b });
                     } finally {
                         busy = false;
                         b.disabled = false;

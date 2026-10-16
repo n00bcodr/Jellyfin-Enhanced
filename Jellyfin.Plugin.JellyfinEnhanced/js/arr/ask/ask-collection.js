@@ -3,7 +3,10 @@
  * a cost preview ("Uses 2 of your 5 this week; 1 need Dad's OK"), the missing movies listed (not out
  * yet ones say so and are not asked for), and **Get the N missing**, which asks for each released
  * missing movie in turn (at most 20, each its own retry-safe ask) and then says honestly what
- * happened ("Asked for 2 · 1 waits for Dad's OK · 1 couldn't be asked"). One
+ * happened ("Asked for 2 · 1 waits for Dad's OK · 1 couldn't be asked"). A movie the server marks as paused
+ * (`blocked`: the drive it would land on, its own folder when Radarr has it, else the default root, is nearly full)
+ * is left out of the batch, says "Paused: storage full" in the list, and the block says why (where and how much is
+ * free for administrators); with every movie paused that line takes the button's place. One
  * GET .../acquire/requests/collection/{itemId} per collection page view; an answer is shown only
  * while its page, user and request are still the current ones.
  */
@@ -121,12 +124,37 @@
     }
 
     /**
-     * The movies "Get the N missing" asks for: released, not asked for by anyone yet.
+     * The movies "Get the N missing" asks for: released, not asked for by anyone yet, not paused.
      * @param {Object} gaps Collection gaps.
      * @returns {Array<Object>} Parts.
      */
     function gettable(gaps) {
-        return (gaps?.missing || []).filter(p => p.released && !p.request).slice(0, MAX_BATCH);
+        return (gaps?.missing || []).filter(p => p.released && !p.request && !blockOf(p)).slice(0, MAX_BATCH);
+    }
+
+    /**
+     * Why a missing movie can't be asked for right now (the server's per-movie answer), or null.
+     * @param {Object} part Part.
+     * @returns {Object|null} Block ({reason, ...}).
+     */
+    function blockOf(part) {
+        return part?.released && !part.request && typeof part.blocked?.reason === 'string' ? part.blocked : null;
+    }
+
+    /**
+     * The paused lines of a collection: one per different explanation of its paused movies (family members read
+     * one sentence; administrators one line per drive), in list order.
+     * @param {Object} gaps Collection gaps.
+     * @param {Object} caps Capabilities.
+     * @returns {Array<Object>} Words ({@link JE.arrAsk.blockWords}).
+     */
+    function pausedWords(gaps, caps) {
+        const lines = new Map();
+        for (const part of gaps?.missing || []) {
+            const words = blockOf(part) ? JE.arrAsk.blockWords(part.blocked, caps) : null;
+            if (words) lines.set(`${words.chip}|${words.detail || words.text}`, words);
+        }
+        return [...lines.values()];
     }
 
     /**
@@ -177,7 +205,10 @@
         have.appendChild(S.el('span', null, tr('arr_collection_have', { have: gaps.have, total: gaps.total })));
         head.appendChild(have);
         const parts = gettable(gaps);
-        if (JE.arrAsk.canAsk(caps, 'movie') && parts.length) {
+        const mayAsk = JE.arrAsk.canAsk(caps, 'movie');
+        // Movies that can't be asked for now (their drive is nearly full) are said, title by title, not asked for.
+        const paused = mayAsk && JE.arrAsk.blockWords ? pausedWords(gaps, caps) : [];
+        if (mayAsk && parts.length) {
             const n = parts.length;
             const label = caps.asksFirst
                 ? (n === 1 ? tr('arr_collection_ask_one', { contact }) : tr('arr_collection_ask', { contact, n }))
@@ -196,12 +227,14 @@
             if (cost) head.appendChild(S.el('span', 'je-ask-coll-cost', cost));
         }
         block.appendChild(head);
+        for (const words of paused) block.appendChild(JE.arrAsk.pausedNote(words));
 
         const list = S.el('ul', 'je-ask-coll-list');
         for (const part of gaps.missing) {
             const li = S.el('li', 'je-ask-coll-part');
             li.appendChild(S.el('bdi', 'je-ask-coll-title', part.year ? `${part.title} (${part.year})` : part.title));
-            const chip = partChip(part);
+            const words = mayAsk && blockOf(part) ? JE.arrAsk.blockWords(part.blocked, caps) : null;
+            const chip = words ? { text: words.chip, tone: 'attention' } : partChip(part);
             if (chip) li.appendChild(S.el('span', `je-arr-chip je-arr-tone-${chip.tone}`, chip.text));
             list.appendChild(li);
         }
@@ -238,7 +271,8 @@
     }
 
     /**
-     * The honest summary of a batch: "Asked for 2 · 1 waits for Dad's OK · 1 couldn't be asked".
+     * The honest summary of a batch: "Asked for 2 · 1 waits for Dad's OK · 1 paused: storage full · 1 couldn't be
+     * asked".
      * @param {Array<Object>} results Results of JE.arrAsk.ask.
      * @param {Object} caps Capabilities.
      * @returns {string} Text.
@@ -248,17 +282,21 @@
         let asked = 0;
         let waiting = 0;
         let nothing = 0;
+        let paused = 0;
         let failed = 0;
         for (const r of results) {
             if (r.state === 'waiting') waiting++;
             else if (r.state === 'asked' || r.state === 'merged' || r.state === 'unknown') asked++;
             else if (r.state === 'nothing') nothing++;
+            // Its drive filled up since the page was drawn: said as such, not as a failure.
+            else if (r.state === 'blocked' && r.reason === 'low_disk') paused++;
             else failed++;
         }
         const pieces = [];
         if (asked) pieces.push(tr('arr_collection_summary_asked', { n: asked }));
         if (waiting) pieces.push(waiting === 1 ? tr('arr_collection_summary_waiting_one', { contact }) : tr('arr_collection_summary_waiting', { n: waiting, contact }));
         if (nothing) pieces.push(tr('arr_collection_summary_nothing', { n: nothing }));
+        if (paused) pieces.push(tr('arr_collection_summary_paused', { n: paused }));
         if (failed) pieces.push(failed === 1 ? tr('arr_collection_summary_failed_one') : tr('arr_collection_summary_failed', { n: failed }));
         return pieces.join(' · ');
     }

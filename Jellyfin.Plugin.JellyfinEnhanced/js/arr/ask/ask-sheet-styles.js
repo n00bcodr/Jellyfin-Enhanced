@@ -51,6 +51,7 @@
 .je-sheet-primary { display: inline-flex; align-items: center; justify-content: center; gap: 0.5em; width: 100%; font: inherit; font-weight: 700; font-size: 1.05em;
   color: #fff; cursor: pointer; border: 0; border-radius: 12px; min-height: 3.1em; padding: 0.4em 1em; background: linear-gradient(90deg, #4f46e5, #7c3aed); }
 .je-sheet-primary[disabled] { opacity: 0.7; cursor: progress; }
+.je-sheet-primary[hidden] { display: none; }
 .je-sheet-secondary { font: inherit; color: inherit; cursor: pointer; background: transparent; border: 0; border-radius: 10px; min-height: 2.9em; padding: 0.3em 1em; font-weight: 600; opacity: 0.85; }
 .je-sheet-card:focus-visible, .je-sheet-toggle:focus-visible, .je-sheet-primary:focus-visible, .je-sheet-secondary:focus-visible, .je-sheet-check input:focus-visible,
 .layout-tv .je-sheet-card:focus, .layout-tv .je-sheet-toggle:focus, .layout-tv .je-sheet-primary:focus, .layout-tv .je-sheet-secondary:focus, .layout-tv .je-sheet-check input:focus
@@ -77,6 +78,9 @@
 .je-ask-action-secondary { background: transparent; color: inherit; border-color: rgba(255,255,255,0.35); }
 .je-ask-action-secondary:hover { background: rgba(255,255,255,0.08); }
 .je-ask-action[disabled] { opacity: 0.75; cursor: progress; }
+.je-ask-action.je-ask-mount-paused { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.6); color: #f5b041; }
+.je-ask-action.je-ask-mount-paused:hover { background: rgba(245,158,11,0.2); }
+.je-ask-light .je-ask-action.je-ask-mount-paused { color: #8a5a00; }
 .je-ask-action-icon { font-size: 1.2em; }
 .je-ask-action:focus-visible, .layout-tv .je-ask-action:focus { outline: 3px solid #fff; outline-offset: 2px; }
 .je-ask-action-cost { opacity: 0.75; font-size: 0.85em; }

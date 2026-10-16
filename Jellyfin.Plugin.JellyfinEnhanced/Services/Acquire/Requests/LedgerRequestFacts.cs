@@ -41,7 +41,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             DateTime? At(string? variant) => approved.Where(w => variant == null || w.Input.Variant == variant).Select(w => (DateTime?)w.UpdatedAt.UtcDateTime).Min();
             return new RequestFacts { AskedAt = wants.Min(w => w.CreatedAt).UtcDateTime, AskedByViewer = wants.Any(w => w.UserId == viewer),
                 Pending = wants.Any(w => w.Status == "pending"), ApprovedAt = At(null), ApprovedStandardAt = At("standard"), Approved4kAt = At("4k"),
-                Declined = wants.All(w => w.Status == "declined"), StandardDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "standard"), FourKDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "4k"),
+                Declined = wants.All(w => w.Status == "declined"),
+                Fulfilled = wants.Any(w => w.Status == "fulfilled") && wants.All(w => w.Status is "fulfilled" or "declined"),
+                StandardDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "standard"), FourKDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "4k"),
                 Sent = Sent(wants, dispatches) };
         }
 

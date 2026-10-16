@@ -68,6 +68,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         [JsonPropertyName("mineSeasons")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<int>? MineSeasons { get; init; }
+
+        /// <summary>
+        /// Why the caller can't ask for this title's standard edition right now (omitted when they can): <c>low_disk</c>,
+        /// the drive it would land on (its own folder when Sonarr/Radarr has it, else the default root) is nearly full;
+        /// instance, folder and sizes for administrators only. Worked out for each answer, never cached.
+        /// </summary>
+        [JsonPropertyName("blocked")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public RequestBlock? Blocked { get; init; }
     }
 
     /// <summary>"Because you watched {title}": recommendations for one title the caller watched lately.</summary>
@@ -224,7 +233,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var lang = Lang(language);
             var hidden = Hidden(viewer.UserId);
             var cacheKey = CacheKey(viewer, list + "|" + type + "|" + page + "|" + lang, hidden);
-            if (Cached(cacheKey) is { } cached) return cached;
+            if (Cached(cacheKey) is { } cached) return await WithPausesAsync(viewer, cached, ct).ConfigureAwait(false);
 
             DiscoverAnswer? answer;
             if (list == "because")
@@ -257,7 +266,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 answer = new DiscoverAnswer { List = list, Type = type, Page = page, TotalPages = Math.Clamp(total, 1, MaxPage), Results = cards };
             }
             Store(cacheKey, answer);
-            return answer;
+            return await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
         }
 
         /// <summary>One page of free-text search (movies and series only), or null when TMDB could not answer.</summary>
@@ -266,14 +275,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var lang = Lang(language);
             var hidden = Hidden(viewer.UserId);
             var cacheKey = CacheKey(viewer, "search|" + page + "|" + lang + "|" + query, hidden);
-            if (Cached(cacheKey) is { } cached) return cached;
+            if (Cached(cacheKey) is { } cached) return await WithPausesAsync(viewer, cached, ct).ConfigureAwait(false);
             var json = await Read("search/multi", Query(page, lang) + "&include_adult=false&query=" + Uri.EscapeDataString(query), ct).ConfigureAwait(false);
             if (json == null) return null;
             var (rows, total) = Parse(json, null);
             var cards = await ProjectAsync(viewer, rows, hidden.Search, ct).ConfigureAwait(false);
             var answer = new DiscoverAnswer { List = "search", Type = "all", Page = page, TotalPages = Math.Clamp(total, 1, MaxPage), Results = cards };
             Store(cacheKey, answer);
-            return answer;
+            return await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// The answer with each card the caller can't ask for right now because of storage marked (see
+        /// <see cref="DiscoverCard.Blocked"/>), title by title: a title Sonarr/Radarr already has is measured on its own
+        /// folder's drive, a new one on the default root's. Worked out from what is in memory on every answer (cached
+        /// ones too); facts not read yet are only started, so a browse never waits for them.
+        /// </summary>
+        private async Task<DiscoverAnswer> WithPausesAsync(StatusViewer viewer, DiscoverAnswer answer, CancellationToken ct)
+        {
+            var cards = answer.Results.Concat(answer.Groups?.SelectMany(g => g.Results) ?? Enumerable.Empty<DiscoverCard>());
+            var paused = await _requests.StoragePausesAsync(viewer.UserId, cards.Select(c => c.Key), false, ct).ConfigureAwait(false);
+            if (paused.Count == 0) return answer;
+            DiscoverCard Mark(DiscoverCard card) => paused.TryGetValue(card.Key, out var block) ? card with { Blocked = block } : card;
+            return answer with
+            {
+                Results = answer.Results.Select(Mark).ToList(),
+                Groups = answer.Groups?.Select(g => g with { Results = g.Results.Select(Mark).ToList() }).ToList(),
+            };
         }
 
         // ------------------------------------------------------------------ projection

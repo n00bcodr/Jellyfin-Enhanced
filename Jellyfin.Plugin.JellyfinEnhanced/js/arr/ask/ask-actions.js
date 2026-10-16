@@ -8,8 +8,11 @@
  * buttons say "Ask {contact} for …". After an ask the button turns into the state (Waiting for OK /
  * Asked!). A missing episode's page (and, for administrators, a series with nothing of it) that is
  * monitored and missing for a long while gets **Search**: an administrator's runs the arr's search
- * at once and says what it found; everyone else asks (the request backend turns it into a search). Collection pages are handed to ask-collection.js. Called by status-details.js after each
- * status read (JE.internals.arrAskActions.attachDetails).
+ * at once and says what it found; everyone else asks (the request backend turns it into a search). When the
+ * title can't be asked for right now (JE.arrAsk.check: e.g. the drive it would land on is nearly full) the ask
+ * buttons give way to one line saying so ("Paused: storage full"; where and how much is free for
+ * administrators), while an administrator's Search stays. Collection pages are handed to ask-collection.js.
+ * Called by status-details.js after each status read (JE.internals.arrAskActions.attachDetails).
  */
 (function (JE) {
     'use strict';
@@ -164,8 +167,35 @@
                 : status.kind === 'episode' ? episodeActions(status, caps)
                     : await movieActions(page, status, caps, gen);
             if (gen !== generation) return;
+            // Asks (and a family Search, which is an ask or a search on the title's own folder) are checked for this
+            // title first: refused right now, the page says why instead of offering a button that can't work. An
+            // administrator's Search stays, and is told the same (where and how much is free): the grab may not fit.
+            if (box && box.querySelector('[data-je-ask-kind="ask"], [data-je-ask-kind="search"]')) {
+                const check = JE.arrAsk.check ? await JE.arrAsk.check(status.key, box.dataset.jeAskVariant || 'standard') : null;
+                if (gen !== generation) return;
+                if (check && !check.canRequest && check.blocked) pause(box, check.blocked, caps);
+            }
             place(page, box);
         });
+    }
+
+    /**
+     * Turns a box's ask buttons into the line saying why the title can't be asked for now ("Paused: storage
+     * full"); an administrator's Search and More… stay.
+     * @param {HTMLElement} box Actions box.
+     * @param {Object} block Block (JE.arrAsk.check).
+     * @param {Object} caps Capabilities.
+     * @returns {void}
+     */
+    function pause(box, block, caps) {
+        const words = JE.arrAsk.blockWords?.(block, caps);
+        if (!words) return;
+        box.querySelectorAll('[data-je-ask-kind="ask"], .je-ask-action-cost').forEach(n => n.remove());
+        const note = JE.arrAsk.pausedNote(words);
+        note.dataset.jeFocus = 'paused';
+        box.insertBefore(note, box.firstChild);
+        box.classList.add('je-ask-actions-paused');
+        box.dataset.sig = signature(box);
     }
 
     /**
@@ -224,9 +254,11 @@
      * @param {string} text Label.
      * @param {Function} onClick Handler (gets the button).
      * @param {boolean} [secondary] Outline look.
+     * @param {'ask'|'search'|'more'} [kind] What the button does: asks (default; paused when the title can't be
+     *     asked for now), an administrator's Search (runs whatever the request policy says), or opens the sheet.
      * @returns {HTMLElement} Button or chip.
      */
-    function action(doneKey, iconName, text, onClick, secondary) {
+    function action(doneKey, iconName, text, onClick, secondary, kind) {
         const S = JE.arrStatus;
         const state = done.get(doneKey);
         if (state && Date.now() - state.at < (state.ttl || DONE_TTL_MS)) {
@@ -238,6 +270,7 @@
         const b = S.el('button', `je-ask-action${secondary ? ' je-ask-action-secondary' : ''}`);
         b.type = 'button';
         b.dataset.jeFocus = doneKey;
+        b.dataset.jeAskKind = kind || 'ask';
         b.appendChild(S.icon(iconName, 'je-ask-action-icon'));
         b.appendChild(S.el('span', 'je-ask-action-text', text));
         if (busy.has(doneKey)) {
@@ -391,7 +424,7 @@
             const instanceId = JE.arrAsk.searchInstance(caps, status, status.key);
             // Requests already sent this episode: the Search runs with no new OK (plain "Search" for a Kid too).
             const text = JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
-            box.appendChild(action(doneKey, 'search', text, (b) => runSearch(b, doneKey, status.key, instanceId, () => ask(b, doneKey))));
+            box.appendChild(action(doneKey, 'search', text, (b) => runSearch(b, doneKey, status.key, instanceId, () => ask(b, doneKey)), false, instanceId ? 'search' : 'ask'));
         } else {
             const doneKey = `${key}|s${season}e${episode}`;
             const text = caps.asksFirst ? tr('arr_actions_ask_episode', { contact }) : tr('arr_ask_get_it');
@@ -439,10 +472,10 @@
                 const doneKey = `${key}|search`;
                 const label = !searchFrom && ask ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
                 box.appendChild(action(doneKey, 'search', label, (b) => (searchFrom ? runSearch(b, doneKey, key, searchFrom)
-                    : run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, wanted), 'tv')), plan.nextSeason != null || plan.missing > 0));
+                    : run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, wanted), 'tv')), plan.nextSeason != null || plan.missing > 0, searchFrom ? 'search' : 'ask'));
             }
         }
-        const more = action(`${key}|more`, 'more_horiz', tr('arr_actions_more'), (b) => openSheet(b, status, plan), true);
+        const more = action(`${key}|more`, 'more_horiz', tr('arr_actions_more'), (b) => openSheet(b, status, plan), true, 'more');
         more.setAttribute('aria-label', tr('arr_actions_more_label', { name: page.querySelector('.itemName, h1, h3.itemName')?.textContent?.trim() || '' }).trim());
         box.appendChild(more);
         if (firstCost) {
@@ -560,6 +593,7 @@
         const doneKey = `${key}|4k`;
         box.appendChild(action(doneKey, '4k', caps.asksFirst ? tr('arr_actions_ask_4k', { contact }) : tr('arr_actions_get_4k'),
             (b) => run(b, doneKey, async () => JE.arrAsk.movieInput(key, '4k'), 'movie'), true));
+        box.dataset.jeAskVariant = '4k';
         box.dataset.sig = signature(box);
         return box;
     }

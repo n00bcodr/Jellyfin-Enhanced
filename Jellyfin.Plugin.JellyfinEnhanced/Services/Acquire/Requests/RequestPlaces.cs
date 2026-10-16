@@ -86,9 +86,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         /// <summary>The title as the instance's library index in memory holds it (folder, whether it has files), or null.</summary>
-        private (string? Path, bool HasFile)? Held(ArrConnection instance, TitleKey key)
+        private (string? Path, bool HasFile)? Held(ArrConnection instance, TitleKey key) => HeldIn(_store.PeekLibrary(instance.Id), key);
+
+        /// <summary>The title as a library index holds it (its folder, whether it has files), or null when it doesn't.</summary>
+        /// <param name="library">An instance's library index (null: not read yet).</param>
+        /// <param name="key">Title key (movie: TMDB or IMDb; series: TVDB, TMDB or IMDb).</param>
+        internal static (string? Path, bool HasFile)? HeldIn(ArrLibrarySnapshot? library, TitleKey key)
         {
-            var library = _store.PeekLibrary(instance.Id);
             if (library == null) return null;
             var title = key.Title;
             if (key.IsMovie)

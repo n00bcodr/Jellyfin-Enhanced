@@ -248,7 +248,7 @@ the alerts.
 |---|---|---|
 | **Show imports in Jellyfin right away** | On | After an import, refresh only the Jellyfin folder the file landed in (never a TV library's root; a new series folder is left to Jellyfin's library monitor when the library has real-time monitoring on, otherwise to its next library scan or Scan now). Needs path mappings when the apps and Jellyfin see the files under different paths |
 | **"In Sonarr/Radarr, not in Jellyfin" after (minutes)** | 10 | When an import Jellyfin still doesn't list goes under Needs attention (1-1440) |
-| **Low disk warning below (% free)** | 10 | A root folder whose disk has less free space goes under Needs attention and, with notifications on, administrators are alerted (at most once a day per folder) (1-50) |
+| **Low disk warning below (% free)** | 10 | A root folder whose disk has less free space goes under Needs attention and, with notifications on, administrators are alerted (at most once a day per folder) (1-50). With **Ask for it** on, asks whose download would land on such a disk (JE mode: the title's own folder, or the default root for a new title; Seerr mode: the default root) are paused and say *Paused: storage full*; administrators' Search still runs |
 | **Tell me when Seerr's OK reaches no Sonarr/Radarr after (minutes)** | 15 | When administrators are told that a request Seerr OK'd isn't in any Sonarr/Radarr (1-1440). The family sees "Taking longer than usual" only after the "still looking" hours |
 | **Copy actions into Jellyfin's activity log** | On | Every audited action (Search now, queue actions, Scan now, webhook set-up) also appears in Dashboard → Activity |
 

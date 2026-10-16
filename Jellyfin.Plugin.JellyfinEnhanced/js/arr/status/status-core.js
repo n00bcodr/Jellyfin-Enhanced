@@ -286,6 +286,7 @@
             case 'partial': return tr('arr_status_partial');
             case 'not_in_arr':
             case 'not_visible_to_user': return tr('arr_status_not_here');
+            case 'removed': return tr('arr_status_removed');
             case 'ready': return status?.stage === 'ready' ? tr('arr_status_ready') : stageText(status, contact);
             default: return stageText(status, contact);
         }

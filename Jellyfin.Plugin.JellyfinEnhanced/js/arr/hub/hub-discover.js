@@ -50,6 +50,7 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
 .je-discover-chip-asked { color: #3b82f6; border-color: #3b82f6; }
 .je-discover-chip-waiting { color: #c27c0e; border-color: #c27c0e; }
 .je-discover-chip-household { color: inherit; border-color: rgba(127,127,127,0.6); }
+.je-discover-btn.je-discover-paused { color: #c27c0e; border-color: #c27c0e; background: rgba(194,124,14,0.1); }
 .je-discover-actions { display: flex; flex-direction: column; gap: 0.4em; }
 .je-discover-card .je-hub-btn, .je-discover-btn { font: inherit; font-weight: 600; font-size: 0.9em; display: inline-flex; align-items: center; justify-content: center;
   gap: 0.3em; min-height: 2.5em; width: 100%; box-sizing: border-box; padding: 0.3em 0.7em; border-radius: 8px; cursor: pointer; color: inherit;
@@ -238,7 +239,11 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
      * for series while no request sheet is loaded (asking for every season of a series is never the
      * right default). Series open the request sheet (it reads their seasons); movies go through the
      * sheet's one-tap rules (the sheet when 4K can be chosen, the allowance is nearly used or asks
-     * wait for an OK).
+     * wait for an OK). When the server marks the card's title as paused (`blocked`: the drive its standard
+     * edition would land on, its own folder when Sonarr/Radarr has it, else the default root, is nearly full)
+     * the button says so instead ("Paused: storage full") and opens the sheet, which says why (where and how
+     * much is free for administrators) after checking that title. A 4K "Request more" is another instance's
+     * drive: left to the sheet's own check.
      * @param {Object} card Card data.
      * @param {Object} ctx Context ({caps, surface}).
      * @param {HTMLElement} node The card.
@@ -250,15 +255,28 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
         const left = moreToAsk(card, caps);
         if (!left.more) return null;
         const series = card.kind === 'tv';
-        if (series && typeof JE.arrAskSheet?.open !== 'function') return null;
+        // The server's answer for this very title (standard edition: its own folder's drive when the arr has it,
+        // else the default root's). The 4K copy goes to another instance: the sheet checks that one.
+        const block = left.variant !== '4k' && typeof card.blocked?.reason === 'string' ? card.blocked : null;
+        const words = block && JE.arrAsk?.blockWords ? JE.arrAsk.blockWords(block, caps) : null;
+        const sheetReady = typeof JE.arrAskSheet?.open === 'function';
+        if (series && !sheetReady && !words) return null;
         const who = JE.arrAsk?.contact ? JE.arrAsk.contact(caps) : tr('arr_contact_default');
-        const label = caps.asksFirst ? tr('arr_discover_ask_contact', { contact: who }) : left.again ? tr('arr_discover_request_more') : tr('arr_discover_request');
-        const button = el('button', 'je-discover-btn je-discover-btn-primary je-discover-request');
+        const label = words ? words.chip
+            : caps.asksFirst ? tr('arr_discover_ask_contact', { contact: who }) : left.again ? tr('arr_discover_request_more') : tr('arr_discover_request');
+        // Paused: still a button (touch, keyboard and D-pad reach it) that opens the sheet, which says why in full
+        // (where and how much is free for administrators) and checks this very title.
+        const button = el('button', words ? 'je-discover-btn je-discover-paused' : 'je-discover-btn je-discover-btn-primary je-discover-request');
         button.type = 'button';
         button.dataset.jeFocus = `${ctx.surface}:request:${card.key}`;
-        button.setAttribute('aria-label', caps.asksFirst ? tr('arr_discover_ask_label', { contact: who, title: card.title })
-            : tr(left.again ? 'arr_discover_request_more_label' : 'arr_discover_request_label', { title: card.title }));
-        button.appendChild(icon(caps.asksFirst ? 'chat' : 'add'));
+        if (words) {
+            button.title = words.detail || words.text;
+            button.setAttribute('aria-label', `${words.chip}. ${words.detail || words.text}`);
+        } else {
+            button.setAttribute('aria-label', caps.asksFirst ? tr('arr_discover_ask_label', { contact: who, title: card.title })
+                : tr(left.again ? 'arr_discover_request_more_label' : 'arr_discover_request_label', { title: card.title }));
+        }
+        button.appendChild(icon(words ? 'storage' : caps.asksFirst ? 'chat' : 'add'));
         const text = el('span', null, label);
         button.appendChild(text);
         button.addEventListener('click', async (e) => {
@@ -266,16 +284,20 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
             e.stopPropagation();
             // Busy, not disabled: a disabled button would drop keyboard / D-pad focus.
             if (button.getAttribute('aria-busy') === 'true') return;
+            if (words && !sheetReady) {
+                JE.arrAsk.toast(words.detail || words.text);
+                return;
+            }
             const sheet = JE.arrAskSheet;
             const title = { key: card.key, kind: series ? 'series' : 'movie', name: card.title, year: card.year ?? null, poster: card.poster ?? null };
             if (series && Array.isArray(card.mineSeasons)) title.askedSeasons = card.mineSeasons.slice();
             const options = left.variant ? { opener: button, variant: left.variant } : { opener: button };
             button.setAttribute('aria-busy', 'true');
-            if (!series) text.textContent = tr('arr_ask_asking');
+            if (!series && !words) text.textContent = tr('arr_ask_asking');
             const started = epoch();
             let result = null;
             try {
-                if (series) result = await sheet.open(title, options);
+                if (series || words) result = await sheet.open(title, options);
                 else if (typeof sheet?.openOrAsk === 'function') result = await sheet.openOrAsk(title, options);
                 else {
                     result = await JE.arrAsk.ask(JE.arrAsk.movieInput(card.key));

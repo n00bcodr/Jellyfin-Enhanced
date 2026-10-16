@@ -13,6 +13,7 @@
         { id: 'needsOk', label: 'arr_hub_group_needs_ok' },
         { id: 'onTheWay', label: 'arr_hub_group_on_the_way' },
         { id: 'notOut', label: 'arr_hub_group_not_out' },
+        { id: 'removed', label: 'arr_hub_group_removed' },
         { id: 'declined', label: 'arr_hub_group_declined' }
     ];
 
@@ -143,7 +144,7 @@
         // Phase 2: Following / Notify me (own requests are followed unless muted).
         JE.internals?.arrNotify?.rowButton?.(entry, buttons);
         // Phase 3: Cancel on the caller's own requests that haven't been sent yet (hub-mine-ledger.js).
-        H.rowExtras?.(entry, buttons);
+        H.rowExtras?.(entry, buttons, body);
         if (buttons.childNodes.length) row.appendChild(buttons);
         const open = () => actions.open(entry);
         row.addEventListener('click', open);

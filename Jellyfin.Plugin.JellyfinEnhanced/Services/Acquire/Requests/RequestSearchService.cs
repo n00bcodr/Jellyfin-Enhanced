@@ -36,7 +36,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// an episode) as <paramref name="viewer"/>. Not this route's to do (outcome <c>skipped</c>, 200,
         /// nothing searched; the caller asks instead): <c>not_requested</c> (nothing was sent for it yet)
         /// and <c>not_searchable</c> (not missing for long enough, or nothing to search). Refusals:
-        /// <c>invalid_input</c> (400), the request policy's own (not visible, no requests, ...),
+        /// <c>invalid_input</c> (400), the request policy's own (not visible, no requests, <c>low_disk</c> when the
+        /// drive of the title's own folder is below the low-disk threshold: the download couldn't be imported, ...),
         /// <c>searched_recently</c> (429) and <c>search_failed</c> (502).
         /// </summary>
         /// <param name="viewer">The caller (a person).</param>
@@ -57,7 +58,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             await _requests.Policy.PrepareAsync(viewer.UserId, input, ct).ConfigureAwait(false);
             var facts = _requests.Policy.Evaluate(viewer.UserId, input);
             if (RequestPolicy.Check(facts, null, input, false) is { } refusal)
-                return (RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), refusal is "not_visible_to_user" ? "blocked" : "denied"), null);
+                return (RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), refusal is "not_visible_to_user" or "low_disk" ? "blocked" : "denied"), null);
             // Not this route's to do (nothing searched, not an error): the caller asks for it instead.
             if (!_requests.Ledger.SentCovers(input, facts))
                 return (Skipped("not_requested", "Nothing was asked for here yet."), null);

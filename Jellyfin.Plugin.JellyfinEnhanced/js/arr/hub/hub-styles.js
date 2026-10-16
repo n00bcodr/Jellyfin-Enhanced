@@ -36,6 +36,7 @@ body.je-hub-active #fallbackPage { display: none !important; }
   border: 1px solid rgba(255,255,255,0.35); vertical-align: middle; }
 .je-hub-meta { font-size: 0.85em; opacity: 0.75; }
 .je-hub-body .je-arr-status { margin: 0.1em 0 0; }
+.je-hub-body .je-ask-paused-note { margin: 0.2em 0 0; padding: 0.45em 0.75em; font-size: 0.9em; }
 .je-hub-actions { display: flex; gap: 0.5em; flex: 0 0 auto; align-items: center; flex-wrap: wrap; }
 .je-hub-btn { font: inherit; font-weight: 600; display: inline-flex; align-items: center; gap: 0.3em; min-height: 2.5em; padding: 0.3em 0.9em;
   border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); color: inherit; cursor: pointer; }

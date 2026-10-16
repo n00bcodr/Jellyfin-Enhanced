@@ -540,3 +540,62 @@ test('a partial ask keeps Request more: other seasons of a series, the other cop
   await until(() => k.document.querySelector('.je-sheet'));
   assert.equal(k.document.querySelector('.je-sheet-variant-option[aria-pressed="true"]').dataset.variant, '4k');
 });
+
+test('storage full: a card says "Paused: storage full" only when the server marks that very title (its own folder, else the default root) and opens the sheet, which says why; the household\'s new-add pause is never used', async t => {
+  const posts = [];
+  const checks = [];
+  const FULL = { reason: 'low_disk' };
+  const rows = {
+    'trending:movie': page([
+      card('movie:tmdb:4', 'On a full drive', { blocked: FULL }),
+      card('movie:tmdb:7', 'Held on a roomy drive'),
+      card('movie:tmdb:905', 'Here', { inLibrary: true, itemId: 'i905', blocked: FULL }),
+      card('movie:tmdb:6', 'Asked in HD', { requested: true, mine: 'asked', mineVariants: ['standard'], blocked: FULL }),
+      card('movie:tmdb:9', 'Asked in 4K', { requested: true, mine: 'asked', mineVariants: ['4k'], blocked: FULL }),
+      card('movie:tmdb:8', 'Someone asked', { requested: true, blocked: FULL })
+    ]),
+    'upcoming:movie': page([]),
+    'popular:tv': page([card('tv:tmdb:20', 'One season asked', { requested: true, mine: 'asked', mineVariants: ['standard'], mineSeasons: [1], blocked: FULL }), card('tv:tmdb:21', 'New show', { blocked: FULL }), card('tv:tmdb:22', 'Held show')]),
+    'because:movie': page([], { groups: [] })
+  };
+  const h = setup(t, {
+    hash: '#/requests?tab=discover', modules: SHEET,
+    // The household's new-add pause (default roots full) is on: it must not decide any card.
+    me: { ...MEMBER, can4kMovies: true, pausedMovies: FULL, pausedSeries: FULL },
+    routes: f => {
+      if (f.path === '/acquire/discover') return rows[`${f.params.get('list')}:${f.params.get('type')}`];
+      if (f.path === '/acquire/requests' && f.init.method === 'POST') posts.push(f);
+      if (f.path === '/acquire/requests/quota') return { quota: { used: 0, limit: 7, remaining: 7, nextSlotAt: null, usedGb: 0, available: true } };
+      if (f.path === '/acquire/requests/check') {
+        checks.push(`${f.params.get('key')}|${f.params.get('variant')}`);
+        return { outcome: 'accepted', reason: 'check', check: { key: f.params.get('key'), variant: f.params.get('variant'), canRequest: false, blocked: FULL } };
+      }
+      return undefined;
+    }
+  });
+  h.JE.initializeArrHub();
+  await until(() => hubPage(h).querySelectorAll('.je-discover-card').length >= 9);
+  const root = hubPage(h);
+  const sentence = "There's no room for new downloads right now, so asking is paused. Dad can free up some space.";
+  const paused = cardOf(root, 'movie:tmdb:4').querySelector('.je-discover-paused');
+  assert.equal(paused.tagName, 'BUTTON', 'touch, keyboard and D-pad reach it');
+  assert.equal(paused.textContent, 'storagePaused: storage full');
+  assert.equal(paused.getAttribute('aria-label'), `Paused: storage full. ${sentence}`);
+  assert.equal(cardOf(root, 'movie:tmdb:4').querySelector('.je-discover-request'), null);
+  // The standard edition of a marked title: new, someone asked, the copy not asked yet, more seasons of a series.
+  for (const key of ['tv:tmdb:21', 'movie:tmdb:8', 'movie:tmdb:9', 'tv:tmdb:20']) assert.ok(cardOf(root, key).querySelector('.je-discover-paused'), key);
+  // Titles the server doesn't mark keep Request although new titles are paused (e.g. held on a roomy drive).
+  assert.equal(cardOf(root, 'movie:tmdb:7').querySelector('.je-discover-request').textContent, 'addRequest');
+  assert.equal(cardOf(root, 'tv:tmdb:22').querySelector('.je-discover-request').textContent, 'addRequest');
+  // The 4K copy goes to another instance (another drive): Request more, the sheet checks it.
+  assert.equal(cardOf(root, 'movie:tmdb:6').querySelector('.je-discover-request').textContent, 'addRequest more');
+  assert.equal(cardOf(root, 'movie:tmdb:6').querySelector('.je-discover-paused'), null);
+  assert.equal(cardOf(root, 'movie:tmdb:905').querySelector('.je-discover-paused, .je-discover-request'), null, 'nothing to ask for a title in the library');
+
+  // Pressed: the sheet opens on that title, checks it and says why; nothing is asked.
+  paused.click();
+  await until(() => h.document.querySelector('.je-sheet-note-paused'));
+  assert.deepEqual(checks, ['movie:tmdb:4|standard']);
+  assert.equal(h.document.querySelector('.je-sheet-note-paused').textContent, `storagePaused: storage full · ${sentence}`);
+  assert.equal(posts.length, 0);
+});

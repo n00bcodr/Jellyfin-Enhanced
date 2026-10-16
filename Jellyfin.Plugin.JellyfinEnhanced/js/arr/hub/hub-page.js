@@ -599,7 +599,7 @@
         strip.textContent = '';
         const view = visibleData(state.data);
         const counts = {
-            mine: (mineView(view)?.mine || []).filter(e => e.group !== 'declined').length,
+            mine: (mineView(view)?.mine || []).filter(e => e.group !== 'declined' && e.group !== 'removed').length,
             soon: (view?.soon || []).length,
             ready: (view?.ready || []).length,
             overview: (H.admin?.state?.data?.overview?.needsAttention || []).length

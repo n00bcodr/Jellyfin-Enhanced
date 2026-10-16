@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -131,6 +132,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             using var command = RequestLedger.Cmd(c, null, "SELECT reason FROM approvals WHERE want_id=$id AND action='declined' ORDER BY created_at DESC LIMIT 1", ("$id", wantId));
             return command.ExecuteScalar() as string;
         });
+        /// <summary>Reads the default instances' disk facts when none are in memory (for <see cref="Me"/>'s storage pauses).</summary>
+        /// <param name="ct">Cancellation.</param>
+        public Task PreparePausesAsync(CancellationToken ct)
+            => Task.WhenAll(_policy.PrepareAddPauseAsync(true, ct), _policy.PrepareAddPauseAsync(false, ct));
         /// <summary>The caller's own request capabilities (no I/O; identity was prepared by the caller).</summary>
         public RequestCapabilities Me(Guid user)
         {
@@ -153,7 +158,70 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Can4kSeries = series4k.Can4k,
                 Backend = backend,
                 Contact = (config.ArrHouseholdContactName ?? string.Empty).Trim(),
+                PausedMovies = Can(movie) ? RequestBlock.Storage(_policy.AddPause(true), movie.Role == "Admin") : null,
+                PausedSeries = Can(series) ? RequestBlock.Storage(_policy.AddPause(false), series.Role == "Admin") : null,
             };
+        }
+        /// <summary>
+        /// Whether the caller may ask for one title now (the standard or 4K edition), and if not, why, for the controls
+        /// that offer it (title page, request sheet). Movies are checked as a movie ask; series as an ask for the season
+        /// in the key (else season 1). No I/O beyond reading the target instance's disk facts when none are in memory;
+        /// null when the key isn't a title key.
+        /// </summary>
+        /// <param name="user">The caller.</param>
+        /// <param name="key">Title key (movie, series, season or episode key).</param>
+        /// <param name="variant">standard or 4k.</param>
+        /// <param name="ct">Cancellation.</param>
+        public async Task<RequestTitleCheck?> CheckAsync(Guid user, string? key, string? variant, CancellationToken ct)
+        {
+            var edition = variant == "4k" ? "4k" : "standard";
+            if (TitleInput(key, edition) is not { } input) return null;
+            await _policy.PrepareDiskAsync(input, ct).ConfigureAwait(false);
+            var facts = _policy.Evaluate(user, input);
+            var can = facts.Refusal == null && facts.CanCreate && facts.Role != "Watcher" && facts.Backend is "je" or "seerr" && (edition == "standard" || facts.Can4k);
+            return new RequestTitleCheck { Key = input.Key, Variant = edition, CanRequest = can, Blocked = can ? null : RequestBlock.Of(facts) };
+        }
+        /// <summary>
+        /// The ask a title check stands for: a movie as a movie ask, a series as an ask for the season in the key (else
+        /// season 1); null when the key isn't a title key.
+        /// </summary>
+        private MutationInput? TitleInput(string? key, string edition)
+        {
+            if (TitleKey.Parse(key) is not { } parsed) return null;
+            var season = Math.Max(parsed.Season ?? 1, 0);
+            return Normalize(parsed.IsMovie
+                ? new MutationInput { Key = parsed.Title.ToString(), Scope = "movie", Variant = edition }
+                : new MutationInput { Key = parsed.Title.ToString(), Scope = "seasons", Seasons = new[] { season }, Variant = edition });
+        }
+        /// <summary>
+        /// The titles of a list (Discover and search cards, a collection's missing movies) the caller can't ask for
+        /// right now because the drive the download would land on is nearly full, keyed as given: for each title the
+        /// same answer as <see cref="CheckAsync"/> for its standard edition (the title's own folder when the arr holds
+        /// it, else the default root; instance, folder and sizes for administrators only). Only titles whose drive is
+        /// low get the full per-person policy answer. With <paramref name="wait"/> the disk facts and the list of titles
+        /// the arr holds are read first when they aren't in memory (bounded); without it the reads are only started (a
+        /// title is then not marked until they are in; asking for it still answers <c>low_disk</c>).
+        /// </summary>
+        /// <param name="user">The caller.</param>
+        /// <param name="keys">Title keys.</param>
+        /// <param name="wait">Wait for facts not in memory yet.</param>
+        /// <param name="ct">Cancellation.</param>
+        public async Task<IReadOnlyDictionary<string, RequestBlock>> StoragePausesAsync(Guid user, IEnumerable<string> keys, bool wait, CancellationToken ct)
+        {
+            var paused = new Dictionary<string, RequestBlock>(StringComparer.Ordinal);
+            var titles = keys.Distinct(StringComparer.Ordinal).Select(k => (Key: k, Input: TitleInput(k, "standard"))).Where(t => t.Input != null).ToList();
+            // Every title of a kind goes to the same default instance: its facts are prepared once per kind.
+            var firsts = titles.GroupBy(t => TitleKey.Parse(t.Input!.Key)!.IsMovie).Select(g => g.First().Input!).ToList();
+            if (wait) await Task.WhenAll(firsts.Select(input => _policy.PrepareDiskAsync(input, ct))).ConfigureAwait(false);
+            foreach (var (key, input) in titles)
+            {
+                // In memory only; a title whose drive has room needs no per-person answer.
+                if (_policy.TitlePause(input!) == null) continue;
+                if (RequestBlock.Of(_policy.Evaluate(user, input!)) is { Reason: "low_disk" } block) paused[key] = block;
+            }
+            // Not waiting: this answer stands on what was in memory; the reads run on (not tied to it) for the next one.
+            if (!wait) foreach (var input in firsts) _ = _policy.PrepareDiskAsync(input, CancellationToken.None);
+            return paused;
         }
         /// <summary>
         /// Current rolling quota status; for series also the single episodes charged in the window
