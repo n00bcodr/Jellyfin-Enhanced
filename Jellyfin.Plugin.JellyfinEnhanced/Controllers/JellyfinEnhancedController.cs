@@ -10569,10 +10569,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Check if user has permission to view all requests
                 // Jellyfin admins can always view all requests regardless of Seerr permissions
-                hasRequestViewPermission = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                // When the admin enabled DownloadsFilterByUserRequests, non-admins only ever see their own requests
+                hasRequestViewPermission = IsAdminUser() || (!config.DownloadsFilterByUserRequests && JellyseerrPermissionHelper.HasAnyPermission(
                     jellyseerrUser.Permissions,
                     JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS | JellyseerrPermission.REQUEST_VIEW
-                );
+                ));
 
                 // Build filter parameter
                 // "comingsoon" is a custom filter - fetch processing items and filter server-side
