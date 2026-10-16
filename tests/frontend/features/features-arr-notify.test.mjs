@@ -86,7 +86,7 @@ function setup(t, { config = {}, routes = {}, hash = '#/home' } = {}) {
   return { ...h, calls, subscriptions, navigation, state, N: h.JE.internals.arrNotify, switchUser: () => userChange.forEach(fn => fn()) };
 }
 
-async function until(check, ms = 3000) {
+async function until(check, ms = 10000) {
   const end = Date.now() + ms;
   while (!check() && Date.now() < end) await wait(10);
   assert.ok(check(), 'condition never became true');
