@@ -94,6 +94,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
         }
 
+        /// <summary>
+        /// One message for several alerts that went out together (a backlog after quiet hours or notifications being
+        /// off): how many, never which titles.
+        /// </summary>
+        /// <param name="count">How many alerts it stands for.</param>
+        public static NotifyMessage Summary(int count)
+            => new(count.ToString(CultureInfo.InvariantCulture) + " new notifications", "They are in the bell in Jellyfin. Open it to see them.");
+
         /// <summary>The e-mail bodies (plain and HTML) with the deep link and the unsubscribe line.</summary>
         public static (string Text, string Html) Email(NotifyMessage message, string? link, string? settingsLink, string serverName)
         {

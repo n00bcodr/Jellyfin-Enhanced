@@ -301,6 +301,31 @@ public class ApiNotifyRoutesTests
         Assert.Equal(2, rig.Pushes.Count);
     }
 
+    [Fact]
+    public async Task ABacklogForOnePersonOnOneChannelGoesOutAsOneSummaryAndAFewGoOutOneByOne()
+    {
+        // Seen live: 36 declines made while notifications were off went out as 36 phone pushes within a minute once
+        // they were back on.
+        using var rig = await IntegrationNotificationsTests.Started();
+        rig.Phones(rig.Emma, rig.Kid);
+        for (var i = 0; i < 5; i++)
+        {
+            Assert.Equal(200, Of(Controller(rig, rig.Emma).SendTest()).Status);
+            if (i < 2) Assert.Equal(200, Of(Controller(rig, rig.Kid).SendTest()).Status);
+            rig.Arr.Now = rig.Arr.Now.AddSeconds(31);
+        }
+        await rig.Dispatcher.RunOnceAsync(default);
+        string Topic(StatusViewer v) => "je-topic-" + v.UserId.ToString("N")[..12];
+        var emma = rig.Pushes.Where(x => (string)x.Body["topic"]! == Topic(rig.Emma)).ToList();
+        var kid = rig.Pushes.Where(x => (string)x.Body["topic"]! == Topic(rig.Kid)).ToList();
+        Assert.Single(emma);
+        Assert.Equal("5 new notifications", (string)emma[0].Body["title"]!);
+        Assert.Equal(2, kid.Count);
+        // Every one of them counts as sent: nothing is sent again.
+        await rig.Dispatcher.RunOnceAsync(default);
+        Assert.Equal(3, rig.Pushes.Count);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

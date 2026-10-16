@@ -386,7 +386,9 @@ looked at again, without waiting for a library scan or for Jellyfin to finish re
 retried (30 s, 2 min, 10 min, 30 min, 2 h, 6 h) and then shown to administrators under **Notification status**; an
 e-mail server that doesn't answer is given up on after 30 seconds for that try, so other alerts aren't held up.
 Switching notifications off holds what is queued until they are back on; switching phone alerts or e-mail off (or a
-person switching theirs off) drops what was queued for that channel. Pointing Jellyfin Enhanced at another Seerr
+person switching theirs off) drops what was queued for that channel. When four or more alerts for one person are due on
+one channel at once (a backlog after quiet hours or after notifications were off), they go out as one "N new
+notifications" message linking to the bell instead of one push or e-mail each. Pointing Jellyfin Enhanced at another Seerr
 server starts its request list afresh: the requests already on it are not announced as new, approved or declined.
 
 Episode batches also recheck every stored episode file when a quiet-hours or retry hold ends:

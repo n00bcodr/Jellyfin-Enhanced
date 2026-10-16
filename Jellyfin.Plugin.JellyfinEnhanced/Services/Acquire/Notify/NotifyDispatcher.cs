@@ -175,15 +175,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 {
                     var due = _store.Due(_now(), BatchSize);
                     if (due.Count == 0) break;
-                    foreach (var delivery in due)
+                    // A backlog released at once (notifications switched back on, quiet hours over) for one person on
+                    // one channel goes out as one summary instead of a burst of pushes or e-mails.
+                    foreach (var group in due.GroupBy(d => (d.UserId, d.Channel)))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        // The settings as they are now, for each delivery: switched off as a whole, the
-                        // rest stay pending (sent when notifications are back on).
                         var config = _config();
                         if (!NotifyFlags.Enabled(config)) return attempted;
-                        await DeliverAsync(config!, delivery, cancellationToken).ConfigureAwait(false);
-                        attempted++;
+                        var list = group.ToList();
+                        if (list.Count >= SummaryAt)
+                        {
+                            attempted += await DeliverSummaryAsync(config!, list, cancellationToken).ConfigureAwait(false);
+                            continue;
+                        }
+                        foreach (var delivery in list)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            // The settings as they are now, for each delivery: switched off as a whole, the
+                            // rest stay pending (sent when notifications are back on).
+                            config = _config();
+                            if (!NotifyFlags.Enabled(config)) return attempted;
+                            await DeliverAsync(config!, delivery, cancellationToken).ConfigureAwait(false);
+                            attempted++;
+                        }
                     }
                 }
                 return attempted;
@@ -194,36 +208,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
         }
 
-        private async Task DeliverAsync(PluginConfiguration config, DueDelivery delivery, CancellationToken cancellationToken)
+        /// <summary>How many alerts due at once for one person on one channel go out as one summary.</summary>
+        internal const int SummaryAt = 4;
+
+        // Whether a delivery may go out now: held by quiet hours (postponed), no longer for the recipient (suppressed), or
+        // ready with its message and link. Held back by quiet hours, a batch window or retries: whether the recipient may
+        // still get it is decided now, not when it was queued.
+        private (NotifyPrefs Prefs, NotifyMessage? Message, string? Link) Prepare(PluginConfiguration config, DueDelivery delivery)
         {
-            var now = _now();
             var prefs = _store.Prefs(delivery.UserId);
-            if (QuietHours.EndsAt(prefs, now) is { } end)
+            if (QuietHours.EndsAt(prefs, _now()) is { } end)
             {
                 _store.Postpone(delivery.Id, end, delivery.Generation);
-                return;
+                return (prefs, null, null);
             }
-            // Held back by quiet hours, a batch window or retries: whether the recipient may still get it
-            // is decided now, not when it was queued.
             var payload = new Dictionary<string, string>(Payload(delivery.Payload));
             if (Suppression(delivery, prefs, payload, out var itemId) is { } reason)
             {
                 _store.Suppress(delivery.Id, reason, delivery.Generation);
-                return;
+                return (prefs, null, null);
             }
             // A channel switched off since the alert was queued (by the administrator or the user):
             // nothing to retry, so not a failure either.
             if (ChannelOff(config, delivery.Channel, prefs) is { } off)
             {
                 _store.Suppress(delivery.Id, off, delivery.Generation);
-                return;
+                return (prefs, null, null);
             }
-            var message = NotifyTexts.Render(delivery.Kind, payload, prefs.HideTitles);
-            var link = ExternalLink(config, itemId, delivery.Kind);
-            var result = delivery.Channel == NotifyChannel.Ntfy
-                ? await _ntfy.SendAsync(config.ArrNtfyServerUrl, config.GetSecret(nameof(PluginConfiguration.ArrNtfyToken)), prefs.NtfyTopic!, message, link, Tags(delivery.Kind), Priority(delivery.Kind), cancellationToken).ConfigureAwait(false)
+            return (prefs, NotifyTexts.Render(delivery.Kind, payload, prefs.HideTitles), ExternalLink(config, itemId, delivery.Kind));
+        }
+
+        private async Task<(bool Ok, string? Error)> SendAsync(PluginConfiguration config, string channel, NotifyPrefs prefs, NotifyMessage message, string? link, string kind, CancellationToken cancellationToken)
+        {
+            var result = channel == NotifyChannel.Ntfy
+                ? await _ntfy.SendAsync(config.ArrNtfyServerUrl, config.GetSecret(nameof(PluginConfiguration.ArrNtfyToken)), prefs.NtfyTopic!, message, link, Tags(kind), Priority(kind), cancellationToken).ConfigureAwait(false)
                 : await _email.SendAsync(config, prefs.EmailAddress!, message, link, SettingsLink(config), cancellationToken).ConfigureAwait(false);
-            if (result.Ok)
+            return (result.Ok, result.Error);
+        }
+
+        // Records one delivery's outcome: sent, or failed with the next retry (none after the last).
+        private void Settle(DueDelivery delivery, bool ok, string? error)
+        {
+            if (ok)
             {
                 Interlocked.Increment(ref _sent);
                 if (!_store.Finish(delivery.Id, true, null, null, _now(), delivery.Generation)) _logger?.Info($"Notifications: delivery {delivery.Id} was sent while the database was restored; the restored rows are left as they are.");
@@ -232,8 +258,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             Interlocked.Increment(ref _failed);
             var attempt = delivery.Attempts + 1;
             DateTimeOffset? retry = attempt <= Backoff.Length ? _now() + Backoff[attempt - 1] : null;
-            _store.Finish(delivery.Id, false, result.Error, retry, _now(), delivery.Generation);
-            _logger?.Warning($"Notifications: {delivery.Channel} delivery {delivery.Id} failed (attempt {attempt}){(retry.HasValue ? ", will retry" : ", giving up")}: {result.Error}");
+            _store.Finish(delivery.Id, false, error, retry, _now(), delivery.Generation);
+            _logger?.Warning($"Notifications: {delivery.Channel} delivery {delivery.Id} failed (attempt {attempt}){(retry.HasValue ? ", will retry" : ", giving up")}: {error}");
+        }
+
+        private async Task DeliverAsync(PluginConfiguration config, DueDelivery delivery, CancellationToken cancellationToken)
+        {
+            var (prefs, message, link) = Prepare(config, delivery);
+            if (message == null) return;
+            var (ok, error) = await SendAsync(config, delivery.Channel, prefs, message, link, delivery.Kind, cancellationToken).ConfigureAwait(false);
+            Settle(delivery, ok, error);
+        }
+
+        /// <summary>
+        /// Several alerts due at once for one person on one channel: each is checked as on its own (quiet hours, still
+        /// theirs, channel on); when <see cref="SummaryAt"/> or more may go out, one summary says how many and links to
+        /// the inbox, and each is settled with its outcome; fewer go out one by one. Returns how many were attempted.
+        /// </summary>
+        private async Task<int> DeliverSummaryAsync(PluginConfiguration config, IReadOnlyList<DueDelivery> deliveries, CancellationToken cancellationToken)
+        {
+            var ready = new List<(DueDelivery Delivery, NotifyPrefs Prefs, NotifyMessage Message, string? Link)>();
+            foreach (var delivery in deliveries)
+            {
+                var (prefs, message, link) = Prepare(config, delivery);
+                if (message != null) ready.Add((delivery, prefs, message, link));
+            }
+            if (ready.Count < SummaryAt)
+            {
+                foreach (var (delivery, prefs, message, link) in ready)
+                {
+                    var (ok, error) = await SendAsync(config, delivery.Channel, prefs, message, link, delivery.Kind, cancellationToken).ConfigureAwait(false);
+                    Settle(delivery, ok, error);
+                }
+                return deliveries.Count;
+            }
+            var summary = NotifyTexts.Summary(ready.Count);
+            var first = ready[0];
+            var result = await SendAsync(config, first.Delivery.Channel, first.Prefs, summary, ExternalLink(config, null, null), NotifyKind.Ready, cancellationToken).ConfigureAwait(false);
+            foreach (var (delivery, _, _, _) in ready) Settle(delivery, result.Ok, result.Error);
+            return deliveries.Count;
         }
 
         /// <summary>
