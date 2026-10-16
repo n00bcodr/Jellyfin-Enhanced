@@ -24,3 +24,10 @@ test('Letterboxd response for previous route cannot decorate a reused current de
  h.window.history.replaceState({},'','#!/details?id=two');pending.resolve({Type:'Movie',ProviderIds:{Imdb:'tt-old'}});await render;
  assert.equal(h.document.querySelector('.letterboxd-link'),null);
 });
+// The server refusing the item (an HTTP answer: a page the viewer may not open) is not an error; a real failure still is.
+test('Letterboxd item refused by the server (HTTP 404) logs no error and adds no link',async t=>{
+ const h=await setup(t,()=>{throw {status:404};});await h.idle.shift()();assert.equal(h.calls(),1);assert.equal(h.document.querySelector('.letterboxd-link'),null);assert.ok(h.document.querySelector('.itemExternalLinks'));
+});
+test('Letterboxd item read failing for real is still logged as an error',async t=>{
+ const h=await setup(t,()=>{throw Error('boom');});h.expectConsoleError(/Letterboxd Links: Error adding Letterboxd link/);await h.idle.shift()();assert.equal(h.document.querySelector('.letterboxd-link'),null);
+});

@@ -709,3 +709,10 @@ test('where the browser has background tasks the cards are built in short ones, 
  assert.deepEqual(early.tasks(),[{priority:'background',live:false}]);assert.equal(early.counts.cards,40);
  early.background();assert.equal(early.counts.cards,40);
 });
+
+test('an item the server refuses (an HTTP answer) gets no rows and logs no error; a real failure is still logged',async t=>{
+ const refused=setup(t,{item:()=>{throw {status:404};}});await refused.start();await refused.render();
+ assert.equal(refused.counts.item,1);assert.equal(refused.marker(),null);assert.deepEqual(refused.after(),[]);assert.deepEqual(refused.network,{similar:0,recommended:0});
+ const broken=setup(t,{item:()=>{throw new Error('boom');}});broken.expectConsoleError(/Seerr Item Details: Error getting TMDB ID/);
+ await broken.start();await broken.render();assert.equal(broken.marker(),null);assert.deepEqual(broken.after(),[]);
+});

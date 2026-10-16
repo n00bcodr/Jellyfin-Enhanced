@@ -80,3 +80,39 @@ test('a status saying the account may not view issues means no issue read at all
   await api.fetchIssuesForMedia(603, 'movie');
   assert.deepEqual(calls.filter(u => u.includes('/issue')), []);
 });
+
+/**
+ * The issue reporter on a details page whose item read fails with the given error.
+ * @param {object} t Test context.
+ * @param {*} failure What reading the item rejects with.
+ * @returns {object} Harness, the reporter and the console.warn calls.
+ */
+function refusedPage(t, failure) {
+  const h = createHarness({
+    url: 'http://jellyfin.test/web/index.html#!/details?id=x',
+    html: '<div id="itemDetailPage"><div class="detailButtons"></div></div>',
+    JE: {
+      pluginConfig: { JellyseerrEnabled: true, JellyseerrShowReportButton: true },
+      t: key => key,
+      jellyseerrAPI: { checkUserStatus: async () => ({ active: true, userFound: true }) },
+    },
+    apiClient: { getItem: async () => { throw failure; }, getUrl: path => path },
+  });
+  t.after(() => h.close());
+  const warnings = [];
+  const warn = h.window.console.warn;
+  h.window.console.warn = (...args) => { warnings.push(args.map(String).join(' ')); return warn.apply(h.window.console, args); };
+  h.load('jellyseerr/issue-reporter.js');
+  return { ...h, warnings, reporter: h.JE.jellyseerrIssueReporter };
+}
+
+test('an item the server refuses (an HTTP answer) gets no button and no warning; a real failure still warns', async t => {
+  const refused = refusedPage(t, { status: 404 });
+  assert.equal(await refused.reporter.tryAddButton(), false);
+  assert.equal(refused.document.querySelector('.jellyseerr-report-issue-icon, .jellyseerr-report-unavailable-icon'), null);
+  assert.ok(refused.document.querySelector('.detailButtons'));
+  assert.deepEqual(refused.warnings.filter(w => w.includes('Error adding button')), []);
+  const broken = refusedPage(t, new Error('boom'));
+  assert.equal(await broken.reporter.tryAddButton(), false);
+  assert.equal(broken.warnings.filter(w => w.includes('Issue Reporter: Error adding button')).length, 1);
+});

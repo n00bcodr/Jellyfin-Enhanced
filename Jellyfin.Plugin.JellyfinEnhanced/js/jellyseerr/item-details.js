@@ -95,7 +95,10 @@
             return { tmdbId: parseInt(tmdbId), type };
         } catch (error) {
             if (error.name === 'AbortError') throw error;
-            console.error(`${logPrefix} Error getting TMDB ID:`, error);
+            // An item the server won't hand out (an HTTP answer such as 404/503: a page that isn't available)
+            // has no TMDB id to look up; only real failures are errors.
+            if ((typeof Response !== 'undefined' && error instanceof Response) || typeof error?.status === 'number') console.debug(`${logPrefix} Item not readable (${error.status}).`);
+            else console.error(`${logPrefix} Error getting TMDB ID:`, error);
             return { tmdbId: null, type: null };
         }
     }
