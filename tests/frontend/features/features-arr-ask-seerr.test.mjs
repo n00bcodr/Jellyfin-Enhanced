@@ -197,7 +197,7 @@ test('JE mode: a collection Request lists its movies and asks Jellyfin Enhanced 
 test('JE mode: a collection with more than 20 movies to ask for ticks 20, says so, and asks for exactly the ticked ones', async t => {
   const h = setup(t);
   // One movie is here; 22 could be asked for.
-  const parts = [{ id: 1, title: 'Dr. No', mediaInfo: { status: 5 } }, ...Array.from({ length: 22 }, (_, i) => ({ id: 100 + i, title: `Bond ${i + 1}` }))];
+  const parts = [{ id: 1, title: 'Dr. No', releaseDate: '1962-10-05', mediaInfo: { status: 5 } }, ...Array.from({ length: 22 }, (_, i) => ({ id: 100 + i, title: `Bond ${i + 1}`, releaseDate: `${1963 + i}-01-01` }))];
   h.JE.jellyseerrAPI.fetchCollectionDetails = async () => ({ id: 645, name: 'James Bond Collection', parts });
   let modalElement = null;
   let options = null;
@@ -234,6 +234,32 @@ test('JE mode: a collection with more than 20 movies to ask for ticks 20, says s
   await settle(60);
   assert.deepEqual(h.posts.map(p => p.body.input.key), [...boxes.slice(1, 20), boxes[21]].map(b => `movie:tmdb:${b.dataset.tmdbId}`));
   assert.equal(closed, 1);
+});
+
+test('JE mode: the collection picker leaves out movies that are not out yet (no date or a later one), as a collection page does', async t => {
+  const h = setup(t);
+  const later = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+  h.JE.jellyseerrAPI.fetchCollectionDetails = async () => ({ id: 2344, name: 'Avatar Collection', parts: [
+    { id: 19995, title: 'Avatar', releaseDate: '2009-12-15' },
+    { id: 76600, title: 'Avatar: The Way of Water', releaseDate: '2022-12-14', mediaInfo: { status: 5 } },
+    { id: 83533, title: 'Avatar: Fire and Ash', releaseDate: later },
+    { id: 216527, title: 'Avatar 4' }
+  ] });
+  let options = null;
+  h.JE.jellyseerrModal.create = (o) => { options = o; return { show() {}, close() {} }; };
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'Avatar Collection', {});
+  await settle();
+  const body = h.document.createElement('div');
+  body.innerHTML = options.bodyHtml;
+  const rows = [...body.querySelectorAll('.jellyseerr-collection-movie-row')];
+  assert.deepEqual(rows.map(r => { const b = r.querySelector('.jellyseerr-collection-checkbox'); return [b.dataset.tmdbId, b.disabled, b.checked, 'jeAskable' in b.dataset]; }),
+    [['19995', false, true, true], ['76600', true, false, false], ['83533', true, false, false], ['216527', true, false, false]]);
+  assert.deepEqual(rows.map(r => r.lastElementChild.textContent), ['', translate('jellyseerr_btn_available'), translate('arr_collection_not_out'), translate('arr_collection_not_out')]);
+  await options.onSave(body, h.document.createElement('button'), () => {});
+  await settle();
+  assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:19995'], 'only the movie that is out is asked for');
+  const { released } = h.JE.internals.arrAskSeerr;
+  assert.deepEqual(['2026-10-17', '2026-10-18', '', '2026-10', null].map(d => released({ releaseDate: d }, '2026-10-17')), [true, false, false, false, false]);
 });
 
 test('JE mode: a collection with 20 or fewer movies to ask for ticks them all and has no limit note', async t => {
