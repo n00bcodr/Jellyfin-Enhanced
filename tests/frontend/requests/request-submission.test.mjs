@@ -379,6 +379,7 @@ test('an issue list Seerr refuses with 403 (no permission to view issues) is not
   h.switchUser();
   await h.api.fetchIssuesForMedia(903, 'tv');
   assert.equal(calls, 2);
+});
 
 test("the search page's Seerr icon offers its double-click filter only where it works (not in Requests & downloads JE mode)", t => {
   const h = uiSetup(t);
