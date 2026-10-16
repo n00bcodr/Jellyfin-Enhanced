@@ -364,3 +364,19 @@ test('collection request modal escapes titles, skips owned movies and stops at t
   assert.deepEqual(h.calls.map(call => call[1].body.mediaId), [2]);
   assert.equal(dialogs.length, 1);
 });
+
+test('an issue list Seerr refuses with 403 (no permission to view issues) is not an error and is not asked again until the user changes', async t => {
+  let calls = 0;
+  const h = setup(t, { get: async () => { calls++; throw Object.assign(new Error('HTTP 403'), { status: 403 }); } });
+  const errors = [];
+  const original = h.window.console.error;
+  h.window.console.error = (...args) => errors.push(args);
+  t.after(() => { h.window.console.error = original; });
+  assert.deepEqual(plain(await h.api.fetchIssuesForMedia(903, 'tv')), { results: [], forbidden: true });
+  assert.deepEqual(plain(await h.api.fetchIssuesForMedia(904, 'tv')), { results: [], forbidden: true });
+  assert.equal(calls, 1);
+  assert.deepEqual(errors, []);
+  h.switchUser();
+  await h.api.fetchIssuesForMedia(903, 'tv');
+  assert.equal(calls, 2);
+});
