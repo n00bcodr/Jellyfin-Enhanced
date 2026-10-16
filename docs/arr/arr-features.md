@@ -1046,7 +1046,7 @@ folder or path.
   | Seasons | the series and those seasons monitored, with all their episodes | Sonarr's search on add, or *Season search* per season |
   | Single episodes | the series monitored and exactly those episodes | *Episode search* for those episodes |
   | Keep getting new episodes | the current season as above, plus new seasons monitored (`monitorNewItems`) | as for a season |
-  | Next season | that season as above; it must be listed by Sonarr already, otherwise the request waits (`not_aired`) | as for a season |
+  | Next season | that season as above; until Sonarr lists it the request waits (`not_aired`): Sonarr refreshes the series and it is checked again every 6 hours, with nothing to approve | as for a season |
 - **Confirmed by a fresh read.** The request counts as sent only when a fresh read shows exactly what was asked for
   (title present and monitored; the seasons flagged and their episodes monitored; the episodes monitored; new-season
   monitoring on) and its search was accepted. If an answer is lost (a timeout or a dropped connection after sending)
@@ -1105,7 +1105,7 @@ another look" or "Taking longer than usual"):
 |---|---|---|
 | `invalid_defaults` | The instance's add defaults are missing or no longer valid | Set them on the settings page, then approve again |
 | `instance_changed` | The instance was disabled, changed role, or its address/key changed | Approve again (with edits) |
-| `not_aired` | Sonarr doesn't list the season or episode yet | Approve again later |
+| `not_aired` | Sonarr doesn't list the season or episode yet | Nothing: the series is refreshed and the request checked again every 6 hours (only a request that already wrote part of its change waits for an approval) |
 | `title_not_found` | The instance (or Seerr) doesn't know the title by its id | Check the title; add it in the app |
 | `service_down` | The instance or Seerr rejected Jellyfin Enhanced's key, or the URL base is wrong | Fix the connection |
 | `instance_rejected` | Sonarr/Radarr refused the add (its own validation message is in the job's details) | Fix it in the app, then approve again |

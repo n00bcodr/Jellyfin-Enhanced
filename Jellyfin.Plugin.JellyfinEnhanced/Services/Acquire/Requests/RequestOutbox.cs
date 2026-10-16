@@ -12,7 +12,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     public sealed record RequestBackendBinding(string? Source = null, int? UserId = null, long Permissions = 0,
         bool FourKEnabled = false, bool Can4k = false, bool CanManage = false, QuotaProjection? Quota = null, int QuotaWindowDays = 7, bool CanRequest = false);
     /// <summary>Transport outcome with explicit retry and read-back certainty.</summary>
-    public sealed record RequestBackendResult(RequestOutcome Outcome, bool Confirmed = false, bool Retryable = false, bool Parked = false, bool VerifiedNotSent = false)
+    /// <remarks><c>RetryAfter</c>: a retryable result's own wait before the next attempt (instead of the short backoff).</remarks>
+    public sealed record RequestBackendResult(RequestOutcome Outcome, bool Confirmed = false, bool Retryable = false, bool Parked = false, bool VerifiedNotSent = false, TimeSpan? RetryAfter = null)
     {
         /// <summary>A refusal at the final send; the job is parked for human review.</summary>
         public static RequestBackendResult Hold(string reason) => new(reason == "quota_exceeded" ? RequestOutcome.Refused(reason, 429, "quota_exceeded") : RequestOutcome.Refused(reason, 409), Parked: true, VerifiedNotSent: true);

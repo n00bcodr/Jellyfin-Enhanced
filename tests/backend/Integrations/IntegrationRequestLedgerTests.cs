@@ -687,6 +687,19 @@ public class IntegrationRequestLedgerTests
         await r.Runner().TickAsync(default); Assert.Equal(1, r.Backend.Sends);
     }
     [Fact]
+    public async Task AResultWithItsOwnWaitIsTriedAgainOnlyAfterItAndStaysAnOpenRequest()
+    {
+        using var r = new Rig(); var want = await r.Create(); var job = r.Ledger.Due(r.Now).Single();
+        Assert.True(r.Ledger.Claim(job, r.Db.Generation, r.Now));
+        var later = BackendResults.Later("not_aired", "Sonarr doesn't list season 5 yet.", TimeSpan.FromHours(6));
+        Assert.True(r.Ledger.Complete(job, r.Db.Generation, later, r.Now));
+        var held = r.Ledger.ForWant(want.RequestId!).Single();
+        Assert.Equal(("retry", "not_aired"), (held.State, held.Reason));
+        Assert.Empty(r.Ledger.Due(r.Now.AddHours(5)));
+        Assert.Single(r.Ledger.Due(r.Now.AddHours(6)));
+        Assert.Equal("queued", r.Ledger.Find(want.RequestId!)!.Status);   // still on its way, nobody has to look at it
+    }
+    [Fact]
     public async Task RestartMidSendReadbacksInsteadOfPostingAgainAndKeepsReservation()
     {
         using var r = new Rig(); var want = await r.Create(); var job = r.Ledger.Due(r.Now).Single();

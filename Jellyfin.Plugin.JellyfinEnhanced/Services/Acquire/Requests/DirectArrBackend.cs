@@ -34,6 +34,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// </summary>
     public sealed class DirectArrBackend : IRequestBackend
     {
+        /// <summary>How long an ask for a season the arr doesn't list yet waits before it is checked again.</summary>
+        internal static readonly TimeSpan NotListedWait = TimeSpan.FromHours(6);
+
         /// <summary>How long a new series' episode list is waited for before monitoring single episodes.</summary>
         internal static readonly TimeSpan EpisodeWait = TimeSpan.FromSeconds(20);
 
@@ -329,7 +332,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var wantedSeasons = input.Scope == "episodes" ? input.Episodes.Select(e => e.Season).Distinct().ToArray() : input.Seasons;
             var missing = wantedSeasons.Where(s => !known.Contains(s)).ToArray();
             if (missing.Length > 0)
-                return BackendResults.Hold("not_aired", $"{instance.Name} doesn't list season {string.Join(", ", missing)} of this series yet.");
+            {
+                // Not announced there yet: nothing is sent and the ask waits, checked again every few hours (never held for a
+                // person to look at). A series the arr already has is refreshed first, so its next check sees a season
+                // its metadata source has added since.
+                if (series is { } listed && Int(listed, "id") is int listedId && listedId > 0 && Gate(run, false) is null)
+                    await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "command", new JsonObject { ["name"] = "RefreshSeries", ["seriesId"] = listedId }).ConfigureAwait(false);
+                return BackendResults.Later("not_aired", $"{instance.Name} doesn't list season {string.Join(", ", missing)} of this series yet; checked again later.", NotListedWait);
+            }
 
             var wrote = false;
             if (series == null)
@@ -438,9 +448,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     // attempt that still doesn't see them holds for a person (the earlier part stays upstream, so the
                     // certainty stays unknown); it never loops without end.
                     if (wrote) return BackendResults.Resume(job.WantId, $"{instance.Name} doesn't list {which} yet; the request is sent again shortly.");
-                    return job.Uncertain
-                        ? BackendResults.HoldAfterWrite(job.WantId, "not_aired", $"{instance.Name} has the series but still doesn't list {which}.")
-                        : BackendResults.Hold("not_aired", $"{instance.Name} doesn't list {which} of this series yet.");
+                    if (job.Uncertain)
+                        return BackendResults.HoldAfterWrite(job.WantId, "not_aired", $"{instance.Name} has the series but still doesn't list {which}.");
+                    // Not listed yet (nothing written by this request): refreshed, and checked again in a few hours.
+                    if (Gate(run, false) is null)
+                        await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "command", new JsonObject { ["name"] = "RefreshSeries", ["seriesId"] = seriesId }).ConfigureAwait(false);
+                    return BackendResults.Later("not_aired", $"{instance.Name} doesn't list {which} of this series yet; checked again later.", NotListedWait);
                 }
             }
             var unmonitored = targets.Where(e => Bool(e, "monitored") != true).Select(e => Int(e, "id") ?? 0).Where(id => id > 0).ToArray();

@@ -679,7 +679,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // send that reads before it writes; its Unknown certainty keeps it from being cancelled or refunded meanwhile.
                 var state = result.Confirmed ? "succeeded" : result.Parked ? "parked" : result.Outcome.Certainty == ArrActionStatus.Unknown ? result.Retryable ? "retry" : "maybe_sent" : result.Retryable ? "retry" : "failed";
                 if (deletedNotSent) state = "cancelled";
-                var next = now.AddSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(job.Attempts, 6))));
+                var next = result.Retryable && result.RetryAfter is { } wait && wait > TimeSpan.Zero ? now + wait : now.AddSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(job.Attempts, 6))));
                 if (Exec(c, t, "UPDATE jobs SET state=$state,reason=$reason,outcome=$outcome,next_attempt=$next,updated_at=$at WHERE id=$id AND state='sending'", ("$state", state), ("$reason", result.Outcome.Reason), ("$outcome", JsonSerializer.Serialize(result.Outcome)), ("$next", Ms(next)), ("$at", Ms(now)), ("$id", job.Id)) == 0) return false;
                 Exec(c, t, "UPDATE wants SET status=$state,reason=$r,updated_at=$at WHERE id=$id AND target_key=$target", ("$state", result.Confirmed ? "sent" : state is "parked" or "failed" ? "pending" : "queued"), ("$r", result.Outcome.Reason), ("$at", Ms(now)), ("$id", job.WantId), ("$target", TargetKey(job.Authorization)));
                 if (state is "parked" or "failed")

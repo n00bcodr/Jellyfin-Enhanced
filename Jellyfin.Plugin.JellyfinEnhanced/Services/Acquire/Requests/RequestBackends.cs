@@ -87,6 +87,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public static RequestBackendResult Retry(string reason, string message)
             => new(RequestOutcome.Refused(reason, 503, "unavailable") with { Message = message }, Retryable: true, VerifiedNotSent: true);
 
+        /// <summary>Nothing was sent; it can't be done yet (a season the arr doesn't list): checked again after <paramref name="after"/>.</summary>
+        public static RequestBackendResult Later(string reason, string message, TimeSpan after)
+            => Retry(reason, message) with { Outcome = RequestOutcome.Refused(reason, 409) with { Message = message }, RetryAfter = after };
+
         /// <summary>Nothing was sent; a person has to look at it (parked).</summary>
         public static RequestBackendResult Hold(string reason, string message)
         {

@@ -340,18 +340,28 @@ public class IntegrationRequestBackendsTests
     }
 
     [Fact]
-    public async Task ASeasonTheArrDoesNotListYetIsHeldBeforeAnyWrite()
+    public async Task ASeasonTheArrDoesNotListYetWaitsAndIsCheckedAgainLaterAfterARefreshNeverHeld()
     {
         using var lab = new Lab();
         ExistingSeries(lab);
         var result = await lab.Direct.SendAsync(lab.Job(Series("next_season", new[] { 5 }), "Sonarr"), Pass, default);
-        Assert.True(result.Parked);
-        Assert.Equal("not_aired", result.Outcome.Reason);
-        Assert.Empty(lab.Sonarr.Writes);
+        Assert.False(result.Parked);
+        Assert.True(result.Retryable && result.Outcome.Certainty != ArrActionStatus.Unknown);
+        Assert.Equal(("not_aired", DirectArrBackend.NotListedWait), (result.Outcome.Reason, result.RetryAfter!.Value));
+        // The series the arr has is refreshed so the next check sees a newly added season; nothing else is written.
+        var refresh = Assert.Single(lab.Sonarr.Writes);
+        Assert.Equal("/api/v3/command", refresh.Path);
+        Assert.Contains("RefreshSeries", refresh.Body, StringComparison.Ordinal);
+        lab.Sonarr.Writes.Clear();
+        // A series the arr doesn't have yet: nothing to refresh, nothing written.
         lab.Sonarr.Lookup.Add(Lab.SeriesLookup(80000, "Other", 1));
         var episodes = await lab.Direct.SendAsync(lab.Job(Series("episodes", episodes: new[] { new RequestEpisode(2, 1) }, tvdb: 80000), "Sonarr"), Pass, default);
-        Assert.Equal("not_aired", episodes.Outcome.Reason);
+        Assert.Equal(("not_aired", false, true), (episodes.Outcome.Reason, episodes.Parked, episodes.Retryable));
         Assert.Empty(lab.Sonarr.Writes);
+        // The guard refuses: not even the refresh goes out.
+        var refused = await lab.Direct.SendAsync(lab.Job(Series("next_season", new[] { 5 }), "Sonarr"), () => "request_changed", default);
+        Assert.Empty(lab.Sonarr.Writes);
+        Assert.True(refused.Parked);
     }
 
     // ------------------------------------------------------------------ add defaults
