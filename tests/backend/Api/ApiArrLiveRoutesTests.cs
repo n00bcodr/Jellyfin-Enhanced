@@ -44,6 +44,7 @@ public class ApiArrLiveRoutesTests
     {
         public FakeArr Arr { get; } = new();
         public FakeArr.Host Radarr { get; }
+        public FakeArr.Host? Sonarr { get; }
         public ArrStateStore Store { get; }
         public ArrChangeFeed Feed { get; } = new();
         public ArrFeedLimits Limits { get; } = new();
@@ -58,11 +59,22 @@ public class ApiArrLiveRoutesTests
         public Guid UserId { get; } = Guid.NewGuid();
         public string AuditPath => Path.Combine(Arr.Plugin.Core.Root, ArrAuditLog.FileName);
 
-        public Rig()
+        public Rig(bool sonarr = false)
         {
             Radarr = Arr.Add("radarr.lan", "Radarr");
             Radarr.Movies.Add(FakeArr.Movie(1, 101, "Alpha", hasFile: false));
-            Arr.Configure(("Movies", ArrKind.Radarr, "http://radarr.lan:7878", RadarrKey));
+            if (sonarr)
+            {
+                // Series 1 (TVDB 100) with one episode, for the episode-pace tests.
+                Sonarr = Arr.Add("sonarr.lan", "Sonarr");
+                Sonarr.Series.Add(FakeArr.SeriesRow(1, 100, "Show"));
+                Sonarr.Episodes.Add(FakeArr.Episode(11, "2026-01-01T00:00:00Z"));
+                Arr.Configure(("Movies", ArrKind.Radarr, "http://radarr.lan:7878", RadarrKey), ("TV", ArrKind.Sonarr, "http://sonarr.lan:8989", "SONARR-ROUTE-KEY-0123456789abcd"));
+            }
+            else
+            {
+                Arr.Configure(("Movies", ArrKind.Radarr, "http://radarr.lan:7878", RadarrKey));
+            }
             var config = Arr.Plugin.Plugin.Configuration;
             config.ArrIntegrationEnabled = true;
             config.ArrPhase1Enabled = true;
@@ -302,6 +314,28 @@ public class ApiArrLiveRoutesTests
         rig.Arr.Now += TimeSpan.FromMinutes(5);
         await Changes(rig.Controller(admin: false), epoch, 0, 0, ArrTitleKey.RequestsState);
         Assert.Equal(rig.Arr.Now, rig.Requests.WatchedAt);
+    }
+
+    [Fact]
+    public async Task AFeedPollNamingASeriesKeepsItsEpisodesOnTheOpenPageMinutePace()
+    {
+        using var rig = new Rig(sonarr: true);
+        var tv = rig.Arr.Instance("TV");
+        await rig.Store.GetLibraryAsync(tv, default);
+        await rig.Store.GetEpisodesAsync(tv, 1, default);
+        var reads = rig.Arr.CallCount("sonarr.lan", "/api/v3/episode");
+        var epoch = Body(await rig.Controller(admin: false).GetChanges(new ArrChangesRequest(), default)).GetProperty("epoch").GetString();
+        // A page about another title doesn't hold this series' pace.
+        rig.Arr.Now += TimeSpan.FromSeconds(25);
+        await Changes(rig.Controller(admin: false), epoch, 0, 0, "movie:tmdb:101", "tv:tvdb:200");
+        rig.Arr.Now += TimeSpan.FromSeconds(40);
+        await Task.WhenAll(rig.Store.Tick());
+        Assert.Equal(reads, rig.Arr.CallCount("sonarr.lan", "/api/v3/episode"));
+        // The series page's poll (an episode key of it is enough): its episodes are read again within the minute.
+        await Changes(rig.Controller(admin: false), epoch, 0, 0, "tv:tvdb:100:s1:e1");
+        rig.Arr.Now += TimeSpan.FromSeconds(5);
+        await Task.WhenAll(rig.Store.Tick());
+        Assert.Equal(reads + 1, rig.Arr.CallCount("sonarr.lan", "/api/v3/episode"));
     }
 
     [Fact]

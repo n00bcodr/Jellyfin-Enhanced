@@ -210,8 +210,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             using var scope = _store.BeginRequest("acquire/changes");
             try
             {
-                // Someone is watching: keep the snapshots behind status current (polling fallback).
+                // Someone is watching: keep the snapshots behind status current (polling fallback), and the episodes
+                // of the series the page shows at the open-series pace (Sonarr announces no episode monitoring change).
                 _store.KeepWarm(WatchedKinds);
+                if (wanted != null) _store.KeepEpisodesWarm(SeriesOf(wanted));
                 var isAdmin = person.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator);
                 var deadline = DateTimeOffset.UtcNow + wait;
                 var after = request.Cursor.Value;
@@ -238,6 +240,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             finally
             {
                 _limits.Exit(uid);
+            }
+        }
+
+        /// <summary>The TVDB ids of the series, season and episode keys among <paramref name="keys"/>.</summary>
+        private static IEnumerable<int> SeriesOf(IEnumerable<string> keys)
+        {
+            foreach (var key in keys)
+            {
+                if (ArrTitleKey.TryParse(key, out var type, out var id, out _, out _) && type == "tv") yield return id;
             }
         }
 

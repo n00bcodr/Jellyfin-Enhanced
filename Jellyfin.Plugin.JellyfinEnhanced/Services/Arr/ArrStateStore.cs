@@ -57,6 +57,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private static readonly TimeSpan RangeFailureRetry = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan CacheWriteInterval = TimeSpan.FromMinutes(10);
         private static readonly TimeSpan DebounceDelay = TimeSpan.FromSeconds(2);
+
+        /// <summary>
+        /// How old a series' episodes may be when a page reads them before they are read again (in the background;
+        /// the page gets the held list now and the change feed brings the new one). Sonarr announces no change to an
+        /// episode's monitored flag (no SignalR message, no webhook), so this and <see cref="EpisodesWatchedInterval"/>
+        /// bound how long a change made in Sonarr's own UI takes to reach the episode status.
+        /// </summary>
+        internal static readonly TimeSpan EpisodesFresh = TimeSpan.FromSeconds(60);
+
+        /// <summary>How often the episodes of a series someone has open are read again (see <see cref="EpisodesWatchedFor"/>).</summary>
+        internal static readonly TimeSpan EpisodesWatchedInterval = TimeSpan.FromSeconds(60);
+
+        /// <summary>
+        /// A series' episodes count as open on a page while a page has read them, or a page's change-feed poll named
+        /// the series (<see cref="KeepEpisodesWarm"/>, every 25 seconds or sooner while the page is open), since they
+        /// were last read from Sonarr, and did so within this long. A page opened once and closed costs no extra read;
+        /// other held series are read again every 5 minutes while read in the last 15.
+        /// </summary>
+        internal static readonly TimeSpan EpisodesWatchedFor = TimeSpan.FromMinutes(2);
         private static readonly JsonSerializerOptions CacheJson = new() { PropertyNameCaseInsensitive = true };
 
         private readonly ArrClientFactory _factory;
@@ -339,7 +358,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     if (!requested)
                     {
                         if (slot.InBackoff(now)) continue;
-                        var policy = PolicyFor(slot.Kind, state, now);
+                        var policy = PolicyFor(slot.Kind, state, now, slot);
                         if (now - slot.LastInterest > policy.Interest) continue;
                         if (slot.HasValue && now - slot.CheckedAt < policy.Interval) continue;
                     }
@@ -555,7 +574,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             var now = _now();
             if (!background) slot.Touch(now);
             else if (slot.Kind != ArrSnapshotKind.Library) slot.TouchBackground(now);
-            var policy = PolicyFor(slot.Kind, state, now);
+            var policy = PolicyFor(slot.Kind, state, now, slot);
             var peek = slot.Peek();
             // A background reader takes what is held (the reconciler keeps it at the idle pace); a
             // page wants it within the snapshot's freshness target. A value kept over an incomplete
@@ -999,8 +1018,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>A baseline row and the last publication that actually saw it.</summary>
         private sealed record QueueKnownRow(ArrQueueEntry Row, DateTimeOffset SeenAt);
 
-        /// <summary>Freshness and refresh policy per snapshot kind.</summary>
-        private Policy PolicyFor(ArrSnapshotKind kind, InstanceState? state, DateTimeOffset now)
+        /// <summary>Freshness and refresh policy per snapshot kind (episodes: per series, by whether a page has it open).</summary>
+        private Policy PolicyFor(ArrSnapshotKind kind, InstanceState? state, DateTimeOffset now, IArrSnapshotSlot? slot = null)
         {
             switch (kind)
             {
@@ -1024,7 +1043,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 case ArrSnapshotKind.System:
                     return new Policy(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5), TimeSpan.FromHours(1), TimeSpan.FromMinutes(15), TimeSpan.FromSeconds(10));
                 case ArrSnapshotKind.Episodes:
-                    return new Policy(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5), TimeSpan.FromHours(6), TimeSpan.FromMinutes(15), TimeSpan.FromSeconds(15));
+                {
+                    // Open on a page (read, or named by its feed poll, since the last read from Sonarr, lately): read
+                    // again every minute; otherwise every 5 minutes while read in the last 15. A page read finds them
+                    // at most a minute old.
+                    var watched = slot != null && slot.LastRead > slot.CheckedAt && now - slot.LastRead <= EpisodesWatchedFor;
+                    return new Policy(EpisodesFresh, watched ? EpisodesWatchedInterval : TimeSpan.FromMinutes(5), TimeSpan.FromHours(6), TimeSpan.FromMinutes(15), TimeSpan.FromSeconds(15));
+                }
                 default:
                     return new Policy(TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(15), TimeSpan.FromDays(7), TimeSpan.FromHours(2), TimeSpan.FromSeconds(20));
             }

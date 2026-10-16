@@ -1521,6 +1521,89 @@ public class IntegrationArrStateTests
         Assert.True(arr.CallCount("sonarr.lan", "/api/v3/history") > history, "history re-read");
     }
 
+    /// <summary>A Sonarr with series 1 (TVDB 100) and its two episodes, both monitored; its library and episodes read once.</summary>
+    private static async Task<(FakeArr Arr, FakeArr.Host Sonarr, ArrStateStore Store, ArrConnection Tv)> EpisodesRead()
+    {
+        var arr = Rig(out _, out var sonarr);
+        sonarr.Series.Add(FakeArr.SeriesRow(1, 100, "Show"));
+        sonarr.Episodes.Add(FakeArr.Episode(11, "2026-01-01T00:00:00Z", season: 1, episode: 1));
+        sonarr.Episodes.Add(FakeArr.Episode(12, "2026-01-08T00:00:00Z", season: 1, episode: 2));
+        var store = arr.Store();
+        var tv = arr.Instance("TV");
+        await store.GetLibraryAsync(tv, default);
+        Assert.True((await store.GetEpisodesAsync(tv, 1, default)).Value!.Episodes.All(e => e.Monitored));
+        return (arr, sonarr, store, tv);
+    }
+
+    [Fact]
+    public async Task AnEpisodeUnmonitoredInSonarrReachesASeriesPageLeftOpenWithinAMinute()
+    {
+        var (arr, sonarr, store, tv) = await EpisodesRead();
+        using var lifetime = arr;
+        var reads = arr.CallCount("sonarr.lan", "/api/v3/episode");
+        // Unmonitored in Sonarr's own UI: Sonarr sends no SignalR message and no webhook for it.
+        sonarr.Episodes[1]["monitored"] = false;
+        // The page stays open: its change-feed poll names the series every 25 seconds (nothing else reads it).
+        for (var elapsed = 25; elapsed <= 75; elapsed += 25)
+        {
+            arr.Now += TimeSpan.FromSeconds(25);
+            Assert.Equal(1, store.KeepEpisodesWarm(new[] { 100, 100, 0, 999 }));
+            await Task.WhenAll(store.Tick());
+        }
+        Assert.Equal(reads + 1, arr.CallCount("sonarr.lan", "/api/v3/episode"));
+        Assert.False(store.PeekEpisodes(tv, 1)!.Value!.Episodes.Single(e => e.EpisodeNumber == 2).Monitored);
+        // Still open: read again once a minute, not more.
+        for (var i = 0; i < 4; i++)
+        {
+            arr.Now += TimeSpan.FromSeconds(15);
+            store.KeepEpisodesWarm(new[] { 100 });
+            await Task.WhenAll(store.Tick());
+        }
+        Assert.Equal(reads + 2, arr.CallCount("sonarr.lan", "/api/v3/episode"));
+    }
+
+    [Fact]
+    public async Task OpeningASeriesPageReReadsEpisodesOlderThanAMinute()
+    {
+        var (arr, sonarr, store, tv) = await EpisodesRead();
+        using var lifetime = arr;
+        var reads = arr.CallCount("sonarr.lan", "/api/v3/episode");
+        sonarr.Episodes[1]["monitored"] = false;
+        arr.Now += TimeSpan.FromSeconds(30);
+        Assert.True((await store.GetEpisodesAsync(tv, 1, default)).Value!.Episodes.All(e => e.Monitored));
+        Assert.Equal(reads, arr.CallCount("sonarr.lan", "/api/v3/episode"));
+        // Opened again a minute and a half later: the held list is shown at once and read again behind it (the change
+        // feed then brings the new one to the page).
+        arr.Now += TimeSpan.FromSeconds(60);
+        var read = await store.GetEpisodesAsync(tv, 1, default);
+        Assert.True(read.Stale);
+        Assert.True(read.Value!.Episodes.All(e => e.Monitored));
+        for (var i = 0; i < 200 && store.PeekEpisodes(tv, 1)!.Value!.Episodes.All(e => e.Monitored); i++) await Task.Delay(10);
+        Assert.Equal(reads + 1, arr.CallCount("sonarr.lan", "/api/v3/episode"));
+        Assert.False(store.PeekEpisodes(tv, 1)!.Value!.Episodes.Single(e => e.EpisodeNumber == 2).Monitored);
+    }
+
+    [Fact]
+    public async Task EpisodesNobodyHasOpenKeepTheFiveMinutePaceAndUnreadSeriesAreNeverLoaded()
+    {
+        var (arr, _, store, tv) = await EpisodesRead();
+        using var lifetime = arr;
+        var reads = arr.CallCount("sonarr.lan", "/api/v3/episode");
+        // A series whose episodes nobody has read isn't loaded by a feed poll naming it.
+        Assert.Equal(0, store.KeepEpisodesWarm(new[] { 200 }));
+        // Closed after the first read: no re-read for 5 minutes.
+        for (var i = 0; i < 9; i++)
+        {
+            arr.Now += TimeSpan.FromSeconds(30);
+            await Task.WhenAll(store.Tick());
+        }
+        Assert.Equal(reads, arr.CallCount("sonarr.lan", "/api/v3/episode"));
+        arr.Now += TimeSpan.FromSeconds(31);
+        await Task.WhenAll(store.Tick());
+        Assert.Equal(reads + 1, arr.CallCount("sonarr.lan", "/api/v3/episode"));
+        Assert.Null(store.PeekEpisodes(tv, 200));
+    }
+
     [Fact]
     public async Task EpisodeSlotsBeingLoadedAreNeverEvictedSoLoadsStayBounded()
     {

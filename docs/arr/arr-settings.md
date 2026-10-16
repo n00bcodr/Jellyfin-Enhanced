@@ -330,6 +330,14 @@ page reload. Off by default; it needs **Requests & downloads (new)**.
   that isn't in Jellyfin yet is announced only to people with no content limit (parental rating,
   blocked or allowed tags, unrated items, blocked folders), and only when they can open one of the
   libraries the instance holding it is linked to (if it is linked to any).
+- **Episode monitoring changed in Sonarr itself.** Sonarr reports no change when an episode is monitored or
+  unmonitored in its own UI (no live message, no webhook), so Jellyfin Enhanced reads the series' episodes again
+  instead: when a page opens the series and they are over a minute old (the page shows them at once and updates
+  when the new read is in), and every minute while a page has the series open (its long-poll names it). The change
+  reaches the episode status within about a minute of being made, or as soon as the series is opened. Series
+  nobody has open are read every 5 minutes while someone looked at them in the last 15; nothing is read for series
+  nobody has opened. Monitoring or unmonitoring a whole season in Sonarr is announced live and shows within
+  seconds.
 
 ---
 

@@ -208,6 +208,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             }
         }
 
+        /// <summary>
+        /// Marks the episodes of the given series (TVDB ids) as read now on every usable Sonarr that holds them in
+        /// memory ("someone has the series open": a page's change-feed poll names it), so the reconciler keeps them at
+        /// the open-series pace (<see cref="EpisodesWatchedInterval"/>). Series whose episodes nobody has read are
+        /// not loaded; nothing is read here.
+        /// </summary>
+        /// <param name="tvdbIds">TVDB ids of the series.</param>
+        /// <returns>How many held episode lists were marked.</returns>
+        public int KeepEpisodesWarm(IEnumerable<int> tvdbIds)
+        {
+            var ids = tvdbIds.Where(id => id > 0).Distinct().ToList();
+            if (ids.Count == 0) return 0;
+            var now = _now();
+            var marked = 0;
+            foreach (var connection in Instances(ArrKind.Sonarr))
+            {
+                if (!_states.TryGetValue(connection.Id, out var state) || state.Library.Peek().Value is not { } library) continue;
+                foreach (var tvdb in ids)
+                {
+                    if (library.SeriesByTvdb(tvdb) is not { } series || state.ExistingEpisodes(series.Id) is not { Retired: false } slot) continue;
+                    slot.Touch(now);
+                    marked++;
+                }
+            }
+            return marked;
+        }
+
         private async Task<int> RefreshTitlesCoreAsync(string instanceId, IReadOnlyCollection<int> arrIds, CancellationToken cancellationToken)
         {
             ArrCallCounter.Current.Value = _backgroundCalls;
