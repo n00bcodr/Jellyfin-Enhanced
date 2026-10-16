@@ -283,6 +283,39 @@ public class IntegrationAutoRequestLedgerTests
     }
 
     [Fact]
+    public async Task TurningAutoMovieAndSeasonRequestsOnAppliesWithoutARestart()
+    {
+        using var a = new Auto();
+        a.Answer = r => Collection(r, 200);
+        a.F.Plugin.Configuration.AutoMovieRequestEnabled = false;
+        a.F.Plugin.Configuration.AutoSeasonRequestEnabled = false;
+        var member = a.Person("Member");
+        var sessions = new Mock<ISessionManager>();
+        var gate = new PlaybackTriggerGate(TimeSpan.FromHours(1), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(30), 100, () => DateTimeOffset.UtcNow);
+        using var movies = new AutoMovieRequestMonitor(sessions.Object, a.Movies(), a.F.Core.Logger, a.Recorder, gate);
+        using var seasons = new AutoSeasonRequestMonitor(sessions.Object, new AutoSeasonRequestService(a.Transport, a.F.Core.Logger, a.Users.Object, null!, Mock.Of<ILibraryManager>(), a.Recorder), a.F.Core.Logger, a.Recorder, gate);
+        // Started while off (the server's start-up): they still listen, and act once turned on.
+        movies.Initialize();
+        seasons.Initialize();
+        sessions.VerifyAdd(s => s.PlaybackProgress += It.IsAny<EventHandler<PlaybackProgressEventArgs>>(), Times.Exactly(2));
+        sessions.VerifyAdd(s => s.PlaybackStopped += It.IsAny<EventHandler<PlaybackStopEventArgs>>(), Times.Once());
+        var movie = Watched();
+        a.F.Plugin.Configuration.AutoMovieRequestTriggerType = "OnMinutesWatched";
+        a.F.Plugin.Configuration.AutoMovieRequestMinutesWatched = 20;
+        sessions.Raise(s => s.PlaybackProgress += null, Progress(movie, member, TimeSpan.FromMinutes(25)));
+        await Task.Delay(100);
+        Assert.Empty(a.R.Ledger.AutomationLog());          // off: nothing
+
+        a.F.Plugin.Configuration.AutoMovieRequestEnabled = true;
+        sessions.Raise(s => s.PlaybackProgress += null, Progress(movie, member, TimeSpan.FromMinutes(26)));
+        await Until(() => a.R.Ledger.AutomationLog().Count == 1);
+        Assert.Equal("auto_movie", a.R.Ledger.AutomationLog().Single().Recipe);
+        // Initialising again doesn't subscribe twice.
+        movies.Initialize();
+        sessions.VerifyAdd(s => s.PlaybackProgress += It.IsAny<EventHandler<PlaybackProgressEventArgs>>(), Times.Exactly(2));
+    }
+
+    [Fact]
     public void TheGateIsSingleFlightCoolsDownOnlyAfterDefinitiveOutcomesAndStaysBounded()
     {
         var now = DateTimeOffset.UnixEpoch;

@@ -46,28 +46,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private bool CanRun(PluginConfiguration? config)
             => config is { AutoSeasonRequestEnabled: true } && (config.JellyseerrEnabled || (_recorder != null && AutoRequestRecorder.Active(config)));
 
-        // Initialize and start monitoring playback events.
+        private readonly object _subscriptionLock = new();
+        private bool _subscribed;
+
+        // Start monitoring playback events. Always subscribed: each event checks the settings, so turning the feature
+        // on (or its Seerr / request-ledger prerequisite) applies right away, without a restart.
         public void Initialize()
         {
-            // Only initialize if the auto-season-request feature is enabled in plugin configuration.
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
+            lock (_subscriptionLock)
             {
-                _logger.Warning("[Auto-Season-Request] Configuration is null - skipping auto-season-request monitoring initialization");
-                return;
+                if (_subscribed) return;
+                _sessionManager.PlaybackStopped += OnPlaybackStopped;
+                _sessionManager.PlaybackProgress += OnPlaybackProgress;
+                _subscribed = true;
             }
 
-            if (!CanRun(config))
-            {
-                _logger.Info("[Auto-Season-Request] Auto-request monitoring is disabled in configuration - not subscribing to playback events");
-                return;
-            }
-
-            // Subscribe to playback events
-            _sessionManager.PlaybackStopped += OnPlaybackStopped;
-            _sessionManager.PlaybackProgress += OnPlaybackProgress;
-
-            _logger.Info("[Auto-Season-Request] Successfully subscribed to playback events");
+            _logger.Info("[Auto-Season-Request] Subscribed to playback events (" + (CanRun(JellyfinEnhanced.Instance?.Configuration) ? "on" : "off until enabled") + ")");
         }
 
         /// <summary>The trigger a stop event makes: an episode played to completion or past 90%. Pure arithmetic.</summary>

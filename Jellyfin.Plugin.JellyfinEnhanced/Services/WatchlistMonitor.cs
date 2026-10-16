@@ -74,21 +74,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Initialize and start monitoring library events.
         public void Initialize()
         {
-            // Only initialize if the watchlist feature is enabled in plugin configuration.
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
-            {
-                _logger.Warning("[Watchlist] Configuration is null - skipping watchlist monitoring initialization");
-                return;
-            }
-
-            if (!config.AddRequestedMediaToWatchlist || !(config.JellyseerrEnabled || (_facts != null && SharedRequestFacts.LedgerAuthority(config))))
-            {
-                _logger.Info("[Watchlist] Watchlist monitoring is disabled in configuration - not subscribing to library events");
-                return;
-            }
-
-            // _logger.Info("[Watchlist] Initializing library event monitoring");
+            // Always subscribed: each library event checks the settings first (ScheduleWatchlistCheck), so turning the
+            // feature on applies right away, without a restart.
             lock (_subscriptionLock)
             {
                 if (_subscribed) return;
@@ -96,8 +83,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _libraryManager.ItemUpdated += OnItemUpdated;
                 _subscribed = true;
             }
-            _logger.Info("[Watchlist] Successfully subscribed to library ItemAdded and ItemUpdated events");
+            _logger.Info("[Watchlist] Subscribed to library ItemAdded and ItemUpdated events (" + (CanRun(JellyfinEnhanced.Instance?.Configuration) ? "on" : "off until enabled") + ")");
         }
+
+        // True when the feature can act: on, with Seerr or the shared request facts to read requests from.
+        private bool CanRun(PluginConfiguration? config)
+            => config is { AddRequestedMediaToWatchlist: true } && (config.JellyseerrEnabled || (_facts != null && SharedRequestFacts.Active(config)));
 
         // Handle library item added events to check if they match pending watchlist items.
         private void OnItemAdded(object? sender, ItemChangeEventArgs e) => ScheduleWatchlistCheck(e, "ItemAdded");
@@ -113,6 +104,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var kind = e.Item?.GetBaseItemKind();
             if (kind != BaseItemKind.Movie && kind != BaseItemKind.Series) return;
+            if (!CanRun(JellyfinEnhanced.Instance?.Configuration)) return;
             _ = Task.Run(() => ProcessItemForWatchlist(e, eventType));
         }
 

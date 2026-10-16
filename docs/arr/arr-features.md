@@ -1177,7 +1177,9 @@ request in Jellyfin Enhanced, under the same rules as a person's own ask, instea
   do"; a definite answer waits an hour before the same episode or movie is checked again, as before.
 
 Playback events only hand the work to a queue and return; the checks run in the background, one at a time. Every
-outcome (recorded, nothing to do and why, failed lookup) is kept for 90 days in the request database's automation log.
+outcome (recorded, nothing to do and why, failed lookup) is kept for 90 days in the request database's automation log. Turning
+Auto Season Request, Auto Movie Request or Add Requested Media to Watchlist on (or off) takes effect right away; no
+restart is needed.
 
 **Add Requested Media to Watchlist** and the request part of **Sync Seerr Watchlist to Jellyfin** read who asked from
 Jellyfin Enhanced's own requests in Jellyfin Enhanced mode, and from Seerr's complete background read in Seerr mode.

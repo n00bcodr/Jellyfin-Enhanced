@@ -128,13 +128,13 @@ public class TaskRegressionTests
     }
 
     [Fact]
-    public void DisabledWatchlistMonitorDoesNotSubscribeAndDisposalUnsubscribes()
+    public void DisabledWatchlistMonitorStillSubscribesSoEnablingNeedsNoRestartAndDisposalUnsubscribes()
     {
         using var f = new ApiPluginFixture();
         f.Plugin.Configuration.AddRequestedMediaToWatchlist = false;
         var library = new Mock<ILibraryManager>();
         using (var monitor = new WatchlistMonitor(library.Object, null!, null!, null!, f.Core.Manager, f.Core.Logger)) monitor.Initialize();
-        library.VerifyAdd(l => l.ItemAdded += It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Never);
+        library.VerifyAdd(l => l.ItemAdded += It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Once);
         library.VerifyRemove(l => l.ItemAdded -= It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Once);
         library.VerifyRemove(l => l.ItemUpdated -= It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Once);
     }

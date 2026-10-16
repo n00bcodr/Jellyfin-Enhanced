@@ -67,6 +67,17 @@ public class IntegrationWatchlistFactsTests
     private static Movie Arrived(int tmdb = 603) => new() { Id = Guid.NewGuid(), Name = "Arrived", ProviderIds = new() { ["Tmdb"] = tmdb.ToString(System.Globalization.CultureInfo.InvariantCulture) } };
 
     [Fact]
+    public void TheWatchlistListensFromStartUpEvenWhileOffSoTurningItOnNeedsNoRestart()
+    {
+        using var rig = new Rig();
+        rig.Config.AddRequestedMediaToWatchlist = false;
+        rig.Monitor.Initialize();
+        rig.Monitor.Initialize();
+        rig.Library.VerifyAdd(l => l.ItemAdded += It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Once());
+        rig.Library.VerifyAdd(l => l.ItemUpdated += It.IsAny<EventHandler<ItemChangeEventArgs>>(), Times.Once());
+    }
+
+    [Fact]
     public async Task InJeModeTheLedgerSaysWhoAskedWithoutSeerr()
     {
         using var r = new Rig();
