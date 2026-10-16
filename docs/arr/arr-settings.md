@@ -483,4 +483,5 @@ Limits offer the inherited value, **No limit** (−1) or a fixed number of reque
 are always Admin and have no role picker. People with a Jellyfin parental limit get a hint that Kid may suit them; it is
 never applied automatically. Managers can read the tab but not change it. The configuration page keeps these fields (and
 *Request handling*, which a move from Seerr switches) as the server has them when it is saved, unless they were changed
-on that page: a page left open before a Household edit or a move doesn't put the older values back.
+on that page: a page left open before a Household edit or a move doesn't put the older values back, even when the edit
+lands while the page is saving.

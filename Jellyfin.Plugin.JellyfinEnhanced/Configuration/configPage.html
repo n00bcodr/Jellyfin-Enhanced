@@ -6269,7 +6269,8 @@
          * The value to save for a setting the server also changes: the page's value when it was changed
          * on this page, else the server's current one (config holds a fresh read), which the page then
          * shows. A save from a page opened before a Household edit or a Seerr move never puts back the
-         * older household or request handling.
+         * older household or request handling. The read is sent along (ArrServerOwnedSeen), so the server
+         * also keeps an edit that lands between this read and the save.
          * @param {Object} config - Plugin configuration being saved (read from the server just now)
          * @param {string} id - The control's selector
          * @param {string} field - The configuration field
@@ -6279,6 +6280,12 @@
         function jeArrServerOwned(config, id, field, read) {
             var el = document.querySelector(id);
             var server = config[field];
+            if (server !== undefined && server !== null) {
+                var seen = {};
+                try { seen = JSON.parse(config.ArrServerOwnedSeen || '{}') || {}; } catch (e) { seen = {}; }
+                seen[field] = String(server);
+                config.ArrServerOwnedSeen = JSON.stringify(seen);
+            }
             if (el.dataset.jeLoaded !== undefined && String(el.value) === el.dataset.jeLoaded && server !== undefined && server !== null) {
                 el.value = server;
                 el.dataset.jeLoaded = String(el.value);

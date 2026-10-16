@@ -374,6 +374,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     var secretsReport = Services.Secrets.SecretsMigration.ApplyIncoming(incoming, current, Secrets);
                     LogSecretsReport(secretsReport);
 
+                    // Household and request-handling settings the page didn't change keep what the server holds now.
+                    var kept = Services.Acquire.Requests.ServerOwnedSettings.Merge(incoming, current);
+                    if (kept.Count > 0) _logger.Info("Jellyfin Enhanced: configuration save kept the server's newer " + string.Join(", ", kept) + ".");
+
                     var incomingIncomplete = string.IsNullOrEmpty(incoming.AnalyticsInstallId) || string.IsNullOrEmpty(incoming.AnalyticsInstallSecret);
                     var currentComplete = !string.IsNullOrEmpty(current.AnalyticsInstallId) && !string.IsNullOrEmpty(current.AnalyticsInstallSecret);
                     if (incomingIncomplete && currentComplete)

@@ -88,3 +88,22 @@ test('a save from a page opened before a Household edit or a Seerr move keeps th
     assert.equal(again.ArrRequestUsers, '{"kid":{"Role":"Watcher"}}');
     assert.equal(again.ArrRequestBackend, 'je');
 });
+
+test('a save sends the server values it read, so the server can keep an edit that lands before the save does', t => {
+    const h = createHarness({ html });
+    t.after(() => h.close());
+    h.window.eval(`${serverOwned} window.loadRequests = function(config) { ${load} }; window.saveRequests = function(config) { ${save} };`);
+    const loaded = {
+        ArrPhase3Enabled: true, ArrRequestBackend: 'seerr', ArrRequest4kMoviesEnabled: false, ArrRequest4kSeriesEnabled: false, ArrRequestPreset: 'ask_first', ArrRequestDefaultRole: 'Member',
+        ArrRequestUsers: '{}', ArrRequestRoles: '{}', ArrRequestQuotaLimit: 0, ArrRequestQuotaWindowDays: 7, ArrRequestSeriesThreshold: 4, ArrRequestDeclineCooldownDays: 7,
+        ArrRequestPendingLimit: 10, ArrRequestQuotaGb: 0, ArrRequestStaleDays: 30, ArrRequestChargeFutureSeasons: true, ArrKidsHideSearch: false
+    };
+    h.window.loadRequests(loaded);
+    h.document.getElementById('arrRequestPreset').value = 'open_house';
+    const saved = { ...loaded, ArrRequestQuotaLimit: 3 };
+    h.window.saveRequests(saved);
+    assert.deepEqual(JSON.parse(saved.ArrServerOwnedSeen), {
+        ArrRequestBackend: 'seerr', ArrRequestPreset: 'ask_first', ArrRequestDefaultRole: 'Member', ArrRequestRoles: '{}', ArrRequestUsers: '{}', ArrRequestQuotaLimit: '3'
+    });
+    assert.equal(saved.ArrRequestPreset, 'open_house');
+});

@@ -833,6 +833,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Rolling quota limit; zero selects the preset default, negative means unlimited.</summary>
         public int ArrRequestQuotaLimit { get; set; } = 0;
 
+        /// <summary>
+        /// Never kept (cleared on every save): the configuration page's read of the settings the server also changes
+        /// (the Household tab, a move from Seerr), as a JSON object of field name to value. A field the page posts
+        /// unchanged from that read keeps whatever the server holds when the save lands, so an edit made in the gap
+        /// between the page's read and its save isn't put back.
+        /// </summary>
+        public string ArrServerOwnedSeen { get; set; } = string.Empty;
+
         /// <summary>Quota window in days.</summary>
         public int ArrRequestQuotaWindowDays { get; set; } = 7;
 

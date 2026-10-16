@@ -595,6 +595,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/ServerOwnedSettings.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/SharedRequestFacts.cs",
       "category": "Services"
     },
@@ -5903,6 +5907,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrServerOwnedSeen",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrRequestQuotaWindowDays",
       "type": "int",
       "initializer": "7",
@@ -9519,9 +9531,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 527,
+    "files": 528,
     "routes": 247,
-    "configuration_properties": 577,
+    "configuration_properties": 578,
     "storage_references": 82,
     "scheduled_tasks": 14,
     "locales": 33

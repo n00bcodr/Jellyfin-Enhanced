@@ -1262,6 +1262,7 @@
     "ArrSeerrHandoffGraceMinutes": 15,
     "ArrSeerrModalStatus": true,
     "ArrSeerrRefreshMinutes": 5,
+    "ArrServerOwnedSeen": "",
     "ArrSmtpFrom": "",
     "ArrSmtpFromName": "Jellyfin",
     "ArrSmtpHost": "",
