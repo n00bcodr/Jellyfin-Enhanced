@@ -213,6 +213,32 @@ public class IntegrationRequestArrivalsTests
     }
 
     [Fact]
+    public async Task ASeasonAskedForArrivesOnlyWhenEveryAiredEpisodeIsHereNotWhenTheMissingOneIsUnmonitored()
+    {
+        using var lab = new Lab();
+        // Seen live (Seerr mode, before Seerr OK'd it): S1 E1-E3 here, E4 not monitored in Sonarr and not here. The ask
+        // for season 1 must not be fulfilled at once because the season "reads Ready" for what Sonarr monitors.
+        foreach (var e in lab.Sonarr.Episodes.Where(e => (int)e["seasonNumber"]! == 1 && (int)e["episodeNumber"]! is 2 or 3)) e["hasFile"] = true;
+        lab.Sonarr.Episodes.Single(e => (int)e["seasonNumber"]! == 1 && (int)e["episodeNumber"]! == 4)["monitored"] = false;
+        lab.View.AddEpisode(lab.SeriesItem, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 2, DateCreated = lab.Arr.Now.UtcDateTime.AddDays(-5) });
+        lab.View.AddEpisode(lab.SeriesItem, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 3, DateCreated = lab.Arr.Now.UtcDateTime.AddDays(-5) });
+        lab.View.Rev++;
+        await lab.Warm();
+        var s1 = await lab.Ask(lab.Emma, new MutationInput { Key = Firefly, Scope = "seasons", Seasons = new[] { 1 } });
+        await lab.Outbox.TickAsync(default);
+        Assert.Equal("sent", lab.Ledger.Find(s1)!.Status);
+        Assert.Equal(0, await lab.Fulfilment.CheckAsync(null, default));
+        Assert.Equal("sent", lab.Ledger.Find(s1)!.Status);
+        Assert.NotEqual(StatusStage.Ready, (await lab.Page(lab.Emma))[Firefly].GetProperty("status").GetProperty("stage").GetString());
+
+        // E4 arrives: now the season is here and the ask is fulfilled.
+        lab.View.AddEpisode(lab.SeriesItem, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 4, DateCreated = lab.Arr.Now.UtcDateTime });
+        lab.View.Rev++;
+        Assert.Equal(1, await lab.Fulfilment.CheckAsync(null, default));
+        Assert.Equal("fulfilled", lab.Ledger.Find(s1)!.Status);
+    }
+
+    [Fact]
     public async Task AnArrivedRequestWhoseTitleWasRemovedSaysSoAndCanBeAskedForAgainNeverOkdAgain()
     {
         using var lab = new Lab();

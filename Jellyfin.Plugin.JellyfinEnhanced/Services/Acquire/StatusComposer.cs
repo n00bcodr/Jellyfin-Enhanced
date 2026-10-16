@@ -880,7 +880,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         : EpisodeFromArr(copy, p.Part.Season, p.Part.Episode, arr, c, facts.Request);
                     return (State: one, Arr: arr, p.Part.Season, p.Part.Episode);
                 }).ToList();
-                var waiting = per.Where(x => SummaryStage(x) != StatusStage.Ready).ToList();
+                // A season asked for has arrived when every aired episode of it is here: one Sonarr doesn't monitor (yet:
+                // Seerr hasn't OK'd the request, or someone unmonitored it) is still to come, not "not wanted".
+                var waiting = per.Where(x => SummaryStage(x) != StatusStage.Ready || (x.Aired > 0 && x.Ready < x.Aired)).ToList();
                 var singlesDone = singles.All(x => x.State.Stage == StatusStage.Ready);
                 if (!singlesDone) waiting.Add(Summarize(singles.Where(x => x.State.Stage != StatusStage.Ready).ToList(), c));
                 if (waiting.Count == 0)

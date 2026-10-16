@@ -1037,7 +1037,8 @@ lists requests made through Jellyfin Enhanced.
 - **Arrival**: once what a request asks for is in Jellyfin (for the person who asked, with their library access and
   parental limits), the request is marked fulfilled, so it reads Ready everywhere and is never marked stale; a
   request whose part arrives another way while it still waits for an OK is closed the same way and gives its allowance
-  back. "Just new episodes from now on" requests never end. A season is only judged with Sonarr's episode list: while
+  back. "Just new episodes from now on" requests never end. A season has arrived when every aired episode of it is in
+  Jellyfin, including ones Sonarr doesn't monitor (yet). A season is only judged with Sonarr's episode list: while
   Sonarr or its episode list can't be read, the episodes in Jellyfin don't close a season request (it is looked at
   again later). Every
   open request is looked at in turn (every ten minutes, a page at a time), besides at once when its title changes.
