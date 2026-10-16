@@ -1011,9 +1011,14 @@ public class ApiNativeDetailsTests
         var pages = Pages(rig);
         var seriesPage = (await pages.ResolveAsync(viewer.Id, series, CancellationToken.None)).Title!;
         Assert.Equal(new[] { 1 }, seriesPage.Seasons.Select(x => x.Season));
+        // The series page names what is hidden (numbers only), so its status leaves Sonarr's states of them out too.
+        Assert.Equal(new[] { 2 }, seriesPage.HiddenSeasons);
+        Assert.Equal(new[] { (1, 2) }, seriesPage.HiddenSeriesEpisodes);
         var seasonPage = (await pages.ResolveAsync(viewer.Id, Id(SyntheticId.SeasonOf(83867, 1)), CancellationToken.None)).Title!;
         Assert.Equal(new[] { 1, 3 }, seasonPage.Episodes.Select(e => e.Episode));
         Assert.Equal(new[] { 2 }, seasonPage.HiddenEpisodes);
+        Assert.Equal(new[] { 2 }, seasonPage.HiddenSeasons);
+        Assert.Empty(seasonPage.HiddenSeriesEpisodes);
         Assert.Equal(AbsentLookup.Refused, (await pages.ResolveAsync(viewer.Id, Id(SyntheticId.SeasonOf(83867, 2)), CancellationToken.None)).Outcome);
         Assert.Equal(AbsentLookup.Refused, (await pages.ResolveAsync(viewer.Id, Id(SyntheticId.EpisodeOf(83867, 1, 2)), CancellationToken.None)).Outcome);
         // The whole series hidden (another library, a blocked tag): its page isn't re-made either.

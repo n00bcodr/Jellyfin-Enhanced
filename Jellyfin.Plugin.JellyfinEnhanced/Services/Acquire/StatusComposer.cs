@@ -344,21 +344,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// A series page of a title no Sonarr holds (the native details page of an absent title): the
         /// series status by key (asked, OK'd, declined or not here) with one entry per season from public
-        /// metadata, so the page can offer "Get Season N". Nothing is counted as missing or ready: the
-        /// seasons are simply not here, and no page id stands for a copy.
+        /// metadata, so the page can offer "Get Season N". An aired season reads where the asks that
+        /// cover that whole season have got to (asked, OK'd, declined), else not here, so a season
+        /// already asked for isn't offered again. Nothing is counted as missing or ready: the seasons
+        /// are simply not here, and no page id stands for a copy.
         /// </summary>
         /// <param name="facts">Facts of the series (requests applied).</param>
         /// <param name="page">The absent page.</param>
         /// <param name="c">Context.</param>
+        /// <param name="seasonRequests">The requests that cover a whole season, by season number (null: none known).</param>
         /// <returns>Status.</returns>
-        public static TitleStatus AbsentSeries(TitleFacts facts, AbsentTitle page, ComposeContext c)
+        public static TitleStatus AbsentSeries(TitleFacts facts, AbsentTitle page, ComposeContext c, Func<int, RequestFacts?>? seasonRequests = null)
         {
             var state = ApplyRequest(NothingKnown(facts), facts.Request, c, facts);
             var seasons = page.Seasons.Where(s => s.Season > 0).OrderBy(s => s.Season).Select(s => new SeasonStatus
             {
                 Season = s.Season,
                 ItemId = Id(s.PageId),
-                Stage = s.Aired > 0 ? StatusStage.NotHere : StatusStage.NotOut,
+                Stage = s.Aired > 0 ? ApplyRequest(NothingKnown(facts), seasonRequests?.Invoke(s.Season), c, facts).Stage : StatusStage.NotOut,
                 Summary = new StatusSummary { Aired = s.Aired },
             }).ToList();
             var next = page.Seasons.Where(s => s.Season > 0 && s.Aired == 0 && s.AirDate is DateTime d && d > c.Now).OrderBy(s => s.Season).FirstOrDefault();
@@ -394,8 +397,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var season = page.Season ?? 0;
             var down = ApplyRequest(NothingKnown(facts), request, c, facts);
-            // Spoiler Guard on the title with its air-date switch: the rows name no air dates (as the page's episode list).
-            var dates = page.Spoilers?.AirDate != true;
             var list = new List<EpisodeStatus>();
             var aired = 0;
             DateTime? nextAir = null;
@@ -420,7 +421,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     Row = page.Rows,
                     Stage = state.Stage,
                     Reason = Reason(state),
-                    AirDate = dates ? e.AirDate : null,
+                    AirDate = e.AirDate,
                 });
             }
 
@@ -476,6 +477,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Journey = EpisodeJourney(state, null, season, number, null, item, c),
                 Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null) : null,
             };
+        }
+
+        /// <summary>
+        /// Spoiler Guard's air-date switch on an absent season or episode page (the page's episode list
+        /// names no air dates): takes every air date out of its status, in place. The episodes' and the
+        /// next episode's dates, the "airs" date of a reason, and the "looking since it aired" stop of an
+        /// episode's journey go; stages stay (an episode not out yet still reads "not aired yet").
+        /// </summary>
+        /// <param name="status">A freshly composed season or episode status.</param>
+        internal static void WithoutAirDates(TitleStatus status)
+        {
+            status.NextDate = null;
+            status.NextDay = null;
+            status.Reason = WithoutDate(status.Reason);
+            if (status.Summary != null) status.Summary.NextAir = null;
+            foreach (var episode in status.Episodes ?? Array.Empty<EpisodeStatus>())
+            {
+                episode.AirDate = null;
+                episode.Reason = WithoutDate(episode.Reason);
+            }
+
+            // An episode's Looking stop is reached when it aired.
+            if (status.Kind == "episode")
+            {
+                foreach (var stop in status.Journey ?? Array.Empty<JourneyStop>())
+                {
+                    if (stop.Stage == StatusStage.Looking) stop.At = null;
+                }
+            }
+        }
+
+        private static StatusReason WithoutDate(StatusReason reason)
+        {
+            if (reason.Params == null || !reason.Params.ContainsKey("date")) return reason;
+            var rest = reason.Params.Where(p => p.Key != "date").ToDictionary(p => p.Key, p => p.Value);
+            return new StatusReason { Code = reason.Code, Params = rest.Count > 0 ? rest : null };
         }
 
         // ------------------------------------------------------------------ series, seasons, episodes

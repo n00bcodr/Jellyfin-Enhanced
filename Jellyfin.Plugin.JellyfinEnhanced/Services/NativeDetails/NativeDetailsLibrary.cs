@@ -37,6 +37,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>Episode numbers (of the season asked for) the library has but the viewer can't open.</summary>
         public IReadOnlySet<int> HiddenEpisodes { get; init; } = new HashSet<int>();
 
+        /// <summary>
+        /// When every season was asked for: the episodes (season, number) the library has but the viewer
+        /// can't open, in seasons they can (a hidden season's episodes are covered by <see cref="HiddenSeasons"/>).
+        /// </summary>
+        public IReadOnlySet<(int Season, int Episode)> HiddenSeriesEpisodes { get; init; } = new HashSet<(int Season, int Episode)>();
+
         /// <summary>True when the title, a season or an episode of a synthetic id is hidden from the viewer.</summary>
         /// <param name="id">Synthetic id.</param>
         /// <returns>True when hidden.</returns>
@@ -80,13 +86,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="movie">Movie (else series).</param>
         /// <param name="tmdb">TMDB id.</param>
         /// <param name="season">The season whose episodes are wanted, or null.</param>
+        /// <param name="everySeason">With no <paramref name="season"/>: the hidden episodes of every season too (<see cref="PhysicalTitle.HiddenSeriesEpisodes"/>).</param>
         /// <returns>The physical title.</returns>
-        public PhysicalTitle Read(User viewer, string viewerRevision, bool movie, int tmdb, int? season)
+        public PhysicalTitle Read(User viewer, string viewerRevision, bool movie, int tmdb, int? season, bool everySeason = false)
         {
-            var key = string.Join('|', viewer.Id.ToString("N", CultureInfo.InvariantCulture), viewerRevision, movie ? "m" : "t", tmdb.ToString(CultureInfo.InvariantCulture), season?.ToString(CultureInfo.InvariantCulture) ?? "-");
+            everySeason &= season == null && !movie;
+            var key = string.Join('|', viewer.Id.ToString("N", CultureInfo.InvariantCulture), viewerRevision, movie ? "m" : "t", tmdb.ToString(CultureInfo.InvariantCulture), season?.ToString(CultureInfo.InvariantCulture) ?? (everySeason ? "*" : "-"));
             var revision = _revision?.Invoke();
             if (revision is long r && _cache.TryGetValue(key, out var hit) && hit.Revision == r && DateTime.UtcNow - hit.At < Ttl) return hit.Value;
-            var value = Compute(viewer, movie, tmdb, season);
+            var value = Compute(viewer, movie, tmdb, season, everySeason);
             if (revision is long now)
             {
                 if (_cache.Count >= MaxEntries) _cache.Clear();
@@ -96,7 +104,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return value;
         }
 
-        private PhysicalTitle Compute(User viewer, bool movie, int tmdb, int? season)
+        private PhysicalTitle Compute(User viewer, bool movie, int tmdb, int? season, bool everySeason)
         {
             var key = TitleKey.Parse((movie ? "movie" : "tv") + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture));
             if (key == null || tmdb <= 0) return PhysicalTitle.None;
@@ -145,34 +153,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 .ToHashSet();
 
             var hiddenEpisodes = new HashSet<int>();
-            if (season is int number && !hiddenSeasons.Contains(number))
+            var hiddenSeriesEpisodes = new HashSet<(int Season, int Episode)>();
+            // The season asked for, or every season the viewer can see (a hidden season hides all of its episodes).
+            var wanted = seasons.Where(s => season is int number ? s.IndexNumber == number && !hiddenSeasons.Contains(number) : everySeason && !hiddenSeasons.Contains(s.IndexNumber!.Value)).ToList();
+            if (wanted.Count > 0)
             {
-                var holders = seasons.Where(s => s.IndexNumber == number).Select(s => s.Id).ToArray();
-                if (holders.Length > 0)
+                var numberOf = wanted.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.First().IndexNumber!.Value);
+                var episodes = (_library.GetItemList(new InternalItemsQuery
                 {
-                    var episodes = (_library.GetItemList(new InternalItemsQuery
-                    {
-                        IncludeItemTypes = new[] { BaseItemKind.Episode },
-                        AncestorIds = holders,
-                        Recursive = true,
-                        DtoOptions = new DtoOptions(false),
-                    }) ?? new List<BaseItem>()).OfType<Episode>().Where(e => e.IndexNumber.HasValue);
-                    var visible = new HashSet<int>();
-                    foreach (var e in episodes)
-                    {
-                        var first = e.IndexNumber!.Value;
-                        var last = Math.Clamp(e.IndexNumberEnd ?? first, first, first + MaxRange);
-                        var numbers = Enumerable.Range(first, last - first + 1);
-                        if (Visible(e.Id, e.SeriesId)) visible.UnionWith(numbers);
-                        else hiddenEpisodes.UnionWith(numbers);
-                    }
-
-                    // A number some visible item carries (another copy, a multi-part file) is not hidden.
-                    hiddenEpisodes.ExceptWith(visible);
+                    IncludeItemTypes = new[] { BaseItemKind.Episode },
+                    AncestorIds = numberOf.Keys.ToArray(),
+                    Recursive = true,
+                    DtoOptions = new DtoOptions(false),
+                }) ?? new List<BaseItem>()).OfType<Episode>().Where(e => e.IndexNumber.HasValue);
+                var visible = new HashSet<(int Season, int Episode)>();
+                var hidden = new HashSet<(int Season, int Episode)>();
+                foreach (var e in episodes)
+                {
+                    // Under one season: that season; under several, the episode's own (else the season item holding it).
+                    int? inSeason = season ?? e.ParentIndexNumber ?? (numberOf.TryGetValue(e.SeasonId, out var held) ? held : null);
+                    if (inSeason is not int s) continue;
+                    var first = e.IndexNumber!.Value;
+                    var last = Math.Clamp(e.IndexNumberEnd ?? first, first, first + MaxRange);
+                    var numbers = Enumerable.Range(first, last - first + 1).Select(n => (s, n));
+                    if (Visible(e.Id, e.SeriesId)) visible.UnionWith(numbers);
+                    else hidden.UnionWith(numbers);
                 }
+
+                // A number some visible item carries (another copy, a multi-part file) is not hidden.
+                hidden.ExceptWith(visible);
+                if (season is int asked) hiddenEpisodes.UnionWith(hidden.Where(p => p.Season == asked).Select(p => p.Episode));
+                else hiddenSeriesEpisodes.UnionWith(hidden);
             }
 
-            return new PhysicalTitle { Copies = ids, HiddenSeasons = hiddenSeasons, HiddenEpisodes = hiddenEpisodes };
+            return new PhysicalTitle { Copies = ids, HiddenSeasons = hiddenSeasons, HiddenEpisodes = hiddenEpisodes, HiddenSeriesEpisodes = hiddenSeriesEpisodes };
         }
 
         private bool CanOpen(Guid id, User viewer) => _library.GetItemById<BaseItem>(id, viewer) != null;

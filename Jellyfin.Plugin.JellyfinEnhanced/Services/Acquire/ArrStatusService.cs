@@ -305,15 +305,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     status = StatusComposer.Movie(facts, null, copies, c, detail: true);
                     break;
                 case "series":
-                    var seasons = page.Seasons.Select(s => new JfSeason { ItemId = s.PageId, Season = s.Season }).ToList();
+                    // What the library hides from the viewer goes in as hidden markers (numbers only), so a
+                    // Sonarr's states of those seasons and episodes never reach the page's seasons or counts.
+                    var seasons = page.Seasons.Select(s => new JfSeason { ItemId = s.PageId, Season = s.Season })
+                        .Concat(page.HiddenSeasons.Select(n => new JfSeason { Season = n, Hidden = true })).ToList();
+                    var hiddenEpisodes = page.HiddenSeriesEpisodes.Select(p => new JfEpisode { Season = p.Season, Episode = p.Episode, Hidden = true }).ToList();
                     status = facts.Copies.Any(x => x.Series != null)
-                        ? StatusComposer.Series(facts, item, Array.Empty<JfEpisode>(), seasons, c, detail: true)
-                        : StatusComposer.AbsentSeries(facts, page, c);
+                        ? StatusComposer.Series(facts, item, hiddenEpisodes, seasons, c, detail: true)
+                        : StatusComposer.AbsentSeries(facts, page, c, number => _requests.ForSeason(title, number, viewer));
                     break;
                 case "season":
                     var rows = page.Rows
                         ? page.Episodes.Select(e => new JfEpisode { ItemId = e.PageId, Season = e.Season, Episode = e.Episode, Virtual = true }).ToList()
                         : new List<JfEpisode>();
+                    // The season's episodes the library hides from the viewer (as the season rows leave them out).
+                    rows.AddRange(page.HiddenEpisodes.Select(n => new JfEpisode { Season = page.Season ?? 0, Episode = n, Hidden = true }));
                     status = facts.Copies.Any(x => x.Series != null)
                         ? StatusComposer.Season(facts, item, rows, c, detail: true)
                         : StatusComposer.AbsentSeason(facts, page, episodeRequests, c);
@@ -325,6 +331,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     break;
             }
 
+            // Spoiler Guard's air-date switch on the title: the page names no air date (as its episode list).
+            if (page.Spoilers?.AirDate == true) StatusComposer.WithoutAirDates(status);
             status = WithLiveKey(status, facts);
             status.OpenItemId = OpenableCopy(viewer, page, copies);
             return status;
@@ -577,8 +585,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// Whether a viewer may ask about a title by key: a visible Jellyfin copy, or an absent
-        /// title with an openable arr destination and no parental limits. Unresolved destinations
-        /// require every library. Their own request grants access only while Jellyfin has no copy.
+        /// title with an openable arr destination and no parental limits. With no arr holding it, the
+        /// destination is where a request would land (the default instance's, as the request policy
+        /// reads it). Unresolved destinations require every library. Their own request grants access
+        /// only while Jellyfin has no copy.
         /// </summary>
         private bool MayAskByKey(StatusViewer viewer, TitleKey key, IReadOnlyList<JfCopy> copies)
         {
@@ -589,8 +599,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (!ArrInstanceLibraries.AbsentParentalEnabled && viewer.HasParentalLimit) return false;
             var holders = _store.Instances(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr)
                 .SelectMany(i => PathsOf(i, key).Select(path => (Instance: i, Path: path))).ToList();
-            return holders.Count > 0 ? holders.Any(c => MayUseCopy(viewer, new CopyAccess(true, false, false), c.Instance, c.Path))
-                : viewer.Handle is User user && ArrInstanceLibraries.CanOpenEveryLibrary(user, _libraries.Libraries());
+            if (holders.Count > 0) return holders.Any(c => MayUseCopy(viewer, new CopyAccess(true, false, false), c.Instance, c.Path));
+            var destination = _store.Registry.DefaultFor(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr, Model.Arr.ArrInstanceRole.Standard) is { } instance
+                ? _libraries.ResolveTitle(instance, key)
+                : new ArrLibraryTarget(null, null, ArrLibraryProblem.NoInstance);
+            return viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, destination, _libraries.Libraries());
         }
 
         private bool AskedBy(TitleKey key, StatusViewer viewer)

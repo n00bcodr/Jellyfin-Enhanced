@@ -746,6 +746,161 @@ public class ApiArrStatusTests
         Assert.Equal(rig.Season1.ToString("N"), season.GetProperty("openItemId").GetString());
     }
 
+    [Fact]
+    public async Task ASonarrHeldAbsentPageLeavesOutTheSeasonsAndEpisodesTheLibraryHidesFromTheViewer()
+    {
+        using var rig = new Rig();
+        // Sonarr also has a season 2 (aired, monitored, nothing on disk).
+        rig.Sonarr.Series[0]["seasons"] = new JsonArray(
+            new JsonObject { ["seasonNumber"] = 1, ["monitored"] = true, ["statistics"] = new JsonObject { ["episodeFileCount"] = 1, ["episodeCount"] = 4, ["totalEpisodeCount"] = 4 } },
+            new JsonObject { ["seasonNumber"] = 2, ["monitored"] = true, ["statistics"] = new JsonObject { ["episodeFileCount"] = 0, ["episodeCount"] = 2, ["totalEpisodeCount"] = 2 } });
+        rig.Sonarr.Episodes.Add(new JsonObject { ["id"] = 201, ["seriesId"] = 1, ["seasonNumber"] = 2, ["episodeNumber"] = 1, ["airDateUtc"] = "2003-01-01T00:00:00Z", ["hasFile"] = false, ["monitored"] = true });
+        rig.Sonarr.Episodes.Add(new JsonObject { ["id"] = 202, ["seriesId"] = 1, ["seasonNumber"] = 2, ["episodeNumber"] = 2, ["airDateUtc"] = "2003-01-08T00:00:00Z", ["hasFile"] = false, ["monitored"] = true });
+        var pages = new FakePages();
+        var key = TitleKey.Parse("tv:tvdb:78874")!;
+        var now = rig.Arr.Now.UtcDateTime;
+        // Jellyfin hides season 2 and S1E2 from the kid (a custom rating, a blocked tag): the page left them out.
+        AbsentTitle Series(bool hidden) => new()
+        {
+            PageId = Guid.NewGuid(), Kind = "series", Title = key, TmdbId = 1437,
+            Seasons = new[] { new AbsentSeason(1, 4, 4, now.AddYears(-20), Guid.NewGuid()) },
+            HiddenSeasons = hidden ? new[] { 2 } : Array.Empty<int>(),
+            HiddenSeriesEpisodes = hidden ? new[] { (1, 2) } : Array.Empty<(int, int)>(),
+        };
+        AbsentTitle Season(bool hidden, bool rows) => new()
+        {
+            PageId = Guid.NewGuid(), Kind = "season", Title = key, TmdbId = 1437, Season = 1, SeriesPageId = Guid.NewGuid(), Rows = rows,
+            Episodes = new[] { 1, 3, 4 }.Select(n => new AbsentEpisode(1, n, now.AddYears(-20), Guid.NewGuid())).ToArray(),
+            HiddenEpisodes = hidden ? new[] { 2 } : Array.Empty<int>(),
+        };
+        async Task<JsonElement> Status(AbsentTitle page)
+        {
+            pages.Pages[page.PageId] = Found(page);
+            return Items(await AbsentItem(rig, rig.Kid, pages, page.PageId))[0];
+        }
+
+        int Count(JsonElement summary, string name) => summary.TryGetProperty(name, out var n) ? n.GetInt32() : 0;
+
+        // Without the markers Sonarr's numbers would bring the hidden parts back (season 2, S1E2 missing).
+        var leaky = await Status(Series(hidden: false));
+        Assert.Equal(new[] { 1, 2 }, leaky.GetProperty("seasons").EnumerateArray().Select(x => x.GetProperty("season").GetInt32()));
+        var series = await Status(Series(hidden: true));
+        var seasons = series.GetProperty("seasons").EnumerateArray().ToList();
+        Assert.Equal(new[] { 1 }, seasons.Select(x => x.GetProperty("season").GetInt32()));
+        Assert.Equal(3, seasons[0].GetProperty("summary").GetProperty("aired").GetInt32());
+        Assert.Equal(0, Count(seasons[0].GetProperty("summary"), "missing"));
+        Assert.Equal((3, 0), (series.GetProperty("summary").GetProperty("aired").GetInt32(), Count(series.GetProperty("summary"), "missing")));
+        Assert.True(Count(leaky.GetProperty("summary"), "missing") > 0);
+
+        // The season page: no entry, count or state for S1E2, with rows or the banner.
+        foreach (var rows in new[] { false, true })
+        {
+            Assert.Contains(2, (await Status(Season(hidden: false, rows))).GetProperty("episodes").EnumerateArray().Select(e => e.GetProperty("episode").GetInt32()));
+            var season = await Status(Season(hidden: true, rows));
+            Assert.Equal(new[] { 1, 3, 4 }, season.GetProperty("episodes").EnumerateArray().Select(e => e.GetProperty("episode").GetInt32()));
+            Assert.DoesNotContain("78874:s1:e2", season.ToString());
+            Assert.Equal((3, 0), (season.GetProperty("summary").GetProperty("aired").GetInt32(), Count(season.GetProperty("summary"), "missing")));
+        }
+    }
+
+    [Fact]
+    public async Task AnAbsentSeriesPageReadsEachSeasonWhereTheAsksForThatSeasonHaveGot()
+    {
+        var requests = new FakeRequests();
+        using var rig = new Rig(requests);
+        var pages = new FakePages();
+        var now = rig.Arr.Now.UtcDateTime;
+        var page = new AbsentTitle
+        {
+            PageId = Guid.NewGuid(), Kind = "series", Title = TitleKey.Parse("tv:tvdb:393189")!, TmdbId = 83867,
+            Seasons = new[] { new AbsentSeason(1, 12, 12, now.AddYears(-3), Guid.NewGuid()), new AbsentSeason(2, 12, 12, now.AddYears(-1), Guid.NewGuid()), new AbsentSeason(3, 12, 0, now.AddDays(30), Guid.NewGuid()) },
+        };
+        pages.Pages[page.PageId] = Found(page);
+        async Task<(string Title, string Seasons)> Stages()
+        {
+            var status = Items(await AbsentItem(rig, rig.Member, pages, page.PageId))[0];
+            return (status.GetProperty("stage").GetString()!, string.Join(",", status.GetProperty("seasons").EnumerateArray().Select(x => x.GetProperty("stage").GetString())));
+        }
+
+        Assert.Equal(("notHere", "notHere,notHere,notOut"), await Stages());
+        // Season 1 asked (waiting for an OK): the series reads asked and season 1 isn't offered again; season 2 still is.
+        requests.Title = new RequestFacts { Pending = true, AskedAt = now.AddHours(-1), AskedByViewer = true };
+        requests.Seasons[1] = new RequestFacts { Pending = true, AskedAt = now.AddHours(-1), AskedByViewer = true };
+        requests.Revision++;
+        Assert.Equal(("asked", "asked,notHere,notOut"), await Stages());
+        // OK'd: approved; declined: not here (it may be asked for again).
+        requests.Seasons[1] = new RequestFacts { ApprovedAt = now.AddHours(-1), AskedAt = now.AddHours(-2), AskedByViewer = true };
+        requests.Revision++;
+        Assert.Equal("approved,notHere,notOut", (await Stages()).Seasons);
+        requests.Seasons[1] = new RequestFacts { Declined = true, AskedAt = now.AddHours(-2), AskedByViewer = true };
+        requests.Revision++;
+        Assert.Equal("notHere,notHere,notOut", (await Stages()).Seasons);
+    }
+
+    [Fact]
+    public async Task SpoilerGuardsAirDateSwitchTakesEveryAirDateOutOfAnAbsentPagesStatus()
+    {
+        using var rig = new Rig();
+        var pages = new FakePages();
+        var now = rig.Arr.Now.UtcDateTime;
+        var later = now.Date.AddDays(20);
+        string Day(DateTime d) => d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        // Sonarr's Firefly gets an episode that airs later (S1E5).
+        rig.Sonarr.Episodes.Add(new JsonObject { ["id"] = 105, ["seriesId"] = 1, ["seasonNumber"] = 1, ["episodeNumber"] = 5, ["airDateUtc"] = later.AddHours(20).ToString("o"), ["hasFile"] = false, ["monitored"] = true });
+        var guarded = new AbsentRowSpoilers(false, false, true);
+        AbsentTitle Page(string key, string kind, int? episode, AbsentRowSpoilers? spoilers)
+        {
+            var id = Guid.NewGuid();
+            return new()
+            {
+                PageId = id, Kind = kind, Title = TitleKey.Parse(key)!, TmdbId = 83867, Season = 1, Episode = episode, SeriesPageId = Guid.NewGuid(), Spoilers = spoilers,
+                Episodes = new[] { new AbsentEpisode(1, 4, now.AddYears(-20), Guid.NewGuid()), new AbsentEpisode(1, 5, later, kind == "episode" ? id : Guid.NewGuid()) },
+            };
+        }
+
+        async Task<string> Body(AbsentTitle page)
+        {
+            pages.Pages[page.PageId] = Found(page);
+            return Items(await AbsentItem(rig, rig.Member, pages, page.PageId))[0].ToString();
+        }
+
+        // No Sonarr (a series nobody holds) and Sonarr's Firefly; the season and the episode that airs later.
+        foreach (var key in new[] { "tv:tvdb:393189", "tv:tvdb:78874" })
+        {
+            foreach (var (kind, episode) in new[] { ("season", (int?)null), ("episode", (int?)5) })
+            {
+                Assert.Contains(Day(later), await Body(Page(key, kind, episode, null)));
+                var body = await Body(Page(key, kind, episode, guarded));
+                Assert.DoesNotContain(Day(later), body);
+                Assert.DoesNotContain("\"date\"", body);
+                Assert.DoesNotContain("\"nextAir\"", body);
+                Assert.DoesNotContain("\"airDate\"", body);
+                // Still not out: the stage stays, without its day.
+                Assert.Contains("\"notOut\"", body);
+            }
+        }
+
+        // An aired episode Sonarr is looking for: its journey's Looking stop is its air day (S1E4, 2002-10-11).
+        AbsentTitle Aired(AbsentRowSpoilers? spoilers)
+        {
+            var id = Guid.NewGuid();
+            return new()
+            {
+                PageId = id, Kind = "episode", Title = TitleKey.Parse("tv:tvdb:78874")!, TmdbId = 1437, Season = 1, Episode = 4, SeriesPageId = Guid.NewGuid(), Spoilers = spoilers,
+                Episodes = new[] { new AbsentEpisode(1, 4, new DateTime(2002, 10, 11, 0, 0, 0, DateTimeKind.Utc), id) },
+            };
+        }
+
+        rig.Sonarr.Queue.Clear();
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(10);
+        await Task.WhenAll(rig.Store.Tick());
+        Assert.Contains("2002-10-11", await Body(Aired(null)));
+        Assert.DoesNotContain("2002-10-11", await Body(Aired(guarded)));
+
+        // The other Spoiler Guard switches leave the dates alone.
+        Assert.Contains(Day(later), await Body(Page("tv:tvdb:393189", "season", null, new AbsentRowSpoilers(true, true, false))));
+    }
+
 #if !NET9_0
     [Fact]
     public async Task TheNavigatorOpensACopyTheViewerCanOpenFirstElseTheNativePage()

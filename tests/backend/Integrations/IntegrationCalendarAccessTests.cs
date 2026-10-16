@@ -333,6 +333,48 @@ public class IntegrationCalendarAccessTests
     }
 
     [Theory]
+    [InlineData("tv", true)]
+    [InlineData("kids", false)]
+    [InlineData("none", false)]
+    public async Task AnAbsentTitleNoArrHoldsIsJudgedByWhereARequestWouldLand(string linked, bool memberSees)
+    {
+        using var rig = new CalendarRig();
+        var config = rig.R.Arr.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = true;
+        config.ArrPhase1Enabled = true;
+        // The default Sonarr ("TV") links the TV library (which the member can open), Kids TV (which they can't), or none.
+        var rows = ArrRegistryMigration.Parse(config.SonarrInstances)!;
+        rows.Single(r => r.Name == "TV").LinkedLibraryIds = linked switch { "tv" => [rig.R.Tv.Id], "kids" => [rig.R.Kids.Id], _ => [] };
+        config.SonarrInstances = ArrRegistryMigration.Serialize(rows);
+        // A series no Sonarr holds and nobody asked for, on its native details page.
+        var key = TitleKey.Parse("tv:tvdb:393189")!;
+        var page = new AbsentTitle
+        {
+            PageId = Guid.NewGuid(), Kind = "series", Title = key, TmdbId = 83867,
+            Seasons = new[] { new AbsentSeason(1, 8, 8, rig.R.Arr.Now.UtcDateTime.AddYears(-1), Guid.NewGuid()) },
+        };
+        var view = new FakeJellyfinView();
+        var member = new StatusViewer { UserId = rig.Member.Id, Handle = rig.Member, PolicyRevision = "member" };
+        var allUser = rig.Callers.Register(Guid.NewGuid(), admin: false);
+        allUser.SetPermission(PermissionKind.EnableAllFolders, true);
+        var all = new StatusViewer { UserId = allUser.Id, Handle = allUser, PolicyRevision = "all" };
+        var status = new ArrStatusService(rig.R.Store, view, new Mock<IArrRequestFacts>().Object, () => config, () => rig.R.Arr.Now, libraries: rig.R.Resolver);
+        async Task<JsonElement> Absent(StatusViewer viewer)
+            => JsonDocument.Parse((await status.ForAbsentAsync(viewer, page, default)).Json).RootElement.GetProperty("items").Clone();
+        async Task<JsonElement> Keyed(StatusViewer viewer)
+            => JsonDocument.Parse((await status.ForBatchAsync(viewer, Array.Empty<Guid>(), new[] { key }, default)).Json).RootElement.GetProperty("items").Clone();
+
+        // The same rule as the request policy (where a request would land): the page, the key and Notify me agree.
+        Assert.Equal(memberSees ? 1 : 0, (await Absent(member)).GetArrayLength());
+        Assert.Equal(memberSees ? 1 : 0, (await Keyed(member)).GetArrayLength());
+        Assert.Equal(memberSees, status.MayFollow(member, key));
+        if (memberSees) Assert.Equal("notHere", (await Absent(member))[0].GetProperty("seasons")[0].GetProperty("stage").GetString());
+        // Someone who can open every library sees it whatever the link.
+        Assert.Equal(1, (await Absent(all)).GetArrayLength());
+        Assert.True(status.MayFollow(all, key));
+    }
+
+    [Theory]
     [InlineData("/data/tv/../movies/Title")]
     [InlineData("/data/tv/./Title")]
     [InlineData("D:\\TV\\..\\Movies\\Title")]

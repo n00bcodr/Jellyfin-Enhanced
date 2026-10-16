@@ -169,7 +169,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public string Stage { get; init; } = string.Empty;
 
         /// <summary>When it was reached, if known.</summary>
-        public DateTime? At { get; init; }
+        public DateTime? At { get; set; }
 
         /// <summary>done, current or next.</summary>
         public string State { get; init; } = "done";
@@ -200,7 +200,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public int Attention { get; init; }
 
         /// <summary>Next air time (UTC).</summary>
-        public DateTime? NextAir { get; init; }
+        public DateTime? NextAir { get; set; }
 
         /// <summary>
         /// <see cref="NextAir"/> is a calendar day (Sonarr gave only the air date), not an instant.
@@ -263,7 +263,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public string Stage { get; init; } = StatusStage.None;
 
         /// <summary>Reason.</summary>
-        public StatusReason Reason { get; init; } = new();
+        public StatusReason Reason { get; set; } = new();
 
         /// <summary>Needs attention.</summary>
         public bool Attention { get; init; }
@@ -272,7 +272,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public StatusProgress? Progress { get; init; }
 
         /// <summary>Air time (UTC).</summary>
-        public DateTime? AirDate { get; init; }
+        public DateTime? AirDate { get; set; }
     }
 
     /// <summary>Admin view of one copy (instance) of a title.</summary>
@@ -404,7 +404,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public string Stage { get; init; } = StatusStage.None;
 
         /// <summary>Why.</summary>
-        public StatusReason Reason { get; init; } = new();
+        public StatusReason Reason { get; set; } = new();
 
         /// <summary>Taking longer than it should (stalled, failed, import blocked).</summary>
         public bool Attention { get; init; }
@@ -416,13 +416,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public StatusProgress? Progress { get; init; }
 
         /// <summary>Release, air or "expected" date, when there is one.</summary>
-        public DateTime? NextDate { get; init; }
+        public DateTime? NextDate { get; set; }
 
         /// <summary>
         /// <see cref="NextDate"/> as a calendar day ("yyyy-MM-dd") when it is a date without a time (a
         /// release date, an air date with no time): shown as that day in every time zone. Null otherwise.
         /// </summary>
-        public string? NextDay { get; init; }
+        public string? NextDay { get; set; }
 
         /// <summary>Journey strip (details pages only).</summary>
         public IReadOnlyList<JourneyStop>? Journey { get; init; }

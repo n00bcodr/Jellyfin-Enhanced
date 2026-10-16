@@ -74,6 +74,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public IReadOnlyCollection<int> HiddenEpisodes { get; init; } = Array.Empty<int>();
 
+        /// <summary>
+        /// Season numbers the library has but hides from the viewer as a whole: never listed, counted
+        /// or followed on the page (they are not in <see cref="Seasons"/> either).
+        /// </summary>
+        public IReadOnlyCollection<int> HiddenSeasons { get; init; } = Array.Empty<int>();
+
+        /// <summary>
+        /// Series pages: the episodes (season, number) the library has but hides from the viewer inside
+        /// seasons they can see. Their arr states never reach the series' seasons or counts.
+        /// </summary>
+        public IReadOnlyCollection<(int Season, int Episode)> HiddenSeriesEpisodes { get; init; } = Array.Empty<(int Season, int Episode)>();
+
         /// <summary>The viewer guards the title with Spoiler Guard: what the season's rows leave out (null: nothing).</summary>
         public AbsentRowSpoilers? Spoilers { get; init; }
 
@@ -95,6 +107,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 string.Join(',', Seasons.Select(s => $"{s.Season}:{s.Episodes}:{s.Aired}")),
                 string.Join(',', Episodes.Select(e => $"{e.Season}:{e.Episode}:{e.AirDate?.ToString("yyyyMMdd", CultureInfo.InvariantCulture)}")),
                 string.Join(',', HiddenEpisodes.OrderBy(n => n)),
+                string.Join(',', HiddenSeasons.OrderBy(n => n)),
+                string.Join(',', HiddenSeriesEpisodes.OrderBy(p => p.Season).ThenBy(p => p.Episode).Select(p => $"{p.Season}:{p.Episode}")),
                 Spoilers?.ToString() ?? "-");
     }
 

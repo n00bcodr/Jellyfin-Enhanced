@@ -897,6 +897,41 @@ public class IntegrationRequestArrivalsTests
         Assert.Equal("fulfilled", lab.Ledger.Find(s2)!.Status);
     }
 
+    [Fact]
+    public async Task AnAbsentSeriesPageNeverOffersASeasonAlreadyAskedForInEitherMode()
+    {
+        using var lab = new Lab();
+        // Andor: no Sonarr holds it; two aired seasons on its native series page.
+        const string Andor = "tv:tvdb:393189";
+        var now = lab.Arr.Now.UtcDateTime;
+        var page = new AbsentTitle
+        {
+            PageId = Guid.NewGuid(), Kind = "series", Title = TitleKey.Parse(Andor)!, TmdbId = 83867,
+            Seasons = new[] { new AbsentSeason(1, 12, 12, now.AddYears(-3), Guid.NewGuid()), new AbsentSeason(2, 12, 12, now.AddYears(-1), Guid.NewGuid()) },
+        };
+        async Task<(string Title, string Seasons)> Stages(StatusViewer viewer)
+        {
+            using var doc = JsonDocument.Parse((await lab.Status.ForAbsentAsync(viewer, page, default)).Json);
+            var status = doc.RootElement.GetProperty("items")[0];
+            return (status.GetProperty("stage").GetString()!, string.Join(",", status.GetProperty("seasons").EnumerateArray().Select(x => x.GetProperty("stage").GetString())));
+        }
+
+        // Jellyfin Enhanced mode: the Kid asks for season 1 and it waits for an OK. Reopened, the page reads
+        // season 1 as asked (not offered again) and season 2 as not here (the next one to get).
+        await lab.Ask(lab.Kid, new MutationInput { Key = Andor, Scope = "seasons", Seasons = new[] { 1 } });
+        Assert.Equal(("asked", "asked,notHere"), await Stages(lab.Kid));
+        Assert.Equal("asked,notHere", (await Stages(lab.Emma)).Seasons);
+
+        // Seerr mode: Seerr's requests are the authority; Emma's season 2 there waits for an OK.
+        lab.Config.ArrRequestBackend = "seerr";
+        lab.Config.JellyseerrEnabled = true;
+        lab.Config.JellyseerrUrls = FakeSeerr.Url;
+        lab.Config.JellyseerrApiKey = FakeSeerr.Key;
+        lab.Seerr.Requests.Add(FakeSeerr.Request(41, "tv", 83867, 1, lab.Emma.UserId, now.AddHours(-1), tvdb: 393189, seasons: new[] { 2 }));
+        Assert.True(await lab.Model.RefreshAsync(default));
+        Assert.Equal(("asked", "notHere,asked"), await Stages(lab.Emma));
+    }
+
     private const string IntegrationNotificationsTestsDune = "movie:tmdb:693134";
     private const string IntegrationNotificationsTestsSeverance = "tv:tvdb:371980";
 }

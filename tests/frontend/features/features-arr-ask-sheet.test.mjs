@@ -635,6 +635,12 @@ test('a series or season that isn\'t in the library (native details): Get Season
   assert.deepEqual([...h.document.querySelectorAll('.je-sheet-card')].length > 0, true);
   key(h, 'Escape');
   await settle();
+  // Season 1 already asked for (the server reads that season as asked): Season 2 is the one to get next.
+  const asked = { ...absent, stage: 'asked', reason: { code: 'awaiting_approval' }, seasons: [{ ...absent.seasons[0], stage: 'asked' }, absent.seasons[1]] };
+  h.JE.internals.arrAskActions.attachDetails(page, asked, { contact: 'Dad' });
+  await settle();
+  box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+  assert.deepEqual([...box.querySelectorAll('.je-ask-action-text')].map(n => n.textContent).filter(t => /Season/.test(t)), ['Get Season 2']);
   // A season page of it: Get Season 1, asked as that season.
   const season = { key: 'tv:tvdb:393189:s1', itemId: SEASON_PAGE, kind: 'season', stage: 'notHere', reason: { code: 'not_in_arr' }, summary: { aired: 12, ready: 0 }, episodes: [] };
   h.JE.internals.arrAskActions.attachDetails(page, season, { contact: 'Dad' });

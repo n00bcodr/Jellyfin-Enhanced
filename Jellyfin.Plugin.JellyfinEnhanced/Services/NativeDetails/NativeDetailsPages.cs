@@ -76,13 +76,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (answer.Data is not { } series) return answer.NotFound ? AbsentPageResult.Refused : AbsentPageResult.Unavailable;
             var key = SeriesKey(series, page.TmdbId);
             var seriesPage = page.SeriesId.ToGuid(serverId);
-            // Seasons and episodes the library has but hides from this viewer are left out (no status, row or ask).
-            var physical = _policy.Physical(viewer, page);
+            // Seasons and episodes the library has but hides from this viewer are left out (no status, row or ask);
+            // a series page also names those of every season, so a Sonarr's states of them never reach its status.
+            var physical = page.Kind == SyntheticKind.Series ? _policy.Physical(viewer, false, page.TmdbId, null, everySeason: true) : _policy.Physical(viewer, page);
+            if (physical.Hides(page)) return AbsentPageResult.Refused;
             var seasons = SeasonsOf(series, page.TmdbId, serverId, _now()).Where(s => !physical.HiddenSeasons.Contains(s.Season)).ToList();
+            var hiddenSeasons = physical.HiddenSeasons.OrderBy(n => n).ToArray();
             switch (page.Kind)
             {
                 case SyntheticKind.Series:
-                    return Found(new AbsentTitle { PageId = id, Kind = "series", Title = key, TmdbId = page.TmdbId, Seasons = seasons });
+                    return Found(new AbsentTitle
+                    {
+                        PageId = id, Kind = "series", Title = key, TmdbId = page.TmdbId, Seasons = seasons, HiddenSeasons = hiddenSeasons,
+                        HiddenSeriesEpisodes = physical.HiddenSeriesEpisodes.OrderBy(p => p.Season).ThenBy(p => p.Episode).ToArray(),
+                    });
                 case SyntheticKind.Season:
                 case SyntheticKind.Episode:
                     if (!seasons.Any(s => s.Season == page.Season)) return AbsentPageResult.Refused;
@@ -101,6 +108,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                         SeriesPageId = seriesPage,
                         Episodes = episodes,
                         HiddenEpisodes = physical.HiddenEpisodes.OrderBy(n => n).ToArray(),
+                        HiddenSeasons = hiddenSeasons,
                         Spoilers = RowSpoilers(viewer, page),
                         // The facade lists a season's episodes as rows exactly when the viewer shows missing episodes.
                         Rows = viewer.DisplayMissingEpisodes,

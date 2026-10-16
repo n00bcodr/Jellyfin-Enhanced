@@ -138,13 +138,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="movie">Movie (else series).</param>
         /// <param name="tmdb">TMDB id.</param>
         /// <param name="season">The season whose hidden episodes are wanted, or null.</param>
+        /// <param name="everySeason">A series with no <paramref name="season"/>: the hidden episodes of every season too (its status page).</param>
         /// <returns>The physical title.</returns>
-        public PhysicalTitle Physical(User viewer, bool movie, int tmdb, int? season)
+        public PhysicalTitle Physical(User viewer, bool movie, int tmdb, int? season, bool everySeason = false)
         {
             if (_physical == null) return PhysicalTitle.None;
             try
             {
-                return _physical.Read(viewer, Revision(viewer), movie, tmdb, season);
+                return _physical.Read(viewer, Revision(viewer), movie, tmdb, season, everySeason);
             }
             catch (Exception)
             {
