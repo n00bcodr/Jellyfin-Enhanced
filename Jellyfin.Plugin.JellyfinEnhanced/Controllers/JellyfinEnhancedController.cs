@@ -798,7 +798,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Response.Headers["Retry-After"] = "2";
                     return StatusCode(504, new { error = true, code = "parental_pending", message = "Parental rating lookups for this page are still running; retry shortly." });
                 }
-                return ProjectDownloadsForCaller(result.Body);
+                return ProjectForCaller(result.Body);
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
@@ -835,6 +835,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return null;
             }
             return pass;
+        }
+
+        /// <summary>
+        /// Sends a Seerr body to the caller: its library links kept to what they may open
+        /// (<see cref="ProjectLibraryCopiesForCaller"/>), then its download rows projected for them
+        /// (<see cref="ProjectDownloadsForCaller"/>). The response cache keeps Seerr's own body.
+        /// </summary>
+        private IActionResult ProjectForCaller(string body)
+        {
+            if (!ProjectLibraryCopiesForCaller(body, out var visible))
+                return StatusCode(502, new { error = true, code = "invalid_upstream", message = "Seerr sent an answer that couldn't be read." });
+            return ProjectDownloadsForCaller(visible);
+        }
+
+        /// <summary>
+        /// Seerr names the Jellyfin item of every title it knows, whichever library holds it: each named item
+        /// is checked against Jellyfin for the caller, so titles from libraries they can't open (or above their
+        /// parental limit, or behind a blocked tag) don't reach them with their ids (see
+        /// <see cref="Helpers.Jellyseerr.SeerrLibraryAccessProjector"/>). Applies to administrators too (a
+        /// restricted administrator account is still restricted); without a caller every named item counts
+        /// as hidden.
+        /// </summary>
+        private bool ProjectLibraryCopiesForCaller(string body, out string projected)
+        {
+            projected = body;
+            if (_libraryManager == null) return true;
+            var userId = UserHelper.GetCurrentUserId(User);
+            var user = userId is { } id && id != Guid.Empty ? _userManager?.GetUserById(id) : null;
+            return Helpers.Jellyseerr.SeerrLibraryAccessProjector.TryProject(
+                body,
+                item => LibraryCopyFor(item, user),
+                (type, tmdb) => user == null ? null : FindLibraryItemByTmdb(user, type, tmdb.ToString(System.Globalization.CultureInfo.InvariantCulture))?.Id,
+                out projected);
+        }
+
+        /// <summary>A Jellyfin item id Seerr names, or null when the item exists but <paramref name="user"/> can't open it.</summary>
+        private string? VisibleJellyfinId(string? id, Jellyfin.Database.Implementations.Entities.User? user)
+        {
+            if (_libraryManager == null || id == null || !Guid.TryParse(id, out var item) || item == Guid.Empty) return id;
+            return LibraryCopyFor(item, user) == Helpers.Jellyseerr.SeerrLibraryCopy.Hidden ? null : id;
+        }
+
+        /// <summary>How a Jellyfin item Seerr names looks to <paramref name="user"/> (null: hidden whenever it exists).</summary>
+        private Helpers.Jellyseerr.SeerrLibraryCopy LibraryCopyFor(Guid item, Jellyfin.Database.Implementations.Entities.User? user)
+        {
+            if (user != null && _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(item, user) != null)
+                return Helpers.Jellyseerr.SeerrLibraryCopy.Visible;
+            return _libraryManager.GetItemById(item) != null
+                ? Helpers.Jellyseerr.SeerrLibraryCopy.Hidden
+                : Helpers.Jellyseerr.SeerrLibraryCopy.Missing;
         }
 
         /// <summary>
@@ -1257,7 +1307,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         }
                         return method == HttpMethod.Get
                             ? await ApplyParentalFilterAsync(json, apiPath, jellyfinUserId)
-                            : ProjectDownloadsForCaller(json);
+                            : ProjectForCaller(json);
                     }
 
                     _logger.Warning($"Seerr request failed for user {ResolveUserDisplay(jellyfinUserId)} at {trimmedUrl}: code={error!.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
@@ -10724,6 +10774,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (results != null)
                 {
                     var requestAborted = HttpContext.RequestAborted;
+                    // A request's Jellyfin item is named only when the caller can open it (Seerr names it
+                    // whichever library holds it, and REQUEST_VIEW lists other people's requests).
+                    var requestViewer = Guid.TryParse(jellyfinUserId, out var requestViewerId) ? _userManager.GetUserById(requestViewerId) : null;
                     // Enrich all requests in parallel for better performance
                     var enrichmentTasks = results.Select(async req =>
                     {
@@ -10849,7 +10902,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             requestedBy = displayName ?? username ?? "Unknown",
                             requestedByAvatar = avatarUrl,
                             createdAt = createdAtStr,
-                            jellyfinMediaId = media?["jellyfinMediaId"]?.Value<string>(),
+                            jellyfinMediaId = VisibleJellyfinId(media?["jellyfinMediaId"]?.Value<string>(), requestViewer),
                             digitalReleaseDate = digitalReleaseDate,
                             theatricalReleaseDate = theatricalReleaseDate,
                             initialAirDate = initialAirDate,

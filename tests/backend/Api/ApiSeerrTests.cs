@@ -27,7 +27,7 @@ public class ApiSeerrTests
         public Func<HttpRequestMessage, HttpResponseMessage> Reply { get; set; } = _ => IntegrationTransport.Response("{\"id\":99}");
         public IntegrationTransport Transport { get; }
         public JellyfinEnhancedController Controller { get; }
-        public SeerrFixture()
+        public SeerrFixture(ILibraryManager? library = null, IUserManager? jellyfinUsers = null)
         {
             JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
             Plugin.Plugin.Configuration.JellyseerrEnabled = true;
@@ -50,9 +50,11 @@ public class ApiSeerrTests
                 } }));
                 return Reply(request);
             });
-            var users = Mock.Of<IUserManager>();
+            var users = jellyfinUsers ?? Mock.Of<IUserManager>();
             var filter = new SeerrParentalFilter(Transport, users, Mock.Of<ILocalizationManager>(), Mock.Of<IServerConfigurationManager>(), Plugin.Core.Logger);
-            Controller = ApiAssetTests.Controller(Plugin.Core, Transport, users, filter);
+            Controller = library == null
+                ? ApiAssetTests.Controller(Plugin.Core, Transport, users, filter)
+                : ApiAssetTests.Controller(Plugin.Core, Transport, users, filter, library);
             SetUser(UserId);
         }
         public void SetUser(Guid user, bool admin = false) => Controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([
@@ -438,5 +440,78 @@ public class ApiSeerrTests
         // The move ended without a switch (still Seerr mode): writes reach Seerr again.
         Assert.IsType<ContentResult>(await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":605,\"is4k\":false}")));
         Assert.Equal(2, f.Calls.Count(call => call.Method == "POST" && call.Path == "/api/v1/request"));
+    }
+
+    [Fact]
+    public async Task LibraryLinksInProxiedSeerrAnswersAreKeptToWhatTheCallerCanOpenOnFreshAndCachedAnswers()
+    {
+        // A person's credits and a discover page name two library copies: one in a library the viewer can
+        // open, one in a library they can't. Seerr names both, whoever asks.
+        // The fixture's Seerr links its two Jellyfin users (27 and 38).
+        Jellyfin.Database.Implementations.Entities.User viewer = null!, admin = null!;
+        var open = new MediaBrowser.Controller.Entities.Movies.Movie { Id = PrivacySeerrLibraryAccessTests.Open };
+        var hidden = new MediaBrowser.Controller.Entities.TV.Series { Id = PrivacySeerrLibraryAccessTests.Hidden };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => id == open.Id ? open : id == hidden.Id ? hidden : null);
+        library.Setup(l => l.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(It.IsAny<Guid>(), It.IsAny<Jellyfin.Database.Implementations.Entities.User?>()))
+            .Returns((Guid id, Jellyfin.Database.Implementations.Entities.User? u) => id == open.Id ? open : id == hidden.Id && u?.Id == admin.Id ? hidden : null);
+        library.Setup(l => l.GetItemList(It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>())).Returns(new List<MediaBrowser.Controller.Entities.BaseItem>());
+        var users = new Mock<IUserManager>();
+        users.Setup(u => u.GetUserById(It.IsAny<Guid>())).Returns((Guid id) => id == viewer.Id ? viewer : id == admin.Id ? admin : null);
+        using var f = new SeerrFixture(library.Object, users.Object);
+        viewer = new Jellyfin.Database.Implementations.Entities.User("viewer", "default", "default") { Id = f.UserId };
+        admin = new Jellyfin.Database.Implementations.Entities.User("admin", "default", "default") { Id = f.OtherUserId };
+        string Media(Guid id, int tmdb, string type) => "{\"tmdbId\":" + tmdb + ",\"mediaType\":\"" + type + "\",\"status\":5,\"jellyfinMediaId\":\"" + id.ToString("N") + "\"}";
+        var credits = "{\"cast\":[{\"id\":603,\"mediaType\":\"movie\",\"title\":\"Open Movie\",\"mediaInfo\":" + Media(open.Id, 603, "movie") + "},"
+            + "{\"id\":1433,\"mediaType\":\"tv\",\"name\":\"Hidden Show\",\"mediaInfo\":" + Media(hidden.Id, 1433, "tv") + "}],\"crew\":[]}";
+        var discover = "{\"page\":1,\"totalPages\":1,\"results\":[{\"id\":1433,\"name\":\"Hidden Show\",\"mediaInfo\":" + Media(hidden.Id, 1433, "tv") + "},{\"id\":99,\"name\":\"Absent Show\"}]}";
+        f.Reply = request => IntegrationTransport.Response(request.RequestUri!.PathAndQuery.Contains("combined_credits") ? credits : discover);
+        string Read(IActionResult result) => Assert.IsType<ContentResult>(result).Content!;
+        async Task<(string Credits, string Discover)> AsCaller(Jellyfin.Database.Implementations.Entities.User who, bool isAdmin)
+        {
+            f.SetUser(who.Id, isAdmin);
+            return (Read(await f.Controller.GetJellyseerrPersonCredits(287)), Read(await f.Controller.DiscoverTvByGenre(18)));
+        }
+        var upstream = new List<int>();
+        foreach (var round in new[] { "fresh", "cached" })
+        {
+            var (c, d) = await AsCaller(viewer, false);
+            Assert.DoesNotContain(hidden.Id.ToString("N"), c + d, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Hidden Show", c + d, StringComparison.Ordinal);
+            Assert.Contains(open.Id.ToString("N"), c, StringComparison.Ordinal);
+            Assert.Contains("Absent Show", d, StringComparison.Ordinal);
+            var (ac, ad) = await AsCaller(admin, true);
+            Assert.Contains(hidden.Id.ToString("N"), ac, StringComparison.Ordinal);
+            Assert.Contains("Hidden Show", ad, StringComparison.Ordinal);
+            upstream.Add(f.Calls.Count(c => c.Path.Contains("combined_credits") || c.Path.Contains("discover")));
+        }
+        Assert.Equal(upstream[0], upstream[1]);        // the second round came from the cache (Seerr's own body), projected again
+    }
+
+    [Fact]
+    public async Task TheRequestsListNamesARequestsJellyfinItemOnlyWhenTheCallerCanOpenIt()
+    {
+        Jellyfin.Database.Implementations.Entities.User viewer = null!;
+        var open = new MediaBrowser.Controller.Entities.Movies.Movie { Id = PrivacySeerrLibraryAccessTests.Open };
+        var hidden = new MediaBrowser.Controller.Entities.TV.Series { Id = PrivacySeerrLibraryAccessTests.Hidden };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => id == open.Id ? open : id == hidden.Id ? hidden : null);
+        library.Setup(l => l.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(It.IsAny<Guid>(), It.IsAny<Jellyfin.Database.Implementations.Entities.User?>()))
+            .Returns((Guid id, Jellyfin.Database.Implementations.Entities.User? _) => id == open.Id ? open : null);
+        var users = new Mock<IUserManager>();
+        users.Setup(u => u.GetUserById(It.IsAny<Guid>())).Returns((Guid id) => id == viewer?.Id ? viewer : null);
+        using var f = new SeerrFixture(library.Object, users.Object);
+        viewer = new Jellyfin.Database.Implementations.Entities.User("viewer", "default", "default") { Id = f.UserId };
+        f.Plugin.Plugin.Configuration.DownloadsPageEnabled = true;
+        f.Permissions = JellyseerrPermission.REQUEST | JellyseerrPermission.REQUEST_VIEW;   // everyone's requests
+        string Request(int id, string type, int tmdb, Guid item) => "{\"id\":" + id + ",\"type\":\"" + type + "\",\"status\":2,\"createdAt\":\"2026-10-01T00:00:00Z\","
+            + "\"media\":{\"tmdbId\":" + tmdb + ",\"status\":5,\"jellyfinMediaId\":\"" + item.ToString("N") + "\"},\"requestedBy\":{\"displayName\":\"Someone\"}}";
+        f.Reply = request => request.RequestUri!.AbsolutePath == "/api/v1/request"
+            ? IntegrationTransport.Response("{\"pageInfo\":{\"pages\":1,\"results\":2},\"results\":[" + Request(1, "movie", 603, open.Id) + "," + Request(2, "tv", 1433, hidden.Id) + "]}")
+            : IntegrationTransport.Response("{}");
+        var body = JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(await f.Controller.GetRequests()).Value);
+        Assert.Contains(open.Id.ToString("N"), body, StringComparison.Ordinal);
+        Assert.DoesNotContain(hidden.Id.ToString("N"), body, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, JsonSerializer.Deserialize<JsonElement>(body).GetProperty("requests").GetArrayLength());   // the request itself stays
     }
 }

@@ -444,3 +444,6 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   names only instances whose event the caller may see.
 * **`/Helpers/Jellyseerr/SeerrDownloadStatusProjector.cs`**: Strips release names, download ids and arr ids from the
   download rows in Seerr answers for anyone who isn't an administrator.
+* **`/Helpers/Jellyseerr/SeerrLibraryAccessProjector.cs`**: Keeps Seerr's links to Jellyfin items to what the caller
+  can open: hidden copies are unlinked, another copy the caller can open takes their place, and list rows of titles the
+  library hides from the caller are left out.

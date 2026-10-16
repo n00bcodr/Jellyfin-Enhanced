@@ -201,6 +201,16 @@ Seerr results respect each user's Jellyfin parental controls: **Max Parental Rat
 - **Blocked Tags / Allowed Tags** are enforced too. A blocked tag matches a title's TMDB keywords and genre names, so blocking "zombie" (a keyword Jellyfin would import as an item tag) or "horror" (a genre) both work; Allowed Tags act as a strict allow-list matched against keywords only, exactly like the library. Blocked tags always win. Keyword coverage on TMDB is community-sourced, so genre blocks give broader coverage than keyword blocks. A tag matches the same way it does in your library: the whole value, ignoring case only ("Sci-Fi" matches "sci-fi" but not "sci fi"), so a tag that works on your library items works here.
 - Collection cards themselves (e.g. "Saw Collection") are not rated and stay visible; their parts are filtered when opened.
 
+### Library access
+
+Seerr links every title it knows to its Jellyfin item, whichever library holds it. Before a Seerr answer reaches a user, each linked item is checked against that user's own Jellyfin access (libraries they may open, parental rating, blocked tags):
+
+- A title held only in libraries the user can't open is left out of search, discovery ("More with" a person, "More from" a genre, studio, network or tag), similar and recommended rows, filmographies, collections and the watchlist. It isn't shown as something to request either.
+- When the user can open another copy (the 4K copy, or a copy in another library), the card links to that copy instead.
+- A title's own details, requests and issues keep their entry, without the link to an item the user can't open.
+
+Unrestricted users see Seerr's answers as before. This is always on and needs no setting.
+
 ### Issue Reporting
 
 Report problems with media directly to Seerr.
