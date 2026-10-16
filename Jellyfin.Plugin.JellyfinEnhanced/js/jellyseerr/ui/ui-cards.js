@@ -179,6 +179,9 @@
         }
         const isAvailable = Boolean(jellyfinMediaId)
             && (cardEffectiveStatus === MediaStatus.AVAILABLE || cardEffectiveStatus === MediaStatus.PARTIALLY_AVAILABLE);
+        // Only the 4K copy is here: the card is in the library through it.
+        const fourK = !isAvailable ? JE.seerrStatus.libraryCopyId({ jellyfinMediaId4k: item?.mediaInfo?.jellyfinMediaId4k, status4k: item?.mediaInfo?.status4k }) : null;
+        if (fourK) return { isAvailable: true, jellyfinMediaId: fourK };
         return { isAvailable, jellyfinMediaId };
     }
 

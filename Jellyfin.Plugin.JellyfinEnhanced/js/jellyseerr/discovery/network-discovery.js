@@ -276,6 +276,9 @@
         // Unlike the other discovery sections, network discovery is opt-in.
         defaultEnabled: false,
         getIdFromUrl: JE.discoveryBase.idFromListParam('studioId'),
+        // A synthetic studio's or network's page lists nothing of the library's own: this row is its only
+        // list of titles, library titles included (as a synthetic person's filmography).
+        keepLibraryItems: (id) => !!syntheticStudio(id),
         // Historical page-key format: no 'network-' prefix.
         pageKey: (id) => `${id}-${window.location.hash}`,
         resolveFeeds,

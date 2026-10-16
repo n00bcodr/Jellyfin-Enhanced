@@ -688,7 +688,7 @@
             if (seen.has(key)) continue;
             seen.add(key);
 
-            if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) {
+            if (excludeLibraryItems && JE.seerrStatus.libraryCopyId(item.mediaInfo)) {
                 continue;
             }
 
@@ -720,7 +720,7 @@
         // Add media type for fast CSS-based filtering
         card.setAttribute('data-media-type', item.mediaType);
 
-        const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
+        const jellyfinMediaId = JE.seerrStatus.libraryCopyId(item.mediaInfo);
         if (jellyfinMediaId) {
             card.setAttribute('data-library-item', 'true');
             card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);

@@ -128,12 +128,12 @@ function realPersonPage(t, results) {
       t: key => key,
       jellyseerrAPI: { checkUserStatus: async () => ({ active: true, userFound: false }) },
       helpers: { getItemCached: async id => ({ Id: id, Type: 'Person', Name: 'Javier Bardem' }) },
-      seerrStatus: { MEDIA: { BLOCKED: 6 } },
     },
     apiClient: { serverId: () => SERVER },
   });
   t.after(() => { cleanups.reverse().forEach(fn => fn()); h.close(); });
   h.JE.jellyseerrUI = { createJellyseerrCard: item => Object.assign(h.document.createElement('div'), { className: 'card', textContent: String(item.id) }) };
+  h.load('jellyseerr/seerr-status.js');
   h.load('jellyseerr/nativedetails/native-details.js');
   h.load('jellyseerr/discovery/discovery-filter-utils.js');
   const filter = h.JE.discoveryFilter;
@@ -228,6 +228,9 @@ test('a genre the library lacks: its page id names the TMDB genre; the name fill
   // The name comes from the page's item; JE's library genre route isn't asked.
   assert.deepEqual(h.requests, []);
   assert.deepEqual(h.items, [id]);
+  // Its row is the page's only list: library titles stay, whatever "exclude library items" says.
+  assert.equal(h.spec.keepLibraryItems(id), true);
+  assert.equal(h.spec.keepLibraryItems(LIBRARY_ID), false);
   // A movie-only genre id: the movie feed is that id.
   const h2 = moduleSpec(t, 'genre-discovery.js', { item: { Name: 'Science Fiction' }, genres });
   const sciFi = await h2.spec.resolveFeeds({ id: h2.JE.titleDetails.syntheticId('genre', 878), signal: h2.signal });
@@ -270,6 +273,10 @@ test('a network or studio the library lacks: its page id names the TMDB network 
   assert.deepEqual(studio.requests, [], 'no company search: the id is known');
   assert.equal(studio.spec.buildDiscoverPath('movie', 99, tiny), '/JellyfinEnhanced/native-details/discover/movie/studio/99');
   assert.equal(studio.spec.buildDiscoverPath('tv', 99, tiny), '/JellyfinEnhanced/native-details/discover/tv/company/99');
+  // A synthetic studio's or network's row is its page's only list: library titles stay.
+  assert.equal(studio.spec.keepLibraryItems(studio.JE.titleDetails.syntheticId('studio', 99)), true);
+  assert.equal(network.spec.keepLibraryItems(network.JE.titleDetails.syntheticId('network', 2739)), true);
+  assert.equal(studio.spec.keepLibraryItems(LIBRARY_ID), false);
   // A library studio keeps the per-user Seerr feeds, as before.
   const library = { tvId: 99, movieId: 99, tvSource: 'company' };
   assert.equal(studio.spec.buildDiscoverPath('movie', 99, library), '/JellyfinEnhanced/jellyseerr/discover/movies/studio/99');
@@ -280,6 +287,7 @@ test('the discovery base renders on a page its spec enables even with the switch
   const h = createHarness({ html: '<main id="detail"></main>', JE: { pluginConfig: { JellyseerrShowPersonDiscovery: false } } });
   t.after(() => h.close());
   h.JE.jellyseerrUI = { createJellyseerrCard: item => Object.assign(h.document.createElement('div'), { className: 'card', textContent: String(item.id) }) };
+  h.load('jellyseerr/seerr-status.js');
   h.load('jellyseerr/discovery/discovery-filter-utils.js');
   h.JE.discoveryFilter.waitForPageReady = async () => h.document.querySelector('#detail');
   h.JE.discoveryFilter.setupInfiniteScroll = () => {};
@@ -384,6 +392,7 @@ test('the native-feeds choice: no Seerr account, Seerr reachable, native details
     apiClient: { serverId: () => SERVER },
   });
   t.after(() => h.close());
+  h.load('jellyseerr/seerr-status.js');
   h.load('jellyseerr/nativedetails/native-details.js');
   h.load('jellyseerr/discovery/discovery-filter-utils.js');
   const use = h.JE.discoveryFilter.useNativeFeeds;
@@ -412,4 +421,81 @@ test('the native feeds are read again each time (filtered for the viewer\'s poli
   await get(proxy); await get(proxy);
   assert.equal(calls.filter(u => u.includes('native-details')).length, 2);
   assert.equal(calls.filter(u => u.includes('/jellyseerr/')).length, 1);
+});
+
+test('library rows count a title held only in 4K as in the library: left out when library titles are excluded, else its card opens the 4K copy', async t => {
+  const fourK = { id: 1, mediaType: 'movie', title: 'Arrival', mediaInfo: { status: 1, status4k: 5, jellyfinMediaId4k: 'uhd-1' } };
+  const coming = { id: 2, mediaType: 'movie', title: 'Coming', mediaInfo: { status: 1, status4k: 3, jellyfinMediaId4k: 'uhd-2' } };
+  const plain = { id: 3, mediaType: 'movie', title: 'Plain' };
+  for (const exclude of [true, false]) {
+    const h = createHarness({ html: '<main></main>', JE: { pluginConfig: { JellyseerrExcludeLibraryItems: exclude } } });
+    t.after(() => h.close());
+    h.JE.jellyseerrUI = { createJellyseerrCard: item => {
+      const card = h.document.createElement('div');
+      card.className = 'card';
+      card.dataset.id = String(item.id);
+      card.innerHTML = '<div class="cardText-first"><a href="#">x</a></div>';
+      return card;
+    } };
+    h.load('jellyseerr/seerr-status.js');
+    h.load('jellyseerr/discovery/discovery-filter-utils.js');
+    const cards = [...h.JE.discoveryFilter.createCardsFragment([fourK, coming, plain]).children];
+    if (exclude) {
+      assert.deepEqual(cards.map(c => c.dataset.id), ['2', '3']);
+      continue;
+    }
+    assert.deepEqual(cards.map(c => c.dataset.id), ['1', '2', '3']);
+    assert.equal(cards[0].getAttribute('data-jellyfin-media-id'), 'uhd-1');
+    assert.equal(cards[0].querySelector('.cardText-first a').getAttribute('href'), '#!/details?id=uhd-1');
+    assert.equal(cards[1].getAttribute('data-library-item'), null);
+  }
+});
+
+test('a synthetic studio page keeps its library titles through the real dual-feed discovery base; a library studio still leaves them out', async t => {
+  const pages = {
+    1: [{ id: 329865, mediaType: 'movie', title: 'Arrival', mediaInfo: { status: 5, jellyfinMediaId: 'a'.repeat(32) } }, { id: 2, mediaType: 'movie', title: 'Not here' }],
+    2: [{ id: 3, mediaType: 'movie', title: 'Also here', mediaInfo: { status: 5, jellyfinMediaId: 'b'.repeat(32) } }, { id: 4, mediaType: 'movie', title: 'Not here either' }],
+  };
+  for (const synthetic of [true, false]) {
+    const requests = [];
+    const h = createHarness({
+      html: '<main id="detail"></main>',
+      JE: {
+        pluginConfig: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1 }, JellyseerrShowNetworkDiscovery: true, JellyseerrExcludeLibraryItems: true },
+        t: key => key,
+        jellyseerrAPI: { checkUserStatus: async () => ({ active: true, userFound: true }) },
+      },
+      apiClient: { serverId: () => SERVER, getCurrentUserId: () => 'viewer', getItem: async () => ({ Name: 'Lava Bear Films' }) },
+    });
+    let controller = null;
+    t.after(() => { controller?.cleanup(); h.close(); });
+    h.JE.jellyseerrUI = { createJellyseerrCard: item => Object.assign(h.document.createElement('div'), { className: 'card', textContent: item.title }) };
+    h.load('jellyseerr/seerr-status.js');
+    h.load('jellyseerr/nativedetails/native-details.js');
+    h.load('jellyseerr/discovery/discovery-filter-utils.js');
+    const filter = h.JE.discoveryFilter;
+    filter.waitForPageReady = async () => h.document.querySelector('#detail');
+    let loadMore = null;
+    filter.setupInfiniteScroll = (state, selector, more) => { loadMore = more; };
+    filter.cleanupScrollObserver = () => {};
+    filter.fetchWithManagedRequest = async path => {
+      requests.push(path);
+      if (path.startsWith('/JellyfinEnhanced/studio/')) return { name: 'Lava Bear Films', tmdbId: '32300' };
+      const page = Number(new URL(path, 'http://x').searchParams.get('page') || 1);
+      return /\/movies?\//.test(path) ? { page, totalPages: 2, results: pages[page] } : { page, totalPages: 1, results: [] };
+    };
+    h.load('jellyseerr/discovery/discovery-base.js');
+    const create = h.JE.discoveryBase.createDiscovery;
+    h.JE.discoveryBase.createDiscovery = spec => { controller = create(spec); return { ...controller, start: () => {} }; };
+    h.load('jellyseerr/discovery/network-discovery.js');
+    const id = synthetic ? h.JE.titleDetails.syntheticId('studio', 32300) : LIBRARY_ID;
+    h.window.location.hash = `#/list?studioId=${id}&serverId=${SERVER}`;
+    await controller.render();
+    const titles = () => Array.from(h.document.querySelectorAll('.card'), c => c.textContent);
+    assert.deepEqual(titles(), synthetic ? ['Arrival', 'Not here'] : ['Not here'], synthetic ? 'synthetic' : 'library');
+    // The next page (infinite scroll) keeps the same rule.
+    await loadMore();
+    assert.deepEqual(titles(), synthetic ? ['Arrival', 'Not here', 'Also here', 'Not here either'] : ['Not here', 'Not here either'], synthetic ? 'synthetic, page 2' : 'library, page 2');
+    assert.ok(requests.some(p => p.startsWith(synthetic ? '/JellyfinEnhanced/native-details/discover/movie/studio/32300' : '/JellyfinEnhanced/jellyseerr/discover/movies/studio/32300')), requests.join(' '));
+  }
 });

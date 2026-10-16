@@ -198,7 +198,7 @@
         let filteredResults = results;
 
         if (excludeLibraryItems) {
-            filteredResults = results.filter(item => !item.mediaInfo?.jellyfinMediaId);
+            filteredResults = results.filter(item => !JE.seerrStatus.libraryCopyId(item.mediaInfo));
         }
         if (JE.hiddenContent) {
             filteredResults = JE.hiddenContent.filterJellyseerrResults(filteredResults, 'recommendations');
@@ -285,7 +285,7 @@
             const titleLink = card.querySelector('.cardText-first a');
 
             // If item exists in library, link to library item
-            const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
+            const jellyfinMediaId = JE.seerrStatus.libraryCopyId(item.mediaInfo);
             if (jellyfinMediaId) {
                 card.setAttribute('data-library-item', 'true');
                 card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
@@ -994,13 +994,13 @@
             const excludeBlocklistedItems = JE.pluginConfig?.JellyseerrExcludeBlocklistedItems === true;
 
             const filteredSimilarResults = similarResults.filter(item => {
-                if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) return false;
+                if (excludeLibraryItems && JE.seerrStatus.libraryCopyId(item.mediaInfo)) return false;
                 if (excludeBlocklistedItems && item.mediaInfo?.status === JE.seerrStatus.MEDIA.BLOCKED) return false;
                 return true;
             });
 
             const filteredRecommendedResults = recommendedResults.filter(item => {
-                if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) return false;
+                if (excludeLibraryItems && JE.seerrStatus.libraryCopyId(item.mediaInfo)) return false;
                 if (excludeBlocklistedItems && item.mediaInfo?.status === JE.seerrStatus.MEDIA.BLOCKED) return false;
                 return true;
             });

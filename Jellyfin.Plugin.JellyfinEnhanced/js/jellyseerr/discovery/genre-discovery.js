@@ -200,6 +200,9 @@
         logLabel: 'Genre Discovery',
         configKey: 'JellyseerrShowGenreDiscovery',
         getIdFromUrl: JE.discoveryBase.idFromListParam('genreId'),
+        // A synthetic genre's page lists nothing of the library's own: this row is its only list of titles,
+        // library titles included (as a synthetic person's filmography).
+        keepLibraryItems: (id) => syntheticGenreTmdb(id) > 0,
         resolveFeeds,
         buildDiscoverPath: (kind, id, feeds) => {
             // A synthetic genre's page, or a viewer without a Seerr account: the server filters the feeds for the viewer.

@@ -144,7 +144,8 @@ library title:
   Requests & downloads' own request mode the filmography needs no Seerr account.
 - **Genres, studios and networks**: Jellyfin's own list of that genre or studio when your library has titles in it
   that you can open (with the genre or network discovery row below, when it's on); otherwise a discovery page with
-  just that row (no Seerr account needed in Requests & downloads' own request mode). **Tags** open the tag's list
+  just that row (no Seerr account needed in Requests & downloads' own request mode). On such a page the row keeps the
+  titles you have, whatever *Exclude library items* says, since it's the page's only list. **Tags** open the tag's list
   with its discovery row.
 - A name that would lead to an empty page isn't a link: with a discovery row turned off only the genres, studios and
   tags your library has for you stay links.
@@ -223,6 +224,7 @@ Seerr links every title it knows to its Jellyfin item, whichever library holds i
 - A title held only in libraries the user can't open is left out of search, discovery ("More with" a person, "More from" a genre, studio, network or tag), similar and recommended rows, filmographies, collections and the watchlist. It isn't shown as something to request either.
 - When the user can open another copy (the 4K copy, or a copy in another library), the card links to that copy instead.
 - A title's own details, requests and issues keep their entry, without the link to an item the user can't open.
+- A title held only in 4K counts as in the library once its 4K copy is available: its card opens the 4K copy, and *Exclude library items* leaves it out of the rows like any other title you have.
 
 Unrestricted users see Seerr's answers as before. This is always on and needs no setting.
 
