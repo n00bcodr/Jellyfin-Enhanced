@@ -467,6 +467,18 @@ public class ApiArrStatusTests
     }
 
     [Fact]
+    public async Task AnEpisodeListSonarrCannotAnswerTellsAdministratorsAndLeavesTheSeasonToSonarrsCounts()
+    {
+        using var rig = new Rig();
+        rig.Sonarr.EpisodesFailWith = 503;
+        var admin = Items(await Item(rig, rig.Admin, rig.Season1))[0];
+        Assert.Contains(admin.GetProperty("admin").GetProperty("unreadable").EnumerateArray(), u => u.GetString()!.Contains("episode list", StringComparison.Ordinal));
+        // Viewers get the season as before, with no administrator detail.
+        var kid = Items(await Item(rig, rig.Kid, rig.Season1))[0];
+        Assert.False(kid.TryGetProperty("admin", out var a) && a.ValueKind == JsonValueKind.Object);
+    }
+
+    [Fact]
     public async Task SeriesCardsAndKeysLeaveOutDownloadsOfEpisodesHiddenFromTheViewer()
     {
         using var rig = new Rig();

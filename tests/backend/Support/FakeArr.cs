@@ -47,6 +47,9 @@ internal sealed class FakeArr : IDisposable
         public int CommandFailWith { get; set; }
         /// <summary>Non-zero: <c>GET /queue/details</c> answers with this HTTP status (other calls as usual).</summary>
         public int DetailsFailWith { get; set; }
+
+        /// <summary>Status code every episode list read answers with (0: answered normally).</summary>
+        public int EpisodesFailWith { get; set; }
         /// <summary>What <c>GET /command/{id}</c> answers for commands posted to <c>/command</c>.</summary>
         public string CommandStatus { get; set; } = "completed";
         /// <summary>The message of those commands.</summary>
@@ -246,6 +249,8 @@ internal sealed class FakeArr : IDisposable
                 host.Queue.RemoveAll(q => ids.Contains((int)q["id"]!));
                 return IntegrationTransport.Response("{}");
             }
+            if (path == "/api/v3/episode" && host.EpisodesFailWith != 0)
+                return IntegrationTransport.Response("{\"message\":\"boom\"}", host.EpisodesFailWith);
             if (path == "/api/v3/queue/details" && host.DetailsFailWith != 0)
                 return IntegrationTransport.Response("{\"message\":\"boom\"}", host.DetailsFailWith);
             if (path == "/api/v3/queue/details")

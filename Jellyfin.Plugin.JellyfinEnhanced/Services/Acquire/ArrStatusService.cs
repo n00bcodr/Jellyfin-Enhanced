@@ -941,6 +941,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                                 if (load.Contains(title)) episodes = await _store.GetEpisodesAsync(instance, series.Id, ct).ConfigureAwait(false);
                                 else if (peek.Contains(title)) episodes = _store.PeekEpisodes(instance, series.Id);
                                 if (episodes != null) revision.Append('e').Append(series.Id).Append(':').Append(Stamp(episodes.LoadedAt)).Append(';');
+                                // Its episode list was needed and can't be read (nothing to serve meanwhile): the copy is judged by
+                                // Sonarr's season counts, and administrators are told the list can't be read.
+                                if (load.Contains(title) && episodes is { Value: null, Error: { } failed })
+                                    facts.Unreadable.Add(new UnreadableArr(instance, instance.Name + " episode list (" + failed.Kind + ")"));
                                 facts.Copies.Add(new ArrCopyFacts(instance)
                                 {
                                     Series = series,

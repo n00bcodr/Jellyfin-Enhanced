@@ -45,7 +45,9 @@ own message ("Manual Import required") and what would fix it.
 - **Details pages**: a pill under the title (tap it for the journey: asked, OK'd, downloading, … with dates);
   series and season pages get a summary ("Season 1 ready · 1 downloading"; episodes Sonarr is still looking for read "Looking for 3", ones missing for a long while "2 missing"); seasons get episode chips and a
   "Missing: E5, E6" line. Episodes whose downloads can't be checked count as "taking longer than usual"
-  in the series or season summary.
+  in the series or season summary. When Sonarr's episode list of a series can't be read, the series and its seasons
+  follow Sonarr's season counts, missing episodes get no row or chip until it can, and administrators see
+  "Sonarr … episode list … can't be read".
 - **Posters**: a small badge while something downloads, is almost ready or takes longer than usual.
 - **Seerr's more-info window**: the same pill and journey for titles that aren't in the library yet, e.g.
   "Downloading · 42%" with "Asked by someone in your household → OK'd → Downloading".
