@@ -196,7 +196,8 @@
         if (input.scope === 'episodes' && cost === 0) return { text: tr('arr_sheet_cost_free', { free: caps?.freeEpisodes ?? 5 }), over: false };
         if (cost > left) {
             if (caps?.backend === 'seerr') return { text: quotaText(quota), over: true };
-            return { text: tr('arr_sheet_cost_over', { contact: JE.arrAsk.contact(caps), left }), over: true };
+            // "only 0 left" reads oddly: none left says it plainly.
+            return { text: tr(left > 0 ? 'arr_sheet_cost_over' : 'arr_sheet_cost_over_none', { contact: JE.arrAsk.contact(caps), left }), over: true };
         }
         if (input.scope === 'future') return { text: tr('arr_sheet_cost_future', { left }), over: false };
         return { text: tr('arr_sheet_cost', { cost, left }), over: false };

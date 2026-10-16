@@ -316,7 +316,7 @@ test('over quota in JE mode: the amber note and "Send to Dad for an OK", recorde
   assert.ok(note.classList.contains('je-sheet-note-attention'));
   assert.match(note.textContent, /^hourglass_emptyYou've used this week's 7 requests \(next frees up .+\)$/);
   assert.equal(primary(h).textContent, 'sendSend to Dad for an OK');
-  assert.match(costText(h, 'everything'), /Needs Dad's OK \(only 0 left this week\)/);
+  assert.match(costText(h, 'everything'), /Needs Dad's OK \(none left this week\)/);
   click(h, primary(h));
   const result = await pending;
   assert.equal(result.state, 'waiting');

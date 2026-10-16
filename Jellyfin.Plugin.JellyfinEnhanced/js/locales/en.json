@@ -1156,6 +1156,7 @@
     "arr_sheet_cost_free": "Free (up to {free} episodes a week)",
     "arr_sheet_cost_future": "Uses 1 of your {left} now, then 1 for each new season",
     "arr_sheet_cost_over": "Needs {contact}'s OK (only {left} left this week)",
+    "arr_sheet_cost_over_none": "Needs {contact}'s OK (none left this week)",
     "arr_sheet_variant_label": "Version",
     "arr_sheet_variant_standard": "Standard",
     "arr_sheet_variant_4k": "4K",
