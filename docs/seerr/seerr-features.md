@@ -131,9 +131,10 @@ library title:
 
 - **People**: someone Jellyfin already has opens their Jellyfin page (with the *More with …* row of their other
   titles). Anyone else opens a page of their own, built the same way: photo, name, biography, birth and death,
-  birthplace, what they're known for and their **Filmography** (best-known titles first, with the usual All / Movies /
-  Series filter and sort). Each title in it opens your library copy when you have one, otherwise its own page like
-  this one. Titles you have are always in it, whatever *Exclude library items* says, since it's the only list of
+  birthplace, what they're known for and their **Filmography** (roles before guest appearances, best-known titles
+  first, movies and series together in that order under *All*, with the usual All / Movies / Series filter and sort).
+  Each title in it opens your library copy when you have one you can open (the 4K copy or another version counts),
+  otherwise its own page like this one. Titles you have are always in it, whatever *Exclude library items* says, since it's the only list of
   that person's titles. A person TMDB marks as an adult performer isn't shown to accounts with a parental limit. In
   Requests & downloads' own request mode the filmography needs no Seerr account.
 - **Genres, studios and networks**: Jellyfin's own list of that genre or studio when your library has titles in it
@@ -146,6 +147,9 @@ library title:
 - Your parental limits and library access apply on every one of these pages. The filmography and the discovery pages'
   rows are filtered on the server before they reach the browser: a title the library has but hides from you, a title
   in a library you can't open, and a title not in the library whose own page you couldn't open are not sent at all.
+- The server fetches these lists for everyone with one Seerr key, so each account can start only so many new pages at
+  once (about sixty, then one a second; pages someone has already opened don't count). Scrolling far down a discovery
+  page very fast can pause for a moment while it catches up.
 
 **When it can't open.** A title your account may not see (parental limits, libraries you can't open, an account
 not linked to Seerr) shows "This title isn't available to you." with *Go back*, never the modal. If Seerr can't be

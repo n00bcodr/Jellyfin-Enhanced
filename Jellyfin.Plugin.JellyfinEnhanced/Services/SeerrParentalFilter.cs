@@ -55,7 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // application/json, and it keeps filtered and unfiltered bodies alike.
         private static readonly JsonSerializerOptions RelaxedJson = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
         private const int MaxCacheEntries = 20000;
-        private static readonly TimeSpan OverallBudget = TimeSpan.FromSeconds(12);
+        private static readonly TimeSpan DefaultOverallBudget = TimeSpan.FromSeconds(12);
         private static readonly TimeSpan PerFetchTimeout = TimeSpan.FromSeconds(8);
         // A title whose certification could not be fetched stays "unverified"
         // (hidden for restricted users) for this long before being retried, so a
@@ -95,6 +95,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // rating-only fetches coalesce separately: a rating-only fetch in flight
         // cannot satisfy a caller with tag rules).
         private readonly ConcurrentDictionary<string, Lazy<Task<Signature?>>> _inFlight = new(StringComparer.Ordinal);
+        private readonly TimeSpan _overallBudget;
 
         /// <summary>Creates the filter; registered as a singleton so its caches and fetch pool are shared.</summary>
         public SeerrParentalFilter(
@@ -109,6 +110,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _localization = localization;
             _serverConfig = serverConfig;
             _logger = logger;
+            _overallBudget = DefaultOverallBudget;
+        }
+
+        /// <summary>Creates the filter with another wait for a response's title lookups (tests).</summary>
+        internal SeerrParentalFilter(
+            IHttpClientFactory httpClientFactory,
+            IUserManager userManager,
+            ILocalizationManager localization,
+            IServerConfigurationManager serverConfig,
+            Logger logger,
+            TimeSpan overallBudget)
+            : this(httpClientFactory, userManager, localization, serverConfig, logger)
+        {
+            _overallBudget = overallBudget;
         }
 
         // ── Policy ───────────────────────────────────────────────────────────
@@ -558,7 +573,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
-            cts.CancelAfter(OverallBudget);
+            cts.CancelAfter(_overallBudget);
             var resolved = await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, cts.Token).ConfigureAwait(false);
             return !IsAllowed(resolved, mediaType, policy);
         }
@@ -688,7 +703,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // pushed the page they are looking at behind everything they had left,
             // until nothing resolved within the budget at all.
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
-            cts.CancelAfter(OverallBudget);
+            cts.CancelAfter(_overallBudget);
             var throttle = _throttle;
             var droppedFromQueue = 0;
 
@@ -748,7 +763,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var pending = tasks.Count(t => !t.IsCompletedSuccessfully) + droppedFromQueue;
             if (pending > 0)
             {
-                _logger.Debug($"Parental filter: {pending} of {tasks.Count} title lookups unresolved after {OverallBudget.TotalSeconds:0}s ({droppedFromQueue} never started); hiding them for this response.");
+                _logger.Debug($"Parental filter: {pending} of {tasks.Count} title lookups unresolved after {_overallBudget.TotalSeconds:0}s ({droppedFromQueue} never started); hiding them for this response.");
             }
 
             foreach (var task in tasks)

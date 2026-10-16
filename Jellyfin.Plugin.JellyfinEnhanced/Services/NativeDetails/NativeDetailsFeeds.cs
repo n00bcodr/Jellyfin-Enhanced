@@ -34,6 +34,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         /// <summary>The request names no valid feed (400).</summary>
         Invalid,
+
+        /// <summary>
+        /// The list isn't cached and the viewer (or the server) has too many upstream reads running to
+        /// start another now (429, retry shortly).
+        /// </summary>
+        Busy,
     }
 
     /// <summary>One feed answer: the outcome and, when <see cref="FeedOutcome.Ok"/>, the JSON body.</summary>
@@ -99,11 +105,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (tmdb <= 0) return new FeedAnswer(FeedOutcome.Invalid, null);
             var access = await ViewerAsync(_policy.SeeLinkedPageAsync(viewer, SyntheticId.Person(tmdb), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
+            // The credits first: their read is the one admitted against the viewer's budget, so a
+            // viewer naming person after person can't make the person reads go upstream unbounded.
+            var credits = await _source.PersonCreditsAsync(tmdb, viewer.Id, ct).ConfigureAwait(false);
+            if (credits.Data is not { } data) return Failed(credits);
             var person = await _source.PersonAsync(tmdb, ct).ConfigureAwait(false);
             if (person.Data is not { } details) return Failed(person);
             if (!NativeDetailsPolicy.PersonAllowed(viewer, details)) return new FeedAnswer(FeedOutcome.Refused, null);
-            var credits = await _source.PersonCreditsAsync(tmdb, ct).ConfigureAwait(false);
-            if (credits.Data is not { } data) return Failed(credits);
             var path = "/api/v1/person/" + tmdb.ToString(CultureInfo.InvariantCulture) + "/combined_credits";
             var (outcome, filtered) = await ParentalAsync(data, path, viewer, ct).ConfigureAwait(false);
             if (outcome != FeedOutcome.Ok) return new FeedAnswer(outcome, null);
@@ -170,8 +178,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
             var company = source == "company";
             var answer = company
-                ? await _source.CompanySeriesAsync(id, page, sortBy, ct).ConfigureAwait(false)
-                : await _source.DiscoverAsync(movie, source!, id, page, sortBy, ct).ConfigureAwait(false);
+                ? await _source.CompanySeriesAsync(id, page, sortBy, viewer.Id, ct).ConfigureAwait(false)
+                : await _source.DiscoverAsync(movie, source!, id, page, sortBy, viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is not { } data) return Failed(answer);
             var number = id.ToString(CultureInfo.InvariantCulture);
             var pageText = page.ToString(CultureInfo.InvariantCulture);
@@ -213,7 +221,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 _ => FeedOutcome.Refused,
             };
 
-        private static FeedAnswer Failed(SourceAnswer answer) => new(answer.NotFound ? FeedOutcome.NotFound : FeedOutcome.Unavailable, null);
+        private static FeedAnswer Failed(SourceAnswer answer)
+            => new(answer.Busy ? FeedOutcome.Busy : answer.NotFound ? FeedOutcome.NotFound : FeedOutcome.Unavailable, null);
 
         /// <summary>The viewer's parental limit over a list (unrestricted viewers: the body as it is).</summary>
         private async Task<(FeedOutcome Outcome, string? Body)> ParentalAsync(JsonElement data, string path, User viewer, CancellationToken ct)
@@ -259,20 +268,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>
-        /// How the viewer sees one listed title: the library copy Seerr names when Jellyfin lets the
-        /// viewer open it (a copy Seerr names that the viewer can't open hides the title), else the
-        /// library's own answer (<see cref="NativeDetailsPolicy.Listed"/>).
+        /// How the viewer sees one listed title: a library copy Seerr names (standard or 4K) that
+        /// Jellyfin lets the viewer open, else any copy the library finds that they can open
+        /// (<see cref="NativeDetailsPolicy.Listed"/>). Left out when copies exist and none of them is
+        /// one they can open: a copy Seerr names that is hidden from them is never shown as absent.
         /// </summary>
         private NativeDetailsPolicy.ListedTitle Listed(User viewer, JsonElement media, bool movie, int tmdb)
         {
+            var hiddenCopy = false;
             foreach (var field in new[] { "jellyfinMediaId", "jellyfinMediaId4k" })
             {
                 if (NativeDetailsDtos.Str(media, field) is not { } text || !Guid.TryParse(text, out var named) || named == Guid.Empty) continue;
                 if (_library.GetItemById<BaseItem>(named, viewer) != null) return NativeDetailsPolicy.ListedTitle.Copy(named);
-                if (_library.GetItemById(named) != null) return NativeDetailsPolicy.ListedTitle.Left;
+                hiddenCopy |= _library.GetItemById(named) != null;
             }
 
-            return _policy.Listed(viewer, movie, tmdb);
+            var library = _policy.Listed(viewer, movie, tmdb);
+            return hiddenCopy && library.LibraryCopy == null ? NativeDetailsPolicy.ListedTitle.Left : library;
         }
 
         /// <summary>The card a listed title gets (whitelisted public fields), or null when the viewer doesn't get it.</summary>

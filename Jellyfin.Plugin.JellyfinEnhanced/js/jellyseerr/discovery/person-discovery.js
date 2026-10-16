@@ -313,6 +313,8 @@
         // library titles included.
         enabledFor: (id) => syntheticPersonTmdb(id) > 0,
         keepLibraryItems: (id) => syntheticPersonTmdb(id) > 0,
+        // Its order (roles before appearances, best known first) holds when movies and series mix.
+        keepListOrder: (id) => syntheticPersonTmdb(id) > 0,
         pageSize: 40,
         resolveItems
     });

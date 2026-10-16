@@ -35,7 +35,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// A person's filmography (<c>{ results }</c> in Seerr's result shape): library copies the caller
         /// can open carry their Jellyfin id; titles the library hides from them are left out; absent
         /// titles are listed when their own page would open for them. 404 when refused or unknown, 503
-        /// when the source can't answer, 504 <c>parental_pending</c> while parental checks still run.
+        /// when the source can't answer, 504 <c>parental_pending</c> while parental checks still run,
+        /// 429 <c>busy</c> when the list isn't cached and the caller has started too many upstream
+        /// reads (or the server has too many queued) to start another now.
         /// </summary>
         /// <param name="tmdbId">TMDB person id.</param>
         /// <param name="ct">Cancellation.</param>
@@ -51,7 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>
         /// One page of a discovery feed (<c>{ page, totalPages, results }</c>): <paramref name="type"/>
         /// <c>movie</c> by <c>genre</c> or <c>studio</c>, or <c>tv</c> by <c>genre</c>, <c>network</c>
-        /// or <c>company</c>, filtered for the caller like <see cref="Filmography"/>.
+        /// or <c>company</c>, filtered for the caller and admitted like <see cref="Filmography"/>.
         /// </summary>
         /// <param name="type">movie or tv.</param>
         /// <param name="source">genre, studio, network or company.</param>
@@ -97,6 +99,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 case FeedOutcome.Pending:
                     Response.Headers["Retry-After"] = "2";
                     return StatusCode(504, new { code = "parental_pending" });
+                case FeedOutcome.Busy:
+                    Response.Headers["Retry-After"] = "2";
+                    return StatusCode(429, new { code = "busy" });
                 case FeedOutcome.Invalid:
                     return BadRequest(new { code = "invalid_feed" });
                 default:

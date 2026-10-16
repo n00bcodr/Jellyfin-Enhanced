@@ -45,30 +45,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>Seerr's details of a TV network, or why there are none.</summary>
         Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
 
-        /// <summary>Seerr's combined credits of a person (cast and crew, every title), or why there are none.</summary>
-        Task<SourceAnswer> PersonCreditsAsync(int tmdb, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+        /// <summary>
+        /// Seerr's combined credits of a person (cast and crew, every title), or why there are none
+        /// (<see cref="SourceAnswer.Busy"/> when it isn't cached and <paramref name="viewer"/> may not
+        /// start another upstream read now).
+        /// </summary>
+        /// <param name="tmdb">TMDB person id.</param>
+        /// <param name="viewer">The viewer whose read budget an upstream read comes out of.</param>
+        /// <param name="ct">Cancellation.</param>
+        Task<SourceAnswer> PersonCreditsAsync(int tmdb, Guid viewer, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
 
         /// <summary>
         /// One page of Seerr's movie or series discovery filtered by a genre, studio (movies) or network
-        /// (series), in Seerr's discover shape, or why there is none.
+        /// (series), in Seerr's discover shape, or why there is none (<see cref="SourceAnswer.Busy"/> as
+        /// for <see cref="PersonCreditsAsync"/>).
         /// </summary>
         /// <param name="movie">Movies (else series).</param>
         /// <param name="filter">Seerr's filter: <c>genre</c>, <c>studio</c> or <c>network</c>.</param>
         /// <param name="id">The TMDB genre, company or network id.</param>
         /// <param name="page">Page (1-500).</param>
         /// <param name="sortBy">Seerr's sort, or null for its default.</param>
+        /// <param name="viewer">The viewer whose read budget an upstream read comes out of.</param>
         /// <param name="ct">Cancellation.</param>
-        Task<SourceAnswer> DiscoverAsync(bool movie, string filter, int id, int page, string? sortBy, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+        Task<SourceAnswer> DiscoverAsync(bool movie, string filter, int id, int page, string? sortBy, Guid viewer, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
 
         /// <summary>
         /// One page of the series a TMDB company produced (TMDB's discover, JE's TMDB key: Seerr filters
-        /// series by network only), in Seerr's discover shape, or why there is none.
+        /// series by network only), in Seerr's discover shape, or why there is none
+        /// (<see cref="SourceAnswer.Busy"/> as for <see cref="PersonCreditsAsync"/>).
         /// </summary>
         /// <param name="company">TMDB company id.</param>
         /// <param name="page">Page (1-500).</param>
         /// <param name="sortBy">TMDB sort, or null for its default.</param>
+        /// <param name="viewer">The viewer whose read budget an upstream read comes out of.</param>
         /// <param name="ct">Cancellation.</param>
-        Task<SourceAnswer> CompanySeriesAsync(int company, int page, string? sortBy, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+        Task<SourceAnswer> CompanySeriesAsync(int company, int page, string? sortBy, Guid viewer, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
 
         /// <summary>
         /// True when the Jellyfin user has a linked Seerr account, false when not, null when it can't
@@ -80,12 +91,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
     /// <summary>
     /// One source answer: the data, a title the source says doesn't exist (<see cref="NotFound"/>,
-    /// answered 404), or neither because the source can't be reached right now (answered 503).
+    /// answered 404), a read not started because the viewer or the server has too many running
+    /// (<see cref="Busy"/>, answered 429), or none of these because the source can't be reached right
+    /// now (answered 503).
     /// </summary>
     /// <param name="Data">The JSON, when there is some.</param>
     /// <param name="NotFound">True when the source answered "no such title" (Seerr 404).</param>
-    public readonly record struct SourceAnswer(JsonElement? Data, bool NotFound)
+    /// <param name="Busy">True when the read wasn't started: try again shortly.</param>
+    public readonly record struct SourceAnswer(JsonElement? Data, bool NotFound, bool Busy = false)
     {
+        /// <summary>The read wasn't started (the viewer's read budget or the server's queue is used up).</summary>
+        public static SourceAnswer Throttled => new(null, false, true);
+
         /// <summary>The source can't answer now (outage, timeout, not configured).</summary>
         public static SourceAnswer Unavailable => default;
 
@@ -98,9 +115,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public static SourceAnswer Of(JsonElement data) => new(data, false);
     }
 
-    /// <summary>Seerr (and, for logos, TMDB) behind bounded, coalesced caches.</summary>
+    /// <summary>
+    /// Seerr (and, for logos and a company's series, TMDB) behind bounded, coalesced caches. Feed
+    /// reads (filmographies, discovery pages) a viewer can name without end are admitted: a cached or
+    /// already running read costs nothing; a new one comes out of the viewer's budget
+    /// (<see cref="FeedBurst"/>, then <see cref="FeedPerSecond"/>) and waits for one of
+    /// <see cref="FeedConcurrency"/> upstream slots, with at most <see cref="FeedQueue"/> more queued
+    /// server-wide; otherwise it isn't started (<see cref="SourceAnswer.Busy"/>).
+    /// </summary>
     public sealed class SeerrNativeDetailsSource : INativeDetailsSource
     {
+        /// <summary>New feed reads one viewer may start at once (a person page needs one; a discovery page's first screens about fifteen).</summary>
+        internal const int FeedBurst = 60;
+
+        /// <summary>New feed reads one viewer may start per second once the burst is used.</summary>
+        internal const double FeedPerSecond = 1;
+
+        /// <summary>Feed reads running upstream at once, server-wide.</summary>
+        internal const int FeedConcurrency = 8;
+
+        /// <summary>Feed reads that may wait for an upstream slot, server-wide.</summary>
+        internal const int FeedQueue = 40;
+
         private const int MaxEntries = 400;
         private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan FailureTtl = TimeSpan.FromSeconds(30);
@@ -120,6 +156,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly ConcurrentDictionary<string, Lazy<Task<SourceAnswer>>> _inFlight = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _linkLock = new(1, 1);
         private readonly Func<DateTime> _now;
+        private readonly ViewerBudget _feedBudget;
+        private readonly SemaphoreSlim _feedSlots = new(FeedConcurrency);
+        private int _feedReads;
         private HashSet<string>? _linked;
         private string? _linkedFrom;
         private DateTime _linkedAt;
@@ -138,10 +177,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             _tmdb = tmdb;
             _logger = logger;
             _now = now;
+            _feedBudget = new ViewerBudget(FeedBurst, FeedPerSecond, now);
         }
 
         /// <summary>Upstream fetches still running (for tests: none may outlive its fetch).</summary>
         internal int InFlightCount => _inFlight.Count;
+
+        /// <summary>Feed reads started upstream and not finished, running or queued (for tests).</summary>
+        internal int FeedReadsPending => Volatile.Read(ref _feedReads);
 
         /// <inheritdoc />
         public Task<SourceAnswer> MovieAsync(int tmdb, CancellationToken ct) => GetAsync($"/api/v1/movie/{tmdb}", ct);
@@ -165,35 +208,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) => GetAsync($"/api/v1/network/{tmdb}", ct);
 
         /// <inheritdoc />
-        public Task<SourceAnswer> PersonCreditsAsync(int tmdb, CancellationToken ct) => GetAsync($"/api/v1/person/{tmdb}/combined_credits", ct);
+        public Task<SourceAnswer> PersonCreditsAsync(int tmdb, Guid viewer, CancellationToken ct)
+        {
+            var path = $"/api/v1/person/{tmdb}/combined_credits";
+            return FeedAsync(path, viewer, () => FetchAndStoreAsync(path), ct);
+        }
 
         /// <inheritdoc />
-        public Task<SourceAnswer> DiscoverAsync(bool movie, string filter, int id, int page, string? sortBy, CancellationToken ct)
+        public Task<SourceAnswer> DiscoverAsync(bool movie, string filter, int id, int page, string? sortBy, Guid viewer, CancellationToken ct)
         {
             if (filter is not ("genre" or "studio" or "network") || id <= 0 || page is < 1 or > 500) return Task.FromResult(SourceAnswer.Missing);
             var path = $"/api/v1/discover/{(movie ? "movies" : "tv")}?page={page}&{filter}={id}";
             if (!string.IsNullOrEmpty(sortBy)) path += "&sortBy=" + Uri.EscapeDataString(sortBy);
-            return GetAsync(path, ct);
+            return FeedAsync(path, viewer, () => FetchAndStoreAsync(path), ct);
         }
 
         /// <inheritdoc />
-        public async Task<SourceAnswer> CompanySeriesAsync(int company, int page, string? sortBy, CancellationToken ct)
+        public Task<SourceAnswer> CompanySeriesAsync(int company, int page, string? sortBy, Guid viewer, CancellationToken ct)
         {
             var key = JellyfinEnhanced.Instance?.Configuration?.GetTmdbApiKey();
-            if (string.IsNullOrWhiteSpace(key) || company <= 0 || page is < 1 or > 500) return SourceAnswer.Unavailable;
+            if (string.IsNullOrWhiteSpace(key) || company <= 0 || page is < 1 or > 500) return Task.FromResult(SourceAnswer.Unavailable);
             var query = $"?with_companies={company}&page={page}";
             if (TmdbCompanyTvDiscover.IsValidSort(sortBy)) query += "&sort_by=" + sortBy;
+            // Kept with the Seerr answers (not a Seerr path: TMDB's own discover).
+            var path = "tmdb:discover/tv" + query;
+            return FeedAsync(path, viewer, () => StoreAsync(path, CompanySeriesFetchAsync(company, query, key)), ct);
+        }
+
+        private async Task<SourceAnswer> CompanySeriesFetchAsync(int company, string query, string key)
+        {
             try
             {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeout.CancelAfter(FetchTimeout);
-                // The TMDB response cache keeps (and coalesces) these itself.
+                using var timeout = new CancellationTokenSource(FetchTimeout);
                 var response = await _tmdb.GetAsync("discover/tv", query, key, timeout.Token).ConfigureAwait(false);
                 if (!response.IsSuccess) return response.StatusCode == 404 ? SourceAnswer.Missing : SourceAnswer.Unavailable;
                 using var doc = JsonDocument.Parse(TmdbCompanyTvDiscover.ToSeerrShape(response.Content, new Dictionary<int, string>()));
                 return SourceAnswer.Of(doc.RootElement.Clone());
             }
-            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            catch (Exception ex)
             {
                 _logger.Debug($"Native details: TMDB series of company {company} failed: {ex.Message}");
                 return SourceAnswer.Unavailable;
@@ -333,28 +385,84 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)));
         }
 
+        private bool TryCached(string path, out SourceAnswer value)
+        {
+            value = default;
+            if (!_cache.TryGetValue(path, out var hit) || DateTime.UtcNow - hit.At >= (hit.Value.Data.HasValue ? Ttl : FailureTtl)) return false;
+            value = hit.Value;
+            return true;
+        }
+
         private Task<SourceAnswer> GetAsync(string path, CancellationToken ct)
         {
-            if (_cache.TryGetValue(path, out var hit) && DateTime.UtcNow - hit.At < (hit.Value.Data.HasValue ? Ttl : FailureTtl))
+            if (TryCached(path, out var hit)) return Task.FromResult(hit);
+            return _inFlight.GetOrAdd(path, p => Shared(p, () => FetchAndStoreAsync(p))).Value.WaitAsync(ct);
+        }
+
+        /// <summary>
+        /// A feed read: answered from the cache or a running read of the same path for free; else
+        /// started only when the server's queue has room and the viewer's budget a token (else
+        /// <see cref="SourceAnswer.Throttled"/>). The upstream slot is held by the read itself, not by
+        /// the caller, so a caller that gives up doesn't free it while the read still runs.
+        /// </summary>
+        private Task<SourceAnswer> FeedAsync(string path, Guid viewer, Func<Task<SourceAnswer>> fetch, CancellationToken ct)
+        {
+            if (TryCached(path, out var hit)) return Task.FromResult(hit);
+            if (_inFlight.TryGetValue(path, out var running)) return running.Value.WaitAsync(ct);
+            if (Interlocked.Increment(ref _feedReads) > FeedConcurrency + FeedQueue)
             {
-                return Task.FromResult(hit.Value);
+                Interlocked.Decrement(ref _feedReads);
+                return Task.FromResult(SourceAnswer.Throttled);
             }
 
-            return _inFlight.GetOrAdd(path, Shared).Value.WaitAsync(ct);
+            if (!_feedBudget.Take(viewer))
+            {
+                Interlocked.Decrement(ref _feedReads);
+                return Task.FromResult(SourceAnswer.Throttled);
+            }
+
+            var mine = Shared(path, async () =>
+            {
+                try
+                {
+                    await _feedSlots.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        return await fetch().ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _feedSlots.Release();
+                    }
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _feedReads);
+                }
+            });
+            var shared = _inFlight.GetOrAdd(path, mine);
+            if (!ReferenceEquals(shared, mine))
+            {
+                // Another caller started the same read a moment ago: join it, nothing was started.
+                Interlocked.Decrement(ref _feedReads);
+                _feedBudget.Refund(viewer);
+            }
+
+            return shared.Value.WaitAsync(ct);
         }
 
         /// <summary>
         /// One upstream fetch shared by every caller of a path. The fetch removes its own entry when it
         /// ends, whether or not anyone still waits (a caller that gave up must not leave it behind).
         /// </summary>
-        private Lazy<Task<SourceAnswer>> Shared(string path)
+        private Lazy<Task<SourceAnswer>> Shared(string path, Func<Task<SourceAnswer>> fetch)
         {
             Lazy<Task<SourceAnswer>>? lazy = null;
             lazy = new Lazy<Task<SourceAnswer>>(async () =>
             {
                 try
                 {
-                    return await FetchAndStoreAsync(path).ConfigureAwait(false);
+                    return await fetch().ConfigureAwait(false);
                 }
                 finally
                 {
@@ -370,6 +478,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var value = await FetchAsync(path, CancellationToken.None).ConfigureAwait(false);
             // Seerr answers 500 for a title TMDB doesn't have (the same as for a TMDB outage): ask TMDB.
             if (value.Data == null && !value.NotFound && await TmdbSaysMissingAsync(path).ConfigureAwait(false)) value = SourceAnswer.Missing;
+            return Store(path, value);
+        }
+
+        private async Task<SourceAnswer> StoreAsync(string path, Task<SourceAnswer> fetch) => Store(path, await fetch.ConfigureAwait(false));
+
+        private SourceAnswer Store(string path, SourceAnswer value)
+        {
             if (_cache.Count >= MaxEntries)
             {
                 foreach (var old in _cache.OrderBy(e => e.Value.At).Take(MaxEntries / 10).ToList())

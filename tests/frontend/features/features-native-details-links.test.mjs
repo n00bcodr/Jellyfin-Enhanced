@@ -69,6 +69,8 @@ test('a person page of someone the library lacks: the row is their filmography f
   assert.equal(h.spec.keepLibraryItems(PERSON), true);
   assert.equal(h.spec.enabledFor(LIBRARY_ID), false);
   assert.equal(h.spec.keepLibraryItems(LIBRARY_ID), false);
+  assert.equal(h.spec.keepListOrder(PERSON), true);
+  assert.equal(h.spec.keepListOrder(LIBRARY_ID), false);
   assert.equal(h.spec.enabledFor(h.JE.titleDetails.syntheticId('movie', 3810)), false);
   const result = await h.spec.resolveItems({ id: PERSON, signal: h.signal });
   assert.equal(result.title, 'native_details_filmography');
@@ -105,14 +107,17 @@ test('a filmography needs no Seerr account, and one the server refuses is no sec
   await assert.rejects(down.spec.resolveItems({ id: PERSON, signal: down.signal }), /HTTP 503/);
 });
 
-test('with library titles excluded (the default), a filmography of someone the library lacks still shows its library titles, through the real discovery base and card filter', async t => {
-  // 45 library titles (best known) ahead of one absent title: one page of 40 would be all library cards.
-  const results = Array.from({ length: 45 }, (_, i) => ({
-    id: i + 1, mediaType: 'movie', title: `In the library ${i + 1}`, voteCount: 1000 - i,
-    mediaInfo: { status: 5, jellyfinMediaId: String(i + 1).padStart(32, '0') },
-  }));
-  results.push({ id: 999, mediaType: 'movie', title: 'Not in the library', voteCount: 1 });
+/**
+ * The real discovery base and card filter on a synthetic person page, with the server answering
+ * `results` for the filmography and every card showing its title id.
+ * @param {object} t Test context.
+ * @param {Array<object>} results The server's filmography.
+ * @returns {object} Harness, the person page's controller, the card filter, the requests made and
+ *   `cleanUp(fn)` (run before the window closes).
+ */
+function realPersonPage(t, results) {
   const requests = [];
+  const cleanups = [];
   const h = createHarness({
     html: '<main id="detail"></main>',
     url: `http://jellyfin.test/web/index.html#/details?id=${PERSON}`,
@@ -125,7 +130,7 @@ test('with library titles excluded (the default), a filmography of someone the l
     },
     apiClient: { serverId: () => SERVER },
   });
-  t.after(() => h.close());
+  t.after(() => { cleanups.reverse().forEach(fn => fn()); h.close(); });
   h.JE.jellyseerrUI = { createJellyseerrCard: item => Object.assign(h.document.createElement('div'), { className: 'card', textContent: String(item.id) }) };
   h.load('jellyseerr/nativedetails/native-details.js');
   h.load('jellyseerr/discovery/discovery-filter-utils.js');
@@ -139,18 +144,56 @@ test('with library titles excluded (the default), a filmography of someone the l
   let controller = null;
   h.JE.discoveryBase.createDiscovery = spec => { controller = create(spec); return { ...controller, start: () => {} }; };
   h.load('jellyseerr/discovery/person-discovery.js');
-  try {
-    await controller.render();
-    const cards = Array.from(h.document.querySelectorAll('.jellyseerr-person-discovery-section .card'), c => c.textContent);
-    assert.equal(cards.length, 40, 'the first page is all there, library cards included');
-    assert.deepEqual(cards.slice(0, 3), ['1', '2', '3']);
-    assert.deepEqual(requests, [FILMOGRAPHY]);
-    // Every other discovery row keeps the setting: library titles out, the absent one in.
-    assert.equal(filter.createCardsFragment(results, { cardClass: 'portraitCard' }).childNodes.length, 1);
-    assert.equal(filter.createCardsFragment(results, { cardClass: 'portraitCard', keepLibraryItems: true }).childNodes.length, 46);
-  } finally {
-    controller.cleanup();
-  }
+  cleanups.push(() => controller.cleanup());
+  const cards = selector => Array.from(h.document.querySelectorAll(`${selector} .card`), c => c.textContent);
+  return { ...h, controller, filter, requests, create, cards, cleanUp: fn => cleanups.push(fn) };
+}
+
+test('with library titles excluded (the default), a filmography of someone the library lacks still shows its library titles, through the real discovery base and card filter', async t => {
+  // 45 library titles (best known) ahead of one absent title: one page of 40 would be all library cards.
+  const results = Array.from({ length: 45 }, (_, i) => ({
+    id: i + 1, mediaType: 'movie', title: `In the library ${i + 1}`, voteCount: 1000 - i,
+    mediaInfo: { status: 5, jellyfinMediaId: String(i + 1).padStart(32, '0') },
+  }));
+  results.push({ id: 999, mediaType: 'movie', title: 'Not in the library', voteCount: 1 });
+  const h = realPersonPage(t, results);
+  await h.controller.render();
+  const cards = h.cards('.jellyseerr-person-discovery-section');
+  assert.equal(cards.length, 40, 'the first page is all there, library cards included');
+  assert.deepEqual(cards.slice(0, 3), ['1', '2', '3']);
+  assert.deepEqual(h.requests, [FILMOGRAPHY]);
+  // Every other discovery row keeps the setting: library titles out, the absent one in.
+  assert.equal(h.filter.createCardsFragment(results, { cardClass: 'portraitCard' }).childNodes.length, 1);
+  assert.equal(h.filter.createCardsFragment(results, { cardClass: 'portraitCard', keepLibraryItems: true }).childNodes.length, 46);
+});
+
+test('a filmography of movies and series keeps its order (roles first, best known first) under "All", through the real discovery base; Movies and Series still filter, and other rows still alternate', async t => {
+  const results = [
+    { id: 1, mediaType: 'tv', name: 'A Talk Show', genreIds: [10767], voteCount: 5, character: 'Self' },
+    { id: 2, mediaType: 'movie', title: 'Famous Film', voteCount: 5000, character: 'Lead' },
+    { id: 3, mediaType: 'movie', title: 'Another Role', voteCount: 1000, character: 'Villain' },
+    { id: 4, mediaType: 'tv', name: 'A Drama', voteCount: 300, character: 'Detective' },
+  ];
+  const h = realPersonPage(t, results);
+  await h.controller.render();
+  const section = '.jellyseerr-person-discovery-section';
+  assert.deepEqual(h.cards(section), ['2', '3', '4', '1']);
+  const click = mode => h.document.querySelector(`${section} .jellyseerr-filter-btn[data-mode="${mode}"]`).click();
+  click(h.filter.MODES.MOVIES);
+  assert.deepEqual(h.cards(section), ['2', '3']);
+  click(h.filter.MODES.TV);
+  assert.deepEqual(h.cards(section), ['4', '1']);
+  click(h.filter.MODES.MIXED);
+  assert.deepEqual(h.cards(section), ['2', '3', '4', '1']);
+
+  // A client-paged row without the option (a library person's "More with") still alternates, series first.
+  const other = h.create({
+    key: 'collection', mode: 'client-paged', logLabel: 'Other', configKey: 'Unused',
+    getIdFromUrl: () => 'other', resolveItems: async () => ({ items: results, title: 'Other' }),
+  });
+  h.cleanUp(() => other.cleanup());
+  await other.render();
+  assert.deepEqual(h.cards('.jellyseerr-collection-discovery-section'), ['1', '2', '4', '3']);
 });
 
 test('a library person keeps JE\'s person lookup and its "More with" row', async t => {

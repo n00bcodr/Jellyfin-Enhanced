@@ -78,6 +78,10 @@
      *   row keeps library titles whatever JellyseerrExcludeLibraryItems says (a
      *   row that is the page's only list of titles; library cards open the
      *   library copy).
+     * @property {(id: string) => boolean} [keepListOrder] - client-paged only: on
+     *   this page "All" keeps the list in the order resolveItems gave it instead
+     *   of alternating series and movies (a list already ranked, such as a
+     *   filmography with what the person is known for first).
      * @property {() => string|null} getIdFromUrl - URL/hash contract: returns the
      *   page's id (or name) when the module applies to the current page.
      * @property {(id: string) => string} [pageKey] - Override the processed-page
@@ -225,6 +229,8 @@
         let renderEpoch = 0;
         // The page being rendered keeps its library titles (spec.keepLibraryItems).
         let keepLibrary = false;
+        // The page being rendered keeps its list's own order in mixed mode (spec.keepListOrder).
+        let keepListOrder = false;
 
         /**
          * Managed fetch through the shared request manager (cache prefix = key).
@@ -366,6 +372,8 @@
                 if (mode === filter.MODES.MOVIES || mode === filter.MODES.TV) {
                     return filter.filterByMediaType(sorted, mode);
                 }
+                // A list ranked on purpose keeps its order.
+                if (keepListOrder) return sorted;
                 // Mixed mode - interleave TV and Movies for balanced display
                 const tvResults = sorted.filter(item => item.mediaType === 'tv');
                 const movieResults = sorted.filter(item => item.mediaType === 'movie');
@@ -1294,6 +1302,7 @@
             // Set rendering key before potentially aborting
             currentRenderingPageKey = pageKey;
             keepLibrary = typeof spec.keepLibraryItems === 'function' && !!spec.keepLibraryItems(id);
+            keepListOrder = isClientPaged && typeof spec.keepListOrder === 'function' && !!spec.keepListOrder(id);
 
             // Cancel any previous requests (for different pages)
             if (currentAbortController) {

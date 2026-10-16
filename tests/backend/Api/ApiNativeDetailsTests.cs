@@ -154,23 +154,27 @@ public class ApiNativeDetailsTests
         public Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) { Calls++; return Task.FromResult(Answer(tmdb == 2739, """{"id":2739,"name":" Disney+ "}""")); }
         /// <summary>The combined credits of Bardem (and of <see cref="AdultPerson"/>).</summary>
         public string Credits { get; set; } = """{"cast":[],"crew":[]}""";
-        public Task<SourceAnswer> PersonCreditsAsync(int tmdb, CancellationToken ct) { Calls++; return Task.FromResult(Answer(tmdb == 3810 || tmdb == AdultPerson, Credits)); }
+        /// <summary>Feed reads aren't started (the viewer's read budget or the server's queue is used up).</summary>
+        public bool Busy { get; set; }
+        public Task<SourceAnswer> PersonCreditsAsync(int tmdb, Guid viewer, CancellationToken ct) { Calls++; return Task.FromResult(Busy ? SourceAnswer.Throttled : Answer(tmdb == 3810 || tmdb == AdultPerson, Credits)); }
         /// <summary>Discovery pages by "movie|tv:filter:id:page" (company series: "tv:company:id:page"); others are unknown.</summary>
         public Dictionary<string, string> Feeds { get; } = new();
         public List<string> FeedCalls { get; } = new();
-        public Task<SourceAnswer> DiscoverAsync(bool movie, string filter, int id, int page, string? sortBy, CancellationToken ct)
+        public Task<SourceAnswer> DiscoverAsync(bool movie, string filter, int id, int page, string? sortBy, Guid viewer, CancellationToken ct)
         {
             Calls++;
             var key = $"{(movie ? "movie" : "tv")}:{filter}:{id}:{page}";
             FeedCalls.Add(key + (sortBy == null ? string.Empty : "?" + sortBy));
+            if (Busy) return Task.FromResult(SourceAnswer.Throttled);
             return Task.FromResult(Answer(Feeds.ContainsKey(key), Feeds.GetValueOrDefault(key) ?? "{}"));
         }
 
-        public Task<SourceAnswer> CompanySeriesAsync(int company, int page, string? sortBy, CancellationToken ct)
+        public Task<SourceAnswer> CompanySeriesAsync(int company, int page, string? sortBy, Guid viewer, CancellationToken ct)
         {
             Calls++;
             var key = $"tv:company:{company}:{page}";
             FeedCalls.Add(key + (sortBy == null ? string.Empty : "?" + sortBy));
+            if (Busy) return Task.FromResult(SourceAnswer.Throttled);
             return Task.FromResult(Answer(Feeds.ContainsKey(key), Feeds.GetValueOrDefault(key) ?? "{}"));
         }
 
@@ -208,8 +212,14 @@ public class ApiNativeDetailsTests
         /// <summary>Library revision handed to the physical-title reader (null: no cache).</summary>
         public Func<long>? LibraryRevision { get; set; }
 
-        /// <summary>A rig; with <paramref name="stateDir"/> the grant key and session epochs are kept there (restart tests).</summary>
-        public Rig(string? stateDir = null)
+        /// <summary>While set, the parental filter's rating lookups wait for it.</summary>
+        public TaskCompletionSource? RatingGate { get; set; }
+
+        /// <summary>
+        /// A rig; with <paramref name="stateDir"/> the grant key and session epochs are kept there (restart
+        /// tests); <paramref name="parentalBudget"/> is how long a list waits for its rating lookups.
+        /// </summary>
+        public Rig(string? stateDir = null, TimeSpan? parentalBudget = null)
         {
             _stateDir = stateDir;
             var c = Plugin.Plugin.Configuration;
@@ -234,18 +244,24 @@ public class ApiNativeDetailsTests
                 r.Content.Headers.ContentType = new("image/jpeg");
                 return Task.FromResult(r);
             });
-            Seerr = new IntegrationTransport((req, _) => Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new
+            Seerr = new IntegrationTransport(async (req, _) =>
             {
-                releases = new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = Rating } } } } },
-                contentRatings = new { results = new[] { new { iso_3166_1 = "US", rating = Rating } } },
-                keywords = Array.Empty<object>(), genres = Array.Empty<object>(),
-            }))));
+                if (RatingGate is { } gate) await gate.Task;
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new
+                {
+                    releases = new { results = new[] { new { iso_3166_1 = "US", release_dates = new[] { new { type = 3, certification = Rating } } } } },
+                    contentRatings = new { results = new[] { new { iso_3166_1 = "US", rating = Rating } } },
+                    keywords = Array.Empty<object>(), genres = Array.Empty<object>(),
+                }));
+            });
             var localization = new Mock<MediaBrowser.Model.Globalization.ILocalizationManager>();
             localization.Setup(l => l.GetRatingScore("PG-13", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(13, null));
             localization.Setup(l => l.GetRatingScore("TV-14", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(14, null));
             localization.Setup(l => l.GetRatingScore("G", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(1, null));
             _server.SetupGet(s => s.Configuration).Returns(new MediaBrowser.Model.Configuration.ServerConfiguration { MetadataCountryCode = "US" });
-            _parental = new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger);
+            _parental = parentalBudget is { } budget
+                ? new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger, budget)
+                : new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger);
             _host.SetupGet(h => h.SystemId).Returns(Server);
             // Spoiler Guard as registered (its own library lookups are for collections and watched state only).
             var loose = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
@@ -1807,6 +1823,121 @@ public class ApiNativeDetailsTests
         rig.Source.Down = true;
         Assert.Equal(FeedOutcome.Unavailable, (await rig.Feeds.DiscoverAsync(viewer, true, "studio", 99, 1, null, CancellationToken.None)).Outcome);
     }
+
+    [Fact]
+    public async Task AListedTitleShowsAnyCopyTheViewerCanOpenBeforeItIsLeftOut()
+    {
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        // 21: Seerr names a standard copy the viewer can't open and a 4K copy they can (the library's
+        // own lookup finds only the standard one). 22: Seerr names a standard copy they can't open; the
+        // library also has another copy, unnamed, that they can. 23: the only copy is hidden from them.
+        var fourK = Copy(rig, true, 21, "4K copy", new[] { viewer });
+        var standard = Copy(rig, true, 21, "Standard copy", Array.Empty<User>(), viewer);
+        var named = Copy(rig, true, 22, "Named copy", Array.Empty<User>(), viewer);
+        var alternate = Copy(rig, true, 22, "Alternate copy", new[] { viewer });
+        var only = Copy(rig, true, 23, "Only copy", Array.Empty<User>(), viewer);
+        var rows = $$$"""
+          {"id":21,"mediaType":"movie","title":"Twenty-one","voteCount":30,"mediaInfo":{"status":5,"jellyfinMediaId":"{{{standard.Id:N}}}","jellyfinMediaId4k":"{{{fourK.Id:N}}}"}},
+          {"id":22,"mediaType":"movie","title":"Twenty-two","voteCount":20,"mediaInfo":{"status":5,"jellyfinMediaId":"{{{named.Id:N}}}"}},
+          {"id":23,"mediaType":"movie","title":"Twenty-three","voteCount":10,"mediaInfo":{"status":5,"jellyfinMediaId":"{{{only.Id:N}}}"}}
+        """;
+        rig.Source.Credits = "{\"cast\":[" + rows + "],\"crew\":[]}";
+        rig.Source.Feeds["movie:studio:99:1"] = "{\"page\":1,\"totalPages\":1,\"results\":[" + rows + "]}";
+        var expected = new[] { $"21={fourK.Id:N}", $"22={alternate.Id:N}" };
+        foreach (var answer in new[]
+        {
+            await rig.Feeds.FilmographyAsync(viewer, 3810, CancellationToken.None),
+            await rig.Feeds.DiscoverAsync(viewer, true, "studio", 99, 1, null, CancellationToken.None),
+        })
+        {
+            Assert.Equal(expected, Titles(Body(answer)));
+            foreach (var hidden in new[] { standard.Id, named.Id, only.Id })
+            {
+                Assert.DoesNotContain(hidden.ToString("N"), answer.Json!, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task FeedReadsTheServerWontStartNowAnswer429AndRetryAfter()
+    {
+        using var rig = new Rig();
+        rig.Source.Credits = """{"cast":[{"id":438631,"mediaType":"movie","title":"Dune","voteCount":3000}],"crew":[]}""";
+        rig.Source.Feeds["movie:genre:878:1"] = """{"page":1,"totalPages":1,"results":[{"id":438631,"mediaType":"movie","title":"Dune"}]}""";
+        var viewer = rig.Person();
+        Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsFeedsController For() => new(rig.Feeds, rig.Callers.Users.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = Me(viewer) } },
+        };
+
+        rig.Source.Busy = true;
+        var calls = rig.Source.Calls;
+        Assert.Equal(FeedOutcome.Busy, (await rig.Feeds.FilmographyAsync(viewer, 3810, CancellationToken.None)).Outcome);
+        // Only the admitted read was asked for: no person read goes upstream behind a refused one.
+        Assert.Equal(calls + 1, rig.Source.Calls);
+        foreach (var call in new Func<Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsFeedsController, Task<IActionResult>>[]
+        {
+            c => c.Filmography(3810, CancellationToken.None),
+            c => c.Discover("movie", "genre", 878),
+            c => c.Discover("tv", "company", 99),
+        })
+        {
+            var controller = For();
+            var result = Assert.IsType<ObjectResult>(await call(controller));
+            Assert.Equal(429, result.StatusCode);
+            Assert.Contains("busy", JsonSerializer.Serialize(result.Value), StringComparison.Ordinal);
+            Assert.Equal("2", controller.Response.Headers.RetryAfter.ToString());
+            Assert.Equal("private, no-store", controller.Response.Headers.CacheControl.ToString());
+        }
+
+        rig.Source.Busy = false;
+        Assert.Equal(new[] { "438631" }, Titles(Body(await rig.Feeds.FilmographyAsync(viewer, 3810, CancellationToken.None))));
+        Assert.Equal(new[] { "438631" }, Titles(Body(await rig.Feeds.DiscoverAsync(viewer, true, "genre", 878, 1, null, CancellationToken.None))));
+    }
+
+    [Fact]
+    public async Task AListWhoseParentalChecksAreStillRunningAnswers504UntilTheyLand()
+    {
+        using var rig = new Rig(parentalBudget: TimeSpan.FromMilliseconds(150));
+        rig.Source.Credits = """{"cast":[{"id":438631,"mediaType":"movie","title":"Dune","voteCount":3000}],"crew":[]}""";
+        rig.Source.Feeds["movie:genre:878:1"] = """{"page":1,"totalPages":3,"results":[{"id":603,"mediaType":"movie","title":"The Matrix"}]}""";
+        var teen = rig.Person();
+        teen.MaxParentalRatingScore = 13;
+        Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsFeedsController For() => new(rig.Feeds, rig.Callers.Users.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = Me(teen) } },
+        };
+
+        rig.RatingGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        foreach (var call in new Func<Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsFeedsController, Task<IActionResult>>[]
+        {
+            c => c.Filmography(3810, CancellationToken.None),
+            c => c.Discover("movie", "genre", 878),
+        })
+        {
+            // Unverified titles are not missing titles: not an empty list, a "come back shortly".
+            var controller = For();
+            var result = Assert.IsType<ObjectResult>(await call(controller));
+            Assert.Equal(504, result.StatusCode);
+            Assert.Contains("parental_pending", JsonSerializer.Serialize(result.Value), StringComparison.Ordinal);
+            Assert.Equal("2", controller.Response.Headers.RetryAfter.ToString());
+        }
+
+        // The lookups kept running; once they land the same requests answer the list.
+        rig.RatingGate.SetResult();
+        FeedAnswer film = default, genre = default;
+        for (var i = 0; i < 100; i++)
+        {
+            film = await rig.Feeds.FilmographyAsync(teen, 3810, CancellationToken.None);
+            genre = await rig.Feeds.DiscoverAsync(teen, true, "genre", 878, 1, null, CancellationToken.None);
+            if (film.Outcome == FeedOutcome.Ok && genre.Outcome == FeedOutcome.Ok) break;
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(new[] { "438631" }, Titles(Body(film)));
+        Assert.Equal(new[] { "603" }, Titles(Body(genre)));
+    }
 }
 
 /// <summary>The real Seerr-backed source: shared fetches, 404 vs outage, and a bounded linked-account check.</summary>
@@ -1990,5 +2121,113 @@ public class NativeDetailsSourceTests
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(1), clock.Elapsed.ToString());
         Assert.Equal(1, seerr.Calls);
     }
+
+    [Fact]
+    public async Task FeedReadsComeOutOfTheViewersBudgetWhenTheyGoUpstream()
+    {
+        using var seerr = new IntegrationTransport((req, _) => Task.FromResult(req.RequestUri!.Host == "api.themoviedb.org"
+            ? IntegrationTransport.Response("""{"page":1,"total_pages":1,"results":[{"id":1399,"name":"Game of Thrones"}]}""")
+            : IntegrationTransport.Response("""{"page":1,"totalPages":500,"results":[{"id":603,"mediaType":"movie","title":"The Matrix"}],"cast":[],"crew":[]}""")));
+        var (plugin, _, tmdb) = Make(seerr);
+        using var _p = plugin;
+        using var _t = tmdb;
+        var now = new DateTime(2026, 10, 16, 12, 0, 0, DateTimeKind.Utc);
+        var source = new SeerrNativeDetailsSource(seerr, tmdb, plugin.Core.Logger, () => now);
+        var viewer = Guid.NewGuid();
+        var none = CancellationToken.None;
+        Task<SourceAnswer> Page(int page, Guid who) => source.DiscoverAsync(true, "genre", 878, page, null, who, none);
+
+        // Normal browsing (a person page: one read; a discovery page's first screens and their
+        // prefetch: about fifteen pages over two feeds) stays well inside the burst.
+        for (var page = 1; page <= SeerrNativeDetailsSource.FeedBurst; page++) Assert.NotNull((await Page(page, viewer)).Data);
+        Assert.Equal(SeerrNativeDetailsSource.FeedBurst, seerr.Calls);
+        // One more page, sort, person or company series that isn't cached: not started.
+        Assert.True((await Page(SeerrNativeDetailsSource.FeedBurst + 1, viewer)).Busy);
+        Assert.True((await source.DiscoverAsync(true, "genre", 878, 1, "vote_average.desc", viewer, none)).Busy);
+        Assert.True((await source.PersonCreditsAsync(3810, viewer, none)).Busy);
+        plugin.Plugin.Configuration.TMDB_API_KEY = "test-tmdb";
+        Assert.True((await source.CompanySeriesAsync(99, 1, null, viewer, none)).Busy);
+        Assert.Equal(SeerrNativeDetailsSource.FeedBurst, seerr.Calls);
+        // What is cached costs nothing.
+        Assert.NotNull((await Page(1, viewer)).Data);
+        Assert.NotNull((await Page(SeerrNativeDetailsSource.FeedBurst, viewer)).Data);
+        // Another viewer has their own budget; what they fetched is then cached for everyone.
+        var other = Guid.NewGuid();
+        Assert.NotNull((await source.CompanySeriesAsync(99, 1, null, other, none)).Data);
+        Assert.NotNull((await source.PersonCreditsAsync(3810, other, none)).Data);
+        Assert.NotNull((await source.CompanySeriesAsync(99, 1, null, viewer, none)).Data);
+        Assert.NotNull((await source.PersonCreditsAsync(3810, viewer, none)).Data);
+        // The budget comes back at FeedPerSecond.
+        now = now.AddSeconds(5);
+        var refilled = (int)(5 * SeerrNativeDetailsSource.FeedPerSecond);
+        var started = 0;
+        for (var page = 100; page < 100 + refilled + 5; page++) started += (await Page(page, viewer)).Data != null ? 1 : 0;
+        Assert.Equal(refilled, started);
+        // A refused read was never fetched or cached: it is started once the budget allows.
+        now = now.AddSeconds(1);
+        Assert.NotNull((await Page(SeerrNativeDetailsSource.FeedBurst + 1, viewer)).Data);
+        Assert.Equal(0, source.FeedReadsPending);
+        Assert.Equal(0, source.InFlightCount);
+    }
+
+    [Fact]
+    public async Task FeedReadsRunAFewAtATimeBehindABoundedQueue()
+    {
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var running = 0;
+        var most = 0;
+        var gate = new object();
+        using var seerr = new IntegrationTransport(async (req, _) =>
+        {
+            var now = Interlocked.Increment(ref running);
+            lock (gate) most = Math.Max(most, now);
+            await hold.Task;
+            Interlocked.Decrement(ref running);
+            return IntegrationTransport.Response("""{"page":1,"totalPages":500,"results":[]}""");
+        });
+        var (plugin, source, tmdb) = Make(seerr);
+        using var _p = plugin;
+        using var _t = tmdb;
+        var none = CancellationToken.None;
+        var queued = SeerrNativeDetailsSource.FeedConcurrency + SeerrNativeDetailsSource.FeedQueue;
+        // Every wait is bounded: a read wrongly queued behind the held ones fails the test instead of hanging it.
+        var limit = TimeSpan.FromSeconds(10);
+        try
+        {
+            // Several viewers, each well inside their own budget, fill the server's queue; the last of
+            // them gives up at once, which doesn't free the place its read still holds.
+            var reads = Enumerable.Range(1, queued - 1).Select(page => source.DiscoverAsync(false, "network", 49, page, null, Guid.NewGuid(), none)).ToList();
+            using (var cts = new CancellationTokenSource())
+            {
+                var gaveUp = source.DiscoverAsync(false, "network", 49, queued, null, Guid.NewGuid(), cts.Token);
+                cts.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => gaveUp);
+            }
+
+            for (var i = 0; i < 200 && Volatile.Read(ref running) < SeerrNativeDetailsSource.FeedConcurrency; i++) await Task.Delay(10);
+            await Task.Delay(50);
+            Assert.Equal(SeerrNativeDetailsSource.FeedConcurrency, Volatile.Read(ref running));
+            Assert.Equal(queued, source.FeedReadsPending);
+            // A fresh viewer's new read isn't started (nor queued) while the queue is full ...
+            Assert.True((await source.DiscoverAsync(false, "network", 49, 400, null, Guid.NewGuid(), none).WaitAsync(limit)).Busy);
+            // ... but joining a read already running costs nothing.
+            var join = source.DiscoverAsync(false, "network", 49, 1, null, Guid.NewGuid(), none);
+            hold.SetResult();
+            Assert.All(await Task.WhenAll(reads).WaitAsync(limit), r => Assert.NotNull(r.Data));
+            Assert.NotNull((await join.WaitAsync(limit)).Data);
+            Assert.Equal(queued, seerr.Calls);
+            Assert.Equal(SeerrNativeDetailsSource.FeedConcurrency, most);
+            Assert.Equal(0, source.FeedReadsPending);
+            Assert.Equal(0, source.InFlightCount);
+        }
+        finally
+        {
+            hold.TrySetResult();
+        }
+
+        // Room again: new reads start.
+        Assert.NotNull((await source.DiscoverAsync(false, "network", 49, 400, null, Guid.NewGuid(), none)).Data);
+    }
+
 }
 #endif

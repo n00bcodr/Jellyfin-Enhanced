@@ -62,7 +62,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private const string KeyFile = "native-details-artwork.key";
         private readonly byte[] _key;
         private readonly IHttpClientFactory _http;
-        private readonly ConcurrentDictionary<Guid, (double Tokens, DateTime At)> _budgets = new();
+        private readonly ViewerBudget _budget;
         private readonly Func<DateTime> _now;
         private readonly SemaphoreSlim _fetchGate = new(8);
         private readonly ConcurrentDictionary<string, (byte[] Bytes, string ContentType, DateTime At)> _bytes = new(StringComparer.Ordinal);
@@ -83,6 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         {
             _http = http;
             _now = now ?? (() => DateTime.UtcNow);
+            _budget = new ViewerBudget(UpstreamBurst, UpstreamPerSecond, _now);
             _key = LoadKey(keyDirectory);
         }
 
@@ -124,26 +125,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// </summary>
         /// <param name="viewer">The viewer the grant was minted for.</param>
         /// <returns>True when the fetch may start.</returns>
-        internal bool TakeUpstream(Guid viewer)
-        {
-            var now = _now();
-            if (_budgets.Count > 10000) _budgets.Clear();
-            var taken = false;
-            _budgets.AddOrUpdate(
-                viewer,
-                _ =>
-                {
-                    taken = true;
-                    return (UpstreamBurst - 1, now);
-                },
-                (_, b) =>
-                {
-                    var tokens = Math.Min(UpstreamBurst, b.Tokens + Math.Max(0, (now - b.At).TotalSeconds) * UpstreamPerSecond);
-                    taken = tokens >= 1;
-                    return (taken ? tokens - 1 : tokens, now);
-                });
-            return taken;
-        }
+        internal bool TakeUpstream(Guid viewer) => _budget.Take(viewer);
 
         /// <summary>True when the image is in the byte cache (no upstream fetch needed).</summary>
         internal bool IsCached(string path, string size)
