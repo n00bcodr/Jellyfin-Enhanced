@@ -174,6 +174,18 @@ test('retryable failures recover with bounded retry count',async t=>{
   assert.equal((await JE.core.api.fetch('/retry')).ok,true); assert.equal(calls,2);
 });
 
+test('a busy answer is retried no sooner than its Retry-After, and a wait past the budget is left to the caller',async t=>{
+  const at=[]; const {JE}=setup(t,{fetch:async()=>{at.push(Date.now());return at.length===1?new Response('{"code":"busy"}',{status:429,headers:{'Retry-After':'1'}}):jsonResponse({ok:true});}});
+  Object.assign(JE.core.api.manager.CONFIG.retry,{baseDelayMs:0,jitterFactor:0});
+  assert.equal((await JE.core.api.fetch('/busy')).ok,true);
+  assert.equal(at.length,2); assert.ok(at[1]-at[0]>=950,`retried after ${at[1]-at[0]} ms`);
+  // A server asking for longer than the time budget allows: no early retry; the error says how long.
+  let calls=0; const late=setup(t,{fetch:async()=>{calls++;return new Response('{}',{status:429,headers:{'Retry-After':'60'}});}});
+  Object.assign(late.JE.core.api.manager.CONFIG.retry,{baseDelayMs:0,jitterFactor:0});
+  await assert.rejects(late.JE.core.api.fetch('/later'),e=>e.status===429&&e.retryAfterMs===60000);
+  assert.equal(calls,1);
+});
+
 test('empty response is supported while malformed JSON fails explicitly',async t=>{
   let body=''; const {JE}=setup(t,{fetch:async()=>new Response(body)});
   assert.deepEqual(plain(await JE.core.api.fetch('/empty')),{});

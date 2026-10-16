@@ -107,6 +107,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 return;
             }
 
+            // A busy answer says when to come back (the client waits at least that long).
+            if (result is StatusCodeResult { StatusCode: StatusCodes.Status429TooManyRequests }) context.HttpContext.Response.Headers["Retry-After"] = "2";
             context.Result = result;
         }
 
@@ -245,7 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     // A real library item with this id (never expected) wins.
                     if (_library.GetItemById(guid) != null) return null;
                     if (!title.IsTitle) return await LinkedPageAsync(await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false);
-                    return Guard(Parents(await ItemAsync(await Dtos().ConfigureAwait(false), title, ct).ConfigureAwait(false), viewer, title), Spoilers(), viewer);
+                    return Guard(Parents(await ItemAsync(await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false), viewer, title), Spoilers(), viewer);
                 case FacadeAnswer.ThemeMedia:
                     return Ok(new AllThemeMediaResult { ThemeSongsResult = Theme(guid), ThemeVideosResult = Theme(guid), SoundtrackSongsResult = Theme(guid) });
                 case FacadeAnswer.ThemeResult:
@@ -326,7 +328,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             switch (page.Kind)
             {
                 case SyntheticKind.Person:
-                    var person = await _source.PersonAsync(page.TmdbId, ct).ConfigureAwait(false);
+                    var person = await _source.PersonAsync(page.TmdbId, viewer.Id, ct).ConfigureAwait(false);
                     if (person.Data is not { } p) return Failed(person);
                     return NativeDetailsPolicy.PersonAllowed(viewer, p) ? Ok(dtos.Person(page, p)) : new NotFoundResult();
                 case SyntheticKind.Genre:
@@ -339,8 +341,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 case SyntheticKind.Studio:
                 case SyntheticKind.Network:
                     var named = page.Kind == SyntheticKind.Studio
-                        ? await _source.StudioAsync(page.TmdbId, ct).ConfigureAwait(false)
-                        : await _source.NetworkAsync(page.TmdbId, ct).ConfigureAwait(false);
+                        ? await _source.StudioAsync(page.TmdbId, viewer.Id, ct).ConfigureAwait(false)
+                        : await _source.NetworkAsync(page.TmdbId, viewer.Id, ct).ConfigureAwait(false);
                     if (named.Data is not { } n) return Failed(named);
                     return NativeDetailsDtos.Str(n, "name") is { Length: > 0 } name ? Ok(dtos.NamePage(page, name.Trim())) : new NotFoundResult();
                 default:
@@ -385,16 +387,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return result;
         }
 
-        private async Task<IActionResult> ItemAsync(NativeDetailsDtos dtos, SyntheticId title, CancellationToken ct)
+        private async Task<IActionResult> ItemAsync(NativeDetailsDtos dtos, User viewer, SyntheticId title, CancellationToken ct)
         {
             var logo = _source.LogoPathAsync(title.IsMovie, title.TmdbId, ct);
             if (title.IsMovie)
             {
-                var movie = await _source.MovieAsync(title.TmdbId, ct).ConfigureAwait(false);
+                var movie = await _source.MovieAsync(title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
                 return movie.Data is { } m ? Ok(dtos.Movie(title, m, await logo.ConfigureAwait(false))) : Failed(movie);
             }
 
-            var series = await _source.SeriesAsync(title.TmdbId, ct).ConfigureAwait(false);
+            var series = await _source.SeriesAsync(title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             if (series.Data is not { } s) return Failed(series);
             switch (title.Kind)
             {
@@ -405,11 +407,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     if (summary.ValueKind != JsonValueKind.Object) return new NotFoundResult();
                     // The page's episode list and status need the season's own data: when it can't be had, the
                     // page fails up front (retryable, the modal once) instead of showing a season with no episodes.
-                    var seasonData = await _source.SeasonAsync(title.TmdbId, title.Season, ct).ConfigureAwait(false);
+                    var seasonData = await _source.SeasonAsync(title.TmdbId, title.Season, viewer.Id, ct).ConfigureAwait(false);
                     if (seasonData.Data == null) return Failed(seasonData);
                     return Ok(dtos.WithSeriesNames(dtos.Season(title, s, summary, await logo.ConfigureAwait(false)), s));
                 case SyntheticKind.Episode:
-                    var season = await _source.SeasonAsync(title.TmdbId, title.Season, ct).ConfigureAwait(false);
+                    var season = await _source.SeasonAsync(title.TmdbId, title.Season, viewer.Id, ct).ConfigureAwait(false);
                     if (season.Data is not { } se) return Failed(season);
                     var episode = NativeDetailsDtos.Episodes(se).FirstOrDefault(e => NativeDetailsDtos.Int(e, "episodeNumber") == title.Episode);
                     return episode.ValueKind == JsonValueKind.Object ? Ok(dtos.WithSeriesNames(dtos.Episode(title, s, se, episode, await logo.ConfigureAwait(false)), s)) : new NotFoundResult();
@@ -421,7 +423,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private async Task<IActionResult> AncestorsAsync(ActionExecutingContext context, NativeDetailsDtos dtos, User viewer, SyntheticId title, CancellationToken ct)
         {
             if (title.Kind is not (SyntheticKind.Season or SyntheticKind.Episode)) return Ok(Array.Empty<BaseItemDto>());
-            var series = await _source.SeriesAsync(title.TmdbId, ct).ConfigureAwait(false);
+            var series = await _source.SeriesAsync(title.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             if (series.Data is not { } s) return Failed(series);
             var logo = await _source.LogoPathAsync(false, title.TmdbId, ct).ConfigureAwait(false);
             // The parts the viewer can open in the library are themselves (a season of a series Jellyfin has
@@ -454,7 +456,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private async Task<IActionResult> SeasonsAsync(ActionExecutingContext context, NativeDetailsDtos dtos, User viewer, SyntheticId series, CancellationToken ct)
         {
             if (Arg<bool?>(context, "isMissing") == false) return Ok(new QueryResult<BaseItemDto>(0, 0, Array.Empty<BaseItemDto>()));
-            var data = await _source.SeriesAsync(series.TmdbId, ct).ConfigureAwait(false);
+            var data = await _source.SeriesAsync(series.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             if (data.Data is not { } s) return Failed(data);
             var logo = await _source.LogoPathAsync(false, series.TmdbId, ct).ConfigureAwait(false);
             var special = Arg<bool?>(context, "isSpecialSeason");
@@ -500,7 +502,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
             // Missing episode rows follow the viewer's "Display missing episodes" setting, as native rows do.
             if (!viewer.DisplayMissingEpisodes) return empty;
-            var seriesData = await _source.SeriesAsync(series.Id.TmdbId, ct).ConfigureAwait(false);
+            var seriesData = await _source.SeriesAsync(series.Id.TmdbId, viewer.Id, ct).ConfigureAwait(false);
             if (seriesData.Data is not { } sd) return Failed(seriesData);
             // A season the series doesn't have is unknown (404); a season whose episode list can't be
             // had right now is an empty list: jellyfin-web's episode list has no error handler.
@@ -509,7 +511,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             // a hidden season is unknown, a hidden episode has no row.
             var physical = _policy.Physical(viewer, false, series.Id.TmdbId, number.Value);
             if (physical.Hidden || physical.HiddenSeasons.Contains(number.Value)) return new NotFoundResult();
-            var seasonData = await _source.SeasonAsync(series.Id.TmdbId, number.Value, ct).ConfigureAwait(false);
+            var seasonData = await _source.SeasonAsync(series.Id.TmdbId, number.Value, viewer.Id, ct).ConfigureAwait(false);
             if (seasonData.Data is not { } se) return empty;
             var logo = await _source.LogoPathAsync(false, series.Id.TmdbId, ct).ConfigureAwait(false);
             var options = Options(context);
@@ -743,7 +745,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private static IActionResult Unavailable() => new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
 
         /// <summary>No data: 404 when the source says the title doesn't exist, 503 when it can't answer now.</summary>
-        private static IActionResult Failed(SourceAnswer answer) => answer.NotFound ? new NotFoundResult() : Unavailable();
+        /// <remarks>A read the viewer's feed budget can't start now (<see cref="SourceAnswer.Busy"/>): 429, try again shortly.</remarks>
+        private static IActionResult Failed(SourceAnswer answer)
+            => answer.Busy ? new StatusCodeResult(StatusCodes.Status429TooManyRequests) : answer.NotFound ? new NotFoundResult() : Unavailable();
 
         private static IActionResult Refuse(string method)
             => HttpMethods.IsGet(method) || HttpMethods.IsHead(method) ? new NotFoundResult() : new StatusCodeResult(StatusCodes.Status403Forbidden);

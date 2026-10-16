@@ -356,6 +356,9 @@
             + `#itemDetailPage.${PERSON_CLASS} .tagline { display: none !important; }\n`
             // A discovery page's own list is empty by construction: no paging, play, sort or filter controls.
             + `.${LIST_CLASS} .itemsViewSettingsContainer, .${LIST_CLASS} .paging, .${LIST_CLASS} .alphaPicker { display: none !important; }\n`
+            // ... and no room for that empty list above the discovery row, which becomes the page's top.
+            + `.${LIST_CLASS} > :not([class*="-discovery-section"]):not(.alphaPicker) { min-height: 0 !important; height: 0 !important; padding-top: 0 !important; padding-bottom: 0 !important; margin: 0 !important; overflow: hidden !important; }\n`
+            + `.${LIST_CLASS} > [class*="-discovery-section"] { margin-top: 0 !important; border-top: 0 !important; }\n`
             + `.je-native-absent-refusal { padding: 3em 1.5em; text-align: center; font-size: 1.15em; }\n`
             // A refused page keeps nothing of the title on screen: a restored view's earlier content is hidden.
             + `#itemDetailPage.${REFUSED_CLASS} > :not(.je-native-absent-refusal) { display: none !important; }\n`

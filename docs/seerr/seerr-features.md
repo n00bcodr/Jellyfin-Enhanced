@@ -158,9 +158,12 @@ library title:
 - Your parental limits and library access apply on every one of these pages. The filmography and the discovery pages'
   rows are filtered on the server before they reach the browser: a title the library has but hides from you, a title
   in a library you can't open, and a title not in the library whose own page you couldn't open are not sent at all.
-- The server fetches these lists for everyone with one Seerr key, so each account can start only so many new pages at
-  once (about sixty, then one a second; pages someone has already opened don't count). Scrolling far down a discovery
-  page very fast can pause for a moment while it catches up.
+- The server fetches these lists, and the pages themselves, for everyone with one Seerr key, so each account can start
+  only so many new reads at once (about sixty, then one a second; anything someone has already opened doesn't count).
+  Past that a page waits a moment for its turn, and a list asks again when the server says it may. Scrolling far down
+  a discovery page very fast can pause for a moment while it catches up.
+- Lists filtered for your account are read again each time a page shows, so a change to your library access or
+  parental limit shows without reloading.
 
 **When it can't open.** A title your account may not see (parental limits, libraries you can't open, an account
 not linked to Seerr) shows "This title isn't available to you." with *Go back*, never the modal. A page you go back

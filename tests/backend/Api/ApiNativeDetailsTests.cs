@@ -180,6 +180,10 @@ public class ApiNativeDetailsTests
             return Task.FromResult(Answer(Feeds.ContainsKey(key), Feeds.GetValueOrDefault(key) ?? "{}"));
         }
 
+        /// <summary>A page's own metadata reads aren't started (the viewer's feed budget is used up).</summary>
+        public bool PagesBusy { get; set; }
+        public Task<SourceAnswer> MovieAsync(int tmdb, Guid viewer, CancellationToken ct) => PagesBusy ? Task.FromResult(SourceAnswer.Throttled) : MovieAsync(tmdb, ct);
+        public Task<SourceAnswer> SeriesAsync(int tmdb, Guid viewer, CancellationToken ct) => PagesBusy ? Task.FromResult(SourceAnswer.Throttled) : SeriesAsync(tmdb, ct);
         public List<string> RatingCalls { get; } = new();
         public Task<SourceAnswer> RatingsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct)
         {
@@ -2182,6 +2186,22 @@ public class ApiNativeDetailsTests
         Assert.Contains(theirs, i => i.Name == "Blade Runner 2049");
     }
 
+
+    [Fact]
+    public async Task APageReadTheViewersBudgetCantStartIs429WithRetryAfterNotAnOutage()
+    {
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        rig.Source.PagesBusy = true;
+        var run = await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) });
+        Assert.Equal(429, Status(run.Result));
+        Assert.Equal("2", run.Http.Response.Headers["Retry-After"].ToString());
+        var seasons = await Call(rig, "TvShows", "GetSeasons", Me(viewer), new() { ["seriesId"] = Id(SyntheticId.Series(83867)) });
+        Assert.Equal(429, Status(seasons.Result));
+        rig.Source.PagesBusy = false;
+        Assert.Equal(200, Status((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result));
+    }
+
 }
 
 /// <summary>The real Seerr-backed source: shared fetches, 404 vs outage, and a bounded linked-account check.</summary>
@@ -2364,6 +2384,81 @@ public class NativeDetailsSourceTests
         Assert.Null(await source.IsSeerrLinkedAsync(user, CancellationToken.None));
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(1), clock.Elapsed.ToString());
         Assert.Equal(1, seerr.Calls);
+    }
+
+    [Fact]
+    public async Task EveryPageOfSeerrsAccountsIsReadBeforeSomeoneIsCalledUnlinked()
+    {
+        // 2,500 Seerr accounts: the one asked about is on the third page.
+        var ids = Enumerable.Range(0, 2500).Select(_ => Guid.NewGuid().ToString("N")).ToList();
+        var failPage = -1;
+        using var seerr = new IntegrationTransport((req, _) =>
+        {
+            var q = System.Web.HttpUtility.ParseQueryString(req.RequestUri!.Query);
+            var skip = int.Parse(q["skip"] ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+            var take = int.Parse(q["take"] ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+            if (skip / take == failPage) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway));
+            var page = ids.Skip(skip).Take(take).Select(id => new { jellyfinUserId = id });
+            return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { pageInfo = new { results = ids.Count }, results = page })));
+        });
+        var (plugin, _, tmdb) = Make(seerr);
+        using var _p = plugin;
+        using var _t = tmdb;
+        var now = new DateTime(2026, 10, 16, 12, 0, 0, DateTimeKind.Utc);
+        var source = new SeerrNativeDetailsSource(seerr, tmdb, plugin.Core.Logger, () => now);
+        Assert.True(await source.IsSeerrLinkedAsync(Guid.Parse(ids[2400]), CancellationToken.None));
+        Assert.Equal(3, seerr.Calls);
+        Assert.False(await source.IsSeerrLinkedAsync(Guid.NewGuid(), CancellationToken.None));
+        // A page that can't be read: can't tell (never "unlinked" for the people on it).
+        var fresh = new SeerrNativeDetailsSource(seerr, tmdb, plugin.Core.Logger, () => now);
+        failPage = 2;
+        Assert.Null(await fresh.IsSeerrLinkedAsync(Guid.Parse(ids[2400]), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task APagesOwnMetadataReadsComeOutOfTheSameBudgetAfterAShortWait()
+    {
+        using var seerr = new IntegrationTransport((req, _) => Task.FromResult(IntegrationTransport.Response("""{"id":1,"title":"A title","name":"A name"}""")));
+        var (plugin, _, tmdb) = Make(seerr);
+        using var _p = plugin;
+        using var _t = tmdb;
+        var now = new DateTime(2026, 10, 16, 12, 0, 0, DateTimeKind.Utc);
+        var source = new SeerrNativeDetailsSource(seerr, tmdb, plugin.Core.Logger, () => now) { PageReadWait = TimeSpan.FromMilliseconds(400) };
+        INativeDetailsSource pages = source;
+        var viewer = Guid.NewGuid();
+        var none = CancellationToken.None;
+        // Movie, series, season, person, studio and network pages, each a new title: a token each.
+        for (var id = 1; id <= SeerrNativeDetailsSource.FeedBurst; id++)
+        {
+            var answer = (id % 6) switch
+            {
+                0 => await pages.MovieAsync(id, viewer, none),
+                1 => await pages.SeriesAsync(id, viewer, none),
+                2 => await pages.SeasonAsync(id, 1, viewer, none),
+                3 => await pages.PersonAsync(id, viewer, none),
+                4 => await pages.StudioAsync(id, viewer, none),
+                _ => await pages.NetworkAsync(id, viewer, none),
+            };
+            Assert.NotNull(answer.Data);
+        }
+
+        Assert.Equal(SeerrNativeDetailsSource.FeedBurst, seerr.Calls);
+        // Past the budget a new page waits for a token, then answers busy (nothing fetched).
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        Assert.True((await pages.MovieAsync(9999, viewer, none)).Busy);
+        Assert.True(watch.ElapsedMilliseconds >= 350, watch.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(SeerrNativeDetailsSource.FeedBurst, seerr.Calls);
+        // A page already read is free; another viewer has their own budget; the old unbudgeted read
+        // (the server's own checks) never asks the viewer's budget.
+        Assert.NotNull((await pages.MovieAsync(6, viewer, none)).Data);
+        Assert.NotNull((await pages.MovieAsync(9999, Guid.NewGuid(), none)).Data);
+        Assert.NotNull((await pages.MovieAsync(9999, viewer, none)).Data);
+        Assert.NotNull((await source.MovieAsync(8888, none)).Data);
+        // A token refilled while waiting lets the read start.
+        var waiting = pages.SeriesAsync(7777, viewer, none);
+        await Task.Delay(100);
+        now = now.AddSeconds(1);
+        Assert.NotNull((await waiting).Data);
     }
 
     [Fact]

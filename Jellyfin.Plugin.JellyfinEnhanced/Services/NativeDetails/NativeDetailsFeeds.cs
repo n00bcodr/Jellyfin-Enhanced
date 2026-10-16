@@ -230,7 +230,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (tmdb <= 0) return new FeedAnswer(FeedOutcome.Invalid, null);
             var access = await ViewerAsync(_policy.SeeAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
-            var answer = movie ? await _source.MovieAsync(tmdb, ct).ConfigureAwait(false) : await _source.SeriesAsync(tmdb, ct).ConfigureAwait(false);
+            var answer = movie ? await _source.MovieAsync(tmdb, viewer.Id, ct).ConfigureAwait(false) : await _source.SeriesAsync(tmdb, viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is not { } data) return Failed(answer);
             if (JsonNode.Parse(data.GetRawText()) is not JsonObject body) return new FeedAnswer(FeedOutcome.Unavailable, null);
             body.Remove("mediaInfo");

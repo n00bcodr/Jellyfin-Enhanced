@@ -348,7 +348,11 @@
 
         if (JE.requestManager) {
             const cacheKey = `${cachePrefix}:${path}`;
-            const cached = JE.requestManager.getCached(cacheKey);
+            // The server's native feeds are filtered for the viewer's current policy (library access,
+            // parental limits): never kept by the tab, so a changed policy shows on the next read. The
+            // server keeps the upstream answers, so reading them again is cheap.
+            const keep = !path.startsWith('/JellyfinEnhanced/native-details/');
+            const cached = keep ? JE.requestManager.getCached(cacheKey) : null;
             if (cached) return cached;
 
             // Identity epoch at request start. Cache keys carry no user id and the
@@ -375,7 +379,7 @@
                 if (!stillCurrent()) {
                     throw new DOMException('User changed during request', 'AbortError');
                 }
-                JE.requestManager.setCache(cacheKey, data);
+                if (keep) JE.requestManager.setCache(cacheKey, data);
                 return data;
             };
 
@@ -387,7 +391,7 @@
                     if (!stillCurrent()) {
                         return Promise.reject(new DOMException('User changed during request', 'AbortError'));
                     }
-                    const hit = JE.requestManager.getCached(cacheKey);
+                    const hit = keep ? JE.requestManager.getCached(cacheKey) : null;
                     return hit ? Promise.resolve(hit) : fetchFn();
                 }),
                 signal

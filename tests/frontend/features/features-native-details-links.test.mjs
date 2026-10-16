@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness } from '../helpers/harness.mjs';
+import { createHarness, jsonResponse } from '../helpers/harness.mjs';
 
 // Where the names on a native page of a title that isn't in the library lead: a person's own page
 // (JE's person discovery row is its filmography) and the discovery pages of genres, studios and
@@ -392,4 +392,24 @@ test('the native-feeds choice: no Seerr account, Seerr reachable, native details
   assert.equal(use({ active: false, userFound: false }), false);   // Seerr unreachable: not a reason to switch
   h.JE.pluginConfig.NativeAbsentDetails.Enabled = false;
   assert.equal(use(UNLINKED), false);
+});
+
+test('the native feeds are read again each time (filtered for the viewer\'s policy now); Seerr\'s rows keep the tab cache', async t => {
+  const calls = [];
+  const h = createHarness({
+    JE: { pluginConfig: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1 } }, t: key => key },
+    apiClient: { serverId: () => SERVER },
+    fetch: async url => { calls.push(String(url)); return jsonResponse({ results: [{ id: calls.length }] }); },
+  });
+  t.after(() => h.close());
+  for (const name of ['navigation', 'session', 'api-client']) h.load(`core/${name}.js`);
+  h.JE.requestManager = h.JE.core.api.manager;
+  h.load('jellyseerr/discovery/discovery-filter-utils.js');
+  const get = path => h.JE.discoveryFilter.fetchWithManagedRequest(path, 'genre');
+  const native = '/JellyfinEnhanced/native-details/discover/tv/genre/16?page=1';
+  const proxy = '/JellyfinEnhanced/jellyseerr/discover/tv/genre/16?page=1';
+  await get(native); await get(native);
+  await get(proxy); await get(proxy);
+  assert.equal(calls.filter(u => u.includes('native-details')).length, 2);
+  assert.equal(calls.filter(u => u.includes('/jellyseerr/')).length, 1);
 });

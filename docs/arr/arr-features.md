@@ -938,6 +938,10 @@ facade and never touch the library):
 | GET | `native-details/title/{movie\|tv}/{tmdbId}[/ratings]` | A not-in-library title's public details (without Seerr's per-account `mediaInfo`) or its ratings, for its native page's extras, under that page's own rule (no Seerr account needed in Jellyfin Enhanced request mode); ratings are limited like the feeds |
 | GET | `native-details/genres/{movie\|tv}`, `native-details/keywords?query=` | TMDB's genres (`[{id, name}]`) and the keywords matching a tag (`{results: [{id, name}]}`), so library genre and tag rows find their TMDB ids without a Seerr account |
 
+The native page's own reads (its title, seasons, episodes and parents, a person, studio or network page) come out of
+the same per-account budget as these lists: a read nobody has made yet waits up to 3 seconds for room, then answers
+429 with `Retry-After: 2`. Jellyfin Enhanced's browser code waits at least that long before it asks again.
+
 `items/by-providers` now answers only with an item the caller can open (an API key keeps the first match).
 
 ### Discover and search (JE mode)

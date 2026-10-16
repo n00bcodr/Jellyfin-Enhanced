@@ -82,6 +82,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         Task<SourceAnswer> CompanySeriesAsync(int company, int page, string? sortBy, Guid viewer, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
 
         /// <summary>
+        /// <see cref="MovieAsync(int, CancellationToken)"/> for a page a viewer opens: a read that isn't cached
+        /// or already running comes out of <paramref name="viewer"/>'s feed budget
+        /// (<see cref="SourceAnswer.Busy"/> when it can't start now).
+        /// </summary>
+        Task<SourceAnswer> MovieAsync(int tmdb, Guid viewer, CancellationToken ct) => MovieAsync(tmdb, ct);
+
+        /// <summary><see cref="SeriesAsync(int, CancellationToken)"/> out of the viewer's feed budget (see <see cref="MovieAsync(int, Guid, CancellationToken)"/>).</summary>
+        Task<SourceAnswer> SeriesAsync(int tmdb, Guid viewer, CancellationToken ct) => SeriesAsync(tmdb, ct);
+
+        /// <summary><see cref="SeasonAsync(int, int, CancellationToken)"/> out of the viewer's feed budget.</summary>
+        Task<SourceAnswer> SeasonAsync(int tmdb, int season, Guid viewer, CancellationToken ct) => SeasonAsync(tmdb, season, ct);
+
+        /// <summary><see cref="PersonAsync(int, CancellationToken)"/> out of the viewer's feed budget.</summary>
+        Task<SourceAnswer> PersonAsync(int tmdb, Guid viewer, CancellationToken ct) => PersonAsync(tmdb, ct);
+
+        /// <summary><see cref="StudioAsync(int, CancellationToken)"/> out of the viewer's feed budget.</summary>
+        Task<SourceAnswer> StudioAsync(int tmdb, Guid viewer, CancellationToken ct) => StudioAsync(tmdb, ct);
+
+        /// <summary><see cref="NetworkAsync(int, CancellationToken)"/> out of the viewer's feed budget.</summary>
+        Task<SourceAnswer> NetworkAsync(int tmdb, Guid viewer, CancellationToken ct) => NetworkAsync(tmdb, ct);
+
+        /// <summary>
         /// Seerr's ratings of a title (movies: RT and IMDb combined; series: RT), or why there are none
         /// (<see cref="SourceAnswer.Busy"/> as for <see cref="PersonCreditsAsync"/>).
         /// </summary>
@@ -182,6 +204,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly ConcurrentDictionary<string, (SourceAnswer Value, DateTime At)> _cache = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, Lazy<Task<SourceAnswer>>> _inFlight = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _linkLock = new(1, 1);
+
+        /// <summary>Seerr accounts read per request when telling who is linked.</summary>
+        internal const int LinkPageSize = 1000;
+
+        /// <summary>The most pages of Seerr accounts read (beyond that: can't tell).</summary>
+        internal const int LinkMaxPages = 20;
         private readonly Func<DateTime> _now;
         private readonly ViewerBudget _feedBudget;
         private readonly FeedScheduler _feeds = new(FeedConcurrency, FeedQueue, FeedPerViewer);
@@ -240,6 +268,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         /// <inheritdoc />
         public Task<SourceAnswer> NetworkAsync(int tmdb, CancellationToken ct) => GetAsync($"/api/v1/network/{tmdb}", ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> MovieAsync(int tmdb, Guid viewer, CancellationToken ct) => Budgeted($"/api/v1/movie/{tmdb}", viewer, ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> SeriesAsync(int tmdb, Guid viewer, CancellationToken ct) => Budgeted($"/api/v1/tv/{tmdb}", viewer, ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> SeasonAsync(int tmdb, int season, Guid viewer, CancellationToken ct) => Budgeted($"/api/v1/tv/{tmdb}/season/{season}", viewer, ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> PersonAsync(int tmdb, Guid viewer, CancellationToken ct) => Budgeted($"/api/v1/person/{tmdb}", viewer, ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> StudioAsync(int tmdb, Guid viewer, CancellationToken ct) => Budgeted($"/api/v1/studio/{tmdb}", viewer, ct);
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> NetworkAsync(int tmdb, Guid viewer, CancellationToken ct) => Budgeted($"/api/v1/network/{tmdb}", viewer, ct);
+
+        /// <summary>How long a page's own metadata read waits for room in the viewer's budget before it answers busy.</summary>
+        internal TimeSpan PageReadWait { get; set; } = TimeSpan.FromSeconds(3);
+
+        /// <summary>
+        /// A page's metadata read: cached or running reads are free, a new one comes out of the viewer's feed
+        /// budget. A page can't be retried by jellyfin-web the way a list page can, so a read without room
+        /// waits a little (a token refills each second) before it answers busy; only sustained reading past
+        /// the budget is refused.
+        /// </summary>
+        private async Task<SourceAnswer> Budgeted(string path, Guid viewer, CancellationToken ct)
+        {
+            var until = DateTime.UtcNow + PageReadWait;
+            while (true)
+            {
+                var answer = await FeedAsync(path, viewer, () => FetchAndStoreAsync(path), ct).ConfigureAwait(false);
+                if (!answer.Busy || DateTime.UtcNow >= until) return answer;
+                await Task.Delay(250, ct).ConfigureAwait(false);
+            }
+        }
 
         /// <inheritdoc />
         public Task<SourceAnswer> PersonCreditsAsync(int tmdb, Guid viewer, CancellationToken ct)
@@ -381,31 +447,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 if (Known(from, _now()) is { } fresh && _now() - _linkedAt < LinkMissRefresh) return fresh.Contains(id);
                 if (_now() - _linkFailedAt < LinkFailureBackoff) return Known(from, _now())?.Contains(id);
-                SourceAnswer users;
-                try
+                // Every page of Seerr's accounts: one missing page would make its people look unlinked.
+                var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var complete = false;
+                for (var page = 0; page < LinkMaxPages; page++)
                 {
-                    users = await FetchAsync("/api/v1/user?take=1000", budget.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                {
-                    users = SourceAnswer.Unavailable;
+                    SourceAnswer users;
+                    try
+                    {
+                        users = await FetchAsync("/api/v1/user?take=" + LinkPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture) + "&skip=" + (page * LinkPageSize).ToString(System.Globalization.CultureInfo.InvariantCulture), budget.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        users = SourceAnswer.Unavailable;
+                    }
+
+                    if (users.Data is not { } body || !body.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array) break;
+                    var count = 0;
+                    foreach (var user in results.EnumerateArray())
+                    {
+                        count++;
+                        if (user.TryGetProperty("jellyfinUserId", out var j) && j.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(j.GetString()))
+                        {
+                            set.Add(j.GetString()!.Replace("-", string.Empty, StringComparison.Ordinal));
+                        }
+                    }
+
+                    var total = body.TryGetProperty("pageInfo", out var info) && info.ValueKind == JsonValueKind.Object && info.TryGetProperty("results", out var r) && r.TryGetInt32(out var n) ? n : (int?)null;
+                    if (count < LinkPageSize || (total is int all && (page + 1) * LinkPageSize >= all))
+                    {
+                        complete = true;
+                        break;
+                    }
                 }
 
-                if (users.Data is not { } body || !body.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+                if (!complete)
                 {
-                    // Seerr unreachable: the previous answer while it is recent (none, or an old one: can't
-                    // tell, so the page falls back instead of acting on stale access), and no retry for a while.
+                    // Seerr unreachable (or more accounts than are read): the previous answer while it is recent
+                    // (none, or an old one: can't tell, so the page falls back instead of acting on stale
+                    // access), and no retry for a while.
                     _linkFailedAt = _now();
                     return Known(from, _now())?.Contains(id);
-                }
-
-                var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var user in results.EnumerateArray())
-                {
-                    if (user.TryGetProperty("jellyfinUserId", out var j) && j.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(j.GetString()))
-                    {
-                        set.Add(j.GetString()!.Replace("-", string.Empty, StringComparison.Ordinal));
-                    }
                 }
 
                 _linked = set;
@@ -460,11 +542,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         {
             if (TryCached(path, out var hit)) return Task.FromResult(hit);
             if (_inFlight.TryGetValue(path, out var running)) return running.Value.WaitAsync(ct);
-            if (!_feeds.TryAdmit(viewer)) return Task.FromResult(SourceAnswer.Throttled);
+            if (!_feeds.TryAdmit(viewer)) return Joined(path, ct) ?? Task.FromResult(SourceAnswer.Throttled);
             if (!_feedBudget.Take(viewer))
             {
                 _feeds.Leave(viewer, false);
-                return Task.FromResult(SourceAnswer.Throttled);
+                return Joined(path, ct) ?? Task.FromResult(SourceAnswer.Throttled);
             }
 
             var mine = Shared(path, async () =>
@@ -490,6 +572,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             return shared.Value.WaitAsync(ct);
+        }
+
+        /// <summary>
+        /// A read of the same path that another caller started (or finished) while this one was being
+        /// admitted: joined for free instead of answering busy. Null when there is none.
+        /// </summary>
+        private Task<SourceAnswer>? Joined(string path, CancellationToken ct)
+        {
+            if (TryCached(path, out var hit)) return Task.FromResult(hit);
+            return _inFlight.TryGetValue(path, out var running) ? running.Value.WaitAsync(ct) : null;
         }
 
         /// <summary>
