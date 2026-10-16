@@ -195,30 +195,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 movie ? p.Movie : p.Tv, movie ? p.MovieDays : p.TvDays, canRequest, wholeSeries, SeerrUnlinked: p.SeerrUser == null);
         }
 
-        // Seerr's quota for one media type; "used" must be a real number or nothing is known. The next free
-        // slot comes from the request read model only when it holds exactly the requests Seerr counts.
+        // Seerr's quota for one media type; "used" must be a real number or nothing is known.
         private (QuotaProjection? Projection, int Days) Quota(JsonElement quota, string type, Guid user, bool movie, string source)
         {
             if (!quota.TryGetProperty(type, out var q) || q.ValueKind != JsonValueKind.Object || Int(q, "used") is not int used || used < 0) return (null, 7);
             var limit = Int(q, "limit") is int l && l > 0 ? l : (int?)null;
             var days = Math.Clamp(Int(q, "days") is int d && d > 0 ? d : 7, 1, 365);
             DateTimeOffset? next = null;
-            if (limit != null)
-            {
-                var (heldSource, all, floor) = _model.Current;
-                if (heldSource == source && floor == null)
-                {
-                    var since = _now().AddDays(-days);
-                    var mine = all.Where(r => r.RequestedBy == user && r.IsMovie == movie && r.Status != Declined && r.CreatedAt is DateTime c && c > since.UtcDateTime).ToList();
-                    var counted = movie ? mine.Count : mine.Sum(r => Math.Max(1, r.Seasons.Count));
-                    if (counted == used)
-                    {
-                        var charges = mine.Select(r => new QuotaCharge(movie ? 1 : Math.Max(1, r.Seasons.Count), new DateTimeOffset(DateTime.SpecifyKind(r.CreatedAt!.Value, DateTimeKind.Utc))));
-                        next = QuotaProjector.Project(charges, limit, TimeSpan.FromDays(days), _now()).NextSlotAt;
-                    }
-                }
-            }
+            var (heldSource, all, _) = _model.Current;
+            if (limit != null && heldSource == source)
+                next = NextSlot(all.Where(r => r.RequestedBy == user && r.IsMovie == movie), used, limit.Value, days, movie);
             return (new QuotaProjection(used, limit, limit is int max ? Math.Max(0, max - used) : null, next, 0), days);
+        }
+
+        /// <summary>
+        /// When the next of a person's Seerr requests leaves the quota window (Seerr's quota answer says how many count, not
+        /// when they were made): from their requests in the read model that Seerr counts (not declined, made within
+        /// <paramref name="days"/>), each counting its seasons (a series) or one (a movie). When the read model doesn't
+        /// hold exactly <paramref name="used"/> (a request made since its last read, one Seerr no longer counts, or more
+        /// requests than it keeps), it is the latest the slot can free up: what it doesn't hold counts as made now, and
+        /// what it holds beyond Seerr's count is taken to be the oldest (not counted).
+        /// </summary>
+        internal DateTimeOffset? NextSlot(IEnumerable<SeerrRequestRecord> mine, int used, int limit, int days, bool movie)
+        {
+            var since = _now().AddDays(-days);
+            var counted = mine.Where(r => r.Status != Declined && r.CreatedAt is DateTime c && c > since.UtcDateTime)
+                .Select(r => new QuotaCharge(movie ? 1 : Math.Max(1, r.Seasons.Count), new DateTimeOffset(DateTime.SpecifyKind(r.CreatedAt!.Value, DateTimeKind.Utc))))
+                .OrderBy(c => c.At).ToList();
+            var excess = counted.Sum(c => c.Cost) - used;
+            var charges = new List<QuotaCharge>();
+            foreach (var charge in counted)
+            {
+                var drop = Math.Clamp(excess, 0, charge.Cost);
+                excess -= drop;
+                if (charge.Cost > drop) charges.Add(charge with { Cost = charge.Cost - drop });
+            }
+            if (excess < 0) charges.Add(new QuotaCharge(-excess, _now()));
+            return QuotaProjector.Project(charges, limit, TimeSpan.FromDays(days), _now()).NextSlotAt;
         }
 
         // The Seerr account linked to a Jellyfin user (by Seerr's jellyfinUserId), cached per Seerr identity and user.

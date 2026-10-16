@@ -1054,6 +1054,37 @@ public class IntegrationRequestBackendsTests
     }
 
     [Fact]
+    public async Task SeerrsNextQuotaSlotIsWorkedOutEvenWhenTheRequestListDoesNotHoldExactlyWhatSeerrCounts()
+    {
+        using var lab = new SeerrLab();
+        lab.Config.ArrIntegrationEnabled = true;
+        lab.Config.ArrPhase1Enabled = true;
+        var now = lab.Now.UtcDateTime;
+        lab.Seerr.Quotas[7] = new JsonObject { ["movie"] = new JsonObject { ["days"] = 7, ["limit"] = 2, ["used"] = 2, ["remaining"] = 0, ["restricted"] = true } };
+        // The request list holds one of Emma's movie requests (three days old); Seerr counts two: the other was made since
+        // the list was last read. The latest the slot frees up: when the one held leaves the window.
+        lab.Seerr.Requests.Add(FakeSeerr.Request(1, "movie", 603, 2, lab.User, now.AddDays(-3)));
+        Assert.True(await lab.Model.RefreshAsync(default));
+        await lab.Backend.PrepareAsync(lab.User, Movie(), default);
+        var fewer = lab.Backend.Binding(lab.User, Movie()).Quota!;
+        Assert.Equal((2, (int?)0), (fewer.Used, fewer.Remaining));
+        Assert.Equal(lab.Now.AddDays(4), fewer.NextSlotAt);
+        // The list holds three; Seerr counts two (one it no longer counts): the oldest is taken as the one not counted.
+        lab.Seerr.Requests.Add(FakeSeerr.Request(2, "movie", 604, 2, lab.User, now.AddDays(-6)));
+        lab.Seerr.Requests.Add(FakeSeerr.Request(3, "movie", 605, 1, lab.User, now.AddDays(-1)));
+        Assert.True(await lab.Model.RefreshAsync(default));
+        lab.Now = lab.Now.AddMinutes(11);
+        await lab.Backend.PrepareAsync(lab.User, Movie(), default);
+        Assert.Equal(lab.Now.AddDays(4).AddMinutes(-11), lab.Backend.Binding(lab.User, Movie()).Quota!.NextSlotAt);
+        // Exactly what Seerr counts: as before.
+        lab.Seerr.Requests.RemoveAt(lab.Seerr.Requests.Count - 1);
+        Assert.True(await lab.Model.RefreshAsync(default));
+        lab.Now = lab.Now.AddMinutes(11);
+        await lab.Backend.PrepareAsync(lab.User, Movie(), default);
+        Assert.Equal(lab.Now.AddDays(1).AddMinutes(-22), lab.Backend.Binding(lab.User, Movie()).Quota!.NextSlotAt);
+    }
+
+    [Fact]
     public async Task ASeerrThatDoesNotAnswerLeavesTheIdentityAsItWasNeverGuessed()
     {
         using var lab = new SeerrLab();

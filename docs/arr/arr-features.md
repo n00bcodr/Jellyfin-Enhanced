@@ -1146,8 +1146,12 @@ Enhanced's key), so Seerr's own permissions, quotas, approval rules and override
   "No seasons available to request" count as success only with a JSON body and a fresh read showing the scope already
   requested or available (the asker then follows that request); otherwise the request waits for an administrator.
   Seerr refusing for quota, 4K permission or its blocklist holds the request with that reason.
-- The person's Seerr quota (used, limit, remaining, window) is read from Seerr; the next free slot is worked out from
-  the request list only when it holds exactly the requests Seerr counts. When Seerr doesn't say who the person is,
+- The person's Seerr quota (used, limit, remaining, window) is read from Seerr. Seerr doesn't say when its next slot
+  frees up, so it is worked out from the request list: each of the person's requests Seerr counts (not declined, made
+  within the window; a series counts its seasons) leaves the window that many days after it was made. When the list
+  doesn't hold exactly what Seerr counts (a request made since the list was last read, or one Seerr no longer counts),
+  it is an estimate of the latest the slot can free up: requests it doesn't hold count as made now, and requests it
+  holds beyond Seerr's count are taken to be the oldest. When Seerr doesn't say who the person is,
   the request waits and is retried, and once it does, the request goes out as that account after every check is made
   again with its permissions. When Seerr answers that no Seerr account is linked to the person, the request is held
   (`seerr_user_unlinked`: "Stuck · needs a Seerr account linked to them" on an administrator's approval card, waiting
