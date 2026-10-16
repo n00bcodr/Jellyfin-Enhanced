@@ -59,7 +59,9 @@ public class ApiArrLiveRoutesTests
         public Guid UserId { get; } = Guid.NewGuid();
         public string AuditPath => Path.Combine(Arr.Plugin.Core.Root, ArrAuditLog.FileName);
 
-        public Rig(bool sonarr = false)
+        /// <param name="sonarr">Also a Sonarr instance.</param>
+        /// <param name="coalesce">The router's coalescing window (10 ms unless a test counts reads across several hints).</param>
+        public Rig(bool sonarr = false, TimeSpan? coalesce = null)
         {
             Radarr = Arr.Add("radarr.lan", "Radarr");
             Radarr.Movies.Add(FakeArr.Movie(1, 101, "Alpha", hasFile: false));
@@ -81,7 +83,7 @@ public class ApiArrLiveRoutesTests
             config.ArrWebhookJellyfinUrl = "http://je.lan:8096/";
             Arr.Now = DateTimeOffset.UtcNow;
             Store = Arr.Store();
-            Router = new ArrLiveRouter(Store, Arr.Plugin.Core.Logger, TimeSpan.FromMilliseconds(10));
+            Router = new ArrLiveRouter(Store, Arr.Plugin.Core.Logger, coalesce ?? TimeSpan.FromMilliseconds(10));
             Receiver = new ArrWebhookReceiver(Arr.Registry, () => Arr.Plugin.Plugin.Secrets, Router, null);
             Audit = new ArrAuditLog(AuditPath, 1024 * 1024, 2);
             Provisioner = new ArrWebhookProvisioner(Arr.Factory, new ArrActionRunner(Audit, new ArrConfirmationTokens()), Receiver);
@@ -198,7 +200,8 @@ public class ApiArrLiveRoutesTests
     [Fact]
     public async Task WebhookPayloadsOnlyChooseWhatToReReadAndReplaysCoalesce()
     {
-        using var rig = new Rig();
+        // A window the ten replays below always fall in, however slow the machine (10 ms didn't under load).
+        using var rig = new Rig(coalesce: TimeSpan.FromSeconds(2));
         var secret = rig.Receiver.EnsureSecret(rig.Instance.Id);
         Assert.NotNull((await rig.Store.GetQueueAsync(rig.Instance, default)).Value);
         Assert.NotNull((await rig.Store.GetHistoryAsync(rig.Instance, default)).Value);
