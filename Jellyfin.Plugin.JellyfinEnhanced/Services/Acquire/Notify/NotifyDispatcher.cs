@@ -149,7 +149,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 try
                 {
                     // Wake on a new delivery, else look every few seconds (retries and quiet hours come due on their own).
-                    await _wake.WaitAsync(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
+                    if (await _wake.WaitAsync(TimeSpan.FromSeconds(5), token).ConfigureAwait(false))
+                    {
+                        // Let a burst settle (a backlog is queued one notification at a time) so it can go out as one
+                        // summary per person and channel: until nothing new for the settle time, at most a few rounds.
+                        var started = DateTimeOffset.UtcNow;
+                        while (DateTimeOffset.UtcNow - started < SettleLimit && await _wake.WaitAsync(SettleWindow, token).ConfigureAwait(false))
+                        {
+                        }
+                    }
                     await RunOnceAsync(token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -207,6 +215,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 _run.Release();
             }
         }
+
+        /// <summary>How long a woken round waits for the next new notification before delivering (tests shorten it).</summary>
+        internal TimeSpan SettleWindow { get; set; } = TimeSpan.FromSeconds(2);
+
+        /// <summary>The longest a woken round waits for a burst to settle.</summary>
+        internal TimeSpan SettleLimit { get; set; } = TimeSpan.FromSeconds(15);
 
         /// <summary>How many alerts due at once for one person on one channel go out as one summary.</summary>
         internal const int SummaryAt = 4;

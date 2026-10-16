@@ -326,6 +326,34 @@ public class ApiNotifyRoutesTests
         Assert.Equal(3, rig.Pushes.Count);
     }
 
+    [Fact]
+    public async Task ABurstQueuedOneNotificationAtATimeSettlesBeforeTheLoopDeliversIt()
+    {
+        // Seen live: a backlog is turned into notifications one at a time, and the first one woke the dispatcher, so
+        // each went out on its own. The loop now waits for the burst to settle.
+        using var rig = await IntegrationNotificationsTests.Started();
+        rig.Phones(rig.Emma);
+        rig.Dispatcher.SettleWindow = TimeSpan.FromMilliseconds(400);
+        await rig.Dispatcher.StartAsync(default);
+        try
+        {
+            for (var i = 0; i < 5; i++)
+            {
+                Assert.Equal(200, Of(Controller(rig, rig.Emma).SendTest()).Status);
+                rig.Arr.Now = rig.Arr.Now.AddSeconds(31);
+                await Task.Delay(50);
+            }
+            for (var i = 0; i < 100 && rig.Pushes.Count == 0; i++) await Task.Delay(50);
+            await Task.Delay(1000);
+            var push = Assert.Single(rig.Pushes);
+            Assert.Equal("5 new notifications", (string)push.Body["title"]!);
+        }
+        finally
+        {
+            await rig.Dispatcher.StopAsync(default);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
