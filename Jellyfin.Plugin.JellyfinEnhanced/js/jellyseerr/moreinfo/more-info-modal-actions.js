@@ -16,6 +16,7 @@
 function buildSingle4kButton(data) {
     const button = document.createElement('button');
     button.className = 'jellyseerr-request-button jellyseerr-button-request';
+    button.dataset.jeEdition = '4k';
     button.innerHTML = `${JE.jellyseerrUIIcons?.request || '<span class="material-icons">download</span>'}<span>${JE.t('jellyseerr_btn_request_4k') || 'Request in 4K'}</span>`;
     button.addEventListener('click', async (e) => {
         e.preventDefault();
@@ -334,7 +335,89 @@ function renderRequestedBy(mount, mediaInfo) {
     JE.helpers?.hydrateAvatarImages?.(mount);
 }
 
+/**
+ * True when the 4K edition of the window's title can still be requested (Seerr's 4K status).
+ * @param {Object} data Seerr details.
+ * @returns {boolean} Requestable in 4K.
+ */
+function fourKRequestable(data) {
+    const info = data?.mediaInfo || {};
+    return JE.seerrStatus.isRequestable(JE.seerrStatus.effectiveMediaStatus(info.status4k ?? 1, info.jellyfinMediaId4k || null));
+}
+
+/**
+ * Jellyfin Enhanced mode (Requests & downloads): the window's Request controls say up front when the title can't
+ * be asked for right now (e.g. "Paused: storage full": the drive it would land on is nearly full), as the title
+ * page and the request sheet do, instead of only a refusal toast once Request is pressed. Each standard or 4K
+ * control the title check refuses (JE.arrAsk.check, per edition) gives way to the paused line (where and how much
+ * is free for administrators); a standard split button keeps "Request in 4K" when that edition can still be asked
+ * for. Seerr mode, or the request feature off: nothing changes.
+ * @param {HTMLElement|null} actionMount The window's action mount.
+ * @param {Object} data Seerr details.
+ * @param {string} mediaType 'movie' or 'tv'.
+ * @param {number} token The render the controls belong to (a newer render wins).
+ * @returns {Promise<void>}
+ */
+async function showPaused(actionMount, data, mediaType, token) {
+    const ask = JE.arrAsk;
+    if (!actionMount || JE.internals?.arrAskSeerr?.jeMode?.() !== true || typeof ask?.check !== 'function'
+        || typeof ask.blockWords !== 'function' || typeof ask.pausedNote !== 'function') return;
+    const id = Number.parseInt(String(data?.id ?? ''), 10);
+    if (!Number.isInteger(id) || id <= 0) return;
+    const controls = [...actionMount.children].filter(n => n.matches('.je-more-info-actions-row, .jellyseerr-request-button') && !n.dataset.jePauseChecked);
+    if (!controls.length) return;
+    controls.forEach(n => { n.dataset.jePauseChecked = '1'; });
+    const movie = mediaType === 'movie';
+    const current = () => token === _renderActionsToken && actionMount.isConnected;
+    const caps = await ask.me();
+    if (!current() || !ask.canAsk(caps, movie ? 'movie' : 'series')) return;
+    const key = `${movie ? 'movie' : 'tv'}:tmdb:${id}`;
+    let added = false;
+    for (const control of controls) {
+        const variant = control.dataset.jeEdition === '4k' ? '4k' : 'standard';
+        const check = await ask.check(key, variant);
+        if (!current()) return;
+        if (!control.isConnected || !check || check.canRequest || !check.blocked) continue;
+        const words = ask.blockWords(check.blocked, caps);
+        if (!words) continue;
+        JE.internals?.arrAskStyles?.ensure?.();
+        const note = ask.pausedNote(words);
+        note.classList.add('je-more-info-paused');
+        note.dataset.jeEdition = variant;
+        const replacement = [note];
+        if (variant === 'standard' && control.querySelector('.jellyseerr-split-arrow') && fourKRequestable(data)) {
+            const fourK = movie ? buildSingle4kButton(data) : internal.buildSingleTv4kButton?.(data);
+            if (fourK) {
+                replacement.push(fourK);
+                added = true;
+            }
+        }
+        control.replaceWith(...replacement);
+    }
+    // A 4K button that took a paused row's place is checked as well.
+    if (added) await showPaused(actionMount, data, mediaType, token);
+}
+
+/**
+ * Renders the window's request actions, status chips and downloads, then (Jellyfin Enhanced mode) marks the
+ * controls that can't be used right now ({@link showPaused}).
+ * @param {Object} data Seerr details.
+ * @param {string} mediaType 'movie' or 'tv'.
+ * @returns {void}
+ */
 function renderActions(data, mediaType) {
+    drawActions(data, mediaType);
+    const actionMount = state.currentModal?.querySelector('[data-mount="je-actions"]');
+    if (actionMount) showPaused(actionMount, data, mediaType, _renderActionsToken).catch(() => { /* the controls stay as drawn */ });
+}
+
+/**
+ * Draws the window's request actions, status chips and downloads ({@link renderActions}).
+ * @param {Object} data Seerr details.
+ * @param {string} mediaType 'movie' or 'tv'.
+ * @returns {void}
+ */
+function drawActions(data, mediaType) {
     if (!state.currentModal) return;
 
     const actionMount = state.currentModal.querySelector('[data-mount="je-actions"]');
@@ -480,6 +563,7 @@ function renderActions(data, mediaType) {
                     if (followUp4k) actionMount.appendChild(followUp4k);
                     maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
                 }
+                if (actionMount) showPaused(actionMount, data, mediaType, myToken).catch(() => { /* the controls stay as drawn */ });
             });
             return;
         }

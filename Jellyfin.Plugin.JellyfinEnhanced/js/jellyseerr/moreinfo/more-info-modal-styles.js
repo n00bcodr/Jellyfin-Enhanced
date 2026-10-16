@@ -325,6 +325,13 @@ const css = `
             margin-top: 0.45rem;
         }
 
+        /* Requests & downloads (JE mode): "Paused: storage full" in place of Request. */
+        .je-more-info-modal .je-more-info-paused {
+            margin: 0 0 0.5rem 0;
+            max-width: 32rem;
+            white-space: normal;
+        }
+
         .je-more-info-actions-row {
             display: flex;
             flex-wrap: wrap;

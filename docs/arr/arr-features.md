@@ -274,7 +274,9 @@ rest" (its seasons and episodes say which parts are missing).
 offer **Get it**, **Get them**, **Request** or a **Search** that is really an ask says so instead: *Paused: storage
 full* on the episode's row, one line for the season above its episodes (or on the *Missing* line), on series, movie
 and episode pages (also the pages of titles that aren't in the library, where a season page says it once, on its
-episodes), in the request sheet, on Discover and search cards, on collection pages and in My requests. Family
+episodes), in the request sheet, on Discover and search cards, in Seerr's more-info window (JE mode: the paused line
+takes the place of **Request**, or of **Request in 4K** when that edition is paused, before anything is pressed; a
+standard pause keeps **Request in 4K** when 4K can still be asked for), on collection pages and in My requests. Family
 members read a plain sentence ("There's no room for new downloads right now, so asking is paused. Dad can free up
 some space."); administrators read which Sonarr/Radarr, which folder and how much is free ("Sonarr: /tv/Firefly
 has 1.2 TB free (3%), under the 10% low-disk limit"). In JE mode the drive measured is the one the download would be

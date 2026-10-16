@@ -24,8 +24,9 @@ const MEMBER = { role: 'member', canRequest: true, canRequestMovies: true, canRe
  * @param {import('node:test').TestContext} t Test.
  * @param {{jeMode?: boolean, me?: Object}} [options] JE mode, capabilities.
  */
-function setup(t, { jeMode = true, me = MEMBER } = {}) {
+function setup(t, { jeMode = true, me = MEMBER, check = null } = {}) {
   const posts = [];
+  const checks = [];
   const toasts = [];
   const seerr = { movie: [], seasons: [], collection: [], advanced: 0, details: [], modals: [] };
   const h = createHarness({
@@ -39,6 +40,11 @@ function setup(t, { jeMode = true, me = MEMBER } = {}) {
         return jsonResponse({ outcome: 'accepted', reason: 'looking', certainty: 'Succeeded', message: 'Asked!', requestId: 'a'.repeat(32) }, 201);
       }
       if (path === '/acquire/requests/me') return jsonResponse({ outcome: 'accepted', reason: 'me', me });
+      if (path.startsWith('/acquire/requests/check')) {
+        const said = { key: u.searchParams.get('key'), variant: u.searchParams.get('variant') };
+        checks.push(said);
+        return jsonResponse({ outcome: 'accepted', reason: 'check', check: check ? check(said.key, said.variant) : { key: said.key, variant: said.variant, canRequest: true } });
+      }
       if (path.startsWith('/acquire/requests/quota')) return jsonResponse({ outcome: 'accepted', reason: 'quota', quota: { used: 0, limit: 7, remaining: 7, nextSlotAt: null, usedGb: 0, available: true } });
       if (path === '/tmdb/tv/1437') return jsonResponse({ seasons: [{ season_number: 1, episode_count: 14, air_date: '2002-09-20' }] });
       return jsonResponse({ outcome: 'denied', reason: 'not_found' }, 404);
@@ -73,7 +79,7 @@ function setup(t, { jeMode = true, me = MEMBER } = {}) {
   });
   t.after(() => h.close());
   for (const m of MODULES) h.load(m);
-  return { ...h, posts, toasts, seerr };
+  return { ...h, posts, toasts, seerr, checks };
 }
 
 async function settle(n = 20) {
@@ -340,4 +346,76 @@ test("the request sheet opens above Seerr's details window (it is opened from th
   const sheet = /\.je-sheet-backdrop \{[^}]*z-index:\s*(\d+)/.exec(readFileSync(resolve(jsRoot, 'arr/ask/ask-sheet-styles.js'), 'utf8'));
   assert.ok(sheet, 'the backdrop has a z-index');
   assert.ok(Number(sheet[1]) > Math.max(...zIndexes('jellyseerr/moreinfo/more-info-modal-styles.js')), `sheet ${sheet[1]} vs the window's layers`);
+});
+
+/**
+ * Seerr's more-info window (its action modules over a bare window with the mounts renderActions fills).
+ * @param {Object} h Harness (setup).
+ * @returns {{internal: Object, actions: HTMLElement}} The window's internals and its action mount.
+ */
+function moreInfoWindow(h) {
+  for (const m of ['jellyseerr/seerr-status.js', 'jellyseerr/moreinfo/more-info-modal-data.js', 'jellyseerr/moreinfo/more-info-modal-badges.js', 'jellyseerr/moreinfo/more-info-modal-actions-tv.js', 'jellyseerr/moreinfo/more-info-modal-actions.js']) h.load(m);
+  const modal = h.document.createElement('div');
+  modal.className = 'je-more-info-modal';
+  modal.innerHTML = ['je-status-chip', 'je-actions', 'je-downloads', 'je-secondary-actions', 'je-requested-by'].map(m => `<div data-mount="${m}"></div>`).join('');
+  h.document.body.appendChild(modal);
+  const internal = h.JE.internals.moreInfoModal;
+  internal.state.currentModal = modal;
+  return { internal, actions: modal.querySelector('[data-mount="je-actions"]') };
+}
+
+const PAUSED = (paused) => (key, variant) => (paused.includes(variant)
+  ? { key, variant, canRequest: false, blocked: { reason: 'low_disk' } }
+  : { key, variant, canRequest: true });
+
+test('JE mode: the more-info window says Paused before Request is pressed (movie, with the 4K choice kept when 4K can still be asked for)', async t => {
+  const h = setup(t, { check: PAUSED(['standard']) });
+  h.JE.pluginConfig.JellyseerrEnable4KRequests = true;
+  const { internal, actions } = moreInfoWindow(h);
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', mediaInfo: { status: 1, status4k: 1 } }, 'movie');
+  await settle();
+  const note = actions.querySelector('.je-ask-paused-note');
+  assert.ok(note, 'the paused line is shown up front');
+  assert.equal(note.querySelector('.je-ask-paused-title').textContent, translate('arr_ask_paused_storage'));
+  assert.equal(note.querySelector('.je-ask-paused-text').textContent, translate('arr_ask_paused_storage_text', { contact: 'Dad' }));
+  assert.equal(actions.querySelector('.jellyseerr-split-main'), null, 'no standard Request to press');
+  const buttons = [...actions.querySelectorAll('.jellyseerr-request-button')];
+  assert.deepEqual(buttons.map(b => b.lastElementChild.textContent), [translate('jellyseerr_btn_request_4k')], '4K can still be asked for');
+  assert.deepEqual(h.checks, [{ key: 'movie:tmdb:604', variant: 'standard' }, { key: 'movie:tmdb:604', variant: '4k' }]);
+  assert.equal(h.toasts.length, 0, 'no refusal toast');
+});
+
+test('JE mode: the more-info window says Paused for a series and for a 4K-only button; nothing changes when asking works', async t => {
+  const h = setup(t, { check: PAUSED(['standard', '4k']) });
+  const { internal, actions } = moreInfoWindow(h);
+  internal.renderActions({ id: 1437, name: 'Firefly', mediaInfo: { status: 1 } }, 'tv');
+  await settle();
+  assert.equal(actions.querySelector('.jellyseerr-request-button'), null);
+  assert.equal(actions.querySelector('.je-ask-paused-title').textContent, translate('arr_ask_paused_storage'));
+  assert.deepEqual(h.checks.at(-1), { key: 'tv:tmdb:1437', variant: 'standard' });
+
+  // Standard copy here already, 4K offered alone: the 4K check says it is paused too.
+  h.JE.pluginConfig.JellyseerrEnable4KRequests = true;
+  internal.renderActions({ id: 605, title: 'The Matrix Revolutions', mediaInfo: { status: 5, jellyfinMediaId: 'x', status4k: 1 } }, 'movie');
+  await settle();
+  assert.equal(actions.querySelector('.jellyseerr-request-button'), null);
+  assert.equal(actions.querySelectorAll('.je-ask-paused-note').length, 1);
+  assert.deepEqual(h.checks.at(-1), { key: 'movie:tmdb:605', variant: '4k' });
+
+  const ok = setup(t);
+  const open = moreInfoWindow(ok);
+  open.internal.renderActions({ id: 604, title: 'The Matrix Reloaded', mediaInfo: { status: 1 } }, 'movie');
+  await settle();
+  assert.equal(open.actions.querySelector('.je-ask-paused-note'), null);
+  assert.equal(open.actions.querySelector('.jellyseerr-request-button').lastElementChild.textContent, translate('jellyseerr_btn_request'));
+});
+
+test('Seerr mode: the more-info window keeps its Request and checks nothing with Jellyfin Enhanced', async t => {
+  const h = setup(t, { jeMode: false, me: { ...MEMBER, backend: 'seerr' }, check: PAUSED(['standard']) });
+  const { internal, actions } = moreInfoWindow(h);
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', mediaInfo: { status: 1 } }, 'movie');
+  await settle();
+  assert.equal(actions.querySelector('.je-ask-paused-note'), null);
+  assert.ok(actions.querySelector('.jellyseerr-request-button'));
+  assert.equal(h.checks.length, 0);
 });
