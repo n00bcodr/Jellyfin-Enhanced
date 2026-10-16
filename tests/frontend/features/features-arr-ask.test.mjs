@@ -146,6 +146,14 @@ function setup(t, { rows = row(1), status = season(), config = {}, server = {}, 
   };
 }
 
+/**
+ * A status with one episode's stage changed: what the server says for an episode a request covers (OK'd and on its way:
+ * approved; sent and the arr looking: looking). An episode left "not here" with a request on it is one nobody fetches.
+ */
+function withEpisode(status, episode, stage, code) {
+  return { ...status, episodes: status.episodes.map(e => (e.episode === episode ? { ...e, stage, reason: { code } } : e)) };
+}
+
 test('ask-core maps every request outcome to an honest family state and words', t => {
   const h = setup(t);
   const A = h.JE.arrAsk;
@@ -314,7 +322,7 @@ test('Jellyfin\'s own missing row is decorated: one label, dimmed, runtime and d
 });
 
 test('banner mode (missing episodes not shown as rows): states per episode and Get them for the rest', async t => {
-  const h = setup(t, { server: { rows: () => rowsBody({ displayMissing: false, requests: { 2: 'household' } }) } });
+  const h = setup(t, { status: withEpisode(season(), 2, 'looking', 'looking'), server: { rows: () => rowsBody({ displayMissing: false, requests: { 2: 'household' } }) } });
   await h.open();
   same(h.episodes(), ['N1'], 'no JE rows without the display setting');
   const banner = h.document.querySelector('.je-arr-banner');
@@ -345,7 +353,7 @@ test('a season that is not in the library at all: the banner lists it and leaves
   assert.equal(banner.querySelector('.je-arr-banner-title').textContent, 'Missing: E2, E4');
   assert.equal(banner.querySelector('.je-ask-get'), null, 'Get Season 1 on the page asks for the season');
   // Once part of it was asked for, the rest is offered on the banner again.
-  const partly = setup(t, { status: absent, server: { rows: () => rowsBody({ displayMissing: false, requests: { 2: 'asked' } }) } });
+  const partly = setup(t, { status: withEpisode(absent, 2, 'approved', 'approved'), server: { rows: () => rowsBody({ displayMissing: false, requests: { 2: 'asked' } }) } });
   partly.JE.titleDetails = { isSynthetic: id => id === SEASON_ID };
   await partly.open();
   assert.equal(partly.document.querySelector('.je-arr-banner .je-ask-get').textContent, 'downloadGet E4');
@@ -742,10 +750,17 @@ test('a request already sent gives way to Search once the episode is missing for
   assert.equal(action.querySelector('.je-ask-get .je-ask-get-text').textContent, 'Search for E2');
 
   // Still fresh (Looking for it): the sent ask keeps its chip.
-  const fresh = setup(t, { server: { rows: () => rowsBody({ requests: { 2: 'asked' } }) } });
+  const fresh = setup(t, { status: withEpisode(season(), 2, 'looking', 'looking'), server: { rows: () => rowsBody({ requests: { 2: 'asked' } }) } });
   await fresh.open();
   assert.equal(fresh.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-arr-chip').textContent, 'Asked!');
   assert.equal(fresh.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'), null);
+
+  // Seen live: unmonitored in Sonarr after the ask went out (nobody fetches it): not "Asked!", but Get it again.
+  const dropped = setup(t, { server: { rows: () => rowsBody({ requests: { 2: 'asked' } }) } });
+  await dropped.open();
+  const two2 = dropped.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  assert.equal(two2.querySelector('.je-arr-chip').textContent, 'Missing');
+  assert.ok(two2.querySelector('.je-ask-get'));
 });
 
 test('a Search pressed by someone who asks shows its answer for a while, even after the season is read again', async t => {

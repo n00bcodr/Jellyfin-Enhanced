@@ -108,7 +108,9 @@
      * episode can be asked for (or searched). A request waiting for an OK, a decline and an ask made
      * from this page a moment ago always do. A request that was already sent (the viewer's or someone
      * else's) gives way to Search once the episode is monitored and missing for a long while: it
-     * reads plainly Missing then, like any other episode nothing was found for.
+     * reads plainly Missing then, like any other episode nothing was found for. It gives way to Get it
+     * too when nobody is fetching the episode any more (unmonitored in Sonarr since, or gone from it):
+     * "Asked!" would promise something nothing is doing.
      * @param {Object} ep Episode status.
      * @returns {string|null} waiting, asked, declined, household or null.
      */
@@ -117,7 +119,7 @@
         if (state !== 'asked' && state !== 'household') return state;
         const mine = local.get(ep.episode);
         if (mine && !(mine.search && Date.now() - mine.at > SEARCHED_TTL_MS)) return state;
-        return JE.arrStatus?.searchable?.(ep) ? null : state;
+        return JE.arrStatus?.searchable?.(ep) || ep.stage === 'notHere' ? null : state;
     }
 
     /**
