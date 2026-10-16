@@ -324,7 +324,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 availableEpisodesInJellyfin = allEpisodes.Count;
             }
 
-            _logger.Info($"[Auto-Season-Request] Season {currentSeasonNumber}: E{currentEpisodeNumber}/{totalEpisodesInSeason} (TMDB total), {availableEpisodesInJellyfin} available in Jellyfin, {remainingAfterCurrent} episodes remaining after current (threshold: {config.AutoSeasonRequestThresholdValue})");
+            // Jellyfin's episodes are only counted for the "require all watched" check.
+            var inJellyfin = config.AutoSeasonRequestRequireAllWatched ? $", {availableEpisodesInJellyfin} in Jellyfin" : string.Empty;
+            _logger.Info($"[Auto-Season-Request] Season {currentSeasonNumber}: E{currentEpisodeNumber}/{totalEpisodesInSeason} (TMDB total){inJellyfin}, {remainingAfterCurrent} episodes remaining after current (threshold: {config.AutoSeasonRequestThresholdValue})");
 
             // Check if threshold is met
             bool thresholdMet = remainingAfterCurrent <= config.AutoSeasonRequestThresholdValue;
