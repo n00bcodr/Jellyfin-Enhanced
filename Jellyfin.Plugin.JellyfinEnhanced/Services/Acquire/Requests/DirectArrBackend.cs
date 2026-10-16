@@ -127,12 +127,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // add: it goes ahead without it. Stop: the guard refused right before the create left (nothing was sent).
         private async Task<(int? Id, RequestBackendResult? Stop)> AttributionTagAsync(Run run)
         {
-            var read = await run.Client.GetAsync<List<TagRow>>("tag", null, ArrCallClass.Read, run.Ct).ConfigureAwait(false);
-            if (!read.Ok) return (null, null);
-            if (read.Value!.FirstOrDefault(t => string.Equals(t.Label, AttributionTag, StringComparison.OrdinalIgnoreCase)) is { } found) return (found.Id, null);
+            if (await FindTagAsync(run) is not { } listed) return (null, null);
+            if (listed > 0) return (listed, null);
             var (created, stopped) = await WriteAsync<TagRow>(run, false, HttpMethod.Post, "tag", new JsonObject { ["label"] = AttributionTag }).ConfigureAwait(false);
             if (stopped != null) return (null, stopped);
-            return (created.Ok && created.Value is { Id: > 0 } tag ? tag.Id : null, null);
+            if (created.Ok && created.Value is { Id: > 0 } tag) return (tag.Id, null);
+            // The answer may have been lost after the arr created it: one more read finds it.
+            return (await FindTagAsync(run) is > 0 and var again ? again : null, null);
+        }
+
+        // The attribution tag's id on the instance: 0 when it has none, null when the list can't be read.
+        private static async Task<int?> FindTagAsync(Run run)
+        {
+            var read = await run.Client.GetAsync<List<TagRow>>("tag", null, ArrCallClass.Read, run.Ct).ConfigureAwait(false);
+            if (!read.Ok) return null;
+            return read.Value!.FirstOrDefault(t => string.Equals(t.Label, AttributionTag, StringComparison.OrdinalIgnoreCase))?.Id ?? 0;
         }
 
         // The add's tags: the instance's defaults and the attribution tag.

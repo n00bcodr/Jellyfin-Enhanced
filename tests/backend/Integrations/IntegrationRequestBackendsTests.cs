@@ -150,6 +150,19 @@ public class IntegrationRequestBackendsTests
         var movie = await lab.Direct.SendAsync(lab.Job(Movie(), "Radarr"), Pass, default);
         Assert.True(movie.Confirmed, movie.Outcome.Message);
         Assert.Empty(Body(lab.Radarr, "POST", "/api/v3/movie")["tags"]!.AsArray());
+
+        // Seen live: the arr creates it but the answer is lost on the way back. One more read finds it.
+        lab.Radarr4k.Tags.Clear();
+        lab.Radarr4k.OnWrite = (method, path, _) =>
+        {
+            if (path != "/api/v3/tag") return null;
+            lab.Radarr4k.Tags[12] = DirectArrBackend.AttributionTag;
+            return IntegrationTransport.Response("{\"message\":\"bad gateway\"}", 502);
+        };
+        lab.Radarr4k.Lookup.Add(Lab.MovieLookup(962));
+        var lost = await lab.Direct.SendAsync(lab.Job(Movie(962, "4k"), "Radarr 4K"), Pass, default);
+        Assert.True(lost.Confirmed, lost.Outcome.Message);
+        Assert.Equal(new[] { 12 }, Body(lab.Radarr4k, "POST", "/api/v3/movie")["tags"]!.AsArray().Select(t => (int)t!).ToArray());
     }
 
     [Fact]
