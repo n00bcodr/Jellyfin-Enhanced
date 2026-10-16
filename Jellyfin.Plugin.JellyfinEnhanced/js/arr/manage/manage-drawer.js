@@ -779,7 +779,8 @@
             if (current !== state || state.adding[instance.id] !== sheet) return;
             try {
                 const mine = await JE.core.api.plugin('/acquire/requests?view=mine', { skipRetry: true });
-                const item = (mine?.items || []).find(x => x.id === requestId);
+                // A row stands for every open request of one title edition: follow this request, which may be one of its members.
+                const item = (mine?.items || []).flatMap(x => [...(Array.isArray(x.members) ? x.members : []), x]).find(x => x.id === requestId);
                 const job = (item?.jobs || []).slice(-1)[0];
                 if (!item) continue;
                 if (['sent', 'stale', 'fulfilled'].includes(item.status)) settled = { failed: false, message: tr('arr_manage_add_done', { instance: instance.name }) };

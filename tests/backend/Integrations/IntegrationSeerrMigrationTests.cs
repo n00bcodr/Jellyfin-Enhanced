@@ -2,7 +2,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -54,6 +56,25 @@ public class IntegrationSeerrMigrationTests
             => await Service.CommitAsync(R.Admin, digest ?? (await Service.PreviewAsync(CancellationToken.None)).Digest, confirm, CancellationToken.None);
         public long Count(string sql) => R.Db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = sql; return Convert.ToInt64(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture); });
         public void Dispose() { Seerr.Dispose(); R.Dispose(); }
+    }
+
+    /// <summary>
+    /// What one person's lists say after a move: the Household row (as an administrator reads it), GET
+    /// acquire/requests/mine and GET acquire/requests?view=mine.
+    /// </summary>
+    private static async Task<(JsonElement Person, JsonElement[] Mine, JsonElement[] List)> Lists(Mig m, Guid user)
+    {
+        var directory = new IntegrationRequestHouseholdTests.FakeDirectory();
+        directory.People[user] = new HouseholdPerson { Id = user, Name = "Asker" };
+        directory.People[m.R.Admin] = new HouseholdPerson { Id = m.R.Admin, Name = "Admin", IsAdmin = true };
+        var hub = new RequestHubProjection(m.R.Service, directory, null, (media, id, ct) => Task.FromResult<HubTitleMeta?>(null), () => m.R.Now);
+        var household = new HouseholdService(hub, m.R.Feed, _ => { });
+        static JsonElement Read(StatusBody body) => JsonDocument.Parse(body.Json).RootElement.Clone();
+        var people = Read(await household.ReadAsync(new StatusViewer { UserId = m.R.Admin, IsAdmin = true }, CancellationToken.None)).GetProperty("people");
+        var person = people.EnumerateArray().Single(p => p.GetProperty("name").GetString() == "Asker");
+        var mine = Read(await hub.MineAsync(new StatusViewer { UserId = user }, CancellationToken.None)).GetProperty("items").EnumerateArray().ToArray();
+        var list = Read(m.R.Service.List(user, false)).GetProperty("items").EnumerateArray().ToArray();
+        return (person, mine, list);
     }
 
     [Fact]
@@ -671,6 +692,18 @@ public class IntegrationSeerrMigrationTests
         var commit = await m.Commit();
         Assert.Equal((200, 1), (commit.HttpStatus, commit.Imported));    // linked, not skipped as "already asked"
 
+        // Two rows in the ledger, one title on every list: the waiting ask leads and only it can be cancelled.
+        var link = m.R.Ledger.ForTitle("movie:tmdb:610").Single(w => w.OriginKind == RequestOrigin.SeerrImportKind);
+        var (person, mine, list) = await Lists(m, kid);
+        Assert.Equal((1, 1), (person.GetProperty("active").GetInt32(), person.GetProperty("waiting").GetInt32()));
+        Assert.Equal((waiting.RequestId, "pending"), (Assert.Single(person.GetProperty("requests").EnumerateArray()).GetProperty("id").GetString(), person.GetProperty("requests")[0].GetProperty("status").GetString()));
+        var row = Assert.Single(mine);
+        Assert.Equal(("pending", true), (row.GetProperty("status").GetString(), row.GetProperty("canCancel").GetBoolean()));
+        Assert.Equal(new[] { waiting.RequestId }, row.GetProperty("cancelIds").EnumerateArray().Select(e => e.GetString()).ToArray());
+        var listed = Assert.Single(list);
+        Assert.Equal("pending", listed.GetProperty("status").GetString());
+        Assert.Equal(new[] { waiting.RequestId, link.Id }, listed.GetProperty("members").EnumerateArray().Select(e => e.GetProperty("id").GetString()).ToArray());
+
         // Approving the waiting ask sends nothing and charges nothing: Seerr already sent the title.
         var approved = await m.R.Service.ApproveAsync(waiting.RequestId!, m.R.Admin, null, CancellationToken.None);
         Assert.Equal((200, "looking"), (approved.HttpStatus, approved.Reason));
@@ -707,6 +740,13 @@ public class IntegrationSeerrMigrationTests
         Assert.Equal("sent", link.Status);
         // Dave's waiting ask now waits in JE's Approvals.
         Assert.Contains(m.R.Ledger.List(m.R.Admin, true), w => w.UserId == dave && w.Input.Key == "movie:tmdb:630");
+        // Alice's ask and the link to Seerr's request are one title on her lists, and on the Household tab.
+        Assert.Equal(2, m.R.Ledger.List(alice, false).Count(w => w.Input.Key == "movie:tmdb:620"));
+        var (person, mine, list) = await Lists(m, alice);
+        Assert.Equal((1, 0), (person.GetProperty("active").GetInt32(), person.GetProperty("waiting").GetInt32()));
+        Assert.Single(person.GetProperty("requests").EnumerateArray());
+        Assert.Equal(("sent", false), (Assert.Single(mine).GetProperty("status").GetString(), mine[0].GetProperty("canCancel").GetBoolean()));
+        Assert.Equal(2, Assert.Single(list).GetProperty("members").GetArrayLength());
 
         // Bob joins what Seerr is fetching: nothing sent, nothing charged. Alice asking again is the same ask.
         var bobs = await m.R.Create(bob, IntegrationRequestLedgerTests.Movie(620));

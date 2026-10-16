@@ -184,7 +184,9 @@
      * @returns {{cancel: string[]}} Ledger part.
      */
     function ledgerOf(own) {
-        return { cancel: own.filter(i => i.canCancel && typeof i.id === 'string').map(i => i.id) };
+        // A row stands for every open request of one title edition: Cancel withdraws each of them not sent yet.
+        const ids = own.flatMap(i => !i.canCancel ? [] : Array.isArray(i.cancelIds) ? i.cancelIds : [i.id]);
+        return { cancel: [...new Set(ids.filter(id => typeof id === 'string'))] };
     }
 
     /**

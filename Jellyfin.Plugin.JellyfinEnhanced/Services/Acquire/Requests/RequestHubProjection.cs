@@ -108,17 +108,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="wants">Requests (already filtered for the caller).</param>
         /// <param name="caller">Who is looking.</param>
         /// <param name="ct">Cancels the reads.</param>
-        internal async Task<Dictionary<string, TitleStatus>> PartStatusesAsync(IEnumerable<RequestWant> wants, StatusViewer caller, CancellationToken ct)
+        internal Task<Dictionary<string, TitleStatus>> PartStatusesAsync(IEnumerable<RequestWant> wants, StatusViewer caller, CancellationToken ct)
+            => PartStatusesAsync(wants.Select(w => new TitleRequests(w, new[] { w })), caller, ct);
+
+        /// <summary>
+        /// As <see cref="PartStatusesAsync(IEnumerable{RequestWant}, StatusViewer, CancellationToken)"/>, for list rows
+        /// (<see cref="LedgerRequestFacts.PerTitle"/>): each row's status covers what all of its requests ask for, keyed by
+        /// the row's id.
+        /// </summary>
+        /// <param name="rows">List rows (already filtered for the caller).</param>
+        /// <param name="caller">Who is looking.</param>
+        /// <param name="ct">Cancels the reads.</param>
+        internal async Task<Dictionary<string, TitleStatus>> PartStatusesAsync(IEnumerable<TitleRequests> rows, StatusViewer caller, CancellationToken ct)
         {
             var result = new Dictionary<string, TitleStatus>(StringComparer.Ordinal);
             if (_status == null) return result;
-            foreach (var want in wants.Take(MaxPartStatuses))
+            foreach (var row in rows.Take(MaxPartStatuses))
             {
-                if (TitleKey.Parse(want.Input.Key) is not { } key) continue;
+                if (TitleKey.Parse(row.Row.Input.Key) is not { } key) continue;
                 var title = key.ToString();
-                var scope = LedgerRequestFacts.ScopeOf(new[] { want }, want.UserId, () => _service.Ledger.Dispatches(title));
+                var scope = LedgerRequestFacts.ScopeOf(row.Members, row.Row.UserId, () => _service.Ledger.Dispatches(title));
                 var composed = await _status.ComposeForAsync(caller, new[] { key }, new Dictionary<TitleKey, ArrStatusService.RequestScope> { [key] = scope }, ct, loadEpisodes: true).ConfigureAwait(false);
-                if (composed.Count > 0) result[want.Id] = composed[0].Status;
+                if (composed.Count > 0) result[row.Row.Id] = composed[0].Status;
             }
             return result;
         }
@@ -227,22 +238,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>
         /// The caller's own requests in the ledger with display data: open ones always, finished,
-        /// declined and cancelled ones for 30 days. <c>canCancel</c> marks the ones not sent yet.
+        /// declined and cancelled ones for 30 days, one row per title edition (<see cref="LedgerRequestFacts.PerTitle"/>).
+        /// <c>canCancel</c> marks rows with requests not sent yet (<c>cancelIds</c>).
         /// </summary>
         public async Task<StatusBody> MineAsync(StatusViewer caller, CancellationToken ct)
         {
             var viewer = _service.Identity(caller.UserId);
             var now = _now();
             var sending = InFlight();
-            var own = _service.Ledger.List(caller.UserId, false)
+            // One row per title edition: an ask and the Seerr request it was linked to when requests moved are one title.
+            var own = LedgerRequestFacts.PerTitle(_service.Ledger.List(caller.UserId, false)
                 .Where(w => w.Status is "pending" or "queued" or "sent" or "stale" || now - w.UpdatedAt <= KeepClosedFor)
                 .Where(w => _service.Policy.Evaluate(caller.UserId, w.Input).Visible)
-                .OrderByDescending(w => w.CreatedAt).ToList();
+                .OrderByDescending(w => w.CreatedAt)).ToList();
             var more = own.Count > MaxItems;
             own = own.Take(MaxItems).ToList();
-            var meta = await MetaAsync(own.Select(w => w.Input.Key), caller, ct).ConfigureAwait(false);
-            var items = own.Select(w =>
+            var meta = await MetaAsync(own.Select(r => r.Row.Input.Key), caller, ct).ConfigureAwait(false);
+            var items = own.Select(r =>
             {
+                var w = r.Row;
+                var cancel = r.Unsent.Where(m => !sending.Contains(m.Id)).Select(m => m.Id).ToArray();
                 var title = meta.GetValueOrDefault(w.Input.Key) ?? new HubTitleMeta();
                 return new
                 {
@@ -258,7 +273,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     group = Group(w.Status),
                     createdAt = w.CreatedAt,
                     updatedAt = w.UpdatedAt,
-                    canCancel = w.Status is "pending" or "queued" && !sending.Contains(w.Id),
+                    canCancel = cancel.Length > 0,
+                    // Every request the row stands for that Cancel withdraws (the row's own id may be a sent one).
+                    cancelIds = cancel,
                     declineReason = w.Status == "declined" ? DeclineReason(w.Id) : null,
                     title = title.Title,
                     year = title.Year,

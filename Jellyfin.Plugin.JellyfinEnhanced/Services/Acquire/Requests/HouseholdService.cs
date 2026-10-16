@@ -109,17 +109,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Id)
                 .Take(MaxPeople).ToList();
             var overrides = ReadMap<RequestUserSettings>(config.ArrRequestUsers);
+            // One row (and one count) per title edition: a person's ask and the Seerr request it was linked to when
+            // requests moved are one title, not two.
             var open = new Dictionary<Guid, List<RequestWant>>();
+            var rows = new List<TitleRequests>();
             foreach (var person in people)
             {
-                open[person.Id] = Service.Ledger.List(person.Id, false)
+                var own = LedgerRequestFacts.PerTitle(Service.Ledger.List(person.Id, false)
                     .Where(w => w.Status is "pending" or "queued" or "sent" or "stale")
-                    .OrderByDescending(w => w.CreatedAt).ToList();
+                    .OrderByDescending(w => w.CreatedAt));
+                open[person.Id] = own.Select(r => r.Row).ToList();
+                rows.AddRange(own.Where(r => Service.Policy.Evaluate(caller.UserId, r.Members[0].Input).Visible).Take(MaxRequestsPerPerson));
             }
-            var shownWants = open.Values.SelectMany(list => list.Where(w => Service.Policy.Evaluate(caller.UserId, w.Input).Visible).Take(MaxRequestsPerPerson)).ToList();
+            var shownWants = rows.Select(r => r.Row).ToList();
             var meta = await _hub.MetaAsync(shownWants.Select(w => w.Input.Key), caller, ct).ConfigureAwait(false);
             // Where each shown request's part has got to (downloading, almost ready, ...), not just "on the way".
-            var parts = await _hub.PartStatusesAsync(shownWants, caller, ct).ConfigureAwait(false);
+            var parts = await _hub.PartStatusesAsync(rows, caller, ct).ConfigureAwait(false);
             var shownIds = shownWants.Select(w => w.Id).ToHashSet(StringComparer.Ordinal);
             var list = people.Select(p =>
             {

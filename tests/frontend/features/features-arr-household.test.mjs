@@ -225,6 +225,30 @@ test('My requests merges the ledger with the page\'s entries: one row per title,
   assert.ok(!page.querySelector('.je-hub-row[data-je-arr-key="movie:tmdb:1"]'));
 });
 
+test('My requests: a row the server merged (an ask and the request linked to it) cancels every unsent member it lists', async t => {
+  const waiting = own(11, { cancelIds: [own(11).id, own(12).id] });
+  const cancels = [];
+  const h = setupHub(t, {
+    me: { role: 'kid', contact: 'Dad' },
+    hub: { contact: 'Dad', seerr: { configured: false, loaded: true, ledger: true }, mine: [], soon: [], ready: [] },
+    routes: (method, path) => {
+      if (path === '/acquire/requests/mine') return mine([waiting]);
+      const m = /^\/acquire\/requests\/([a-z0-9]+)\/cancel$/.exec(path);
+      if (m) {
+        cancels.push(m[1]);
+        return { status: 200, body: { outcome: 'accepted', reason: 'cancelled', certainty: 'Succeeded', requestId: m[1] } };
+      }
+      return null;
+    }
+  });
+  h.JE.initializeArrStatus();
+  const page = h.page();
+  await until(() => page.querySelectorAll('.je-hub-row').length === 1);
+  page.querySelector('.je-hub-cancel').click();
+  await until(() => cancels.length === 2);
+  assert.deepEqual(cancels.sort(), [own(11).id, own(12).id].sort());
+});
+
 test('household rows say where each request\'s part has got to (not just "On the way")', async t => {
   const h = setupHub(t, {
     hash: '#/requests?tab=household',

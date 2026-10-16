@@ -373,6 +373,32 @@ public class IntegrationRequestHouseholdTests
     }
 
     [Fact]
+    public async Task APersonsAsksForDifferentSeasonsOfOneTitleStayRowsOfTheirOwn()
+    {
+        using var h = new Hub();
+        var r = h.R;
+        // Leo (a Kid) asks for season 1, then season 2 of the same series: two asks for different parts, both waiting.
+        var first = await r.Create(r.Kid, IntegrationRequestLedgerTests.Seasons(1));
+        var second = await r.Create(r.Kid, IntegrationRequestLedgerTests.Seasons(2));
+        await r.Create(r.Kid, IntegrationRequestLedgerTests.Movie(901));
+        Assert.Equal(("pending", "pending"), (r.Ledger.Find(first.RequestId!)!.Status, r.Ledger.Find(second.RequestId!)!.Status));
+
+        var leo = Json(await h.As(r.Admin).Household(default)).GetProperty("people").EnumerateArray().First(p => p.GetProperty("name").GetString() == "Leo");
+        Assert.Equal((3, 3), (leo.GetProperty("active").GetInt32(), leo.GetProperty("waiting").GetInt32()));
+        var series = leo.GetProperty("requests").EnumerateArray().Where(q => q.GetProperty("key").GetString() == "tv:tvdb:78874")
+            .Select(q => q.GetProperty("seasons").EnumerateArray().Single().GetInt32()).OrderBy(n => n).ToArray();
+        Assert.Equal(new[] { 1, 2 }, series);
+
+        // Approving one: the other still waits, and each row cancels only its own request.
+        await r.Service.ApproveAsync(first.RequestId!, r.Admin, null, CancellationToken.None);
+        var mine = Json(await h.As(r.Kid).Mine(default)).GetProperty("items").EnumerateArray().Where(q => q.GetProperty("key").GetString() == "tv:tvdb:78874").ToArray();
+        Assert.Equal(2, mine.Length);
+        var waiting = mine.Single(q => q.GetProperty("id").GetString() == second.RequestId);
+        Assert.Equal("pending", waiting.GetProperty("status").GetString());
+        Assert.Equal(new[] { second.RequestId }, waiting.GetProperty("cancelIds").EnumerateArray().Select(e => e.GetString()).ToArray());
+    }
+
+    [Fact]
     public void OnlyAdministratorsSaveTheHouseholdAndEveryInputIsCheckedBeforeAnythingIsWritten()
     {
         using var h = new Hub();

@@ -116,6 +116,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return asked.Where(w => (w.Input.Variant == "4k") == fourK).ToList();
         }
 
+        private static readonly string[] OpenStates = { "pending", "queued", "sent", "stale" };
+
+        /// <summary>
+        /// One person's requests as the rows their lists show: open requests that ask for some of the same part of one
+        /// title edition (<see cref="MutationInput.Overlaps"/>, followed through: A overlaps B overlaps C is one row) are
+        /// one row, so a title asked for twice (an ask and the Seerr request it was linked to when requests moved) is
+        /// listed and counted once. Asks for different parts (season 1, later season 2; an ask split at the series
+        /// threshold) stay rows of their own. The most open state leads (waiting for an OK, then queued, sent, stale); the
+        /// row asks for every member's seasons and episodes and was asked for when its first member was. Finished,
+        /// declined and cancelled requests stay rows of their own. Rows keep the order of their first member in
+        /// <paramref name="wants"/>.
+        /// </summary>
+        /// <param name="wants">One person's requests, in display order.</param>
+        internal static IReadOnlyList<TitleRequests> PerTitle(IEnumerable<RequestWant> wants)
+        {
+            var groups = new List<List<RequestWant>>();
+            foreach (var want in wants)
+            {
+                if (Array.IndexOf(OpenStates, want.Status) < 0) { groups.Add(new List<RequestWant> { want }); continue; }
+                var joined = groups.Where(g => Array.IndexOf(OpenStates, g[0].Status) >= 0
+                    && g.Any(w => w.UserId == want.UserId && w.Input.Overlaps(want.Input))).ToList();
+                if (joined.Count == 0) { groups.Add(new List<RequestWant> { want }); continue; }
+                // The first group listed keeps its place; the others it now bridges join it.
+                var into = joined[0];
+                foreach (var other in joined.Skip(1))
+                {
+                    into.AddRange(other);
+                    groups.Remove(other);
+                }
+                into.Add(want);
+            }
+            return groups.Select(g => g.Count == 1 ? new TitleRequests(g[0], g) : Merge(g)).ToList();
+        }
+
+        private static TitleRequests Merge(List<RequestWant> group)
+        {
+            // Stable: the first member listed leads among equally open ones.
+            var members = group.Select((w, i) => (w, i)).OrderBy(x => Array.IndexOf(OpenStates, x.w.Status)).ThenBy(x => x.i).Select(x => x.w).ToList();
+            var lead = members[0];
+            var input = lead.Input;
+            if (input.Scope != "movie")
+            {
+                var whole = members.Where(w => w.Input.Scope != "episodes").ToList();
+                var seasons = whole.SelectMany(w => w.Input.Seasons).Distinct().OrderBy(n => n).ToArray();
+                var episodes = members.Where(w => w.Input.Scope == "episodes").SelectMany(w => w.Input.Episodes)
+                    .Where(e => !seasons.Contains(e.Season)).Distinct().OrderBy(e => e.Season).ThenBy(e => e.Episode).ToArray();
+                var scopes = whole.Select(w => w.Input.Scope).Distinct().ToList();
+                var scope = whole.Count == 0 ? "episodes"
+                    : scopes.Count == 1 && (scopes[0] == "seasons" || seasons.Length == 1) ? scopes[0] : "seasons";
+                input = input with { Scope = scope, Seasons = seasons, Episodes = episodes };
+            }
+            var row = lead with { Input = input, CreatedAt = members.Min(w => w.CreatedAt), UpdatedAt = members.Max(w => w.UpdatedAt) };
+            return new TitleRequests(row, members);
+        }
+
         private static RequestSentPart[] Sent(RequestWant[] wants, Func<IReadOnlyList<RequestDispatch>> dispatches)
         {
             var sent = wants.Where(w => w.Status == "sent").ToArray();
@@ -163,5 +218,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public bool AskedLatelyBy(TitleKey titleKey, Guid userId) => Direct ? Wants(titleKey).Any(w => w.UserId == userId && (w.Status != "cancelled" || w.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-10))) : _seerr.AskedLatelyBy(titleKey, userId);
         /// <inheritdoc />
         public bool RequestedLately(TitleKey titleKey) => Direct ? Wants(titleKey).Any(w => w.Status != "cancelled" || w.UpdatedAt > DateTimeOffset.UtcNow.AddMinutes(-10)) : _seerr.RequestedLately(titleKey);
+    }
+
+    /// <summary>
+    /// One row of a person's request list (<see cref="LedgerRequestFacts.PerTitle"/>): the request that leads it, with
+    /// every member's seasons and episodes and the first member's ask time, and the requests it stands for (the lead first).
+    /// </summary>
+    /// <param name="Row">The leading request as the row shows it.</param>
+    /// <param name="Members">The requests the row stands for, the lead first.</param>
+    internal sealed record TitleRequests(RequestWant Row, IReadOnlyList<RequestWant> Members)
+    {
+        /// <summary>The members not sent yet (waiting for an OK or queued): the ones Cancel withdraws.</summary>
+        public IEnumerable<RequestWant> Unsent => Members.Where(w => w.Status is "pending" or "queued");
     }
 }

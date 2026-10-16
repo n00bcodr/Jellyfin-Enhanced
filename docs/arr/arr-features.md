@@ -1146,7 +1146,9 @@ move make it refuse ("changed since the check") instead of being missed.
 Moving again is safe: requests already moved from the same Seerr are skipped (a new Seerr API key is still the same
 Seerr; another address is another Seerr), and an ask someone already has in Jellyfin Enhanced isn't duplicated. A
 request Seerr is already processing is still linked when that person's own ask in Jellyfin Enhanced is only waiting for
-an OK or was sent to Seerr, so approving that ask, or someone else asking, doesn't send the title again. The
+an OK or was sent to Seerr, so approving that ask, or someone else asking, doesn't send the title again. That
+person's lists (My requests, Household, Approvals' person view) show the ask and the linked request as one title, led by
+the ask while it waits for an OK; Cancel withdraws only what wasn't sent. The
 move is all or nothing: if it fails part-way, nothing of it is kept and Seerr stays in charge.
 
 A move can be **rolled back** for 14 days from the same panel. Rolling back removes the moved requests nobody changed

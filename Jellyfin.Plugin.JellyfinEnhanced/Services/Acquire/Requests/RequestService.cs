@@ -109,18 +109,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             await _policy.PrepareAsync(actor, want.Input, ct).ConfigureAwait(false);
             return Close(id, actor, reason);
         }
-        /// <summary>Projects a list per user, role and current policy revision; never shares a caller's body.</summary>
+        /// <summary>
+        /// Projects a list per user, role and current policy revision; never shares a caller's body. The caller's own
+        /// list (<paramref name="pending"/> false) has one row per title edition (<see cref="LedgerRequestFacts.PerTitle"/>),
+        /// with the requests it stands for in <c>members</c>; the waiting list has one row per request.
+        /// </summary>
         public StatusBody List(Guid user, bool pending)
         {
             var viewer = Identity(user);
-            var items = _ledger.List(user, pending).Where(w => _policy.Evaluate(user, w.Input).Visible).Select(w => new
+            var visible = _ledger.List(user, pending).Where(w => _policy.Evaluate(user, w.Input).Visible);
+            var rows = pending ? visible.Select(w => new TitleRequests(w, new[] { w })).ToList() : LedgerRequestFacts.PerTitle(visible);
+            object[]? Jobs(RequestWant w) => viewer.Role == "Admin" ? _ledger.ForWant(w.Id).Select(j => (object)new { j.Id, j.State, j.Attempts, j.Reason }).ToArray() : null;
+            var items = rows.Select(r =>
             {
-                id = w.Id, key = w.Input.Key, scope = w.Input.Scope, variant = w.Input.Variant, seasons = w.Input.Seasons, episodes = w.Input.Episodes,
-                status = w.Status, reason = w.Reason, cost = w.Cost, createdAt = w.CreatedAt,
-                canApprove = viewer.CanApprove && _policy.Evaluate(user, w.Input).CanApprove && (w.Input.Variant != "4k" || _policy.Evaluate(user, w.Input).Can4k),
-                requesterId = viewer.Role is "Manager" or "Admin" ? (Guid?)w.UserId : null,
-                declineReason = w.Status == "declined" ? DeclineReason(w.Id) : null,
-                jobs = viewer.Role == "Admin" ? _ledger.ForWant(w.Id).Select(j => new { j.Id, j.State, j.Attempts, j.Reason }).ToArray() : null,
+                var w = r.Row;
+                var facts = _policy.Evaluate(user, r.Members[0].Input);
+                return new
+                {
+                    id = w.Id, key = w.Input.Key, scope = w.Input.Scope, variant = w.Input.Variant, seasons = w.Input.Seasons, episodes = w.Input.Episodes,
+                    status = w.Status, reason = w.Reason, cost = r.Members.Sum(m => m.Cost), createdAt = w.CreatedAt,
+                    canApprove = viewer.CanApprove && facts.CanApprove && (w.Input.Variant != "4k" || facts.Can4k),
+                    requesterId = viewer.Role is "Manager" or "Admin" ? (Guid?)w.UserId : null,
+                    declineReason = w.Status == "declined" ? DeclineReason(w.Id) : null,
+                    jobs = Jobs(w),
+                    members = pending ? null : r.Members.Select(m => new { id = m.Id, status = m.Status, reason = m.Reason, jobs = Jobs(m) }).ToArray(),
+                };
             }).ToArray();
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = pending ? "pending" : "mine", certainty = "Succeeded", message = "Requests", items }, Json);
             var stamp = user.ToString("N") + "|" + viewer.Role + "|" + viewer.Revision + "|" + pending + "|";
