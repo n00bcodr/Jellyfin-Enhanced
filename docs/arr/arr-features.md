@@ -950,7 +950,8 @@ the 4K menu ask for the 4K copy. A collection's **Request** lists the collection
 library can't be ticked) and asks Jellyfin Enhanced for each ticked one, then says what happened ("Asked
 for 2 · 1 waits for Dad's OK"). Up to 20 can be asked for at a time: with more than that missing, the first 20 are
 ticked, a note says so, and no more can be ticked until one is unticked. Seerr's own request windows (with its servers, profiles and folders) are never shown
-in JE mode, and Seerr's "only Seerr results" search filter (double-tap on its icon) does nothing there. In Seerr mode
+in JE mode, and Seerr's "only Seerr results" search filter (double-tap on its icon) does nothing there: the icon's
+tooltip then reads just "Seerr is active" instead of offering it. In Seerr mode
 every Seerr control behaves as before. With Seerr's experimental native details page on, the card itself (title,
 poster, Enter) opens the title's [details page](#titles-that-arent-in-the-library-native-details) instead of Seerr's
 window; only its **Request** button opens the sheet.

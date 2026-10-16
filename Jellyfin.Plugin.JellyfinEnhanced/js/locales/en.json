@@ -171,6 +171,7 @@
     "jellyseerr_recommended_title": "Recommended",
     "jellyseerr_icon_active_tooltip": "Seerr is active\nDouble-click to show only Seerr results",
     "jellyseerr_icon_active_filter_tooltip": "Seerr is active\nDouble-click to show all results",
+    "jellyseerr_icon_active_je_tooltip": "Seerr is active",
     "jellyseerr_icon_no_user_tooltip": "User not found on Seerr",
     "jellyseerr_icon_disabled_tooltip": "Seerr is not connected.",
     "jellyseerr_no_results_jellyfin": "Sorry! No results found for \"{query}\" on Jellyfin",
