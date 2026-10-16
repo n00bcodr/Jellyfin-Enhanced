@@ -1299,6 +1299,11 @@ public class ApiArrRequestsHubTests
         Assert.Equal(0, Searches());
         rig.Arr.Plugin.Plugin.Configuration.ArrStatusLookingHours = 24;
 
+        // Seen live: Sonarr's address or key changed after the send (a new connection generation of the same instance).
+        // What was sent still counts: the Search searches, it doesn't ask (and charge) again.
+        foreach (var viewer in new[] { rig.Emma, rig.Kid })
+            policy.People[viewer.UserId] = policy.People[viewer.UserId] with { ConnectionGeneration = "g2" };
+
         // Missing for a long while: Emma's Search runs Sonarr's search for exactly that episode; nothing grabbed.
         var searched = await Press(rig.Emma, E4, "p2");
         Assert.Equal(200, searched.Status);

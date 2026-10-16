@@ -109,8 +109,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public bool SentCovers(MutationInput input, RequestPolicyFacts facts) => _db.Available && _db.Read(c =>
         {
             var covered = Wants(c, null, "title_key=$key AND variant=$v", ("$key", input.Key), ("$v", input.Variant)).Where(Active).ToArray();
-            return covered.Length > 0 && input.Extra(Confirmed(c, null, covered, TargetKey(facts))) == null;
+            // Any connection of the same instance (or Seerr) counts: a Search runs only for parts the instance already
+            // monitors, so an address or key change since the send doesn't make them "never asked for".
+            var destination = Destination(TargetKey(facts));
+            return covered.Length > 0 && input.Extra(Confirmed(c, null, covered, target => Destination(target) == destination)) == null;
         });
+        // A target key without its connection generation: the backend, the instance and the Seerr source.
+        private static string Destination(string target)
+        {
+            try
+            {
+                var parts = JsonSerializer.Deserialize<string?[]>(target);
+                if (parts is { Length: 4 }) return JsonSerializer.Serialize(new[] { parts[0], parts[1], parts[3] });
+            }
+            catch (JsonException)
+            {
+                // Not a target key: compared as it is.
+            }
+            return target;
+        }
         /// <summary>
         /// What actually went out for a title, per target: each succeeded job's scope at the time its send was
         /// confirmed, and each request that was already processing in Seerr when it moved (a job-less link) at the
@@ -405,11 +422,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // Scope already sent to the target: succeeded jobs, and requests that were already processing in Seerr
         // when they moved (Seerr sent them; JE never sends them again).
         private static IEnumerable<MutationInput> Confirmed(SqliteConnection c, SqliteTransaction? t, IEnumerable<RequestWant> wants, string target)
+            => Confirmed(c, t, wants, key => key == target);
+        private static IEnumerable<MutationInput> Confirmed(SqliteConnection c, SqliteTransaction? t, IEnumerable<RequestWant> wants, Func<string, bool> target)
         {
             foreach (var want in wants)
             {
-                foreach (var job in Jobs(c, t, "want_id=$id AND state='succeeded'", ("$id", want.Id)).Where(j => TargetKey(j.Authorization) == target)) yield return job.Input;
-                if (want.TargetKey == target && LinkedScope(c, t, want) is { } linked) yield return linked;
+                foreach (var job in Jobs(c, t, "want_id=$id AND state='succeeded'", ("$id", want.Id)).Where(j => target(TargetKey(j.Authorization)))) yield return job.Input;
+                if (target(want.TargetKey) && LinkedScope(c, t, want) is { } linked) yield return linked;
             }
         }
         private static bool ConfirmedScope(SqliteConnection c, SqliteTransaction t, MutationInput input, RequestWant[] covered, RequestPolicyFacts facts)
