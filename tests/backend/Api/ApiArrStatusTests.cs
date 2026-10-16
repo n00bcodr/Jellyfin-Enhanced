@@ -663,6 +663,11 @@ public class ApiArrStatusTests
         requests.Revision++;
         var notListed = await Status(Season(1, today.AddDays(-7)));
         Assert.Equal(("approved", "not_aired"), (notListed.GetProperty("stage").GetString(), notListed.GetProperty("reason").GetProperty("code").GetString()));
+        // OK'd but held until a person sorts it out (no 4K instance now, say): taking longer, not "Getting started".
+        requests.Seasons[1] = new RequestFacts { ApprovedAt = now.AddHours(-1), AskedAt = now.AddHours(-2), AskedByViewer = true, HeldAfterOk = true };
+        requests.Revision++;
+        var held = await Status(Season(1, today.AddDays(-7)));
+        Assert.Equal(("approved", "approved_not_in_arr", true), (held.GetProperty("stage").GetString(), held.GetProperty("reason").GetProperty("code").GetString(), held.GetProperty("attention").GetBoolean()));
         requests.Seasons[1] = new RequestFacts { Declined = true, AskedAt = now.AddHours(-2), AskedByViewer = true };
         requests.Revision++;
         Assert.Equal(("notHere", "declined"), ((await Status(Season(1, today.AddDays(-7)))).GetProperty("stage").GetString(), (await Status(Season(1, today.AddDays(-7)))).GetProperty("reason").GetProperty("code").GetString()));

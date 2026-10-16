@@ -806,6 +806,10 @@ public class IntegrationRequestLedgerTests
         Assert.Equal("queued", r.Ledger.Find(want.RequestId!)!.Status);   // still on its way, nobody has to look at it
         // Its facts say so: the status reads "Not aired yet" instead of "OK'd! Getting started".
         Assert.True(LedgerRequestFacts.FactsOf(new[] { r.Ledger.Find(want.RequestId!)! }, r.Member, () => Array.Empty<RequestDispatch>())!.NotListed);
+        // A sent request held for something a person must sort out reads as held, not as getting started.
+        var sentHeld = r.Ledger.Find(want.RequestId!)! with { Status = "sent", Reason = RequestLedger.No4k };
+        Assert.True(LedgerRequestFacts.FactsOf(new[] { sentHeld }, r.Member, () => Array.Empty<RequestDispatch>())!.HeldAfterOk);
+        Assert.False(LedgerRequestFacts.FactsOf(new[] { sentHeld with { Reason = "looking" } }, r.Member, () => Array.Empty<RequestDispatch>())!.HeldAfterOk);
     }
     [Fact]
     public async Task RestartMidSendReadbacksInsteadOfPostingAgainAndKeepsReservation()

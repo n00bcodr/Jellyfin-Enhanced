@@ -224,6 +224,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public bool NotListed { get; init; }
 
         /// <summary>
+        /// Every OK'd request is held after its OK for something a person has to sort out (no 4K instance can take it
+        /// now, no Seerr account, the connection changed, …): it reads "Taking longer than usual", not "OK'd! Getting
+        /// started" (the Approvals card says why).
+        /// </summary>
+        public bool HeldAfterOk { get; init; }
+
+        /// <summary>
         /// The parts of the title that requests on their way cover (sent to Sonarr/Radarr by Jellyfin
         /// Enhanced, or OK'd in Seerr), each with when that happened. "Nothing grabbed for a long while"
         /// counts from then: an episode asked for today in a series the arr has listed for years is

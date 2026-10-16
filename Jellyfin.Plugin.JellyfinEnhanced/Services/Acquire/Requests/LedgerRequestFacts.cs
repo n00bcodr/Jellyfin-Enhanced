@@ -95,6 +95,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Declined = seerr.Declined && held.Declined,
                 Fulfilled = seerr.Fulfilled && held.Fulfilled,
                 Sent = seerr.Sent.Concat(held.Sent).Distinct().ToArray(),
+                // Held here after its OK only while Seerr has nothing OK'd of its own for it.
+                HeldAfterOk = held.HeldAfterOk && seerr.ApprovedAt == null,
             };
         }
 
@@ -161,7 +163,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Fulfilled = wants.Any(w => w.Status == "fulfilled") && wants.All(w => w.Status is "fulfilled" or "declined"),
                 StandardDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "standard"), FourKDone = wants.Any(w => w.Status == "fulfilled" && w.Input.Variant == "4k"),
                 Sent = Sent(wants, dispatches),
-                NotListed = approved.Length > 0 && approved.All(w => w.Status == "queued" && w.Reason == "not_aired") };
+                NotListed = approved.Length > 0 && approved.All(w => w.Status == "queued" && w.Reason == "not_aired"),
+                HeldAfterOk = approved.Length > 0 && approved.All(w => w.Status is "queued" or "sent" or "stale" && RequestHubProjection.StuckReasons.Contains(w.Reason ?? string.Empty)) };
         }
 
         /// <summary>
