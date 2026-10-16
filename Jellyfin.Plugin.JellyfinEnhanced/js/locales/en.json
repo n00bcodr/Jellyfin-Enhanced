@@ -830,6 +830,7 @@
     "arr_chip_waiting_ok": "Waiting for OK",
     "arr_chip_not_fetched": "Missing · not being fetched",
     "arr_chip_missing": "Missing",
+    "arr_chip_looking": "Looking for it",
     "arr_banner_missing": "Missing: {list}",
     "arr_banner_not_yet": "Not in the library yet:",
     "arr_ask_chip_waiting": "Waiting for OK",

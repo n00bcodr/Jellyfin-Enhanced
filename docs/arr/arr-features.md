@@ -219,7 +219,11 @@ when it aired or came out, when Sonarr/Radarr first listed it, and (with *Ask fo
 last went out: sent to Sonarr/Radarr in Jellyfin Enhanced mode (joining a request that was already sent restarts
 nothing; a request moved from Seerr while Seerr was already fetching it counts from when it was asked for there), or
 OK'd in Seerr in Seerr mode. An episode asked for today in a series Sonarr has had for years reads "Looking for it",
-not **Missing**. Fresh ones keep "Looking for it"; ones Sonarr/Radarr isn't fetching keep "Not being fetched".
+not **Missing**. Fresh ones keep "Looking for it" and offer nothing to press (Sonarr is already on them): no **Get it**
+on their row, in their details or on their page, the *Missing* line names them with *Looking for it* (one chip when
+every episode there is), **Get missing episodes** on a series page counts only the episodes missing for a long while,
+and a season whose every episode is still fresh gets no **Get Season N**. Ones Sonarr/Radarr isn't fetching keep "Not
+being fetched" with **Get it**.
 A season, a series, or a request's card (Household, My requests, approvals) reads **Missing** too when every episode
 still to come there is missing like that and none of it is here, downloading or on its way; one still fresh keeps the
 whole scope at "Looking for it", and a scope with some episodes already here keeps "Some episodes here, looking for the

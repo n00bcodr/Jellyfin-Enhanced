@@ -394,6 +394,8 @@
         if (ep.stage === 'asked') return tr('arr_chip_waiting_ok');
         if (code === 'failed' || code === 'service_down') return tr('arr_chip_taking_longer');
         if (code === 'unmonitored') return tr('arr_chip_not_fetched');
+        // Monitored and wanted a moment ago: the arr is on it (missing for a long while reads Missing).
+        if (ep.stage === 'looking' && !searchable(ep)) return tr('arr_chip_looking');
         return tr('arr_chip_missing');
     }
 

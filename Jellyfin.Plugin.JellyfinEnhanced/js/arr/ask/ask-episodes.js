@@ -15,7 +15,9 @@
  * the request policy says; everyone else asks for it like Get it. When the viewer's role may ask but the
  * policy can't take an ask right now (the season read's `blocked`, e.g. the drive is nearly full) the
  * episode says so in place of Get it ("Paused: storage full"), with one line for the season (where and
- * how much is free, for administrators) — never a bare "Missing" with nothing to do.
+ * how much is free, for administrators) — never a bare "Missing" with nothing to do. A monitored
+ * episode the arr is looking for right now (not missing for long yet) offers nothing: its chip says
+ * "Looking for it".
  */
 (function (JE) {
     'use strict';
@@ -54,7 +56,8 @@
     }
 
     /**
-     * True when the episode is missing and nothing is under way for it (Get it makes sense).
+     * True when the episode is missing and nothing is under way for it (dimmed, listed by the banner).
+     * Being missing is not enough to offer anything: see offerable.
      * @param {Object} ep Episode status.
      * @returns {boolean} Missing.
      */
@@ -62,6 +65,27 @@
         if (!ep || !MISSING_STAGES.has(ep.stage) || ep.attention) return false;
         const code = ep.reason?.code;
         return code !== 'service_down' && code !== 'failed';
+    }
+
+    /**
+     * True when a missing episode can be asked for (Get it): nobody is fetching it (not monitored, or
+     * not in the arr at all).
+     * @param {Object} ep Episode status.
+     * @returns {boolean} Askable.
+     */
+    function askable(ep) {
+        return isMissing(ep) && ep.stage === 'notHere';
+    }
+
+    /**
+     * True when a missing episode gets a button: it can be asked for (askable), or it is monitored and
+     * missing for a long while (JE.arrStatus.searchable: Search). A monitored episode the arr is
+     * looking for right now gets neither: its chip says "Looking for it".
+     * @param {Object} ep Episode status.
+     * @returns {boolean} Offerable.
+     */
+    function offerable(ep) {
+        return askable(ep) || (isMissing(ep) && !!JE.arrStatus?.searchable?.(ep));
     }
 
     /**
@@ -153,7 +177,7 @@
     /**
      * Extension hook: the chip of a missing episode says its request state, or plainly "Missing"
      * (one label, whatever Sonarr's monitoring says) when it can be asked for, searched, or the page
-     * says why it can't be asked for now.
+     * says why it can't be asked for now. One the arr is looking for right now keeps "Looking for it".
      * @param {Object} ep Episode status.
      * @returns {{text: string, tone: string}|null} Chip override.
      */
@@ -161,6 +185,7 @@
         if (!JE.arrAsk?.enabled() || !isMissing(ep)) return null;
         const byState = chipForState(shownState(ep));
         if (byState) return byState;
+        if (!offerable(ep)) return null;
         return offered(ep) || blockedWords() ? { text: tr('arr_chip_missing'), tone: 'notOut' } : null;
     }
 
@@ -318,7 +343,7 @@
      * @returns {void}
      */
     function syncNote(page, list, status) {
-        const words = list && (status.episodes || []).some(ep => isMissing(ep) && !shownState(ep)) ? blockedWords() : null;
+        const words = list && (status.episodes || []).some(ep => offerable(ep) && !shownState(ep)) ? blockedWords() : null;
         const existing = page.querySelector('.je-ask-season-note');
         const signature = words ? `${words.chip}|${words.detail || words.text}` : '';
         if (existing && (!words || existing.dataset.sig !== signature || existing.nextElementSibling !== list)) existing.remove();
@@ -389,7 +414,7 @@
     function syncGetIt(chipEl, ep, scope) {
         // On TV a row is one focus target (Jellyfin's own rows are buttons there): Get it lives in the
         // episode's dialog (JE rows) or on the episode's page (Jellyfin's rows), never inside a row.
-        const open = !!chipEl && !!ep && isMissing(ep) && !shownState(ep) && !chipEl.classList.contains('je-arr-chip-overlay') && !isTv();
+        const open = !!chipEl && !!ep && offerable(ep) && !shownState(ep) && !chipEl.classList.contains('je-arr-chip-overlay') && !isTv();
         const placeable = open && offered(ep);
         const outcome = placeable ? searchedOutcome(ep.episode) : null;
         const want = placeable && !outcome;
@@ -941,8 +966,11 @@
         const missingEps = JE.internals.arrStatusEpisodes.bannerEntries(status).missing.filter(isMissing);
         const missing = missingEps.map(ep => ep.episode);
         const states = new Map(missingEps.map(ep => [ep.episode, shownState(ep)]));
-        const openEps = missingEps.filter(ep => !states.get(ep.episode));
+        // Monitored episodes the arr is looking for right now: nothing to ask for, the banner says so.
+        const lookingEps = missingEps.filter(ep => !states.get(ep.episode) && !offerable(ep));
+        const openEps = missingEps.filter(ep => !states.get(ep.episode) && offerable(ep));
         const open = openEps.map(ep => ep.episode);
+        const looking = lookingEps.map(ep => ep.episode);
         const asked = missing.filter(n => states.get(n));
         // What the button is for: every episode left when the viewer may ask; otherwise an administrator's Search
         // for the ones missing for a long while (it runs whatever the request policy says).
@@ -959,7 +987,7 @@
         const wholeSeason = !search && !asked.length && open.length > 0 && open.length === (status.summary?.aired || -1)
             && !!JE.titleDetails?.isSynthetic?.(status.itemId);
         let action = banner.querySelector('.je-ask-banner-action');
-        const signature = `${open.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}`;
+        const signature = `${open.join(',')}|${looking.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}`;
         if (action && action.dataset.sig === signature) return;
         if (action) action.remove();
         if (!missing.length) return;
@@ -969,6 +997,9 @@
             const shown = chipForState(states.get(n));
             if (shown) action.appendChild(S.el('span', `je-arr-chip je-arr-tone-${shown.tone}`, `E${n} · ${shown.text}`));
         }
+        // Every episode listed is being looked for: one chip says so; otherwise each one that is says it.
+        if (looking.length > 1 && looking.length === missing.length) action.appendChild(S.el('span', 'je-arr-chip je-arr-tone-looking', tr('arr_chip_looking')));
+        else for (const n of looking) action.appendChild(S.el('span', 'je-arr-chip je-arr-tone-looking', `E${n} · ${tr('arr_chip_looking')}`));
         if (outcome) {
             const note = S.el('span', `je-arr-chip je-ask-searched je-arr-tone-${outcome.tone}`, outcome.chip);
             note.tabIndex = -1;
@@ -1099,14 +1130,14 @@
         if (meta.overview && !spoiler) dialog.appendChild(S.el('p', 'je-ask-dialog-overview', meta.overview));
         const actions = S.el('div', 'je-ask-dialog-actions');
         // Why it can't be asked for now, above the buttons (an administrator's Search stays below it).
-        if (isMissing(ep) && !shownState(ep) && blockedWords()) {
+        if (offerable(ep) && !shownState(ep) && blockedWords()) {
             const note = pausedNote(blockedWords(), '');
             note.id = `${titleId}-paused`;
             dialog.appendChild(note);
             // Read out with the dialog's name (focus lands on a button; the reason is plain text).
             dialog.setAttribute('aria-describedby', note.id);
         }
-        if (isMissing(ep) && offered(ep) && !shownState(ep) && !searchedOutcome(ep.episode)) {
+        if (offerable(ep) && offered(ep) && !shownState(ep) && !searchedOutcome(ep.episode)) {
             const get = getItButton(ep);
             get.classList.add('je-ask-get-large');
             get.addEventListener('click', () => close());
@@ -1213,6 +1244,6 @@
     });
 
     JE.internals = JE.internals || {};
-    JE.internals.arrAskEpisodes = { initialize, chip, drawn, decorate, clear, isMissing, requestState, getEpisodes, searchEpisode, searchBanner, openDetails, closeDialog, adminSearchable, stop: () => { if (unsubscribe) unsubscribe(); } };
+    JE.internals.arrAskEpisodes = { initialize, chip, drawn, decorate, clear, isMissing, askable, offerable, requestState, getEpisodes, searchEpisode, searchBanner, openDetails, closeDialog, adminSearchable, stop: () => { if (unsubscribe) unsubscribe(); } };
     JE.initializeArrAskEpisodes = initialize;
 })(window.JellyfinEnhanced);

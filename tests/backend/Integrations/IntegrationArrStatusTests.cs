@@ -451,6 +451,33 @@ public class IntegrationArrStatusTests
     }
 
     [Fact]
+    public void SummariesCountTheMissingEpisodesThatAreMissingForALongWhile()
+    {
+        // E4 was asked for ten minutes ago (being looked for now), E5 is missing for a long while (Search):
+        // both are missing, only E5 is long missing, so a series page offers nothing to ask for E4 alone.
+        var series = new ArrSeriesEntry
+        {
+            Id = 3, TvdbId = 279121, Title = "Show", Monitored = true, Added = Now.AddDays(-400),
+            Seasons = new[] { new ArrSeasonEntry { SeasonNumber = 1, Monitored = true, EpisodeCount = 2, TotalEpisodeCount = 2 } },
+        };
+        var e4 = new ArrEpisodeEntry { Id = 104, SeasonNumber = 1, EpisodeNumber = 4, AirDateUtc = Now.AddDays(-300), Monitored = true };
+        var e5 = new ArrEpisodeEntry { Id = 105, SeasonNumber = 1, EpisodeNumber = 5, AirDateUtc = Now.AddDays(-293), Monitored = true };
+        var show = new TitleFacts(ShowKey) { Request = new RequestFacts { Sent = new[] { new RequestSentPart(false, 1, 4, Now.AddMinutes(-10)) } } };
+        show.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = new ArrEpisodesSnapshot(3, new[] { e4, e5 }) });
+        var seasonItem = new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = TitleKey.Parse("tv:tvdb:279121:s1")!, Season = 1 };
+        var season = StatusComposer.Season(show, seasonItem, Array.Empty<JfEpisode>(), Ctx(), detail: true);
+        Assert.Equal((2, 1), (season.Summary!.Missing, season.Summary.LongMissing));
+        var item = new JfItemRef { ItemId = Guid.NewGuid(), Kind = "series", Key = ShowKey };
+        var whole = StatusComposer.Series(show, item, Array.Empty<JfEpisode>(), null, Ctx(), detail: true);
+        Assert.Equal((2, 1), (whole.Summary!.Missing, whole.Summary.LongMissing));
+        Assert.Equal(1, Assert.Single(whole.Seasons!).Summary!.LongMissing);
+        // Both asked for a moment ago: none is long missing.
+        show.Request = new RequestFacts { Sent = new[] { new RequestSentPart(false, 1, null, Now.AddMinutes(-10)) } };
+        var fresh = StatusComposer.Season(show, seasonItem, Array.Empty<JfEpisode>(), Ctx(), detail: true).Summary!;
+        Assert.Equal((2, 0), (fresh.Missing, fresh.LongMissing));
+    }
+
+    [Fact]
     public void ARequestGoingOutRestartsTheStillLookingClockOfThePartItCovers()
     {
         // A movie Radarr listed 30 h ago with nothing grabbed: missing for a long while (Search)...

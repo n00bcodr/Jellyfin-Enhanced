@@ -36,14 +36,14 @@ function page(rows) {
     + `<div id="childrenContent"><div class="itemsContainer">${rows}</div></div></div>`;
 }
 
-/** A season status: E1 ready (row), E2 missing (row only when virtual), E3 downloading (no row), E4 missing (no row). */
+/** A season status: E1 ready (row), E2 missing and not monitored (row only when virtual), E3 downloading (no row), E4 missing (no row). */
 function season({ e2row = false } = {}) {
   return {
     key: 'tv:tvdb:1:s1', itemId: SEASON_ID, kind: 'season', stage: 'downloading', reason: { code: 'downloading' },
     summary: { aired: 4, ready: 1, downloading: 1, missing: 2, attention: 0 },
     episodes: [
       { key: 'tv:tvdb:1:s1:e1', season: 1, episode: 1, itemId: ID(1), row: true, stage: 'ready', reason: { code: 'ready' } },
-      { key: 'tv:tvdb:1:s1:e2', season: 1, episode: 2, itemId: e2row ? ID(2) : null, row: e2row, stage: 'looking', reason: { code: 'looking' } },
+      { key: 'tv:tvdb:1:s1:e2', season: 1, episode: 2, itemId: e2row ? ID(2) : null, row: e2row, stage: 'notHere', reason: { code: 'unmonitored' } },
       { key: 'tv:tvdb:1:s1:e3', season: 1, episode: 3, row: false, stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 60 } },
       { key: 'tv:tvdb:1:s1:e4', season: 1, episode: 4, row: false, stage: 'notHere', reason: { code: 'unmonitored' }, airDate: '2014-06-22T00:00:00Z' }
     ]
@@ -390,12 +390,61 @@ test('the episode dialog shows the status and Get it, traps focus and gives it b
   const dialog = h.document.querySelector('.je-ask-dialog');
   assert.equal(dialog.getAttribute('role'), 'dialog');
   assert.equal(dialog.querySelector('.je-ask-dialog-title').textContent, '2. Two');
-  assert.match(dialog.querySelector('.je-arr-pill-text').textContent, /Looking for it/);
+  assert.match(dialog.querySelector('.je-arr-pill-text').textContent, /Not being fetched/);
   assert.equal(dialog.getAttribute('aria-describedby'), null, 'nothing paused to read out');
   assert.equal(h.document.activeElement, dialog.querySelector('.je-ask-get'));
   h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.equal(h.document.querySelector('.je-ask-dialog'), null);
   assert.equal(h.document.activeElement, title);
+});
+
+/** The base season with E2 monitored and wanted a moment ago: Sonarr is looking for it right now. */
+function freshLooking() {
+  const status = season();
+  Object.assign(status.episodes[1], { stage: 'looking', reason: { code: 'looking' } });
+  return status;
+}
+
+test('an episode the arr is looking for right now: "Looking for it", dimmed and listed, but no Get it in its row, the banner or its dialog', async t => {
+  const h = setup(t, { status: freshLooking() });
+  await h.open();
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  assert.equal(two.querySelector('.je-arr-chip').textContent, 'Looking for it');
+  assert.ok(two.querySelector('.je-arr-chip').classList.contains('je-arr-tone-looking'));
+  assert.equal(two.querySelector('.je-ask-get'), null, 'nothing to ask for: Sonarr is on it');
+  assert.ok(two.classList.contains('je-ask-dim'), 'still missing: dimmed');
+  // E4 (not monitored) still offers Get it.
+  assert.ok(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
+  two.querySelector('.je-ask-row-title').click();
+  const dialog = h.document.querySelector('.je-ask-dialog');
+  assert.match(dialog.querySelector('.je-arr-pill-text').textContent, /Looking for it/);
+  assert.equal(dialog.querySelector('.je-ask-get'), null, 'the dialog offers nothing either');
+  h.JE.internals.arrAskEpisodes.closeDialog();
+
+  // Banner mode: listed as missing, its own chip says it is being looked for; Get E4 only.
+  const banner = setup(t, { status: freshLooking(), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  await banner.open();
+  const b = banner.document.querySelector('.je-arr-banner');
+  assert.equal(b.querySelector('.je-arr-banner-title').textContent, 'Missing: E2, E4');
+  same([...b.querySelectorAll('.je-ask-banner-action .je-arr-chip')].map(c => c.textContent), ['E2 · Looking for it']);
+  assert.equal(b.querySelector('.je-ask-get').textContent, 'downloadGet E4');
+
+  // Every missing episode is being looked for: one "Looking for it" for all of them, nothing to ask for.
+  const allFresh = freshLooking();
+  Object.assign(allFresh.episodes[3], { stage: 'looking', reason: { code: 'looking' } });
+  const quiet = setup(t, { status: allFresh, server: { rows: () => rowsBody({ displayMissing: false }) } });
+  await quiet.open();
+  const qb = quiet.document.querySelector('.je-arr-banner');
+  same([...qb.querySelectorAll('.je-ask-banner-action .je-arr-chip')].map(c => c.textContent), ['Looking for it']);
+  assert.equal(qb.querySelector('.je-ask-get'), null);
+
+  // Asking paused (storage full): nothing to explain on an episode nobody could ask for anyway.
+  const paused = setup(t, { status: freshLooking(), server: { rows: () => rowsBody({ canRequest: false, blocked: { reason: 'storage_full' } }) } });
+  await paused.open();
+  const pausedTwo = paused.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  assert.equal(pausedTwo.querySelector('.je-arr-chip').textContent, 'Looking for it');
+  assert.equal(pausedTwo.querySelector('.je-ask-paused'), null);
+  assert.ok(paused.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-paused'), 'E4 says why it can\'t be asked for now');
 });
 
 test('phones: the chip and Get it of a JE row move to their own line above the overview', async t => {

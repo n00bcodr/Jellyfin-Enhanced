@@ -566,18 +566,20 @@ test('mount API: a redraw keeps the keyboard focus on the control (or its stand-
 const PAGE = '<div id="itemDetailPage"><div class="detailPagePrimaryContent"><div class="detailSection"><h3 class="itemName">Severance</h3></div></div></div>';
 const SERIES_STATUS = {
   key: 'tv:tvdb:371980', itemId: 'series1', kind: 'series', stage: 'looking', reason: { code: 'partial' },
-  summary: { aired: 28, ready: 18, missing: 10 },
+  summary: { aired: 28, ready: 18, missing: 12, longMissing: 11 },
   seasons: [
     { season: 1, itemId: 's1', stage: 'ready', summary: { aired: 9, ready: 9, missing: 0 } },
-    { season: 2, itemId: null, stage: 'looking', summary: { aired: 10, ready: 0, missing: 10 } },
-    { season: 3, itemId: 's3', stage: 'looking', summary: { aired: 6, ready: 4, missing: 2 } }
+    { season: 2, itemId: null, stage: 'looking', summary: { aired: 10, ready: 0, missing: 10, longMissing: 10 } },
+    { season: 3, itemId: 's3', stage: 'looking', summary: { aired: 6, ready: 4, missing: 2, longMissing: 1 } }
   ]
 };
+/** Season 3: E5 missing for a long while (Search), E6 not in the arr, E8 being looked for right now (nothing to ask). */
 const SEASON3 = { items: [{ key: 'tv:tvdb:371980:s3', kind: 'season', episodes: [
   { episode: 1, stage: 'ready', reason: { code: 'ready' } },
-  { episode: 5, stage: 'looking', reason: { code: 'looking' } },
+  { episode: 5, stage: 'looking', reason: { code: 'no_release_yet' } },
   { episode: 6, stage: 'notHere', reason: { code: 'not_in_arr' } },
-  { episode: 7, stage: 'downloading', reason: { code: 'downloading' } }
+  { episode: 7, stage: 'downloading', reason: { code: 'downloading' } },
+  { episode: 8, stage: 'looking', reason: { code: 'looking' } }
 ] }] };
 
 test('series page: Get Season 2, Get missing episodes, More… and the cost line; each ask turns into its state', async t => {
@@ -798,7 +800,11 @@ test('an episode missing for a long while: Search; a Kid asks Dad, a member asks
   assert.equal(page.querySelector('.je-ask-action').textContent, 'searchSearch');
   h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, key: 'tv:tvdb:371980:s3:e7', reason: { code: 'looking' } }, {});
   await settle();
-  assert.equal(page.querySelector('.je-ask-action').textContent, 'addGet it', 'still fresh: Get it');
+  assert.equal(page.querySelector('.je-ask-actions'), null, 'still fresh: Sonarr is looking for it, nothing to ask for');
+  // Not monitored: Get it.
+  h.JE.internals.arrAskActions.attachDetails(page, { ...LONG_MISSING_EPISODE, key: 'tv:tvdb:371980:s3:e8', stage: 'notHere', reason: { code: 'unmonitored' } }, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-action').textContent, 'addGet it');
 });
 
 test('an administrator\'s Search on an episode page runs the arr search at once and says what it found', async t => {
@@ -1060,10 +1066,10 @@ test('a series named without its seasons (search and Discover cards) has them re
 
 const SERIES_NOTHING = {
   key: 'tv:tvdb:371980', itemId: 'series1', kind: 'series', stage: 'looking', reason: { code: 'no_release_yet' },
-  summary: { aired: 16, ready: 0, missing: 16 },
+  summary: { aired: 16, ready: 0, missing: 16, longMissing: 16 },
   seasons: [
-    { season: 1, itemId: 's1', stage: 'looking', summary: { aired: 10, ready: 0, missing: 10 } },
-    { season: 2, itemId: 's2', stage: 'looking', summary: { aired: 6, ready: 0, missing: 6 } }
+    { season: 1, itemId: 's1', stage: 'looking', summary: { aired: 10, ready: 0, missing: 10, longMissing: 10 } },
+    { season: 2, itemId: 's2', stage: 'looking', summary: { aired: 6, ready: 0, missing: 6, longMissing: 6 } }
   ]
 };
 
@@ -1087,10 +1093,21 @@ test('a series missing for a long while: Search for everyone who may ask (member
   await settle();
   same(texts(), ['Get Season 1', 'Get missing episodes', 'Search', 'More…']);
 
-  // Still fresh: no Search.
-  h.JE.internals.arrAskActions.attachDetails(page, { ...SERIES_NOTHING, key: 'tv:tvdb:2', reason: { code: 'looking' } }, { contact: 'Dad' });
+  // Still fresh (Sonarr is looking for every episode right now): nothing to ask for, no Search; More… only.
+  const fresh = { ...SERIES_NOTHING, key: 'tv:tvdb:2', reason: { code: 'looking' }, summary: { aired: 16, ready: 0, missing: 16 },
+    seasons: SERIES_NOTHING.seasons.map(s => ({ ...s, summary: { ...s.summary, longMissing: 0 } })) };
+  h.JE.internals.arrAskActions.attachDetails(page, fresh, { contact: 'Dad' });
   await settle();
-  same(texts(), ['Get Season 1', 'Get missing episodes', 'More…']);
+  same(texts(), ['More…']);
+  // Season 2 partly here with only fresh episodes missing, Season 3 not monitored at all: Get Season 3 only.
+  const mixed = { ...fresh, key: 'tv:tvdb:3', seasons: [
+    { season: 1, itemId: 's1', stage: 'looking', summary: { aired: 10, ready: 0, missing: 10 } },
+    { season: 2, itemId: 's2', stage: 'looking', summary: { aired: 6, ready: 3, missing: 3 } },
+    { season: 3, itemId: 's3', stage: 'none', summary: { aired: 8, ready: 0 } }
+  ] };
+  h.JE.internals.arrAskActions.attachDetails(page, mixed, { contact: 'Dad' });
+  await settle();
+  same(texts(), ['Get Season 3', 'More…']);
 });
 
 test('a whole-series Search of episodes requests already sent searches them again: no new ask, no OK (series page and request controls)', async t => {
