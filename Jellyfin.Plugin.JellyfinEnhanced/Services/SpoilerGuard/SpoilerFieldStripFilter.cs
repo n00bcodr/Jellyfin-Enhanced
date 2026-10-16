@@ -157,6 +157,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return RunFieldStripAsync(context, next, cfg);
         }
 
+        /// <summary>
+        /// Spoiler Guard's own strip over library items answered by another filter that short-circuits the
+        /// action (the native details facade lists a season or episode the viewer can open in the library
+        /// as itself): the same pipeline as a native answer, by the caller's watched state.
+        /// </summary>
+        /// <param name="result">The answer.</param>
+        /// <param name="context">The action's context (the route).</param>
+        /// <param name="userId">The effective viewer the answer is for.</param>
+        internal void StripLibraryItems(IActionResult? result, ActionExecutingContext context, Guid userId)
+        {
+            var cfg = JellyfinEnhanced.Instance?.Configuration;
+            if (result == null || cfg?.SpoilerBlurEnabled != true || userId == Guid.Empty) return;
+            var userState = _resolver.LoadUserState(context.HttpContext, userId);
+            if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0) return;
+            try
+            {
+                StripIfApplicable(result, userState, cfg, userId, context);
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited("fieldstrip-apply:" + ex.GetType().FullName, $"Spoiler Guard field strip failed: {ex.Message}");
+            }
+        }
+
         private static bool IsTargetRoute(ActionExecutingContext context)
         {
             var rv = context.ActionDescriptor.RouteValues;

@@ -67,7 +67,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             dto.Studios = Studios(m, "productionCompanies", network: false);
             dto.Tags = Tags(m);
             dto.ProductionLocations = Names(m, "productionCountries");
-            dto.People = People(m, movie: true);
+            dto.People = People(m, movie: true, context: guid);
             dto.RemoteTrailers = Trailers(m);
             var imdb = Str(m, "imdbId") ?? Str(Obj(m, "externalIds"), "imdbId");
             dto.ProviderIds = Providers(id.TmdbId, imdb, null);
@@ -100,7 +100,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             dto.Studios = Studios(s, "networks", network: true);
             dto.Tags = Tags(s);
             dto.ProductionLocations = Names(s, "productionCountries");
-            dto.People = People(s, movie: false);
+            dto.People = People(s, movie: false, context: guid);
             dto.RemoteTrailers = Trailers(s);
             var external = Obj(s, "externalIds");
             var tvdb = Int(external, "tvdbId");
@@ -180,7 +180,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public BaseItemDto WithSeriesNames(BaseItemDto dto, JsonElement series)
         {
             Genres(dto, series);
-            dto.People = People(series, movie: false, withCreators: false);
+            dto.People = People(series, movie: false, withCreators: false, context: dto.Id);
             return dto;
         }
 
@@ -292,8 +292,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 RemoteTrailers = Array.Empty<MediaUrl>(),
             };
 
-        private string? Grant(Guid owner, ImageType type, int index, string? path)
-            => _artwork.Mint(owner, type, index, TmdbPath(path), _viewer, _revision);
+        private string? Grant(Guid owner, ImageType type, int index, string? path, Guid? context = null)
+            => _artwork.Mint(owner, type, index, TmdbPath(path), _viewer, _revision, context);
 
         /// <summary>
         /// A TMDB file path ("/abc.jpg"). Seerr gives some images as full TMDB URLs
@@ -335,7 +335,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (Grant(seriesGuid, ImageType.Primary, 0, Str(series, "posterPath")) is { } p) dto.SeriesPrimaryImageTag = p;
         }
 
-        private BaseItemPerson[] People(JsonElement title, bool movie, bool withCreators = true)
+        private BaseItemPerson[] People(JsonElement title, bool movie, Guid context, bool withCreators = true)
         {
             var people = new List<BaseItemPerson>();
             var credits = Obj(title, "credits");
@@ -343,7 +343,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 foreach (var c in cast.EnumerateArray().OrderBy(c => Int(c, "order") ?? int.MaxValue).Take(MaxCast))
                 {
-                    if (CastMember(c, PersonKind.Actor, Str(c, "character")) is { } p) people.Add(p);
+                    if (CastMember(c, PersonKind.Actor, Str(c, "character"), context) is { } p) people.Add(p);
                 }
             }
 
@@ -358,7 +358,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                         "Screenplay" or "Writer" when movie => PersonKind.Writer,
                         _ => (PersonKind?)null,
                     };
-                    if (kind is { } k && people.Count(x => x.Type == k) < 6 && CastMember(c, k, job) is { } p) people.Add(p);
+                    if (kind is { } k && people.Count(x => x.Type == k) < 6 && CastMember(c, k, job, context) is { } p) people.Add(p);
                 }
             }
 
@@ -366,7 +366,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 foreach (var c in creators.EnumerateArray().Take(6))
                 {
-                    if (CastMember(c, PersonKind.Creator, null) is { } p) people.Add(p);
+                    if (CastMember(c, PersonKind.Creator, null, context) is { } p) people.Add(p);
                 }
             }
 
@@ -377,7 +377,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// A cast or crew entry: the library's person when Jellyfin has them and the viewer can open their
         /// page (with its own photo), else the person's own page made from public data (photo by grant).
         /// </summary>
-        private BaseItemPerson? CastMember(JsonElement p, PersonKind kind, string? role)
+        private BaseItemPerson? CastMember(JsonElement p, PersonKind kind, string? role, Guid context)
         {
             var tmdb = Int(p, "id") ?? 0;
             var name = Str(p, "name");
@@ -394,7 +394,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 Name = name,
                 Role = role,
                 Type = kind,
-                PrimaryImageTag = Grant(guid, ImageType.Primary, 0, Str(p, "profilePath")),
+                // The photo is served while the page it is shown on is still the viewer's.
+                PrimaryImageTag = Grant(guid, ImageType.Primary, 0, Str(p, "profilePath"), context),
             };
         }
 

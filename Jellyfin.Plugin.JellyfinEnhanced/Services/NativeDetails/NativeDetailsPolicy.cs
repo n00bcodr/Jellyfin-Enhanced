@@ -357,6 +357,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>
+        /// <see cref="MayListAbsent"/> that reads a rating the parental cache doesn't hold (a restart, an
+        /// expired entry) instead of refusing: artwork grants outlive the page and the server process that
+        /// minted them. Shared and bounded like the page's own check; fails closed.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="title">Any synthetic id of the title.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>True when the title may be shown.</returns>
+        public async Task<bool> MayListAbsentAsync(User viewer, SyntheticId title, CancellationToken ct)
+        {
+            if (MayListAbsent(viewer, title)) return true;
+            if (!title.IsTitle) return false;
+            if (!await _parental.MaySeeAbsentAsync(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false)) return false;
+            return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title);
+        }
+
+        /// <summary>
         /// How a title a list names (a filmography, a discovery feed) is shown to the viewer, judged by the
         /// library first: the library copy they can open (a library card), or, with no copy anywhere, the
         /// absent title when its own page would open for them (<see cref="MayListAbsent"/>: the cached

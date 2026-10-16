@@ -221,7 +221,8 @@ public class ApiNativeDetailsTests
         public Mock<MediaBrowser.Controller.Drawing.IImageProcessor> ImageTags { get; } = new();
         public string Rating { get; set; } = "PG-13";
         private readonly string? _stateDir;
-        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter _parental;
+        private Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter _parental;
+        private readonly Func<Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter> _newParental;
         private readonly Mock<MediaBrowser.Controller.IServerApplicationHost> _host = new();
         private readonly Mock<MediaBrowser.Controller.Configuration.IServerConfigurationManager> _server = new();
         private readonly SpoilerNextUnwatchedService _next;
@@ -277,9 +278,10 @@ public class ApiNativeDetailsTests
             localization.Setup(l => l.GetRatingScore("TV-14", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(14, null));
             localization.Setup(l => l.GetRatingScore("G", "US")).Returns(new MediaBrowser.Model.Entities.ParentalRatingScore(1, null));
             _server.SetupGet(s => s.Configuration).Returns(new MediaBrowser.Model.Configuration.ServerConfiguration { MetadataCountryCode = "US" });
-            _parental = parentalBudget is { } budget
+            _newParental = () => parentalBudget is { } budget
                 ? new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger, budget)
                 : new Jellyfin.Plugin.JellyfinEnhanced.Services.SeerrParentalFilter(Seerr, Callers.Users.Object, localization.Object, _server.Object, Plugin.Core.Logger);
+            _parental = _newParental();
             _host.SetupGet(h => h.SystemId).Returns(Server);
             // Spoiler Guard as registered (its own library lookups are for collections and watched state only).
             var loose = new Mock<MediaBrowser.Controller.Library.ILibraryManager>();
@@ -289,9 +291,13 @@ public class ApiNativeDetailsTests
             Restart();
         }
 
-        /// <summary>A server restart: new artwork service, policy and facade (the same users, library and state folder).</summary>
-        public void Restart()
+        /// <summary>
+        /// A server restart: new artwork service, policy and facade (the same users, library and state folder);
+        /// with <paramref name="forgetRatings"/> the parental filter's rating cache is lost too, as in a real restart.
+        /// </summary>
+        public void Restart(bool forgetRatings = false)
         {
+            if (forgetRatings) _parental = _newParental();
             Artwork = new NativeDetailsArtwork(Images, _stateDir);
             Policy = new NativeDetailsPolicy(_parental, Source, Libraries, null, _stateDir, new NativeDetailsLibrary(Library.Object, null, LibraryRevision));
             Filter = new NativeDetailsFacadeFilter(Callers.Users.Object, Library.Object, Dto.Object, _host.Object, _server.Object, Source, Policy, Artwork, _parental, Plugin.Core.Manager, _strip, _spoilerUsers,
@@ -1073,6 +1079,9 @@ public class ApiNativeDetailsTests
             }
         }
 
+        // A part the viewer can open is listed as itself: native's own DTO (a stand-in with its id and number).
+        rig.Dto.Setup(d => d.GetBaseItemDto(It.Is<MediaBrowser.Controller.Entities.BaseItem>(i => i.Id == series.Id || i.Id == s1.Id || i.Id == s2.Id || i.Id == e1.Id || i.Id == e2.Id), It.IsAny<MediaBrowser.Controller.Dto.DtoOptions>(), It.IsAny<User>(), null))
+            .Returns((MediaBrowser.Controller.Entities.BaseItem i, MediaBrowser.Controller.Dto.DtoOptions _, User _, MediaBrowser.Controller.Entities.BaseItem? _) => new BaseItemDto { Id = i.Id, IndexNumber = i.IndexNumber, Name = "library " + i.Id.ToString("N") });
         return new Shelf(series.Id, s1.Id, s2.Id, e1.Id, e2.Id, hidden);
     }
 
@@ -1112,8 +1121,24 @@ public class ApiNativeDetailsTests
         Assert.Equal(200, await Item(SyntheticId.SeasonOf(83867, 1)));
         var seasons = Value<QueryResult<BaseItemDto>>((await Call(rig, "TvShows", "GetSeasons", me, new() { ["seriesId"] = series })).Result);
         Assert.Equal(new int?[] { 1 }, seasons.Items.Select(i => i.IndexNumber));
+        // What the viewer can open in the library is listed as itself, never as a stand-in from public data.
+        Assert.Equal(shelf.Season1, seasons.Items.Single().Id);
         var episodes = Value<QueryResult<BaseItemDto>>((await Call(rig, "TvShows", "GetEpisodes", me, new() { ["seriesId"] = series, ["seasonId"] = Id(SyntheticId.SeasonOf(83867, 1)) })).Result);
         Assert.Equal(new int?[] { 1, 3 }, episodes.Items.Select(i => i.IndexNumber));
+        Assert.Equal(new[] { shelf.Episode1, Id(SyntheticId.EpisodeOf(83867, 1, 3)) }, episodes.Items.Select(i => i.Id));
+        // A season page of the series: it belongs to the library's series (its links go there).
+        var seasonOne = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = Id(SyntheticId.SeasonOf(83867, 1)) })).Result);
+        Assert.Equal((shelf.Series, shelf.Series), (seasonOne.SeriesId, seasonOne.ParentId));
+        // jellyfin-web then lists the season's episodes by the library's series and the page's season.
+        var bySeries = Value<QueryResult<BaseItemDto>>((await Call(rig, "TvShows", "GetEpisodes", me, new() { ["seriesId"] = shelf.Series, ["seasonId"] = Id(SyntheticId.SeasonOf(83867, 1)) })).Result);
+        Assert.Equal(new int?[] { 1, 3 }, bySeries.Items.Select(i => i.IndexNumber));
+        // A series id that isn't a copy of this title (or one the viewer can't open) is a mismatched scope.
+        Assert.Equal(404, Status((await Call(rig, "TvShows", "GetEpisodes", me, new() { ["seriesId"] = Guid.NewGuid(), ["seasonId"] = Id(SyntheticId.SeasonOf(83867, 1)) })).Result));
+        var episodeThree = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", me, new() { ["itemId"] = Id(SyntheticId.EpisodeOf(83867, 1, 3)) })).Result);
+        Assert.Equal((shelf.Series, shelf.Season1, shelf.Season1), (episodeThree.SeriesId, episodeThree.SeasonId, episodeThree.ParentId));
+        // And an episode page's parents: the library's season and series.
+        var parents = Value<List<BaseItemDto>>((await Call(rig, "Library", "GetAncestors", me, new() { ["itemId"] = Id(SyntheticId.EpisodeOf(83867, 1, 3)) })).Result);
+        Assert.Equal(new[] { shelf.Season1, shelf.Series }, parents.Select(p => p.Id));
         Assert.Equal(2, episodes.TotalRecordCount);
         Assert.Equal(404, Status((await Call(rig, "TvShows", "GetEpisodes", me, new() { ["seriesId"] = series, ["seasonId"] = Id(SyntheticId.SeasonOf(83867, 2)) })).Result));
         Assert.Equal(404, Status((await Call(rig, "TvShows", "GetEpisodes", me, new() { ["seriesId"] = series, ["season"] = 2 })).Result));
@@ -1154,6 +1179,9 @@ public class ApiNativeDetailsTests
         var series = Id(SyntheticId.Series(83867));
         var episode = Id(SyntheticId.EpisodeOf(83867, 1, 1));
         var shelf = Library(rig, viewer, fan, other);
+        // A third season the library doesn't have.
+        rig.Source.Series = SeriesJson.Replace("{\"seasonNumber\":2,", "{\"seasonNumber\":3,\"name\":\"Season 3\",\"episodeCount\":8,\"airDate\":\"2027-04-22\",\"posterPath\":\"/s3.jpg\"},{\"seasonNumber\":2,", StringComparison.Ordinal);
+        rig.Source.KnownSeasons.Add(3);
         async Task<BaseItemDto> Item(User who, Guid id) => Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(who), new() { ["itemId"] = id })).Result);
         Dictionary<string, object?> Still(BaseItemDto dto) => new() { ["itemId"] = dto.Id, ["imageType"] = ImageType.Primary, ["tag"] = dto.ImageTags[ImageType.Primary], ["maxWidth"] = 300 };
         void Guard(User who, Action<Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur> on)
@@ -1184,12 +1212,17 @@ public class ApiNativeDetailsTests
             Assert.Equal(200, Status((await Call(rig, "Image", "GetItemImage", null, new(seriesPoster))).Result));
             viewer.DisplayMissingEpisodes = true;
             var list = Value<QueryResult<BaseItemDto>>((await Call(rig, "TvShows", "GetEpisodes", Me(viewer), new() { ["seriesId"] = series, ["seasonId"] = Id(SyntheticId.SeasonOf(83867, 1)) })).Result);
-            Assert.All(list.Items, e => Assert.StartsWith("Season 1, Episode ", e.Name, StringComparison.Ordinal));
-            Assert.All(list.Items, e => Assert.False(e.ImageTags?.ContainsKey(ImageType.Primary) == true));
-            // Seasons: the first keeps its poster (an entry point, as in the library); later ones don't.
+            // Episodes the viewer can open in the library are listed as themselves (Spoiler Guard's library
+            // rules apply to them, by watched state); the absent ones are stripped here.
+            var absent = list.Items.Where(e => SyntheticId.HasNamespace(e.Id)).ToList();
+            Assert.Equal(new[] { shelf.Episode1, shelf.Episode2 }, list.Items.Where(e => !SyntheticId.HasNamespace(e.Id)).Select(e => e.Id));
+            Assert.NotEmpty(absent);
+            Assert.All(absent, e => Assert.StartsWith("Season 1, Episode ", e.Name, StringComparison.Ordinal));
+            Assert.All(absent, e => Assert.False(e.ImageTags?.ContainsKey(ImageType.Primary) == true));
+            // Seasons: the library's own are themselves; a later absent one has no poster.
             var seasons = Value<QueryResult<BaseItemDto>>((await Call(rig, "TvShows", "GetSeasons", Me(viewer), new() { ["seriesId"] = series })).Result).Items;
-            Assert.True(seasons.Single(x => x.IndexNumber == 1).ImageTags.ContainsKey(ImageType.Primary));
-            Assert.False(seasons.Single(x => x.IndexNumber == 2).ImageTags?.ContainsKey(ImageType.Primary) == true);
+            Assert.Equal(new[] { shelf.Season1, shelf.Season2 }, seasons.Where(x => x.IndexNumber is 1 or 2).Select(x => x.Id));
+            Assert.False(seasons.Single(x => x.IndexNumber == 3).ImageTags?.ContainsKey(ImageType.Primary) == true);
 
             // The season's rows (the status page) carry no plot either, by the same switches.
             var rows = (await Pages(rig).ResolveAsync(viewer.Id, Id(SyntheticId.SeasonOf(83867, 1)), CancellationToken.None)).Title!;
@@ -2046,6 +2079,109 @@ public class ApiNativeDetailsTests
             Assert.DoesNotContain(dto.People, p => p.Name == "Tony Gilroy");   // the series' creators stay on the series page
         }
     }
+
+    [Fact]
+    public void AGrantLastsADayFromTheHourItWasMintedInAndNeverFromTheFuture()
+    {
+        var now = new DateTime(2026, 10, 17, 10, 30, 0, DateTimeKind.Utc);
+        using var images = new IntegrationTransport((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var artwork = new NativeDetailsArtwork(images, null, () => now);
+        var owner = Guid.NewGuid();
+        var viewer = Guid.NewGuid();
+        var tag = artwork.Mint(owner, ImageType.Primary, 0, "/a.jpg", viewer, "r1");
+        // The same image in the same hour keeps its tag (a page drawn twice reuses its URLs).
+        now = now.AddMinutes(20);
+        Assert.Equal(tag, artwork.Mint(owner, ImageType.Primary, 0, "/a.jpg", viewer, "r1"));
+        Assert.True(artwork.TryRead(tag, out var grant));
+        Assert.Equal(owner, grant!.Context);                     // a title's own artwork: its own page
+        now = new DateTime(2026, 10, 18, 9, 59, 0, DateTimeKind.Utc);
+        Assert.True(artwork.TryRead(tag, out _));
+        now = new DateTime(2026, 10, 18, 10, 0, 0, DateTimeKind.Utc);
+        Assert.False(artwork.TryRead(tag, out _));               // 24 hours after its hour began
+        // A clock that went back two hours doesn't make a grant from "later" acceptable.
+        var later = artwork.Mint(owner, ImageType.Primary, 0, "/a.jpg", viewer, "r1");
+        now = now.AddHours(-2);
+        Assert.False(artwork.TryRead(later, out _));
+        now = now.AddHours(1);
+        Assert.True(artwork.TryRead(later, out _));
+    }
+
+    [Fact]
+    public async Task ACastPhotoIsServedWhileThePageItWasShownOnIsStillTheViewers()
+    {
+        using var rig = new Rig();
+        long revision = 1;
+        rig.LibraryRevision = () => revision;
+        rig.Restart();
+        var viewer = rig.Person();
+        var movie = SyntheticId.Movie(693134);
+        var dto = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = Id(movie) })).Result);
+        var bardem = dto.People.Single(p => p.Name == "Javier Bardem");
+        Assert.True(rig.Artwork.TryRead(bardem.PrimaryImageTag, out var castGrant));
+        Assert.Equal((bardem.Id, Id(movie)), (castGrant!.Owner, castGrant.Context));
+        var ownPage = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = bardem.Id })).Result);
+        Assert.True(rig.Artwork.TryRead(ownPage.ImageTags[ImageType.Primary], out var pageGrant));
+        Assert.Equal(bardem.Id, pageGrant!.Context);
+        Dictionary<string, object?> Args(string tag) => new() { ["itemId"] = bardem.Id, ["imageType"] = ImageType.Primary, ["tag"] = tag, ["maxWidth"] = 300 };
+        Assert.Equal(200, Status((await Call(rig, "Image", "GetItemImage", null, Args(bardem.PrimaryImageTag!))).Result));
+        // The library gets a copy of the title that is hidden from the viewer: the title's page is no
+        // longer theirs, and neither are the photos it showed; the person's own page still is.
+        Copy(rig, true, 693134, "Dune: Part Two", Array.Empty<User>(), viewer);
+        revision++;
+        Assert.Equal(404, Status((await Call(rig, "Image", "GetItemImage", null, Args(bardem.PrimaryImageTag!))).Result));
+        Assert.Equal(200, Status((await Call(rig, "Image", "GetItemImage", null, Args(ownPage.ImageTags[ImageType.Primary]))).Result));
+        // The person page's rule is read again when its photo is served: an unknown person (the source says
+        // there is no such person now) loses it.
+        rig.Source.Down = true;
+        Assert.Equal(404, Status((await Call(rig, "Image", "GetItemImage", null, Args(ownPage.ImageTags[ImageType.Primary]))).Result));
+    }
+
+    [Fact]
+    public async Task ARestrictedViewersArtworkStillLoadsAfterARestartForgotTheTitlesRating()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "je-3h1-grants-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var rig = new Rig(dir);
+            var viewer = rig.Person();
+            viewer.MaxParentalRatingScore = 14;
+            var movie = Id(SyntheticId.Movie(693134));
+            var tag = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = movie })).Result).ImageTags[ImageType.Primary];
+            var args = new Dictionary<string, object?> { ["itemId"] = movie, ["imageType"] = ImageType.Primary, ["tag"] = tag, ["maxWidth"] = 300 };
+            Assert.Equal(200, Status((await Call(rig, "Image", "GetItemImage", null, new(args))).Result));
+            // A restart: the key and the policy revision are the same, the rating cache is empty. The rating is read again.
+            rig.Restart(forgetRatings: true);
+            Assert.Equal(200, Status((await Call(rig, "Image", "GetItemImage", null, new(args))).Result));
+            // A rating that can't be placed under the limit any more (re-rated while the server was down) is
+            // refused once read: fail closed.
+            rig.Restart(forgetRatings: true);
+            rig.Rating = "R";
+            Assert.Equal(404, Status((await Call(rig, "Image", "GetItemImage", null, new(args))).Result));
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
+
+    [Fact]
+    public async Task ASimilarTitleTheLibraryHasButSeerrDoesntNameIsShownAsTheViewersCopyOrLeftOut()
+    {
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        var blocked = rig.Person();
+        // Dune (2021) is recommended without a library link from Seerr, but the library has it.
+        var copy = Copy(rig, true, 438631, "Dune", new[] { viewer }, blocked);
+        rig.Dto.Setup(d => d.GetBaseItemDto(copy, It.IsAny<MediaBrowser.Controller.Dto.DtoOptions>(), viewer, null)).Returns(new BaseItemDto { Id = copy.Id, Name = "Dune" });
+        async Task<BaseItemDto[]> Similar(User who) => Value<QueryResult<BaseItemDto>>((await Call(rig, "Library", "GetSimilarItems", Me(who), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result).Items.ToArray();
+        var mine = await Similar(viewer);
+        Assert.Equal(copy.Id, mine.Single(i => i.Name == "Dune").Id);       // the library's own, not a stand-in
+        var theirs = await Similar(blocked);
+        Assert.DoesNotContain(theirs, i => i.Name == "Dune" || i.Id == copy.Id);   // hidden from them: not remade from public data
+        Assert.Contains(theirs, i => i.Name == "Blade Runner 2049");
+    }
+
 }
 
 /// <summary>The real Seerr-backed source: shared fetches, 404 vs outage, and a bounded linked-account check.</summary>

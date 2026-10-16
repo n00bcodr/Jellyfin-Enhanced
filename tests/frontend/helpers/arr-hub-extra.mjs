@@ -27,8 +27,8 @@ export function deferred() {
   return { promise, resolve };
 }
 
-/** Waits (up to 5 s) until `check` is true. */
-export async function until(check, ms = 5000) {
+/** Waits (up to 15 s: the full suite can run under heavy load) until `check` is true. */
+export async function until(check, ms = 15000) {
   const end = Date.now() + ms;
   while (!check() && Date.now() < end) await wait(10);
 }

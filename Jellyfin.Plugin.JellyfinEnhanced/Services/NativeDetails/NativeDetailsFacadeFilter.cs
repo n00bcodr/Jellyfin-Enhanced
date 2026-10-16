@@ -215,7 +215,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (route.Answer == FacadeAnswer.PassThrough) return null;
 
             var ct = http.RequestAborted;
-            if (route.Answer == FacadeAnswer.Image) return await ImageAsync(context, hits[0].Id, ct).ConfigureAwait(false);
+            if (route.Answer == FacadeAnswer.Image) return await ImageAsync(context, hits[0].Id, serverId, ct).ConfigureAwait(false);
 
             var (viewer, refusal) = Viewer(context);
             if (viewer == null) return refusal;
@@ -245,7 +245,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     // A real library item with this id (never expected) wins.
                     if (_library.GetItemById(guid) != null) return null;
                     if (!title.IsTitle) return await LinkedPageAsync(await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false);
-                    return Guard(await ItemAsync(await Dtos().ConfigureAwait(false), title, ct).ConfigureAwait(false), Spoilers(), viewer);
+                    return Guard(Parents(await ItemAsync(await Dtos().ConfigureAwait(false), title, ct).ConfigureAwait(false), viewer, title), Spoilers(), viewer);
                 case FacadeAnswer.ThemeMedia:
                     return Ok(new AllThemeMediaResult { ThemeSongsResult = Theme(guid), ThemeVideosResult = Theme(guid), SoundtrackSongsResult = Theme(guid) });
                 case FacadeAnswer.ThemeResult:
@@ -255,13 +255,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 case FacadeAnswer.EmptyArray:
                     return Ok(Array.Empty<BaseItemDto>());
                 case FacadeAnswer.Ancestors:
-                    return Guard(await AncestorsAsync(await Dtos().ConfigureAwait(false), title, ct).ConfigureAwait(false), Spoilers(), viewer);
+                    return Library(Guard(await AncestorsAsync(context, await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false), Spoilers(), viewer), context, viewer);
                 case FacadeAnswer.Seasons:
-                    return Guard(await SeasonsAsync(context, await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false), Spoilers(), viewer);
+                    return Library(Guard(await SeasonsAsync(context, await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false), Spoilers(), viewer), context, viewer);
                 case FacadeAnswer.Episodes:
-                    return Guard(await EpisodesAsync(context, await Dtos().ConfigureAwait(false), viewer, hits, ct).ConfigureAwait(false), Spoilers(), viewer);
+                    return Library(Guard(await EpisodesAsync(context, await Dtos().ConfigureAwait(false), viewer, hits, ct).ConfigureAwait(false), Spoilers(), viewer), context, viewer);
                 case FacadeAnswer.Similar:
-                    return await SimilarAsync(context, await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false);
+                    return Library(await SimilarAsync(context, await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false), context, viewer);
                 default:
                     return Refuse(method);
             }
@@ -360,6 +360,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return null;
         }
 
+        /// <summary>
+        /// A season or episode page of a series the viewer can open in the library (this season or episode
+        /// isn't in it): its series (and, for an episode, its season when the viewer can open it) are the
+        /// library's own, so the page's links go there rather than to stand-ins from public data.
+        /// </summary>
+        private IActionResult Parents(IActionResult result, User viewer, SyntheticId title)
+        {
+            if (title.Kind is not (SyntheticKind.Season or SyntheticKind.Episode) || result is not OkObjectResult { Value: BaseItemDto dto }) return result;
+            var physical = _policy.Physical(viewer, false, title.TmdbId, null);
+            if (physical.Shown.Count == 0) return result;
+            var series = physical.Shown[0];
+            dto.SeriesId = series;
+            if (title.Kind == SyntheticKind.Season)
+            {
+                dto.ParentId = series;
+            }
+            else if (physical.VisibleSeasons.TryGetValue(title.Season, out var season))
+            {
+                dto.SeasonId = season;
+                dto.ParentId = season;
+            }
+
+            return result;
+        }
+
         private async Task<IActionResult> ItemAsync(NativeDetailsDtos dtos, SyntheticId title, CancellationToken ct)
         {
             var logo = _source.LogoPathAsync(title.IsMovie, title.TmdbId, ct);
@@ -393,22 +418,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
         }
 
-        private async Task<IActionResult> AncestorsAsync(NativeDetailsDtos dtos, SyntheticId title, CancellationToken ct)
+        private async Task<IActionResult> AncestorsAsync(ActionExecutingContext context, NativeDetailsDtos dtos, User viewer, SyntheticId title, CancellationToken ct)
         {
             if (title.Kind is not (SyntheticKind.Season or SyntheticKind.Episode)) return Ok(Array.Empty<BaseItemDto>());
             var series = await _source.SeriesAsync(title.TmdbId, ct).ConfigureAwait(false);
             if (series.Data is not { } s) return Failed(series);
             var logo = await _source.LogoPathAsync(false, title.TmdbId, ct).ConfigureAwait(false);
+            // The parts the viewer can open in the library are themselves (a season of a series Jellyfin has
+            // but this season isn't in it), never a stand-in from public data.
+            var physical = _policy.Physical(viewer, false, title.TmdbId, null);
+            var options = Options(context);
             var list = new List<BaseItemDto>();
             if (title.Kind == SyntheticKind.Episode)
             {
-                var summary = NativeDetailsDtos.Seasons(s).FirstOrDefault(e => NativeDetailsDtos.Int(e, "seasonNumber") == title.Season);
-                if (summary.ValueKind == JsonValueKind.Object) list.Add(dtos.Season(title.SeasonId, s, summary, logo));
+                if (Real(physical.VisibleSeasons.TryGetValue(title.Season, out var held) ? held : null, viewer, options) is { } real) list.Add(real);
+                else
+                {
+                    var summary = NativeDetailsDtos.Seasons(s).FirstOrDefault(e => NativeDetailsDtos.Int(e, "seasonNumber") == title.Season);
+                    if (summary.ValueKind == JsonValueKind.Object) list.Add(dtos.Season(title.SeasonId, s, summary, logo));
+                }
             }
 
-            list.Add(dtos.Series(title.SeriesId, s, logo));
+            list.Add(Real(physical.Shown.Count > 0 ? physical.Shown[0] : null, viewer, options) ?? dtos.Series(title.SeriesId, s, logo));
             return Ok(list);
         }
+
+        /// <summary>The fields a native list request asked for (native builds its DTOs with exactly those).</summary>
+        private static DtoOptions Options(ActionExecutingContext context)
+            => new() { Fields = Arg<ItemFields[]>(context, "fields") ?? Array.Empty<ItemFields>() };
+
+        /// <summary>The library item's own DTO when the viewer can open it (Jellyfin's check for them), else null.</summary>
+        private BaseItemDto? Real(Guid? id, User viewer, DtoOptions options)
+            => id is Guid item && _library.GetItemById<BaseItem>(item, viewer) is { } found ? _dto.GetBaseItemDto(found, options, viewer) : null;
 
         private async Task<IActionResult> SeasonsAsync(ActionExecutingContext context, NativeDetailsDtos dtos, User viewer, SyntheticId series, CancellationToken ct)
         {
@@ -418,11 +459,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var logo = await _source.LogoPathAsync(false, series.TmdbId, ct).ConfigureAwait(false);
             var special = Arg<bool?>(context, "isSpecialSeason");
             // A season the library has but hides from this viewer is never drawn from public data instead.
-            var hidden = _policy.Physical(viewer, false, series.TmdbId, null).HiddenSeasons;
+            var physical = _policy.Physical(viewer, false, series.TmdbId, null);
+            var hidden = physical.HiddenSeasons;
+            var options = Options(context);
+            // A season the viewer can open in the library is listed as itself.
             var items = NativeDetailsDtos.Seasons(s)
                 .Where(e => special == null || (NativeDetailsDtos.Int(e, "seasonNumber") == 0) == special)
                 .Where(e => !hidden.Contains(NativeDetailsDtos.Int(e, "seasonNumber") ?? 0))
-                .Select(e => dtos.Season(SyntheticId.SeasonOf(series.TmdbId, NativeDetailsDtos.Int(e, "seasonNumber") ?? 0), s, e, logo))
+                .Select(e => NativeDetailsDtos.Int(e, "seasonNumber") ?? 0)
+                .Select(n => Real(physical.VisibleSeasons.TryGetValue(n, out var held) ? held : null, viewer, options)
+                    ?? dtos.Season(SyntheticId.SeasonOf(series.TmdbId, n), s, NativeDetailsDtos.Seasons(s).First(e => (NativeDetailsDtos.Int(e, "seasonNumber") ?? 0) == n), logo))
                 .ToArray();
             return Ok(new QueryResult<BaseItemDto>(0, items.Length, items));
         }
@@ -431,8 +477,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         {
             var empty = Ok(new QueryResult<BaseItemDto>(0, 0, Array.Empty<BaseItemDto>()));
             var series = hits.FirstOrDefault(h => h.Argument == "seriesId");
-            if (series.Argument == null || series.Id.Kind != SyntheticKind.Series) return new NotFoundResult();
             var seasonHit = hits.FirstOrDefault(h => h.Argument == "seasonId");
+            // A season page of a series the library has (this season isn't in it) names the library's series:
+            // the scope is that title when the series id is a copy of it the viewer can open.
+            if (series.Argument == null && seasonHit.Argument != null && seasonHit.Id.Kind == SyntheticKind.Season
+                && Arg<Guid?>(context, "seriesId") is { } realSeries && _policy.Physical(viewer, false, seasonHit.Id.TmdbId, null).Shown.Contains(realSeries))
+            {
+                series = ("seriesId", SyntheticId.Series(seasonHit.Id.TmdbId));
+            }
+
+            if (series.Argument == null || series.Id.Kind != SyntheticKind.Series) return new NotFoundResult();
             if (seasonHit.Argument != null && (seasonHit.Id.Kind != SyntheticKind.Season || seasonHit.Id.TmdbId != series.Id.TmdbId)) return new NotFoundResult();
             // A real season/series id next to a synthetic one is a mismatched scope.
             if (seasonHit.Argument == null && Arg<Guid?>(context, "seasonId") is { } other && other != Guid.Empty) return new NotFoundResult();
@@ -458,9 +512,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var seasonData = await _source.SeasonAsync(series.Id.TmdbId, number.Value, ct).ConfigureAwait(false);
             if (seasonData.Data is not { } se) return empty;
             var logo = await _source.LogoPathAsync(false, series.Id.TmdbId, ct).ConfigureAwait(false);
+            var options = Options(context);
+            // An episode the viewer can open in the library is listed as itself.
             var all = NativeDetailsDtos.Episodes(se)
                 .Where(e => !physical.HiddenEpisodes.Contains(NativeDetailsDtos.Int(e, "episodeNumber") ?? 0))
-                .Select(e => dtos.Episode(SyntheticId.EpisodeOf(series.Id.TmdbId, number.Value, NativeDetailsDtos.Int(e, "episodeNumber") ?? 0), sd, se, e, logo))
+                .Select(e => Real(physical.VisibleEpisodes.TryGetValue(NativeDetailsDtos.Int(e, "episodeNumber") ?? 0, out var held) ? held : null, viewer, options)
+                    ?? dtos.Episode(SyntheticId.EpisodeOf(series.Id.TmdbId, number.Value, NativeDetailsDtos.Int(e, "episodeNumber") ?? 0), sd, se, e, logo))
                 .ToArray();
             var start = Math.Max(0, Arg<int?>(context, "startIndex") ?? 0);
             var limit = Arg<int?>(context, "limit") is int l && l > 0 ? l : int.MaxValue;
@@ -500,10 +557,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                         continue;
                     }
 
-                    // An absent title is listed only when its own page would open for this viewer.
+                    // A copy Seerr doesn't name but the library has (found by TMDB id): that copy when the viewer
+                    // can open it, left out when it's hidden from them; an absent title only when its own page
+                    // would open for this viewer.
                     var tmdb = NativeDetailsDtos.Int(r, "id") ?? 0;
-                    SyntheticId? absent = NativeDetailsDtos.Str(r, "mediaType") switch { "movie" => SyntheticId.Movie(tmdb), "tv" => SyntheticId.Series(tmdb), _ => null };
-                    if (absent is not { } recommended || tmdb <= 0 || !_policy.MayListAbsent(viewer, recommended)) continue;
+                    var kind = NativeDetailsDtos.Str(r, "mediaType");
+                    if (tmdb <= 0 || kind is not ("movie" or "tv")) continue;
+                    var listed = _policy.Listed(viewer, kind == "movie", tmdb);
+                    if (listed.LibraryCopy is { } copy)
+                    {
+                        if (Real(copy, viewer, options) is { } own) items.Add(own);
+                        continue;
+                    }
+
+                    if (!listed.Shown) continue;
                     if (dtos.Card(r) is { } card) items.Add(card);
                 }
             }
@@ -540,7 +607,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return NativeDetailsDtos.Str(media, "jellyfinMediaId") is { } jf && Guid.TryParse(jf, out var id) && hidden.Contains(id.ToString("N"));
         }
 
-        private async Task<IActionResult> ImageAsync(ActionExecutingContext context, SyntheticId owner, CancellationToken ct)
+        private async Task<IActionResult> ImageAsync(ActionExecutingContext context, SyntheticId owner, string serverId, CancellationToken ct)
         {
             var tag = Arg<string>(context, "tag");
             if (!_artwork.TryRead(tag, out var grant) || grant == null) return new NotFoundResult();
@@ -562,7 +629,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             // Grants outlive their page: the viewer-level eligibility (Seerr linkage) and, for a title's own
             // artwork, the title-level one (cached rating, request visibility) are checked again.
             if (!await _policy.ViewerMayUseAsync(viewer, ct).ConfigureAwait(false)) return new NotFoundResult();
-            if (owner.Kind != SyntheticKind.Person && !_policy.MayListAbsent(viewer, owner)) return new NotFoundResult();
+            // And the page it was minted for: the title (its own artwork and the cast photos shown on it),
+            // or a person's own page (an adult performer's photo isn't for a viewer with a parental limit).
+            // A rating the cache no longer holds (a restart) is read again rather than refused.
+            if (!SyntheticId.TryParse(grant.Context, serverId, out var page)) return new NotFoundResult();
+            if (page.IsTitle)
+            {
+                if (!await _policy.MayListAbsentAsync(viewer, page, ct).ConfigureAwait(false)) return new NotFoundResult();
+            }
+            else if (page.Kind == SyntheticKind.Person)
+            {
+                if ((await _source.PersonAsync(page.TmdbId, ct).ConfigureAwait(false)).Data is not { } person || !NativeDetailsPolicy.PersonAllowed(viewer, person)) return new NotFoundResult();
+            }
+            else
+            {
+                return new NotFoundResult();
+            }
             // An episode still or a later season's poster of a title the viewer guards with Spoiler Guard:
             // never served (a page drawn before they guarded it still holds the URL).
             if (HidesArtwork(owner, grant.Type) && Guarded(context.HttpContext, viewer, owner) != null) return new NotFoundResult();
@@ -598,6 +680,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// nothing watched (the absent parts never are): the admin's and viewer's strip, and no
         /// plot-specific artwork (no grant, so no image; the page falls back to the series' own art).
         /// </summary>
+        /// <summary>
+        /// Spoiler Guard's own strip over the library items a list holds (parts the viewer can open in the
+        /// library are listed as themselves): JE's strip filter never sees these answers otherwise.
+        /// </summary>
+        private IActionResult Library(IActionResult result, ActionExecutingContext context, User viewer)
+        {
+            _spoilerStrip?.StripLibraryItems(result, context, viewer.Id);
+            return result;
+        }
+
         private IActionResult Guard(IActionResult result, Configuration.UserSpoilerBlur? state, User viewer)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -609,7 +701,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 IEnumerable<BaseItemDto> list => list,
                 _ => Array.Empty<BaseItemDto>(),
             };
-            foreach (var dto in items)
+            // Library items in the list are stripped by Spoiler Guard's own rules (Library), by watched state.
+            foreach (var dto in items.Where(d => SyntheticId.HasNamespace(d.Id)))
             {
                 _spoilerStrip.StripAbsent(dto, state, config, viewer.Id);
                 if (!HidesArtwork(dto.Type, dto.IndexNumber ?? 0, ImageType.Primary)) continue;

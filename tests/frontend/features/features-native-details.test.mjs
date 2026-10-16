@@ -233,7 +233,7 @@ test('a page shown again (Back, restore) is checked again and refused when it ma
   allowed = false;
   await h.JE.internals.nativeDetails.onView();
   assert.equal(calls, 2);
-  assert.equal(h.resolved.length, 1); // where it opens is asked once per page
+  assert.equal(h.resolved.length, 2); // where it opens is asked again: the title may be in the library now
   const page = h.document.getElementById('itemDetailPage');
   const box = h.document.querySelector('.je-native-absent-refusal');
   assert.ok(box);
@@ -618,4 +618,73 @@ test('a series page\'s ratings come from its native route and are drawn as Rotte
   await h.JE.internals.nativeDetails.onView();
   await wait(20);
   assert.deepEqual(JSON.parse(JSON.stringify(ratings)), [{ rt: { criticsScore: 96 } }]);
+});
+
+test('a restored page shows none of its earlier content while it is checked again, and a copy that arrived since wins', async t => {
+  let release;
+  let gate = null;
+  let resolveTo = null;
+  const copy = '0123456789abcdef0123456789abcdef';
+  const h = setup(t, {
+    html: PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`,
+    getItem: async () => { if (gate) await gate; return { Id: MOVIE, Type: 'Movie', Name: 'Dune' }; },
+    resolve: () => resolveTo,
+  });
+  await h.JE.internals.nativeDetails.onView();
+  const page = h.document.getElementById('itemDetailPage');
+  const html = h.document.documentElement;
+  assert.equal(page.classList.contains('je-native-absent-checking'), false);
+  // Back to the same page: hidden (backdrop too) until the check passes, then shown as it was.
+  gate = new Promise(r => { release = r; });
+  const again = h.JE.internals.nativeDetails.onView();
+  await wait(5);
+  assert.ok(page.classList.contains('je-native-absent-checking'));
+  assert.ok(html.classList.contains('je-native-absent-checking'));
+  assert.equal(h.window.getComputedStyle(page.querySelector('.detailPageContent')).visibility, 'hidden');
+  release();
+  await again;
+  assert.equal(page.classList.contains('je-native-absent-checking'), false);
+  assert.equal(html.classList.contains('je-native-absent-checking'), false);
+  assert.ok(h.document.querySelector('.je-native-absent-actions'));
+  // Back again after the title arrived: its library page replaces this one, never shown in between.
+  gate = null;
+  resolveTo = { itemId: copy };
+  await h.JE.internals.nativeDetails.onView();
+  assert.equal(h.window.location.hash, `#/details?id=${copy}&serverId=${SERVER}`);
+  assert.equal(html.classList.contains('je-native-absent-checking'), false);
+});
+
+test('a native page shown again after the setting was turned off keeps nothing of the title on screen', async t => {
+  const cap = { Enabled: true, ContractVersion: 1 };
+  const h = setup(t, { cap, html: PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`, getItem: async () => ({ Id: MOVIE, Type: 'Movie', Name: 'Dune' }) });
+  await h.JE.internals.nativeDetails.onView();
+  cap.Enabled = false;
+  await h.JE.internals.nativeDetails.onView();
+  const page = h.document.getElementById('itemDetailPage');
+  assert.ok(h.document.querySelector('.je-native-absent-refusal'));
+  assert.equal(h.window.getComputedStyle(page.querySelector('.detailPageContent')).display, 'none');
+});
+
+test('Back to a native page after leaving it (its module state ended) is hidden until checked again too', async t => {
+  let release;
+  let gate = null;
+  const h = setup(t, {
+    html: PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`,
+    getItem: async () => { if (gate) await gate; return { Id: MOVIE, Type: 'Movie', Name: 'Dune' }; },
+  });
+  const nd = h.JE.internals.nativeDetails;
+  await nd.onView();
+  const page = h.document.getElementById('itemDetailPage');
+  // Leaving for Home ends the page's state; jellyfin-web keeps the details page's element for Back.
+  h.window.location.hash = '#/home';
+  await nd.onView();
+  assert.equal(nd.current(), null);
+  gate = new Promise(r => { release = r; });
+  h.window.location.hash = `#/details?id=${MOVIE}&serverId=${SERVER}`;
+  const back = nd.onView();
+  await wait(5);
+  assert.ok(page.classList.contains('je-native-absent-checking'));
+  release();
+  await back;
+  assert.equal(page.classList.contains('je-native-absent-checking'), false);
 });

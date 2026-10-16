@@ -46,6 +46,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// </summary>
         public IReadOnlySet<(int Season, int Episode)> HiddenSeriesEpisodes { get; init; } = new HashSet<(int Season, int Episode)>();
 
+        /// <summary>Season numbers the viewer can open in the library, with the season item (a real one, not a placeholder).</summary>
+        public IReadOnlyDictionary<int, Guid> VisibleSeasons { get; init; } = new Dictionary<int, Guid>();
+
+        /// <summary>Episode numbers (of the season asked for) the viewer can open in the library, with the episode item (a file, not a missing-episode placeholder).</summary>
+        public IReadOnlyDictionary<int, Guid> VisibleEpisodes { get; init; } = new Dictionary<int, Guid>();
+
         /// <summary>True when the title, a season or an episode of a synthetic id is hidden from the viewer.</summary>
         /// <param name="id">Synthetic id.</param>
         /// <returns>True when hidden.</returns>
@@ -179,9 +185,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 .Where(g => !g.Any(s => Visible(s.Id, s.SeriesId)))
                 .Select(g => g.Key)
                 .ToHashSet();
+            // The seasons the viewer can open: a list of the title's seasons shows these as they are, never
+            // a stand-in from public data.
+            var visibleSeasons = new Dictionary<int, Guid>();
+            foreach (var s in seasons.Where(s => !s.IsVirtualItem && !hiddenSeasons.Contains(s.IndexNumber!.Value)))
+            {
+                if (!visibleSeasons.ContainsKey(s.IndexNumber!.Value) && Visible(s.Id, s.SeriesId)) visibleSeasons[s.IndexNumber.Value] = s.Id;
+            }
 
             var hiddenEpisodes = new HashSet<int>();
             var hiddenSeriesEpisodes = new HashSet<(int Season, int Episode)>();
+            var visibleEpisodes = new Dictionary<int, Guid>();
             // The season asked for, or every season the viewer can see (a hidden season hides all of its episodes).
             var wanted = seasons.Where(s => season is int number ? s.IndexNumber == number && !hiddenSeasons.Contains(number) : everySeason && !hiddenSeasons.Contains(s.IndexNumber!.Value)).ToList();
             if (wanted.Count > 0)
@@ -204,8 +218,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     var first = e.IndexNumber!.Value;
                     var last = Math.Clamp(e.IndexNumberEnd ?? first, first, first + MaxRange);
                     var numbers = Enumerable.Range(first, last - first + 1).Select(n => (s, n));
-                    if (Visible(e.Id, e.SeriesId)) visible.UnionWith(numbers);
-                    else hidden.UnionWith(numbers);
+                    if (Visible(e.Id, e.SeriesId))
+                    {
+                        visible.UnionWith(numbers);
+                        // A file the viewer can open stands for its episode in the asked season's list.
+                        if (season is int only && !e.IsVirtualItem && !visibleEpisodes.ContainsKey(first) && s == only) visibleEpisodes[first] = e.Id;
+                    }
+                    else
+                    {
+                        hidden.UnionWith(numbers);
+                    }
                 }
 
                 // A number some visible item carries (another copy, a multi-part file) is not hidden.
@@ -214,7 +236,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 else hiddenSeriesEpisodes.UnionWith(hidden);
             }
 
-            return new PhysicalTitle { Copies = ids, Shown = title.Shown, HiddenSeasons = hiddenSeasons, HiddenEpisodes = hiddenEpisodes, HiddenSeriesEpisodes = hiddenSeriesEpisodes };
+            return new PhysicalTitle
+            {
+                Copies = ids, Shown = title.Shown, HiddenSeasons = hiddenSeasons, HiddenEpisodes = hiddenEpisodes, HiddenSeriesEpisodes = hiddenSeriesEpisodes,
+                VisibleSeasons = visibleSeasons, VisibleEpisodes = visibleEpisodes,
+            };
         }
 
         private bool CanOpen(Guid id, User viewer) => _library.GetItemById<BaseItem>(id, viewer) != null;

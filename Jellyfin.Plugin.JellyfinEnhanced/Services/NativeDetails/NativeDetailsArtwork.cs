@@ -21,16 +21,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
     /// <param name="Path">Fixed TMDB file path.</param>
     /// <param name="Viewer">The viewer the grant was minted for.</param>
     /// <param name="PolicyRevision">The viewer's policy revision when minted.</param>
-    public sealed record ArtworkGrant(Guid Owner, ImageType Type, int Index, string Path, Guid Viewer, string PolicyRevision);
+    /// <param name="Context">
+    /// The page the grant was minted for (a title, or a person's own page): a cast photo on a title's page
+    /// is served while that title is still the viewer's, not just while the person is.
+    /// </param>
+    /// <param name="IssuedHour">The hour the grant was minted in (hours since the Unix epoch).</param>
+    public sealed record ArtworkGrant(Guid Owner, ImageType Type, int Index, string Path, Guid Viewer, string PolicyRevision, Guid Context, long IssuedHour);
 
     /// <summary>
     /// Signed artwork grants and the TMDB image fetch behind them. A synthetic page's image tags are
-    /// <c>na1.&lt;hex payload&gt;.&lt;hex HMAC-SHA256&gt;</c>: the payload binds the image owner, type,
-    /// index, the fixed TMDB file path, the viewer and the viewer's policy revision. Images are
+    /// <c>na1.&lt;hex payload&gt;.&lt;hex HMAC-SHA256&gt;</c>: the payload (version 2) binds the image owner,
+    /// type, index, the fixed TMDB file path, the viewer, the viewer's policy revision, the page it was
+    /// minted for and the hour it was minted in. A grant lasts <see cref="GrantLifetimeHours"/> hours (a
+    /// page open longer gets new ones when it is drawn again; within an hour the same image keeps the
+    /// same tag); version-1 grants (no page, no time) are no longer accepted. Images are
     /// requested without credentials (plain &lt;img&gt;), so the grant is the authority: every GET/HEAD
     /// checks it against the viewer's current policy revision (parental rules, library access, feature
-    /// and Seerr switches, import block) and re-runs the viewer's eligibility (Seerr linkage) and, for a
-    /// title's own artwork, the title's cached eligibility; cast photos are bound to the viewer only.
+    /// and Seerr switches, import block) and re-runs the viewer's eligibility (Seerr linkage) and the
+    /// page's: the title's (its artwork and the cast photos on it), or the person page's.
     /// Answers are never cacheable
     /// by the browser or a proxy (no 304). The key is kept in the plugin's data folder (owner-only),
     /// so a restart doesn't end the grants of pages that are open; without a data folder it lives in
@@ -58,6 +66,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         /// <summary>Upstream image fetches one viewer may start per second once the burst is used.</summary>
         public const double UpstreamPerSecond = 4;
+
+        /// <summary>How long a grant is accepted after the hour it was minted in.</summary>
+        public const int GrantLifetimeHours = 24;
 
         private const string KeyFile = "native-details-artwork.key";
         private readonly byte[] _key;
@@ -141,17 +152,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <returns>Safe.</returns>
         public static bool IsSafeTmdbPath(string? path) => path != null && SafePath.IsMatch(path);
 
+        /// <summary>The current hour (hours since the Unix epoch).</summary>
+        private long Hour() => (long)Math.Floor((_now() - DateTime.UnixEpoch).TotalHours);
+
         /// <summary>Mints a grant tag, or null for an unsafe path.</summary>
-        public string? Mint(Guid owner, ImageType type, int index, string? tmdbPath, Guid viewer, string policyRevision)
+        /// <param name="owner">The image's item id.</param>
+        /// <param name="type">Image type.</param>
+        /// <param name="index">Image index.</param>
+        /// <param name="tmdbPath">TMDB file path.</param>
+        /// <param name="viewer">The viewer.</param>
+        /// <param name="policyRevision">The viewer's policy revision.</param>
+        /// <param name="context">The page it is minted for (a title or a person's page); null: the owner itself.</param>
+        /// <returns>The tag, or null.</returns>
+        public string? Mint(Guid owner, ImageType type, int index, string? tmdbPath, Guid viewer, string policyRevision, Guid? context = null)
         {
             if (!IsSafeTmdbPath(tmdbPath)) return null;
-            var payload = string.Join('|', "1", owner.ToString("N"), ((int)type).ToString(CultureInfo.InvariantCulture),
-                index.ToString(CultureInfo.InvariantCulture), tmdbPath, viewer.ToString("N"), policyRevision);
+            var payload = string.Join('|', "2", owner.ToString("N"), ((int)type).ToString(CultureInfo.InvariantCulture),
+                index.ToString(CultureInfo.InvariantCulture), tmdbPath, viewer.ToString("N"), policyRevision,
+                (context ?? owner).ToString("N"), Hour().ToString(CultureInfo.InvariantCulture));
             var bytes = Encoding.UTF8.GetBytes(payload);
             return Prefix + Convert.ToHexStringLower(bytes) + "." + Sign(bytes);
         }
 
-        /// <summary>Reads and verifies a grant tag (signature and shape only; policy is the caller's check).</summary>
+        /// <summary>Reads and verifies a grant tag (signature, shape and age; policy is the caller's check).</summary>
         /// <param name="tag">The tag from the image request.</param>
         /// <param name="grant">The grant.</param>
         /// <returns>True when the tag is a genuine grant.</returns>
@@ -175,17 +198,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var given = Encoding.ASCII.GetBytes(tag.Substring(dot + 1).ToLowerInvariant());
             if (!CryptographicOperations.FixedTimeEquals(expected, given)) return false;
             var parts = Encoding.UTF8.GetString(payload).Split('|');
-            if (parts.Length != 7 || parts[0] != "1"
+            if (parts.Length != 9 || parts[0] != "2"
                 || !Guid.TryParseExact(parts[1], "N", out var owner)
                 || !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var type)
                 || !int.TryParse(parts[3], NumberStyles.None, CultureInfo.InvariantCulture, out var index)
                 || !IsSafeTmdbPath(parts[4])
-                || !Guid.TryParseExact(parts[5], "N", out var viewer))
+                || !Guid.TryParseExact(parts[5], "N", out var viewer)
+                || !Guid.TryParseExact(parts[7], "N", out var context)
+                || !long.TryParse(parts[8], NumberStyles.None, CultureInfo.InvariantCulture, out var issued))
             {
                 return false;
             }
 
-            grant = new ArtworkGrant(owner, (ImageType)type, index, parts[4], viewer, parts[6]);
+            // Expired, or minted in the future (a clock that went back is no reason to accept one).
+            var now = Hour();
+            if (issued > now + 1 || now - issued >= GrantLifetimeHours) return false;
+            grant = new ArtworkGrant(owner, (ImageType)type, index, parts[4], viewer, parts[6], context, issued);
             return true;
         }
 

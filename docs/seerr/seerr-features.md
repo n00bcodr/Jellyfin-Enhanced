@@ -121,7 +121,12 @@ On a search card, Enter opens the page and Space still shows the overview with i
   services and links (Seerr, TMDB, IMDb, TVDB, Rotten Tomatoes, Trakt, Letterboxd, SIMKL), plus the movie's
   collection with *View* and Spoiler Guard's switch for the title. *Elsewhere* works as on any details page.
 - **Open**: when the title arrives in your library while the page is open, an *Open* button takes you to it. A link
-  to such a page after that goes straight to the library copy.
+  to such a page after that goes straight to the library copy, and so does going Back to it.
+- **What you already have**: a season page of a series Jellyfin has (a season it doesn't) lists the seasons and
+  episodes you can open as themselves, links to the library's series and season above it, and the *More like this*
+  row shows your copy of a title even when Seerr doesn't know it's in the library.
+- Artwork links on these pages are made for your account and the page they were shown on, and last a day; a page
+  open longer than that gets new ones when it's shown again. They keep working after a server restart.
 
 Play, Shuffle, Played, Favourite, the More menu, Download, Hide and Spoiler Guard's item buttons are hidden: there is
 nothing to play, and no rule or mark is ever stored for a title you don't have.
@@ -158,7 +163,8 @@ library title:
   page very fast can pause for a moment while it catches up.
 
 **When it can't open.** A title your account may not see (parental limits, libraries you can't open, an account
-not linked to Seerr) shows "This title isn't available to you." with *Go back*, never the modal. If Seerr can't be
+not linked to Seerr) shows "This title isn't available to you." with *Go back*, never the modal. A page you go back
+to is checked again before any of it shows. If Seerr can't be
 reached, you're taken back and the More Info modal opens once; if that happens again within a few seconds the page
 says it can't be loaded right now. With the setting off, on Jellyfin 10.11 and in other apps, titles open exactly as
 before (the modal, or Seerr, as set above).

@@ -53,6 +53,8 @@
     const REFUSED_CLASS = 'je-native-absent-refused';
     /** On the document while a refused page shows (the shared backdrop is hidden). */
     const REFUSED_VIEW_CLASS = 'je-native-absent-refused-view';
+    /** A restored page whose access is being checked again: nothing of its earlier content shows until it passes. */
+    const CHECKING_CLASS = 'je-native-absent-checking';
     const STYLE_ID = 'je-native-absent-style';
     const HIDDEN_ACTIONS = [
         '.btnPlay', '.btnResume', '.btnReplay', '.btnShuffle', '.btnInstantMix', '.btnPlaystate', '.btnUserRating',
@@ -358,6 +360,9 @@
             // A refused page keeps nothing of the title on screen: a restored view's earlier content is hidden.
             + `#itemDetailPage.${REFUSED_CLASS} > :not(.je-native-absent-refusal) { display: none !important; }\n`
             + `html.${REFUSED_VIEW_CLASS} .backdropContainer { display: none !important; }\n`
+            // A restored page being checked again: its earlier content is kept in place but not shown.
+            + `#itemDetailPage.${CHECKING_CLASS} > * { visibility: hidden !important; }\n`
+            + `html.${CHECKING_CLASS} .backdropContainer { visibility: hidden !important; }\n`
             + `.je-native-absent-refusal button { margin-top: 1.2em; }\n`
             + `@media (max-width: 600px) { ${x} .trailer-item { width: 170px; } }`;
         document.head.appendChild(style);
@@ -527,8 +532,24 @@
         // The page's own content (a restored view still holds the title, overview, cast and artwork) is
         // hidden while the refusal stands; a later check that passes shows it again.
         page.prepend(box);
+        checking(page, false);
         page.classList.add(REFUSED_CLASS);
         document.documentElement.classList.add(REFUSED_VIEW_CLASS);
+    }
+
+    /**
+     * Shows (or hides) a restored page's earlier content while its access is checked again.
+     * @param {HTMLElement|null} page Page.
+     * @param {boolean} on Hide it (true) or show it again.
+     * @returns {void}
+     */
+    function checking(page, on) {
+        const was = document.documentElement.classList.contains(CHECKING_CLASS);
+        document.documentElement.classList.toggle(CHECKING_CLASS, on);
+        page?.classList.toggle(CHECKING_CLASS, on);
+        // Jellyfin's own loading indicator while the page is hidden.
+        if (on && !was) window.Dashboard?.showLoadingMsg?.();
+        else if (!on && was) window.Dashboard?.hideLoadingMsg?.();
     }
 
     /**
@@ -873,10 +894,20 @@
         const page = visiblePage();
         // Capability or admin switch off (or a 10.11 server): native pages stay exactly as they are.
         if (!available()) {
+            // A page this module drew earlier, shown again (Back) after the setting was turned off.
+            const restored = !!page?.classList.contains(PAGE_CLASS);
             page?.classList.remove(PAGE_CLASS, PERSON_CLASS);
             document.querySelectorAll(`.${LIST_CLASS}`).forEach(n => n.classList.remove(LIST_CLASS));
             unrefuse(null);
+            checking(page, false);
             dispose();
+            // A restored page of a title not in the library, after the setting was turned off: there is
+            // no such page any more, so none of its earlier content stays on screen. (A fresh deep link is
+            // Jellyfin's own: it answers that the item doesn't exist.)
+            if (restored && id && parse(id)) {
+                injectStyles();
+                refuse(page);
+            }
             return;
         }
         adaptListPage();
@@ -887,6 +918,7 @@
         }
         if (!parts || !page) {
             unrefuse(parts ? null : page);
+            checking(page, false);
             dispose();
             return;
         }
@@ -908,9 +940,12 @@
         const generation = ++state.generation;
         let item = null;
         let status = 0;
-        // Where this title opens for the viewer now: a copy that is already here wins (asked once
-        // per page; a restored page keeps its Open button from the status instead).
-        const where = same || !isTitle ? Promise.resolve(null) : resolve({ id });
+        // A restored page still shows what it showed before (Back keeps the page's element, though
+        // leaving it ended this module's state): hidden until the check below passes.
+        if (same || page.dataset.jeNativeShown) checking(page, true);
+        // Where this title opens for the viewer now: a copy that is already here wins, on a restored
+        // page too (the title may have arrived since).
+        const where = !isTitle ? Promise.resolve(null) : resolve({ id });
         try {
             item = await ApiClient.getItem(ApiClient.getCurrentUserId(), id);
         } catch (err) {
@@ -925,6 +960,7 @@
             }
             // Outage or an unusable page: back to where the user was, then the modal, once; a
             // second failure soon after says so on the page instead of leaving its spinner.
+            checking(page, false);
             dispose();
             if (!isTitle) {
                 // No modal shows a person: the page says it can't be loaded.
@@ -953,10 +989,13 @@
         if (state.aborted || current !== state) return;
         if (destination?.itemId && !isSynthetic(destination.itemId) && /^[0-9a-f-]{32,36}$/i.test(destination.itemId)) {
             // A deep link to a title that is here now: its library page, in this page's place.
+            checking(page, false);
             dispose();
             go(destination.itemId, true);
             return;
         }
+        checking(page, false);
+        page.dataset.jeNativeShown = id;
         if (same) return;
         if (!isTitle) {
             showKnownFor(state, item);
