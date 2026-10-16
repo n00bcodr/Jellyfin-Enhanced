@@ -425,7 +425,8 @@
         const backdrop = el('div', 'je-sheet-backdrop');
         if (isTv()) backdrop.classList.add('je-sheet-tv');
         if (light) backdrop.classList.add('je-sheet-light');
-        const sheet = el('div', 'je-sheet');
+        // focuscontainer: jellyfin-web's D-pad navigation (TV layout) stays inside the sheet, as Tab does.
+        const sheet = el('div', 'je-sheet focuscontainer');
         sheet.setAttribute('role', 'dialog');
         sheet.setAttribute('aria-modal', 'true');
         const titleId = `je-sheet-title-${Date.now().toString(36)}`;
@@ -1044,16 +1045,24 @@
 
         /**
          * Draws the controls for the current status and capabilities. A control that had the keyboard
-         * (or remote) focus hands it to its stand-in, or to the mount's first control when it is gone.
+         * (or remote) focus hands it to its stand-in, or to the mount's first control when it is gone,
+         * or (nothing to press left: a state chip took its place) to that chip, so the keyboard and the
+         * TV remote go on from here instead of the top of the page.
+         * @param {boolean} [pressed] The control just pressed had the focus (it lost it while disabled).
          * @returns {void}
          */
-        function render() {
+        function render(pressed) {
             if (destroyed) return;
-            const focused = focusedControl();
+            // The pressed control lost the focus to the page itself; focus moved elsewhere meanwhile stays there.
+            const focused = focusedControl() || (pressed && (!document.activeElement || document.activeElement === document.body) ? 'button' : null);
             draw();
             if (!focused || destroyed) return;
-            const target = host.querySelector(focused) || host.querySelector('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])');
-            target?.focus?.({ preventScroll: true });
+            const target = host.querySelector(focused) || host.querySelector('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')
+                || host.querySelector('.je-arr-chip');
+            if (!target) return;
+            // A chip is not focusable by itself: it takes the focus only to hand it on.
+            if (target.classList.contains('je-arr-chip')) target.tabIndex = -1;
+            target.focus?.({ preventScroll: true });
         }
 
         /**
@@ -1096,6 +1105,8 @@
                     e.stopPropagation();
                     if (busy) return;
                     busy = true;
+                    // Disabling the button drops its focus: noted here, so the redraw can hand it on.
+                    const pressed = document.activeElement === b;
                     b.disabled = true;
                     let result = null;
                     try {
@@ -1107,7 +1118,7 @@
                     if (result && (result.ok || result.state === 'unknown')) {
                         const words = JE.arrAsk.describe(result, caps, null);
                         local = words.chip ? { chip: words.chip, tone: words.tone } : null;
-                        render();
+                        render(pressed);
                     }
                 });
                 row.appendChild(b);
@@ -1141,6 +1152,7 @@
                 e.stopPropagation();
                 if (busy) return;
                 busy = true;
+                const pressed = document.activeElement === b;
                 b.disabled = true;
                 const instanceId = JE.arrAsk.searchInstance(caps, status, status?.key || title.key);
                 let words = null;
@@ -1171,7 +1183,7 @@
                 }
                 if (words) {
                     local = words;
-                    render();
+                    render(pressed);
                 } else if (!destroyed) {
                     label.textContent = searchLabel();
                 }

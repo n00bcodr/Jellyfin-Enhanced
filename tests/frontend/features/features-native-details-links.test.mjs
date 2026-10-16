@@ -169,6 +169,14 @@ test('with library titles excluded (the default), a filmography of someone the l
   assert.equal(h.filter.createCardsFragment(results, { cardClass: 'portraitCard', keepLibraryItems: true }).childNodes.length, 46);
 });
 
+test('a person row (no side padding of its own) keeps its header, and the Sort select, inside the page\'s right padding', async t => {
+  const h = realPersonPage(t, [{ id: 1, mediaType: 'movie', title: 'One', voteCount: 10 }]);
+  await h.controller.render();
+  const header = h.document.querySelector('.jellyseerr-person-discovery-section .jellyseerr-discovery-header');
+  assert.ok(header.classList.contains('padded-right'), 'the same right edge as its cards');
+  assert.equal(header.style.boxSizing, 'border-box', 'width 100% includes the padding, so the header does not run past the screen');
+});
+
 test('a filmography of movies and series keeps its order (roles first, best known first) under "All", through the real discovery base; Movies and Series still filter, and other rows still alternate', async t => {
   const results = [
     { id: 1, mediaType: 'tv', name: 'A Talk Show', genreIds: [10767], voteCount: 5, character: 'Self' },

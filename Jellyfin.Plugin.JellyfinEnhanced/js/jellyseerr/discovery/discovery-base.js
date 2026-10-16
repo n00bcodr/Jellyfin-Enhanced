@@ -422,6 +422,9 @@
             // Use shared header helper if available, otherwise create basic header
             if (JE.discoveryFilter?.createSectionHeader) {
                 const header = JE.discoveryFilter.createSectionHeader(title, key, showFilter, onFilterChange, onSortChange);
+                // A section without its own side padding (person, collection pages): the header keeps
+                // the same right edge as its cards, so the Sort select isn't flush with the screen edge.
+                if (!isDualFeed) header.classList.add('padded-right');
                 section.appendChild(header);
             } else {
                 const titleElement = document.createElement('h2');

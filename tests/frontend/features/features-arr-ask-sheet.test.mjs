@@ -431,6 +431,8 @@ test('on TV the sheet is a full-screen panel and Back closes it', async t => {
   const pending = h.Sheet.open(MOVIE);
   await settle();
   assert.ok(h.document.querySelector('.je-sheet-backdrop').classList.contains('je-sheet-tv'));
+  // jellyfin-web's D-pad navigation stays inside a focus container: the arrows never reach the page behind.
+  assert.ok(sheetEl(h).classList.contains('focuscontainer'));
   key(h, 'Backspace');
   assert.equal(await pending, null);
 });
@@ -588,6 +590,36 @@ test('mount API: a redraw keeps the keyboard focus on the control (or its stand-
   h.document.body.appendChild(outside);
   outside.focus();
   controls.update(notHere);
+  assert.equal(h.document.activeElement, outside);
+  controls.destroy();
+});
+
+test('mount API: Request pressed from the keyboard or remote hands the focus to the state chip that replaces it', async t => {
+  const h = setup(t, { html: '<div id="a"></div>' });
+  const a = h.document.getElementById('a');
+  // As the native details page mounts it: no Notify me (the page's details surface has its own).
+  const controls = h.Sheet.mount(a, MOVIE, { notify: false });
+  await settle();
+  const request = a.querySelector('.je-ask-mount-request');
+  // A browser drops the focus of a button as it becomes disabled (jsdom keeps it): do the same.
+  const disabled = Object.getOwnPropertyDescriptor(h.window.HTMLButtonElement.prototype, 'disabled');
+  Object.defineProperty(request, 'disabled', { configurable: true, get() { return disabled.get.call(this); },
+    set(value) { if (value && h.document.activeElement === this) this.blur(); disabled.set.call(this, value); } });
+  request.focus();
+  click(h, request);
+  assert.notEqual(h.document.activeElement, request, 'the pressed button lost the focus');
+  await settle(30);
+  const chip = a.querySelector('.je-arr-chip');
+  assert.equal(chip.textContent, 'Asked!');
+  assert.equal(h.document.activeElement, chip, 'the focus stays on the row, not the top of the page');
+  // A later redraw (the details surface forwards every status read) keeps it on the chip.
+  controls.update({ key: MOVIE.key, kind: 'movie', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 42 } });
+  assert.equal(h.document.activeElement, a.querySelector('.je-arr-chip'));
+  // Focus the viewer moved elsewhere meanwhile is never taken back.
+  const outside = h.document.createElement('button');
+  h.document.body.appendChild(outside);
+  outside.focus();
+  controls.update({ key: MOVIE.key, kind: 'movie', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 50 } });
   assert.equal(h.document.activeElement, outside);
   controls.destroy();
 });

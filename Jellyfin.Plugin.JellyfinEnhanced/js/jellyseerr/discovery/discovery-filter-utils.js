@@ -314,7 +314,7 @@
     function createSectionHeader(title, moduleName, showFilter, onFilterChange, onSortChange) {
         const header = document.createElement('div');
         header.className = 'jellyseerr-discovery-header';
-        header.style.cssText = 'display:flex;align-items:baseline;gap:1em;margin-bottom:1em;flex-wrap:wrap;width:100%;';
+        header.style.cssText = 'display:flex;align-items:baseline;gap:1em;margin-bottom:1em;flex-wrap:wrap;width:100%;box-sizing:border-box;';
 
         const titleElement = document.createElement('h2');
         titleElement.className = 'sectionTitle sectionTitle-cards';
