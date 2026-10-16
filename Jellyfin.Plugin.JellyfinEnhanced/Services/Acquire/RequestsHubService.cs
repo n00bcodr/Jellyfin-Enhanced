@@ -255,7 +255,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 .ThenByDescending(g => g.Max(r => r.CreatedAt ?? DateTime.MinValue))
                 .ToList();
             var more = titles.Count > MaxTitles;
-            var entries = titles.Take(MaxTitles).ToList();
+            // One edition per row (as in Jellyfin Enhanced mode): a 4K request after the standard copy arrived follows
+            // the 4K copy, never shown Ready (or labelled) by the standard one.
+            var entries = titles.Take(MaxTitles).Select(g => EditionOf(g).ToList()).ToList();
             var keys = entries.Select(g => g[0].Key!).ToList();
             // Each title is judged by the part asked for: a request for Season 3 of a series Jellyfin
             // already has isn't "Ready", nor is a 4K request for a title Jellyfin has in standard
@@ -442,6 +444,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var store = _status.Store;
             return store.Instances(Arr.ArrKind.Radarr).Concat(store.Instances(Arr.ArrKind.Sonarr)).Any(store.PipelineExpired);
+        }
+
+        /// <summary>
+        /// The Seerr requests (one person's, for one title) that one status follows: one edition at a time, as each
+        /// edition is its own copy (<see cref="LedgerRequestFacts.EditionOf"/> in Jellyfin Enhanced mode). The edition
+        /// still waited for (not done in Seerr and its media not available; the standard copy first when both are), else
+        /// the one that changed last; declined requests only when nothing else is left.
+        /// </summary>
+        /// <param name="records">One person's requests for one title (not empty).</param>
+        internal static IReadOnlyList<SeerrRequestRecord> EditionOf(IReadOnlyList<SeerrRequestRecord> records)
+        {
+            var active = records.Where(r => r.Active).ToList();
+            if (active.Count == 0) return records;
+            var open = active.Where(r => r.Status != SeerrRequestStatus.Completed && r.MediaStatus != 5).ToList();
+            var fourK = open.Count > 0 ? open.All(r => r.Is4k) : active.MaxBy(r => r.UpdatedAt ?? r.CreatedAt ?? DateTime.MinValue)!.Is4k;
+            return active.Where(r => r.Is4k == fourK).ToList();
         }
 
         /// <summary>

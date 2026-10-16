@@ -506,22 +506,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 if (!_store.Prefs(group.Key).AutoFollowRequests) continue;
                 var i = For(group.Key);
                 i.HasRequest = true;
-                var scope = RequestsHubService.ScopeOf(mine, group.Key);
-                if (title.IsMovie)
+                // Each edition asked for is followed through its own copy, as in Jellyfin Enhanced mode (a 4K request
+                // after the standard copy arrived waits for the 4K copy); a plain follow of a series hears of every copy.
+                var editions = !title.IsMovie && i.HasFollow
+                    ? new List<List<SeerrRequestRecord>> { mine }
+                    : mine.Where(r => r.Active).GroupBy(r => r.Is4k).OrderBy(e => e.Key).Select(e => e.ToList()).ToList();
+                foreach (var edition in editions)
                 {
-                    i.Scope = scope;
-                    continue;
-                }
-                // A 4K request is followed through the 4K copies, like a 4K movie request and the
-                // Requests page's 4K entries (a plain follow of the series still hears of every copy).
-                i.Only4k = scope.Only4k && !i.HasFollow;
-                if (scope.Seasons.Count == 0)
-                {
-                    i.AllSeasons = true;
-                }
-                else
-                {
-                    foreach (var s in scope.Seasons) (i.Seasons ??= new HashSet<int>()).Add(s);
+                    var target = i;
+                    if (edition != editions[0]) extra.Add(target = new Interest { User = group.Key, Key = title, HasRequest = true, HasFollow = i.HasFollow });
+                    var scope = RequestsHubService.ScopeOf(edition, group.Key);
+                    if (title.IsMovie)
+                    {
+                        target.Scope = scope;
+                        continue;
+                    }
+                    // A 4K request is followed through the 4K copies, like a 4K movie request and the
+                    // Requests page's 4K entries (a plain follow of the series still hears of every copy).
+                    target.Only4k = scope.Only4k && !target.HasFollow;
+                    if (scope.Seasons.Count == 0)
+                    {
+                        target.AllSeasons = true;
+                    }
+                    else
+                    {
+                        foreach (var s in scope.Seasons) (target.Seasons ??= new HashSet<int>()).Add(s);
+                    }
                 }
             }
             if (LedgerInterest)
@@ -931,7 +941,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>The Jellyfin item Seerr matched a user's 4K request for the title to (null: none, or not a 4K-only request).</summary>
         private Guid? SeerrFourKItem(TitleKey key, Guid user)
         {
-            var mine = RequestsFor(key).Where(r => r.RequestedBy == user).ToList();
+            // The 4K edition's own requests (a standard request of the same person doesn't hide Seerr's 4K match).
+            var mine = RequestsFor(key).Where(r => r.RequestedBy == user && r.Is4k).ToList();
             return mine.Count > 0 ? RequestsHubService.ScopeOf(mine, user).JellyfinItemId : null;
         }
 

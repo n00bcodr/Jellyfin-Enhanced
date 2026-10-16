@@ -345,8 +345,8 @@ Settings: [*arr Settings](arr-settings.md#notifications-phase-2).
   OK'd Firefly S1E4"; "… is on its way" when someone else's request covered it). In JE mode your requests are
   followed like Seerr requests are in Seerr mode: Ready and new episodes are told for exactly the part you asked for
   (a single episode, not the rest of its season), each edition by its own copy (a 4K request made after the standard
-  copy arrived is told when the 4K copy arrives), and what arrived after you asked is told even when Jellyfin was
-  restarted before it first looked. Turning **Following** off for one mutes it. An OK held by
+  copy arrived is told when the 4K copy arrives; Seerr requests are followed the same way in Seerr mode), and what
+  arrived after you asked is told even when Jellyfin was restarted before it first looked. Turning **Following** off for one mutes it. An OK held by
   quiet hours isn't sent once the request was cancelled or declined meanwhile. Following
   something that is already there tells you nothing; each thing is told once (once per Jellyfin item, whichever id it
   is known by), even across restarts, and told again if you ask for it again after it was removed; a title you can
@@ -1032,8 +1032,8 @@ lists requests made through Jellyfin Enhanced.
   **Ask Dad again**; *Paused: storage full* while new titles of its kind are paused) to ask for the same part once
   more. Removed from Jellyfin only (Sonarr/Radarr still has it), it reads where Sonarr/Radarr has it, such as *Missing*
   with **Search**. A title asked for in both editions
-  follows one at a time: the edition still waited for (the standard one first), so a 4K request after the standard
-  copy arrived reads where the 4K copy is, not Ready. **Coming soon** lists them too. Rows update live.
+  follows one at a time, in either mode: the edition still waited for (the standard one first), so a 4K request after
+  the standard copy arrived reads (and is labelled) where the 4K copy is, not Ready. **Coming soon** lists them too. Rows update live.
 - **Arrival**: once what a request asks for is in Jellyfin (for the person who asked, with their library access and
   parental limits), the request is marked fulfilled, so it reads Ready everywhere and is never marked stale; a
   request whose part arrives another way while it still waits for an OK is closed the same way and gives its allowance

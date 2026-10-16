@@ -767,6 +767,40 @@ public class IntegrationRequestArrivalsTests
     }
 
     [Fact]
+    public async Task InSeerrModeAFourKRequestAfterTheStandardCopyArrivedIsToldWhenTheFourKCopyArrivesOnce()
+    {
+        // Seerr's requests are the interests (no ledger): Emma's standard request for Dune, OK'd in Seerr.
+        using var rig = await IntegrationNotificationsTests.Started(r =>
+        {
+            FourKRadarr(r);
+            r.Request(1, 693134, r.Emma);
+        });
+        await rig.Step(IntegrationNotificationsTestsDune);
+        // The standard copy arrives: told.
+        var hd = rig.Arrive(IntegrationNotificationsTestsDune);
+        await rig.Step(IntegrationNotificationsTestsDune);
+        Assert.Single(rig.Inbox(rig.Emma), n => n.Kind == "ready");
+
+        // A day later she asks for the 4K copy in Seerr: followed through the 4K copy, nothing told yet.
+        rig.Arr.Now = rig.Arr.Now.AddDays(1);
+        rig.Request(2, 693134, rig.Emma, is4k: true, created: rig.Arr.Now.UtcDateTime);
+        await rig.Step(IntegrationNotificationsTestsDune);
+        Assert.NotNull(rig.NotifyStore.Watch(rig.Emma.UserId, IntegrationNotificationsTestsDune, "m4k"));
+        Assert.Single(rig.Inbox(rig.Emma), n => n.Kind == "ready");
+
+        // The 4K copy arrives: told once, as 4K, with the 4K item.
+        rig.Arr.Now = rig.Arr.Now.AddHours(1);
+        var uhd = Guid.NewGuid();
+        rig.View.AddCopy(TitleKey.Parse(IntegrationNotificationsTestsDune)!, new JfCopy { ItemId = uhd, Path = "/media/movies4k/Dune Part Two (2024)/Dune.mkv", LibraryName = "Movies 4K", DateCreated = rig.Arr.Now.UtcDateTime });
+        rig.View.Rev++;
+        await rig.Step(IntegrationNotificationsTestsDune);
+        await rig.Step(IntegrationNotificationsTestsDune);
+        var ready = rig.Inbox(rig.Emma).Where(n => n.Kind == "ready").ToList();
+        Assert.Equal(new[] { uhd.ToString("N"), hd.ToString("N") }, ready.Select(n => n.ItemId).ToArray());
+        Assert.Equal("4k", JsonSerializer.Deserialize<Dictionary<string, string>>(ready[0].Payload)!["variant"]);
+    }
+
+    [Fact]
     public async Task APartThatArrivedBeforeTheFirstLookAfterARestartIsStillTold()
     {
         using var rig = await IntegrationNotificationsTests.Started();
