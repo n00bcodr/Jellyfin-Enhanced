@@ -40,6 +40,7 @@ public class IntegrationRequestBackendsTests
                 host.Profiles.Add(new JsonObject { ["id"] = 4, ["name"] = "HD-1080p" });
                 host.Profiles.Add(new JsonObject { ["id"] = 5, ["name"] = "Ultra-HD" });
                 host.RootFolders.Add(new JsonObject { ["path"] = root, ["freeSpace"] = 1_000_000_000_000L, ["accessible"] = true });
+                host.Tags[90] = DirectArrBackend.AttributionTag;   // already there (a test without it removes it)
             }
             Arr.Configure(("Radarr", ArrKind.Radarr, "http://radarr.test", "key-radarr"), ("Radarr 4K", ArrKind.Radarr, "http://radarr4k.test", "key-radarr4k"), ("Sonarr", ArrKind.Sonarr, "http://sonarr.test", "key-sonarr"));
             Config.ArrIntegrationEnabled = true;
@@ -124,8 +125,31 @@ public class IntegrationRequestBackendsTests
         Assert.Equal("released", (string)add["minimumAvailability"]!);
         Assert.True((bool)add["addOptions"]!["searchForMovie"]!);
         Assert.False(add.ContainsKey("id"));
+        Assert.Equal(new[] { 90 }, add["tags"]!.AsArray().Select(t => (int)t!).ToArray());   // the attribution tag
         Assert.Single(lab.Radarr.Writes);
         Assert.Empty(lab.Radarr4k.Writes);
+    }
+
+    [Fact]
+    public async Task TheAttributionTagIsCreatedOnAnInstanceWithoutItAndAFailedCreateDoesNotStopTheAdd()
+    {
+        using var lab = new Lab();
+        lab.Sonarr.Tags.Clear();
+        lab.Sonarr.Tags[3] = "kids";
+        lab.Sonarr.Lookup.Add(Lab.SeriesLookup(75565, seasons: 2));
+        var result = await lab.Direct.SendAsync(lab.Job(Series("seasons", new[] { 1 }), "Sonarr"), Pass, default);
+        Assert.True(result.Confirmed, result.Outcome.Message);
+        Assert.Equal("POST /api/v3/tag", lab.Sonarr.Writes.Select(w => w.Method + " " + w.Path).First());
+        Assert.Equal("je-requested", lab.Sonarr.Tags[4]);
+        Assert.Equal(new[] { 4 }, Body(lab.Sonarr, "POST", "/api/v3/series")["tags"]!.AsArray().Select(t => (int)t!).ToArray());
+
+        // Radarr refuses to create it: the movie is still added, untagged.
+        lab.Radarr.Tags.Clear();
+        lab.Radarr.OnWrite = (method, path, _) => path == "/api/v3/tag" ? IntegrationTransport.Response("{\"message\":\"nope\"}", 400) : null;
+        lab.Radarr.Lookup.Add(Lab.MovieLookup(961));
+        var movie = await lab.Direct.SendAsync(lab.Job(Movie(), "Radarr"), Pass, default);
+        Assert.True(movie.Confirmed, movie.Outcome.Message);
+        Assert.Empty(Body(lab.Radarr, "POST", "/api/v3/movie")["tags"]!.AsArray());
     }
 
     [Fact]
@@ -352,7 +376,8 @@ public class IntegrationRequestBackendsTests
         Assert.Equal("invalid_defaults", tag.Outcome.Reason);
         Assert.Empty(lab.Radarr.Writes);
         // With the tag present the same defaults pass, and the tag goes with the add.
-        lab.Radarr.Tags[7] = "je-requested";
+        lab.Radarr.Tags.Remove(90);
+        lab.Radarr.Tags[7] = "je-requested";   // the default tag is the attribution tag itself: listed once
         var ok = await lab.Direct.SendAsync(lab.Job(Movie(), "Radarr"), Pass, default);
         Assert.True(ok.Confirmed, ok.Outcome.Message);
         Assert.Equal(new[] { 7 }, Ids(Body(lab.Radarr, "POST", "/api/v3/movie")["tags"]));

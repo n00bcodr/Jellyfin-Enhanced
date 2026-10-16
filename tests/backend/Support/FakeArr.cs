@@ -322,6 +322,17 @@ internal sealed class FakeArr : IDisposable
             return IntegrationTransport.Response(new JsonArray(host.Movies.Where(m => m["tmdbId"]?.ToString() == tmdb).Select(m => m.DeepClone()).ToArray()).ToJsonString());
         if (method == "GET" && path == "/api/v3/series" && query["tvdbId"] is { } tvdb)
             return IntegrationTransport.Response(new JsonArray(host.Series.Where(m => m["tvdbId"]?.ToString() == tvdb).Select(m => m.DeepClone()).ToArray()).ToJsonString());
+        if (method == "POST" && path == "/api/v3/tag")
+        {
+            // As the arrs do: a label they already have answers with that tag.
+            var sent = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+            host.Writes.Add((method, path, sent));
+            if (host.OnWrite?.Invoke(method, path, sent) is { } refused) return refused;
+            var label = (string?)JsonNode.Parse(sent)?["label"] ?? string.Empty;
+            var id = host.Tags.FirstOrDefault(t => string.Equals(t.Value, label, StringComparison.OrdinalIgnoreCase)).Key;
+            if (id == 0) host.Tags[id = host.Tags.Keys.DefaultIfEmpty(0).Max() + 1] = label;
+            return IntegrationTransport.Response(JsonSerializer.Serialize(new { id, label = host.Tags[id] }), 201);
+        }
         var writes = new[] { ("POST", "/api/v3/movie"), ("POST", "/api/v3/series"), ("PUT", "/api/v3/movie/editor"), ("PUT", "/api/v3/series/editor"), ("POST", "/api/v3/seasonpass"), ("PUT", "/api/v3/episode/monitor") };
         if (!writes.Contains((method, path))) return null;
         var text = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;

@@ -19,7 +19,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// goes to a 4K-role instance (never the standard one).</description></item>
     /// <item><description>Read before write: the title is looked up fresh in the arr; a lookup row must carry the requested id
     /// (greater than zero). A title the arr already has is a merge: only the missing monitoring is switched on.</description></item>
-    /// <item><description>New titles get the instance's add defaults (profile, root folder, tags), checked against a current
+    /// <item><description>New titles get the instance's add defaults (profile, root folder, tags) and the opaque attribution tag
+    /// <c>je-requested</c> (created on the instance when missing), checked against a current
     /// system snapshot only when a title is added; existing ones are changed with field-scoped edits only (<c>movie/editor</c>,
     /// <c>series/editor</c>, <c>seasonpass</c>, <c>episode/monitor</c>), never a full-resource PUT, so monitoring
     /// the request doesn't cover stays as it was.</description></item>
@@ -115,6 +116,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return (null, check.Reason == "defaults_unverified" ? BackendResults.Retry("backend_unavailable", check.Message) : BackendResults.Hold("invalid_defaults", check.Message));
         }
 
+        /// <summary>The opaque tag on every title Jellyfin Enhanced adds to Sonarr or Radarr (never a person's name).</summary>
+        internal const string AttributionTag = "je-requested";
+
+        // The attribution tag's id on this instance, created there when it has none (the arrs return the existing tag
+        // for a label they already have, so a repeat is harmless). A tag that can't be read or created doesn't stop the
+        // add: it goes ahead without it. Stop: the guard refused right before the create left (nothing was sent).
+        private async Task<(int? Id, RequestBackendResult? Stop)> AttributionTagAsync(Run run)
+        {
+            var read = await run.Client.GetAsync<List<TagRow>>("tag", null, ArrCallClass.Read, run.Ct).ConfigureAwait(false);
+            if (!read.Ok) return (null, null);
+            if (read.Value!.FirstOrDefault(t => string.Equals(t.Label, AttributionTag, StringComparison.OrdinalIgnoreCase)) is { } found) return (found.Id, null);
+            var (created, stopped) = await WriteAsync<TagRow>(run, false, HttpMethod.Post, "tag", new JsonObject { ["label"] = AttributionTag }).ConfigureAwait(false);
+            if (stopped != null) return (null, stopped);
+            return (created.Ok && created.Value is { Id: > 0 } tag ? tag.Id : null, null);
+        }
+
+        // The add's tags: the instance's defaults and the attribution tag.
+        private static JsonArray Tags(ArrAddDefaults defaults, int? attribution)
+            => new(defaults.Tags.Concat(attribution is int id ? new[] { id } : Array.Empty<int>()).Distinct().Select(t => (JsonNode)t).ToArray());
+
         // The guard before a write or a search. Refused before anything was written: held, nothing sent.
         // Refused after a write: held too, with the certainty left unknown (the written part stays upstream).
         private static RequestBackendResult? Gate(Run run, bool wrote)
@@ -203,13 +224,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     var (defaults, stop) = await DefaultsAsync(run).ConfigureAwait(false);
                     if (defaults == null) return stop!;
                     if (Gate(run, wrote) is { } refused) return refused;
+                    var (attribution, tagStop) = await AttributionTagAsync(run).ConfigureAwait(false);
+                    if (tagStop != null) return tagStop;
                     var body = (JsonObject)JsonNode.Parse(row.GetRawText())!;
                     body.Remove("id");
                     body["qualityProfileId"] = defaults.ProfileId;
                     body["rootFolderPath"] = defaults.RootFolder;
                     body["monitored"] = true;
                     body["minimumAvailability"] = defaults.MinimumAvailability;
-                    body["tags"] = new JsonArray(defaults.Tags.Select(t => (JsonNode)t).ToArray());
+                    body["tags"] = Tags(defaults, attribution);
                     body["addOptions"] = new JsonObject { ["searchForMovie"] = true, ["monitor"] = "movieOnly", ["addMethod"] = "manual" };
                     var (added, stopped) = await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "movie", body).ConfigureAwait(false);
                     if (stopped != null) return stopped;
@@ -314,6 +337,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var (defaults, stop) = await DefaultsAsync(run).ConfigureAwait(false);
                 if (defaults == null) return stop!;
                 if (Gate(run, wrote) is { } refused) return refused;
+                var (attribution, tagStop) = await AttributionTagAsync(run).ConfigureAwait(false);
+                if (tagStop != null) return tagStop;
                 var body = (JsonObject)JsonNode.Parse(lookupRow!.Value.GetRawText())!;
                 body.Remove("id");
                 var monitorSeasons = input.Scope != "episodes";
@@ -328,7 +353,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 body["seasonFolder"] = true;
                 body["monitored"] = true;
                 body["monitorNewItems"] = input.Scope == "future" ? "all" : "none";
-                body["tags"] = new JsonArray(defaults.Tags.Select(t => (JsonNode)t).ToArray());
+                body["tags"] = Tags(defaults, attribution);
                 // "skip": Sonarr keeps the season flags above (new episodes inherit them) instead of applying a
                 // monitoring preset after its first refresh, so nothing is monitored that wasn't asked for.
                 body["addOptions"] = new JsonObject

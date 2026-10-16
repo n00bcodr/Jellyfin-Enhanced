@@ -1029,6 +1029,9 @@ folder or path.
   (*When Jellyfin Enhanced adds a title*). They are checked against the instance's current profile and folder list
   right before sending: if they are missing or no longer valid the request waits for an administrator (`invalid_defaults`);
   if the list can't be read just now it is tried again later. Nothing is guessed (for example "the first profile").
+  It also gets the tag `je-requested` (created on the instance the first time it is needed; it never names a person),
+  so you can tell in Sonarr/Radarr which titles Jellyfin Enhanced added. If the tag can't be created the title is
+  added without it. Titles the instance already had aren't re-tagged.
 - **Read before write.** The title is looked up in the instance first; only a lookup result carrying the requested
   TMDB/TVDB/IMDb id counts. A title the instance already has is a merge: only the monitoring the request needs is
   switched on, with field-scoped edits (`movie/editor`, `series/editor`, `seasonpass`, `episode/monitor`), never a
