@@ -62,11 +62,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Own finished, declined or cancelled requests stay listed this long.</summary>
         private static readonly TimeSpan KeepClosedFor = TimeSpan.FromDays(30);
 
-        /// <summary>Reasons of a want that is held at send and needs a person to look at it.</summary>
+        /// <summary>Reasons of a want that is held (at send, or because nothing can take its 4K copy) and needs a person to look at it.</summary>
         public static readonly IReadOnlySet<string> StuckReasons = new HashSet<string>(StringComparer.Ordinal)
         {
             "authorization_changed", "identity_changed", "configuration_changed", "instance_changed", "seerr_whole_series_only",
-            "seerr_user_unlinked",
+            "seerr_user_unlinked", RequestLedger.No4k,
         };
 
         private static readonly Regex PosterPath = new("^/[A-Za-z0-9_.-]{1,80}$", RegexOptions.CultureInvariant);

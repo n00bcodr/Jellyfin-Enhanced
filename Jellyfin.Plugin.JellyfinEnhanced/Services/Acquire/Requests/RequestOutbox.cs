@@ -43,6 +43,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, CancellationToken ct);
         /// <summary>Fresh scoped read using the original connection identity; never sends a write.</summary>
         Task<RequestBackendResult> ReadBackAsync(RequestJob job, CancellationToken ct);
+        /// <summary>
+        /// Whether the backend has a server for the 4K copy of a movie (or series) as last read: Seerr's 4K Radarr/Sonarr
+        /// setting. Null when the backend doesn't say or it isn't known lately (nothing is concluded then).
+        /// </summary>
+        bool? FourKServer(bool movie) => null;
     }
     /// <summary>Safe production placeholder until request executors are installed. It performs no network I/O.</summary>
     public sealed class UnavailableRequestBackend : IRequestBackend
@@ -125,6 +130,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public async Task TickAsync(CancellationToken ct)
         {
             if (!_ledger.Database.Available) return;
+            // Open 4K requests nothing can take now say so (and are released when a 4K target is back).
+            foreach (var held in _ledger.HoldWithout4k(_policy.Has4kTarget, _now()))
+                _feed.Bump(new[] { held.Input.Key, ArrTitleKey.UserRequests(held.UserId), ArrTitleKey.RequestsState });
             foreach (var job in _ledger.Due(_now()))
             {
                 ct.ThrowIfCancellationRequested();
@@ -164,6 +172,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         if (!stable || requester == null) return "authorization_changed";
                         if (requester.Refusal == "user_required" || approver?.Refusal == "user_required") return "identity_changed";
                         if (requester.Backend != job.Authorization.Backend || requester.Refusal == "feature_disabled") return "configuration_changed";
+                        // Nothing can take the 4K copy now (no usable 4K instance, or no 4K server in Seerr): held for an administrator.
+                        if (job.Input.Variant == "4k" && _policy.Has4kTarget(TitleKey.Parse(job.Input.Key)?.IsMovie != false) == false) return RequestLedger.No4k;
                         // Seerr picks its own server: a Seerr-mode job is bound to the Seerr identity below, not to an arr connection.
                         if (job.Authorization.Backend != "seerr" && (requester.ConnectionGeneration != job.Authorization.ConnectionGeneration || requester.InstanceId != job.Authorization.InstanceId)) return "instance_changed";
                         // An unknown current Seerr account (Seerr not answering) waits below; only a known different one is a change.

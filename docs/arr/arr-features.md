@@ -841,7 +841,12 @@ use camelCase, including `used`, `remaining`, `nextSlotAt`, `usedGb` and `availa
 Requests are serialized locally by title and edition; this lock cannot stop another upstream application writing.
 The outgoing worker rechecks identity, roles, visibility, edition, flags, authority and connection identity at send.
 A changed permission parks work for review. Restarted `sending` rows become `maybe_sent` and require read-back before
-any resend. List validators include user, role and policy revision, with private cache headers. Family responses contain
+any resend. A 4K request nothing can take any more (no usable 4K Radarr/Sonarr in Jellyfin Enhanced mode, no 4K server
+in Seerr as last read in Seerr mode) says so instead of turning stale: one not sent yet waits for an administrator
+(`no_4k_instance`, "Stuck · nothing can take the 4K copy now" on the approval card; a queued job is held at send with
+that reason), and one already sent keeps its state with that reason and is listed on the approval page as stuck. When a
+4K target is back each is released as it was (sent, queued, or waiting for an OK, which resumes a job held at send).
+A new 4K ask with no 4K target is refused up front, as the 4K capability needs one. List validators include user, role and policy revision, with private cache headers. Family responses contain
 no backend connection, folder, profile, credential or other person's identity.
 
 ### Asking for titles

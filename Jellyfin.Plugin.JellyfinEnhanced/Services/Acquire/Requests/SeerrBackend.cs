@@ -252,6 +252,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return (null, false);
         }
 
+        /// <summary>How long Seerr's last-read 4K server settings count as known (see <see cref="FourKServer"/>).</summary>
+        private static readonly TimeSpan FourKKnownFor = TimeSpan.FromHours(1);
+
+        /// <inheritdoc />
+        /// <remarks>Seerr's 4K Radarr/Sonarr setting as last read from the Seerr configured now (within the last hour).</remarks>
+        public bool? FourKServer(bool movie)
+        {
+            var config = _config();
+            var source = config == null ? null : _model.SourceOf(config);
+            var held = Volatile.Read(ref _settings);
+            if (source == null || held == null || held.Source != source || _now() - held.At > FourKKnownFor) return null;
+            return movie ? held.Settings.Movie4k : held.Settings.Series4k;
+        }
+
         private async Task<SeerrRequestSettings?> SettingsAsync(PluginConfiguration config, string source, bool fresh, CancellationToken ct)
         {
             var held = Volatile.Read(ref _settings);

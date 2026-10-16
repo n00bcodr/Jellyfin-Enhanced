@@ -98,6 +98,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// (a new add needs no library index).
         /// </summary>
         Task PrepareAddPauseAsync(bool movie, CancellationToken ct) => Task.CompletedTask;
+        /// <summary>
+        /// Whether anything can take the 4K copy of a movie (true) or series (false) now: a usable 4K Radarr/Sonarr in
+        /// Jellyfin Enhanced mode, a 4K server in Seerr (as last read) in Seerr mode. Null when it isn't known (nothing
+        /// is concluded then). Reads memory only.
+        /// </summary>
+        bool? Has4kTarget(bool movie) => null;
     }
     /// <summary>Central role, parental, destination, edition and disk policy.</summary>
     public sealed class RequestPolicy : IRequestPolicy
@@ -341,6 +347,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var instance = input.InstanceId != null ? _store.Registry.Get(input.InstanceId) :
                 _store.Registry.DefaultFor(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr, input.Variant == "4k" ? ArrInstanceRole.FourK : ArrInstanceRole.Standard);
             return (instance, instance?.Id ?? string.Empty, instance == null ? string.Empty : _clients.ConnectionGeneration(instance.Id) ?? string.Empty);
+        }
+        /// <inheritdoc />
+        public bool? Has4kTarget(bool movie)
+        {
+            var config = Configuration;
+            if (!(config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled)) return null;
+            return config.ArrRequestBackend switch
+            {
+                "je" => _store.Registry.DefaultFor(movie ? ArrKind.Radarr : ArrKind.Sonarr, ArrInstanceRole.FourK) != null,
+                "seerr" => _backend.FourKServer(movie),
+                _ => null,
+            };
         }
         /// <summary>The one edition-capability calculation used by every submit path.</summary>
         public static bool Can4k(PluginConfiguration config, bool movie, string backend, bool capability, bool fourKInstance, bool seerrEnabled, bool seerrPermission)

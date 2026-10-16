@@ -49,6 +49,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         public Task<RequestBackendResult> ReadBackAsync(RequestJob job, CancellationToken ct)
             => For(job)?.ReadBackAsync(job, ct) ?? Task.FromResult(BackendResults.Maybe(job.WantId, "The backend this request was sent to is no longer known.", "configuration_changed"));
+
+        /// <inheritdoc />
+        public bool? FourKServer(bool movie) => Current?.FourKServer(movie);
     }
 
     /// <summary>

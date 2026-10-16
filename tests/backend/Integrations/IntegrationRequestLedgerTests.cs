@@ -21,6 +21,8 @@ public class IntegrationRequestLedgerTests
         public Dictionary<Guid, RequestPolicyFacts> People { get; } = new();
         public Func<Guid, MutationInput, Task>? Before { get; set; }
         public Func<Guid, MutationInput, RequestPolicyFacts, RequestPolicyFacts>? Adjust { get; set; }
+        public Func<bool, bool?>? FourK { get; set; }
+        public bool? Has4kTarget(bool movie) => FourK?.Invoke(movie);
         public Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct) => Task.CompletedTask;
         public Task PrepareAsync(Guid user, MutationInput input, CancellationToken ct) => Before?.Invoke(user, input) ?? Task.CompletedTask;
         public bool IsAdmin(Guid user) => People.GetValueOrDefault(user)?.Role == "Admin";
@@ -130,6 +132,58 @@ public class IntegrationRequestLedgerTests
         await r.Runner().TickAsync(default);
         Assert.Equal(1, r.Backend.Sends);
         Assert.All(r.Ledger.ForTitle(Movie().Key), w => Assert.Equal("sent", w.Status));
+    }
+
+    [Fact]
+    public async Task A4kRequestNothingCanTakeAnyMoreSaysSoForAnAdministratorNeverTurnsStaleAndIsReleasedWhenA4kTargetIsBack()
+    {
+        using var r = new Rig();
+        r.Policy.Adjust = (_, _, facts) => facts with { Can4k = true };
+        RequestWant Find(RequestOutcome o) => r.Ledger.Find(o.RequestId!)!;
+        var sent = await r.Create(r.Admin, Movie(603, "4k"));
+        await r.Runner().TickAsync(default);
+        Assert.Equal("sent", Find(sent).Status);
+        var queued = await r.Create(r.Member, Movie(604, "4k"));
+        var waiting = await r.Create(r.Kid, Movie(605, "4k"));
+        var standard = await r.Create(r.Member, Movie(606));
+        Assert.Equal(("queued", "pending"), (Find(queued).Status, Find(waiting).Status));
+        // The 4K Radarr is removed (or disabled): nothing can take a 4K movie any more.
+        r.Policy.FourK = movie => !movie;
+        await r.Runner().TickAsync(default);
+        // Sent already: still sent, says why, and listed for an administrator to look at.
+        Assert.Equal(("sent", "no_4k_instance"), (Find(sent).Status, Find(sent).Reason));
+        Assert.Contains(r.Ledger.List(r.Admin, true), w => w.Id == sent.RequestId);
+        Assert.Contains("no_4k_instance", RequestHubProjection.StuckReasons);
+        // Not sent yet: its job is held at send with the same reason, nothing goes out; one waiting for an OK says why.
+        var job = r.Ledger.ForWant(queued.RequestId!).Single();
+        Assert.Equal(("parked", "no_4k_instance"), (job.State, job.Reason));
+        Assert.Equal(("pending", "no_4k_instance"), (Find(queued).Status, Find(queued).Reason));
+        Assert.Equal(("pending", "no_4k_instance"), (Find(waiting).Status, Find(waiting).Reason));
+        // The standard edition isn't touched.
+        Assert.Equal("sent", Find(standard).Status);
+        Assert.Equal(2, r.Backend.Sends);
+        // Never silently stale.
+        r.Now = r.Now.AddDays(60);
+        r.Ledger.Retain(r.Now, 30);
+        Assert.Equal(("sent", "no_4k_instance"), (Find(sent).Status, Find(sent).Reason));
+        Assert.Equal("stale", Find(standard).Status);
+        // A 4K Radarr is back: each is released as it was; the one held at send waits for an OK, which sends it.
+        r.Policy.FourK = _ => true;
+        await r.Runner().TickAsync(default);
+        Assert.Equal(("sent", "looking"), (Find(sent).Status, Find(sent).Reason));
+        Assert.Equal(("pending", "awaiting_approval"), (Find(queued).Status, Find(queued).Reason));
+        Assert.Equal(("pending", "awaiting_approval"), (Find(waiting).Status, Find(waiting).Reason));
+        Assert.DoesNotContain(r.Ledger.List(r.Admin, true), w => w.Id == sent.RequestId);
+        Assert.Equal(200, (await r.Service.ApproveAsync(queued.RequestId!, r.Admin, null, default)).HttpStatus);
+        await r.Runner().TickAsync(default);
+        Assert.Equal(3, r.Backend.Sends);
+        Assert.Equal("sent", Find(queued).Status);
+        // Unknown (Seerr not read lately) concludes nothing.
+        r.Policy.FourK = _ => null;
+        await r.Runner().TickAsync(default);
+        Assert.Equal(("sent", "looking"), (Find(sent).Status, Find(sent).Reason));
+        r.Ledger.Retain(r.Now, 30);
+        Assert.Equal("stale", Find(sent).Status);
     }
 
     [Fact]

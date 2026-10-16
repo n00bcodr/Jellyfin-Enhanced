@@ -797,11 +797,13 @@ public class IntegrationRequestBackendsTests
         var fourK = policy.Evaluate(admin.UserId, Movie(variant: "4k"));
         Assert.Equal(lab.Instance("Radarr 4K").Id, fourK.InstanceId);
         Assert.True(fourK.Can4k);
+        Assert.True(policy.Has4kTarget(true));
         // Without a 4K instance, 4K has no target at all (it never falls back to the standard instance).
         lab.Edit("Radarr 4K", row => row["Enabled"] = false);
         var none = policy.Evaluate(admin.UserId, Movie(variant: "4k"));
         Assert.Equal(string.Empty, none.InstanceId);
         Assert.False(none.Can4k);
+        Assert.False(policy.Has4kTarget(true));
         // Seerr mode: Seerr picks its own server, so a request isn't tied to an arr's connection.
         Assert.NotEqual(string.Empty, policy.Evaluate(admin.UserId, Movie()).ConnectionGeneration);
         var jeMode = policy.Evaluate(admin.UserId, Movie());
@@ -1194,6 +1196,23 @@ public class IntegrationRequestBackendsTests
         Assert.Equal("succeeded", rig.Ledger.ForWant(ask.RequestId!).Single().State);
         Assert.Equal("sent", rig.Ledger.Find(ask.RequestId!)!.Status);
         Assert.Equal("9", Assert.Single(lab.Seerr.Posts).ApiUser);
+    }
+
+    [Fact]
+    public async Task SeerrsLastRead4kServerSettingSaysWhetherA4kCopyCanBeTaken()
+    {
+        using var lab = new SeerrLab();
+        // Not read yet: unknown (nothing is concluded).
+        Assert.Null(lab.Backend.FourKServer(true));
+        lab.Seerr.Settings["movie4kEnabled"] = false;
+        lab.Seerr.Settings["series4kEnabled"] = true;
+        await lab.Backend.PrepareAsync(lab.User, Movie(), default);
+        Assert.Equal(((bool?)false, (bool?)true), (lab.Backend.FourKServer(true), lab.Backend.FourKServer(false)));
+        var router = new RequestBackendRouter(null!, lab.Backend, () => lab.Config);
+        Assert.False(router.FourKServer(true));
+        // Read long ago: unknown again.
+        lab.Now = lab.Now.AddHours(2);
+        Assert.Null(lab.Backend.FourKServer(true));
     }
 
     // ------------------------------------------------------------------ review round 1 (Seerr)

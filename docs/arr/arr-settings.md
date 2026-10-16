@@ -461,7 +461,7 @@ The advanced fields are server-owned. Quota and preset settings govern JE mode; 
 | `ArrRequestPendingLimit` | 10 | Pending requests per person |
 | `ArrRequestQuotaGb` | 0 | Optional estimated GB cap; zero disables it |
 | `ArrRequestChargeFutureSeasons` | true | Charge the owner of a "Keep getting new episodes" request once for each new season Sonarr monitors, once it starts (an aired episode or a file); in Seerr mode, once for each new season Jellyfin Enhanced asks Seerr for. Off: new seasons are still followed, without a charge |
-| `ArrRequestStaleDays` | 30 | Flag a sent request that hasn't arrived for review; no automatic refund. A request whose part is in Jellyfin is marked fulfilled instead and never turns stale |
+| `ArrRequestStaleDays` | 30 | Flag a sent request that hasn't arrived for review; no automatic refund. A request whose part is in Jellyfin is marked fulfilled instead and never turns stale, nor does a 4K request nothing can take any more (it says `no_4k_instance`) |
 | `ArrRequestRoles` | `{}` | Optional per-role `QuotaLimit`, `QuotaGb` and `FourKInstances` defaults |
 | `ArrRequestUsers` | `{}` | Per-user `Role`, `QuotaLimit`, `QuotaGb` and `FourKInstances` overrides |
 

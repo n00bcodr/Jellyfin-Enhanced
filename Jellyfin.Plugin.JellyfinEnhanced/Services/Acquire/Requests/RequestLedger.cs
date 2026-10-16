@@ -97,8 +97,63 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>One want by opaque id.</summary>
         public RequestWant? Find(string id) => _db.Read(c => Wants(c, null, "id=$id", ("$id", id)).SingleOrDefault());
         /// <summary>Private listing source; policy filtering happens before projection.</summary>
+        /// <remarks>
+        /// The waiting list also holds requests that went out for a 4K copy nothing can take any more
+        /// (<c>no_4k_instance</c>): an administrator has to look at them.
+        /// </remarks>
         public IReadOnlyList<RequestWant> List(Guid user, bool pending) => _db.Read(c => Wants(c, null,
-            pending ? "status='pending'" : "user_id=$u", ("$u", Id(user))));
+            pending ? "status='pending' OR (status IN ('sent','stale') AND reason='" + No4k + "')" : "user_id=$u", ("$u", Id(user))));
+        /// <summary>The reason of an open 4K request nothing can take now (no usable 4K instance, or no 4K server in Seerr).</summary>
+        internal const string No4k = "no_4k_instance";
+        /// <summary>
+        /// Holds every open 4K request whose kind nothing can take now (<paramref name="fourKTarget"/> answers false: no
+        /// usable 4K Radarr/Sonarr in Jellyfin Enhanced mode, no 4K server in Seerr mode) with the reason
+        /// <c>no_4k_instance</c> instead of leaving it to look like it is still coming (and turn stale): one waiting for an
+        /// OK or not sent yet waits for an administrator; one that already went out keeps its state, says why and is
+        /// listed for administrators. When a 4K target is back (true), each is released as it was: queued again (its job
+        /// still due), sent, or waiting for an OK. Unknown (null) changes nothing. Returns the requests changed.
+        /// </summary>
+        /// <param name="fourKTarget">Whether a 4K copy of a movie (true) or series (false) can be taken now.</param>
+        /// <param name="now">Now.</param>
+        public IReadOnlyList<RequestWant> HoldWithout4k(Func<bool, bool?> fourKTarget, DateTimeOffset now)
+        {
+            if (!_db.Available) return Array.Empty<RequestWant>();
+            var known = new Dictionary<bool, bool?>();
+            bool? Target(RequestWant w) => TitleKey.Parse(w.Input.Key) is { } key ? known.TryGetValue(key.IsMovie, out var k) ? k : known[key.IsMovie] = fourKTarget(key.IsMovie) : null;
+            bool Changes(RequestWant w) => Target(w) is bool has && (has ? w.Reason == No4k : w.Reason != No4k);
+            if (!_db.Read(c => Wants(c, null, "variant='4k' AND status IN ('pending','queued','sent','stale')")).Any(Changes)) return Array.Empty<RequestWant>();
+            return _db.Write((c, t) =>
+            {
+                var changed = new List<RequestWant>();
+                foreach (var want in Wants(c, t, "variant='4k' AND status IN ('pending','queued','sent','stale')").Where(Changes))
+                {
+                    string status, reason;
+                    if (Target(want) == false)
+                    {
+                        // Not sent yet: waits for an administrator (its job, when due, is held at send with the same reason).
+                        (status, reason) = (want.Status is "pending" or "queued" ? "pending" : want.Status, No4k);
+                    }
+                    else if (want.Status != "pending")
+                    {
+                        (status, reason) = (want.Status, want.Status == "stale" ? "stale" : "looking");
+                    }
+                    else
+                    {
+                        // Its own job still due goes on; scope already sent (by it or anyone) is sent; scope another request is
+                        // sending follows it; else it waits for an OK (a job held at send resumes with the OK).
+                        var shared = Wants(c, t, "acquisition_id=$a", ("$a", want.AcquisitionId));
+                        (status, reason) = Jobs(c, t, "want_id=$id AND state IN ('queued','retry','sending','maybe_sent')", ("$id", want.Id)).Count > 0 ? ("queued", "queued_outage")
+                            : want.Input.Extra(Confirmed(c, t, shared, want.TargetKey)) == null ? ("sent", "looking")
+                            : want.Input.Extra(Coverage(c, t, shared, want.TargetKey)) == null ? ("queued", "queued_outage")
+                            : ("pending", "awaiting_approval");
+                    }
+                    Exec(c, t, "UPDATE wants SET status=$s,reason=$r,updated_at=$at WHERE id=$id", ("$s", status), ("$r", reason), ("$at", Ms(now)), ("$id", want.Id));
+                    Record(c, t, want.Id, null, null, reason == No4k ? "scope_held" : "scope_restored", "accepted", reason, want.Input.Key, now);
+                    changed.Add(want with { Status = status, Reason = reason });
+                }
+                return (IReadOnlyList<RequestWant>)changed;
+            });
+        }
         /// <summary>Title intent for read models, with canonical provider identity.</summary>
         public IReadOnlyList<RequestWant> ForTitle(string key) => _db.Read(c => Wants(c, null, "title_key=$key", ("$key", key)));
         /// <summary>
@@ -892,7 +947,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Exec(c, t, "DELETE FROM request_audit WHERE created_at<$at", ("$at", Ms(now.AddDays(-180))));
             Exec(c, t, "DELETE FROM automation_log WHERE created_at<$at", ("$at", Ms(now.AddDays(-90))));
             Exec(c, t, "DELETE FROM wants WHERE status IN ('fulfilled','cancelled','declined') AND updated_at<$at", ("$at", Ms(now.AddYears(-1))));
-            return Exec(c, t, "UPDATE wants SET status='stale',reason='stale' WHERE status='sent' AND created_at<$at", ("$at", Ms(now.AddDays(-Math.Clamp(staleDays, 1, 365)))));
+            // A 4K request nothing can take (no_4k_instance) says so; it never turns stale meanwhile.
+            return Exec(c, t, "UPDATE wants SET status='stale',reason='stale' WHERE status='sent' AND reason<>'" + No4k + "' AND created_at<$at", ("$at", Ms(now.AddDays(-Math.Clamp(staleDays, 1, 365)))));
         });
         /// <summary>Lab-only durable send claim, with no transport. Restart recovery must read it back.</summary>
         public bool LabHold(string wantId, DateTimeOffset now) => _db.Write((c, t) =>
