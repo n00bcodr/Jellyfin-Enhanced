@@ -23,6 +23,8 @@
             replaceTitle: JE.pluginConfig.SpoilerReplaceTitle !== false,
             cast: JE.pluginConfig.SpoilerStripCast !== false,
             reviews: JE.pluginConfig.SpoilerStripReviews !== false,
+            // Trickplay seek previews (admin SpoilerBlurTrickplay, default on).
+            trickplay: JE.pluginConfig.SpoilerBlurTrickplay !== false,
             // Advanced per-category reveals. Gated on the admin having
             // explicitly ENABLED advanced mode (not "not disabled" like the
             // strip categories above) — there is nothing to opt out of while
@@ -66,6 +68,7 @@
                     ${row('sbPrefHideTaglines', 'HideTaglines', 'panel_settings_spoiler_guard_override_taglines', 'panel_settings_spoiler_guard_override_taglines_desc', adminOn.taglines)}
                     ${row('sbPrefHideTags', 'HideTags', 'panel_settings_spoiler_guard_override_tags', 'panel_settings_spoiler_guard_override_tags_desc', adminOn.tags)}
                     ${row('sbPrefHideReviews', 'HideReviews', 'panel_settings_spoiler_guard_override_reviews', 'panel_settings_spoiler_guard_override_reviews_desc', adminOn.reviews)}
+                    ${row('sbPrefHideTrickplay', 'HideTrickplay', 'panel_settings_spoiler_guard_override_trickplay', 'panel_settings_spoiler_guard_override_trickplay_desc', adminOn.trickplay)}
                     ${row('sbPrefUseAdvancedCategories', 'UseAdvancedCategories', 'panel_settings_spoiler_guard_override_advanced', 'panel_settings_spoiler_guard_override_advanced_desc', adminOn.advanced)}
                     <div style="margin-top:12px;padding:12px;background:${ctx.presetBoxBackground};border-radius:6px;border-left:3px solid ${ctx.toggleAccentColor};">
                         <label style="display:flex;align-items:center;gap:12px;cursor:pointer;">

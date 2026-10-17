@@ -25,7 +25,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     //   • Season posters for S2+ of an opted-in series with no episode watched
     //   • Movies opted in directly OR via an opted-in collection (until played;
     //     SpoilerKeepMoviePosters can exempt the Primary/Thumb poster)
-    //   • Trickplay tile-sheets and (when SpoilerBlurArtwork is on) backdrops
+    //   • Trickplay tile-sheets (unless the admin turned SpoilerBlurTrickplay
+    //     off or the user opted out via Prefs.HideTrickplay=false) and (when
+    //     SpoilerBlurArtwork is on) backdrops
     // A collection's (BoxSet's) OWN art always passes through — it's a shortcut
     // that protects the movies inside, not itself. Per-user state lives in
     // spoilerblur.json (Series / Movies / Collections / PendingTmdb / Prefs).
@@ -411,6 +413,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var jUser = _userManager.GetUserById(effectiveUserId);
             if (jUser == null)
             {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            // Trickplay opt-out (admin SpoilerBlurTrickplay=false, or every
+            // in-scope candidate set Prefs.HideTrickplay=false). Checked before
+            // the movie/episode branches so the progressive-reveal trickplay
+            // lookup is skipped. Same rationale as the artwork tier with its
+            // toggle OFF: pass the original bytes through BUT with no-store, so
+            // turning protection back on takes effect on the next fetch instead
+            // of a browser/proxy holding the unprotected sheet.
+            if (isTrickplay && !TrickplayProtectionApplies(context.HttpContext, pluginConfig, candidates, item))
+            {
+                RegisterNoStoreOnStarting(context.HttpContext);
                 await next().ConfigureAwait(false);
                 return;
             }
@@ -969,6 +985,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 default:
                     return false;
             }
+        }
+
+        // Is trickplay protection on for this in-scope trickplay request? The
+        // admin switch (SpoilerBlurTrickplay) caps everything. Otherwise each
+        // user may opt out with Prefs.HideTrickplay=false (null/true inherit
+        // the admin's protection). Fail-CLOSED on a shared-IP request: the
+        // sheet is only exempt when EVERY candidate whose scope covers the item
+        // opted out — one in-scope candidate still inheriting keeps it
+        // protected, matching the "protect if ANY opted in" effective-user
+        // pick. Only called for trickplay routes, after an in-scope candidate
+        // was found; LoadUserState is cached per request, so re-walking the
+        // candidates costs no extra disk reads.
+        private bool TrickplayProtectionApplies(
+            Microsoft.AspNetCore.Http.HttpContext httpContext,
+            Configuration.PluginConfiguration pluginConfig,
+            IReadOnlyList<Guid> candidates,
+            BaseItem item)
+        {
+            if (!pluginConfig.SpoilerBlurTrickplay) return false;
+            foreach (var candidate in candidates)
+            {
+                if (candidate == Guid.Empty) continue;
+                var candidateState = _resolver.LoadUserState(httpContext, candidate);
+                if (candidateState.Prefs?.HideTrickplay != false
+                    && ItemInSpoilerScope(candidateState, item))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         // A movie is "in spoiler scope" when either (a) the user has it

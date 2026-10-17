@@ -376,6 +376,8 @@ All use own/admin authorization. GETs are `no-store`; POST replaces the complete
 | POST | `user-settings/{userId}/shortcuts.json` | Replace shortcut list |
 | GET | `user-settings/{userId}/elsewhere.json` | Provider preferences |
 | POST | `user-settings/{userId}/elsewhere.json` | Replace provider preferences |
+| GET | `user-settings/{userId}/ddd-triggers.json` | Picked DoesTheDogDie trigger IDs, `{Triggers:[int]}` |
+| POST | `user-settings/{userId}/ddd-triggers.json` | Replace picked trigger IDs |
 | GET | `user-settings/{userId}/hidden-content.json` | Hidden Content state |
 | POST | `user-settings/{userId}/hidden-content.json` | Replace Hidden Content state |
 | GET | `user-settings/{userId}/spoilerblur.json` | Raw Spoiler Guard state |
@@ -932,12 +934,13 @@ The four dictionaries default to `{}` and use case-insensitive keys. Library key
   "ReplaceEpisodeTitles": null,
   "HideCast": null,
   "HideReviews": null,
+  "HideTrickplay": null,
   "UseAdvancedCategories": null,
   "SkipDisableConfirm": false
 }
 ```
 
-Nullable category flags inherit policy with null, and opt out of stripping with false. True never enables a category that the administrator disabled. `UseAdvancedCategories=false` instead restores uniform stripping by opting out of category reveals.
+Nullable category flags inherit policy with null, and opt out of stripping with false. True never enables a category that the administrator disabled. `HideTrickplay=false` opts out of trickplay seek-preview protection (`SpoilerBlurTrickplay`). `UseAdvancedCategories=false` instead restores uniform stripping by opting out of category reveals.
 
 POST replaces preferences rather than patching them; missing body returns `400`.
 
@@ -1123,9 +1126,9 @@ Preview may fall back to original bytes when no tags render. Artwork stays origi
 
 Diagnostic headers use the prefix `X-JE-Poster-Tags-`: `Status`, `Artwork` (`original`), `Master-Enabled`, `User-Enabled`, `Any-Group`, `Settings-Digest`, `Spoiler-Stripped`.
 
-### Audio tags, awards, and MDBList
+### Audio tags, awards, MDBList, and content warnings
 
-Use these routes to look up language tag names, awards, and external ratings. The account-status route lets administrators check MDBList limits.
+Use these routes to look up language tag names, awards, external ratings, and DoesTheDogDie content warnings. The account-status route lets administrators check MDBList limits.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -1134,6 +1137,7 @@ Use these routes to look up language tag names, awards, and external ratings. Th
 | **Show Awards Banner** | `false` | `ShowAwards`; enables Wikidata lookup, without a TMDB key requirement. |
 | **Enable MDBList Ratings** | `false` | `MdblistRatingsEnabled`; gates MDBList title responses. |
 | **MDBList API Key** | `""` | `MdblistApiKey`; enables upstream lookups. |
+| **Show Content Warnings** | `false` | `DoesTheDogDieEnabled`; also needs a nonblank `DoesTheDogDieApiKey`. |
 
 | Method | Path | Access | Contract |
 |---|---|---|---|
@@ -1141,6 +1145,8 @@ Use these routes to look up language tag names, awards, and external ratings. Th
 | GET | `awards/{mediaType}/{tmdbId}` | Authenticated | `movie`, `tv`, or `person` → awards object. |
 | GET | `mdblist-ratings/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → MDBList object. |
 | GET | `mdblist-ratings/account-status` | Administrator | Optional nonblank query `apiKey` override → live account status. |
+| GET | `ddd/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → DoesTheDogDie object. |
+| GET | `ddd/topics` | Authenticated | Topic catalogue for the trigger picker. |
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
@@ -1162,6 +1168,10 @@ MDBList object: `{Found,Ratings,Confirmed,FetchedAtUnixMs,Ids}`. Each rating has
 `Found:false,Confirmed:true` is a confirmed miss. `Confirmed:false` is an unavailable/unconfirmed placeholder and should be retried, rather than treated as a definitive miss.
 
 A missing MDBList key can return such a successful placeholder; a fresh cached result can still be returned. Confirmed awards/ratings get 30-minute private browser caching; unconfirmed placeholders do not.
+
+DoesTheDogDie object: `{Found,ItemId,Name,Topics,Confirmed,FetchedAtUnixMs}`. Each topic has `{Id,Name,Yes,No}`, where `Yes` and `No` are vote counts; only topics with at least one vote are included. `ItemId` builds the title link `https://www.doesthedogdie.com/media/{ItemId}`. Cached found results last 30 days, confirmed misses 14 days, and failed lookups return `Confirmed:false` and are retried after an hour. Movie and show matches are separated by media type, because one TMDB ID can exist as both.
+
+`ddd/topics` returns `{Topics:[{Id,Name,Category,Group}],FetchedAtUnixMs}`, refreshed about monthly. If the catalogue cannot be fetched and none is cached it returns `502`. Both `ddd` routes return `503` when the feature or key is missing and `400` for an unsupported media type or non-digit ID. The upstream key never reaches the client.
 
 Account status force-refreshes and returns `{Plan,IsSupporter,RateLimit,RateLimitRemaining,RateLimitResetUnixSeconds,FetchedAtUnixMs}`. Without a supplied/saved key it returns `503`; unavailable account status `502`. Reset time is Unix **seconds**, fetch time Unix **milliseconds**.
 
@@ -1229,7 +1239,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `TmdbEnabled`, `EnableCustomSplashScreen`, `ElsewhereEnabled`, `ElsewhereSeasonProviders`, `AutoPauseEnabled`, `AutoResumeEnabled`, `AutoPipEnabled`, `AutoSkipIntro` | Boolean |
     | `AutoSkipOutro`, `LongPress2xEnabled`, `RandomButtonEnabled`, `RandomIncludeMovies`, `RandomIncludeShows`, `RandomUnwatchedOnly`, `RandomScopeCurrentContainer`, `ShowWatchProgress` | Boolean |
     | `ShowFileSizes`, `RemoveContinueWatchingEnabled`, `ShowAudioLanguages`, `ShowReviews`, `ShowUserReviews`, `ReviewsExpandedByDefault`, `HideReviewsFromHiddenUsers`, `HideReviewsFromDisabledUsers` | Boolean |
-    | `ShowAwards`, `MdblistEnabled`, `MdblistRatingsEnabled`, `MdblistRatingsShowOnItemDetails`, `MdblistRatingsShowPercentSymbol`, `ShowReleaseDates`, `ShowUserRatingOnPosters`, `ShowUserRatingDash` | Boolean |
+    | `ShowAwards`, `DoesTheDogDieEnabled`, `MdblistEnabled`, `MdblistRatingsEnabled`, `MdblistRatingsShowOnItemDetails`, `MdblistRatingsShowPercentSymbol`, `ShowReleaseDates`, `ShowUserRatingOnPosters`, `ShowUserRatingDash` | Boolean |
     | `PauseScreenEnabled`, `ShowPlaybackRatingBadge`, `NativePosterTagsEnabled`, `TagStyleWebActive`, `QualityTagsEnabled`, `ShowResolutionTag`, `ShowSourceTag`, `ShowDynamicRangeTag` | Boolean |
     | `ShowSpecialFormatTag`, `ShowVideoCodecTag`, `ShowAudioInfoTag`, `GenreTagsEnabled`, `LanguageTagsEnabled`, `RatingTagsEnabled`, `AgeRatingTagsEnabled`, `PeopleTagsEnabled` | Boolean |
     | `DisableAllShortcuts`, `DisableCustomSubtitleStyles`, `LanguageTagsPriorityStrict`, `QualityTagsAudioLanguageFromUser`, `RatingTagsOnMovies`, `RatingTagsOnSeries`, `RatingTagsOnSeasons`, `RatingTagsOnEpisodes` | Boolean |
@@ -1246,7 +1256,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `RecommendationsUseCustomTabs`, `RecommendationsUseNativeTab`, `ActivityFeedEnabled`, `ActivityFeedUseCustomTabs`, `ActivityFeedUseNativeTab`, `ActivityFeedShowWatched`, `ActivityFeedShowFavorited`, `ActivityFeedShowReviewed` | Boolean |
     | `ActivityFeedShowActiveStreams`, `HiddenContentEnabled`, `HiddenContentUsePluginPages`, `HiddenContentUseCustomTabs`, `HiddenContentUseNativeTab`, `HiddenContentAdmin`, `CatchUpEnabled`, `CatchUpUsePluginPages` | Boolean |
     | `CatchUpUseCustomTabs`, `CatchUpUseNativeTab`, `MaintenanceModeEnabled`, `SpoilerBlurEnabled`, `SpoilerBlurStrictRefresh`, `SpoilerStripSeriesOverview`, `SpoilerStripOverview`, `SpoilerStripTags` | Boolean |
-    | `SpoilerStripChapters`, `SpoilerStripTaglines`, `SpoilerStripRatings`, `SpoilerStripPremiereDate`, `SpoilerReplaceTitle`, `SpoilerStripCast`, `SpoilerStripReviews`, `SpoilerAdvancedMode` | Boolean |
+    | `SpoilerStripChapters`, `SpoilerStripTaglines`, `SpoilerStripRatings`, `SpoilerStripPremiereDate`, `SpoilerReplaceTitle`, `SpoilerStripCast`, `SpoilerStripReviews`, `SpoilerBlurTrickplay`, `SpoilerAdvancedMode` | Boolean |
     | `ToastDuration`, `HelpPanelAutocloseDelay`, `PauseScreenDelaySeconds`, `ResolutionTagOrder`, `SourceTagOrder`, `DynamicRangeTagOrder`, `SpecialFormatTagOrder`, `VideoCodecTagOrder` | Integer |
     | `AudioInfoTagOrder`, `DefaultSubtitleStyle`, `DefaultSubtitleSize`, `DefaultSubtitleFont`, `DefaultSubtitleTextEffect`, `TagsCacheTtlDays`, `DownloadsPollIntervalSeconds`, `SpoilerBlurIntensity` | Integer |
     | `SplashScreenImageUrl`, `DEFAULT_REGION`, `DEFAULT_PROVIDERS`, `IGNORE_PROVIDERS`, `ElsewhereCustomBrandingText`, `ElsewhereCustomBrandingImageUrl`, `WatchProgressDefaultMode`, `WatchProgressTimeFormat` | String |
@@ -1275,7 +1285,7 @@ Locale JSON tries the requested code, then a base-language fallback such as `de-
 
 Font names are `materialsymbolsrounded-subset.woff2`, `materialsymbolsoutlined-subset.woff2`, `materialsymbolsrounded.woff2`, `materialsymbolsoutlined.woff2`. Unsupported/missing names return `404`.
 
-CDN `source` is one of `selfhst`, `jellyfish`, `dashboard-icons`, `zesty`, `jelly-helper`, `moonbase`, `flagcdn`, `flag-icons`, `ibb`, `locales`, `je-docs-img`, `je-css`, `icon-metadata`, `elsewhere-res`, `award-logos`, `mdblist-logos`, `mdblist-static`. It is a fixed-source mirror, rather than a generic URL proxy.
+CDN `source` is one of `selfhst`, `jellyfish`, `dashboard-icons`, `zesty`, `jelly-helper`, `moonbase`, `flagcdn`, `flag-icons`, `ibb`, `locales`, `je-docs-img`, `je-css`, `icon-metadata`, `elsewhere-res`, `award-logos`, `mdblist-logos`, `mdblist-static`, `ddd-static`. It is a fixed-source mirror, rather than a generic URL proxy.
 
 Paths/content types are validated, and some sources allow only fixed assets. Unknown/refused/unavailable assets return `404`; success uses the asset MIME, one-day public caching, ETag and `304`. No client feature toggle gates fonts/CDN.
 

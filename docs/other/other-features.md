@@ -492,6 +492,69 @@ JE uses your MDBList account status to track limits, remaining quota, and reset 
 
 If no badges appear, check the master/display switches, key status, TMDB metadata, and available source data. If Jellyfin's own fields stay unchanged, check the Sync switch, cached data, chosen sources, and overwrite setting. Failed batches are logged and can be retried on a later Fetch run.
 
+## Content Warnings
+
+Show community-voted content warnings, such as "a dog dies", gore or flashing lights, on movie and series pages. The data comes from [DoesTheDogDie](https://www.doesthedogdie.com), and each user chooses which triggers matter to them.
+
+![Content Warnings section on a movie detail page, between Reviews and the Director and Studios block, showing a dog dies at 91% with 1,509 votes and a green not reported chip](../images/other/content-warnings.webp)
+
+### How to use
+
+1. Create a DoesTheDogDie account and copy the API key from your profile page.
+2. Open admin **Display** → **Content Warnings (DoesTheDogDie)** and turn on **Show Content Warnings**.
+3. Paste the key into **DoesTheDogDie API Key**, click **Save Settings**, and reload the web client.
+4. Open a movie or series that DoesTheDogDie knows about. A **Content Warnings** section appears above Reviews.
+5. Click the gear icon on the section to choose your own triggers.
+
+![Content Warnings (DoesTheDogDie) settings in the admin Display tab, with the master switch and API key field](../images/other/content-warnings-admin.webp)
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Show Content Warnings** | Off | Master switch. The section also needs a saved key. |
+| **DoesTheDogDie API Key** | Empty | Account key used by the server. Viewers never see it. |
+
+### Reading the section
+
+Each chip is one trigger with the share of votes that say it happens in the title and the total number of votes, for example `A dog dies 91% · 1,509`. Hover a chip to see the yes/no split.
+
+| Colour | Share of "yes" votes |
+|---|---|
+| Red | 90% and above |
+| Orange | 75% to 89% |
+| Yellow | 50% to 74% |
+| Green | One of your picked triggers, reported as not happening |
+
+Before you pick anything, the section lists every trigger that most voters say is present, most-voted first. Topics with fewer than three votes are left out so a single stray vote cannot headline the list.
+
+### Choosing your triggers
+
+The gear icon opens a searchable list of all DoesTheDogDie topics, grouped by category. Tick the ones you care about and click **Save**. The choice is personal and stored server-side with your other settings, so it follows you between devices.
+
+![Your triggers dialog with a search box and topics grouped by category, with A dog dies ticked](../images/other/content-warnings-picker.webp)
+
+After you have picked triggers:
+
+- Your triggers are shown first, with a summary such as "2 of your 5 triggers reported for this title".
+- A picked trigger that voters say does not happen shows as a green "not reported" chip.
+- A picked trigger nobody has voted on for this title is not shown, because no data is not the same as "does not happen".
+- Everything else is folded behind **+ N other triggers**. Click it to expand and click again to fold.
+
+### Request budget
+
+DoesTheDogDie's free tier allows 5,000 requests a month for the whole server and is for non-commercial use only. JE keeps requests low:
+
+- One shared cache serves every user, and your personal trigger filter is applied in the browser, so it costs nothing.
+- A title that has not been opened before costs two requests. After that it costs none: results are kept for 30 days, and a title DoesTheDogDie does not know is remembered for 14 days.
+- Several people opening the same new title at once share one lookup.
+- JE reads the remaining monthly and per-minute allowance from every response, stops looking up new titles when about 100 requests remain for the month, and pauses all lookups when DoesTheDogDie reports a rate limit.
+- The topic list for the picker is refreshed about once a month.
+
+!!! note "Attribution"
+
+    DoesTheDogDie requires the text "Powered by DoesTheDogDie.com" next to its data. JE shows it under the section and links it to the title's page on their site. The wording is fixed and is not translated.
+
+If nothing appears, check that the master switch is on and a key is saved, that the item has a TMDB ID, and that DoesTheDogDie has the title. Seasons and episodes use their parent series. Lookups that fail are retried after an hour.
+
 ## Hidden Content
 
 Hide and restore content with JE's per-user tools.

@@ -549,6 +549,11 @@
                                 <div class="fieldDescription">When on, a protected movie's poster still shows in full, but the scene thumbnails inside the movie's detail page (chapters, screenshots) stay hidden. Useful if you find movie posters are usually marketing art that doesn't give plot away, while the chapter scene-thumbs inside the movie do. Doesn't affect TV shows.</div>
                             </div>
 
+                            <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerBlurTrickplay" is="emby-checkbox" type="checkbox"/><span>Hide trickplay seek previews</span></label></div>
+                            <div class="je-setting-description" data-desc-for="spoilerBlurTrickplay" data-gated-by="spoilerBlurEnabled">
+                                <div class="fieldDescription">Protects the scrubbing thumbnails the player shows while you seek through an unwatched protected episode or movie. Sheets that end before your saved progress are still shown. Turn this off to always show seek previews. Users can also turn it off for themselves in their Spoiler Guard settings.</div>
+                            </div>
+
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnFirstPlay" is="emby-checkbox" type="checkbox"/><span>Auto-enable Spoiler Guard on first play of a new show</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerAutoEnableOnFirstPlay" data-gated-by="spoilerBlurEnabled">
                                 <div class="fieldDescription">When on, Spoiler Guard turns itself on for a series the moment a user starts Season 1 Episode 1 of a show they've never watched. They don't have to remember to flip the toggle before pressing play. Rewatches and jumping in at later episodes are ignored; only a fresh first-play counts.</div>
@@ -795,6 +800,29 @@
                             <div class="checkboxContainer je-main-feature"><label><input id="showAwards" is="emby-checkbox" type="checkbox"/><span>Show Awards Banner</span></label></div>
                             <div class="je-setting-description" data-desc-for="showAwards">
                                 <div class="fieldDescription je-field-desc-sm-font-lg">Shows a wins/nominations banner on item-details pages, sourced from Wikidata by TMDB id. Data is as accurate as what is available in Wikidata.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" data-je-cdn="ddd-static/favicon.ico" alt="">Content Warnings (DoesTheDogDie)</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="doesTheDogDieEnabled" is="emby-checkbox" type="checkbox"/><span>Show Content Warnings</span></label></div>
+                            <div class="je-setting-description" data-desc-for="doesTheDogDieEnabled">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Shows community-voted content warnings (a dog dies, gore, flashing lights and more) on movie and show pages</li>
+                                        <li>Each user picks the triggers they care about with the gear icon on the section</li>
+                                        <li>Requires a free API key from doesthedogdie.com. The free tier is for non-commercial use and allows 5,000 requests a month for the whole server. Results are cached for weeks, so only titles nobody has opened yet cost requests</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="doesTheDogDieApiKey">DoesTheDogDie API Key</label>
+                                <input id="doesTheDogDieApiKey" is="emby-input" type="text" autocomplete="off" class="je-api-input"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="doesTheDogDieApiKey">
+                                <div class="fieldDescription">Your API key from your <a class="sectionTitle" href="https://www.doesthedogdie.com/profile" target="_blank">doesthedogdie.com</a> profile page.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -6525,6 +6553,8 @@
                 document.querySelector('#showPlaybackRatingBadge').checked = config.ShowPlaybackRatingBadge === true;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#showAwards').checked = !!config.ShowAwards;
+                document.querySelector('#doesTheDogDieEnabled').checked = !!config.DoesTheDogDieEnabled;
+                document.querySelector('#doesTheDogDieApiKey').value = config.DoesTheDogDieApiKey || '';
                 document.querySelector('#mdblistRatingsEnabled').checked = !!config.MdblistRatingsEnabled;
                 document.querySelector('#mdblistApiKey').value = config.MdblistApiKey || '';
                 document.querySelector('#mdblistRatingsShowOnItemDetails').checked = config.MdblistRatingsShowOnItemDetails !== false;
@@ -6903,6 +6933,7 @@
                     ['spoilerAutoEnableMovies',     'SpoilerAutoEnableMovies',     true],
                     ['spoilerBlurStrictRefresh',    'SpoilerBlurStrictRefresh',    false],
                     ['spoilerKeepMoviePosters',     'SpoilerKeepMoviePosters',     true],
+                    ['spoilerBlurTrickplay',        'SpoilerBlurTrickplay',        true],
                     // Advanced per-category reveals. The master switch is off
                     // for existing installs; the category masks keep the
                     // strictest posture except the next-episode title, which
@@ -7096,6 +7127,8 @@
             config.ShowPlaybackRatingBadge = document.querySelector('#showPlaybackRatingBadge').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ShowAwards = document.querySelector('#showAwards').checked;
+            config.DoesTheDogDieEnabled = document.querySelector('#doesTheDogDieEnabled').checked;
+            config.DoesTheDogDieApiKey = document.querySelector('#doesTheDogDieApiKey').value.trim();
             config.MdblistRatingsEnabled = document.querySelector('#mdblistRatingsEnabled').checked;
             config.MdblistApiKey = document.querySelector('#mdblistApiKey').value.trim();
             config.MdblistRatingsShowOnItemDetails = document.querySelector('#mdblistRatingsShowOnItemDetails').checked;
@@ -7414,6 +7447,7 @@
                 'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies',
                 'spoilerBlurStrictRefresh',
                 'spoilerKeepMoviePosters',
+                'spoilerBlurTrickplay',
                 'spoilerAdvancedMode',
                 'spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview',
                 'spoilerNextEpisodeStripRatings', 'spoilerNextEpisodeStripImage',
@@ -8630,6 +8664,7 @@
         var PARENT_DEPS = [
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
+            { parent: 'doesTheDogDieEnabled', label: 'Show Content Warnings', children: ['doesTheDogDieApiKey'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistCommunityRatingSource', 'mdblistCommunityRatingFallbackSource', 'mdblistCriticRatingSource', 'mdblistCriticRatingFallbackSource', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
@@ -8664,7 +8699,7 @@
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseNativeTab', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseNativeTab', 'hiddenContentUseCustomTabs'] },
-            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerAutoEnableOnLibraryAdd', 'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerAdvancedMode'] },
+            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerAutoEnableOnLibraryAdd', 'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerBlurTrickplay', 'spoilerAdvancedMode'] },
             { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] },
             { parent: 'spoilerAdvancedMode',  label: 'Enable advanced per-category reveals', children: ['spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview', 'spoilerNextEpisodeStripRatings', 'spoilerNextEpisodeStripImage', 'spoilerCurrentSeasonStripTitle', 'spoilerCurrentSeasonStripOverview', 'spoilerCurrentSeasonStripRatings'] }
         ];

@@ -191,6 +191,10 @@
       "category": "Model"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/DoesTheDogDieData.cs",
+      "category": "Model"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Jellyseerr/JellyseerrPermission.cs",
       "category": "Model"
     },
@@ -340,6 +344,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/DoesTheDogDieService.cs",
       "category": "Services"
     },
     {
@@ -1359,6 +1367,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/others/doesthedogdie.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/others/letterboxd-links.js",
       "category": "js"
     },
@@ -2140,6 +2152,44 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/ddd/{mediaType}/{tmdbId}",
+      "method": "GetDoesTheDogDie",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/ddd/topics",
+      "method": "GetDoesTheDogDieTopics",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/ddd-triggers.json",
+      "method": "GetUserSettingsDdd",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/ddd-triggers.json",
+      "method": "SaveUserSettingsDdd",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
       ]
     },
     {
@@ -3481,6 +3531,22 @@
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "DoesTheDogDieEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "DoesTheDogDieApiKey",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": "\"\"",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -5693,6 +5759,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "SpoilerBlurTrickplay",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "SpoilerAdvancedMode",
       "type": "bool",
       "initializer": "false",
@@ -6605,6 +6679,14 @@
     },
     {
       "class": "SpoilerBlurUserPrefs",
+      "name": "HideTrickplay",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "SpoilerBlurUserPrefs",
       "name": "UseAdvancedCategories",
       "type": "bool?",
       "initializer": null,
@@ -6768,6 +6850,14 @@
       "name": "SeasonProviders",
       "type": "bool",
       "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "DddSettings",
+      "name": "Triggers",
+      "type": "List<int>",
+      "initializer": "new List<int>()",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
@@ -7246,6 +7336,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
     },
     {
+      "literal": "ddd-triggers.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
+    },
+    {
       "literal": "elsewhere.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
     },
@@ -7267,6 +7361,10 @@
     },
     {
       "literal": "user-settings/{userId}/bookmark.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
+    },
+    {
+      "literal": "user-settings/{userId}/ddd-triggers.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
     },
     {
@@ -7316,6 +7414,10 @@
     {
       "literal": "component-scripts.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs"
+    },
+    {
+      "literal": "ddd-cache.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/DoesTheDogDieService.cs"
     },
     {
       "literal": "hidden-content.json",
@@ -7444,6 +7546,10 @@
     {
       "literal": "/JellyfinEnhanced/locales/en.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/translations.js"
+    },
+    {
+      "literal": "ddd-triggers.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/others/doesthedogdie.js"
     },
     {
       "literal": "bookmark.json",
@@ -7636,10 +7742,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 352,
-    "routes": 173,
-    "configuration_properties": 523,
-    "storage_references": 65,
+    "files": 355,
+    "routes": 177,
+    "configuration_properties": 528,
+    "storage_references": 69,
     "scheduled_tasks": 13,
     "locales": 33
   }
