@@ -506,7 +506,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             var own = Wants(c, t, "user_id=$u", ("$u", Id(user)));
             var ownSame = own.Where(w => Active(w) && w.TargetKey == TargetKey(facts) && w.Input.Key == normalized.Key && w.Input.Variant == normalized.Variant).ToArray();
-            // One of the person's own asks covers it, or several together do (an ask split at the series threshold).
+            // One of the person's own asks covers it, or several together do (an ask split at the series threshold). An ask
+            // choosing a Seerr destination is covered only by asks going there (MutationInput.Extra); else it is a request of
+            // its own, whose destination is checked when it is sent. The same holds for someone else's scope below.
             var sameOwn = ownSame.FirstOrDefault(w => normalized.Extra(new[] { w.Input }) == null)
                 ?? (ownSame.Length > 1 && normalized.Extra(ownSame.Select(w => w.Input)) == null ? ownSame.First(w => w.Input.Overlaps(normalized)) : null);
             if (sameOwn != null)

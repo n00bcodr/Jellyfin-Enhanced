@@ -454,6 +454,53 @@ public class IntegrationSeerrRequestOptionsTests
     }
 
     [Fact]
+    public async Task AnAskAtAnotherDestinationIsNeverAnEarlierRequestElsewhereAndIsCheckedWhenItIsSent()
+    {
+        using var rig = new Rig();
+        // The administrator's own request at the kids' server goes out.
+        var kids = await rig.Ask(rig.Admin, Choice(await rig.Stamp(1)));
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal("sent", rig.Ledger.Find(kids.RequestId!)!.Status);
+        // The same destination again, or no choice at all (Seerr may pick): that request is already recorded.
+        Assert.Equal((kids.RequestId, 200), ((await rig.Ask(rig.Admin, Choice(await rig.Stamp(1)))).RequestId, (await rig.Ask(rig.Admin, Choice(await rig.Stamp(1)))).HttpStatus));
+        Assert.Equal(kids.RequestId, (await rig.Ask(rig.Admin, new MutationInput { Key = Title })).RequestId);
+        // Another server: a request of its own. Seerr has the movie at the kids' server, so the send holds it (Seerr
+        // created nothing); the request at the kids' server stays as it was.
+        var other = await rig.Ask(rig.Admin, Choice(await rig.Stamp(0), server: 0, profile: 4, root: "/movies"));
+        Assert.True(other.HttpStatus == 201, other.Reason + ": " + other.Message);
+        Assert.NotEqual(kids.RequestId, other.RequestId);
+        Assert.Equal(0, Assert.Single(rig.Ledger.ForWant(other.RequestId!)).Input.SeerrServerId);
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal(2, rig.Fake.Posts.Count);
+        var held = Assert.Single(rig.Ledger.ForWant(other.RequestId!));
+        Assert.Equal(("parked", "seerr_options_changed", false), (held.State, held.Reason, held.Uncertain));
+        Assert.Equal(("pending", "sent"), (rig.Ledger.Find(other.RequestId!)!.Status, rig.Ledger.Find(kids.RequestId!)!.Status));
+
+        // Someone else's request (Seerr's default server) never counts as sent for an administrator's choice of another
+        // server: the choice is a request of its own, checked when it is sent.
+        var manager = await rig.Ask(rig.Manager, new MutationInput { Key = "movie:tmdb:604" });
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal("sent", rig.Ledger.Find(manager.RequestId!)!.Status);
+        var routed = await rig.Ask(rig.Admin, Choice(await rig.Stamp(1), key: "movie:tmdb:604"));
+        Assert.True(routed.HttpStatus == 201 && routed.Outcome != "merged", routed.Outcome + ": " + routed.Message);
+        Assert.Single(rig.Ledger.ForWant(routed.RequestId!));
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal(4, rig.Fake.Posts.Count);
+        Assert.Equal(("pending", "seerr_options_changed"), (rig.Ledger.Find(routed.RequestId!)!.Status, rig.Ledger.Find(routed.RequestId!)!.Reason));
+
+        // Both waiting to go at once (the other one first): the choice doesn't follow it (which would count it sent with it).
+        var first = await rig.Ask(rig.Manager, new MutationInput { Key = "movie:tmdb:605" });
+        rig.Lab.Now = rig.Lab.Now.AddSeconds(1);
+        var second = await rig.Ask(rig.Admin, Choice(await rig.Stamp(1), key: "movie:tmdb:605"));
+        Assert.Single(rig.Ledger.ForWant(second.RequestId!));
+        Assert.False(rig.Ledger.Find(second.RequestId!)!.Follower);
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal(6, rig.Fake.Posts.Count);
+        Assert.Equal("sent", rig.Ledger.Find(first.RequestId!)!.Status);
+        Assert.Equal(("pending", "seerr_options_changed"), (rig.Ledger.Find(second.RequestId!)!.Status, rig.Ledger.Find(second.RequestId!)!.Reason));
+    }
+
+    [Fact]
     public async Task AnAdministratorMayChooseOptionsWhenApprovingAndTheAccountItGoesOutAsNeedsSeerrsPermission()
     {
         using var rig = new Rig();

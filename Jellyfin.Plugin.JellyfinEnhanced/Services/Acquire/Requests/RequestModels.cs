@@ -103,9 +103,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (other.Scope == "episodes") return other.Episodes.Any(e => Seasons.Contains(e.Season));
             return Seasons.Intersect(other.Seasons).Any() || (Scope == "future" && other.Scope == "future");
         }
+        /// <summary>
+        /// True when <paramref name="other"/> goes where this input's administrator Seerr options say: the same Seerr server,
+        /// quality profile and root folder, chosen against the same options stamp (the server's facts and where Seerr
+        /// reaches it). An input without Seerr options goes wherever Seerr picks, so it never satisfies a choice.
+        /// </summary>
+        internal bool SameSeerrDestination(MutationInput other)
+            => other.SeerrServerId == SeerrServerId && other.SeerrProfileId == SeerrProfileId && other.SeerrRootFolder != null && SeerrRootFolder != null
+               && BridgePaths.SamePath(other.SeerrRootFolder, SeerrRootFolder) && string.Equals(other.SeerrOptions, SeerrOptions, StringComparison.OrdinalIgnoreCase);
+        /// <summary>
+        /// What of this input <paramref name="covered"/> doesn't ask for yet (null: nothing). An input carrying Seerr options
+        /// is covered only by inputs going to the same Seerr destination (<see cref="SameSeerrDestination"/>); one without
+        /// them is covered wherever the scope went.
+        /// </summary>
         internal MutationInput? Extra(IEnumerable<MutationInput> covered)
         {
-            var all = covered.Where(c => c.Key == Key && c.Variant == Variant && (InstanceId == null || c.InstanceId == null || c.InstanceId == InstanceId)).ToArray();
+            var all = covered.Where(c => c.Key == Key && c.Variant == Variant && (InstanceId == null || c.InstanceId == null || c.InstanceId == InstanceId) &&
+                (!HasSeerrOptions || SameSeerrDestination(c))).ToArray();
             if (Scope == "movie") return all.Length == 0 ? this : null;
             if (Scope == "episodes")
             {
