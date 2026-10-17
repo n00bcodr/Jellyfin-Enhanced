@@ -101,6 +101,11 @@
             let text = translations[key] || key;
             if (params) {
                 for (const [param, value] of Object.entries(params)) {
+                    // The household contact ("the admin" when none is named) can start a sentence: a capital there.
+                    if (param === 'contact' && typeof value === 'string' && value) {
+                        const start = value.charAt(0).toLocaleUpperCase() + value.slice(1);
+                        text = text.replace(/(^|[.!?]\s+)\{contact\}/g, (match, lead) => lead + start);
+                    }
                     text = text.replace(new RegExp(`{${param}}`, 'g'), value);
                 }
             }

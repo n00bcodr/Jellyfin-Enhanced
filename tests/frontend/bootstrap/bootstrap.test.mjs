@@ -236,3 +236,22 @@ for (const late of ['private-config', 'settings']) test(`per-endpoint fallback d
   assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
   assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-c': { name: 'user-c' } });
 });
+
+test('a household contact that starts a sentence starts with a capital ("the admin said no" reads "The admin said no")', async t => {
+  const h = setup(t);
+  await until(() => h.plugin.initialized);
+  h.plugin.translations = {
+    said_no: '{contact} said no',
+    asked: 'Asked! {contact} will take a look.',
+    paused: 'Asking is paused. {contact} can free up some space.',
+    waiting: 'Waiting for {contact} to OK it',
+    ready: '{title} is ready'
+  };
+  const t1 = (key, params) => h.plugin.t(key, params);
+  assert.equal(t1('said_no', { contact: 'the admin' }), 'The admin said no');
+  assert.equal(t1('asked', { contact: 'the admin' }), 'Asked! The admin will take a look.');
+  assert.equal(t1('paused', { contact: 'the admin' }), 'Asking is paused. The admin can free up some space.');
+  assert.equal(t1('waiting', { contact: 'the admin' }), 'Waiting for the admin to OK it', 'mid-sentence it stays as it is');
+  assert.equal(t1('said_no', { contact: 'Dad' }), 'Dad said no');
+  assert.equal(t1('ready', { title: 'iCarly' }), 'iCarly is ready', 'only the contact is touched, never a title');
+});
