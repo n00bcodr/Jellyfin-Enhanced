@@ -59,16 +59,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<DateTimeOffset> _now;
         private readonly Func<string, int, int[], bool>? _bind;
         private readonly Action<Guid>? _linked;
+        private readonly Func<TitleKey, CancellationToken, Task<int?>>? _findTmdb;
         private readonly ConcurrentDictionary<Guid, Prepared> _prepared = new();
         private readonly ConcurrentDictionary<string, (int? Id, DateTimeOffset At)> _ids = new(StringComparer.Ordinal);
         private SettingsRead? _settings;
 
         /// <summary>
         /// Creates the backend (DI); each send is bound on its ledger job before it leaves, and a person's requests waiting
-        /// for a Seerr account are woken (and the outbox signalled) as soon as Seerr links one to them.
+        /// for a Seerr account are woken (and the outbox signalled) as soon as Seerr links one to them. A title known only
+        /// by its TVDB or IMDb id is found on TMDB through the shared cache.
         /// </summary>
-        public SeerrBackend(IHttpClientFactory http, SeerrRequestReadModel model, TitleAliases aliases, RequestLedger ledger, RequestOutboxSignal signal)
-            : this(http, model, aliases, () => JellyfinEnhanced.Instance?.Configuration, () => DateTimeOffset.UtcNow, ledger.BindSeerrSend, user => Wake(ledger, signal, user))
+        public SeerrBackend(IHttpClientFactory http, SeerrRequestReadModel model, TitleAliases aliases, RequestLedger ledger, RequestOutboxSignal signal, TmdbResponseCache tmdb)
+            : this(http, model, aliases, () => JellyfinEnhanced.Instance?.Configuration, () => DateTimeOffset.UtcNow, ledger.BindSeerrSend, user => Wake(ledger, signal, user),
+                (key, ct) => RequestHubProjection.TmdbIdOfAsync(tmdb, key, ct))
         {
         }
 
@@ -90,9 +93,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// Creates the backend over explicit configuration and time (tests). <paramref name="bind"/> records a job's
         /// account and seasons before its POST (see <see cref="RequestLedger.BindSeerrSend"/>); null: not recorded.
         /// <paramref name="linked"/> hears of a person Seerr now links an account to after it didn't (or for the first
-        /// time since a start).
+        /// time since a start). <paramref name="findTmdb"/> names the TMDB id of a title no arr or Seerr request links one
+        /// to (null: such a title is held).
         /// </summary>
-        internal SeerrBackend(IHttpClientFactory http, SeerrRequestReadModel model, TitleAliases? aliases, Func<PluginConfiguration?> config, Func<DateTimeOffset> now, Func<string, int, int[], bool>? bind = null, Action<Guid>? linked = null)
+        internal SeerrBackend(IHttpClientFactory http, SeerrRequestReadModel model, TitleAliases? aliases, Func<PluginConfiguration?> config, Func<DateTimeOffset> now, Func<string, int, int[], bool>? bind = null, Action<Guid>? linked = null,
+            Func<TitleKey, CancellationToken, Task<int?>>? findTmdb = null)
         {
             _http = http;
             _model = model;
@@ -101,6 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _now = now;
             _bind = bind;
             _linked = linked;
+            _findTmdb = findTmdb;
         }
 
         private sealed record SettingsRead(string Source, SeerrRequestSettings Settings, DateTimeOffset At);
@@ -312,7 +318,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return BackendResults.Hold("invalid_defaults", "Instance, profile and folder choices can't be sent to Seerr; Seerr picks its own server.");
             var key = TitleKey.Parse(input.Key);
             if (key == null) return BackendResults.Failed("invalid_input", "The request's title key can't be read.");
-            if (TmdbOf(key) is not int tmdb) return BackendResults.Hold("title_not_found", "Seerr needs the title's TMDB id, which isn't known yet.");
+            if (await TmdbOfAsync(key, ct).ConfigureAwait(false) is not int tmdb) return BackendResults.Hold("title_not_found", "Seerr needs the title's TMDB id, which isn't known yet.");
             var is4k = input.Variant == "4k";
             string body;
             int[] seasons = Array.Empty<int>();
@@ -429,7 +435,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (config == null || source == null || source != job.Authorization.SeerrSource)
                 return BackendResults.Maybe(job.WantId, "The Seerr this request was sent to is no longer configured; check it there.", "identity_changed");
             var key = TitleKey.Parse(job.Input.Key);
-            if (key == null || TmdbOf(key) is not int tmdb) return BackendResults.Maybe(job.WantId, "The title can't be read back from Seerr.", "title_not_found");
+            if (key == null || await TmdbOfAsync(key, ct).ConfigureAwait(false) is not int tmdb) return BackendResults.Maybe(job.WantId, "The title can't be read back from Seerr.", "title_not_found");
             // Read where requests are sent.
             var url = Urls(config).FirstOrDefault();
             if (url == null) return BackendResults.Maybe(job.WantId, "Seerr has no address; the request stays unconfirmed.", "service_down");
@@ -526,7 +532,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var config = _config();
             if (config == null || _model.SourceOf(config) == null) return null;
-            if (TitleKey.Parse(titleKey) is not { IsMovie: false } key || TmdbOf(key) is not int tmdb) return null;
+            if (TitleKey.Parse(titleKey) is not { IsMovie: false } key || await TmdbOfAsync(key, ct).ConfigureAwait(false) is not int tmdb) return null;
             if (await GetAsync(config, "/api/v1/tv/" + tmdb.ToString(CultureInfo.InvariantCulture), ct).ConfigureAwait(false) is not { } tv) return null;
             var today = _now().UtcDateTime.Date;
             var started = new SortedSet<int>();
@@ -598,6 +604,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private int? TmdbOf(TitleKey key)
             => key.Provider == "tmdb" ? key.NumericId : _aliases?.Of(key).FirstOrDefault(a => a.Provider == "tmdb")?.NumericId;
+
+        // The TMDB id Seerr knows a title by: from the arr libraries and Seerr's requests, else (a title nothing here holds
+        // yet, known by its TVDB or IMDb id: a series asked for from its page before any arr has it) TMDB's find.
+        private async Task<int?> TmdbOfAsync(TitleKey key, CancellationToken ct)
+            => TmdbOf(key) ?? (_findTmdb == null ? null : await _findTmdb(key.Title, ct).ConfigureAwait(false));
 
         private static List<string> Urls(PluginConfiguration config)
             => (config.JellyseerrUrls ?? string.Empty).Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)

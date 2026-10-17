@@ -1175,6 +1175,34 @@ public class IntegrationRequestBackendsTests
     }
 
     [Fact]
+    public async Task ASeriesKnownOnlyByItsTvdbIdIsSentToSeerrUnderTheTmdbIdTmdbFindsForIt()
+    {
+        using var lab = new SeerrLab();
+        SeerrShow(lab.Seerr);
+        // Asked for from its page before any arr holds it: only TVDB's id is in the key, and no arr or Seerr request
+        // links it to a TMDB id.
+        var input = new MutationInput { Key = "tv:tvdb:79216", Scope = "seasons", Seasons = new[] { 1 } };
+        var held = await lab.Backend.SendAsync(lab.Job(input), Pass, default);
+        Assert.True(held.Parked);
+        Assert.Equal("title_not_found", held.Outcome.Reason);
+        Assert.Empty(lab.Seerr.Posts);
+        // TMDB's find names it: sent under that id, and read back under it too.
+        var asked = new List<TitleKey>();
+        var backend = new SeerrBackend(lab.Seerr.Transport, lab.Model, null, () => lab.Config, () => lab.Now,
+            findTmdb: (key, _) => { asked.Add(key); return Task.FromResult<int?>(key.Provider == "tvdb" && key.NumericId == 79216 ? 1731 : null); });
+        var sent = await backend.SendAsync(lab.Job(input), Pass, default);
+        Assert.True(sent.Confirmed, sent.Outcome.Message);
+        var body = Assert.Single(lab.Seerr.Posts).Body;
+        Assert.Equal(("tv", 1731), ((string)body["mediaType"]!, (int)body["mediaId"]!));
+        Assert.NotEqual("title_not_found", (await backend.ReadBackAsync(lab.Job(input), default)).Outcome.Reason);
+        Assert.All(asked, key => Assert.Equal("tv:tvdb:79216", key.ToString()));
+        // A key that already is TMDB's needs no find.
+        asked.Clear();
+        await backend.SendAsync(lab.Job(Show(2)), Pass, default);
+        Assert.Empty(asked);
+    }
+
+    [Fact]
     public async Task AnUnknownSeerrAccountAtSendWaitsInsteadOfParking()
     {
         using var lab = new SeerrLab();

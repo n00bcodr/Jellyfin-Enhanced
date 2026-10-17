@@ -1125,6 +1125,10 @@ After a change the title's entry and the queue are re-read, so the status pill f
 **Seerr mode** sends each request to Seerr *as the person who asked* (Seerr's per-user header with Jellyfin
 Enhanced's key), so Seerr's own permissions, quotas, approval rules and override rules apply:
 
+- Seerr knows titles by their TMDB id. A series asked for before any Sonarr or Seerr request holds it (from its page
+  while it isn't in the library, say) is known by its TVDB id only; Jellyfin Enhanced finds its TMDB id on TMDB
+  (through the shared TMDB cache, so it needs the TMDB API key) and sends it under that. Without one it waits
+  (`title_not_found`).
 - `is4k` is always sent. Who may ask for 4K comes from Seerr: its 4K server setting and the person's own Seerr 4K
   permission (Seerr's Admin permission includes it). Jellyfin administrator status doesn't bypass it.
 - Seerr's partial-request setting is read at send time and treated as on, off or *unknown* (anything that isn't a

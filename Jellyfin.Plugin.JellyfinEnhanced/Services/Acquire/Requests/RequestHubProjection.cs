@@ -462,7 +462,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
         }
 
-        /// <summary>Title, year, poster and certification of a TMDB title through the shared cache (server key).</summary>
         /// <summary>TMDB's id of a title known by its TVDB or IMDb id (TMDB's find, through the shared cache), or null.</summary>
         internal static async Task<int?> TmdbIdOfAsync(TmdbResponseCache tmdb, TitleKey title, CancellationToken ct)
         {
@@ -492,6 +491,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return null;
         }
 
+        /// <summary>Title, year, poster and certification of a TMDB title through the shared cache (server key).</summary>
         private static async Task<HubTitleMeta?> TmdbTitleAsync(TmdbResponseCache tmdb, string region, string media, int id, CancellationToken ct)
         {
             var key = JellyfinEnhanced.Instance?.Configuration.GetTmdbApiKey();
