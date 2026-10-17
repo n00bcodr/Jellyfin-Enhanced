@@ -144,7 +144,11 @@ public class IntegrationArrAdminAlertsTests
         Assert.InRange(rig.Arr.CallCount("radarr.lan", "/api/v3/history") - history, 5, 7);
         Assert.InRange(rig.Arr.CallCount("radarr.lan", "/api/v3/health") - system, 5, 7);
 
-        // A page reading the queue brings it back to the page's pace.
+        // A page reading the queue brings it back to the page's pace. Its reads answer slowly (a loaded machine).
+        rig.Radarr.Before = async (path, _) =>
+        {
+            if (path.Contains("/api/v3/queue", StringComparison.Ordinal)) await Task.Delay(40);
+        };
         var before = rig.Arr.CallCount("radarr.lan", "/api/v3/queue");
         var radarr = rig.Arr.Instance("RadarrZ");
         for (var second = 10; second <= 5 * 60; second += 10)
