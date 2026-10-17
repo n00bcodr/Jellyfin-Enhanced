@@ -287,9 +287,9 @@
   "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js": "c5b774773a42ef0da0c6dd3b55aee5aa3acb37434d6c0d1188ba0448745962b6",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsoutlined.woff2": "5741bbaa09c4b7d9654753144a38133072ca51cf0c931d13ab93bd391c3fc8be",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsrounded.woff2": "05cc9b9f8de1f641e9f8e54106c8fa665a834c7fbfab573b4f5a81704e78170a",
-  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js": "9624d29a2e4ef5eb02582385566f18d8f5fdbdba134d5b2ea54af08e970bf2a3",
-  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js": "6a9259059009079b44496068815dbea60a32d741d2217742e9c2e7f45ac28aaa",
-  "css/ratings.css": "56b280ac8d014d035a64ac1e7180138bc7de00e60235dbf9b3e254711ce2d0a5"
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js": "2b898546e693f159cfb166e4d3568304ace2bb337d6a128ce7c89ffcbbb71a58",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js": "1fb5bcdbb31fd1a917814dd8f84e84900270fe1ef17495b6eef06a4e52823354",
+  "css/ratings.css": "b87ae170cda8c05175fd03f49d7a090e3d704e06fcc47425bbc02e86b726fdf2"
  },
  "options": {
   "flagSize": [
@@ -312,8 +312,8 @@
    "sha256": "cd1ee2442b7350ab708e7a1cfb3cdd821f5347c138a65616e1e7f4a308151d9c"
   },
   "age-rating-colours.json": {
-   "bytes": 4563,
-   "sha256": "1be4462df3f53a849d24e5425bcacfe6828cd8dcb1a8a61538ff696865aedf12"
+   "bytes": 9177,
+   "sha256": "e4e27e727faaaadd00e0fc147ce9590ed8ec9792d3b62a92b65871374c15810b"
   },
   "flags/ad.webp": {
    "bytes": 3660,
