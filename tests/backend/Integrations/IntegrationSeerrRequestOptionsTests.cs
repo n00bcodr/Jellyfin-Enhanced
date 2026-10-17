@@ -436,6 +436,57 @@ public class IntegrationSeerrRequestOptionsTests
         Assert.True(result.VerifiedNotSent, result.Outcome.Message);
     }
 
+    [Theory]
+    [InlineData("requested at another root folder", false)]
+    [InlineData("only available (no request shows where)", false)]
+    [InlineData("requested at the chosen options", true)]
+    public async Task ASeasonAlreadyCoveredElsewhereNeverMakesAMultiSeasonAskWithOptionsConfirmed(string seasonOne, bool confirmed)
+    {
+        using var lab = new IntegrationRequestBackendsTests.SeerrLab(permissions: 2 | 8192);
+        lab.Config.ArrRequestBackend = "seerr";
+        lab.Config.ArrPhase4Enabled = true;
+        lab.Config.ArrPhase4SeerrRequestOptionsEnabled = true;
+        Servers(lab.Seerr);
+        // Season 1 is already covered: someone else's request (at /tv-anime, or at the chosen /tv), or it is just there.
+        var requests = seasonOne.StartsWith("requested", StringComparison.Ordinal)
+            ? new JsonArray(Existing(41, 0, 4, confirmed ? "/tv" : "/tv-anime", 1))
+            : new JsonArray();
+        var mediaSeasons = seasonOne.StartsWith("only", StringComparison.Ordinal)
+            ? new JsonArray(new JsonObject { ["seasonNumber"] = 1, ["status"] = 5, ["status4k"] = 1 })
+            : new JsonArray();
+        lab.Seerr.Shows[1731] = new JsonObject
+        {
+            ["id"] = 1731, ["seasons"] = new JsonArray(new JsonObject { ["seasonNumber"] = 1 }, new JsonObject { ["seasonNumber"] = 2 }),
+            ["mediaInfo"] = new JsonObject { ["status"] = 4, ["status4k"] = 1, ["requests"] = requests, ["seasons"] = mediaSeasons },
+        };
+        var input = new MutationInput
+        {
+            Key = "tv:tmdb:1731", Scope = "seasons", Seasons = new[] { 1, 2 }, SeerrServerId = 0, SeerrProfileId = 4, SeerrRootFolder = "/tv",
+            SeerrOptions = (await lab.Backend.RequestOptionsAsync(false, default))!.Single(s => s.Id == 0).Options,
+        };
+        var job = lab.Job(input);
+        var sent = await lab.Backend.SendAsync(job, () => null, default);
+        // Seerr created the person's request for season 2 at /tv (season 1 was taken already).
+        Assert.Equal("1,2", string.Join(",", Assert.Single(lab.Seerr.Posts).Body["seasons"]!.AsArray().Select(n => (int)n!)));
+        var created = lab.Seerr.Shows[1731]["mediaInfo"]!["requests"]!.AsArray().Last()!;
+        Assert.Equal(("/tv", "2"), ((string)created["rootFolder"]!, string.Join(",", created["seasons"]!.AsArray().Select(s => (int)s!["seasonNumber"]!))));
+        var readBack = await lab.Backend.ReadBackAsync(job, default);
+        if (confirmed)
+        {
+            Assert.True(sent.Confirmed, sent.Outcome.Message);
+            Assert.True(readBack.Confirmed, readBack.Outcome.Message);
+            return;
+        }
+        // Not every season asked for is at the chosen destination: held for a person with the destination reason. Part of it
+        // was written, so it stays uncertain (never cancelled or sent again), at the send and at a read-back alike.
+        foreach (var result in new[] { sent, readBack })
+        {
+            Assert.False(result.Confirmed, result.Outcome.Message);
+            Assert.Equal(("seerr_options_changed", true, false), (result.Outcome.Reason, result.Parked, result.VerifiedNotSent));
+            Assert.Equal(ArrActionStatus.Unknown, result.Outcome.Certainty);
+        }
+    }
+
     [Fact]
     public async Task ARequestSeerrStoredWithOtherOptionsIsNotAMatchAndIsNeverSentAgain()
     {

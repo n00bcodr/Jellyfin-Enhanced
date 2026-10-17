@@ -61,6 +61,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// scoped read of the title settles it. A 409 or a 202 "No seasons available" counts as success only
     /// with a JSON body and a fresh read that shows the scope already requested or available; for a request with
     /// administrator Seerr options, only by requests at the chosen server, profile and root folder (else it is held).
+    /// A created request (and a read-back) with options counts only when every season asked for is covered there.
     /// </summary>
     public sealed class SeerrBackend : IRequestBackend
     {
@@ -620,6 +621,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     // counts once a fresh read shows every sent season covered and this person's new request among them.
                     var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, seerrUser, CreatedId(raw.Body), ct).ConfigureAwait(false);
                     if (verify.Reason == OptionsMismatch) return OptionsNotApplied(job);
+                    if (verify.Reason == PartlyElsewhere) return PartlyNotApplied(job);
                     return verify.Matched == true
                         ? BackendResults.Done(job.WantId, "accepted", verify.Reason, "Asked in Seerr.", 201)
                         : BackendResults.Maybe(job.WantId, "Seerr accepted the request, but a fresh read doesn't show it yet.");
@@ -707,6 +709,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, own, null, ct).ConfigureAwait(false);
             if (verify.Reason == OptionsMismatch) return OptionsNotApplied(job);
+            if (verify.Reason == PartlyElsewhere) return PartlyNotApplied(job);
             return verify.Matched switch
             {
                 true => BackendResults.Done(job.WantId, "accepted", verify.Reason, "Confirmed in Seerr."),
@@ -732,6 +735,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// not with the chosen server, profile or root folder.
         /// </summary>
         private const string OptionsMismatch = "seerr_options_mismatch";
+
+        /// <summary>
+        /// <see cref="VerifyAsync"/>'s reason when the job carries Seerr options and the person's request is there with them,
+        /// but not every season asked for is covered at the chosen destination (some only elsewhere).
+        /// </summary>
+        private const string PartlyElsewhere = "seerr_options_partly_elsewhere";
+
+        // Seerr made the person's request with the options chosen, but some seasons asked for are requested or on their way
+        // elsewhere: held for a person after the write (certainty unknown: neither cancelled nor sent again).
+        private static RequestBackendResult PartlyNotApplied(RequestJob job)
+            => BackendResults.HoldAfterWrite(job.WantId, "seerr_options_changed", "Seerr has this person's request at the server, profile and root folder chosen, but some seasons asked for are requested or on their way elsewhere; check it in Seerr.");
 
         // The person's request is in Seerr with other options than chosen: held for a person (the written request stays;
         // its certainty stays unknown, so it is neither cancelled nor sent again).
@@ -798,6 +812,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             if (own == null) return (all, reason, false);
             var theirs = created != null ? mine.Count > 0 : mine.Any(r => SeasonsOf(r).Any(seasons.Contains));
+            // With Seerr options every season asked for must be covered at the chosen destination (anyone's request with the
+            // chosen options). One covered only by a request elsewhere, or only processing or available (no request shows
+            // where), isn't: the person's part is written, so it is held after the write.
+            if (job.Input.HasSeerrOptions && all && theirs)
+            {
+                var atChoice = edition.Where(r => SameOptions(r, job.Input)).SelectMany(SeasonsOf).ToHashSet();
+                if (!seasons.All(atChoice.Contains)) return (false, PartlyElsewhere, true);
+            }
             return (all && theirs, reason, theirs);
         }
 

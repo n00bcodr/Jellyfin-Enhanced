@@ -199,8 +199,8 @@ internal sealed class FakeSeerr : IDisposable
     }
 
     // Like Seerr's POST /api/v1/request: a duplicate movie request is a 409 with a JSON message, a series
-    // request whose seasons are all requested already is a 202 "No seasons available to request", and
-    // otherwise only the seasons not yet requested go into the new request (lab spike, 2026-10-14).
+    // request whose seasons are all requested (or already processing or available) is a 202 "No seasons
+    // available to request", and otherwise only the other seasons go into the new request (lab spike, 2026-10-14).
     private HttpResponseMessage Post(HttpRequestMessage request)
     {
         var body = JsonNode.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult())!.AsObject();
@@ -218,7 +218,11 @@ internal sealed class FakeSeerr : IDisposable
         if (movie && existing.Count > 0) return IntegrationTransport.Response("{\"message\":\"Request for this media already exists.\"}", 409);
         if (!movie)
         {
-            var taken = existing.SelectMany(r => r!["seasons"]!.AsArray().Select(x => (int)x!["seasonNumber"]!)).ToHashSet();
+            // Like Seerr (MediaRequest.request): seasons of its open requests (not declined or completed), and seasons the
+            // media already knows (any status but unknown, 1, or deleted, 7), aren't requested again.
+            var taken = existing.Where(r => (int)r!["status"]! != 5).SelectMany(r => r!["seasons"]!.AsArray().Select(x => (int)x!["seasonNumber"]!)).ToHashSet();
+            foreach (var known in (media["seasons"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
+                if (known[is4k ? "status4k" : "status"] is { } status && (int)status! is not (1 or 7) && known["seasonNumber"] is { } number) taken.Add((int)number!);
             seasons = body["seasons"]!.AsArray().Select(x => (int)x!).Where(n => !taken.Contains(n)).ToArray();
             if (seasons.Length == 0) return IntegrationTransport.Response("{\"message\":\"No seasons available to request\"}", 202);
         }
