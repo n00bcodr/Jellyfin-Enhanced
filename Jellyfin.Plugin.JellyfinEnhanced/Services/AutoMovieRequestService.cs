@@ -416,8 +416,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 int? currentIndex = null;
                                 int? nextIndex = null;
 
-                                // Find current movie and next movie
-                                var parts = partsArray.EnumerateArray().ToList();
+                                // Find current movie and next movie. Seerr lists the parts in TMDB's order, which isn't
+                                // release order: sorted as on the TMDB path (undated last).
+                                var parts = partsArray.EnumerateArray()
+                                    .OrderBy(p => p.TryGetProperty("releaseDate", out var r) && r.ValueKind == JsonValueKind.String && DateTime.TryParse(r.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var date) ? date : DateTime.MaxValue)
+                                    .ThenBy(p => p.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number ? id.GetInt32() : int.MaxValue)
+                                    .ToList();
                                 for (int i = 0; i < parts.Count; i++)
                                 {
                                     var part = parts[i];
@@ -448,22 +452,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                         }
                                     }
 
-                                    // Check release date if configured
-                                    if (config.AutoMovieRequestCheckReleaseDate && nextPart.TryGetProperty("releaseDate", out var releaseDateProp))
+                                    // Check release date if configured. Seerr sends ISO dates ("2001-01-01"); a
+                                    // culture-sensitive parse reads the year in the server's calendar (Persian, Thai
+                                    // Buddhist) and misjudges the release. A date-only value parses as the server's local
+                                    // midnight, so a title counts as released from the start of its release day in the
+                                    // server's time zone. A part with no date (planned, rumoured) isn't released, as on the
+                                    // TMDB path.
+                                    if (config.AutoMovieRequestCheckReleaseDate)
                                     {
-                                        var releaseDateStr = releaseDateProp.GetString();
-                                        // Seerr sends ISO dates ("2001-01-01"); a culture-sensitive parse reads the year
-                                        // in the server's calendar (Persian, Thai Buddhist) and misjudges the release.
-                                        // A date-only value parses as the server's local midnight, so a title counts as
-                                        // released from the start of its release day in the server's time zone.
-                                        if (!string.IsNullOrEmpty(releaseDateStr) && DateTime.TryParse(releaseDateStr, System.Globalization.CultureInfo.InvariantCulture,
-                                            System.Globalization.DateTimeStyles.None, out var releaseDate))
+                                        var releaseDateStr = nextPart.TryGetProperty("releaseDate", out var releaseDateProp) && releaseDateProp.ValueKind == JsonValueKind.String ? releaseDateProp.GetString() : null;
+                                        if (string.IsNullOrEmpty(releaseDateStr) || !DateTime.TryParse(releaseDateStr, System.Globalization.CultureInfo.InvariantCulture,
+                                            System.Globalization.DateTimeStyles.None, out var releaseDate) || releaseDate > DateTime.Now)
                                         {
-                                            if (releaseDate > DateTime.Now)
-                                            {
-                                                _logger.Debug($"[Auto-Movie-Request] Next movie is not yet released (release date: {releaseDateStr}), skipping");
-                                                return new NextMovie(null, "not_released", false);
-                                            }
+                                            _logger.Debug($"[Auto-Movie-Request] Next movie is not yet released (release date: {releaseDateStr ?? "none"}), skipping");
+                                            return new NextMovie(null, "not_released", false);
                                         }
                                     }
 

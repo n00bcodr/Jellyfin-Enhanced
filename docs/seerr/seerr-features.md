@@ -491,7 +491,8 @@ Automatically request media based on viewing behavior.
 
 - Trigger on playback start
 - Trigger after X minutes watched
-- Check release date (only request if released)
+- Check release date (only request if released; a movie with no release date yet counts as not released)
+- The next movie is the next one released in the collection, whatever order Seerr or TMDB lists the collection in
 
 With **Requests & downloads** phase 3 ("Ask for it") on, both record their requests in Jellyfin Enhanced under the
 household rules instead of sending them to Seerr directly; see
