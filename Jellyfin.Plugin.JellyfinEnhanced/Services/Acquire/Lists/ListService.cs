@@ -366,22 +366,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var accepted = await PrevalidateAsync(access, entries, skipped, cancellationToken).ConfigureAwait(false);
             accepted = await ExpandAsync(access, accepted, cancellationToken).ConfigureAwait(false);
             await UseServerPostersAsync(accepted.Where(e => e.Placeholder != null).Select(e => e.Placeholder!).ToList(), cancellationToken).ConfigureAwait(false);
-            var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
 
-            var outcome = await RunLockedAsync(access, kind, request, cancellationToken, () =>
+            var outcome = await RunLockedAsync(access, kind, request, cancellationToken, async () =>
             {
                 if (recheckAccess)
                 {
                     var (denied, current) = RecheckAccess(access);
                     if (denied != null)
                     {
-                        return Task.FromResult(denied);
+                        return denied;
                     }
 
                     access = current!;
                 }
 
-                return ApplyLockedAsync(access, accepted, skipped, position, expectedRev, visibility, hooks);
+                // Everything above ran before the lock and can take seconds: the caller's limits and which items they and
+                // the owner can open are checked again with the rights this write uses, failing closed.
+                var still = await RevalidateAsync(access, accepted, skipped, cancellationToken).ConfigureAwait(false);
+                var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
+                return await ApplyLockedAsync(access, still, skipped, position, expectedRev, visibility, hooks).ConfigureAwait(false);
             }).ConfigureAwait(false);
             if (outcome.Value is ApplyResultDto { Added.Count: > 0 } applied)
             {
@@ -628,6 +631,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             return accepted;
+        }
+
+        // Under the list lock: the accepted entries (real items, and placeholders the library expanded into real items)
+        // checked again against the caller and owner of this write. An item either of them can no longer open is skipped
+        // as notVisible (an expanded one then never lands, so its placeholder keeps that episode unfilled); a placeholder
+        // the caller's parental limit now hides (or can't verify) is skipped as blocked.
+        private async Task<List<ApplyEntry>> RevalidateAsync(ListAccess access, List<ApplyEntry> accepted, List<SkippedEntryDto> skipped, CancellationToken cancellationToken)
+        {
+            var blocked = await _access.GetHiddenPlaceholderIdsAsync(
+                accepted.Where(e => e.ItemId == null && e.Placeholder != null).Select(e => e.Placeholder!).ToList(),
+                access.User,
+                cancellationToken).ConfigureAwait(false);
+            var isPlaylist = access.List.Kind == ListKinds.Playlist;
+            var result = new List<ApplyEntry>(accepted.Count);
+            foreach (var entry in accepted)
+            {
+                if (entry.ItemId is Guid itemId)
+                {
+                    if (!_host.CanAccessItem(itemId, access.User) || (isPlaylist && (access.Owner == null || !_host.CanAccessItem(itemId, access.Owner))))
+                    {
+                        if (!skipped.Any(s => s.Index == entry.Index && s.Reason == "notVisible"))
+                        {
+                            skipped.Add(Skip(entry, "notVisible"));
+                        }
+
+                        continue;
+                    }
+                }
+                else if (entry.Placeholder != null && blocked.Contains(entry.Placeholder.Id))
+                {
+                    skipped.Add(Skip(entry, "blocked"));
+                    continue;
+                }
+
+                result.Add(entry);
+            }
+
+            return result;
         }
 
         private async Task<ListOutcome> ApplyLockedAsync(
