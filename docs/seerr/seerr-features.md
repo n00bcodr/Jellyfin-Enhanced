@@ -267,10 +267,13 @@ Report problems with media directly to Seerr.
 
 !!! note
 
-    Issue reporting button will be hidden, if these are true:
+    When Seerr can't be reached, the report icon is shown crossed out. Pressing it (or Enter/Space on it) says
+    why, and nothing else happens.
 
-    * Seerr is not reachable
-    * User is not linked
+    The report icon isn't shown at all when:
+
+    * The user has no linked Seerr account
+    * The item has no TMDB match
 
 ## Requests Page
 

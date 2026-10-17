@@ -585,7 +585,9 @@
     };
 
     /**
-     * Create a disabled "unavailable" button to show when reporting isn't possible
+     * Create the "unavailable" button to show when reporting isn't possible. It is aria-disabled, not
+     * disabled: a browser sends a disabled button no click, and a press (click, Enter or Space) has to
+     * show the toast that says why. It does nothing else.
      * @param {HTMLElement} container
      * @param {string} itemName
      * @param {string} mediaType
@@ -605,8 +607,8 @@
             ariaLabel = 'TMDB ID not found';
             title = 'TMDB ID not found for this item';
         } else if (reason === 'no-jellyseerr') {
-            ariaLabel = 'Jellyseerr unavailable';
-            title = 'Jellyseerr is not available';
+            ariaLabel = JE.t('jellyseerr_report_unavailable_seerr_down');
+            title = ariaLabel;
         } else if (reason === 'no-both') {
             ariaLabel = 'Reporting services unavailable';
             title = 'TMDB ID not found and Jellyseerr is not available';
@@ -617,21 +619,21 @@
 
         button.setAttribute('aria-label', ariaLabel);
         button.title = title;
-        button.disabled = true;
+        button.setAttribute('aria-disabled', 'true');
         button.innerHTML = `
             <div class="detailButton-content">
                 <span class="material-icons detailButton-icon" aria-hidden="true">warning_off</span>
             </div>
         `;
 
-        // Still allow click to show a helpful toast explaining why
+        // A press shows a helpful toast explaining why
         button.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             if (reason === 'no-tmdb') {
                 JE.toast('TMDB ID not found for this item', 4000);
             } else if (reason === 'no-jellyseerr') {
-                JE.toast('Jellyseerr is not available', 4000);
+                JE.toast(JE.t('jellyseerr_report_unavailable_seerr_down'), 4000);
             } else if (reason === 'no-both') {
                 JE.toast('TMDB ID not found and Jellyseerr is not available', 4000);
             } else if (reason === 'no-permissions') {

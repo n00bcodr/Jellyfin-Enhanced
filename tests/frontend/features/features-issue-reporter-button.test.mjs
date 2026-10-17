@@ -153,6 +153,8 @@ for (const active of [true, false]) {
     const h = page(t, { active });
     const opened = [];
     h.reporter.showReportModal = (...args) => opened.push(args);
+    const toasts = [];
+    h.JE.toast = (...args) => toasts.push(args);
     const first = h.reporter.tryAddButton();
     await tick();
     h.reads.shift().resolve(movie('a'));
@@ -169,12 +171,9 @@ for (const active of [true, false]) {
     assert.equal(icons.length, 1, 'one icon');
     assert.equal(dead.isConnected, false, 'the dead copy is gone');
     assert.deepEqual(h.row(), ['btnPlay', active ? 'jellyseerr-report-issue-icon' : 'jellyseerr-report-unavailable-icon', 'btnMoreCommands']);
-    // The unavailable icon is a disabled button (a browser sends it no click), so only the working
-    // one is clicked; the unavailable one is checked to be a new one, not the copy.
-    if (active) {
-      icons[0].click();
-      assert.deepEqual(opened.map(a => a[0]), ['603'], 'the icon opens the issue dialog');
-    }
+    icons[0].click();
+    if (active) assert.deepEqual(opened.map(a => a[0]), ['603'], 'the icon opens the issue dialog');
+    else assert.deepEqual(toasts, [['jellyseerr_report_unavailable_seerr_down', 4000]], 'the icon says why');
     // A later look keeps the working icon.
     assert.equal(await h.reporter.tryAddButton(), true);
     assert.equal(h.reads.length, 0);
@@ -296,4 +295,40 @@ test('a page element reused for the next title gets a Hide button for that title
   hides[0].click();
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(h.hidden, ['b']);
+});
+
+// Q-3I-11: the unavailable icon explains why when pressed. It used to be a disabled button, which a
+// browser never sends a click, so its toast never showed. It is now aria-disabled with the same
+// look: a press (click, or Enter/Space, which a browser turns into a click on a button) shows the
+// toast and does nothing else.
+
+test('the unavailable icon explains why when pressed and does nothing else', async t => {
+  const h = page(t, { active: false });
+  const toasts = [];
+  h.JE.toast = (...args) => toasts.push(args);
+  const opened = [];
+  h.reporter.showReportModal = (...args) => opened.push(args);
+  const look = h.reporter.tryAddButton();
+  await tick();
+  h.reads.shift().resolve(movie('a'));
+  assert.equal(await look, true);
+  // Same place in the row as before.
+  assert.deepEqual(h.row(), ['btnPlay', 'jellyseerr-report-unavailable-icon', 'btnMoreCommands']);
+  const icon = h.document.querySelector('.jellyseerr-report-unavailable-icon');
+  assert.equal(icon.tagName, 'BUTTON', 'a real button, so Enter and Space press it');
+  assert.equal(icon.disabled, false, 'not disabled: a disabled button gets no click');
+  assert.equal(icon.getAttribute('aria-disabled'), 'true', 'still announced as unavailable');
+  assert.ok(icon.tabIndex >= 0, 'reachable from the keyboard');
+  assert.equal(icon.getAttribute('aria-label'), 'jellyseerr_report_unavailable_seerr_down');
+  assert.equal(icon.title, 'jellyseerr_report_unavailable_seerr_down');
+  let bubbled = 0;
+  h.document.querySelector('.mainDetailButtons').addEventListener('click', () => bubbled++);
+  const click = new h.window.MouseEvent('click', { bubbles: true, cancelable: true });
+  icon.dispatchEvent(click);
+  assert.deepEqual(toasts, [['jellyseerr_report_unavailable_seerr_down', 4000]], 'the toast says why');
+  assert.equal(click.defaultPrevented, true);
+  assert.equal(bubbled, 0, 'the press goes no further');
+  assert.equal(opened.length, 0, 'no issue dialog');
+  icon.click();
+  assert.equal(toasts.length, 2, 'every press explains');
 });
