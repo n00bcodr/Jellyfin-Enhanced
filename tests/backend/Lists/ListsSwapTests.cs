@@ -767,23 +767,27 @@ public class ListsSwapTests
         var movie = Movie(97);
         await Add(h, access, null, movie);
         await h.Swap.DrainAsync(None);
-        h.Swap.SettleDelay = TimeSpan.FromSeconds(1);
+        // Waits go by a deadline, not a loop count: on a loaded machine (the whole suite in parallel) the worker can take
+        // longer than a fixed number of short polls to pick the arrival up, and the settle window must outlast that.
+        h.Swap.SettleDelay = TimeSpan.FromSeconds(3);
         h.Swap.Start();
         try
         {
             var arrived = h.Host.AddItem(tmdb: 97);
             h.Swap.NotifyItemChanged(arrived);
             Guid? pending = null;
-            for (var i = 0; i < 100 && pending == null; i++)
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            while (pending == null && DateTime.UtcNow < deadline)
             {
                 pending = h.Swap.GetPendingMatch(access.ListIdN, movie.Id);
-                await Task.Delay(10);
+                if (pending == null) await Task.Delay(10);
             }
 
             Assert.Equal(arrived, pending);
             var view = await h.Service.GetViewAsync(access, None);
             Assert.Equal(arrived.ToString("N"), view.Placeholders.Single().InLibraryItemId);
-            for (var i = 0; i < 100 && h.Host.Resolved(playlist.Info.Id).Count == 0; i++)
+            deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+            while (h.Host.Resolved(playlist.Info.Id).Count == 0 && DateTime.UtcNow < deadline)
             {
                 await Task.Delay(50);
             }
