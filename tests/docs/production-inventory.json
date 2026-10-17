@@ -5759,6 +5759,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "SpoilerBlurTrickplay",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "SpoilerAdvancedMode",
       "type": "bool",
       "initializer": "false",
@@ -6664,6 +6672,14 @@
     {
       "class": "SpoilerBlurUserPrefs",
       "name": "HideReviews",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "SpoilerBlurUserPrefs",
+      "name": "HideTrickplay",
       "type": "bool?",
       "initializer": null,
       "constructor_assignment": null,
@@ -7728,7 +7744,7 @@
     "build_targets": 2,
     "files": 355,
     "routes": 177,
-    "configuration_properties": 526,
+    "configuration_properties": 528,
     "storage_references": 69,
     "scheduled_tasks": 13,
     "locales": 33

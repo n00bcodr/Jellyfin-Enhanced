@@ -3876,6 +3876,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SpoilerReplaceTitle,
                 config.SpoilerStripCast,
                 config.SpoilerStripReviews,
+                // Gates the per-user "Seek previews" opt-out row.
+                config.SpoilerBlurTrickplay,
                 // Advanced category reveals: clients only need the master flag
                 // (to gate the per-user opt-out row in the settings panel);
                 // the six per-category strip toggles are server-only strip
@@ -6207,6 +6209,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         ReplaceEpisodeTitles = body.ReplaceEpisodeTitles,
                         HideCast = body.HideCast,
                         HideReviews = body.HideReviews,
+                        HideTrickplay = body.HideTrickplay,
                         UseAdvancedCategories = body.UseAdvancedCategories,
                         SkipDisableConfirm = body.SkipDisableConfirm,
                     };

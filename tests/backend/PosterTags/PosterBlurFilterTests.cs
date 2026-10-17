@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Claims;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
@@ -5,8 +6,10 @@ using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Controller.Chapters;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
+using MediaBrowser.Controller.Trickplay;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
@@ -14,6 +17,7 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SkiaSharp;
 
@@ -33,11 +37,16 @@ public class PosterBlurFilterTests
         public readonly ApiPluginFixture Plugin=new();
         public readonly Guid UserId=Guid.NewGuid();
         public readonly Movie Movie=new(){Id=Guid.NewGuid()};
+        // An unwatched episode of a guarded series, for trickplay tiles.
+        public readonly Episode Episode=new(){Id=Guid.NewGuid(),SeriesId=Guid.NewGuid(),ParentIndexNumber=1,IndexNumber=2};
+        public readonly Mock<ISessionManager> Sessions=new();
+        public readonly Mock<ITrickplayManager> Trickplay=new();
         public readonly Mock<ILibraryManager> Library=new();
         public readonly Mock<IUserManager> Users=new();
         public readonly Mock<IUserDataManager> UserData=new();
         public readonly Mock<IChapterManager> Chapters=new();
         public readonly User User=new("test","default","default");
+        private readonly List<Guid> extraUsers=[];
         public readonly SpoilerBlurImageFilter Filter;
         private readonly SpoilerNextUnwatchedService next;
         public Fixture(bool guarded=true)
@@ -47,27 +56,51 @@ public class PosterBlurFilterTests
             User.Id=UserId; Users.Setup(u=>u.GetUserById(UserId)).Returns(User);
             Library.Setup(l=>l.GetItemById(Movie.Id)).Returns(Movie);
             UserData.Setup(u=>u.GetUserData(User,Movie)).Returns(new UserItemData{Key="movie",Played=false});
-            var state=new UserSpoilerBlur(); if(guarded) state.Movies[Movie.Id.ToString("N")]=new();
+            Library.Setup(l=>l.GetItemById(Episode.Id)).Returns(Episode);
+            UserData.Setup(u=>u.GetUserData(User,Episode)).Returns(new UserItemData{Key="episode",Played=false});
+            var state=new UserSpoilerBlur(); if(guarded) { state.Movies[Movie.Id.ToString("N")]=new(); state.Series[Episode.SeriesId.ToString("N")]=new(); }
             Plugin.Core.Manager.SaveUserConfiguration(UserId.ToString("N"),"spoilerblur.json",state);
+            Sessions.SetupGet(s=>s.Sessions).Returns(Array.Empty<SessionInfo>());
             var markers=new SpoilerIdentityService(Users.Object,Plugin.Core.Logger);
-            var identity=new RequestIdentityService(Mock.Of<ISessionManager>(),Users.Object,markers,Plugin.Core.Logger);
+            var identity=new RequestIdentityService(Sessions.Object,Users.Object,markers,Plugin.Core.Logger);
             var resolver=new SpoilerUserResolver(Plugin.Core.Manager,Library.Object,Plugin.Core.Logger,identity);
             next=new SpoilerNextUnwatchedService(Library.Object,Users.Object,UserData.Object,Plugin.Core.Logger);
             Filter=new SpoilerBlurImageFilter(Library.Object,Users.Object,UserData.Object,Chapters.Object,resolver,new ImageBlurService(Plugin.Core.Logger),next,Plugin.Core.Logger);
         }
-        public async Task<(ActionExecutedContext Executed,DefaultHttpContext Http)> Run(IActionResult original,string type="Primary",string method="GET",string controller="Image",string action="GetItemImage",Guid? viewer=null,string query="")
+        /// <summary>Saves a guard state for another user, who can then share an IP with the fixture user.</summary>
+        public Guid AddUser(UserSpoilerBlur state)
+        {
+            var id=Guid.NewGuid(); extraUsers.Add(id);
+            Users.Setup(u=>u.GetUserById(id)).Returns(new User("other","default","default"){Id=id});
+            Plugin.Core.Manager.SaveUserConfiguration(id.ToString("N"),"spoilerblur.json",state); return id;
+        }
+        /// <summary>Overwrites the fixture user's per-user Spoiler Guard preferences.</summary>
+        public void SetPrefs(SpoilerBlurUserPrefs prefs)
+        {
+            var key=UserId.ToString("N"); var state=Plugin.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(key,"spoilerblur.json"); state.Prefs=prefs;
+            Plugin.Core.Manager.SaveUserConfiguration(key,"spoilerblur.json",state); SpoilerUserResolver.InvalidateUser(key);
+        }
+        /// <summary>Runs a trickplay tile request (Videos/{id}/Trickplay/{width}/{index}.jpg); with an ip it is anonymous and resolved by session-on-IP.</summary>
+        public Task<(ActionExecutedContext Executed,DefaultHttpContext Http)> RunTrickplay(IActionResult original,Guid item,IPAddress? ip=null)
+            => Run(original,controller:"Trickplay",action:"GetTrickplayTileImage",item:item,ip:ip);
+        public async Task<(ActionExecutedContext Executed,DefaultHttpContext Http)> Run(IActionResult original,string type="Primary",string method="GET",string controller="Image",string action="GetItemImage",Guid? viewer=null,string query="",Guid? item=null,IPAddress? ip=null)
         {
             var http=new DefaultHttpContext(); var response=new ResponseFeature(); http.Features.Set<IHttpResponseFeature>(response);
             http.Request.Method=method; http.Request.QueryString=new QueryString(query);
-            http.User=new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-UserId",(viewer??UserId).ToString())],"Test"));
+            if(ip==null) http.User=new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-UserId",(viewer??UserId).ToString())],"Test"));
+            else http.Connection.RemoteIpAddress=ip;
+            var services=new Mock<IServiceProvider>(); services.Setup(s=>s.GetService(typeof(ITrickplayManager))).Returns(Trickplay.Object); http.RequestServices=services.Object;
             var descriptor=new ActionDescriptor{RouteValues=new Dictionary<string,string?>{{"controller",controller},{"action",action}}};
             var ac=new ActionContext(http,new RouteData(),descriptor,new ModelStateDictionary());
-            var executing=new ActionExecutingContext(ac,[],new Dictionary<string,object?>{{"itemId",Movie.Id},{"imageType",type},{"imageIndex",0}},new object());
+            var arguments=controller=="Trickplay"
+                ? new Dictionary<string,object?>{{"itemId",item??Movie.Id},{"width",320},{"index",0}}
+                : new Dictionary<string,object?>{{"itemId",item??Movie.Id},{"imageType",type},{"imageIndex",0}};
+            var executing=new ActionExecutingContext(ac,[],arguments,new object());
             var executed=new ActionExecutedContext(ac,[],new object()){Result=original};
             await Filter.OnActionExecutionAsync(executing,()=>{http.Response.Headers.CacheControl="public, max-age=31536000";http.Response.Headers.ETag="original";http.Response.Headers.LastModified="yesterday";return Task.FromResult(executed);});
             await response.Start(); return(executed,http);
         }
-        public void Dispose(){Filter.Dispose();next.Dispose();SpoilerUserResolver.InvalidateUser(UserId.ToString("N"));Plugin.Dispose();}
+        public void Dispose(){Filter.Dispose();next.Dispose();SpoilerUserResolver.InvalidateUser(UserId.ToString("N"));foreach(var id in extraUsers) SpoilerUserResolver.InvalidateUser(id.ToString("N"));Plugin.Dispose();}
     }
     private static void Private(HttpContext http,bool chapter=false)
     {
@@ -183,6 +216,61 @@ public class PosterBlurFilterTests
             var(executed,_)=await f.Run(new FileContentResult(PosterBlurTests.Source(),"image/png"));return Contrast(Assert.IsType<FileContentResult>(executed.Result).FileContents);
         }
         var(light,heavy)=(await At(10),await At(60));Assert.True(heavy<light/2,$"intensity 60 left contrast {heavy}, intensity 10 left {light}");
+    }
+
+    // Trickplay seek previews (#947): admin SpoilerBlurTrickplay caps protection, Prefs.HideTrickplay=false opts a user out.
+    private static void Protected(byte[] source,ActionExecutedContext executed,HttpContext http)
+    {
+        var result=Assert.IsType<FileContentResult>(executed.Result);Assert.NotEqual(source,result.FileContents);Blurred(source,result.FileContents);Private(http);
+    }
+    [Theory]
+    [InlineData("episode",true,null,true)][InlineData("episode",true,true,true)][InlineData("episode",true,false,false)]
+    [InlineData("episode",false,null,false)][InlineData("episode",false,true,false)]
+    [InlineData("movie",true,null,true)][InlineData("movie",false,null,false)][InlineData("movie",true,false,false)]
+    public async Task Trickplay_tiles_follow_admin_switch_and_user_opt_out(string kind,bool admin,bool? hideTrickplay,bool protect)
+    {
+        using var f=new Fixture();Assert.True(new PluginConfiguration().SpoilerBlurTrickplay);
+        f.Plugin.Plugin.Configuration.SpoilerBlurTrickplay=admin;f.SetPrefs(new SpoilerBlurUserPrefs{HideTrickplay=hideTrickplay});
+        var bytes=PosterBlurTests.Source();var original=new FileContentResult(bytes,"image/jpeg");
+        var(executed,http)=await f.RunTrickplay(original,kind=="episode"?f.Episode.Id:f.Movie.Id);
+        if(protect) Protected(bytes,executed,http);
+        // Opted out: original bytes, but never publicly cacheable so turning protection back on applies on the next fetch.
+        else { Assert.Same(original,executed.Result);Private(http); }
+    }
+    [Fact]
+    public async Task Trickplay_switch_off_leaves_tiles_outside_the_users_scope_untouched()
+    {
+        using var f=new Fixture(guarded:false);f.Plugin.Plugin.Configuration.SpoilerBlurTrickplay=false;
+        var original=new FileContentResult(PosterBlurTests.Source(),"image/jpeg");var(executed,http)=await f.RunTrickplay(original,f.Episode.Id);
+        Assert.Same(original,executed.Result);Assert.Equal("original",http.Response.Headers.ETag.ToString());Assert.False(http.Items.ContainsKey(SpoilerBlurImageFilter.NoStoreHttpContextItem));
+    }
+    [Theory]
+    [InlineData(true)][InlineData(false)]
+    public async Task Trickplay_opt_out_skips_progressive_reveal_lookup_which_still_runs_when_protected(bool admin)
+    {
+        // A partially watched episode whose first tile sheet (10 thumbs x 1s) ends before the resume point.
+        using var f=new Fixture();f.Plugin.Plugin.Configuration.SpoilerBlurTrickplay=admin;
+        f.UserData.Setup(u=>u.GetUserData(f.User,f.Episode)).Returns(new UserItemData{Key="episode",PlaybackPositionTicks=TimeSpan.FromMinutes(5).Ticks});
+        f.Trickplay.Setup(t=>t.GetTrickplayResolutions(f.Episode.Id)).ReturnsAsync(new Dictionary<int,TrickplayInfo>{{320,new TrickplayInfo{ItemId=f.Episode.Id,Width=320,TileWidth=5,TileHeight=2,Interval=1000}}});
+        var original=new FileContentResult(PosterBlurTests.Source(),"image/jpeg");var(executed,http)=await f.RunTrickplay(original,f.Episode.Id);
+        Assert.Same(original,executed.Result);Private(http);
+        f.Trickplay.Verify(t=>t.GetTrickplayResolutions(f.Episode.Id),admin?Times.Once():Times.Never());
+    }
+    private static int ipCounter;
+    // Anonymous tile request on an IP shared by two guarded users: the opt-out applies only when every in-scope user chose it.
+    [Theory]
+    [InlineData(null,true,true)][InlineData(true,true,true)][InlineData(false,true,false)][InlineData(null,false,false)]
+    public async Task Shared_ip_trickplay_stays_protected_while_any_in_scope_user_inherits(bool? otherHide,bool otherInScope,bool protect)
+    {
+        using var f=new Fixture();f.SetPrefs(new SpoilerBlurUserPrefs{HideTrickplay=false});
+        var other=new UserSpoilerBlur{Prefs=new SpoilerBlurUserPrefs{HideTrickplay=otherHide}};
+        if(otherInScope) other.Series[f.Episode.SeriesId.ToString("N")]=new(); else other.Series[Guid.NewGuid().ToString("N")]=new();
+        var otherId=f.AddUser(other);
+        var ip=IPAddress.Parse("198.19."+(Interlocked.Increment(ref ipCounter)/250)+"."+(ipCounter%250+1));
+        f.Sessions.SetupGet(s=>s.Sessions).Returns(new[]{f.UserId,otherId}.Select(id=>new SessionInfo(f.Sessions.Object,NullLogger.Instance){UserId=id,RemoteEndPoint=ip+":8096"}).ToArray());
+        var bytes=PosterBlurTests.Source();var original=new FileContentResult(bytes,"image/jpeg");
+        var(executed,http)=await f.RunTrickplay(original,f.Episode.Id,ip);
+        if(protect) Protected(bytes,executed,http); else { Assert.Same(original,executed.Result);Private(http); }
     }
 
     [Fact]

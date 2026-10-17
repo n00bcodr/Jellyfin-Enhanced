@@ -934,12 +934,13 @@ The four dictionaries default to `{}` and use case-insensitive keys. Library key
   "ReplaceEpisodeTitles": null,
   "HideCast": null,
   "HideReviews": null,
+  "HideTrickplay": null,
   "UseAdvancedCategories": null,
   "SkipDisableConfirm": false
 }
 ```
 
-Nullable category flags inherit policy with null, and opt out of stripping with false. True never enables a category that the administrator disabled. `UseAdvancedCategories=false` instead restores uniform stripping by opting out of category reveals.
+Nullable category flags inherit policy with null, and opt out of stripping with false. True never enables a category that the administrator disabled. `HideTrickplay=false` opts out of trickplay seek-preview protection (`SpoilerBlurTrickplay`). `UseAdvancedCategories=false` instead restores uniform stripping by opting out of category reveals.
 
 POST replaces preferences rather than patching them; missing body returns `400`.
 
@@ -1255,7 +1256,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `RecommendationsUseCustomTabs`, `RecommendationsUseNativeTab`, `ActivityFeedEnabled`, `ActivityFeedUseCustomTabs`, `ActivityFeedUseNativeTab`, `ActivityFeedShowWatched`, `ActivityFeedShowFavorited`, `ActivityFeedShowReviewed` | Boolean |
     | `ActivityFeedShowActiveStreams`, `HiddenContentEnabled`, `HiddenContentUsePluginPages`, `HiddenContentUseCustomTabs`, `HiddenContentUseNativeTab`, `HiddenContentAdmin`, `CatchUpEnabled`, `CatchUpUsePluginPages` | Boolean |
     | `CatchUpUseCustomTabs`, `CatchUpUseNativeTab`, `MaintenanceModeEnabled`, `SpoilerBlurEnabled`, `SpoilerBlurStrictRefresh`, `SpoilerStripSeriesOverview`, `SpoilerStripOverview`, `SpoilerStripTags` | Boolean |
-    | `SpoilerStripChapters`, `SpoilerStripTaglines`, `SpoilerStripRatings`, `SpoilerStripPremiereDate`, `SpoilerReplaceTitle`, `SpoilerStripCast`, `SpoilerStripReviews`, `SpoilerAdvancedMode` | Boolean |
+    | `SpoilerStripChapters`, `SpoilerStripTaglines`, `SpoilerStripRatings`, `SpoilerStripPremiereDate`, `SpoilerReplaceTitle`, `SpoilerStripCast`, `SpoilerStripReviews`, `SpoilerBlurTrickplay`, `SpoilerAdvancedMode` | Boolean |
     | `ToastDuration`, `HelpPanelAutocloseDelay`, `PauseScreenDelaySeconds`, `ResolutionTagOrder`, `SourceTagOrder`, `DynamicRangeTagOrder`, `SpecialFormatTagOrder`, `VideoCodecTagOrder` | Integer |
     | `AudioInfoTagOrder`, `DefaultSubtitleStyle`, `DefaultSubtitleSize`, `DefaultSubtitleFont`, `DefaultSubtitleTextEffect`, `TagsCacheTtlDays`, `DownloadsPollIntervalSeconds`, `SpoilerBlurIntensity` | Integer |
     | `SplashScreenImageUrl`, `DEFAULT_REGION`, `DEFAULT_PROVIDERS`, `IGNORE_PROVIDERS`, `ElsewhereCustomBrandingText`, `ElsewhereCustomBrandingImageUrl`, `WatchProgressDefaultMode`, `WatchProgressTimeFormat` | String |

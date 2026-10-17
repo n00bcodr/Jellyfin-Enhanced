@@ -151,6 +151,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool? ReplaceEpisodeTitles { get; set; }
         public bool? HideCast { get; set; }
         public bool? HideReviews { get; set; }
+        // Trickplay seek previews (admin switch: SpoilerBlurTrickplay).
+        // false = show this user the scrubbing thumbnails while seeking
+        // through a protected unwatched episode/movie.
+        public bool? HideTrickplay { get; set; }
         // Advanced per-category reveals (admin default: SpoilerAdvancedMode).
         // Unlike the per-field opt-outs above, `false` here is the STRICTER
         // choice: it opts this user out of the category reveals entirely,

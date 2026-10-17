@@ -153,7 +153,7 @@ With **Blur images** selected, unplayed episodes lose their original artwork and
 | Episode and season titles | Numbered protected episodes become `Season X, Episode Y`; eligible numbered seasons become `Season N`. |
 | Story tags and JE overlays | Story tags, genre, language, and quality overlays follow **Hide tags**. Score overlays follow **Hide ratings**. |
 | Chapters | Protected names become `Chapter N`, keeping timestamps. Thumbnail images have separate rules. |
-| Trickplay previews | Protected preview sheets use image replacement. Saved progress can reveal whole sheets. |
+| Trickplay previews | Protected preview sheets use image replacement while [**Hide trickplay seek previews**](spoiler-guard-settings.md#image-replacement-mode) is on. Saved progress can reveal whole sheets. You can opt out with [**Seek previews**](spoiler-guard-settings.md#per-user-overrides). |
 | Taglines, ratings, air date | Removes taglines, community/critic scores, and premiere dates. |
 | Cast | Hides guest stars or the entire cast, depending on your settings. |
 | Search hints | Protected episode hints use generic titles or the placeholder. |
@@ -190,6 +190,8 @@ With **Blur images** selected, unplayed episodes lose their original artwork and
 Saved progress can reveal movie chapters and preview sheets you have already reached. Spoiler Guard uses Jellyfin's saved position, so hovering or seeking does not reveal more.
 
 **How to use:** Resume from your saved playback position. Episode chapters stay protected until the episode is played, subject to your separate chapter-name preference.
+
+The trickplay rules below apply while your admin's [**Hide trickplay seek previews**](spoiler-guard-settings.md#image-replacement-mode) is on and you have not unchecked [**Seek previews**](spoiler-guard-settings.md#per-user-overrides). Otherwise seek previews are shown in full.
 
 ??? info "How saved-progress boundaries work"
 
@@ -319,7 +321,7 @@ The [per-user settings table](spoiler-guard-settings.md#per-user-overrides) cove
 
 ??? note "Override limits"
 
-    Metadata opt-outs do not directly turn off image replacement. Images retain their admin policy, played/progress rules, and exemptions.
+    Metadata opt-outs do not directly turn off image replacement. Images retain their admin policy, played/progress rules, and exemptions. **Seek previews** is the exception: unchecking it shows trickplay thumbnails while you seek through protected unwatched items.
 
     **Advanced per-category reveals** works in the other direction: unchecking it restores uniform metadata protection and disables the next-episode image exception for your account.
 
@@ -383,7 +385,7 @@ Your stored lists and preferences belong to your account. Spoiler Guard changes 
     4. Session-validated browser cookie.
     5. Session users matching the request IP.
 
-    No candidates means no per-user protection. Ambiguous metadata identity passes through. For ambiguous images, the filter chooses the first candidate whose scope covers the item, then applies that user's played/progress state and exemptions. Ambiguity does not guarantee replacement. Identity markers select presentation policy and are not credentials.
+    No candidates means no per-user protection. Ambiguous metadata identity passes through. For ambiguous images, the filter chooses the first candidate whose scope covers the item, then applies that user's played/progress state and exemptions. A **Seek previews** opt-out applies only when every candidate whose scope covers the item made it. Ambiguity does not guarantee replacement. Identity markers select presentation policy and are not credentials.
 
 ## Troubleshooting
 
@@ -398,7 +400,7 @@ If protection does not look right, start with the checks that match what you see
 ### Images or text still look unchanged
 
 1. Reload item metadata and check the dotted icon's tooltip. Text already on the page normally waits for navigation after a detail toggle.
-2. Check played-state exemptions, **Keep movie posters visible**, artwork policy, advanced reveals, and collection inheritance.
+2. Check played-state exemptions, **Keep movie posters visible**, artwork policy, seek-preview settings, advanced reveals, and collection inheritance.
 3. If old images remain in a native client, use its image-cache clearing function. In a browser, try a reload or ++ctrl+f5++ for a stale cache.
 
 ??? note "Native client refreshes"
