@@ -127,6 +127,106 @@ public class TaskRegressionTests
         data.Verify(d => d.GetUserData(blocked, It.IsAny<BaseItem>()), Times.Never);
     }
 
+    // Seerr's watchlist answers 20 items a page with totalPages, and rejects query parameters it doesn't know (take). The
+    // read pages through all of it, so a title on a later page isn't added again.
+    [Fact]
+    public async Task WatchlistExportReadsEverySeerrWatchlistPageWithoutUnknownParameters()
+    {
+        using var f = new ApiPluginFixture();
+        var alice = new User("alice", "default", "default") { Id = Guid.NewGuid() };
+        var config = f.Plugin.Configuration;
+        config.JellyseerrEnabled = true;
+        config.SyncJellyfinWatchlistToSeerr = true;
+        config.JellyseerrUrls = "http://seerr.test";
+        config.JellyseerrApiKey = "test-key";
+        var movies = new[] { 123, 456 }.Select(id => (BaseItem)new Movie { Id = Guid.NewGuid(), Name = "Movie " + id, ProviderIds = new() { ["Tmdb"] = id.ToString(System.Globalization.CultureInfo.InvariantCulture) } }).ToArray();
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => q.IncludeItemTypes.Contains(Jellyfin.Data.Enums.BaseItemKind.Movie) ? movies : Array.Empty<BaseItem>());
+        var users = new Mock<IUserManager>();
+        var parameter = System.Linq.Expressions.Expression.Parameter(typeof(IUserManager), "u");
+        var method = typeof(IUserManager).GetMethod("GetUsers", Type.EmptyTypes);
+        System.Linq.Expressions.Expression body = method != null
+            ? System.Linq.Expressions.Expression.Call(parameter, method)
+            : System.Linq.Expressions.Expression.Property(parameter, "Users");
+        users.Setup(System.Linq.Expressions.Expression.Lambda<Func<IUserManager, IEnumerable<User>>>(body, parameter)).Returns(new[] { alice });
+        var data = new Mock<IUserDataManager>();
+        data.Setup(d => d.GetUserData(It.IsAny<User>(), It.IsAny<BaseItem>())).Returns(new UserItemData { Key = "test", Likes = true });
+        var added = new List<int>();
+        using var transport = new IntegrationTransport(async (request, ct) =>
+        {
+            var uri = request.RequestUri!;
+            if (uri.AbsolutePath == "/api/v1/user")
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = alice.Id.ToString() } } }));
+            if (request.Method == HttpMethod.Get)
+            {
+                if (uri.Query.Contains("take=", StringComparison.Ordinal))
+                    return IntegrationTransport.Response("{\"message\":\"Unknown query parameter 'take'\"}", 400);
+                // A full first page of 20 other titles, then 456 on page 2.
+                var page = uri.Query.Contains("page=2", StringComparison.Ordinal) ? 2 : 1;
+                var results = page == 1 ? Enumerable.Range(1000, 20).Select(id => new { tmdbId = id, mediaType = "movie" }).ToArray() : new[] { new { tmdbId = 456, mediaType = "movie" } };
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { page, totalPages = 2, totalResults = 21, results }));
+            }
+            using var payload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+            added.Add(payload.RootElement.GetProperty("tmdbId").GetInt32());
+            return IntegrationTransport.Response();
+        });
+        await new JellyfinToSeerrWatchlistSyncTask(library.Object, users.Object, data.Object, transport, f.Core.Manager, f.Core.Logger).ExecuteAsync(new ProgressLog(), default);
+        Assert.Equal(new[] { 123 }, added);
+    }
+
+    // The sync switch and the blocked list are read when the run starts, then every person's Seerr watchlist is read.
+    // An administrator's save in between (the configuration object is replaced) is read again right before each add:
+    // sync turned off stops the run, a person blocked since is skipped.
+    [Theory]
+    [InlineData("off")][InlineData("blocked")]
+    public async Task WatchlistExportRereadsTheSyncSwitchAndBlockedPeopleBeforeEveryAdd(string change)
+    {
+        using var f = new ApiPluginFixture();
+        var alice = new User("alice", "default", "default") { Id = Guid.NewGuid() };
+        var bob = new User("bob", "default", "default") { Id = Guid.NewGuid() };
+        var config = f.Plugin.Configuration;
+        config.JellyseerrEnabled = true;
+        config.SyncJellyfinWatchlistToSeerr = true;
+        config.JellyseerrUrls = "http://seerr.test";
+        config.JellyseerrApiKey = "test-key";
+        var movies = new[] { 123, 456 }.Select(id => (BaseItem)new Movie { Id = Guid.NewGuid(), Name = "Movie " + id, ProviderIds = new() { ["Tmdb"] = id.ToString(System.Globalization.CultureInfo.InvariantCulture) } }).ToArray();
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => q.IncludeItemTypes.Contains(Jellyfin.Data.Enums.BaseItemKind.Movie) ? movies : Array.Empty<BaseItem>());
+        var users = new Mock<IUserManager>();
+        var parameter = System.Linq.Expressions.Expression.Parameter(typeof(IUserManager), "u");
+        var method = typeof(IUserManager).GetMethod("GetUsers", Type.EmptyTypes);
+        System.Linq.Expressions.Expression body = method != null
+            ? System.Linq.Expressions.Expression.Call(parameter, method)
+            : System.Linq.Expressions.Expression.Property(parameter, "Users");
+        users.Setup(System.Linq.Expressions.Expression.Lambda<Func<IUserManager, IEnumerable<User>>>(body, parameter)).Returns(new[] { alice, bob });
+        var data = new Mock<IUserDataManager>();
+        data.Setup(d => d.GetUserData(It.IsAny<User>(), It.IsAny<BaseItem>())).Returns(new UserItemData { Key = "test", Likes = true });
+        var posts = new Dictionary<string, int> { ["27"] = 0, ["28"] = 0 };
+        using var transport = new IntegrationTransport((request, ct) =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/api/v1/user")
+                return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = alice.Id.ToString() }, new { id = 28, jellyfinUserId = bob.Id.ToString() } } })));
+            var seerrUser = request.Headers.GetValues("X-Api-User").Single();
+            if (request.Method == HttpMethod.Get)
+            {
+                if (seerrUser == "27")
+                {
+                    // Saved while alice's Seerr watchlist is being read.
+                    var copy = (Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration)typeof(object).GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(f.Plugin.Configuration, null)!;
+                    if (change == "off") copy.SyncJellyfinWatchlistToSeerr = false;
+                    else copy.JellyseerrImportBlockedUsers = alice.Id.ToString();
+                    f.Plugin.UpdateConfiguration(copy);
+                }
+                return Task.FromResult(IntegrationTransport.Response("{\"results\":[]}"));
+            }
+            posts[seerrUser]++;
+            return Task.FromResult(IntegrationTransport.Response());
+        });
+        await new JellyfinToSeerrWatchlistSyncTask(library.Object, users.Object, data.Object, transport, f.Core.Manager, f.Core.Logger).ExecuteAsync(new ProgressLog(), default);
+        Assert.Equal(0, posts["27"]);
+        Assert.Equal(change == "off" ? 0 : 2, posts["28"]);
+    }
+
     [Fact]
     public void DisabledWatchlistMonitorStillSubscribesSoEnablingNeedsNoRestartAndDisposalUnsubscribes()
     {

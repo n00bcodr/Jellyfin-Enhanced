@@ -1334,6 +1334,14 @@ either is off, the automatic requests above behave exactly as described there. W
   sent. It is checked again right before every request sent, so turning it on stops one that is already on its way
   (and its retry to a second Seerr address). It stays on through every other switch and upgrade until an
   administrator turns it off. People's own requests are never affected.
+- **Switches changed while a recipe is working.** A recipe reads the switches when it starts, and its lookups take a
+  moment. Whatever an administrator saves in the meantime counts: with phase 3 off, the next-season keeper and the
+  collection completer look again right before each request they send straight to Seerr (each Seerr address
+  included). If phase 3 has been turned on, nothing is sent that way: the check starts again under the engine, so a
+  recipe in *Shadow* only records, *Ask* waits for an OK, and kill switches, opt-outs and budgets apply. If the recipe
+  or Seerr has been turned off, nothing is sent. Under the engine, a mode change, the engine turned on or a person
+  opting out while a request is being prepared is read again right before it is recorded, and it starts over under
+  the new rules.
 
 What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic
@@ -1354,3 +1362,5 @@ configuration page.
   already running that scan, Jellyfin Enhanced waits for it and asks once more afterwards instead of interrupting it,
   and it asks only the first of your Seerr addresses that answers. In Jellyfin Enhanced request mode, a title Jellyfin
   Enhanced adds to Radarr or Sonarr also triggers Seerr's Radarr or Sonarr scan, so Seerr shows it as requested.
+  If the trigger (or Seerr) is turned off while a scan waits for its debounce, it isn't sent. *Trigger scan now* is
+  unaffected.

@@ -56,7 +56,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="body">Client id and input.</param>
         /// <param name="ct">Cancellation.</param>
         /// <param name="origin">Automation origin; null for a person's own ask.</param>
-        public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null)
+        /// <param name="recheck">
+        /// Asked after the preparation reads, right before the ledger write: a reason stops the create (nothing is
+        /// recorded). Automatic callers re-read there the rules they decided under.
+        /// </param>
+        public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null, Func<string?>? recheck = null)
         {
             var input = Normalize(body?.Input);
             if (body == null || input == null) return RequestOutcome.Refused("invalid_input", 400);
@@ -74,6 +78,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var config = _policy.Configuration;
             if (origin?.Automatic == true && AutomationFlags.Engine(config) && AutomationSendGuard.Killed(config, origin.Recipe, AutomationSendGuard.Target(_policy.Evaluate(user, input))))
                 return RequestOutcome.Refused(AutomationHolds.Killed, 409, "blocked");
+            if (recheck?.Invoke() is { } changed) return RequestOutcome.Refused(changed, 409, "blocked");
             var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin);
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(user), ArrTitleKey.RequestsState });
             if (outcome.Reason == "queued_outage") Signal?.Pulse();

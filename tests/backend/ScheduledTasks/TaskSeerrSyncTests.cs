@@ -63,6 +63,46 @@ public class TaskSeerrSyncTests
         Assert.Equal(100, progress.Values.Last());
     }
 
+    // The switch and the blocked list are read when the run starts; an administrator's save while the first address
+    // fails (the configuration object is replaced) is read again before the next address: auto-import turned off stops
+    // the run, a person blocked since is left out.
+    [Theory]
+    [InlineData("off")][InlineData("blocked")]
+    public async Task UserImportRereadsTheSwitchAndBlockedPeopleBeforeTheNextAddress(string change)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.JellyseerrEnabled = true;
+        config.JellyseerrAutoImportUsers = true;
+        config.JellyseerrUrls = "http://first.test\nhttp://second.test";
+        config.JellyseerrApiKey = "test";
+        var kept = new User("kept", "default", "default") { Id = Guid.NewGuid() };
+        var later = new User("later", "default", "default") { Id = Guid.NewGuid() };
+        var requests = new List<(string Host, string Body)>();
+        using var transport = new IntegrationTransport(async (request, ct) =>
+        {
+            requests.Add((request.RequestUri!.Host, await request.Content!.ReadAsStringAsync(ct)));
+            if (request.RequestUri.Host == "first.test")
+            {
+                var copy = (PluginConfiguration)typeof(object).GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(f.Plugin.Configuration, null)!;
+                if (change == "off") copy.JellyseerrAutoImportUsers = false;
+                else copy.JellyseerrImportBlockedUsers = later.Id.ToString();
+                f.Plugin.UpdateConfiguration(copy);
+                return IntegrationTransport.Response("{}", 500);
+            }
+            return IntegrationTransport.Response("[{\"id\":27}]");
+        });
+        await new JellyseerrUserImportTask(Users(kept, later).Object, transport, f.Core.Logger).ExecuteAsync(new ProgressLog(), default);
+        if (change == "off")
+        {
+            Assert.Equal(new[] { "first.test" }, requests.Select(r => r.Host));
+            return;
+        }
+        Assert.Equal(new[] { "first.test", "second.test" }, requests.Select(r => r.Host));
+        using var body = JsonDocument.Parse(requests[1].Body);
+        Assert.Equal(kept.Id.ToString("N"), Assert.Single(body.RootElement.GetProperty("jellyfinUserIds").EnumerateArray()).GetString());
+    }
+
     [Fact]
     public async Task UserImportCancellationPropagatesWithoutContactingProvider()
     {

@@ -313,6 +313,64 @@ public class IntegrationAutomationTests
         Assert.Equal(AutoRequestOutcomeKind.WantRecorded, (await e.Auto(e.R.Admin, Movie(675))).Kind);
     }
 
+    // The recorder reads the recipe's mode, then the request service's preparation reads run. A change in between (Auto
+    // to Shadow or Ask, the engine turned on, the person opting out) is read again right before the ledger write, and
+    // the ask starts over under the current rules instead of being recorded under the old ones.
+    [Theory]
+    [InlineData("shadow")]
+    [InlineData("ask")]
+    [InlineData("engine_on")]
+    [InlineData("opted_out")]
+    [InlineData("flapping")]
+    public async Task AChangeWhileARecipesAskIsPreparedIsReadAgainBeforeAnythingIsRecorded(string change)
+    {
+        using var e = new Engine(engine: change != "engine_on");
+        e.Mode(AutomationRecipes.AutoMovie, change == "engine_on" ? AutomationMode.Shadow : AutomationMode.Auto);
+        var rows = e.Rows();
+        var changed = false;
+        e.R.Policy.Before = (_, _) =>
+        {
+            if (change == "flapping")
+            {
+                // Changed again during every attempt: bounded, nothing recorded, tried again on the next trigger.
+                e.Mode(AutomationRecipes.AutoMovie, changed ? AutomationMode.Auto : AutomationMode.Ask);
+                changed = !changed;
+                return Task.CompletedTask;
+            }
+            if (changed) return Task.CompletedTask;
+            changed = true;
+            if (change == "shadow") e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Shadow);
+            else if (change == "ask") e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Ask);
+            else if (change == "engine_on") { e.C.ArrPhase4Enabled = true; e.C.ArrPhase4AutomationEnabled = true; }
+            else e.Consent.Map[(e.R.Admin, AutomationRecipes.AutoMovie)] = false;
+            return Task.CompletedTask;
+        };
+        var outcome = await e.Auto(e.R.Admin, Movie(680));
+        e.R.Policy.Before = null;
+        if (change == "flapping")
+        {
+            Assert.Equal((AutoRequestOutcomeKind.PreparationFailed, AutomationHolds.EngineChanged), (outcome.Kind, outcome.Reason));
+            Assert.Equal(rows, e.Rows());
+            Assert.Empty(e.Store.Decisions());
+            return;
+        }
+        Assert.True(changed);
+        if (change == "ask")
+        {
+            Assert.Equal(AutoRequestOutcomeKind.WantRecorded, outcome.Kind);
+            Assert.Equal("pending", e.R.Ledger.Find(outcome.WantId!)!.Status);
+            Assert.Equal(("asked", "ask"), e.Store.Decisions().Single() is var asked ? (asked.Outcome, asked.Mode) : default);
+            return;
+        }
+        Assert.Equal(rows, e.Rows());
+        if (change == "opted_out") Assert.Equal((AutoRequestOutcomeKind.DefinitiveNoop, "user_opted_out"), (outcome.Kind, outcome.Reason));
+        else
+        {
+            Assert.StartsWith("shadow_", outcome.Reason, StringComparison.Ordinal);
+            Assert.Equal("shadow", e.Store.Decisions().Single().Mode);
+        }
+    }
+
     [Fact]
     public async Task WithTheEngineOffTheExistingRecipesBehaveExactlyAsBefore()
     {

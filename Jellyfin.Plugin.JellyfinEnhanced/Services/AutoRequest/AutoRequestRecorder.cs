@@ -74,17 +74,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
         /// <param name="ct">Cancellation.</param>
         public async Task<AutoRequestOutcome> RecordAsync(string recipe, Guid user, MutationInput input, CancellationToken ct)
         {
+            // The mode, kills and consent are read first and the request service's preparation reads come after. A change
+            // in between is read again right before the ledger write, and the ask starts over under the current rules
+            // instead of being recorded under the old ones. A switch flipped back and forth leaves it to the next trigger.
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                if (await RecordOnceAsync(recipe, user, input, ct).ConfigureAwait(false) is { } outcome) return outcome;
+            }
+            return AutoRequestOutcome.Failed(AutomationHolds.EngineChanged, input.Key);
+        }
+
+        // One attempt; null when the rules changed before the ledger write.
+        private async Task<AutoRequestOutcome?> RecordOnceAsync(string recipe, Guid user, MutationInput input, CancellationToken ct)
+        {
             var key = input.Key;
             var config = _requests.Policy.Configuration;
             if (config.ArrRequestBackend == "status_only") return AutoRequestOutcome.Noop("requests_off", key);
             if (!_requests.Ledger.Database.Available) return AutoRequestOutcome.Failed("database_unavailable", key);
             var client = ClientId(recipe, input);
             var control = AutomationFlags.Control(config, recipe);
+            var consented = AutomationConsent.Allows(_consents, user, recipe);
+            string? Changed() => AutomationFlags.Control(_requests.Policy.Configuration, recipe) != control || AutomationConsent.Allows(_consents, user, recipe) != consented
+                ? AutomationHolds.EngineChanged : null;
             if (control.Legacy || _decider == null || _store == null)
             {
                 // The same recipe asking for the same scope again replays its first ask instead of adding another.
-                var legacy = await _requests.CreateAsync(user, new CreateRequest(client, input), ct, RequestOrigin.Automation(recipe)).ConfigureAwait(false);
-                return Outcome(legacy, key);
+                var legacy = await _requests.CreateAsync(user, new CreateRequest(client, input), ct, RequestOrigin.Automation(recipe), Changed).ConfigureAwait(false);
+                return Restart(legacy) ? null : Outcome(legacy, key);
             }
 
             var origin = RequestOrigin.Automation(recipe) with { Provenance = new RequestProvenance(Recipe: recipe, TriggerIdentity: client) };
@@ -97,7 +113,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
                 return AutoRequestOutcome.Noop(control.Reason ?? "recipe_off", key);
             }
 
-            if (!AutomationConsent.Allows(_consents, user, recipe))
+            if (!consented)
             {
                 _store.Record(new AutomationDecision(decisionKey, recipe, user, key, control.Effective!.Value, "opted_out", "user_opted_out", backend), _now());
                 return AutoRequestOutcome.Noop("user_opted_out", key);
@@ -113,7 +129,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
             }
 
             var (asked, approval) = _decider.OriginFor(origin, control.Effective!.Value, user, input);
-            var outcome = await _requests.CreateAsync(user, new CreateRequest(client, input), ct, asked).ConfigureAwait(false);
+            var outcome = await _requests.CreateAsync(user, new CreateRequest(client, input), ct, asked, Changed).ConfigureAwait(false);
+            if (Restart(outcome)) return null;
             var result = Outcome(outcome, key);
             var status = outcome.RequestId == null ? null : _requests.Ledger.Find(outcome.RequestId)?.Status;
             var label = result.Kind switch
@@ -127,6 +144,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
                 new AutomationDecisionDetail { Status = status, Approval = status == "pending" ? approval ?? outcome.Reason : null, Scope = input.Scope, Variant = input.Variant, Seasons = input.Seasons.Length == 0 ? null : input.Seasons }), _now());
             return result;
         }
+
+        // The create stopped because the rules changed during its preparation reads (nothing recorded).
+        private static bool Restart(RequestOutcome outcome) => outcome.RequestId == null && outcome.Reason == AutomationHolds.EngineChanged;
 
         private static AutoRequestOutcome Outcome(RequestOutcome outcome, string key)
         {

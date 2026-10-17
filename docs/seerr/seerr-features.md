@@ -356,6 +356,7 @@ Automatically sync watchlist items between Seerr and Jellyfin in both directions
 - Only syncs items that have a TMDB ID and a linked Seerr account
 - Skips items already present in the Seerr watchlist
 - Runs via the **Sync Watchlist from Jellyfin to Seerr** scheduled task (default: daily at 03:30)
+- Turning the sync off during a run stops it before the next item; a user blocked during a run is skipped from then on
 
 #### Configuration:
 

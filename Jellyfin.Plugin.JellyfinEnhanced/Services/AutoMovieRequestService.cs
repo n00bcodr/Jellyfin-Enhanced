@@ -91,6 +91,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // The outcome is typed: a failed TMDB or Seerr lookup is a PreparationFailed, never "not in a collection".
         public async Task<AutoRequestOutcome> CheckMovieForCollectionRequestAsync(BaseItem movieItem, Guid userId, CancellationToken ct = default)
         {
+            // Phase 3 turned on while a direct Seerr send was being prepared: the check starts again and goes through the
+            // ledger under the rules in effect now (modes, kills, consent, budgets) instead of POSTing. A switch flipped
+            // back and forth leaves it to the next trigger.
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                if (await CheckOnceAsync(movieItem, userId, ct) is { } outcome) return outcome;
+            }
+            return AutoRequestOutcome.Failed(AutomationHolds.EngineChanged);
+        }
+
+        // Why a direct Seerr POST (phase 3 off) may not go now, read from the live configuration (an administrator's save
+        // replaces it) right before the lookups and again right before each POST: the rollout Shadow override; phase 3 on
+        // since the check began (the decision now belongs to the ledger, see EngineChanged); the recipe or Seerr turned
+        // off. Null: it may go.
+        private string? DirectStop()
+        {
+            var live = JellyfinEnhanced.Instance?.Configuration;
+            if (AutomationFlags.ShadowOverride(live)) return AutomationHolds.ShadowOverride;
+            if (LedgerMode(live)) return AutomationHolds.EngineChanged;
+            return live is { AutoMovieRequestEnabled: true, JellyseerrEnabled: true } ? null : "disabled";
+        }
+
+        // One check; null when the direct path stopped for phase 3 and the check has to start again.
+        private async Task<AutoRequestOutcome?> CheckOnceAsync(BaseItem movieItem, Guid userId, CancellationToken ct)
+        {
             var config = JellyfinEnhanced.Instance?.Configuration;
             var ledger = LedgerMode(config);
             if (config == null || !config.AutoMovieRequestEnabled || (!ledger && !config.JellyseerrEnabled))
@@ -212,35 +237,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _requestedMovies[user.Id.ToString()][requestKey] = DateTime.Now;
             }
 
-            // Rollout Shadow override: what would have been asked is recorded and nothing is sent. It is read live (an
-            // administrator's save replaces the configuration) here and again right before every POST.
-            AutoRequestOutcome ShadowOverridden()
+            // Stopped before a POST (see DirectStop), here or right before every POST: with the rollout Shadow override,
+            // what would have been asked is recorded and nothing is sent; with phase 3 now on, the check starts again.
+            AutoRequestOutcome? Stopped(string stop)
             {
-                _recorder?.ShadowOverride(Recipe, user.Id, key.ToString());
                 lock (_movieCacheLock)
                 {
                     if (_requestedMovies.ContainsKey(user.Id.ToString())) _requestedMovies[user.Id.ToString()].Remove(requestKey);
                 }
+                if (stop == AutomationHolds.EngineChanged)
+                {
+                    _logger.Info($"[Auto-Movie-Request] Phase 3 was turned on before '{nextMovieInfo.Title}' was sent to Seerr; checking again under the current rules");
+                    return null;
+                }
+                if (stop != AutomationHolds.ShadowOverride)
+                {
+                    _logger.Info($"[Auto-Movie-Request] '{nextMovieInfo.Title}' not sent to Seerr: the recipe or Seerr was turned off since the check began");
+                    return AutoRequestOutcome.Noop(stop, key.ToString());
+                }
+                _recorder?.ShadowOverride(Recipe, user.Id, key.ToString());
                 _logger.Info($"[Auto-Movie-Request] Shadow override: would have requested '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}; nothing sent");
                 return AutoRequestOutcome.Noop(AutomationHolds.ShadowOverride, key.ToString());
             }
 
-            if (AutomationFlags.ShadowOverride(JellyfinEnhanced.Instance?.Configuration))
+            if (DirectStop() is { } early)
             {
-                return ShadowOverridden();
+                return Stopped(early);
             }
 
             // Resolve quality profile settings based on configuration mode
             var qualitySettings = await ResolveQualityProfileAsync(tmdbId);
 
             // Request the movie
-            var sent = await RequestMovie(nextMovieInfo.TmdbId.ToString(), user.Id.ToString(), qualitySettings);
-            if (sent == null)
+            var (sent, stop) = await RequestMovie(nextMovieInfo.TmdbId.ToString(), user.Id.ToString(), qualitySettings);
+            if (stop != null)
             {
-                return ShadowOverridden();
+                return Stopped(stop);
             }
 
-            if (sent == true)
+            if (sent)
             {
                 _logger.Info($"[Auto-Movie-Request] ✓ Requested '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}");
                 return AutoRequestOutcome.Recorded("seerr_request", key.ToString());
@@ -683,15 +718,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return null;
         }
 
-        // Requests a movie from Jellyseerr: true when sent, false when it failed, null when the rollout Shadow override
-        // was on right before a POST (nothing more is sent).
-        private async Task<bool?> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
+        // Requests a movie from Jellyseerr: Sent, or why it stopped right before a POST (see DirectStop; nothing more is
+        // sent). Neither: it failed.
+        private async Task<(bool Sent, string? Stopped)> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Auto-Movie-Request] Jellyseerr configuration is missing");
-                return false;
+                return (false, null);
             }
 
             // Get Jellyseerr user ID
@@ -699,7 +734,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (string.IsNullOrEmpty(jellyseerrUserId))
             {
                 _logger.Warning($"[Auto-Movie-Request] Could not find Jellyseerr user for Jellyfin user {jellyfinUserId}");
-                return false;
+                return (false, null);
             }
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
@@ -731,10 +766,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);
 
-                    // The rollout Shadow override, read live right before each POST (the next Seerr URL included).
-                    if (AutomationFlags.ShadowOverride(JellyfinEnhanced.Instance?.Configuration))
+                    // Read live right before each POST (the next Seerr URL included).
+                    if (DirectStop() is { } stop)
                     {
-                        return null;
+                        return (false, stop);
                     }
 
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
@@ -744,7 +779,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (error == null)
                     {
-                        return true;
+                        return (true, null);
                     }
                     _logger.Warning($"[Auto-Movie-Request] Jellyseerr request failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                 }
@@ -754,7 +789,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            return false;
+            return (false, null);
         }
 
         // Gets the Jellyseerr user ID for a Jellyfin user

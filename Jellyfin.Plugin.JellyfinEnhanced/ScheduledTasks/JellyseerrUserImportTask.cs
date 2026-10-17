@@ -81,8 +81,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             progress?.Report(25);
 
             cancellationToken.ThrowIfCancellationRequested();
+            // An administrator's save since the run began is read again before every Seerr address: auto-import turned
+            // off stops the run, people blocked since are left out.
+            static List<string>? StillAllowed(List<string> ids)
+            {
+                var live = JellyfinEnhanced.Instance?.Configuration;
+                if (live is not { JellyseerrAutoImportUsers: true, JellyseerrEnabled: true }) return null;
+                var blocked = JellyseerrUserImportHelper.GetBlockedUserIds(live.JellyseerrImportBlockedUsers);
+                return ids.Where(id => !blocked.Contains(id)).ToList();
+            }
             var importResult = await JellyseerrUserImportHelper.BulkImportAsync(
-                userIds, urls, config.GetJellyseerrApiKey(), _httpClientFactory, _logger, cancellationToken);
+                userIds, urls, config.GetJellyseerrApiKey(), _httpClientFactory, _logger, cancellationToken, StillAllowed);
 
             if (importResult.Reached && importResult.Imported > 0)
             {
