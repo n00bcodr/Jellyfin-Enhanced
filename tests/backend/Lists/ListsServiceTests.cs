@@ -505,6 +505,41 @@ public class ListsServiceTests
     // shared request status per title key (IListStatusSource), only while the admin switch and the caller's preference
     // show it. Released stays per placeholder.
     [Fact]
+    public async Task AnExactEpisodeEntrysStatusIsThoseEpisodesNeverTheWholeSeasons()
+    {
+        using var h = new ListsHarness(status: true);
+        h.Plugin.Plugin.Configuration.ArrPhase4ListStatusEnabled = true;
+        var show = TitleKey.ForSeries(null, "7", null)!;
+        h.Status.ByKey[ListStatusKeys.SeasonId(show, 2)] = "{\"stage\":\"downloading\"}";
+        h.Status.ByKey["tv:tmdb:7:s2:e1"] = "{\"stage\":\"ready\"}";
+        h.Status.ByKey["tv:tmdb:7:s2:e2"] = "{\"stage\":\"asked\"}";
+        h.Status.ByKey["tv:tmdb:7:s2:e1,2"] = "{\"stage\":\"looking\"}";
+        var owner = h.NewUser("owner");
+        var playlist = h.Host.AddPlaylist(owner);
+        var access = h.AccessFor(playlist, owner);
+        Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(
+            access,
+            new[]
+            {
+                Ph("{\"kind\":\"season\",\"tmdbId\":7,\"title\":\"S\",\"seasonNumber\":2}"),
+                Ph("{\"kind\":\"episodes\",\"tmdbId\":7,\"title\":\"S\",\"seasonNumber\":2,\"episodes\":[{\"s\":2,\"e\":1}]}"),
+                Ph("{\"kind\":\"episodes\",\"tmdbId\":7,\"title\":\"S\",\"seasonNumber\":2,\"episodes\":[{\"s\":2,\"e\":2}]}"),
+                Ph("{\"kind\":\"episodes\",\"tmdbId\":7,\"title\":\"S\",\"seasonNumber\":2,\"episodes\":[{\"s\":2,\"e\":2},{\"s\":2,\"e\":1}]}"),
+            },
+            null,
+            null,
+            null,
+            None));
+
+        var view = await h.Service.GetViewAsync(access, None);
+
+        // Two entries for different episodes of one season keep their own statuses; the season entry has the season's.
+        Assert.Equal(
+            new[] { "downloading", "ready", "asked", "looking" },
+            view.Placeholders.Select(p => p.Status is { } status ? status.GetProperty("stage").GetString() : null));
+    }
+
+    [Fact]
     public async Task ViewsCarryTheCallersRequestStatusPerTitleKey()
     {
         using var h = new ListsHarness(status: true);
@@ -530,7 +565,7 @@ public class ListsServiceTests
         var view = await h.Service.GetViewAsync(access, None);
 
         Assert.True(view.StatusShown);
-        // A season or episodes entry gets its season's status, never the series card's (season 3 has none yet).
+        // A season entry gets its season's status, never the series card's; an episodes entry its episodes' (none yet).
         Assert.Equal(
             new[] { "available", null, "available", "downloading", null, null },
             view.Placeholders.Select(p => p.Status is { } status ? status.GetProperty("stage").GetString() : null));
@@ -541,7 +576,8 @@ public class ListsServiceTests
         Assert.Equal(owner.Id, call.User);
         Assert.Equal(new[] { "movie:tmdb:1", "movie:tmdb:99", "tv:tmdb:7" }, call.Keys);
         var seasonCall = Assert.Single(h.Status.SeasonCalls);
-        Assert.Equal(new[] { ListStatusKeys.SeasonId(show, 2), ListStatusKeys.SeasonId(show, 3) }, seasonCall.Seasons);
+        Assert.Equal(new[] { ListStatusKeys.SeasonId(show, 2) }, seasonCall.Seasons);
+        Assert.Equal(new[] { "tv:tmdb:7:s3:e1" }, Assert.Single(h.Status.PartCalls).Parts);
 
         // The caller hides status: no status read, nothing shown.
         h.Preferences.ByUser[owner.Id] = (null, false, true);

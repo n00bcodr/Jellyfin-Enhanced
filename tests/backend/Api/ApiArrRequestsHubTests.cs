@@ -497,6 +497,23 @@ public class ApiArrRequestsHubTests
     }
 
     [Fact]
+    public async Task AnExactEpisodeListEntryFollowsThoseEpisodesOnly()
+    {
+        // Firefly: S1E1 is in Jellyfin; S1E4 is monitored in Sonarr with no file yet.
+        using var rig = await Ready();
+        var lists = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ArrListStatusSource(rig.Service, rig.View);
+        var key = TitleKey.Parse("tv:tvdb:78874")!;
+        var first = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusPart(key, null, false, new[] { (1, 1) });
+        var fourth = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusPart(key, null, false, new[] { (1, 4) });
+
+        var statuses = await lists.PartStatusesAsync(rig.Admin.UserId, new[] { first, fourth }, default);
+
+        Assert.Equal(("tv:tvdb:78874:s1:e1", "tv:tvdb:78874:s1:e4"), (first.Id, fourth.Id));
+        Assert.Equal("ready", statuses[first.Id].GetProperty("stage").GetString());
+        Assert.NotEqual("ready", statuses[fourth.Id].GetProperty("stage").GetString());
+    }
+
+    [Fact]
     public async Task AFourKRequestAfterTheStandardCopyArrivedIsItsOwnEditionNotShownReadyByTheStandardCopy()
     {
         // Emma's standard Sintel is here (Ready); she then asks Seerr for the 4K copy, which Radarr 4K doesn't have.

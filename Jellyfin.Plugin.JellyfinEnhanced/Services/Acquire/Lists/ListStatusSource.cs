@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -32,7 +33,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>
         /// Statuses of entries the title or season status can't stand for, by <see cref="ListStatusPart.Id"/>: a 4K entry
-        /// follows the 4K copies alone (and the asks for them), never the standard copy Jellyfin may already have.
+        /// follows the 4K copies alone (and the asks for them), never the standard copy Jellyfin may already have; an
+        /// entry for some episodes follows exactly those episodes, never the rest of their season.
         /// </summary>
         /// <param name="user">The viewer.</param>
         /// <param name="parts">The entries' scopes.</param>
@@ -44,9 +46,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
     /// <summary>The scope of a list entry whose status is its own (see <see cref="IListStatusSource.PartStatusesAsync"/>).</summary>
     /// <param name="Key">Movie or series key.</param>
-    /// <param name="Season">The season (season entries), or null for the whole title.</param>
+    /// <param name="Season">The season (season entries), or null for the whole title or an episodes entry.</param>
     /// <param name="FourK">The 4K edition.</param>
-    public sealed record ListStatusPart(TitleKey Key, int? Season, bool FourK)
+    /// <param name="Episodes">The episodes (episodes entries), or null.</param>
+    public sealed record ListStatusPart(TitleKey Key, int? Season, bool FourK, IReadOnlyList<(int Season, int Episode)>? Episodes = null)
     {
         /// <summary>The part's status id (<see cref="ListStatusKeys.PartId"/>).</summary>
         public string Id => ListStatusKeys.PartId(this);
@@ -61,11 +64,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The id.</returns>
         public static string SeasonId(TitleKey key, int season) => key.WithSeason(season).ToString();
 
-        /// <summary>The id of a part's status: the title or season id, then <c>@4k</c> for the 4K edition.</summary>
+        /// <summary>
+        /// The id of a part's status: the title or season id, or for episodes each season's key with its episodes
+        /// (<c>tv:tvdb:1:s2:e1,3</c>, in order); then <c>@4k</c> for the 4K edition.
+        /// </summary>
         /// <param name="part">The part.</param>
         /// <returns>The id.</returns>
-        public static string PartId(ListStatusPart part) =>
-            (part.Season is int season ? SeasonId(part.Key, season) : part.Key.ToString()) + (part.FourK ? "@" + ListRules.FourK : string.Empty);
+        public static string PartId(ListStatusPart part)
+        {
+            var id = part.Episodes is { Count: > 0 } episodes
+                ? string.Join("+", episodes.Distinct().GroupBy(e => e.Season).OrderBy(g => g.Key).Select(g =>
+                    part.Key.WithSeason(g.Key).ToString() + ":e" + string.Join(",", g.Select(e => e.Episode).OrderBy(n => n).Select(n => n.ToString(CultureInfo.InvariantCulture)))))
+                : part.Season is int season ? SeasonId(part.Key, season) : part.Key.ToString();
+            return id + (part.FourK ? "@" + ListRules.FourK : string.Empty);
+        }
     }
 
     /// <summary><see cref="IListStatusSource"/> over <see cref="ArrStatusService"/> (batches of its key limit).</summary>
@@ -194,7 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             foreach (var part in parts.DistinctBy(p => p.Id).Take(MaxSeasons))
             {
                 var seasons = part.Season is int season ? new[] { season } : Array.Empty<int>();
-                var body = await _status.ForPartAsync(viewer, part.Key, seasons, Array.Empty<(int Season, int Episode)>(), part.FourK, cancellationToken).ConfigureAwait(false);
+                var body = await _status.ForPartAsync(viewer, part.Key, seasons, part.Episodes ?? Array.Empty<(int Season, int Episode)>(), part.FourK, cancellationToken).ConfigureAwait(false);
                 using var json = JsonDocument.Parse(body.Json);
                 if (json.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array && items.GetArrayLength() > 0)
                 {

@@ -301,7 +301,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var statuses = new Dictionary<string, JsonElement>(
                     keys.Count == 0 ? new Dictionary<string, JsonElement>() : await _status.StatusesAsync(access.User.Id, keys, cancellationToken).ConfigureAwait(false),
                     StringComparer.Ordinal);
-                // Standard seasons and episodes of one season: that season's status (a series card reads Ready once any season is in).
+                // Standard seasons: the season's status (a series card reads Ready once any season is in).
                 var seasons = keyed
                     .Where(p => StatusPartOf(p) == null && p.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && p.SeasonNumber is int && p.TmdbId is > 0)
                     .Select(p => (Key: ListRules.TitleKeyOf(p)!, TmdbId: p.TmdbId!.Value, Season: p.SeasonNumber!.Value))
@@ -315,7 +315,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
                 }
 
-                // 4K entries: their own edition's status, keyed apart from the standard one.
+                // Episodes entries and 4K entries: their own scope's status, keyed apart from the season's and the standard one.
                 var parts = keyed.Select(StatusPartOf).OfType<ListStatusPart>().DistinctBy(p => p.Id).ToList();
                 if (parts.Count > 0)
                 {
@@ -2108,10 +2108,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return statuses.TryGetValue(key.ToString(), out var status) ? status : null;
         }
 
-        // The scope of an entry whose status is its own rather than the title's or season's: a 4K entry (its edition's).
+        // The scope of an entry whose status is its own rather than the title's or season's: an episodes entry (exactly
+        // its episodes) and a 4K entry (its edition's).
         private static ListStatusPart? StatusPartOf(Placeholder placeholder)
         {
-            if (ListRules.EditionOf(placeholder) != ListRules.FourK || ListRules.TitleKeyOf(placeholder) is not { } key)
+            if (ListRules.TitleKeyOf(placeholder) is not { } key)
+            {
+                return null;
+            }
+
+            var fourK = ListRules.EditionOf(placeholder) == ListRules.FourK;
+            if (placeholder.Kind == PlaceholderKinds.Episodes && placeholder.Episodes.Count > 0)
+            {
+                return new ListStatusPart(key, null, fourK, placeholder.Episodes.Select(e => (e.S, e.E)).Distinct().ToList());
+            }
+
+            if (!fourK)
             {
                 return null;
             }
