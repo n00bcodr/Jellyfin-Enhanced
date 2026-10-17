@@ -142,7 +142,7 @@ To set starting preferences for accounts that haven't loaded JE yet, change them
 
 ??? info "How starting values are chosen"
 
-    JE creates a missing `settings.json` using current admin defaults. **Hide Tags on Hover** is the exception: it starts Off regardless of the admin value. Settings without admin defaults use built-in defaults.
+    JE creates a missing `settings.json` using current admin defaults. Settings without admin defaults use built-in defaults.
 
     Client fallbacks fill in missing values. An ordinary **Save Settings** updates the server configuration. **Default UI Language → System Default** stores an empty value.
 
@@ -162,7 +162,7 @@ Use this action when you want existing users to start over with the current defa
 
     | Data | Effect of the overwrite action |
     | --- | --- |
-    | `settings.json` | Replaced with current admin defaults, except **Hide Tags on Hover** resets to Off, and watch progress mode/time format reset to **Percentage** / **h:m** regardless of **Watch Progress Default** / **Watch Progress Time Format**. Personal subtitle colors/position and random source selections reset to built-in defaults; audio language and native poster preferences return to inheriting server settings. Internal panel/Calendar view state also resets. |
+    | `settings.json` | Replaced with current admin defaults, except watch progress mode/time format reset to **Percentage** / **h:m** regardless of **Watch Progress Default** / **Watch Progress Time Format**. Personal subtitle colors/position and random source selections reset to built-in defaults; audio language and native poster preferences return to inheriting server settings. Internal panel/Calendar view state also resets. |
     | `hidden-content.json` | Personal filter settings reset; hidden items retained. |
     | Existing `spoilerblur.json` | Preference overrides reset to inherit admin policy; protection lists retained. A missing file isn't created just for this reset. |
     | `shortcuts.json` | Personal shortcut overrides retained. |

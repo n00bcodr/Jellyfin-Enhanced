@@ -26,7 +26,7 @@ You can choose tags for your own account. If you administer the server, you can 
 Tables below show factory defaults. Rows marked “Admin / personal” give both exact labels for the same preference. Most admin defaults become the starting values for new personal settings. Saved personal values take precedence, so changing a server default does not overwrite a user's choice.
 
 !!! note "Hover hiding starts off"
-    **Hide Tags on Hover** starts off in personal settings, regardless of the admin value. Overwriting personal settings also resets it to off.
+    **Hide Tags on Hover** follows the admin value for new users, and overwriting personal settings applies it too.
 
 !!! warning "Replacing everyone's preferences"
     **Overview** → **Quick Actions** → **Overwrite everyone's personal settings** replaces saved personal preferences with the current admin values. It also replaces other Enhanced display/playback preferences, so each user would need to reapply their customizations. Read [Settings Overview](../getting-started/settings-overview.md) before using it.
@@ -75,7 +75,7 @@ You can place each poster group in a corner and hide badges on hover to make car
 | **Position** — Language Tags | **Bottom Left** | Admin default and personal corner choice for flags |
 | **Position** — Rating Tags | **Bottom Right** | Admin default and personal corner choice for score and review chips |
 | **Position** — Age Rating Tags | **Bottom Right** | Admin default and personal corner choice for classification badges |
-| Admin / personal: **Hide Tags on Hover** | Off | Fades web poster overlays when you hover over a card, making its buttons easier to see; personal settings start and reset to off as noted above |
+| Admin / personal: **Hide Tags on Hover** | Off | Fades web poster overlays when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster overlays on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
 
 Groups sharing a corner stack with a small gap rather than overlap. Top-right groups move below Jellyfin's watched or unplayed-count indicator. People Tags have their own cast-card layout and no corner selector.

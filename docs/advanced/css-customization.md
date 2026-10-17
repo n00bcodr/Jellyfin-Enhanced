@@ -187,7 +187,7 @@ New user settings for the six tag features are seeded from the plugin configurat
 
 Server and saved user properties use PascalCase. Resolved client settings use camelCase, such as `qualityTagsEnabled`.
 
-**Hide Tags on Hover** is an exception: new user settings store `TagsHideOnHover=false` even when the admin default is on. That stored value takes precedence. To hide tags on hover, turn on **Hide Tags on Hover** in your personal **UI Settings**.
+Users can change **Hide Tags on Hover** later in their personal **UI Settings**.
 
 If tag data is stale or missing, also check the server's cache configuration under **Display** → **Media Tags**:
 
