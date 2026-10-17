@@ -151,6 +151,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool? ReplaceEpisodeTitles { get; set; }
         public bool? HideCast { get; set; }
         public bool? HideReviews { get; set; }
+        // Trickplay seek previews (admin switch: SpoilerBlurTrickplay).
+        // false = show this user the scrubbing thumbnails while seeking
+        // through a protected unwatched episode/movie.
+        public bool? HideTrickplay { get; set; }
         // Advanced per-category reveals (admin default: SpoilerAdvancedMode).
         // Unlike the per-field opt-outs above, `false` here is the STRICTER
         // choice: it opts this user out of the category reveals entirely,
@@ -257,6 +261,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<string> Regions { get; set; } = new List<string>();
         public List<string> Services { get; set; } = new List<string>();
         public bool SeasonProviders { get; set; } = true;
+    }
+
+    /// <summary>Per-user DoesTheDogDie trigger picks (topic ids), stored in ddd-triggers.json.</summary>
+    public class DddSettings
+    {
+        public List<int> Triggers { get; set; } = new List<int>();
     }
 
     public class PendingWatchlistItem

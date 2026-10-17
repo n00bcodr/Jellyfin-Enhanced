@@ -68,6 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.SpoilerTagDataStripper _spoilerTagDataStripper;
         private readonly Services.WikidataAwardsService _wikidataAwardsService;
         private readonly Services.MdblistService _mdblistService;
+        private readonly Services.DoesTheDogDieService _doesTheDogDieService;
         private readonly Services.WhatsNewService _whatsNewService;
         private readonly Services.UsageEventCounterService _usageEventCounterService;
         private readonly Services.AnalyticsReportingService _analyticsReportingService;
@@ -203,6 +204,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.SpoilerTagDataStripper spoilerTagDataStripper,
             Services.WikidataAwardsService wikidataAwardsService,
             Services.MdblistService mdblistService,
+            Services.DoesTheDogDieService doesTheDogDieService,
             Services.SeerrParentalFilter parentalFilter,
             Services.WhatsNewService whatsNewService,
             Services.UsageEventCounterService usageEventCounterService,
@@ -233,6 +235,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _spoilerTagDataStripper = spoilerTagDataStripper;
             _wikidataAwardsService = wikidataAwardsService;
             _mdblistService = mdblistService;
+            _doesTheDogDieService = doesTheDogDieService;
             _parentalFilter = parentalFilter;
             _whatsNewService = whatsNewService;
             _usageEventCounterService = usageEventCounterService;
@@ -3651,6 +3654,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HideReviewsFromHiddenUsers,
                 config.HideReviewsFromDisabledUsers,
                 config.ShowAwards,
+                DoesTheDogDieEnabled = config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.DoesTheDogDieApiKey),
                 MdblistEnabled = mdblistEnabled,
                 config.MdblistRatingsEnabled,
                 config.MdblistRatingsShowOnItemDetails,
@@ -3872,6 +3876,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SpoilerReplaceTitle,
                 config.SpoilerStripCast,
                 config.SpoilerStripReviews,
+                // Gates the per-user "Seek previews" opt-out row.
+                config.SpoilerBlurTrickplay,
                 // Advanced category reveals: clients only need the master flag
                 // (to gate the per-user opt-out row in the settings panel);
                 // the six per-category strip toggles are server-only strip
@@ -4557,6 +4563,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to fetch MDBList ratings for {mediaType}:{tmdbId}. Error: {ex.Message}");
                 return StatusCode(500, "Failed to fetch MDBList ratings.");
+            }
+        }
+
+        private bool DoesTheDogDieActive(out PluginConfiguration? config)
+        {
+            config = JellyfinEnhanced.Instance?.Configuration;
+            return config != null && config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.DoesTheDogDieApiKey);
+        }
+
+        /// <summary>DoesTheDogDie content warnings for a title, by TMDB id.</summary>
+        [HttpGet("ddd/{mediaType}/{tmdbId}")]
+        [Authorize]
+        public async Task<IActionResult> GetDoesTheDogDie(string mediaType, string tmdbId, CancellationToken cancellationToken)
+        {
+            if (!DoesTheDogDieActive(out _)) return StatusCode(503, "DoesTheDogDie is not enabled.");
+            if (mediaType != "movie" && mediaType != "tv") return BadRequest("mediaType must be 'movie' or 'tv'.");
+            if (string.IsNullOrWhiteSpace(tmdbId) || !tmdbId.All(char.IsDigit)) return BadRequest("tmdbId must be a positive integer.");
+
+            try
+            {
+                var result = await _doesTheDogDieService.GetWarningsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                if (result.Confirmed) SetExternalDataCacheHeaders();
+                return Ok(result);
+            }
+            catch (OperationCanceledException)
+            {
+                return StatusCode(499);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to fetch DoesTheDogDie data for {mediaType}:{tmdbId}. Error: {ex.Message}");
+                return StatusCode(500, "Failed to fetch DoesTheDogDie data.");
+            }
+        }
+
+        /// <summary>All DoesTheDogDie topics, for the trigger picker.</summary>
+        [HttpGet("ddd/topics")]
+        [Authorize]
+        public async Task<IActionResult> GetDoesTheDogDieTopics(CancellationToken cancellationToken)
+        {
+            if (!DoesTheDogDieActive(out _)) return StatusCode(503, "DoesTheDogDie is not enabled.");
+
+            try
+            {
+                var catalog = await _doesTheDogDieService.GetCatalogAsync(cancellationToken).ConfigureAwait(false);
+                if (catalog == null) return StatusCode(502, "DoesTheDogDie topics are unavailable.");
+                SetExternalDataCacheHeaders();
+                return Ok(catalog);
+            }
+            catch (OperationCanceledException)
+            {
+                return StatusCode(499);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to fetch DoesTheDogDie topics. Error: {ex.Message}");
+                return StatusCode(500, "Failed to fetch DoesTheDogDie topics.");
+            }
+        }
+
+        [HttpGet("user-settings/{userId}/ddd-triggers.json")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult GetUserSettingsDdd(string userId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+
+            return Ok(_userConfigurationManager.GetUserConfiguration<DddSettings>(authorizedUserId, "ddd-triggers.json"));
+        }
+
+        [HttpPost("user-settings/{userId}/ddd-triggers.json")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult SaveUserSettingsDdd(string userId, [FromBody] DddSettings userConfiguration)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "ddd-triggers.json", userConfiguration);
+                return Ok(new { success = true, file = "ddd-triggers.json" });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user DoesTheDogDie settings for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user DoesTheDogDie settings." });
             }
         }
 
@@ -6115,6 +6209,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         ReplaceEpisodeTitles = body.ReplaceEpisodeTitles,
                         HideCast = body.HideCast,
                         HideReviews = body.HideReviews,
+                        HideTrickplay = body.HideTrickplay,
                         UseAdvancedCategories = body.UseAdvancedCategories,
                         SkipDisableConfirm = body.SkipDisableConfirm,
                     };
@@ -10569,10 +10664,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // Check if user has permission to view all requests
                 // Jellyfin admins can always view all requests regardless of Seerr permissions
-                hasRequestViewPermission = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                // When the admin enabled DownloadsFilterByUserRequests, non-admins only ever see their own requests
+                hasRequestViewPermission = IsAdminUser() || (!config.DownloadsFilterByUserRequests && JellyseerrPermissionHelper.HasAnyPermission(
                     jellyseerrUser.Permissions,
                     JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS | JellyseerrPermission.REQUEST_VIEW
-                );
+                ));
 
                 // Build filter parameter
                 // "comingsoon" is a custom filter - fetch processing items and filter server-side

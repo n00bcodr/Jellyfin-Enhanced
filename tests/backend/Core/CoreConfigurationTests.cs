@@ -40,6 +40,7 @@ public class CoreConfigurationTests
         Assert.True(state.PendingTmdb.ContainsKey("tv:123"));
         Assert.Null(state.Prefs.HideRatings);
         Assert.Null(state.Prefs.UseAdvancedCategories);
+        Assert.Null(state.Prefs.HideTrickplay);
     }
 
     [Theory]
