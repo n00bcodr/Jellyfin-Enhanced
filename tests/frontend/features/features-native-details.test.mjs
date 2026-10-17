@@ -604,6 +604,210 @@ test('a page shown again whose action row was drawn anew gets its Request and Sp
   assert.equal(page.querySelector('.je-spoiler-pending-detail'), null);
 });
 
+test('a row copied and left before the next look has one live Request when the page is shown again', async t => {
+  // Codex's 3i-R5-1: the request feature off, the action row replaced by a copy of itself, the page left
+  // before a look; on return the copy's dead Request stood beside the new one.
+  const h = setup(t, { html: PAGE, ask: false, seerr: true, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`, getItem: async () => ({ Id: MOVIE, Type: 'Movie', Name: 'Dune', ProviderIds: { Tmdb: '693134' } }) });
+  const nd = h.JE.internals.nativeDetails;
+  const page = h.document.querySelector('#itemDetailPage');
+  await nd.onView();
+  const row = page.querySelector('.mainDetailButtons');
+  row.replaceWith(row.cloneNode(true));
+  h.window.location.hash = '#/home';
+  await nd.onView();
+  // Nothing of the page's controls stays behind it, copies included.
+  assert.equal(h.document.querySelectorAll('.je-native-absent-primary, .je-native-absent-legacy-request, .je-native-absent-actions').length, 0);
+  h.window.location.hash = `#/details?id=${MOVIE}&serverId=${SERVER}`;
+  await nd.onView();
+  const buttons = h.document.querySelectorAll('.je-native-absent-legacy-request');
+  assert.equal(buttons.length, 1, 'one Request after return');
+  assert.equal(h.document.querySelectorAll('.je-native-absent-primary').length, 1);
+  assert.equal(page.querySelector('.mainDetailButtons').firstElementChild, nd.current().primary);
+  const before = h.modal.length;
+  buttons[0].click();
+  assert.equal(h.modal.length, before + 1, 'the Request is live');
+});
+
+/**
+ * A small seeded generator (mulberry32), so a failing sequence can be replayed from its seed.
+ * @param {number} seed Seed.
+ * @returns {() => number} Numbers in [0, 1).
+ */
+function seeded(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let x = Math.imul(a ^ (a >>> 15), 1 | a);
+    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+for (const ask of [false, true]) {
+  test(`whatever happens to the action row (drawn anew, replaced, copied, emptied, left and shown again), the page has one of each of its controls and its Request works (request feature ${ask ? 'on' : 'off'})`, async t => {
+    const details = { id: 693134, status: 'Released', relatedVideos: [] };
+    const h = setup(t, {
+      html: ROW_PAGE, ask, seerr: true, modalData: {}, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`,
+      getItem: async () => ({ Id: MOVIE, Type: 'Movie', Name: 'Dune', ProviderIds: { Tmdb: '693134' } }),
+      resolve: path => (path === '/native-details/title/movie/693134' ? details : path.endsWith('/ratings') ? { rt: { criticsScore: 92 } } : null),
+    });
+    const nd = h.JE.internals.nativeDetails;
+    const page = h.document.getElementById('itemDetailPage');
+    const doc = h.document;
+    const spoilerClicks = [];
+    h.JE.internals.spoilerGuard.buildSeerrToggle = () => {
+      const b = Object.assign(doc.createElement('button'), { className: 'button-flat detailButton je-spoiler-pending-detail' });
+      b.addEventListener('click', () => spoilerClicks.push(b));
+      return b;
+    };
+    // The request mount draws a real button; a click says which mount answered.
+    const asked = [];
+    const mounts = [];
+    if (ask) {
+      h.JE.arrAskSheet.mount = (container) => {
+        const m = { destroyed: false };
+        mounts.push(m);
+        const b = Object.assign(doc.createElement('button'), { className: 'je-ask-action je-ask-mount-request', textContent: 'Request' });
+        b.addEventListener('click', () => asked.push(m));
+        container.append(b);
+        return { update: () => {}, destroy: () => { m.destroyed = true; } };
+      };
+    }
+    const fresh = () => {
+      const row = doc.createElement('div');
+      row.className = 'mainDetailButtons focuscontainer-x';
+      row.innerHTML = '<button class="btnPlay detailButton">Play</button><button class="jellyseerr-report-issue-icon detailButton">Report</button><button class="btnMoreCommands detailButton">More</button>';
+      return row;
+    };
+    const rowNow = () => page.querySelector('.mainDetailButtons');
+    // ask-actions' place for each status read (see the r4 test).
+    let lastBox;
+    let boxes = 0;
+    const draw = (box) => {
+      const old = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+      const native = nd.placeActions(page, box, old);
+      lastBox = box;
+      if (!box) {
+        if (old && !native) old.remove();
+        return;
+      }
+      if (!native && old) old.replaceWith(box);
+      else if (!native) page.querySelector('.je-native-absent-status')?.appendChild(box);
+    };
+    const all = sel => [...doc.querySelectorAll(sel)];
+    // The page's own controls, once each, where they belong.
+    const structure = (step) => {
+      const state = nd.current();
+      const row = rowNow();
+      assert.ok(state, step);
+      assert.deepEqual(all('.je-native-absent-primary'), [state.primary], `${step}: one request slot`);
+      assert.equal(row.firstElementChild, state.primary, `${step}: it leads the row`);
+      assert.deepEqual(all('.je-native-absent-actions'), [state.container], `${step}: one status container`);
+      assert.deepEqual(all('.je-spoiler-pending-detail'), [state.spoiler], `${step}: one Spoiler Guard`);
+      assert.equal(state.spoiler.parentElement, row, `${step}: Spoiler Guard in the row`);
+      const more = row.querySelector('.btnMoreCommands');
+      if (more) assert.equal(state.spoiler.nextElementSibling, more, `${step}: Spoiler Guard before More…`);
+    };
+    let trail = [];
+    const look = async () => {
+      const drawn = nd.current()?.drawn && nd.current().id === MOVIE && h.window.location.hash.includes(MOVIE);
+      const pending = nd.onView();
+      // A page shown again starts its look from its live controls, before its item is read again.
+      if (drawn) structure(`${trail.join(' → ')} (look starts)`);
+      await pending;
+      await wait(1);
+    };
+    const check = async (step) => {
+      structure(step);
+      const state = nd.current();
+      assert.ok(all('.je-native-absent-extras').length <= 1, `${step}: one extras`);
+      assert.ok(all('.je-native-absent-ratings').length <= 1, `${step}: one ratings row`);
+      assert.ok(all('.je-native-absent-request').length === 1 && state.primary.contains(all('.je-native-absent-request')[0]), `${step}: one request mount, in the slot`);
+      // Exactly one Request, and it works.
+      const sel = ask ? '.je-ask-mount-request' : '.je-native-absent-legacy-request';
+      const requests = all(sel);
+      assert.equal(requests.length, 1, `${step}: one Request`);
+      assert.ok(state.primary.contains(requests[0]), `${step}: Request in the slot`);
+      if (ask) {
+        assert.equal(mounts.filter(m => !m.destroyed).length, 1, `${step}: one live mount`);
+        const n = asked.length;
+        requests[0].click();
+        assert.equal(asked.length, n + 1, `${step}: Request answers`);
+        assert.equal(asked.at(-1).destroyed, false, `${step}: the live mount answered`);
+        // At most one smart-actions box: the newest one drawn, in the row; only its cost line shows.
+        const shown = all('.je-ask-actions');
+        assert.ok(shown.length <= 1, `${step}: one smart-actions box (${shown.length})`);
+        // Never a dead copy in its place.
+        assert.ok(shown.every(b => b === lastBox), `${step}: no copy of a box`);
+        if (lastBox && lastBox.isConnected) {
+          assert.deepEqual(shown, [lastBox], `${step}: the newest box`);
+          assert.ok(state.primary.contains(lastBox), `${step}: the box is in the row`);
+        }
+        const notes = state.container.querySelector('.je-native-absent-notes').textContent;
+        assert.ok(notes === '' || (lastBox && notes === lastBox.dataset.cost), `${step}: its cost line only (${notes})`);
+      } else {
+        const n = h.modal.length;
+        requests[0].click();
+        assert.equal(h.modal.length, n + 1, `${step}: Request opens the modal`);
+      }
+      const s = spoilerClicks.length;
+      state.spoiler.click();
+      assert.equal(spoilerClicks.at(-1), state.spoiler, `${step}: Spoiler Guard answers`);
+      assert.equal(spoilerClicks.length, s + 1);
+    };
+    const ops = {
+      contents: () => { const row = rowNow(); row.innerHTML = row.innerHTML; },
+      clone: () => { const row = rowNow(); row.replaceWith(row.cloneNode(true)); },
+      replace: () => rowNow().replaceWith(fresh()),
+      empty: () => rowNow().replaceChildren(),
+      refill: () => rowNow().replaceChildren(...fresh().childNodes),
+      leave: async (rnd) => {
+        h.window.location.hash = '#/home';
+        await look();
+        // Copies made while away, then back.
+        if (rnd() < 0.5) ops.clone();
+        h.window.location.hash = `#/details?id=${MOVIE}&serverId=${SERVER}`;
+      },
+      overlap: async () => { await Promise.all([nd.onView(), nd.onView()]); },
+      status: (rnd) => {
+        if (!ask) return;
+        if (rnd() < 0.25) return draw(null);
+        boxes += 1;
+        const box = askBox(doc, [['add', `Request ${boxes}`, false]], [`Cost ${boxes}`]);
+        box.dataset.cost = `Cost ${boxes}`;
+        draw(box);
+      },
+      shown: () => nd.statusShown(page, { stage: 'notHere' }),
+    };
+    const names = Object.keys(ops);
+    await look();
+    await check('first look');
+    for (const seed of [1, 7, 42, 2026]) {
+      const rnd = seeded(seed);
+      trail = [];
+      for (let i = 0; i < 60; i++) {
+        const name = names[Math.floor(rnd() * names.length)];
+        trail.push(name);
+        await ops[name](rnd);
+        // A status read puts the page's controls right too, before any look.
+        if ((name === 'shown' || (name === 'status' && ask)) && nd.current()?.drawn) await check(`seed ${seed}: ${trail.join(' → ')} (status read)`);
+        // Sometimes several changes come before the next look.
+        if (rnd() < 0.3) continue;
+        await look();
+        await check(`seed ${seed}: ${trail.join(' → ')}`);
+      }
+      await look();
+      await check(`seed ${seed}: ${trail.join(' → ')} → look`);
+    }
+    // Leaving the page takes everything away, copies included.
+    ops.clone();
+    h.window.location.hash = '#/home';
+    await look();
+    assert.equal(doc.querySelectorAll('.je-native-absent-primary, .je-spoiler-pending-detail, .je-native-absent-actions, .je-native-absent-extras, .je-native-absent-ratings, [data-je-native]').length, 0);
+    if (ask) assert.equal(mounts.filter(m => !m.destroyed).length, 0);
+  });
+}
+
 test('the navigator: native page, scoped pages, the modal as fallback, provider keys through the server', async t => {
   const h = setup(t, { resolve: path => (path.includes('movie%3Atmdb%3A45745') ? { itemId: '0123456789abcdef0123456789abcdef' } : path.includes('tv%3Atvdb%3A393189') ? { id: '4a45ad130001479b0001000092805890' } : null) });
   assert.equal(h.td.show(83867, 'tv', { season: 1, episode: 3 }), true);

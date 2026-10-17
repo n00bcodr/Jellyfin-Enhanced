@@ -62,6 +62,13 @@
     const STYLE_ID = 'je-native-absent-style';
     /** The page's request controls in the native action row, in Play's place (first in the row). */
     const PRIMARY_CLASS = 'je-native-absent-primary';
+    /**
+     * Every control this module adds to a details page (the request controls in the row, the status
+     * container, Spoiler Guard, the ratings, the extras) carries its page state's token here. Only
+     * that state's own nodes are live; anything else marked (a copy, what an earlier state left) is
+     * dead and goes at the next look, status read or dispose.
+     */
+    const OWNER_ATTR = 'data-je-native';
     const HIDDEN_ACTIONS = [
         '.btnPlay', '.btnResume', '.btnReplay', '.btnShuffle', '.btnInstantMix', '.btnPlaystate', '.btnUserRating',
         '.btnDownload', '.btnMoreCommands', '.btnSplitVersions', '.btnCancelSeriesTimer', '.btnCancelTimer',
@@ -88,6 +95,9 @@
      * @type {{timer: number, user: string|null, from: string, landing: string|null}|null}
      */
     let pendingModal = null;
+    /** Page states made so far (each one's token), and whether any control was ever marked. */
+    let tokens = 0;
+    let marked = false;
 
     /**
      * This server's id in the normalised form the id check uses (lower case, no dashes).
@@ -521,23 +531,58 @@
     }
 
     /**
+     * Marks a control as the page state's own (see OWNER_ATTR).
+     * @template {HTMLElement} T
+     * @param {Object} state Page state.
+     * @param {T} node Control.
+     * @returns {T} The control.
+     */
+    function own(state, node) {
+        node.setAttribute(OWNER_ATTR, state.token);
+        marked = true;
+        return node;
+    }
+
+    /**
+     * The controls a page state added to its page (each holds the rest of its parts).
+     * @param {Object} state Page state.
+     * @returns {HTMLElement[]} Controls.
+     */
+    function controlsOf(state) {
+        return [state.primary, state.container, state.spoiler, state.ratings, state.extras].filter(Boolean);
+    }
+
+    /**
+     * Removes every control this module drew that isn't one of the live page state's own nodes:
+     * dead copies (a row drawn anew from its old self copies them, with their marks) and whatever an
+     * earlier state left behind. With no state, all of them go.
+     * @param {Object|null} state Live page state.
+     * @returns {void}
+     */
+    function sweep(state) {
+        if (!marked) return;
+        const live = state ? controlsOf(state) : [];
+        document.querySelectorAll(`[${OWNER_ATTR}]`).forEach((n) => {
+            if (!state || n.getAttribute(OWNER_ATTR) !== state.token || !live.includes(n)) n.remove();
+        });
+    }
+
+    /**
      * The request controls' place in the native action row: first, where Play sits on a library
      * title. It holds the request slot (Open, the movie's Request mount, the modal's Request) and
      * then the smart actions; its first control leads with its label, the rest are icon buttons.
-     * @param {HTMLElement} page Details page.
+     * Always a new one for a new page state: one already in the row belongs to no live state.
+     * @param {Object} state Page state.
      * @returns {HTMLElement|null} Slot, or null when the page has no action row.
      */
-    function primaryOf(page) {
-        const row = rowOf(page);
+    function primaryOf(state) {
+        const row = rowOf(state.page);
         if (!row) return null;
-        let slot = row.querySelector(`.${PRIMARY_CLASS}`);
-        if (!slot) {
-            slot = el('div', PRIMARY_CLASS);
-            slot.setAttribute('role', 'group');
-            slot.setAttribute('aria-label', JE.t('arr_actions_label'));
-            slot.appendChild(el('div', 'je-native-absent-request'));
-        }
-        if (row.firstElementChild !== slot) row.insertBefore(slot, row.firstElementChild);
+        const slot = own(state, el('div', PRIMARY_CLASS));
+        slot.setAttribute('role', 'group');
+        slot.setAttribute('aria-label', JE.t('arr_actions_label'));
+        slot.appendChild(el('div', 'je-native-absent-request'));
+        row.insertBefore(slot, row.firstElementChild);
         return slot;
     }
 
@@ -572,24 +617,24 @@
      * The container of this module's controls at the top of the primary detail section (under the
      * title ribbon): the status slot (status-details anchorOf puts the status block there), the cost
      * lines of the request actions in the row, and the ratings until they find their place. A page
-     * without an action row keeps the request slot here too.
-     * @param {HTMLElement} page Details page.
-     * @param {HTMLElement|null} primary Request controls in the row.
+     * without an action row keeps the request slot here too. Always a new one for a new page state
+     * (it sets `state.ratings` too).
+     * @param {Object} state Page state.
      * @returns {HTMLElement|null} Container.
      */
-    function actionsOf(page, primary) {
-        let box = page.querySelector('.je-native-absent-actions');
-        if (box) return box;
+    function actionsOf(state) {
+        const { page, primary } = state;
         const anchor = page.querySelector('.detailPagePrimaryContent .detailSection')
             || page.querySelector('.detailPagePrimaryContent')
             || page.querySelector('.detailPagePrimaryContainer');
         if (!anchor) return null;
-        box = el('div', 'je-native-absent-actions');
+        const box = own(state, el('div', 'je-native-absent-actions'));
         const status = el('div', 'je-native-absent-status');
         box.appendChild(status);
         box.appendChild(el('div', 'je-native-absent-notes'));
         if (!primary) box.appendChild(el('div', 'je-native-absent-row je-native-absent-request'));
-        box.appendChild(el('div', 'je-native-absent-ratings'));
+        // Ratings start here and move above the external links once drawn (mountExtras).
+        state.ratings = box.appendChild(own(state, el('div', 'je-native-absent-ratings')));
         anchor.insertBefore(box, anchor.firstChild);
         // The details surface may have answered before this page's controls existed.
         page.querySelectorAll('.je-arr-status[data-je-arr-surface="details"]').forEach(n => {
@@ -610,20 +655,34 @@
     function placeActions(page, box, old) {
         const state = current;
         if (!state || state.aborted || state.page !== page || !state.primary) return false;
+        restore(state);
         if (!page.contains(state.primary)) {
-            // The row was drawn anew and the request controls wait for keepRow: the new box goes under
-            // the status meanwhile (keepRow brings it back), and the one they kept is out of date.
+            // No action row to put them in: the new box goes under the status (ask-actions; a later look
+            // brings it into the row), and the one the controls hold is out of date.
             dropActions(state);
             return false;
         }
+        putActions(state, box, old);
+        return true;
+    }
+
+    /**
+     * Puts a smart-actions box (or none) into the row's request controls, which then hold that one
+     * box only (the newest), its cost lines under the status.
+     * @param {Object} state Page state.
+     * @param {HTMLElement|null} box Actions, or null for none.
+     * @param {HTMLElement|null} [old] The box shown until now.
+     * @returns {void}
+     */
+    function putActions(state, box, old) {
         if (old && old !== box) old.remove();
+        state.primary.querySelectorAll('.je-ask-actions').forEach((n) => { if (n !== box) n.remove(); });
         const notes = state.container?.querySelector('.je-native-absent-notes');
         notes?.replaceChildren();
-        if (!box) return true;
+        if (!box) return;
         if (box.parentNode !== state.primary) state.primary.appendChild(box);
         if (notes) box.querySelectorAll('.je-ask-action-cost').forEach(n => notes.appendChild(n));
         markRow(state.primary);
-        return true;
     }
 
     /**
@@ -700,47 +759,55 @@
         }
         if (!button) return;
         // Where a library title has it: after Report issue, just before More….
+        state.spoiler = own(state, button);
         JE.core.ui.placeDetailAction(row, button);
-        state.spoiler = button;
     }
 
     /**
-     * A page shown again whose action row was drawn anew (its contents, or the row itself) while the
-     * page stayed: its request controls and Spoiler Guard button go back into the row where they
-     * stood. They are the same controls, still live and still observed, so nothing is mounted twice;
-     * copies of them a row drawn from its old self holds are dead and go.
+     * The page's controls are the live state's own, once each: dead copies and leftovers go, and the
+     * request controls and Spoiler Guard go back into the row if it was drawn anew (its contents or
+     * the row itself) while the page stayed. They are the same controls, still live and still
+     * observed, so nothing is mounted twice. The status container, ratings and extras live outside
+     * the row; if the details section holding them is drawn anew, the page isn't the same any more
+     * and a new state draws it.
      * @param {Object} state Page state.
      * @returns {void}
      */
-    function keepRow(state) {
-        const row = rowOf(state.page);
+    function restore(state) {
+        sweep(state);
+        const row = state.primary ? rowOf(state.page) : null;
         if (!row) return;
-        row.querySelectorAll(`.${PRIMARY_CLASS}, .je-spoiler-pending-detail`).forEach((n) => {
-            if (n !== state.primary && n !== state.spoiler) n.remove();
-        });
-        if (state.primary && row.firstElementChild !== state.primary) {
-            row.insertBefore(state.primary, row.firstElementChild);
-            adoptActions(state);
-        }
-        if (state.spoiler && !row.contains(state.spoiler)) JE.core.ui.placeDetailAction(row, state.spoiler);
+        if (row.firstElementChild !== state.primary) row.insertBefore(state.primary, row.firstElementChild);
+        if (state.spoiler && state.spoiler.parentNode !== row) JE.core.ui.placeDetailAction(row, state.spoiler);
     }
 
     /**
-     * Stops what the previous synthetic page started.
+     * restore, then smart actions shown outside the row move in. Runs on every look (and for a new
+     * page state), on every status read, and (as restore) whenever smart actions are placed.
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function reconcile(state) {
+        restore(state);
+        adoptActions(state);
+    }
+
+    /**
+     * Stops what the previous synthetic page started and takes away every control this module drew,
+     * copies included.
      * @returns {void}
      */
     function dispose() {
-        if (!current) return;
-        current.aborted = true;
-        try { current.controls?.destroy?.(); } catch { /* already gone */ }
-        current.observer?.disconnect();
-        if (current.onKey) document.removeEventListener('keydown', current.onKey, true);
-        current.container?.remove();
-        current.primary?.remove();
-        current.spoiler?.remove();
-        current.ratings?.remove();
-        current.extras?.remove();
-        current = null;
+        const state = current;
+        if (state) {
+            state.aborted = true;
+            try { state.controls?.destroy?.(); } catch { /* already gone */ }
+            state.observer?.disconnect();
+            if (state.onKey) document.removeEventListener('keydown', state.onKey, true);
+            controlsOf(state).forEach(n => n.remove());
+            current = null;
+        }
+        sweep(null);
     }
 
     /**
@@ -756,7 +823,7 @@
         if (pendingModal && window.location.hash !== pendingModal.from) cancelPendingModal();
         window.Dashboard?.hideLoadingMsg?.();
         page.querySelector('.je-native-absent-refusal')?.remove();
-        page.querySelectorAll(`.je-native-absent-actions, .je-native-absent-extras, .${PRIMARY_CLASS}, .je-spoiler-pending-detail, .je-native-absent-ratings`).forEach(n => n.remove());
+        sweep(null);
         const box = el('div', 'je-native-absent-refusal');
         box.setAttribute('role', 'status');
         box.textContent = JE.t(messageKey);
@@ -967,17 +1034,18 @@
         if (!state || state.aborted || state.page !== page) return;
         // Kept for the Request mount, which may only be made after this read (the item is read first).
         state.status = status || null;
-        showOpen(state, status?.openItemId || null);
-        // The movie's Request mount follows the same status (asked, on its way, Search…).
-        state.controls?.update?.(status || null);
-        // Keep the status block in this page's status slot, and the smart actions in the row.
+        // Keep the status block in this page's status slot (first: it may have gone into a dead copy's),
+        // then the page's controls, and the smart actions in the row.
         const slot = state.container?.querySelector('.je-native-absent-status');
         if (slot) {
             page.querySelectorAll('.je-arr-status[data-je-arr-surface="details"]').forEach(n => {
                 if (!slot.contains(n)) slot.appendChild(n);
             });
         }
-        adoptActions(state);
+        reconcile(state);
+        showOpen(state, status?.openItemId || null);
+        // The movie's Request mount follows the same status (asked, on its way, Search…).
+        state.controls?.update?.(status || null);
     }
 
     /**
@@ -991,7 +1059,7 @@
         boxes.forEach((n) => {
             if (state.primary) {
                 // Drawn after the box the controls hold (while they were out of the row): it replaces it.
-                if (!state.primary.contains(n)) placeActions(state.page, n, state.primary.querySelector('.je-ask-actions'));
+                if (!state.primary.contains(n) && state.page.contains(state.primary)) putActions(state, n, null);
             } else {
                 const slot = state.container?.querySelector('.je-native-absent-status');
                 if (slot && !slot.contains(n)) slot.appendChild(n);
@@ -1052,7 +1120,7 @@
         // A copy is offered by Open only (checked for this viewer by the server), never from Seerr's link.
         const shown = Object.assign({}, data, { mediaInfo: null });
         const releaseDate = mediaType === 'movie' ? data.releaseDate : data.firstAirDate;
-        const extras = el('div', 'detailSection je-native-absent-extras');
+        const extras = own(state, el('div', 'detailSection je-native-absent-extras'));
         extras.dataset.tmdbId = String(parts.tmdbId);
         let html = '';
         try {
@@ -1093,16 +1161,13 @@
             const raw = await nativeTitleData(state, '/ratings');
             const ratings = raw && mediaType === 'tv' ? { rt: raw } : raw;
             if (state.aborted || current !== state) return;
-            const mount = state.container?.querySelector('.je-native-absent-ratings');
+            const mount = state.ratings;
             if (mount && ratings) {
                 data.ratings = ratings;
                 mount.innerHTML = internal.buildRatingLogos(ratings, data, mediaType, parts.tmdbId) || '';
                 // Where JE's MDBList ratings sit on a library title: just above the external links.
                 const links = page.querySelector('.detailPagePrimaryContent .itemExternalLinks');
-                if (mount.innerHTML && links?.parentNode) {
-                    links.insertAdjacentElement('beforebegin', mount);
-                    state.ratings = mount;
-                }
+                if (mount.innerHTML && links?.parentNode) links.insertAdjacentElement('beforebegin', mount);
             }
         }
     }
@@ -1198,14 +1263,15 @@
         const state = same ? current : {
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
             controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, extras: null,
-            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false
+            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false,
+            token: String(++tokens)
         };
         if (!same) {
             dispose();
             current = state;
             // Titles get their request controls in the native action row; a person page has none.
-            state.primary = isTitle ? primaryOf(page) : null;
-            state.container = actionsOf(page, state.primary);
+            state.primary = isTitle ? primaryOf(state) : null;
+            state.container = actionsOf(state);
             if (state.primary && typeof MutationObserver === 'function') {
                 // The controls redraw themselves (status changes, asks): each drawing gets the native look,
                 // and smart actions taken away by any path take their cost lines with them.
@@ -1218,8 +1284,9 @@
                 document.addEventListener('keydown', state.onKey, true);
                 markRow(state.primary);
             }
-            adoptActions(state);
         }
+        // Every look starts from the live controls only (copies and leftovers gone), and ends so too.
+        reconcile(state);
         const generation = ++state.generation;
         let item = null;
         let status = 0;
@@ -1279,7 +1346,7 @@
         }
         checking(page, false);
         page.dataset.jeNativeShown = id;
-        keepRow(state);
+        reconcile(state);
         // Drawn once per page state: a look that overlapped the first one (viewshow and the first look
         // on a fresh load, the first giving way to it) still draws the page.
         if (state.drawn) return;
