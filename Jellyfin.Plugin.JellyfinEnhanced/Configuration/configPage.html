@@ -2691,6 +2691,14 @@
                                 <div class="je-setting-description" data-desc-for="arrAcquisitionUpgradedDays"><div class="fieldDescription">A badge also goes as soon as the person watches the title.</div></div>
                             </div>
                             <!-- /Phase 4e: acquisition badges -->
+                            <!-- Phase 4c3a: list pages -->
+                            <div id="arrListPageSettings" class="je-arr-list-settings">
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListPlaylistUiEnabled" is="emby-checkbox" type="checkbox"/><span>Show list entries on playlist pages</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListPlaylistUiEnabled"><div class="fieldDescription">Playlist pages show the entries that aren't in the library in list order between the real items, with their request status and a Request button where the person may ask. They never play and can't be picked for playing or selecting. On the Playlists page a playlist with such entries is marked as incomplete instead of with Jellyfin's "played" check. Everyone can hide this for themselves.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListCollectionUiEnabled" is="emby-checkbox" type="checkbox"/><span>Show list entries on collection pages</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListCollectionUiEnabled"><div class="fieldDescription">Collection pages get a "Not in your library" section with the collection's entries that aren't in the library, by release date (dates still to be announced last). Everyone can hide this for themselves.</div></div>
+                            </div>
+                            <!-- /Phase 4c3a: list pages -->
                             <!-- /Requests & downloads, phase 4 -->
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
@@ -6730,6 +6738,9 @@
             document.querySelector('#arrPhase4NativeStampsEnabled').checked = config.ArrPhase4NativeStampsEnabled === true;
             document.querySelector('#arrAcquisitionNewDays').value = num(config.ArrAcquisitionNewDays, 7);
             document.querySelector('#arrAcquisitionUpgradedDays').value = num(config.ArrAcquisitionUpgradedDays, 7);
+            // Phase 4c3a: list pages
+            document.querySelector('#arrPhase4ListPlaylistUiEnabled').checked = config.ArrPhase4ListPlaylistUiEnabled === true;
+            document.querySelector('#arrPhase4ListCollectionUiEnabled').checked = config.ArrPhase4ListCollectionUiEnabled === true;
             document.querySelector('#arrAutomationShadowOverride').checked = config.ArrAutomationShadowOverride === true;
             document.querySelector('#arrAutomationKillAll').checked = config.ArrAutomationKillAll === true;
             document.querySelector('#arrAutomationFree').checked = config.ArrAutomationFree === true;
@@ -6806,6 +6817,9 @@
             config.ArrPhase4NativeStampsEnabled = document.querySelector('#arrPhase4NativeStampsEnabled').checked;
             config.ArrAcquisitionNewDays = days('#arrAcquisitionNewDays');
             config.ArrAcquisitionUpgradedDays = days('#arrAcquisitionUpgradedDays');
+            // Phase 4c3a: list pages
+            config.ArrPhase4ListPlaylistUiEnabled = document.querySelector('#arrPhase4ListPlaylistUiEnabled').checked;
+            config.ArrPhase4ListCollectionUiEnabled = document.querySelector('#arrPhase4ListCollectionUiEnabled').checked;
             config.ArrAutomationShadowOverride = document.querySelector('#arrAutomationShadowOverride').checked;
             config.ArrAutomationKillAll = document.querySelector('#arrAutomationKillAll').checked;
             config.ArrAutomationFree = document.querySelector('#arrAutomationFree').checked;
@@ -10564,6 +10578,8 @@
             { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4AcquisitionBadgesEnabled'] },
             { parent: 'arrPhase4AcquisitionBadgesEnabled', label: 'Poster badges: New for you, Upgraded, 4K', children: ['arrPhase4NativeStampsEnabled', 'arrAcquisitionNewDays', 'arrAcquisitionUpgradedDays'] },
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['arrPhase4NativeStampsEnabled'] },
+            // Phase 4c3a: list pages
+            { parent: 'arrPhase4ListPlaceholdersEnabled', label: 'Lists', children: ['arrPhase4ListPlaylistUiEnabled', 'arrPhase4ListCollectionUiEnabled'] },
             { parent: 'arrPhase4AutomationEnabled', label: 'Automation engine', children: ['arrAutomationRecipe_auto_season', 'arrAutomationRecipe_auto_movie', 'arrAutomationRecipe_keep_up', 'arrAutomationRecipe_list_acquire_ahead', 'arrAutomationRecipe_release_day', 'arrAutomationRecipe_list_sync', 'arrAutomationRecipe_list_sync_requests', 'arrAutomationKillAll', 'arrAutomationHouseholdAddsPerDay', 'arrAutomationSearchesPerHour', 'arrAutomationSearchesPerDay', 'arrAutomationSeerrPostsPerDay', 'arrAutomationSourceFetchesPerHour', 'arrAutomationDeltaWorkPerHour', 'arrAutomationFree'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },

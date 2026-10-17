@@ -317,6 +317,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 .ToList();
         }
 
+        /// <summary>Ids of the lists an imported collage marker is kept for (<see cref="LegacyCollagesFolder"/>).</summary>
+        /// <returns>List ids ("N").</returns>
+        public IReadOnlyList<string> EnumerateCollageMarkerIds()
+        {
+            var dir = Path.Combine(_dir, LegacyCollagesFolder);
+            if (!Directory.Exists(dir))
+            {
+                return Array.Empty<string>();
+            }
+
+            return Directory.EnumerateFiles(dir, "*.json")
+                .Select(Path.GetFileNameWithoutExtension)
+                .Where(IsValidListId)
+                .Select(id => id!)
+                .ToList();
+        }
+
         /// <summary>True when at least one stored list has placeholders (library events are only matched then).</summary>
         /// <returns>Whether any placeholder exists.</returns>
         public bool HasAnyPlaceholders()

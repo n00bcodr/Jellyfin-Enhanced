@@ -5,9 +5,9 @@ using static JE.Tests.ListsHarness;
 namespace JE.Tests;
 
 // Review round 2 (4c1-r2-security-1, 4c1-B4-r2): a retried create recognises the list its first attempt made only by a
-// marker Jellyfin keeps in the same write that creates the list (a share for an id no person has, on a playlist; a
-// provider id, on a collection), never by its name or creation time. A namesake, someone else's or the caller's own,
-// is never adopted or changed.
+// marker Jellyfin keeps in the same write that creates the list (since round 3: the folder Jellyfin makes from the name
+// the create runs under, and a provider id on a collection), never by its name or creation time. A namesake, someone
+// else's or the caller's own, is never adopted or changed.
 [Collection("Plugin singleton")]
 public class ListsCreateIdentityTests
 {
@@ -101,7 +101,8 @@ public class ListsCreateIdentityTests
         Assert.Equal(made.ToString("N"), retry.ListId);
         Assert.Equal(new[] { item }, h.Host.Resolved(made));
         Assert.All(h.Host.Lists.Values.Where(l => l.Info.Id != made), l => Assert.Empty(l.Raw));
-        // The marker is gone from the playlist once the operation recorded it (no share to a person who doesn't exist).
+        // The list got its chosen name, and never had a share for a person who doesn't exist.
+        Assert.Equal("Watch next", h.Host.GetList(made)!.Name);
         Assert.All(h.Host.GetList(made)!.Shares, s => Assert.NotNull(h.Users.Object.GetUserById(s.UserId)));
     }
 
