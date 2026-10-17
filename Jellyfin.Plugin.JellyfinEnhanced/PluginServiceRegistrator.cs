@@ -150,6 +150,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestOperations>();
             serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationStatusService>();
             serviceCollection.AddHostedService<Services.Acquire.Automation.AutomationStartup>();
+            // ---- Phase 4c1: lists (inert while off). Store, rights, Jellyfin seam, durable operations / request links /
+            // swap-in events (acquire.db schema 5), the list service, list requests through the shared request service,
+            // swap-in (library events; consent-gated inserts), lifecycle (deleted lists, restore reconciliation, deleted
+            // users) and the experimental-list importer (D33, administrators).
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListStore>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.IListHost, Services.Acquire.Lists.JellyfinListHost>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListAccessService>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListResolver>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.IListMetadataSource, Services.Acquire.Lists.ListMetadataService>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.IListPreferences, Services.Acquire.Lists.UserSettingsListPreferences>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListOperations>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListLinks>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListEventStore>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.IListStatusSource, Services.Acquire.Lists.ArrListStatusSource>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListSwapService>(sp => new Services.Acquire.Lists.ListSwapService(
+                sp.GetRequiredService<Services.Acquire.Lists.ListStore>(),
+                sp.GetRequiredService<Services.Acquire.Lists.IListHost>(),
+                sp.GetRequiredService<MediaBrowser.Controller.Library.IUserManager>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListResolver>(),
+                sp.GetRequiredService<Services.Acquire.Lists.IListMetadataSource>(),
+                sp.GetRequiredService<Logger>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListEventStore>(),
+                sp.GetRequiredService<Services.Acquire.Lists.IListPreferences>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListAccessService>()));
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListService>(sp => new Services.Acquire.Lists.ListService(
+                sp.GetRequiredService<Services.Acquire.Lists.ListStore>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListAccessService>(),
+                sp.GetRequiredService<Services.Acquire.Lists.IListHost>(),
+                sp.GetRequiredService<MediaBrowser.Controller.Library.IUserManager>(),
+                sp.GetRequiredService<Logger>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListResolver>(),
+                sp.GetRequiredService<Services.Acquire.Lists.IListMetadataSource>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListSwapService>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListOperations>(),
+                sp.GetRequiredService<Services.Acquire.Lists.IListStatusSource>(),
+                sp.GetRequiredService<Services.Acquire.Lists.IListPreferences>(),
+                user => sp.GetRequiredService<Services.Acquire.Requests.RequestService>().Me(user)));
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListAcquisition>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ExperimentalListImporter>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListLifecycle>(sp => new Services.Acquire.Lists.ListLifecycle(
+                sp.GetRequiredService<MediaBrowser.Controller.Library.ILibraryManager>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListStore>(),
+                sp.GetRequiredService<Services.Acquire.Lists.IListHost>(),
+                sp.GetRequiredService<Logger>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListLinks>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListOperations>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListEventStore>(),
+                sp.GetRequiredService<Services.Acquire.Lists.ListSwapService>()));
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Lists.ListLifecycle>());
+            serviceCollection.AddHostedService<Services.Acquire.Lists.ListSwapMonitor>();
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Lists.ListUserPurge>();
+            // ---- end Phase 4c1 ----
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             // "Keep getting new episodes": charges each new season once when a Sonarr library read shows it started.
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();

@@ -208,6 +208,33 @@ CREATE TABLE automation_grants (
 CREATE TABLE automation_breakers (
     target TEXT PRIMARY KEY, failures INTEGER NOT NULL, opened_until INTEGER, last_reason TEXT, updated_at INTEGER NOT NULL);
 ",
+            // 4: reserved for phase 4b (household rules, Trusted, group quotas); its step takes this slot when the tracks
+            // are joined. Empty here, so this build's step 5 doesn't depend on it.
+            "",
+            // 5: phase 4 lists (4c1). Durable list operations (a retried add, apply, edit, reorder or list creation is
+            // answered from its operation, never applied twice, across restarts); which person's request a list entry
+            // asked for (list links, restored together with the requests they point at); verified swap-in events for
+            // notifications. Every statement is guarded so the step doesn't depend on another phase-4 step.
+            @"
+CREATE TABLE IF NOT EXISTS list_operations (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, scope TEXT NOT NULL, client_id TEXT NOT NULL,
+    kind TEXT NOT NULL, fingerprint TEXT NOT NULL, state TEXT NOT NULL,
+    status INTEGER, list_id TEXT, result TEXT,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+    UNIQUE(user_id,scope,client_id));
+CREATE INDEX IF NOT EXISTS list_operations_at ON list_operations(updated_at);
+CREATE TABLE IF NOT EXISTS list_links (
+    list_id TEXT NOT NULL, placeholder_id TEXT NOT NULL, user_id TEXT NOT NULL, want_id TEXT NOT NULL,
+    operation_id TEXT, title_key TEXT NOT NULL, scope TEXT NOT NULL, edition TEXT NOT NULL, created_at INTEGER NOT NULL,
+    PRIMARY KEY (list_id,placeholder_id,user_id,want_id));
+CREATE INDEX IF NOT EXISTS list_links_want ON list_links(want_id);
+CREATE INDEX IF NOT EXISTS list_links_user ON list_links(user_id);
+CREATE TABLE IF NOT EXISTS list_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, event_key TEXT NOT NULL UNIQUE, list_id TEXT NOT NULL, placeholder_id TEXT NOT NULL,
+    kind TEXT NOT NULL, title_key TEXT, edition TEXT, item_ids TEXT NOT NULL, coords TEXT, complete INTEGER NOT NULL,
+    created_at INTEGER NOT NULL, delivered_at INTEGER);
+CREATE INDEX IF NOT EXISTS list_events_pending ON list_events(delivered_at);
+",
         };
 
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
