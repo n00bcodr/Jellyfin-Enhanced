@@ -43,8 +43,12 @@ test('an account Seerr won\'t show issues to is asked once, quietly, until the u
   const h = createHarness({
     JE: {
       t: key => key,
-      session: { onUserChange: (_name, fn) => switches.push(fn) },
-      core: { api: { fetch: async url => { calls.push(url); throw Object.assign(new Error('HTTP 403'), { status: 403 }); } } },
+      session: { getEpoch: () => 0, isCurrent: () => true, onUserChange: (_name, fn) => switches.push(fn) },
+      // A status that doesn't say (an older answer), so only Seerr's own 403 tells.
+      core: { api: { fetch: async url => {
+        if (url.includes('/user-status')) return { active: true, userFound: true, reason: 'linked' };
+        calls.push(url); throw Object.assign(new Error('HTTP 403'), { status: 403 });
+      } } },
     },
     apiClient: { getUrl: path => path },
   });
@@ -53,6 +57,7 @@ test('an account Seerr won\'t show issues to is asked once, quietly, until the u
   h.window.console.error = (...args) => errors.push(args.join(' '));
   h.load('jellyseerr/api.js');
   const api = h.JE.jellyseerrAPI;
+  api.surfaceUserStatusBanner = () => {};
   assert.deepEqual(JSON.parse(JSON.stringify(await api.fetchIssuesForMedia(603, 'movie'))), { results: [], forbidden: true });
   assert.deepEqual(JSON.parse(JSON.stringify(await api.fetchIssuesForMedia(604, 'movie'))), { results: [], forbidden: true });
   assert.equal(calls.length, 1);

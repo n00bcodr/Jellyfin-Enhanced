@@ -572,7 +572,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `jellyseerr/status` | Seerr connection/reachability check (answer cached for 30 s) |
 | GET | `jellyseerr/validate` | Validate configured Seerr URL(s) + API key |
 | POST | `jellyseerr/trigger-recently-added-scan` | Kick off a Seerr library scan |
-| GET | `jellyseerr/user-status` | Is the calling Jellyfin user linked to a Seerr account |
+| GET | `jellyseerr/user-status` | Is the calling Jellyfin user linked to a Seerr account; for a linked user also `canRequestAdvanced` and `canViewIssues` (whether `jellyseerr/issue` would answer them or refuse with `403`) |
 | GET | `jellyseerr/permission-audit` | Admin: audit every Jellyfin user's Seerr permission bits |
 | GET | `jellyseerr/search` | Proxy a Seerr search query |
 | GET | `jellyseerr/sonarr` / `jellyseerr/radarr` | List Sonarr/Radarr instances known to Seerr (read-only profile/folder discovery, no credentials) |

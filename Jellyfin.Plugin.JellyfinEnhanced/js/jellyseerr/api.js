@@ -724,9 +724,15 @@
      */
     api.fetchIssuesForMedia = async function(tmdbId, mediaType, options = {}) {
         const { take = 20, skip = 0, filter = 'open', sort = 'added' } = options;
-        // A viewer whose Seerr account may not view issues (said by their status, or by Seerr once): nothing to
-        // show, and no call, so no point asking again on every page.
-        if (issuesRefused || cachedUserStatus?.canViewIssues === false) return { results: [], forbidden: true };
+        // Seerr doesn't let this person view issues (said by Seerr once, or by their user status: cached for the
+        // session and carried by the page bootstrap): nothing to show, and no call the proxy would refuse with a 403
+        // on every page load.
+        if (issuesRefused) return { results: [], forbidden: true };
+        const status = await api.checkUserStatus();
+        if (status?.canViewIssues === false) {
+            issuesRefused = true;
+            return { results: [], forbidden: true };
+        }
         try {
             const query = new URLSearchParams({
                 take: String(take),

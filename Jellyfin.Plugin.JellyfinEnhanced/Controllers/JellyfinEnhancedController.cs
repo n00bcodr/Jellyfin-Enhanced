@@ -1149,8 +1149,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             || apiPath.StartsWith("/api/v1/issue/", StringComparison.OrdinalIgnoreCase)
                             || string.Equals(apiPath, "/api/v1/issue", StringComparison.OrdinalIgnoreCase)))
                         {
-                            if (!JellyseerrPermissionHelper.HasAnyPermission(perms,
-                                JellyseerrPermission.VIEW_ISSUES | JellyseerrPermission.MANAGE_ISSUES))
+                            if (!CanViewIssues(false, seerrUser))
                                 return StatusCode(403, new { code = "no_issue_view_permission", message = "You do not have permission to view issues in Seerr." });
                         }
 
@@ -1651,9 +1650,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var cachedId = TryGetCachedJellyseerrUserId(jellyfinUserId);
             if (cachedId == null) return null;
 
-            // canRequestAdvanced: an admin always may; anyone else needs their
-            // Seerr user (permissions), which must already be in the user cache
-            // for this answer to need no Seerr round trip.
+            // canRequestAdvanced and canViewIssues: an admin always may; anyone
+            // else needs their Seerr user (permissions), which must already be in
+            // the user cache for this answer to need no Seerr round trip.
             if (isAdmin) return LinkedSeerrUserStatus(cachedId, true, true);
             return TryGetCachedJellyseerrUser(jellyfinUserId, out var seerrUser)
                 ? LinkedSeerrUserStatus(cachedId, CanRequestAdvanced(false, seerrUser), CanViewIssues(false, seerrUser))
@@ -1665,12 +1664,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             => new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked", canRequestAdvanced, canViewIssues };
 
         /// <summary>
-        /// Whether the issue reads may be made for the user: a Jellyfin administrator always (the proxy lets them),
-        /// anyone else needs Seerr's VIEW_ISSUES or MANAGE_ISSUES (or Seerr ADMIN), as the proxy checks.
+        /// Whether the issue list and issues may be read through the Seerr proxy
+        /// (its 403 gate): Jellyfin admins always, anyone else with Seerr's
+        /// admin, view-issues or manage-issues permission. Without a Seerr user to
+        /// judge by, the proxy doesn't refuse (Seerr decides), so neither does this.
+        /// Pages read it from <c>jellyseerr/user-status</c> so they don't ask for
+        /// an issue list they would be refused.
         /// </summary>
         private static bool CanViewIssues(bool isAdmin, JellyseerrUser? seerrUser)
-            => isAdmin || (seerrUser != null && JellyseerrPermissionHelper.HasAnyPermission(seerrUser.Permissions,
-                JellyseerrPermission.ADMIN | JellyseerrPermission.VIEW_ISSUES | JellyseerrPermission.MANAGE_ISSUES));
+            => isAdmin || seerrUser == null
+                || JellyseerrPermissionHelper.HasPermission(seerrUser.Permissions, JellyseerrPermission.ADMIN)
+                || JellyseerrPermissionHelper.HasAnyPermission(seerrUser.Permissions, JellyseerrPermission.VIEW_ISSUES | JellyseerrPermission.MANAGE_ISSUES);
 
         /// <summary>
         /// Whether the request modals may offer the advanced options (server,

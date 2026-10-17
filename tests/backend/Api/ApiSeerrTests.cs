@@ -516,7 +516,10 @@ public class ApiSeerrTests
     }
 
     [Theory]
+    [InlineData(JellyseerrPermission.NONE, false, false)]
     [InlineData(JellyseerrPermission.REQUEST, false, false)]
+    [InlineData(JellyseerrPermission.REQUEST | JellyseerrPermission.CREATE_ISSUES, false, false)]
+    [InlineData(JellyseerrPermission.VIEW_ISSUES, false, true)]
     [InlineData(JellyseerrPermission.REQUEST | JellyseerrPermission.VIEW_ISSUES, false, true)]
     [InlineData(JellyseerrPermission.MANAGE_ISSUES, false, true)]
     [InlineData(JellyseerrPermission.ADMIN, false, true)]
