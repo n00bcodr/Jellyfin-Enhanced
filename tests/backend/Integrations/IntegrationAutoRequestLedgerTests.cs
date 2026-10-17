@@ -195,6 +195,67 @@ public class IntegrationAutoRequestLedgerTests
         Assert.Equal(AutoRequestOutcomeKind.WantRecorded, sent.Kind);
     }
 
+    // An administrator's save: Jellyfin replaces the configuration object, so a reference taken earlier goes stale.
+    private static void SaveOverride(ApiPluginFixture f, bool on)
+    {
+        var copy = (Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration)typeof(object).GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(f.Plugin.Configuration, null)!;
+        copy.ArrAutomationShadowOverride = on;
+        f.Plugin.UpdateConfiguration(copy);
+    }
+
+    private static HttpResponseMessage? SeerrShow(HttpRequestMessage request)
+        => request.RequestUri!.AbsolutePath == "/api/v1/tv/42"
+            ? IntegrationTransport.Response(JsonSerializer.Serialize(new { numberOfSeasons = 2, seasons = new object[] { new { seasonNumber = 1, episodeCount = 10, status = 5 }, new { seasonNumber = 2, episodeCount = 10, status = 1 } } }))
+            : null;
+
+    [Theory]
+    [InlineData("movie", "lookup")]
+    [InlineData("movie", "retry")]
+    [InlineData("season", "lookup")]
+    [InlineData("season", "retry")]
+    public async Task TheRolloutShadowOverrideSavedWhileADirectSeerrSendWaitsStopsEveryPostIncludingTheNextUrl(string recipe, string when)
+    {
+        using var a = new Auto(seerr: true);
+        a.F.Plugin.Configuration.ArrPhase3Enabled = false;
+        a.F.Plugin.Configuration.JellyseerrUrls = "http://seerr.test,http://seerr2.test";
+        var person = a.Person("Member");
+        var posts = 0;
+        a.Answer = r =>
+        {
+            var path = r.RequestUri!.AbsolutePath;
+            if (path == "/api/v1/user")
+            {
+                // Saved on while the send is reading Seerr's accounts (after the override was checked).
+                if (when == "lookup") SaveOverride(a.F, true);
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new object[] { new { id = 5, jellyfinUserId = person.ToString("N") } } }));
+            }
+            if (r.Method == HttpMethod.Post && path == "/api/v1/request")
+            {
+                posts++;
+                // Saved on while the first Seerr URL's POST fails: the next URL is not tried.
+                SaveOverride(a.F, true);
+                return IntegrationTransport.Response("{\"message\":\"down\"}", 503);
+            }
+            if (path == "/api/v1/collection/9")
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new object[] { new { id = 123, title = "First", releaseDate = "2000-01-01" }, new { id = 124, title = "Second", releaseDate = "2001-01-01" } } }));
+            return SeerrShow(r) ?? Collection(r);
+        };
+        AutoRequestOutcome outcome;
+        if (recipe == "movie") outcome = await a.Movies(recorder: false).CheckMovieForCollectionRequestAsync(Watched(), person);
+        else
+        {
+            var (series, episode, library) = Show(9);
+            var previous = BaseItem.LibraryManager;
+            BaseItem.LibraryManager = library.Object;
+            try { outcome = await new AutoSeasonRequestService(a.Transport, a.F.Core.Logger, a.Users.Object, null!, library.Object, a.Recorder).CheckEpisodeCompletionAsync(episode, person); }
+            finally { BaseItem.LibraryManager = previous; }
+        }
+        Assert.Contains(a.Urls, u => u == "GET /api/v1/user");
+        Assert.Equal(when == "lookup" ? 0 : 1, posts);
+        Assert.Equal((AutoRequestOutcomeKind.DefinitiveNoop, "shadow_override"), (outcome.Kind, outcome.Reason));
+        Assert.True(a.F.Plugin.Configuration.ArrAutomationShadowOverride);
+    }
+
     private static (Series Series, Episode Episode, Mock<ILibraryManager> Library) Show(int episode)
     {
         var series = new Series { Id = Guid.NewGuid(), Name = "Show", ProviderIds = new() { ["Tmdb"] = "42", ["Tvdb"] = "4242" } };

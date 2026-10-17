@@ -437,8 +437,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return AutoRequestOutcome.Noop("already_requested", seriesKey?.ToString());
             }
 
-            // Rollout Shadow override: what would have been asked is recorded and nothing is sent.
-            if (AutomationFlags.ShadowOverride(config))
+            // Rollout Shadow override: what would have been asked is recorded and nothing is sent. It is read live (an
+            // administrator's save replaces the configuration) here and again right before every POST.
+            AutoRequestOutcome ShadowOverridden()
             {
                 _recorder?.ShadowOverride(Recipe, user.Id, seriesKey?.ToString(), nextSeasonNumber);
                 lock (_requestCacheLock)
@@ -449,10 +450,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return AutoRequestOutcome.Noop(AutomationHolds.ShadowOverride, seriesKey?.ToString());
             }
 
-            // Season exists, not available, not requested - proceed with request
-            var success = await RequestNextSeason(tmdbId, nextSeasonNumber, user.Id.ToString());
+            if (AutomationFlags.ShadowOverride(JellyfinEnhanced.Instance?.Configuration))
+            {
+                return ShadowOverridden();
+            }
 
-            if (success)
+            // Season exists, not available, not requested - proceed with request
+            var sent = await RequestNextSeason(tmdbId, nextSeasonNumber, user.Id.ToString());
+            if (sent == null)
+            {
+                return ShadowOverridden();
+            }
+
+            if (sent == true)
             {
                 _logger.Info($"[Auto-Season-Request] ✓ Requested '{series.Name}' S{nextSeasonNumber} (TMDB: {tmdbId}) for {user.Username}");
                 return AutoRequestOutcome.Recorded("seerr_request", seriesKey?.ToString());
@@ -712,8 +722,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return null;
         }
 
-        // Requests the next season from Jellyseerr
-        private async Task<bool> RequestNextSeason(string tmdbId, int seasonNumber, string jellyfinUserId)
+        // Requests the next season from Jellyseerr: true when sent, false when it failed, null when the rollout Shadow
+        // override was on right before a POST (nothing more is sent).
+        private async Task<bool?> RequestNextSeason(string tmdbId, int seasonNumber, string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
@@ -747,6 +758,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     };
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);
+
+                    // The rollout Shadow override, read live right before each POST (the next Seerr URL included).
+                    if (AutomationFlags.ShadowOverride(JellyfinEnhanced.Instance?.Configuration))
+                    {
+                        return null;
+                    }
 
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
                         HttpMethod.Post, requestUri, config.GetJellyseerrApiKey(), jellyseerrUserId, jsonContent);

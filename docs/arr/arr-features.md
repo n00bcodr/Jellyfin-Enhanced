@@ -1328,8 +1328,9 @@ either is off, the automatic requests above behave exactly as described there. W
   searches or stop that work. Recipes that need Sonarr/Radarr handling (the release-day search) don't run in Seerr mode.
 - **Rollout guard.** *Rollout guard: Shadow only* makes every automatic request only record what it would have done,
   with or without phase 4, through Seerr or Jellyfin Enhanced, and holds automatic requests already waiting to be
-  sent. It stays on through every other switch and upgrade until an administrator turns it off. People's own
-  requests are never affected.
+  sent. It is checked again right before every request sent, so turning it on stops one that is already on its way
+  (and its retry to a second Seerr address). It stays on through every other switch and upgrade until an
+  administrator turns it off. People's own requests are never affected.
 
 What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic

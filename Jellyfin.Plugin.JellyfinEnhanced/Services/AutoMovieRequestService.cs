@@ -212,8 +212,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _requestedMovies[user.Id.ToString()][requestKey] = DateTime.Now;
             }
 
-            // Rollout Shadow override: what would have been asked is recorded and nothing is sent.
-            if (AutomationFlags.ShadowOverride(config))
+            // Rollout Shadow override: what would have been asked is recorded and nothing is sent. It is read live (an
+            // administrator's save replaces the configuration) here and again right before every POST.
+            AutoRequestOutcome ShadowOverridden()
             {
                 _recorder?.ShadowOverride(Recipe, user.Id, key.ToString());
                 lock (_movieCacheLock)
@@ -224,13 +225,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return AutoRequestOutcome.Noop(AutomationHolds.ShadowOverride, key.ToString());
             }
 
+            if (AutomationFlags.ShadowOverride(JellyfinEnhanced.Instance?.Configuration))
+            {
+                return ShadowOverridden();
+            }
+
             // Resolve quality profile settings based on configuration mode
             var qualitySettings = await ResolveQualityProfileAsync(tmdbId);
 
             // Request the movie
-            var success = await RequestMovie(nextMovieInfo.TmdbId.ToString(), user.Id.ToString(), qualitySettings);
+            var sent = await RequestMovie(nextMovieInfo.TmdbId.ToString(), user.Id.ToString(), qualitySettings);
+            if (sent == null)
+            {
+                return ShadowOverridden();
+            }
 
-            if (success)
+            if (sent == true)
             {
                 _logger.Info($"[Auto-Movie-Request] ✓ Requested '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}");
                 return AutoRequestOutcome.Recorded("seerr_request", key.ToString());
@@ -673,8 +683,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return null;
         }
 
-        // Requests a movie from Jellyseerr
-        private async Task<bool> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
+        // Requests a movie from Jellyseerr: true when sent, false when it failed, null when the rollout Shadow override
+        // was on right before a POST (nothing more is sent).
+        private async Task<bool?> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
@@ -719,6 +730,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);
+
+                    // The rollout Shadow override, read live right before each POST (the next Seerr URL included).
+                    if (AutomationFlags.ShadowOverride(JellyfinEnhanced.Instance?.Configuration))
+                    {
+                        return null;
+                    }
 
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
                         HttpMethod.Post, requestUri, config.GetJellyseerrApiKey(), jellyseerrUserId, jsonContent);
