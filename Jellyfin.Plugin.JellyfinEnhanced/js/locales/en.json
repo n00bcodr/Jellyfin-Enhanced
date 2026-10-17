@@ -1703,5 +1703,15 @@
     "arr_auto_migration": "Automatic requests were moved to recipe modes: next season {season}, next movie {movie}.",
     "arr_auto_migration_grants": "These Managers keep their automatic requests without an OK (recorded when their old automatic requests were on): {names}.",
     "arr_auto_got_it": "Got it",
-    "arr_auto_action_failed": "That didn't go through. Try again in a moment."
+    "arr_auto_action_failed": "That didn't go through. Try again in a moment.",
+    "panel_settings_lists": "Lists",
+    "panel_settings_lists_desc": "Titles that aren't in the library yet, on playlists and collections.",
+    "panel_settings_lists_entries": "Show titles not in the library on lists",
+    "panel_settings_lists_status": "Show where each list title's request stands",
+    "panel_settings_lists_follow": "Show (household setting)",
+    "panel_settings_lists_hide": "Hide",
+    "panel_settings_lists_swapin": "Let titles that arrive take their place in lists I turned this on for",
+    "panel_settings_lists_swapin_no": "No",
+    "panel_settings_lists_swapin_yes": "Yes",
+    "toast_list_settings_saved": "List settings saved"
 }

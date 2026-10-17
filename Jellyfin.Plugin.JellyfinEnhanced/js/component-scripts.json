@@ -261,6 +261,8 @@
     "arr/ask/ask-collection.js",
     "arr/ask/ask-seerr.js",
     "arr/ask/ask-styles.js",
+    "// lists (Requests & downloads, phase 4c1): the transport (JE.arrLists); page modules come with the list UI.",
+    "arr/lists/list-api.js",
 
     "// extras",
     "extras/colored-activity-icons.js",

@@ -187,6 +187,20 @@
                 resetAutoCloseTimer();
             });
         }
+        // Phase 4c1: list preferences per person ("" = null: follow the household; swap-in "" = no).
+        for (const [id, key] of [['listPlaceholdersSelect', 'listPlaceholders'], ['listStatusSelect', 'listStatus'], ['listSwapInSelect', 'listSwapIn']]) {
+            document.getElementById(id)?.addEventListener('change', (event) => {
+                if (JE.pluginConfig?.ArrListsEnabled !== true) return;
+                const value = event.target.value === 'on' ? true : event.target.value === 'off' ? false : null;
+                JE.userConfig = JE.userConfig || {};
+                JE.userConfig.settings = JE.userConfig.settings || {};
+                JE.userConfig.settings[key] = value;
+                JE.currentSettings[key] = value;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.toast(JE.t('toast_list_settings_saved'));
+                resetAutoCloseTimer();
+            });
+        }
         addSettingToggleListener('qualityTagsToggle', 'qualityTagsEnabled', 'feature_quality_tags', true);
         // Show or hide the nested category section when the master quality-tags toggle changes
         const qualityMasterToggle = document.getElementById('qualityTagsToggle');
