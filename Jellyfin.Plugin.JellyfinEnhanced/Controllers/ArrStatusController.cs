@@ -104,8 +104,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// scope <paramref name="key"/> (a movie, series, season or episode key), the id it showed and the
         /// series item it belonged to (<paramref name="seriesId"/>: a standard and a 4K copy, or one series in
         /// two libraries, are separate series items), the item of that scope the caller can open:
-        /// <c>{"itemId": "…"}</c>, or <c>{"itemId": null}</c> when there is none (also for titles the caller
-        /// can't see). Never calls an arr.
+        /// <c>{"itemId": "…"}</c>, or no <c>itemId</c> (Jellyfin leaves nulls out: <c>{}</c>) when there is
+        /// none (also for titles the caller can't see). Never calls an arr.
         /// </summary>
         [HttpGet("acquire/status/arrival")]
         [Authorize]
