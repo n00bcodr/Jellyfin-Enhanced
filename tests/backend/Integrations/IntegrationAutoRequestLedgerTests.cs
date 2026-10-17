@@ -167,6 +167,34 @@ public class IntegrationAutoRequestLedgerTests
         Assert.Single(a.R.Ledger.ForTitle("movie:tmdb:124"));
     }
 
+    [Fact]
+    public async Task TheRolloutShadowOverrideStopsTheDirectSeerrPathWithPhaseThreeOffAndSendsNothing()
+    {
+        using var a = new Auto(seerr: true);
+        a.Answer = r => r.RequestUri!.AbsolutePath == "/api/v1/collection/9"
+            ? IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new object[] { new { id = 123, title = "First", releaseDate = "2000-01-01" }, new { id = 124, title = "Second", releaseDate = "2001-01-01" } } }))
+            : r.Method == HttpMethod.Post && r.RequestUri.AbsolutePath == "/api/v1/request" ? IntegrationTransport.Response("{\"id\":1}", 201)
+            : Collection(r);
+        a.F.Plugin.Configuration.ArrPhase3Enabled = false;
+        a.F.Plugin.Configuration.ArrAutomationShadowOverride = true;
+        var member = a.Person("Member");
+        var held = await a.Movies().CheckMovieForCollectionRequestAsync(Watched(), member);
+        Assert.Equal((AutoRequestOutcomeKind.DefinitiveNoop, "shadow_override", "movie:tmdb:124"), (held.Kind, held.Reason, held.TitleKey));
+        Assert.DoesNotContain(a.Urls, u => u == "POST /api/v1/request");
+        Assert.Empty(a.R.Ledger.ForTitle("movie:tmdb:124"));
+
+        // Override off: the existing direct Seerr request goes out as before.
+        a.F.Plugin.Configuration.ArrAutomationShadowOverride = false;
+        var other = a.Person("Member");
+        var answer = a.Answer;
+        a.Answer = r => r.RequestUri!.AbsolutePath == "/api/v1/user"
+            ? IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new object[] { new { id = 5, jellyfinUserId = other.ToString("N") } } }))
+            : answer(r);
+        var sent = await a.Movies().CheckMovieForCollectionRequestAsync(Watched(), other);
+        Assert.Contains(a.Urls, u => u == "POST /api/v1/request");
+        Assert.Equal(AutoRequestOutcomeKind.WantRecorded, sent.Kind);
+    }
+
     private static (Series Series, Episode Episode, Mock<ILibraryManager> Library) Show(int episode)
     {
         var series = new Series { Id = Guid.NewGuid(), Name = "Show", ProviderIds = new() { ["Tmdb"] = "42", ["Tvdb"] = "4242" } };

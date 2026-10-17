@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest;
 using MediaBrowser.Controller.Entities;
@@ -434,6 +435,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _logger.Debug($"[Auto-Season-Request] Season {nextSeasonNumber} already requested in Jellyseerr for '{series.Name}'");
                 return AutoRequestOutcome.Noop("already_requested", seriesKey?.ToString());
+            }
+
+            // Rollout Shadow override: what would have been asked is recorded and nothing is sent.
+            if (AutomationFlags.ShadowOverride(config))
+            {
+                _recorder?.ShadowOverride(Recipe, user.Id, seriesKey?.ToString(), nextSeasonNumber);
+                lock (_requestCacheLock)
+                {
+                    _requestedSeasons.Remove(cacheKey);
+                }
+                _logger.Info($"[Auto-Season-Request] Shadow override: would have requested '{series.Name}' S{nextSeasonNumber} for {user.Username}; nothing sent");
+                return AutoRequestOutcome.Noop(AutomationHolds.ShadowOverride, seriesKey?.ToString());
             }
 
             // Season exists, not available, not requested - proceed with request

@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest;
 using MediaBrowser.Controller.Entities;
@@ -209,6 +210,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 // Reserve the slot so concurrent callers see it immediately
                 _requestedMovies[user.Id.ToString()][requestKey] = DateTime.Now;
+            }
+
+            // Rollout Shadow override: what would have been asked is recorded and nothing is sent.
+            if (AutomationFlags.ShadowOverride(config))
+            {
+                _recorder?.ShadowOverride(Recipe, user.Id, key.ToString());
+                lock (_movieCacheLock)
+                {
+                    if (_requestedMovies.ContainsKey(user.Id.ToString())) _requestedMovies[user.Id.ToString()].Remove(requestKey);
+                }
+                _logger.Info($"[Auto-Movie-Request] Shadow override: would have requested '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}; nothing sent");
+                return AutoRequestOutcome.Noop(AutomationHolds.ShadowOverride, key.ToString());
             }
 
             // Resolve quality profile settings based on configuration mode

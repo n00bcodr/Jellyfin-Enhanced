@@ -42,6 +42,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             Services.HostCompatibilityService hostCompatibility) : base(applicationPaths, xmlSerializer)
         {
             Instance = this;
+            // Before anything reads the configuration (that creates it): a fresh install has none yet.
+            ConfigurationExistedAtStart = File.Exists(ConfigurationFilePath);
             _applicationPaths = applicationPaths;
             // Before anything reads a credential: the sidecar that holds them all (see SecretsStore).
             Secrets = new Services.Secrets.SecretsStore(Services.Secrets.SecretsStore.DefaultPath(applicationPaths), m => logger.Warning(m));
@@ -67,6 +69,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             BackfillMissingDefaultShortcuts();
             MigrateSecretsOnStartup();
         }
+
+        /// <summary>
+        /// True when this start found a saved configuration (an upgrade or a restart); false on a fresh install. The
+        /// one-time automation migration reads it (fresh installs keep every recipe in Shadow).
+        /// </summary>
+        public bool ConfigurationExistedAtStart { get; }
 
         /// <summary>
         /// The credentials sidecar. Every API key and secret JE stores lives here; the plugin

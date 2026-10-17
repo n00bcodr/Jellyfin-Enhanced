@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
@@ -15,6 +16,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
     /// and approval rules as a person's own ask, instead of a direct Seerr request. A Member's automatic ask
     /// waits for an OK in JE mode (nobody self-approves by watching), Kids always wait, Managers and Admins
     /// go straight through. Every outcome is written to the automation log. With phase 3 off it is unused.
+    /// <para>
+    /// With the phase-4 automation engine on, the recipe's mode decides: Off does nothing, Shadow records what it would
+    /// have done (the no-write decision seam) and nothing else, Ask always creates a pending approval, Auto asks under
+    /// the usual rules, and only an eligible person's (administrators, Trusted, recorded grants) go ahead without an OK.
+    /// Kill switches stop new requests; a person who opted out of the recipe is skipped. The rollout Shadow override
+    /// turns every mode into Shadow, with or without the engine.
+    /// </para>
     /// </summary>
     public sealed class AutoRequestRecorder
     {
@@ -22,23 +30,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
         private readonly IArrJellyfinView _view;
         private readonly TitleAliases? _aliases;
         private readonly Func<DateTimeOffset> _now;
+        private readonly AutomationDecider? _decider;
+        private readonly AutomationStore? _store;
+        private readonly IAutomationConsents? _consents;
 
         /// <summary>Creates the recorder (DI).</summary>
-        public AutoRequestRecorder(RequestService requests, IArrJellyfinView view, TitleAliases aliases)
-            : this(requests, view, aliases, () => DateTimeOffset.UtcNow)
+        public AutoRequestRecorder(RequestService requests, IArrJellyfinView view, TitleAliases aliases, AutomationDecider decider, AutomationStore store, IAutomationConsents consents)
+            : this(requests, view, aliases, () => DateTimeOffset.UtcNow, decider, store, consents)
         {
         }
 
-        internal AutoRequestRecorder(RequestService requests, IArrJellyfinView view, TitleAliases? aliases, Func<DateTimeOffset> now)
+        internal AutoRequestRecorder(RequestService requests, IArrJellyfinView view, TitleAliases? aliases, Func<DateTimeOffset> now,
+            AutomationDecider? decider = null, AutomationStore? store = null, IAutomationConsents? consents = null)
         {
             _requests = requests;
             _view = view;
             _aliases = aliases;
             _now = now;
+            _decider = decider;
+            _store = store;
+            _consents = consents;
         }
 
         /// <summary>True when the recipes record into the ledger: the integration, phase 1 and phase 3 are on.</summary>
         public static bool Active(PluginConfiguration? config) => config is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true };
+
+        /// <summary>The id an automatic ask of a recipe uses: the same recipe asking for the same scope again replays its first ask.</summary>
+        /// <param name="recipe">The recipe.</param>
+        /// <param name="input">The scope.</param>
+        internal static string ClientId(string recipe, MutationInput input)
+        {
+            var client = "auto:" + recipe + ":" + input.Key + ":" + input.Scope + ":" + string.Join(",", input.Seasons.Select(s => s.ToString(CultureInfo.InvariantCulture))) + ":" + input.Variant;
+            return client.Length > 128 ? "auto:" + recipe + ":" + input.Fingerprint[..40] : client;
+        }
 
         /// <summary>
         /// Records a want for a person. A refusal by policy (Watcher, quota, parental, a declined ask) is a
@@ -51,12 +75,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
         public async Task<AutoRequestOutcome> RecordAsync(string recipe, Guid user, MutationInput input, CancellationToken ct)
         {
             var key = input.Key;
-            if (_requests.Policy.Configuration.ArrRequestBackend == "status_only") return AutoRequestOutcome.Noop("requests_off", key);
+            var config = _requests.Policy.Configuration;
+            if (config.ArrRequestBackend == "status_only") return AutoRequestOutcome.Noop("requests_off", key);
             if (!_requests.Ledger.Database.Available) return AutoRequestOutcome.Failed("database_unavailable", key);
-            // The same recipe asking for the same scope again replays its first ask instead of adding another.
-            var client = "auto:" + recipe + ":" + key + ":" + input.Scope + ":" + string.Join(",", input.Seasons.Select(s => s.ToString(CultureInfo.InvariantCulture))) + ":" + input.Variant;
-            if (client.Length > 128) client = "auto:" + recipe + ":" + input.Fingerprint[..40];
-            var outcome = await _requests.CreateAsync(user, new CreateRequest(client, input), ct, RequestOrigin.Automation(recipe)).ConfigureAwait(false);
+            var client = ClientId(recipe, input);
+            var control = AutomationFlags.Control(config, recipe);
+            if (control.Legacy || _decider == null || _store == null)
+            {
+                // The same recipe asking for the same scope again replays its first ask instead of adding another.
+                var legacy = await _requests.CreateAsync(user, new CreateRequest(client, input), ct, RequestOrigin.Automation(recipe)).ConfigureAwait(false);
+                return Outcome(legacy, key);
+            }
+
+            var origin = RequestOrigin.Automation(recipe) with { Provenance = new RequestProvenance(Recipe: recipe, TriggerIdentity: client) };
+            var decisionKey = recipe + "|" + user.ToString("N") + "|" + client;
+            var backend = config.ArrRequestBackend;
+            var mode = control.Stored ?? AutomationMode.Shadow;
+            if (control.Effective == AutomationMode.Off)
+            {
+                if (control.Reason == AutomationHolds.Killed) _store.Record(new AutomationDecision(decisionKey, recipe, user, key, mode, "killed", AutomationHolds.Killed, backend), _now());
+                return AutoRequestOutcome.Noop(control.Reason ?? "recipe_off", key);
+            }
+
+            if (!AutomationConsent.Allows(_consents, user, recipe))
+            {
+                _store.Record(new AutomationDecision(decisionKey, recipe, user, key, control.Effective!.Value, "opted_out", "user_opted_out", backend), _now());
+                return AutoRequestOutcome.Noop("user_opted_out", key);
+            }
+
+            if (control.Effective == AutomationMode.Shadow)
+            {
+                // Decide and record only: no want, approval, reservation, job or upstream call.
+                var decision = await _decider.DecideAsync(decisionKey, recipe, user, client, input, origin, AutomationMode.Shadow, ct).ConfigureAwait(false);
+                if (control.Reason == AutomationHolds.ShadowOverride) decision = decision with { Detail = (decision.Detail ?? new AutomationDecisionDetail()) with { ShadowOverride = true } };
+                _store.Record(decision, _now());
+                return decision.Outcome == "deferred" ? AutoRequestOutcome.Failed(decision.Reason, key) : AutoRequestOutcome.Noop("shadow_" + decision.Outcome, key);
+            }
+
+            var (asked, approval) = _decider.OriginFor(origin, control.Effective!.Value, user, input);
+            var outcome = await _requests.CreateAsync(user, new CreateRequest(client, input), ct, asked).ConfigureAwait(false);
+            var result = Outcome(outcome, key);
+            var status = outcome.RequestId == null ? null : _requests.Ledger.Find(outcome.RequestId)?.Status;
+            var label = result.Kind switch
+            {
+                AutoRequestOutcomeKind.WantRecorded => status == "pending" ? "asked" : "recorded",
+                AutoRequestOutcomeKind.PreparationFailed => "deferred",
+                _ => outcome.HttpStatus < 300 ? "already_recorded" : "blocked",
+            };
+            _store.Record(new AutomationDecision(decisionKey, recipe, user, key, control.Effective.Value, label, outcome.Reason, backend,
+                new AutomationDecisionDetail { Status = status, Approval = status == "pending" ? approval ?? outcome.Reason : null, Scope = input.Scope, Variant = input.Variant, Seasons = input.Seasons.Length == 0 ? null : input.Seasons }), _now());
+            return result;
+        }
+
+        private static AutoRequestOutcome Outcome(RequestOutcome outcome, string key)
+        {
             if (outcome.HttpStatus < 300)
             {
                 return outcome.Reason is "cancelled" or "declined"
@@ -64,6 +136,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
                     : AutoRequestOutcome.Recorded(outcome.Reason, key, outcome.RequestId);
             }
             return outcome.HttpStatus == 503 ? AutoRequestOutcome.Failed(outcome.Reason, key) : AutoRequestOutcome.Noop(outcome.Reason, key);
+        }
+
+        /// <summary>
+        /// The rollout Shadow override on the existing recipes' direct Seerr path (phase 3 off): what the recipe would have
+        /// asked Seerr for is recorded as a Shadow decision (when the database is available) and nothing is sent. True when
+        /// the override is on: the caller then stops.
+        /// </summary>
+        /// <param name="recipe">The recipe.</param>
+        /// <param name="user">The person.</param>
+        /// <param name="titleKey">The title it would have asked for, when known.</param>
+        /// <param name="season">The season (next-season keeper).</param>
+        public bool ShadowOverride(string recipe, Guid user, string? titleKey, int? season = null)
+        {
+            if (!AutomationFlags.ShadowOverride(_requests.Policy.Configuration)) return false;
+            _store?.Record(new AutomationDecision(recipe + "|" + user.ToString("N") + "|seerr:" + titleKey + ":" + season?.ToString(CultureInfo.InvariantCulture), recipe, user, titleKey,
+                AutomationMode.Shadow, "would_request", AutomationHolds.ShadowOverride, "seerr_direct",
+                new AutomationDecisionDetail { WouldSend = true, ShadowOverride = true, Seasons = season.HasValue ? new[] { season.Value } : null }), _now());
+            return true;
         }
 
         /// <summary>Writes one outcome to the automation log (phase 3 only; never throws).</summary>

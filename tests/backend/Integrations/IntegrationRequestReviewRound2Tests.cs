@@ -270,6 +270,7 @@ public class IntegrationRequestReviewRound2Tests
             cmd.Parameters.AddWithValue("$w", follower.RequestId!); return cmd.ExecuteNonQuery();
         });
         var path = Path.Combine(r.Root, "follower-schema2.db"); File.WriteAllBytes(path, r.Db.Snapshot()!);
+        AcquireSchemaFixtures.ToSchemaTwo(path);
         using (var c = new SqliteConnection("Data Source=" + path + ";Pooling=False"))
         {
             c.Open(); using var cmd = c.CreateCommand(); cmd.CommandText = "ALTER TABLE wants DROP COLUMN target_key; ALTER TABLE reservations DROP COLUMN job_id;"; cmd.ExecuteNonQuery();
@@ -289,11 +290,12 @@ public class IntegrationRequestReviewRound2Tests
         await r.Service.ApproveAsync(want.RequestId!, r.Admin, null, default);
         var live = Assert.Single(r.Ledger.ForWant(want.RequestId!), j => j.State == "queued");
         var path = Path.Combine(r.Root, "reused-schema2.db"); File.WriteAllBytes(path, r.Db.Snapshot()!);
+        AcquireSchemaFixtures.ToSchemaTwo(path);
         using (var c = new SqliteConnection("Data Source=" + path + ";Pooling=False"))
         {
             c.Open(); using var cmd = c.CreateCommand(); cmd.CommandText = "ALTER TABLE wants DROP COLUMN target_key; ALTER TABLE reservations DROP COLUMN job_id;"; cmd.ExecuteNonQuery();
         }
-        using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(2, db.Version);
+        using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
         Assert.Equal(live.Id, db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT job_id FROM reservations WHERE want_id=$w AND scope='initial'"; cmd.Parameters.AddWithValue("$w", want.RequestId!); return cmd.ExecuteScalar()?.ToString(); }));
         var ledger = new RequestLedger(db); ledger.PurgeUser(r.Admin);
         Assert.Equal(0, ledger.Quota(r.Policy.Evaluate(r.Kid, Movie()), r.Now).UsedGb);
@@ -306,13 +308,14 @@ public class IntegrationRequestReviewRound2Tests
         using var r = new Rig(); var (id, user) = await Orphan(r); Confirm(r, Assert.Single(r.Ledger.ForWant(id)));
         r.Now = r.Now.AddMinutes(1); await r.Service.ApproveAsync(id, r.Manager, null, default);
         var path = Path.Combine(r.Root, "old-schema2.db"); File.WriteAllBytes(path, r.Db.Snapshot()!);
+        AcquireSchemaFixtures.ToSchemaTwo(path);
         using (var c = new SqliteConnection("Data Source=" + path + ";Pooling=False"))
         {
             c.Open(); using var cmd = c.CreateCommand(); cmd.CommandText = "ALTER TABLE wants DROP COLUMN target_key; ALTER TABLE reservations DROP COLUMN job_id;"; cmd.ExecuteNonQuery();
         }
         for (var pass = 0; pass < 2; pass++)
         {
-            using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(2, db.Version);
+            using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
             var ledger = new RequestLedger(db); Assert.NotEmpty(ledger.Find(id)!.TargetKey);
             Assert.Equal(2 + pass, db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT COUNT(*) FROM reservations WHERE want_id=$w AND job_id IS NOT NULL"; cmd.Parameters.AddWithValue("$w", id); return Convert.ToInt32(cmd.ExecuteScalar()); }));
             if (pass == 0)

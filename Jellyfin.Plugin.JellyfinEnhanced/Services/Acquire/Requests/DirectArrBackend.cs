@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
@@ -30,6 +31,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// exactly what was asked for. A write whose answer was lost is "maybe sent" and is settled by that read, never by
     /// sending blindly again: nothing there is safe to send again; anything there (an add, part of the monitoring, or
     /// all of it with the search unknown) is completed by a fresh send while it can't be cancelled or refunded.</description></item>
+    /// <item><description>Automatic work (recipes, list sync) is admitted against its budgets right before each add, monitor
+    /// change and search leaves (an add that makes the arr search counts as a search too); a full budget holds the
+    /// request until it has room, and a write admitted then lost stays counted until a read-back settles it.</description></item>
     /// </list>
     /// </summary>
     public sealed class DirectArrBackend : IRequestBackend
@@ -67,15 +71,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public RequestBackendBinding Binding(Guid user, MutationInput input) => new();
 
         /// <inheritdoc />
-        public async Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, CancellationToken ct)
+        public Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, CancellationToken ct) => SendAsync(job, finalGuard, null, ct);
+
+        /// <inheritdoc />
+        public async Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, ISendAdmission? admission, CancellationToken ct)
         {
             // The guard runs before any upstream contact, and again right before every write and search.
-            if (finalGuard() is { } refusal) return RequestBackendResult.Hold(refusal);
+            if (finalGuard() is { } refusal) return AutomationHolds.IsWait(refusal) ? BackendResults.Held(job.WantId, false, refusal, "Automatic requests are held (" + refusal + ").", AutomationHolds.WaitFor(refusal)) : RequestBackendResult.Hold(refusal);
             var key = TitleKey.Parse(job.Input.Key);
             if (key == null || key.Season.HasValue) return BackendResults.Failed("invalid_input", "The request's title key is not a movie or series key.");
             if (Target(job, key, out var hold) is not { } target) return hold!;
             var (instance, client) = target;
-            var run = new Run(job, instance, client, key, finalGuard, ct);
+            var run = new Run(job, instance, client, key, finalGuard, admission, ct);
             return key.IsMovie ? await MovieAsync(run).ConfigureAwait(false) : await SeriesAsync(run).ConfigureAwait(false);
         }
 
@@ -101,7 +108,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 : $"{instance.Name} has part of the change ({verify.Message}); the rest is sent on the next attempt.");
         }
 
-        private readonly record struct Run(RequestJob Job, ArrConnection Instance, ArrClient Client, TitleKey Key, Func<string?> Guard, CancellationToken Ct);
+        private readonly record struct Run(RequestJob Job, ArrConnection Instance, ArrClient Client, TitleKey Key, Func<string?> Guard, ISendAdmission? Admission, CancellationToken Ct);
 
         // The add settings, checked against a current system snapshot. Only an add needs them: merges are
         // field-scoped monitoring edits that never send a profile, folder or tag.
@@ -153,18 +160,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static RequestBackendResult? Gate(Run run, bool wrote)
             => run.Guard() is { } refusal ? Refused(run, wrote, refusal) : null;
 
+        // An automatic request's hold (kill switch, mode change, Shadow override) waits and is checked again by itself.
         private static RequestBackendResult Refused(Run run, bool wrote, string refusal)
-            => wrote
+            => AutomationHolds.IsWait(refusal)
+                ? BackendResults.Held(run.Job.WantId, wrote, refusal, $"Automatic requests to {run.Instance.Name} are held ({refusal}).", AutomationHolds.WaitFor(refusal))
+                : wrote
                 ? BackendResults.HoldAfterWrite(run.Job.WantId, refusal, $"{run.Instance.Name} has part of the change; the rest was stopped ({refusal}).")
                 : RequestBackendResult.Hold(refusal);
 
         // A write or search. The guard is asked once more after the client's wait for a free connection slot, right
         // before the call leaves (slow calls can hold every slot for a while): refused there, this call sends nothing.
+        // Automatic work then admits the write against its budgets (admit: what it counts as), and is told how it ended.
         // wrote: whether an earlier step of this attempt wrote.
-        private static async Task<(ArrResult<T> Result, RequestBackendResult? Stop)> WriteAsync<T>(Run run, bool wrote, HttpMethod method, string path, object body)
+        private static async Task<(ArrResult<T> Result, RequestBackendResult? Stop)> WriteAsync<T>(Run run, bool wrote, HttpMethod method, string path, object body, params (SendWriteKind Kind, string Detail)[] admit)
         {
             string? refusal = null;
-            var result = await run.Client.SendCheckedAsync<T>(method, path, body, () => (refusal = run.Guard()) == null, run.Ct).ConfigureAwait(false);
+            SendRefusal? limited = null;
+            var admitted = new List<(SendWriteKind Kind, string Detail)>();
+            bool Proceed()
+            {
+                if ((refusal = run.Guard()) != null) return false;
+                if (run.Admission == null) return true;
+                foreach (var slot in admit)
+                {
+                    if (run.Admission.Admit(slot.Kind, slot.Detail) is { } no)
+                    {
+                        limited = no;
+                        foreach (var taken in admitted) run.Admission.Settled(taken.Kind, taken.Detail, SendWriteResult.NotSent);
+                        admitted.Clear();
+                        return false;
+                    }
+                    admitted.Add(slot);
+                }
+                return true;
+            }
+            var result = await run.Client.SendCheckedAsync<T>(method, path, body, Proceed, run.Ct).ConfigureAwait(false);
+            if (run.Admission != null && admitted.Count > 0)
+            {
+                // As WriteFailure reads it: a lost answer, a server error or a conflict may have written. A title already
+                // there was neither added nor searched by this call.
+                var error = result.Error;
+                var ended = result.Ok ? SendWriteResult.Sent : AlreadyAdded(error!) ? SendWriteResult.AlreadyThere
+                    : error!.MaybeSent || error.Kind is ArrErrorKind.Server or ArrErrorKind.Conflict ? SendWriteResult.MaybeSent : SendWriteResult.NotSent;
+                foreach (var taken in admitted) run.Admission.Settled(taken.Kind, taken.Detail, ended);
+            }
+            if (limited != null) return (result, BackendResults.Held(run.Job.WantId, wrote, limited.Reason, $"{run.Instance.Name}: {limited.Message}", limited.Wait));
             return (result, refusal == null ? null : Refused(run, wrote, refusal));
         }
 
@@ -246,7 +286,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     body["minimumAvailability"] = defaults.MinimumAvailability;
                     body["tags"] = Tags(defaults, attribution);
                     body["addOptions"] = new JsonObject { ["searchForMovie"] = true, ["monitor"] = "movieOnly", ["addMethod"] = "manual" };
-                    var (added, stopped) = await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "movie", body).ConfigureAwait(false);
+                    // The add makes Radarr search for the movie (searchForMovie): an add and a search.
+                    var (added, stopped) = await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "movie", body, (SendWriteKind.Add, "add"), (SendWriteKind.Search, "add:movie")).ConfigureAwait(false);
                     if (stopped != null) return stopped;
                     wrote = true;
                     if (added.Ok)
@@ -274,7 +315,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     if (Gate(run, wrote) is { } refused) return refused;
                     var partial = wrote;
                     wrote = true;
-                    var (edit, stopped) = await WriteAsync<NoContent>(run, partial, HttpMethod.Put, "movie/editor", new { movieIds = new[] { id }, monitored = true }).ConfigureAwait(false);
+                    var (edit, stopped) = await WriteAsync<NoContent>(run, partial, HttpMethod.Put, "movie/editor", new { movieIds = new[] { id }, monitored = true }, (SendWriteKind.Add, "monitor")).ConfigureAwait(false);
                     if (stopped != null) return stopped;
                     if (!edit.Ok) return WriteFailure(job, instance, edit.Error!, partial);
                 }
@@ -283,7 +324,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     if (Gate(run, wrote) is { } refused) return refused;
                     var before = wrote;
                     wrote = true;
-                    var (search, stopped) = await WriteAsync<NoContent>(run, before, HttpMethod.Post, "command", new { name = "MoviesSearch", movieIds = new[] { id } }).ConfigureAwait(false);
+                    var (search, stopped) = await WriteAsync<NoContent>(run, before, HttpMethod.Post, "command", new { name = "MoviesSearch", movieIds = new[] { id } }, (SendWriteKind.Search, "MoviesSearch:" + id.ToString(CultureInfo.InvariantCulture))).ConfigureAwait(false);
                     if (stopped != null) return stopped;
                     if (!search.Ok) return SearchFailure(run, before, search.Error!);
                 }
@@ -381,7 +422,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     ["searchForMissingEpisodes"] = monitorSeasons,
                     ["searchForCutoffUnmetEpisodes"] = false,
                 };
-                var (added, stopped) = await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "series", body).ConfigureAwait(false);
+                // With seasons asked for, the add makes Sonarr search for their missing episodes: an add and a search.
+                var addSlots = monitorSeasons ? new[] { (SendWriteKind.Add, "add"), (SendWriteKind.Search, "add:series") } : new[] { (SendWriteKind.Add, "add") };
+                var (added, stopped) = await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "series", body, addSlots).ConfigureAwait(false);
                 if (stopped != null) return stopped;
                 wrote = true;
                 if (added.Ok)
@@ -419,7 +462,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var partial = wrote;
                 wrote = true;
                 editor["seriesIds"] = new[] { seriesId };
-                var (edit, stopped) = await WriteAsync<NoContent>(run, partial, HttpMethod.Put, "series/editor", editor).ConfigureAwait(false);
+                var (edit, stopped) = await WriteAsync<NoContent>(run, partial, HttpMethod.Put, "series/editor", editor, (SendWriteKind.Add, "monitor")).ConfigureAwait(false);
                 if (stopped != null) return stopped;
                 if (!edit.Ok) return WriteFailure(job, instance, edit.Error!, partial);
                 if (editor.ContainsKey("monitored")) monitoredNow = true;
@@ -438,7 +481,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     {
                         series = new[] { new { id = seriesId, monitored = true, seasons = input.Seasons.Select(s => new { seasonNumber = s, monitored = true }).ToArray() } },
                     };
-                    var (sent, stopped) = await WriteAsync<NoContent>(run, partial, HttpMethod.Post, "seasonpass", pass).ConfigureAwait(false);
+                    var (sent, stopped) = await WriteAsync<NoContent>(run, partial, HttpMethod.Post, "seasonpass", pass, (SendWriteKind.Add, "monitor")).ConfigureAwait(false);
                     if (stopped != null) return stopped;
                     if (!sent.Ok) return WriteFailure(job, instance, sent.Error!, partial);
                 }
@@ -472,7 +515,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (Gate(run, wrote) is { } refused) return refused;
                 var partial = wrote;
                 wrote = true;
-                var (monitor, stopped) = await WriteAsync<NoContent>(run, partial, HttpMethod.Put, "episode/monitor", new { episodeIds = unmonitored, monitored = true }).ConfigureAwait(false);
+                var (monitor, stopped) = await WriteAsync<NoContent>(run, partial, HttpMethod.Put, "episode/monitor", new { episodeIds = unmonitored, monitored = true }, (SendWriteKind.Add, "monitor")).ConfigureAwait(false);
                 if (stopped != null) return stopped;
                 if (!monitor.Ok) return WriteFailure(job, instance, monitor.Error!, partial);
             }
@@ -484,7 +527,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var ids = targets.Select(e => Int(e, "id") ?? 0).Where(id => id > 0).ToArray();
                 var before = wrote;
                 wrote = true;
-                var (search, stopped) = await WriteAsync<NoContent>(run, before, HttpMethod.Post, "command", new { name = "EpisodeSearch", episodeIds = ids }).ConfigureAwait(false);
+                var (search, stopped) = await WriteAsync<NoContent>(run, before, HttpMethod.Post, "command", new { name = "EpisodeSearch", episodeIds = ids }, (SendWriteKind.Search, "EpisodeSearch:" + string.Join(",", ids))).ConfigureAwait(false);
                 if (stopped != null) return stopped;
                 if (!search.Ok) return SearchFailure(run, before, search.Error!);
             }
@@ -495,7 +538,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     if (Gate(run, wrote) is { } refused) return refused;
                     var before = wrote;
                     wrote = true;
-                    var (search, stopped) = await WriteAsync<NoContent>(run, before, HttpMethod.Post, "command", new { name = "SeasonSearch", seriesId, seasonNumber = season }).ConfigureAwait(false);
+                    var (search, stopped) = await WriteAsync<NoContent>(run, before, HttpMethod.Post, "command", new { name = "SeasonSearch", seriesId, seasonNumber = season }, (SendWriteKind.Search, "SeasonSearch:" + seriesId.ToString(CultureInfo.InvariantCulture) + ":" + season.ToString(CultureInfo.InvariantCulture))).ConfigureAwait(false);
                     if (stopped != null) return stopped;
                     if (!search.Ok) return SearchFailure(run, before, search.Error!);
                 }

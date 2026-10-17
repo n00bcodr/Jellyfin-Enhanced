@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 {
@@ -299,9 +300,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // ---------------- send ----------------
 
         /// <inheritdoc />
-        public async Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, CancellationToken ct)
+        public Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, CancellationToken ct) => SendAsync(job, finalGuard, null, ct);
+
+        // An automatic request's hold (kill switch, mode change, Shadow override) waits and is checked again by itself.
+        private static RequestBackendResult Refused(RequestJob job, string refusal)
+            => AutomationHolds.IsWait(refusal) ? BackendResults.Held(job.WantId, false, refusal, "Automatic requests to Seerr are held (" + refusal + ").", AutomationHolds.WaitFor(refusal)) : RequestBackendResult.Hold(refusal);
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Automatic work counts Jellyfin Enhanced's own POSTs to Seerr only (its separately labelled budget). Once Seerr
+        /// accepts a request, what Seerr and its Sonarr/Radarr do with it is Seerr's: no per-arr budget, disk check or kill
+        /// switch of Jellyfin Enhanced reaches it.
+        /// </remarks>
+        public async Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, ISendAdmission? admission, CancellationToken ct)
         {
-            if (finalGuard() is { } refusal) return RequestBackendResult.Hold(refusal);
+            if (finalGuard() is { } refusal) return Refused(job, refusal);
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
             if (config == null || source == null) return BackendResults.Retry("backend_unavailable", "Seerr isn't configured.");
@@ -362,12 +375,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     : BackendResults.Retry("backend_unavailable", "Seerr couldn't confirm the person's account; nothing was sent.");
             if (!string.Equals(Str(linked, "jellyfinUserId"), job.Authorization.Requester.ToString("N"), StringComparison.OrdinalIgnoreCase))
                 return Unlinked(job.Authorization.Requester, source, "That Seerr account is no longer linked to the person who asked.");
-            if (finalGuard() is { } late) return RequestBackendResult.Hold(late);
+            if (finalGuard() is { } late) return Refused(job, late);
+            if (admission?.Admit(SendWriteKind.Post, "post") is { } limited) return BackendResults.Held(job.WantId, false, limited.Reason, "Seerr: " + limited.Message, limited.Wait);
             // What goes out is recorded first (the account and the exact seasons), so a read-back looks for exactly that,
             // whatever Seerr's settings or account links say by then.
             if (_bind != null && !_bind(job.Id, seerrUser, seasons))
                 return BackendResults.Retry("backend_unavailable", "The request couldn't be recorded before sending; nothing was sent.");
             var raw = await RawAsync(HttpMethod.Post, url + "/api/v1/request", config.GetJellyseerrApiKey(), seerrUser, body, WriteTimeout, ct).ConfigureAwait(false);
+            // Any answer means the POST reached Seerr (a refusal included); a lost answer may have.
+            admission?.Settled(SendWriteKind.Post, "post", raw.Delivery switch { Delivery.NotSent => SendWriteResult.NotSent, Delivery.MaybeSent => SendWriteResult.MaybeSent, _ => SendWriteResult.Sent });
             switch (raw.Delivery)
             {
                 case Delivery.NotSent:

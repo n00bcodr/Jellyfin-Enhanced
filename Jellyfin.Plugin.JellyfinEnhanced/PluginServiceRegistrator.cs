@@ -137,6 +137,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Who asked for what, for the watchlist features (ledger or Seerr read model, with completeness).
             serviceCollection.AddSingleton<Services.Acquire.Requests.SharedRequestFacts>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestOutboxEvents>();
+            // Phase 4a (inert while off): the automation engine's shared state (recipe modes, durable budgets, decisions,
+            // eligibility grants, breakers), the send guard the outbox applies to automatic work, the no-write decision
+            // seam, durable batch/confirmation operations, and the one-time migration at start-up (before the outbox).
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationStore>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationBudgets>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.IAutomationTrust, Services.Acquire.Automation.NoAutomationTrust>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.IAutomationConsents, Services.Acquire.Automation.UserSettingsConsents>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationEligibility>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationDecider>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationSendGuard>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.RequestOperations>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationStatusService>();
+            serviceCollection.AddHostedService<Services.Acquire.Automation.AutomationStartup>();
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             // "Keep getting new episodes": charges each new season once when a Sonarr library read shows it started.
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();

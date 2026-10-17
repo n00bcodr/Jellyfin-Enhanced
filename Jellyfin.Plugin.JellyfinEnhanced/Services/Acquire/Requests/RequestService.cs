@@ -73,6 +73,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (outcome.Reason == "queued_outage") Signal?.Pulse();
             return outcome;
         }
+        /// <summary>
+        /// What <see cref="CreateAsync"/> would do now, with nothing written (the no-write decision seam): the same
+        /// normalization and bounded preparation reads, then <see cref="RequestLedger.Preview"/>. No change-feed bump and no
+        /// outbox wake-up.
+        /// </summary>
+        /// <param name="user">The requester.</param>
+        /// <param name="body">Client id and input.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <param name="origin">Where the ask would come from.</param>
+        public async Task<RequestPreview> PreviewAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null)
+        {
+            var input = Normalize(body?.Input);
+            if (body == null || input == null) return new RequestPreview(RequestOutcome.Refused("invalid_input", 400));
+            if (!Enabled) return new RequestPreview(RequestOutcome.Refused("feature_disabled"));
+            if (!_ledger.Database.Available) return new RequestPreview(RequestOutcome.Refused("database_unavailable", 503, "unavailable"));
+            if (!_policy.IsAdmin(user) && RequestLedger.HasRouting(input)) return new RequestPreview(RequestOutcome.Refused("admin_required"));
+            await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
+            return _ledger.Preview(user, body with { Input = input }, _policy, _now(), origin);
+        }
         /// <summary>Approves with fresh requester and approver prerequisites.</summary>
         public async Task<RequestOutcome> ApproveAsync(string id, Guid actor, ApproveRequest? body, CancellationToken ct)
         {
