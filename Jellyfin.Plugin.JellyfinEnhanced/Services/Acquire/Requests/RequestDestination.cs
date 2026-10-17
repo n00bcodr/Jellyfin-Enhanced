@@ -64,6 +64,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return target;
         }
 
+        /// <summary>
+        /// Where a request actually goes, as a policy sees it (who may see it there): its own input, an arr folder or a
+        /// Seerr choice included, at the arr instance its target names (Jellyfin Enhanced handling; Seerr picks its own).
+        /// </summary>
+        /// <param name="input">The request's input.</param>
+        /// <param name="target">Its target key.</param>
+        internal static MutationInput Of(MutationInput input, string target)
+        {
+            if (input.InstanceId != null) return input;
+            try
+            {
+                var parts = JsonSerializer.Deserialize<string?[]>(target);
+                if (parts is { Length: 4 } && parts[0] == "je" && !string.IsNullOrEmpty(parts[1])) return input with { InstanceId = parts[1] };
+            }
+            catch (JsonException)
+            {
+                // Not a target key (an unresolved one): the input as it is.
+            }
+            return input;
+        }
+
         /// <summary>The same place (<see cref="Place"/>): another connection of the same arr instance or Seerr counts.</summary>
         /// <param name="a">A target key.</param>
         /// <param name="b">Another target key.</param>

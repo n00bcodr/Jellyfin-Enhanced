@@ -876,64 +876,90 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Record(c, t, follower.Id, null, actor, "merged", "accepted", sent ? "looking" : "queued_outage", follower.Input.Key, now);
             }
         }
-        /// <summary>
-        /// Cancel or decline; uncertain/in-flight writes cannot be refunded or deleted. Whether a person may withdraw a
-        /// request never depends on where it was going (its arr or Seerr routing, which may have stopped fitting: that is
-        /// often why it waits). A request waiting for an OK whose sent part covers what it asked for (a new season it
-        /// followed, held) keeps what went out: only its unsent work is cancelled and refunded, and it is sent again.
-        /// </summary>
+        /// <summary>Cancel (<paramref name="declineReason"/> null) or decline: the one withdrawal rule (see <see cref="Withdraw"/>).</summary>
         public RequestOutcome Close(string id, Guid actor, string? declineReason, IRequestPolicy policy, DateTimeOffset now)
-            => _db.Write((c, t) =>
+            => _db.Write((c, t) => Withdraw(c, t, id, actor, declineReason, policy, now));
+        // Work proven unsent: queued, retried later, held at send (parked) or refused (failed), and never left uncertain.
+        private const string Unsent = "state IN ('queued','retry','parked','failed') AND " + KnownUnsent;
+        // What a policy refusal says only about a request's routing no longer fitting, or not being checkable now (its arr
+        // instance or folder changed, its Seerr choice is stale, Seerr can't be asked, the drive is low): never a reason to
+        // keep it. Anything else (no such person, the feature off, authority changing, not seeing it) refuses a withdrawal.
+        private static readonly IReadOnlySet<string> RoutingRefusals = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "invalid_instance", "instance_changed", "invalid_defaults", "seerr_options_invalid", "seerr_options_changed", "seerr_options_disabled",
+            "seerr_advanced_required", "backend_unavailable", "low_disk",
+        };
+        /// <summary>
+        /// The one withdrawal rule (phase 4b, review round 4), for a cancel (<paramref name="declineReason"/> null) or a decline:
+        /// <list type="number">
+        /// <item>Who may: the person who asked or an administrator cancels; someone who may approve declines. Each is judged
+        /// as they see the request where it actually goes (its arr instance and folder, or its Seerr choice), never by whether
+        /// its routing still fits: a stale Seerr choice or a changed arr is often why it waits.</item>
+        /// <item>What may be withdrawn: an active request (a decline: one waiting for an OK), never while a part of it may have
+        /// gone out (being sent, unconfirmed, or a request Seerr was already processing when it moved). A request with a part
+        /// that went out only while it waits for an OK and what went out covers what it asked for.</item>
+        /// <item>What is cancelled and refunded: every part proven unsent (queued, retried later, held, refused). What stays:
+        /// what went out, charged; such a request is sent again. Else the request is cancelled or declined as a whole.</item>
+        /// <item>The people following it: a cancel withdraws what they followed that nothing covers any more; a decline makes
+        /// each of them the owner of what nobody else is still asking for, waiting for an OK.</item>
+        /// </list>
+        /// </summary>
+        private static RequestOutcome Withdraw(SqliteConnection c, SqliteTransaction t, string id, Guid actor, string? declineReason, IRequestPolicy policy, DateTimeOffset now)
+        {
+            var want = Wants(c, t, "id=$id", ("$id", id)).SingleOrDefault();
+            if (want == null) return RequestOutcome.Refused("not_found", 404);
+            var decline = declineReason != null;
+            // 1. Who may, seeing it where it goes.
+            var facts = policy.Evaluate(actor, RequestDestination.Of(want.Input, want.TargetKey));
+            if (!facts.Visible || (facts.Refusal != null && !RoutingRefusals.Contains(facts.Refusal))) return RequestOutcome.Refused(facts.Refusal ?? "not_visible_to_user");
+            if (decline ? !facts.CanApprove : actor != want.UserId && facts.Role != "Admin") return RequestOutcome.Refused("requests_approve_required");
+            if (decline && (string.IsNullOrWhiteSpace(declineReason) || declineReason!.Length > 500 || declineReason.Any(ch => char.IsControl(ch) && ch != '\n'))) return RequestOutcome.Refused("invalid_reason", 400);
+            // 2. What may be withdrawn.
+            if (!Active(want) || (decline && want.Status != "pending")) return RequestOutcome.Refused("request_changed", 409);
+            var jobs = Jobs(c, t, "want_id=$id", ("$id", id));
+            if (jobs.Any(j => j.State is "sending" or "maybe_sent" || j.Uncertain) || LinkedScope(c, t, want) != null) return RequestOutcome.Refused("request_in_flight", 409);
+            var sent = jobs.Where(j => j.State == "succeeded").Select(j => j.Input).ToList();
+            if (sent.Count > 0 && (want.Status != "pending" || want.Input.Extra(sent) != null)) return RequestOutcome.Refused("request_in_flight", 409);
+            // 3. Every part proven unsent is cancelled and refunded; what went out stays.
+            var state = decline ? "declined" : "cancelled";
+            Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$id AND " + Unsent + ")", ("$id", id));
+            Exec(c, t, "UPDATE jobs SET state='cancelled',reason=$s WHERE want_id=$id AND " + Unsent, ("$s", state), ("$id", id));
+            if (sent.Count > 0)
             {
-                var want = Wants(c, t, "id=$id", ("$id", id)).SingleOrDefault();
-                if (want == null) return RequestOutcome.Refused("not_found", 404);
-                var facts = policy.Evaluate(actor, Unrouted(want.Input));
-                if (facts.Refusal != null) return RequestOutcome.Refused(facts.Refusal);
-                if (declineReason == null ? actor != want.UserId && facts.Role != "Admin" : !facts.CanApprove) return RequestOutcome.Refused("requests_approve_required");
-                if (declineReason != null && (string.IsNullOrWhiteSpace(declineReason) || declineReason.Length > 500 || declineReason.Any(ch => char.IsControl(ch) && ch != '\n'))) return RequestOutcome.Refused("invalid_reason", 400);
-                if (!Active(want) || (declineReason != null && want.Status != "pending")) return RequestOutcome.Refused("request_changed", 409);
-                if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$id", id)) != null ||
-                    LinkedScope(c, t, want) != null) return RequestOutcome.Refused("request_in_flight", 409);
-                var state = declineReason == null ? "cancelled" : "declined";
-                if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND state='succeeded' LIMIT 1", ("$id", id)) != null)
-                {
-                    if (want.Status != "pending" || want.Input.Extra(Jobs(c, t, "want_id=$id AND state='succeeded'", ("$id", id)).Select(j => j.Input)) != null)
-                        return RequestOutcome.Refused("request_in_flight", 409);
-                    Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$id AND state IN ('queued','retry','parked'))", ("$id", id));
-                    Exec(c, t, "UPDATE jobs SET state='cancelled',reason=$s WHERE want_id=$id AND state IN ('queued','retry','parked')", ("$s", state), ("$id", id));
-                    Exec(c, t, "UPDATE wants SET status='sent',reason='looking',cost=(SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=wants.id AND state='charged'),updated_at=$at WHERE id=$id", ("$at", Ms(now)), ("$id", id));
-                    Approval(c, t, want, actor, state, declineReason, null, Authorize(facts, facts, want.Input, false), now);
-                    Record(c, t, id, null, actor, state, "accepted", "looking", want.Input.Key, now);
-                    return RequestOutcome.Accepted(id, "looking", 200);
-                }
+                Exec(c, t, "UPDATE wants SET status='sent',reason='looking',cost=(SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=wants.id AND state='charged'),updated_at=$at WHERE id=$id", ("$at", Ms(now)), ("$id", id));
+            }
+            else
+            {
                 Exec(c, t, "UPDATE wants SET status=$s,reason=$s,updated_at=$at WHERE id=$id", ("$s", state), ("$at", Ms(now)), ("$id", id));
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE want_id=$id", ("$id", id));
-                Exec(c, t, "UPDATE jobs SET state='cancelled',reason=$s WHERE want_id=$id", ("$s", state), ("$id", id));
-                if (declineReason == null) WithdrawFollowers(c, t, want.AcquisitionId, now);
-                else RestorePendingOwners(c, t, want.AcquisitionId, policy, now);
-                Approval(c, t, want, actor, state, declineReason, null, Authorize(facts, facts, want.Input, false), now);
-                Record(c, t, id, null, actor, state, "accepted", state, want.Input.Key, now);
-                return RequestOutcome.Accepted(id, state, 200);
-            });
-        // The input without its routing (arr instance, profile, folder; Seerr options): the person's own facts for it.
-        private static MutationInput Unrouted(MutationInput input) => input with
-        {
-            InstanceId = null, ProfileId = null, RootFolder = null, SeerrServerId = null, SeerrProfileId = null, SeerrRootFolder = null, SeerrOptions = null,
-        };
+            }
+            // 4. The people following it.
+            if (decline) RestorePendingOwners(c, t, want.AcquisitionId, policy, now);
+            else WithdrawFollowers(c, t, want.AcquisitionId, now);
+            var reason = sent.Count > 0 ? "looking" : state;
+            Approval(c, t, want, actor, state, declineReason, null, Authorize(facts, facts, want.Input, false), now);
+            Record(c, t, id, null, actor, state, "accepted", reason, want.Input.Key, now);
+            return RequestOutcome.Accepted(id, reason, 200);
+        }
+        // A decline: each person following a request that nothing covers any more (pending or queued) owns what nobody else
+        // at their target is still asking for (the remaining coverage), waiting for an OK.
         private static void RestorePendingOwners(SqliteConnection c, SqliteTransaction t, string acquisition, IRequestPolicy policy, DateTimeOffset now)
         {
             var wants = Wants(c, t, "acquisition_id=$a", ("$a", acquisition));
-            var coverage = wants.Where(w => Active(w) && w.OwnedInput != null).ToList();
-            foreach (var follower in wants.Where(w => w.Follower && w.Status == "pending"))
+            for (var i = 0; i < wants.Count; i++)
             {
-                var extra = follower.Input.Extra(coverage.Where(w => RequestDestination.SameTarget(w.TargetKey, follower.TargetKey)).Select(w => w.OwnedInput!));
+                var follower = wants[i];
+                if (!follower.Follower || follower.Status is not ("pending" or "queued")) continue;
+                var extra = follower.Input.Extra(Coverage(c, t, wants, follower.TargetKey, true));
                 if (extra == null) continue;
                 var facts = policy.Evaluate(follower.UserId, extra);
                 var cost = Cost(c, t, extra, follower.UserId, now, facts.WindowDays);
-                Exec(c, t, "UPDATE wants SET owned_input=$input,is_follower=0,cost=$cost,updated_at=$at WHERE id=$id", ("$input", extra.Canonical), ("$cost", cost), ("$at", Ms(now)), ("$id", follower.Id));
-                Exec(c, t, "UPDATE reservations SET cost=$cost,estimated_gb=$gb WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", EstimateGb(extra, facts)), ("$id", follower.Id));
-                Record(c, t, follower.Id, null, null, "scope_restored", "accepted", follower.Reason, follower.Input.Key, now);
-                coverage.Add(follower with { OwnedInput = extra });
+                var reason = follower.Status == "pending" ? follower.Reason : "awaiting_approval";
+                Exec(c, t, "UPDATE wants SET status='pending',reason=$r,owned_input=$input,is_follower=0,cost=$cost,updated_at=$at WHERE id=$id", ("$r", reason), ("$input", extra.Canonical), ("$cost", cost), ("$at", Ms(now)), ("$id", follower.Id));
+                Exec(c, t, "UPDATE reservations SET state='held',cost=$cost,estimated_gb=$gb WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", EstimateGb(extra, facts)), ("$id", follower.Id));
+                Record(c, t, follower.Id, null, null, "scope_restored", "accepted", reason, follower.Input.Key, now);
+                // It covers the people after it who follow the same scope.
+                wants[i] = follower with { Status = "pending", Reason = reason, Follower = false, OwnedInput = extra, Cost = cost };
             }
         }
         private static void WithdrawFollowers(SqliteConnection c, SqliteTransaction t, string acquisition, DateTimeOffset now)
@@ -1153,8 +1179,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             foreach (var want in retained)
             {
                 var linked = LinkedScope(c, t, want) != null;
-                Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$w AND state IN ('queued','retry') AND COALESCE(json_extract(outcome,'$.certainty'),'Rejected')<>'Unknown')", ("$w", want.Id));
-                Exec(c, t, "UPDATE jobs SET state='cancelled',reason='identity_changed' WHERE want_id=$w AND state IN ('queued','retry') AND COALESCE(json_extract(outcome,'$.certainty'),'Rejected')<>'Unknown'", ("$w", want.Id));
+                // As a withdrawal: every part proven unsent (held and refused parts included) is cancelled and refunded.
+                Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$w AND " + Unsent + ")", ("$w", want.Id));
+                Exec(c, t, "UPDATE jobs SET state='cancelled',reason='identity_changed' WHERE want_id=$w AND " + Unsent, ("$w", want.Id));
                 if (!linked && Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$w", want.Id)) == null)
                     Exec(c, t, "UPDATE wants SET status='cancelled',reason='identity_changed' WHERE id=$w", ("$w", want.Id));
                 Exec(c, t, "UPDATE wants SET user_id=$anon,client_request_id=id,fingerprint='',parental_signature='null',cost=(SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=wants.id AND state='charged') WHERE id=$w", ("$anon", anonymous), ("$w", want.Id));

@@ -790,9 +790,12 @@ new season, including an overdraft; followers do not. A season counts once Sonar
 (an aired episode or a file), seen in a Sonarr library read of the instance and connection the request went to; a
 season someone else asked for themselves is theirs to pay for. *Charge future seasons when they start* turns it off. Declines have a configurable cooldown. Cancel before sending or
 decline refunds the reservation. A request waiting for an OK after part of it went out (a new season it followed,
-held) can be declined or cancelled too: what went out stays, the held part is cancelled and refunded, and the request
-is sent again. Whether someone may cancel or decline a request never depends on where it was going (a Seerr server
-choice that stopped fitting, or an arr that's gone, is often why it waits). An uncertain outgoing action keeps its reservation until a fresh read of the original
+held or refused) can be declined or cancelled too: what went out stays, every part that never went out (queued,
+retried, held or refused) is cancelled and refunded, and the request is sent again. People following a withdrawn
+request are never left waiting on nothing: a cancel withdraws what they followed, and a decline makes each of them the
+owner of what nobody else is asking for, waiting for an OK. Whether someone may cancel or decline a request never
+depends on its routing still fitting (a Seerr server choice that stopped fitting, or an arr that's gone, is often why it
+waits), but only someone who can see where it goes (its library folder) may decline it. An uncertain outgoing action keeps its reservation until a fresh read of the original
 connection resolves it, even after authority changes. Deleting an approver anonymizes retained job contexts and preserves
 send certainty; only known-unsent queued approvals return to review, refunding just their own scope's charges. Charges
 for surviving jobs still count toward count, estimated GB and episode allowances. Deleting a requester anonymizes
