@@ -41,7 +41,8 @@ button.je-list-row-main { cursor: pointer; }
 .je-list-body > span { display: block; overflow: hidden; text-overflow: ellipsis; }
 .je-list-title { opacity: 0.9; white-space: nowrap; }
 .je-list-sub { white-space: normal; }
-.je-list-note { font-style: italic; white-space: normal; }
+.je-list-note { font-style: italic; white-space: normal; display: -webkit-box !important; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.je-list-status-line { display: none !important; }
 .je-list-absent { display: inline-flex; align-items: center; gap: 0.25em; opacity: 0.8; }
 .je-list-absent .material-icons { font-size: 1.05em; }
 .je-list-side { display: flex; align-items: center; gap: 0.5em; flex-shrink: 0; margin: 0 0.5em; }
@@ -74,14 +75,13 @@ button.je-list-card-main { cursor: pointer; }
 .je-list-grid-indicator { display: inline-flex !important; align-items: center; gap: 0.15em; width: auto !important; min-width: 1.6em; padding: 0 0.45em; border-radius: 999px !important; background: #e5a00d !important; color: #111 !important; font-weight: 700; }
 .je-list-grid-indicator .material-icons { font-size: 1.1em; }
 @container (max-width: 8.5em) {
-  .je-list-card .je-arr-pill-text, .je-list-card .je-arr-pill-caret { display: none; }
-  .je-list-card .je-arr-pill { padding: 0.25em 0.45em; }
+  .je-list-card .je-list-status { display: none; }
+  .je-list-card .je-list-status-line { display: block !important; }
   .je-list-card .je-list-request > span:not(.material-icons) { display: none; }
 }
 @media all and (max-width: 50em) {
-  .je-list-side .je-arr-pill-text { display: none; }
-  .je-list-side .je-arr-pill-caret { display: none; }
-  .je-list-side .je-arr-pill { padding: 0.25em 0.45em; }
+  .je-list-side .je-list-status { display: none; }
+  .je-list-row .je-list-status-line { display: block !important; }
   .je-list-request > span:not(.material-icons) { display: none; }
   .je-list-request { padding: 0.4em; min-width: 44px; min-height: 44px; }
   .je-list-side { margin: 0 0.25em; gap: 0.35em; }
@@ -371,6 +371,22 @@ button.je-list-card-main { cursor: pointer; }
     }
 
     /**
+     * The status in words, for narrow screens where the pill would be an icon only (null: no status shown).
+     * @param {Object} ph Entry.
+     * @param {Object} ctx Context.
+     * @param {string} cls Class names.
+     * @returns {HTMLElement|null} Line.
+     */
+    function statusLine(ph, ctx, cls) {
+        const status = statusOf(ph, ctx);
+        if (!status || addingItemId(ph) || typeof JE.arrStatus?.familyText !== 'function') return null;
+        const line = el('span', cls, JE.arrStatus.familyText(status, ctx.statusContext || {}));
+        // The pill (beside it, with the same words as its label) is what assistive tech reads.
+        line.setAttribute('aria-hidden', 'true');
+        return line;
+    }
+
+    /**
      * The Request button of an entry, or null when it isn't offered.
      * @param {Object} ph Entry.
      * @param {Object} ctx Context.
@@ -418,7 +434,10 @@ button.je-list-card-main { cursor: pointer; }
     function noteLine(ph, ctx, cls) {
         if (typeof ph.note !== 'string' || !ph.note.trim()) return null;
         if (ctx?.guarded?.(ph) === true) return el('span', cls, tr('arr_lists_note_hidden'));
-        return el('span', cls, ph.note);
+        const line = el('span', cls, ph.note);
+        // Long notes are cut to a few lines; the whole note stays in the tooltip.
+        line.title = ph.note;
+        return line;
     }
 
     /**
@@ -469,6 +488,8 @@ button.je-list-card-main { cursor: pointer; }
             absent.appendChild(el('span', null, tr('arr_lists_not_in_library')));
             body.appendChild(absent);
         }
+        const words = statusLine(ph, ctx, 'secondary listItemBodyText je-list-status-line');
+        if (words) body.appendChild(words);
         const note = noteLine(ph, ctx, 'secondary listItemBodyText je-list-note');
         if (note) body.appendChild(note);
         main.appendChild(body);
@@ -516,6 +537,8 @@ button.je-list-card-main { cursor: pointer; }
         title.appendChild(el('bdi', null, ph.title || ''));
         box.appendChild(title);
         box.appendChild(el('div', 'cardText cardTextCentered cardText-secondary je-list-card-sub', sub));
+        const words = statusLine(ph, ctx, 'cardText cardTextCentered cardText-secondary je-list-card-sub je-list-status-line');
+        if (words) box.appendChild(words);
         const note = noteLine(ph, ctx, 'cardText cardTextCentered cardText-secondary je-list-card-sub je-list-note');
         if (note) box.appendChild(note);
         const block = statusBlock(ph, ctx);
@@ -627,7 +650,7 @@ button.je-list-card-main { cursor: pointer; }
 
     lp.render = {
         ensureStyles, tr, tn, normalizeId, el, icon, posterUrl, formatDate, episodeLabel, kindLabel, dateLabel, fillParts,
-        addingItemId, statusOf, canRequest, subtitle, statusBlock, requestButton, row, card, signature, opensTitle,
+        addingItemId, statusOf, canRequest, subtitle, statusBlock, statusLine, requestButton, row, card, signature, opensTitle,
         spoilerPolicy, guardedTmdb, STYLE_ID
     };
 })(window.JellyfinEnhanced);
