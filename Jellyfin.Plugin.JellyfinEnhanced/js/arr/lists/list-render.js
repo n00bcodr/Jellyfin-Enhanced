@@ -55,20 +55,20 @@ button.je-list-row-main { cursor: pointer; }
 .je-list-section { margin-top: 1em; }
 .je-list-section .sectionTitle { display: flex; align-items: baseline; gap: 0.5em; }
 .je-list-section-count { font-size: 0.7em; opacity: 0.7; font-weight: normal; }
-.je-list-cards { display: flex; flex-wrap: wrap; gap: 1em 0.8em; }
-.je-list-card { width: 10.5em; display: flex; flex-direction: column; gap: 0.35em; }
-.je-list-card-main { position: relative; display: block; padding: 0; margin: 0; border: 0; background: rgba(128, 128, 128, 0.18); border-radius: 0.3em; overflow: hidden; aspect-ratio: 2 / 3; color: inherit; font: inherit; }
+.je-list-card-box { display: flex; flex-direction: column; align-items: stretch; gap: 0.3em; }
+.je-list-card-main { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; padding: 0; margin: 0; border: 0; background: rgba(128, 128, 128, 0.18); border-radius: 0.3em; overflow: hidden; aspect-ratio: 2 / 3; color: inherit; font: inherit; }
+.je-list-card-main > .material-icons { font-size: 3em; opacity: 0.5; }
 button.je-list-card-main { cursor: pointer; }
 .je-list-card-main img { width: 100%; height: 100%; object-fit: cover; opacity: 0.7; filter: grayscale(0.35); display: block; }
 .je-list-card-main:focus-visible, .layout-tv .je-list-card-main:focus { outline: 3px solid var(--jf-palette-primary-main, #00a4dc); outline-offset: 2px; }
 .je-list-chip { position: absolute; left: 0.4em; max-width: calc(100% - 0.8em); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.15em 0.55em; border-radius: 999px; background: rgba(0, 0, 0, 0.72); color: #fff; font-size: 0.75em; font-weight: 600; }
 .je-list-chip-kind { top: 0.4em; }
 .je-list-chip-fill { bottom: 0.4em; }
-.je-list-card-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.je-list-card-sub { font-size: 0.85em; opacity: 0.75; }
-.je-list-card .je-arr-status { margin: 0; }
-.je-list-card .je-arr-pill { font-size: 0.8em; }
-.je-list-card .je-list-request { align-self: flex-start; }
+.je-list-card-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.je-list-card-sub { white-space: normal; }
+.je-list-card .je-arr-status { margin: 0; display: flex; justify-content: center; }
+.je-list-card .je-arr-pill { font-size: 0.75em; max-width: 100%; }
+.je-list-card .je-list-request { align-self: center; font-size: 0.8em; }
 .card.je-list-incomplete .cardIndicators .playedIndicator { display: none !important; }
 .je-list-grid-indicator { display: inline-flex !important; align-items: center; gap: 0.15em; width: auto !important; min-width: 1.6em; padding: 0 0.45em; border-radius: 999px !important; background: #e5a00d !important; color: #111 !important; font-weight: 700; }
 .je-list-grid-indicator .material-icons { font-size: 1.1em; }
@@ -82,7 +82,6 @@ button.je-list-card-main { cursor: pointer; }
 }
 @media all and (max-width: 40em) {
   .je-list-thumb { width: 2.8em; height: 4.2em; }
-  .je-list-card { width: calc(50% - 0.4em); }
 }
 `;
 
@@ -385,7 +384,7 @@ button.je-list-card-main { cursor: pointer; }
      */
     function poster(ph, size) {
         const url = posterUrl(ph.posterPath, size);
-        if (!url) return icon(ph.kind === 'custom' ? 'edit_note' : ph.mediaType === 'tv' ? 'tv' : 'movie');
+        if (!url) return icon(ph.kind === 'custom' ? 'notes' : ph.mediaType === 'tv' ? 'tv' : 'movie');
         const img = /** @type {HTMLImageElement} */ (el('img'));
         img.alt = '';
         img.loading = 'lazy';
@@ -481,9 +480,13 @@ button.je-list-card-main { cursor: pointer; }
      * @returns {HTMLElement} Card.
      */
     function card(ph, ctx) {
-        const node = el('div', 'je-list-card');
+        // Jellyfin's own card classes (portraitCard in a vertical-wrap container): the same size as the collection's
+        // real cards at every width. No data-id / itemAction: Jellyfin's card actions, menus and selection skip it.
+        const node = el('div', 'card portraitCard je-list-card');
         node.dataset.jeListId = ph.id;
         node.dataset.jeListKind = ph.kind;
+        const box = el('div', 'cardBox cardBox-bottompadded je-list-card-box');
+        node.appendChild(box);
         const main = el(opensTitle(ph) ? 'button' : 'div', 'je-list-card-main');
         if (main.tagName === 'BUTTON') {
             /** @type {HTMLButtonElement} */ (main).type = 'button';
@@ -495,19 +498,19 @@ button.je-list-card-main { cursor: pointer; }
         if (fill) main.appendChild(el('span', 'je-list-chip je-list-chip-fill', fill));
         const sub = [dateLabel(ph), statusOf(ph, ctx) || addingItemId(ph) ? '' : tr('arr_lists_not_in_library')].filter(Boolean).join(' · ');
         main.setAttribute('aria-label', [ph.title || '', kindLabel(ph), fill, sub].filter(Boolean).join(', '));
-        node.appendChild(main);
-        const title = el('div', 'je-list-card-title');
+        box.appendChild(main);
+        const title = el('div', 'cardText cardTextCentered cardText-first je-list-card-title');
         title.appendChild(el('bdi', null, ph.title || ''));
-        node.appendChild(title);
-        node.appendChild(el('div', 'je-list-card-sub', sub));
-        const note = noteLine(ph, ctx, 'je-list-card-sub je-list-note');
-        if (note) node.appendChild(note);
+        box.appendChild(title);
+        box.appendChild(el('div', 'cardText cardTextCentered cardText-secondary je-list-card-sub', sub));
+        const note = noteLine(ph, ctx, 'cardText cardTextCentered cardText-secondary je-list-card-sub je-list-note');
+        if (note) box.appendChild(note);
         const block = statusBlock(ph, ctx);
-        if (block) node.appendChild(block);
+        if (block) box.appendChild(block);
         const request = requestButton(ph, ctx);
         if (request) {
             if (ctx.tv) request.classList.add('focusable');
-            node.appendChild(request);
+            box.appendChild(request);
         }
         return node;
     }

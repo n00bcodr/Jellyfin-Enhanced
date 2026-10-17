@@ -110,7 +110,7 @@
             h2.appendChild(lp.render.el('span', 'je-list-section-count'));
             head.appendChild(h2);
             section.appendChild(head);
-            section.appendChild(lp.render.el('div', 'itemsContainer je-list-cards padded-left padded-right'));
+            section.appendChild(lp.render.el('div', 'itemsContainer vertical-wrap je-list-cards padded-left padded-right'));
             section.addEventListener('click', ctrl.onClick);
             anchor.after(section);
             ctrl.section = section;
