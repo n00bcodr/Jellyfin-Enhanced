@@ -440,6 +440,23 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   (`pool_id`); `RequestLedger.PreviewBatch` previews a run of asks in one rolled-back transaction. Routes in
   **`Controllers/AcquireRulesController.cs`** (rules editor, streaming services, batch preview).
 
+* **`/Services/Acquire/Lists/`**: Phase-4 lists (playlist and collection entries for titles not in the library).
+  `ListStore.cs` keeps one document per list in `lists/` (atomic writes, per-list locks, a reverse index by title ids);
+  `ListOrder.cs` the pure order algebra (real-entry tokens, projections, Jellyfin's move coordinates); `ListRules.cs`
+  entry validation, identity, edition and the request a list ask makes; `ListHost.cs` the Jellyfin seam (lists, shares,
+  inserts and moves on 12 and 10.11); `ListAccess.cs` who may see and edit a list and the parental filter of entries; `ListGate.cs` the one list access
+  gate, read right before every Jellyfin write (its single-use `ListWrite` grant) and every answer with list contents;
+  `ListResolver.cs` which library items stand for an entry (and fill progress); `ListPlaylistPlacement.cs` putting new
+  items at their spot; `ListService.cs` views and every change (durable operations); `ListAcquisition.cs` Request one /
+  Request all missing through the request service; `ListSwapService.cs`/`ListSwapMonitor.cs` swap-in on arrivals
+  (consent-gated, intents settled by Jellyfin's real membership); `ListLifecycle.cs` deleted lists, restores and
+  deleted people; `ListDatabase.cs` operations, request links and swap-in events in acquire.db (schema 5);
+  `ListStatusSource.cs` the shared status for entries; `ListMetadata.cs` the metadata source behind
+  `IListMetadataSource`; `ListSourceOwnership.cs` linked-source ownership on swap-in; `ExperimentalListImporter.cs` the
+  one-time importer of the experimental lists; `ListFlags.cs` the switches and per-person preferences. Routes in
+  **`Controllers/AcquireListsController.cs`**, models in **`Model/ListPlaceholders/`**, the daily task in
+  **`ScheduledTasks/ListMaintenanceTask.cs`** and the client transport in **`js/arr/lists/list-api.js`** (`JE.arrLists`).
+
 * **`/Services/Acquire/Requests/`**: Durable request server core. `RequestModels.cs` contains normalized scopes, outcomes
   and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility; `RequestLedger.cs`
   commits intent, reservations, approvals, events and outbox jobs in acquire.db (schema 3 adds each want's server-built

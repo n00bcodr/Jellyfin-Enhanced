@@ -62,9 +62,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="now">Now.</param>
         /// <param name="payload">Bounded server-built payload, or null.</param>
         public RequestOperationResult Begin(Guid user, string kind, string clientId, string fingerprint, string? subject, int size, DateTimeOffset now, string? payload = null)
+            => Begin(user, kind, clientId, fingerprint, subject, size, now, payload == null ? null : _ => payload);
+
+        /// <summary>
+        /// Records an operation whose payload names the operation itself (e.g. the request ids its items will ask with):
+        /// <paramref name="payload"/> gets the new operation's id and runs in the same write, only when the operation is new.
+        /// </summary>
+        /// <param name="user">The person.</param>
+        /// <param name="kind">Operation kind.</param>
+        /// <param name="clientId">The caller's confirmation id.</param>
+        /// <param name="fingerprint">Fingerprint of what was confirmed.</param>
+        /// <param name="subject">What it is about, or null.</param>
+        /// <param name="size">How many items.</param>
+        /// <param name="now">Now.</param>
+        /// <param name="payload">Builds the bounded payload from the new operation's id, or null.</param>
+        public RequestOperationResult Begin(Guid user, string kind, string clientId, string fingerprint, string? subject, int size, DateTimeOffset now, Func<string, string?>? payload)
         {
             if (string.IsNullOrWhiteSpace(kind) || kind.Length > 40 || string.IsNullOrWhiteSpace(clientId) || clientId.Length > 128 || clientId.Any(char.IsControl) ||
-                string.IsNullOrEmpty(fingerprint) || fingerprint.Length > 128 || size < 0 || subject?.Length > 200 || payload?.Length > 1_000_000)
+                string.IsNullOrEmpty(fingerprint) || fingerprint.Length > 128 || size < 0 || subject?.Length > 200)
                 return new(null, Refusal: "invalid_input");
             if (size > (kind == RequestBatch ? MaxBatch : MaxItems)) return new(null, Refusal: "batch_too_large");
             if (!_db.Available) return new(null, Refusal: "database_unavailable");
@@ -74,11 +89,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (existing != null)
                     return existing.Fingerprint == fingerprint ? new RequestOperationResult(existing, Replayed: true) : new RequestOperationResult(null, Refusal: "idempotency_conflict");
                 var id = RequestLedger.NewId();
+                var body = payload?.Invoke(id);
+                if (body?.Length > 1_000_000) return new RequestOperationResult(null, Refusal: "invalid_input");
                 RequestLedger.Exec(c, t, "INSERT INTO request_operations(id,user_id,kind,client_id,fingerprint,subject,size,state,payload,created_at,updated_at) VALUES($id,$u,$k,$c,$f,$s,$n,'open',$p,$at,$at)",
-                    ("$id", id), ("$u", RequestLedger.Id(user)), ("$k", kind), ("$c", clientId), ("$f", fingerprint), ("$s", subject), ("$n", size), ("$p", payload), ("$at", RequestLedger.Ms(now)));
-                return new RequestOperationResult(new RequestOperation(id, user, kind, clientId, fingerprint, subject, size, "open", payload, now));
+                    ("$id", id), ("$u", RequestLedger.Id(user)), ("$k", kind), ("$c", clientId), ("$f", fingerprint), ("$s", subject), ("$n", size), ("$p", body), ("$at", RequestLedger.Ms(now)));
+                return new RequestOperationResult(new RequestOperation(id, user, kind, clientId, fingerprint, subject, size, "open", body, now));
             });
         }
+
+        /// <summary>A person's operation of a kind by their confirmation id, or null (read only).</summary>
+        /// <param name="user">The person.</param>
+        /// <param name="kind">Operation kind.</param>
+        /// <param name="clientId">The caller's confirmation id.</param>
+        public RequestOperation? Find(Guid user, string kind, string clientId)
+            => !_db.Available ? null : _db.Read(c => Read(c, null, "user_id=$u AND kind=$k AND client_id=$c", ("$u", RequestLedger.Id(user)), ("$k", kind), ("$c", clientId)));
 
         /// <summary>One operation, or null.</summary>
         /// <param name="id">Operation id.</param>

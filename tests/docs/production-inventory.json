@@ -75,6 +75,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireMigrationController.cs",
       "category": "Controllers"
     },
@@ -307,6 +311,14 @@
       "category": "Model"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/ListDoc.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/ListDtos.cs",
+      "category": "Model"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/MdblistRatings.cs",
       "category": "Model"
     },
@@ -384,6 +396,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JellyseerrWatchlistSyncTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ListMaintenanceTask.cs",
       "category": "ScheduledTasks"
     },
     {
@@ -512,6 +528,86 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/JellyfinLibraryAccess.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ApplyHooks.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ExperimentalListImporter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListAccess.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListAcquisition.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListDatabase.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListFlags.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListGate.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListHost.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListLifecycle.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListMetadata.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListOrder.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListPlaylistPlacement.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListResolver.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListRules.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListSourceOwnership.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListStatusSource.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListStore.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListSwapMonitor.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListSwapService.cs",
       "category": "Services"
     },
     {
@@ -1396,6 +1492,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-api.js",
       "category": "js"
     },
     {
@@ -2288,6 +2388,145 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHouseholdController.cs",
       "following_attributes": [
         "BodyLimit(MaxBodyBytes)"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/lists/{listId}",
+      "method": "GetList",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/lists/{listId}/items",
+      "method": "AddItems",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(LargeBody)"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/lists/{listId}/apply",
+      "method": "Apply",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(LargeBody)"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/acquire/lists/{listId}/items/{placeholderId}",
+      "method": "PatchItem",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit"
+      ]
+    },
+    {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/acquire/lists/{listId}/items/{placeholderId}",
+      "method": "DeleteItem",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit"
+      ]
+    },
+    {
+      "verb": "PUT",
+      "path": "/JellyfinEnhanced/acquire/lists/{listId}/order",
+      "method": "PutOrder",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(LargeBody)"
+      ]
+    },
+    {
+      "verb": "PUT",
+      "path": "/JellyfinEnhanced/acquire/lists/{listId}/swap-in",
+      "method": "PutSwapIn",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/lists/{listId}/requests/preview",
+      "method": "PreviewRequests",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/lists/{listId}/requests",
+      "method": "SubmitRequests",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/lists/editable",
+      "method": "GetEditableLists",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/lists/playlists",
+      "method": "CreatePlaylist",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(LargeBody)"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/lists/collections",
+      "method": "CreateCollection",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(LargeBody)"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/lists/import",
+      "method": "ImportDryRun",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "PrivateResponse"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/lists/import",
+      "method": "ImportApply",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "PrivateResponse",
+        "BodyLimit"
       ]
     },
     {
@@ -6400,6 +6639,62 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrPhase4ListPlaceholdersEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4ListAuthoringEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4ListRequestsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4ListRequestAllEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4ListSwapInEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4ListMaintenanceEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4ListStatusEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrPhase1Enabled",
       "type": "bool",
       "initializer": null,
@@ -8368,6 +8663,30 @@
     },
     {
       "class": "UserSettings",
+      "name": "ListPlaceholders",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSettings",
+      "name": "ListStatus",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSettings",
+      "name": "ListSwapIn",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSettings",
       "name": "QualityTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -9557,6 +9876,18 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationConsents.cs"
     },
     {
+      "literal": "*.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ExperimentalListImporter.cs"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListFlags.cs"
+    },
+    {
+      "literal": "*.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListStore.cs"
+    },
+    {
       "literal": "hidden-content.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/DiscoverService.cs"
     },
@@ -9836,6 +10167,11 @@
       "key": "JellyfinEnhancedJellyseerrWatchlistSync"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ListMaintenanceTask.cs",
+      "class": "ListMaintenanceTask",
+      "key": "JellyfinEnhancedListMaintenance"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/MdblistRatingsFetchTask.cs",
       "class": "MdblistRatingsFetchTask",
       "key": "JellyfinEnhancedMdblistRatingsFetch"
@@ -9964,11 +10300,11 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 554,
-    "routes": 262,
-    "configuration_properties": 602,
-    "storage_references": 83,
-    "scheduled_tasks": 14,
+    "files": 579,
+    "routes": 276,
+    "configuration_properties": 612,
+    "storage_references": 86,
+    "scheduled_tasks": 15,
     "locales": 33
   }
 }

@@ -284,6 +284,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     /// <param name="At">When the request went out (UTC).</param>
     public sealed record RequestSentPart(bool FourK, int? Season, int? Episode, DateTime At);
 
+    /// <summary>A backend's word on an edition being available (see <see cref="IArrRequestFacts.AvailabilityForPart"/>).</summary>
+    /// <param name="Available">The backend says the edition asked for is available.</param>
+    /// <param name="AvailableAt">When that last changed, if known.</param>
+    /// <param name="JellyfinItemId">The Jellyfin item the backend matched a 4K copy to (4K only), if any.</param>
+    public sealed record PartAvailability(bool Available, DateTime? AvailableAt, Guid? JellyfinItemId);
+
     /// <summary>
     /// Source of request facts for the status composer. The default knows nothing; the Seerr read
     /// model replaces it in Seerr mode. <see cref="Revision"/> must change whenever any answer may have.
@@ -318,6 +324,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <param name="viewer">Viewer.</param>
         /// <returns>Request facts, or null.</returns>
         RequestFacts? ForSeason(TitleKey seriesKey, int season, StatusViewer viewer) => null;
+
+        /// <summary>
+        /// What is known about the requests for one edition of a title, or for some of its seasons or episodes in that
+        /// edition (a list entry's scope): asks for the 4K copy when <paramref name="fourK"/>, else for the standard one;
+        /// with seasons or episodes named, the asks that cover any of them. As seen by the viewer; null when nothing.
+        /// </summary>
+        /// <param name="titleKey">Movie or series key.</param>
+        /// <param name="fourK">The 4K edition.</param>
+        /// <param name="seasons">Whole seasons (none with no episodes: the whole title).</param>
+        /// <param name="episodes">Single episodes.</param>
+        /// <param name="viewer">Viewer.</param>
+        /// <returns>Request facts, or null.</returns>
+        RequestFacts? ForPart(TitleKey titleKey, bool fourK, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, StatusViewer viewer) => null;
+
+        /// <summary>
+        /// The backend's own word on one edition of a title (or some of its seasons or episodes in that edition) being
+        /// available: whether it says so, since when, and the Jellyfin item it matched. Composed exactly as the Requests
+        /// page composes a request's row (<see cref="SeerrRequestReadModel.AvailabilityOf"/>), so a list entry and the
+        /// Requests page agree. Null when this source has no such word (Jellyfin Enhanced mode judges by the arrs).
+        /// </summary>
+        /// <param name="titleKey">Movie or series key.</param>
+        /// <param name="fourK">The 4K edition.</param>
+        /// <param name="seasons">Whole seasons (none with no episodes: the whole title).</param>
+        /// <param name="episodes">Single episodes.</param>
+        /// <param name="viewer">Viewer.</param>
+        /// <returns>The availability, or null.</returns>
+        PartAvailability? AvailabilityForPart(TitleKey titleKey, bool fourK, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, StatusViewer viewer) => null;
 
         /// <summary>
         /// True when this user asked for the title (movie or series key) themselves. Such a title is

@@ -1425,6 +1425,63 @@ configuration page.
 | POST | `acquire/household/rules` | Jellyfin administrator, Jellyfin Enhanced handling; saves `rules`, `streamingCountry`, `streamingServices` and `pools` (only the parts named) |
 | GET | `acquire/household/streaming-services?country=GB` | Jellyfin administrator; the services TMDB lists for a country |
 
+### Lists: titles not in the library on playlists and collections (phase 4)
+
+With lists on (*Lists: titles not in the library on playlists and collections*, under phase 4 and *Ask for it*, off by
+default), a playlist or collection can hold movies, whole series, seasons, specific episodes of one season and
+free-text entries that aren't in the library yet, in order with its real items. What a person sees, edits or asks for
+follows Jellyfin's own rights and the household's request rules:
+
+- **Who sees and edits a list.** A playlist is seen by its owner, the people it is shared with, everyone when it is
+  public, and administrators; it is edited by its owner, an edit share and administrators (an administrator editing
+  someone else's playlist adds real items as its owner, and only items the owner can open). A collection is seen by
+  everyone who can open it and edited by administrators and collection managers. Seeing a list never lets anyone edit
+  it, and editing it never lets anyone ask for something the request rules don't allow. Rights are checked again right
+  before every change reaches Jellyfin and before every answer: someone who loses a list (or gets a new limit) while a
+  change or a confirmation is on its way gets nothing more written for them and no look at the list; what Jellyfin
+  already took stays and is reported.
+- **Creating a list.** A create that is sent again (a retry, also after the server stopped in the middle) continues with
+  the list its first attempt made (Jellyfin keeps a mark of it), never with another list of the same name. A collection
+  name the server already has is refused: Jellyfin keeps one collection per name and would replace the other one.
+- **Order.** Entries keep their place among the real items, also when the same item is in a playlist twice. Dragging an
+  entry moves it; dragging a real item moves it in Jellyfin too (only the first copy of a duplicated item can move).
+  Collections list their entries by release date, undated (TBA) ones last.
+- **What is already there goes in as itself.** Adding a title the library has puts the real item in its place; a
+  season or episodes entry puts the episodes that are there in episode order and keeps standing for the rest.
+- **Asking from a list** (*Ask for list entries*, *Request all missing*). Each person asks as themselves, through the
+  usual request rules: their allowance, approvals (Kids always wait), 4K permission, and the request handling in use
+  (Jellyfin Enhanced or Seerr). *Request all missing* shows first what it would ask for and what it would cost, and asks
+  for at most 20 titles per confirmation. A title someone already asked for is followed instead (no second request to
+  Sonarr/Radarr); two people asking for the same entry each keep their own request. Free-text entries, unreleased and
+  undated (TBA) titles are not asked for. A request made from a list remembers the list; removing the entry or the list
+  never cancels it. A confirmation sent again (a retry, also after a restart) asks for nothing twice, and for exactly
+  what was confirmed, even if an entry's details (a series' seasons) changed in between.
+- **Arrivals** (*Swap in titles that arrive*). When a title arrives, it takes its entry's place: a movie replaces it;
+  episodes go in one by one in episode order and the entry keeps standing for the rest until the season (or the listed
+  episodes) is complete. This happens only on lists whose editor turned swap-in on for the list *and* agreed in their
+  own Jellyfin Enhanced settings, and only while that person can still edit the list. A 4K entry only takes a 4K copy.
+  If the server stops in the middle of putting an item in, the next start finishes or undoes it by what is actually in
+  the list, so an item never goes in twice.
+- **Status** (*Show request status on list entries*). Each entry shows where its request stands, the same status as
+  everywhere else in Requests & downloads (a season entry shows that season's, an episodes entry only its own episodes';
+  a 4K entry follows the 4K copy and the 4K asks, so it isn't Ready while only the standard copy is in; in Seerr mode
+  without a 4K Radarr it reads Seerr's word on the 4K copy, as the Requests page does). Everyone can hide it for
+  themselves.
+- **Privacy.** A person with parental limits sees only entries whose rating is verified to be within them (anything
+  that can't be checked is hidden), and only the rows Jellyfin shows them; counts never include what they can't see.
+- **Deleted lists and people.** Deleting a playlist or collection removes its entries; deleting a person removes what
+  lists kept about them (their requests stay).
+- **Backups.** Lists are part of Jellyfin Enhanced backups. After a restore every list is checked against what is
+  really in Jellyfin before anything new goes in.
+
+Each person can, in the Jellyfin Enhanced panel (*Lists*): hide entries, hide their status, and agree that titles that
+arrive may take their place in lists they turned swap-in on for (off until they choose it).
+
+**Lists from the experimental list feature.** Administrators can bring over the lists of the earlier experimental
+list feature (its `list-placeholders` folder) with `GET /JellyfinEnhanced/arr/admin/lists/import` (a dry run that
+changes nothing) and `POST` (the import). The old files are only read. Lists whose playlist or collection is gone are
+left out, unreadable files are copied aside, and imported lists start with swap-in off and any linked source paused.
+
 ### Privacy and Seerr scans
 
 - **Download progress from Seerr.** Seerr's title answers include the download rows it copies from Sonarr/Radarr's
