@@ -26,7 +26,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <param name="Genres">TMDB genre ids, or null.</param>
     /// <param name="OriginalLanguage">ISO 639-1 original language, or null.</param>
     /// <param name="Providers">Flat-rate/free/ad-supported services per country, or null.</param>
-    /// <param name="FetchedAt">When they were read.</param>
+    /// <param name="FetchedAt">When they were read (a failed read never moves it).</param>
     public sealed record RuleFactSet(int? TmdbId, IReadOnlyDictionary<string, string>? Certifications, IReadOnlyList<int>? Genres, string? OriginalLanguage,
         IReadOnlyDictionary<string, IReadOnlyList<RuleProvider>>? Providers, DateTimeOffset FetchedAt)
     {
@@ -61,7 +61,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="ct">Cancellation.</param>
         Task PrepareAsync(TitleKey title, CancellationToken ct);
 
-        /// <summary>The facts in memory for the title, or null.</summary>
+        /// <summary>
+        /// The facts in memory for the title that household rules may decide on, or null: facts older than their freshness
+        /// window count as not known (a review, never the old answer) until a read succeeds again.
+        /// </summary>
         /// <param name="title">The title.</param>
         RuleFactSet? Peek(TitleKey title);
 
@@ -74,7 +77,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>
     /// Household-rule facts from TMDB through <see cref="TmdbResponseCache"/> (one bundled read for a movie: details,
     /// release dates and watch providers; a series adds its content ratings), kept in a bounded memory cache: six hours
-    /// when read, two minutes when the read failed. A title known only by its TVDB or IMDb id is found on TMDB first.
+    /// when read, two minutes when the read failed. A failed read never replaces facts that were read, but it doesn't
+    /// keep them fresh either: once their six hours are up they count as not known until a read succeeds (it is tried
+    /// again two minutes after each failure). A title known only by its TVDB or IMDb id is found on TMDB first.
     /// </summary>
     public sealed class HouseholdRuleFacts : IHouseholdRuleFacts
     {
@@ -88,7 +93,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal const int MaxEntries = 4000;
 
         private static readonly TimeSpan Wait = TimeSpan.FromSeconds(8);
-        private readonly ConcurrentDictionary<string, RuleFactSet> _cache = new(StringComparer.Ordinal);
+        // The facts last read (or the failed read when nothing was ever read) and when a read was last tried.
+        private readonly ConcurrentDictionary<string, (RuleFactSet Facts, DateTimeOffset TriedAt)> _cache = new(StringComparer.Ordinal);
         private readonly Func<TitleKey, CancellationToken, Task<int?>> _tmdbId;
         private readonly Func<string, CancellationToken, Task<string?>> _get;
         private readonly Func<string, string, int?> _score;
@@ -128,7 +134,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public int? Score(string certification, string country) => string.IsNullOrWhiteSpace(certification) ? null : _score(certification.Trim(), country.ToUpperInvariant());
 
         /// <inheritdoc />
-        public RuleFactSet? Peek(TitleKey title) => _cache.TryGetValue(CacheKey(title), out var facts) ? facts : null;
+        public RuleFactSet? Peek(TitleKey title)
+            => _cache.TryGetValue(CacheKey(title), out var held) && (held.Facts.Failed || _now() - held.Facts.FetchedAt < FreshFor) ? held.Facts : null;
 
         private static string CacheKey(TitleKey title) => title.Title.ToString();
 
@@ -136,7 +143,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public async Task PrepareAsync(TitleKey title, CancellationToken ct)
         {
             var key = CacheKey(title);
-            if (_cache.TryGetValue(key, out var held) && _now() - held.FetchedAt < (held.Failed ? FailedFor : FreshFor)) return;
+            var now = _now();
+            if (_cache.TryGetValue(key, out var held) && (held.Facts.Failed ? now - held.TriedAt < FailedFor : now - held.Facts.FetchedAt < FreshFor || now - held.TriedAt < FailedFor)) return;
             using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct);
             bounded.CancelAfter(Wait);
             RuleFactSet facts;
@@ -150,14 +158,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 facts = new RuleFactSet(null, null, null, null, null, _now());
             }
 
-            // A failed read never replaces facts that were read before (they stay until fresh ones come).
-            if (facts.Failed && held is { Failed: false }) facts = held with { FetchedAt = _now() - FreshFor + FailedFor };
+            // A failed read never replaces facts that were read before, and never makes them fresh again: past their window
+            // Peek says they aren't known (rules ask for a look), and the read is tried again after FailedFor.
+            if (facts.Failed && held.Facts is { Failed: false }) facts = held.Facts;
             if (_cache.Count >= MaxEntries)
             {
-                foreach (var old in _cache.OrderBy(p => p.Value.FetchedAt).Take(MaxEntries / 4).ToList()) _cache.TryRemove(old.Key, out _);
+                foreach (var old in _cache.OrderBy(p => p.Value.TriedAt).Take(MaxEntries / 4).ToList()) _cache.TryRemove(old.Key, out _);
             }
 
-            _cache[key] = facts;
+            _cache[key] = (facts, _now());
         }
 
         private async Task<RuleFactSet> ReadAsync(TitleKey title, CancellationToken ct)

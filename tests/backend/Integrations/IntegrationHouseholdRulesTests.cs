@@ -326,7 +326,7 @@ public class IntegrationHouseholdRulesTests
     }
 
     [Fact]
-    public async Task FactsAreCachedFailedReadsRetrySoonAndNeverReplaceGoodFacts()
+    public async Task FactsAreCachedAndAfterTheirWindowAFailedRefreshLeavesThemUnknownUntilARefreshSucceeds()
     {
         var tmdb = new FakeTmdb();
         tmdb.Movie(603, "en", new[] { 28 }, R);
@@ -339,10 +339,29 @@ public class IntegrationHouseholdRulesTests
         var reads = tmdb.Reads;
         await facts.PrepareAsync(key, default);
         Assert.Equal(reads, tmdb.Reads);                         // fresh: no second read
-        now = now.Add(HouseholdRuleFacts.FreshFor).AddMinutes(1);
+        now = now.Add(HouseholdRuleFacts.FreshFor).AddMinutes(-1);
+        Assert.Equal(first.Version, facts.Peek(key)!.Version);   // still within the window
+        now = now.AddMinutes(2);
+        Assert.Null(facts.Peek(key));                            // past it: not known to the rules, whatever was read
         tmdb.Down = true;
         await facts.PrepareAsync(key, default);
-        Assert.Equal(first.Version, facts.Peek(key)!.Version);   // a failed refresh keeps what was known
+        Assert.Null(facts.Peek(key));                            // a failed refresh never makes the old facts count again
+        reads = tmdb.Reads;
+        now = now.AddMinutes(1);
+        await facts.PrepareAsync(key, default);
+        Assert.Equal(reads, tmdb.Reads);                         // retried only after the failure wait
+        Assert.Null(facts.Peek(key));
+        now = now.Add(HouseholdRuleFacts.FailedFor);
+        await facts.PrepareAsync(key, default);
+        Assert.True(tmdb.Reads > reads);
+        Assert.Null(facts.Peek(key));
+        tmdb.Down = false;
+        tmdb.Movie(603, "en", new[] { 28 }, Pg13);
+        now = now.Add(HouseholdRuleFacts.FailedFor).AddSeconds(1);
+        await facts.PrepareAsync(key, default);
+        Assert.Equal("PG-13", facts.Peek(key)!.Certification("US")); // a successful read counts again
+        now = now.Add(HouseholdRuleFacts.FreshFor).AddMinutes(1);
+        tmdb.Down = true;
         // A title never read with TMDB down: unknown, tried again after the short failure wait.
         var other = TitleKey.Parse("movie:tmdb:604")!;
         await facts.PrepareAsync(other, default);
@@ -469,7 +488,7 @@ public class IntegrationHouseholdRulesTests
         Assert.Equal(200, (await r.Service.ApproveAsync(held.Id, r.Admin.UserId, null, default)).HttpStatus);
         var job = Assert.Single(r.Rig.Ledger.Due(r.Now));
         Assert.Null(r.Rig.Ledger.ApprovalNeededAtSend(job, r.Policy.Evaluate(r.Member.UserId, job.Input), r.Policy, r.Now));
-        // A queued review that is now unknown (TMDB down, facts expired) waits too.
+        // A queued request whose title's rating changed (read again once the facts expired) waits for a look.
         r.Set(new { roles = new { member = new { rating = new { max = "PG-13", country = "US", match = "approve", otherwise = "review" } } } });
         r.Tmdb.Movie(606, "en", new[] { 18 }, Pg13);
         var second = await r.Ask(r.Member, 606);
@@ -478,7 +497,56 @@ public class IntegrationHouseholdRulesTests
         r.Tmdb.Movie(606, "en", new[] { 18 }, R);
         r.Now = r.Now.Add(HouseholdRuleFacts.FreshFor).AddMinutes(1);
         await r.Facts.PrepareAsync(TitleKey.Parse("movie:tmdb:606")!, default);
+        Assert.Equal("R", r.Facts.Peek(TitleKey.Parse("movie:tmdb:606")!)!.Certification("US"));
         Assert.Equal("rule_review", r.Rig.Ledger.ApprovalNeededAtSend(secondJob, r.Policy.Evaluate(r.Member.UserId, secondJob.Input), r.Policy, r.Now));
+    }
+
+    [Fact]
+    public async Task ExpiredPermissiveFactsAreNotKnownDuringATmdbOutageAtTheAskAndAtTheSendGuard()
+    {
+        using var r = new Rules();
+        r.Config.ArrRequestPreset = "approve_everything";
+        // A Member's blanket preset is lifted only by an approve rule; a Trusted person is refused above PG-13.
+        r.Set(new
+        {
+            roles = new
+            {
+                member = new { rating = new { max = "PG-13", country = "US", match = "approve", otherwise = "review" } },
+                trusted = new { rating = new { max = "PG-13", country = "US", match = "none", otherwise = "deny" } },
+            },
+        });
+        r.Tmdb.Movie(606, "en", new[] { 18 }, Pg13);
+        r.Tmdb.Movie(607, "en", new[] { 18 }, Pg13);
+        r.Tmdb.Movie(608, "en", new[] { 18 }, Pg13);
+        r.Tmdb.Movie(609, "en", new[] { 18 }, Pg13);
+        var queued = await r.Ask(r.Member, 606);
+        Assert.Equal("queued", r.Want(queued).Status);
+        Assert.Equal("queued", r.Want(await r.Ask(r.Trusted, 607)).Status);
+        Assert.Equal(0, r.Rig.Backend.Sends);
+        // Two more titles are read as PG-13 (shown in a sheet, say) but not asked for yet.
+        await r.Facts.PrepareAsync(TitleKey.Parse("movie:tmdb:608")!, default);
+        await r.Facts.PrepareAsync(TitleKey.Parse("movie:tmdb:609")!, default);
+        // TMDB goes down (the titles' answers would now be R) and the facts' window passes before anything is sent.
+        foreach (var id in new[] { 606, 607, 608, 609 }) r.Tmdb.Movie(id, "en", new[] { 18 }, R);
+        r.Tmdb.Down = true;
+        r.Now = r.Now.Add(HouseholdRuleFacts.FreshFor).AddMinutes(1);
+        // The send guard reads again, fails and holds both for a look instead of trusting the old PG-13.
+        await r.Runner().TickAsync(default);
+        Assert.Equal(0, r.Rig.Backend.Sends);
+        Assert.Equal(("pending", "rule_review"), (r.Want(queued).Status, r.Want(queued).Reason));
+        Assert.All(r.Rig.Ledger.List(r.Trusted.UserId, false), w => Assert.Equal(("pending", "rule_review"), (w.Status, w.Reason)));
+        // A new ask for a title last read as PG-13 waits too (Member and Trusted alike), with the rating unknown.
+        var member = await r.Ask(r.Member, 608);
+        var trusted = await r.Ask(r.Trusted, 609);
+        Assert.Equal(("pending", "rule_review"), (r.Want(member).Status, r.Want(member).Reason));
+        Assert.Equal(("pending", "rule_review"), (r.Want(trusted).Status, r.Want(trusted).Reason));
+        Assert.Null(member.Rules!.Hits.Single().Matched);
+        // TMDB back: the next read decides on the real answer (R: a Trusted ask for it is refused).
+        r.Tmdb.Down = false;
+        r.Now = r.Now.Add(HouseholdRuleFacts.FailedFor).AddSeconds(1);
+        var refused = await r.Ask(r.Trusted, 608);
+        Assert.Equal((403, "household_rule"), (refused.HttpStatus, refused.Reason));
+        Assert.Equal("R", r.Facts.Peek(TitleKey.Parse("movie:tmdb:608")!)!.Certification("US"));
     }
 
     [Fact]
