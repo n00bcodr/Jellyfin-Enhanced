@@ -385,9 +385,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 // Not announced there yet: nothing is sent and the ask waits, checked again every few hours (never held for a
                 // person to look at). A series the arr already has is refreshed first, so its next check sees a season
-                // its metadata source has added since.
-                if (series is { } listed && Int(listed, "id") is int listedId && listedId > 0 && Gate(run, false) is null)
-                    await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "command", new JsonObject { ["name"] = "RefreshSeries", ["seriesId"] = listedId }).ConfigureAwait(false);
+                // its metadata source has added since. The refresh is a write too: a gate that holds it holds the request.
+                if (series is { } listed && Int(listed, "id") is int listedId && listedId > 0)
+                {
+                    if (Gate(run, false) is { } refused) return refused;
+                    var (_, stopped) = await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "command", new JsonObject { ["name"] = "RefreshSeries", ["seriesId"] = listedId }).ConfigureAwait(false);
+                    if (stopped != null) return stopped;
+                }
                 return BackendResults.Later("not_aired", $"{instance.Name} doesn't list season {string.Join(", ", missing)} of this series yet; checked again later.", NotListedWait);
             }
 
@@ -503,8 +507,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     if (job.Uncertain)
                         return BackendResults.HoldAfterWrite(job.WantId, "not_aired", $"{instance.Name} has the series but still doesn't list {which}.");
                     // Not listed yet (nothing written by this request): refreshed, and checked again in a few hours.
-                    if (Gate(run, false) is null)
-                        await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "command", new JsonObject { ["name"] = "RefreshSeries", ["seriesId"] = seriesId }).ConfigureAwait(false);
+                    if (Gate(run, false) is { } refused) return refused;
+                    var (_, stopped) = await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "command", new JsonObject { ["name"] = "RefreshSeries", ["seriesId"] = seriesId }).ConfigureAwait(false);
+                    if (stopped != null) return stopped;
                     return BackendResults.Later("not_aired", $"{instance.Name} doesn't list {which} of this series yet; checked again later.", NotListedWait);
                 }
             }

@@ -137,19 +137,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     }
 
     /// <summary>
-    /// The send-time guard for automatic work (recipes, list sync) and for work only phase 4 creates. Interactive asks
-    /// are never touched. Asked by the outbox before any transport and again at every write (kills between writes),
-    /// and it builds the per-write budget admission. With the engine off, the existing recipes' queued work goes out
-    /// as before; only the rollout Shadow override, an old recipe's own switch turned off and phase-4-only origins hold
-    /// then.
+    /// The send-time side of automation for queued work (recipes, list sync, work only phase 4 creates). People's own
+    /// asks are never touched. Its <see cref="Gate"/> is the one <see cref="AutomationWriteGate"/> the outbox asks before
+    /// any transport and the backends ask again immediately before every write; it also builds the per-write budget
+    /// admission, and counts breakers and settles budgets after an attempt. With the engine off, the existing recipes'
+    /// queued work goes out as before; only the rollout Shadow override, an old recipe's own switch turned off, the request
+    /// path changing and phase-4-only origins hold then.
     /// </summary>
     public sealed class AutomationSendGuard
     {
         private readonly IRequestPolicy _policy;
         private readonly AutomationBudgets _budgets;
         private readonly AutomationStore _store;
-        private readonly AutomationEligibility _eligibility;
-        private readonly IAutomationConsents? _consents;
         private readonly Func<DateTimeOffset> _now;
 
         /// <summary>Creates the guard (DI).</summary>
@@ -164,9 +163,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             _policy = policy;
             _budgets = budgets;
             _store = store;
-            _eligibility = eligibility;
-            _consents = consents;
             _now = now;
+            Gate = new AutomationWriteGate(() => policy.Configuration, policy, budgets, store, eligibility, consents, now);
         }
 
         /// <summary>The budgets.</summary>
@@ -174,6 +172,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
         /// <summary>The automation store (breakers).</summary>
         public AutomationStore Store => _store;
+
+        /// <summary>The write gate every automatic write of a queued job passes, before any transport and before each write.</summary>
+        public AutomationWriteGate Gate { get; }
 
         /// <summary>The target a job's sends go to, for kills and breakers: its instance (Sonarr/Radarr) or <c>seerr</c>.</summary>
         /// <param name="job">The job.</param>
@@ -198,66 +199,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         public static bool Applies(RequestWant? want) => want != null && (RequestOrigin.IsAutomatic(want.OriginKind) || RequestOrigin.IsPhase4Only(want.OriginKind, want.OriginSource));
 
         /// <summary>
-        /// Why the job may not be sent now (null: it may). Checked before any transport, and again before every write.
-        /// Never asked for a read-back.
+        /// Why the job may not be sent now (null: it may): the write gate for this job. <paramref name="budgetedAtStart"/>
+        /// null is the check before any transport; otherwise whether the attempt chose a budget admission, asked
+        /// immediately before each write. Never asked for a read-back.
         /// </summary>
         /// <param name="job">The job.</param>
         /// <param name="want">Its want (null: not this guard's).</param>
-        /// <param name="preTransport">The check before any transport (budgets and disk are checked there only).</param>
-        public AutomationHold? Hold(RequestJob job, RequestWant? want, bool preTransport = true)
-        {
-            if (!Applies(want)) return null;
-            var config = _policy.Configuration;
-            var automatic = RequestOrigin.IsAutomatic(want!.OriginKind);
-            if (automatic && AutomationFlags.ShadowOverride(config))
-                return new(AutomationHolds.ShadowOverride, "The rollout Shadow override is on: automatic requests are recorded, never sent.", AutomationHolds.WaitFor(AutomationHolds.ShadowOverride));
-            var phase4Only = RequestOrigin.IsPhase4Only(want.OriginKind, want.OriginSource);
-            if (phase4Only && !(automatic ? AutomationFlags.Engine(config) : AutomationFlags.Phase4WithRequests(config)))
-                return new(AutomationHolds.Phase4Off, "Phase 4 (or its automation engine) is off: work it created waits.", AutomationHolds.WaitFor(AutomationHolds.Phase4Off));
-            // An old recipe whose own switch (Auto Season / Auto Movie Request) was turned off after its request was
-            // queued: the request waits until it is on again, with the engine on or off, like an opt-out.
-            var recipe = RecipeOf(want);
-            if (want.OriginKind == RequestOrigin.AutomationKind && !AutomationRecipes.SwitchedOn(config, recipe))
-                return new(AutomationHolds.RecipePaused, "The recipe is switched off: its queued request waits until it is on again.", AutomationHolds.WaitFor(AutomationHolds.RecipePaused));
-            if (!automatic || !AutomationFlags.Engine(config)) return null;
-
-            var target = Target(job);
-            if (Killed(config, recipe, target))
-                return new(AutomationHolds.Killed, "A kill switch is on: automatic requests wait until it is off.", AutomationHolds.WaitFor(AutomationHolds.Killed));
-            var mode = recipe == null ? AutomationMode.Shadow : AutomationModes.Mode(config, recipe);
-            if (mode is AutomationMode.Off or AutomationMode.Shadow)
-                return new(AutomationHolds.RecipePaused, "The recipe is now " + AutomationModes.Name(mode) + ": its queued request waits.", AutomationHolds.WaitFor(AutomationHolds.RecipePaused));
-            // A recipe's ask: the person's consent as it is now (they may have opted out since it was queued). List sync
-            // asks run on the list link's own consent, not a recipe preference.
-            if (want.OriginKind == RequestOrigin.AutomationKind && recipe != null && !AutomationConsent.Allows(_consents, job.Authorization.Requester, recipe))
-                return new(AutomationHolds.UserOptedOut, "The person turned this automatic request off for themselves: it waits until they turn it back on.", AutomationHolds.WaitFor(AutomationHolds.UserOptedOut));
-            if (job.Authorization.Backend == "seerr" && AutomationRecipes.RequiresDirect(recipe))
-                return new(AutomationHolds.SeerrUnsupported, "This recipe needs Sonarr/Radarr handling; Seerr handles requests now.", TimeSpan.Zero, Park: true);
-            if (job.Authorization.Approver == null)
-            {
-                var role = _policy.Evaluate(job.Authorization.Requester, job.Input).Role;
-                if (mode == AutomationMode.Ask || !_eligibility.Eligible(job.Authorization.Requester, role))
-                    return new(AutomationHolds.ApprovalRequired, "An OK is required now (Ask mode, or the person isn't eligible for automatic requests).", TimeSpan.Zero, Park: true);
-            }
-
-            var now = _now();
-            var breaker = _store.Breaker(target);
-            if (breaker.Open(now))
-                return new(AutomationHolds.BreakerOpen, "Automatic sends to this target failed " + breaker.Failures.ToString(CultureInfo.InvariantCulture) + " times in a row; paused until " + breaker.OpenUntil!.Value.ToString("u", CultureInfo.InvariantCulture) + ".", Until(breaker.OpenUntil!.Value, now));
-            if (!preTransport) return null;
-
-            if (_policy.TitlePause(job.Input) != null)
-                return new(AutomationHolds.LowDisk, "The drive it would land on is below the low-disk threshold.", AutomationHolds.WaitFor(AutomationHolds.LowDisk));
-            if (job.Authorization.Backend == "je" && config.ArrLowDiskPercent > 0 && !_policy.DiskKnown(job.Input))
-                return new(AutomationHolds.DiskUnknown, "The destination's free space isn't known yet; automatic sends wait for it.", AutomationHolds.WaitFor(AutomationHolds.DiskUnknown));
-
-            var exhausted = job.Authorization.Backend == "seerr"
-                ? _budgets.Exhausted(BudgetCategories.SeerrPost, AutomationFlags.SeerrTarget)
-                : _budgets.Exhausted(BudgetCategories.Search, target);
-            if (exhausted != null)
-                return new(AutomationHolds.BudgetExhausted, "The " + exhausted.Category + " budget (" + AutomationBudgets.Label(exhausted.Window) + ") is used up.", Until(exhausted.NextSlotAt ?? now + exhausted.Window, now));
-            return null;
-        }
+        /// <param name="budgetedAtStart">Null before any transport; else whether this attempt was admitted against budgets.</param>
+        public AutomationHold? Hold(RequestJob job, RequestWant? want, bool? budgetedAtStart = null)
+            => Gate.Check(AutomationWrite.ForJob(job, want, budgetedAtStart));
 
         /// <summary>The per-write admission for an automatic job under the engine; null for anything else.</summary>
         /// <param name="job">The job (its attempt count makes a resend's search a new search).</param>
@@ -295,9 +245,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 _store.Failure(target, result.Outcome.Reason, now);
         }
 
-        private static TimeSpan Until(DateTimeOffset at, DateTimeOffset now) => at > now ? at - now + TimeSpan.FromSeconds(1) : TimeSpan.FromSeconds(30);
-
-        private static string? RecipeOf(RequestWant want) => want.OriginKind == RequestOrigin.AutomationKind ? want.OriginSource
+        /// <summary>The recipe a want's automatic work belongs to (list sync: its provenance's), or null.</summary>
+        /// <param name="want">The want.</param>
+        internal static string? RecipeOf(RequestWant want) => want.OriginKind == RequestOrigin.AutomationKind ? want.OriginSource
             : want.OriginKind == RequestOrigin.SyncKind ? RequestOriginDetail.Read(want.OriginDetail)?.Provenance?.Recipe ?? AutomationRecipes.ListSyncRequests : null;
 
         /// <summary>One job's admission: adds count once per job, each search and POST once per attempt.</summary>

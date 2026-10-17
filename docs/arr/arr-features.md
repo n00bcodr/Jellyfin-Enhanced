@@ -1324,7 +1324,8 @@ either is off, the automatic requests above behave exactly as described there. W
 - **Breakers and storage.** Five failed automatic sends in a row to one instance pause automatic sends to it for 15
   minutes (an administrator can retry at once from the status). An automatic request whose download would land on a
   drive below the low-disk threshold waits, measured at the folder it would actually land in; while that drive's free
-  space isn't known yet it waits too.
+  space isn't known yet it waits too. Both are checked again right before every add, monitoring change and search, so
+  turning the low-disk guard on while a request is being sent holds it until the drive's free space is known.
 - **Seerr handling is narrower.** Jellyfin Enhanced can only hold back its own requests to Seerr: the Seerr budget
   counts those, and the kill switches and storage check stop only those. Once Seerr accepts a request, Seerr and its
   Sonarr/Radarr decide what happens next (its approval, the folder, the searches): Jellyfin Enhanced can't cap their
@@ -1345,6 +1346,15 @@ either is off, the automatic requests above behave exactly as described there. W
   a request it is preparing is not recorded (not even what *Shadow* would have done), and its requests that haven't
   been sent yet wait until it is on again, checked right before every add, search and Seerr request (a send whose
   answer was lost is still read back).
+- **One check before every automatic send.** Every automatic add, monitoring change, search, series refresh and Seerr
+  request (Jellyfin Enhanced's own, and the old recipes' direct ones at each Seerr address) passes the same check
+  immediately before it leaves, reading every switch as it is at that moment: the recipe's own switch, the rollout
+  guard, request handling (integration, phase 1 and 3, who handles requests, Seerr), phase 4 and the engine, the kill
+  switches, the recipe's mode, the person's opt-out, whether an OK is needed, the instance's breaker, low disk and
+  unknown free space, and the budgets. Whatever changed while the request was being prepared counts. On the recording
+  side, a recipe compares every setting its request depends on (including *Free automatic requests*, eligibility and
+  the instance it would go to) right before it records the request or a *Shadow* decision, and starts over if any
+  changed, so a request is never recorded under settings that no longer apply.
 
 What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic

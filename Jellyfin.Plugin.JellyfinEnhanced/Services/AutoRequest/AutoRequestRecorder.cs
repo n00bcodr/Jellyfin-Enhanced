@@ -74,10 +74,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
         /// <param name="ct">Cancellation.</param>
         public async Task<AutoRequestOutcome> RecordAsync(string recipe, Guid user, MutationInput input, CancellationToken ct)
         {
-            // The recipe's own switch, mode, kills and consent are read first and the request service's preparation reads
-            // come after. A change in between is read again right before the ledger write, and the ask starts over under the
-            // current rules instead of being recorded under the old ones (the recipe switched off: nothing is recorded). A
-            // switch flipped back and forth leaves it to the next trigger.
+            // Every setting the ask depends on is captured first (AutomationRecordSnapshot) and the request service's (or
+            // the Shadow preview's) preparation reads come after. The whole snapshot is taken again right before the ledger
+            // write and before a Shadow decision is saved; any difference starts the ask over under the current rules
+            // instead of recording it under the old ones (the recipe switched off: nothing is recorded). A setting flipped
+            // back and forth leaves it to the next trigger.
             for (var attempt = 0; attempt < 3; attempt++)
             {
                 if (await RecordOnceAsync(recipe, user, input, ct).ConfigureAwait(false) is { } outcome) return outcome;
@@ -96,13 +97,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
             if (!_requests.Ledger.Database.Available) return AutoRequestOutcome.Failed("database_unavailable", key);
             var client = ClientId(recipe, input);
             var control = AutomationFlags.Control(config, recipe);
-            var consented = AutomationConsent.Allows(_consents, user, recipe);
-            string? Changed()
-            {
-                var live = _requests.Policy.Configuration;
-                return !AutomationRecipes.SwitchedOn(live, recipe) || AutomationFlags.Control(live, recipe) != control || AutomationConsent.Allows(_consents, user, recipe) != consented
-                    ? AutomationHolds.EngineChanged : null;
-            }
+            var snapshot = Snapshot(config, recipe, user, input);
+            var consented = snapshot.Consented;
+            // Asked after every awaited read, right before anything is recorded: the snapshot as a whole, read live.
+            string? Changed() => Snapshot(_requests.Policy.Configuration, recipe, user, input) != snapshot ? AutomationHolds.EngineChanged : null;
             if (control.Legacy || _decider == null || _store == null)
             {
                 // The same recipe asking for the same scope again replays its first ask instead of adding another.
@@ -112,7 +110,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
 
             var origin = RequestOrigin.Automation(recipe) with { Provenance = new RequestProvenance(Recipe: recipe, TriggerIdentity: client) };
             var decisionKey = recipe + "|" + user.ToString("N") + "|" + client;
-            var backend = config.ArrRequestBackend;
+            var backend = snapshot.Backend;
             var mode = control.Stored ?? AutomationMode.Shadow;
             if (control.Effective == AutomationMode.Off)
             {
@@ -153,6 +151,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
                 new AutomationDecisionDetail { Status = status, Approval = status == "pending" ? approval ?? outcome.Reason : null, Scope = input.Scope, Variant = input.Variant, Seasons = input.Seasons.Length == 0 ? null : input.Seasons }), _now());
             return result;
         }
+
+        // Every live setting this ask depends on, read now (no await).
+        private AutomationRecordSnapshot Snapshot(PluginConfiguration config, string recipe, Guid user, MutationInput input)
+            => AutomationRecordSnapshot.Take(config, recipe, user, input, _requests.Policy, _consents, _decider?.Eligibility);
 
         // The create stopped because the rules changed during its preparation reads (nothing recorded).
         private static bool Restart(RequestOutcome outcome) => outcome.RequestId == null && outcome.Reason == AutomationHolds.EngineChanged;

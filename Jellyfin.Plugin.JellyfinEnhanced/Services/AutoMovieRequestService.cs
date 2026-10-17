@@ -29,6 +29,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IUserManager _userManager;
         private readonly ILibraryManager _libraryManager;
         private readonly AutoRequestRecorder? _recorder;
+        // The automatic-write gate over the live configuration (the same gate as the ledger's sends; the engine can't be in
+        // effect on this path, so its engine-only gates never apply here).
+        private readonly AutomationWriteGate _gate = new(() => JellyfinEnhanced.Instance?.Configuration);
 
         // Track which movies have already been requested to avoid duplicates (with timestamps for expiry)
         private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
@@ -101,19 +104,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return AutoRequestOutcome.Failed(AutomationHolds.EngineChanged);
         }
 
-        // Why a direct Seerr POST (phase 3 off) may not go now, read from the live configuration (an administrator's save
-        // replaces it) right before the lookups and again right before each POST: the rollout Shadow override; phase 3 on
-        // since the check began (the decision now belongs to the ledger, see EngineChanged); the recipe or Seerr turned
-        // off. Null: it may go.
-        private string? DirectStop()
-        {
-            var live = JellyfinEnhanced.Instance?.Configuration;
-            // The recipe switched off comes first: nothing is sent or recorded, not even a Shadow decision.
-            if (live is not { AutoMovieRequestEnabled: true }) return "disabled";
-            if (AutomationFlags.ShadowOverride(live)) return AutomationHolds.ShadowOverride;
-            if (LedgerMode(live)) return AutomationHolds.EngineChanged;
-            return live.JellyseerrEnabled ? null : "disabled";
-        }
+        // The write gate for a direct Seerr POST (phase 3 off), read from the live configuration (an administrator's save
+        // replaces it) right before the lookups and again immediately before each POST, every Seerr address included: the
+        // recipe's own switch or Seerr turned off ("disabled": nothing is sent or recorded, not even a Shadow decision); the
+        // rollout Shadow override; phase 3 on since the check began (EngineChanged: the decision now belongs to the
+        // ledger). Null: it may go.
+        private string? DirectStop() => _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;
 
         // One check; null when the direct path stopped for phase 3 and the check has to start again.
         private async Task<AutoRequestOutcome?> CheckOnceAsync(BaseItem movieItem, Guid userId, CancellationToken ct)

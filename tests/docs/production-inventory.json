@@ -467,6 +467,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationRecordSnapshot.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationRisk.cs",
       "category": "Services"
     },
@@ -476,6 +480,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationStore.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationWriteGate.cs",
       "category": "Services"
     },
     {
@@ -9801,7 +9809,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 542,
+    "files": 544,
     "routes": 255,
     "configuration_properties": 595,
     "storage_references": 83,

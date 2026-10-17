@@ -153,8 +153,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 RequestBackendResult result;
                 var transportStarted = false;
                 var settledByRead = false;
-                // Automatic work (recipes, list sync) and work only phase 4 creates: held at send by the kill switches,
-                // modes, budgets, breakers and the rollout Shadow override. A read-back is never held.
+                // Automatic work (recipes, list sync) and work only phase 4 creates: the write gate before any transport
+                // (and again immediately before every write, in Guard below). A read-back is never held.
                 var want = _automation == null ? null : _ledger.Find(job.WantId);
                 var hold = job.State == "maybe_sent" ? null : _automation?.Hold(job, want);
                 var admission = job.State == "maybe_sent" ? null : _automation?.Admission(job, want);
@@ -207,11 +207,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             if (requester.Backend == "seerr" && requester.SeerrUser == null && requester.SeerrUnlinked) return "seerr_user_unlinked";
                             if (requester.Backend == "seerr" && requester.BackendQuota?.Available != true && job.State != "maybe_sent") return "backend_unavailable";
                             if (requester.Backend == "seerr" && (requester.SeerrUser == null || requester.SeerrSource == null)) return "backend_unavailable";
-                            // The engine turned on or off since this attempt chose its budget admission: it starts again under
-                            // the current rules rather than writing uncounted (or counted by rules no longer in effect).
-                            if (_automation != null && _automation.Budgeted(want) != (admission != null)) return AutomationHolds.EngineChanged;
-                            // A kill switch, mode change or the Shadow override between queueing and this write.
-                            if (_automation?.Hold(job, want, preTransport: false) is { } late) return late.Reason;
+                            // The write gate, read live right before this write: every automation gate (switches, engine change
+                            // since this attempt chose its budget admission, kills, mode, consent, override, eligibility,
+                            // breaker, disk). Each write's budget is admitted by the backend right after this.
+                            if (_automation?.Hold(job, want, budgetedAtStart: admission != null) is { } late) return late.Reason;
                             // A changed revision is evaluated above; it is not itself a refusal.
                             return null;
                         }

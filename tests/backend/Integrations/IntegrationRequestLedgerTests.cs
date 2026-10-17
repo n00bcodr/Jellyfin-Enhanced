@@ -23,6 +23,13 @@ public class IntegrationRequestLedgerTests
         public Func<Guid, MutationInput, RequestPolicyFacts, RequestPolicyFacts>? Adjust { get; set; }
         public Func<bool, bool?>? FourK { get; set; }
         public bool? Has4kTarget(bool movie) => FourK?.Invoke(movie);
+        /// <summary>The destination's disk facts are in memory (as <see cref="RequestPolicy.DiskKnown"/> reads them).</summary>
+        public bool DiskFacts { get; set; } = true;
+        /// <summary>Non-null: the drive the request would land on is below the low-disk threshold.</summary>
+        public RequestDiskFacts? Pause { get; set; }
+        public RequestDiskFacts? TitlePause(MutationInput input) => Pause;
+        // Like production: known when the guard is off or Seerr handles requests; else when the facts are in memory.
+        public bool DiskKnown(MutationInput input) => Configuration.ArrLowDiskPercent <= 0 || Configuration.ArrRequestBackend != "je" || DiskFacts;
         public Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct) => Task.CompletedTask;
         public Task PrepareAsync(Guid user, MutationInput input, CancellationToken ct) => Before?.Invoke(user, input) ?? Task.CompletedTask;
         /// <summary>Runs when the rating facts a person's visibility needs are loaded (tests make visibility depend on it).</summary>

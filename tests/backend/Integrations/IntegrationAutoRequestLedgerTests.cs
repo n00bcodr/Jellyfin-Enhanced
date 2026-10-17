@@ -26,7 +26,7 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class IntegrationAutoRequestLedgerTests
 {
-    private sealed class Auto : IDisposable
+    internal sealed class Auto : IDisposable
     {
         public ApiPluginFixture F { get; } = new();
         public IntegrationRequestLedgerTests.Rig R { get; } = new();
@@ -62,7 +62,7 @@ public class IntegrationAutoRequestLedgerTests
         public void Dispose() { Transport.Dispose(); R.Dispose(); F.Dispose(); }
     }
 
-    private static HttpResponseMessage? Collection(HttpRequestMessage request, int tmdbStatus = 200)
+    internal static HttpResponseMessage? Collection(HttpRequestMessage request, int tmdbStatus = 200)
         => request.RequestUri!.AbsolutePath switch
         {
             "/3/movie/123" => IntegrationTransport.Response("{\"belongs_to_collection\":{\"id\":9,\"name\":\"Saga\"}}", tmdbStatus),
@@ -70,7 +70,7 @@ public class IntegrationAutoRequestLedgerTests
             _ => null,
         };
 
-    private static Movie Watched() => new() { Id = Guid.NewGuid(), Name = "First", ProviderIds = new() { ["Tmdb"] = "123" }, RunTimeTicks = TimeSpan.FromMinutes(100).Ticks };
+    internal static Movie Watched() => new() { Id = Guid.NewGuid(), Name = "First", ProviderIds = new() { ["Tmdb"] = "123" }, RunTimeTicks = TimeSpan.FromMinutes(100).Ticks };
 
     [Theory]
     [InlineData("Member", "awaiting_approval", "pending", 0)]
@@ -201,14 +201,14 @@ public class IntegrationAutoRequestLedgerTests
     // An administrator's save: Jellyfin replaces the configuration object, so a reference taken earlier goes stale.
     private static void SaveOverride(ApiPluginFixture f, bool on) => Save(f, c => c.ArrAutomationShadowOverride = on);
 
-    private static void Save(ApiPluginFixture f, Action<Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration> change)
+    internal static void Save(ApiPluginFixture f, Action<Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration> change)
     {
         var copy = (Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration)typeof(object).GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(f.Plugin.Configuration, null)!;
         change(copy);
         f.Plugin.UpdateConfiguration(copy);
     }
 
-    private static HttpResponseMessage? SeerrShow(HttpRequestMessage request)
+    internal static HttpResponseMessage? SeerrShow(HttpRequestMessage request)
         => request.RequestUri!.AbsolutePath == "/api/v1/tv/42"
             ? IntegrationTransport.Response(JsonSerializer.Serialize(new { numberOfSeasons = 2, seasons = new object[] { new { seasonNumber = 1, episodeCount = 10, status = 5 }, new { seasonNumber = 2, episodeCount = 10, status = 1 } } }))
             : null;
@@ -433,7 +433,7 @@ public class IntegrationAutoRequestLedgerTests
         Assert.DoesNotContain(a.Urls, u => u == "POST /api/v1/request");
     }
 
-    private static (Series Series, Episode Episode, Mock<ILibraryManager> Library) Show(int episode)
+    internal static (Series Series, Episode Episode, Mock<ILibraryManager> Library) Show(int episode)
     {
         var series = new Series { Id = Guid.NewGuid(), Name = "Show", ProviderIds = new() { ["Tmdb"] = "42", ["Tvdb"] = "4242" } };
         var item = new Episode { Id = Guid.NewGuid(), Name = "Ep", SeriesId = series.Id, ParentIndexNumber = 1, IndexNumber = episode, RunTimeTicks = TimeSpan.FromMinutes(40).Ticks };
@@ -638,7 +638,7 @@ public class IntegrationAutoRequestLedgerTests
     }
 
     // The repository: above the build output, the working directory, or (build output elsewhere) this source file.
-    private static string Root([System.Runtime.CompilerServices.CallerFilePath] string here = "")
+    internal static string Root([System.Runtime.CompilerServices.CallerFilePath] string here = "")
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
@@ -650,7 +650,7 @@ public class IntegrationAutoRequestLedgerTests
         return root!.FullName;
     }
 
-    private static string Body(string source, string signature)
+    internal static string Body(string source, string signature)
     {
         var start = source.IndexOf(signature, StringComparison.Ordinal);
         Assert.True(start >= 0, signature);
