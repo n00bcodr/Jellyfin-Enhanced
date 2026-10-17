@@ -210,10 +210,18 @@ public class ListsLifecycleRestoreTests
         var created = h.Operations.Begin(owner.Id, "create-playlist", "create-1", "create", "f", now).Operation!;
         h.Operations.SetList(created.Id, g, now);
 
+        // The imported collage markers of both lists (D33 importer).
+        var legacyDir = Path.Combine(h.Store.DirectoryPath, "legacy-collages");
+        Directory.CreateDirectory(legacyDir);
+        File.WriteAllText(Path.Combine(legacyDir, g + ".json"), "{}");
+        File.WriteAllText(Path.Combine(legacyDir, o + ".json"), "{}");
+
         using var lifecycle = new ListLifecycle(new Mock<ILibraryManager>().Object, h.Store, h.Host, h.Plugin.Core.Logger, links, h.Operations, h.Events);
         Assert.True(await lifecycle.DeleteForRemovedListAsync(gone));
 
         Assert.Null(h.Store.Load(g));
+        Assert.False(File.Exists(Path.Combine(legacyDir, g + ".json")));
+        Assert.True(File.Exists(Path.Combine(legacyDir, o + ".json")));
         Assert.Empty(links.ForList(g));
         Assert.Single(links.ForList(o));
         Assert.False(h.Operations.Begin(owner.Id, g, "c", "add", "f", now).Replayed);

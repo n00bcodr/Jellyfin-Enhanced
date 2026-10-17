@@ -475,13 +475,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             try
             {
-                var dir = Path.Combine(_store.DirectoryPath, "legacy-collages");
+                // Only called for a list this run imports (the store had no document): a marker already there was left
+                // by an earlier list with the same id, so this import's marker replaces it.
+                var dir = Path.Combine(_store.DirectoryPath, ListStore.LegacyCollagesFolder);
                 Directory.CreateDirectory(dir);
-                var target = Path.Combine(dir, listIdN + ".json");
-                if (!File.Exists(target))
-                {
-                    File.Copy(source, target);
-                }
+                File.Copy(source, Path.Combine(dir, listIdN + ".json"), overwrite: true);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

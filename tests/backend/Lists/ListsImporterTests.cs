@@ -338,6 +338,26 @@ public class ListsImporterTests
     }
 
     [Fact]
+    public async Task AnImportReplacesALegacyCollageMarkerLeftByAnEarlierListWithTheSameId()
+    {
+        // Jellyfin derives a playlist's id from its folder, so a list deleted and made again under the same name gets the
+        // same id: a marker an earlier list left behind must not stand for the new list's image.
+        using var r = new Rig();
+        var list = r.H.Host.AddPlaylist(r.Owner);
+        var ids = NewIds(list.Info.Id, r.Owner);
+        r.Write(ids.List + ".json", SchemaOne(ids));
+        var marker = r.Write(ids.List + ".json", "{\"generatedBy\":\"je\",\"hash\":\"new\"}", collage: true);
+        var legacy = Path.Combine(r.StoreDir, "legacy-collages", ids.List + ".json");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacy)!);
+        File.WriteAllText(legacy, "{\"generatedBy\":\"je\",\"hash\":\"stale\"}");
+
+        var report = await r.Importer.RunAsync(apply: true, None);
+
+        Assert.True(Assert.Single(report.Imported).CollageMarker);
+        Assert.Equal(File.ReadAllBytes(marker), File.ReadAllBytes(legacy));
+    }
+
+    [Fact]
     public async Task TheStoreHasNoDefaultSchemaSoAnOtherwiseValidDocumentWithoutOneIsRefusedAndASaveWritesSchemaTwo()
     {
         using var r = new Rig();

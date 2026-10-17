@@ -95,6 +95,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>The directory holding the documents.</summary>
         public string DirectoryPath => _dir;
 
+        /// <summary>Folder (in <see cref="DirectoryPath"/>) of the collage markers the experimental-list importer copied.</summary>
+        public const string LegacyCollagesFolder = "legacy-collages";
+
         /// <summary>
         /// Raised with the list id after a document was saved or deleted (any change of a list's placeholders). Runs on
         /// the writer's thread, possibly under the list lock: handlers must only queue work and must not throw.
@@ -258,7 +261,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return doc;
         }
 
-        /// <summary>Deletes a list's document (list deleted in Jellyfin). Takes no lock; callers hold it when racing writers matter.</summary>
+        /// <summary>
+        /// Deletes a list's document (list deleted in Jellyfin) and its imported collage marker: Jellyfin gives a list
+        /// made again under the same name the same id, and an old marker must not stand for the new list's image. Takes
+        /// no lock; callers hold it when racing writers matter.
+        /// </summary>
         /// <param name="listIdN">List id.</param>
         /// <returns>True when a document existed.</returns>
         public bool Delete(string listIdN)
@@ -269,6 +276,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             if (existed)
             {
                 File.Delete(path);
+            }
+
+            var marker = Path.Combine(_dir, LegacyCollagesFolder, listIdN + ".json");
+            if (File.Exists(marker))
+            {
+                File.Delete(marker);
             }
 
             lock (_cacheLock)

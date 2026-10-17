@@ -75,7 +75,9 @@ public class ListsLifecycleTests
         f.Library.Raise(l => l.ItemRemoved += null, f.Library.Object, new ItemChangeEventArgs { Item = new Playlist { Id = playlistId } });
         f.Library.Raise(l => l.ItemRemoved += null, f.Library.Object, new ItemChangeEventArgs { Item = new BoxSet { Id = collectionId } });
         f.Library.Raise(l => l.ItemRemoved += null, f.Library.Object, new ItemChangeEventArgs { Item = new Movie { Id = Guid.NewGuid() } });
-        for (var i = 0; i < 100 && f.Store.EnumerateListIds().Count > 0; i++)
+        // The deletions run off the event thread: wait by a deadline, not a loop count (a loaded test run is slow).
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (f.Store.EnumerateListIds().Count > 0 && DateTime.UtcNow < deadline)
         {
             await Task.Delay(20);
         }
