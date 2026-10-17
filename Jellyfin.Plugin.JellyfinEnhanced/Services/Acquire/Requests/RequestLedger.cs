@@ -483,6 +483,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 RememberInput(c, t, user, request.ClientRequestId, normalized.Fingerprint, sameOwn.Id);
                 return RequestOutcome.Accepted(sameOwn.Id, sameOwn.Reason, 200) with { Message = "Your request is already recorded." };
             }
+            // An explicit household-rule deny (phase 4b) refuses every new request of the person for it, following someone
+            // else's included: the rules say this person doesn't get it. (A replay of their own earlier ask answers above.)
+            if (facts.Rules is { Verdict: HouseholdRules.Deny } denied)
+                return RequestOutcome.Refused(HouseholdRule, 403, "denied") with { Message = "The household's rules don't allow this request (" + denied.Text() + ").", Rules = denied };
             if (own.Count(w => w.Status == "pending") >= Math.Clamp(policy.Configuration.ArrRequestPendingLimit, 1, 100)) return RequestOutcome.Refused("pending_limit", 429, "quota_exceeded");
             if (own.Any(w => w.Status == "declined" && w.Input.Key == normalized.Key && w.Input.Variant == normalized.Variant &&
                 normalized.Extra(new[] { w.Input }) == null && w.UpdatedAt > now.AddDays(-Math.Clamp(policy.Configuration.ArrRequestDeclineCooldownDays, 0, 365)))) return RequestOutcome.Refused("decline_cooldown", outcome: "blocked");
@@ -502,9 +506,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 !OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold));
             if (!auto && !automation && SplitAtThreshold(c, t, user, request, normalized, facts, own, policy, now, origin) is { } split) return split;
             var extra = normalized.Extra(Coverage(c, t, covered, TargetKey(facts), !auto));
-            // An explicit household-rule deny refuses anything new to get (following scope someone already asked for is free).
-            if (extra != null && rules?.Verdict == HouseholdRules.Deny)
-                return RequestOutcome.Refused(HouseholdRule, 403, "denied") with { Message = "The household's rules don't allow this request (" + rules.Text() + ").", Rules = rules };
             if (auto && (extra != null || covered.Any(w => w.Status == "pending")) && Scalar(c, t,
                 "SELECT j.id FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w.title_key=$key AND w.variant=$v AND json_extract(j.authorization_context,'$.Backend')=$backend AND json_extract(j.authorization_context,'$.InstanceId')=$instance AND json_extract(j.authorization_context,'$.ConnectionGeneration')=$generation AND json_extract(j.authorization_context,'$.SeerrSource') IS $source AND (j.state IN ('sending','maybe_sent') OR json_extract(j.outcome,'$.certainty')='Unknown') LIMIT 1",
                 ("$key", normalized.Key), ("$v", normalized.Variant), ("$backend", facts.Backend), ("$instance", facts.InstanceId), ("$generation", facts.ConnectionGeneration), ("$source", facts.SeerrSource)) != null) return RequestOutcome.Refused("request_in_flight", 409);

@@ -226,7 +226,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     if (actions != null && (!Actions.Contains(actions.Match) || !Actions.Contains(actions.Otherwise))) return "invalid_action";
                 }
 
-                if (rules.Rating is { Active: true } rating && (string.IsNullOrWhiteSpace(rating.Max) || rating.Max.Length > 20 || rating.Max.Any(char.IsControl) || !Country.IsMatch(rating.Country ?? string.Empty))) return "invalid_rating";
+                if (rules.Rating is { Active: true } rating && (string.IsNullOrWhiteSpace(rating.Max) || rating.Max.Length > 20 || rating.Max.Any(char.IsControl) || !Country.IsMatch((rating.Country ?? string.Empty).ToUpperInvariant()))) return "invalid_rating";
                 if (rules.Genre is { } genre && (genre.Ids == null || genre.Ids.Length > 50 || genre.Ids.Any(id => !Genres.ContainsKey(id)) || (genre.Active && genre.Ids.Length == 0))) return "invalid_genre";
                 if (rules.Language is { } language && (language.Codes == null || language.Codes.Length > 50 || language.Codes.Any(c => c == null || !Language.IsMatch(c)) || (language.Active && language.Codes.Length == 0))) return "invalid_language";
                 if (rules.Size is { Active: true } size && (double.IsNaN(size.MaxGb) || size.MaxGb < 0.1 || size.MaxGb > 100000)) return "invalid_size";

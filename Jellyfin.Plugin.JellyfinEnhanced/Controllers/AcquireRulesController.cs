@@ -139,6 +139,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 estimateGb = Math.Round(p.EstimatedGb, 1),
                 follows = p.Follower,
                 already = p.Outcome.HttpStatus < 400 && !p.New,
+                // An ask split at the series threshold: the seasons that would wait for an OK as their own request.
+                heldSeasons = p.Outcome.HeldSeasons,
                 rules = p.Outcome.Rules,
             }).ToArray();
             var quota = Service.Quota(viewer.UserId);
@@ -154,7 +156,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 summary = new
                 {
                     now = items.Count(x => x.status is "queued" or "sent"),
-                    needOk = items.Count(x => x.status == "pending"),
+                    // A split ask goes ahead for some seasons and waits for an OK for the rest: it counts in both.
+                    needOk = items.Count(x => x.status == "pending" || x.heldSeasons != null),
                     refused = items.Count(x => x.status == null),
                     cost = items.Where(x => x.status != null).Sum(x => x.cost),
                     quota = new { used = quota.Used, limit = quota.Limit, remaining = quota.Remaining, nextSlotAt = quota.NextSlotAt },

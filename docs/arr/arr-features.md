@@ -1071,6 +1071,10 @@ lists requests made through Jellyfin Enhanced.
 | GET | `acquire/requests/attention` | Manager or Admin; `needOk` and `stuck` counts for visible titles (no network) |
 | GET | `acquire/household` | Manager (people sharing a library) or Admin (everyone, overrides and house rules) |
 | POST | `acquire/household` | Jellyfin administrator; saves roles, per-person limits, role limits, the preset and the default role |
+| GET | `acquire/household/rules` | Jellyfin administrator, household rules on (phase 4); Seerr mode: Seerr's own rules, read-only |
+| POST | `acquire/household/rules` | Jellyfin administrator; saves conditions, streaming settings and group pools (Jellyfin Enhanced handling only) |
+| GET | `acquire/household/streaming-services` | Jellyfin administrator; TMDB's streaming services for a country |
+| POST | `acquire/requests/preview` | Anyone who may ask (phase 4): what a batch of up to 20 asks would do, nothing written |
 
 The household save body names only what changes, for example
 `{"preset":"ask_first","users":{"<user id>":{"role":"Kid","quotaLimit":3}},"roles":{"Member":{"quotaLimit":7}}}`.

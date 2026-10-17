@@ -424,6 +424,16 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   administrators' status and the request backend's admission contract. Routes in **`Controllers/ArrAdminAutomationController.cs`**;
   the Requests page card in **`js/arr/admin/admin-automation.js`**.
 
+* **`/Services/Acquire/Requests/` (phase 4b household rules)**: `HouseholdFlags.cs` the switches as every route and
+  worker reads them; `HouseholdRules.cs` the fixed conditions per role (rating, genre, original language, size estimate,
+  streaming service), their validation and the verdict with its precedence (deny, look, approve, preset); `RuleFacts.cs`
+  the title facts they read from TMDB through the shared cache (bounded memory cache, failed reads retried soon);
+  `GroupQuotaPolicy.cs` group pools and who draws on which; `HouseholdTrust.cs` the Trusted role behind the automation
+  engine's trust seam; `HouseholdRulesService.cs` the administrators' rules editor (and Seerr's own rules, read-only, in
+  Seerr mode). The ledger keeps each want's verdict (schema 4 `rule_detail`) and binds each reservation to its pool
+  (`pool_id`); `RequestLedger.PreviewBatch` previews a run of asks in one rolled-back transaction. Routes in
+  **`Controllers/AcquireRulesController.cs`** (rules editor, streaming services, batch preview).
+
 * **`/Services/Acquire/Requests/`**: Durable request server core. `RequestModels.cs` contains normalized scopes, outcomes
   and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility; `RequestLedger.cs`
   commits intent, reservations, approvals, events and outbox jobs in acquire.db (schema 3 adds each want's server-built
