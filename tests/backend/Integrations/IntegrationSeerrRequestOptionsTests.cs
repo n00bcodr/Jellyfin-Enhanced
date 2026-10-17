@@ -531,6 +531,46 @@ public class IntegrationSeerrRequestOptionsTests
     }
 
     [Fact]
+    public async Task ANewSeasonHeldForChangedServerFactsGoesOutWhenAnAdministratorChoosesTheSameDestinationAgain()
+    {
+        using var rig = new Rig();
+        AnimeRoot(rig.Fake);
+        static JsonObject Season(int n, string aired) => new() { ["seasonNumber"] = n, ["episodeCount"] = 8, ["airDate"] = aired };
+        rig.Fake.Shows[1731] = new JsonObject { ["id"] = 1731, ["seasons"] = new JsonArray(Season(1, "2020-01-01"), Season(2, "2027-03-01")) };
+        var choice = new MutationInput { Key = "tv:tmdb:1731", Scope = "future", Seasons = new[] { 1 }, SeerrServerId = 0, SeerrProfileId = 4, SeerrRootFolder = "/tv-anime", SeerrOptions = await rig.Stamp(0, movie: false) };
+        var keep = await rig.Ask(rig.Admin, choice);
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal("sent", rig.Ledger.Find(keep.RequestId!)!.Status);
+        // Seerr's Sonarr gets another root folder, then season 2 starts: its request is held (the stamp changed).
+        AnimeRoot(rig.Fake, "/tv-kids");
+        rig.Lab.Now = rig.Lab.Now.AddMinutes(2);
+        rig.Fake.Shows[1731]["seasons"]!.AsArray()[1]!["airDate"] = "2026-10-01";
+        var follow = new FutureSeasonCharges(rig.Lab.Arr.Store, rig.Ledger, rig.Policy, rig.Lab.Arr.Arr.Factory, new ArrChangeFeed(), null, null, () => rig.Lab.Now, rig.Seerr, rig.Lab.Model, new RequestOutboxSignal());
+        Assert.Equal(1, await follow.FollowSeerrAsync(default));
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal(("pending", "seerr_options_changed"), (rig.Ledger.Find(keep.RequestId!)!.Status, rig.Ledger.Find(keep.RequestId!)!.Reason));
+
+        // Approving it as it is would send the old choice: refused with the reason, nothing sent.
+        Assert.Equal(("seerr_options_changed", 409), ((await rig.Service.ApproveAsync(keep.RequestId!, rig.Admin.UserId, null, default)).Reason, (await rig.Service.ApproveAsync(keep.RequestId!, rig.Admin.UserId, null, default)).HttpStatus));
+        // Another root folder can't be chosen for a request that already went out somewhere.
+        var fresh = await rig.Stamp(0, movie: false);
+        Assert.Equal("request_changed", (await rig.Service.ApproveAsync(keep.RequestId!, rig.Admin.UserId, new ApproveRequest(choice with { SeerrRootFolder = "/tv-kids", SeerrOptions = fresh }), default)).Reason);
+        Assert.Single(rig.Fake.Posts);
+        // The same server, profile and root folder chosen again against Seerr's current facts: season 2 goes there, with
+        // the new stamp, and season 1 (already sent) isn't asked for again.
+        var approved = await rig.Service.ApproveAsync(keep.RequestId!, rig.Admin.UserId, new ApproveRequest(choice with { SeerrOptions = fresh }), default);
+        Assert.True(approved.HttpStatus == 200, approved.Reason + ": " + approved.Message);
+        var season2 = Assert.Single(rig.Ledger.ForWant(keep.RequestId!), j => j.State == "queued");
+        Assert.Equal(("2", "/tv-anime", fresh), (string.Join(",", season2.Input.Seasons), season2.Input.SeerrRootFolder, season2.Input.SeerrOptions));
+        Assert.Equal(fresh, rig.Ledger.Find(keep.RequestId!)!.Input.SeerrOptions);
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal(2, rig.Fake.Posts.Count);
+        var post = rig.Fake.Posts.Last().Body;
+        Assert.Equal(("2", "/tv-anime"), (string.Join(",", post["seasons"]!.AsArray().Select(n => (int)n!)), (string)post["rootFolder"]!));
+        Assert.Equal("sent", rig.Ledger.Find(keep.RequestId!)!.Status);
+    }
+
+    [Fact]
     public async Task ARequestSeerrStoredWithOtherOptionsIsNotAMatchAndIsNeverSentAgain()
     {
         using var rig = new Rig();

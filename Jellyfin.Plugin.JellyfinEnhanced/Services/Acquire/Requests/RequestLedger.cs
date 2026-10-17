@@ -767,13 +767,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent') OR (state<>'parked' AND json_extract(outcome,'$.certainty')='Unknown')) LIMIT 1", ("$id", id)) != null) return RequestOutcome.Refused("request_in_flight", 409);
             var held = Jobs(c, t, "want_id=$id AND state='parked' AND json_extract(outcome,'$.certainty')='Unknown'", ("$id", id));
             var targetChanged = TargetKey(requester) != want.TargetKey;
+            // The same Seerr server, profile and root folder chosen again against Seerr's current facts (only the options
+            // stamp differs): the same request, re-confirmed rather than edited.
+            var restamp = edits != null && want.Input.HasSeerrOptions && input.SeerrOptions != want.Input.SeerrOptions
+                && (input with { SeerrOptions = want.Input.SeerrOptions }).Fingerprint == want.Input.Fingerprint;
             // The written part stays where it went: such a request resumes as it was, never edited or moved elsewhere.
             if (held.Count > 0 && (!resumeHeld || targetChanged || held.Any(j => TargetKey(j.Authorization) != TargetKey(requester)) || (edits != null && input.Fingerprint != want.Input.Fingerprint)))
                 return RequestOutcome.Refused("request_in_flight", 409);
             if (targetChanged)
                 foreach (var old in Jobs(c, t, "want_id=$id AND state IN ('queued','retry') AND " + KnownUnsent, ("$id", id)).Where(j => TargetKey(j.Authorization) != TargetKey(requester)))
                     Supersede(c, t, old.Id, "instance_changed");
-            if (edits != null && input.Fingerprint != want.Input.Fingerprint)
+            if (restamp)
+            {
+                // Its jobs at that destination carry the new stamp (Seerr is only ever sent the server, profile and root
+                // folder): what went out stays covered, and held new seasons and queued work go out with the new stamp.
+                foreach (var job in Jobs(c, t, "want_id=$id", ("$id", id)).Where(j => j.Input.HasSeerrOptions && j.Input.SameSeerrDestination(want.Input)))
+                {
+                    var moved = job.Input with { SeerrOptions = input.SeerrOptions };
+                    Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$j", ("$input", moved.Canonical), ("$f", moved.Fingerprint), ("$j", job.Id));
+                }
+            }
+            else if (edits != null && input.Fingerprint != want.Input.Fingerprint)
             {
                 var succeeded = Jobs(c, t, "want_id=$id AND state='succeeded'", ("$id", id));
                 if (succeeded.Any(j => TargetKey(j.Authorization) != TargetKey(requester) || RoutingChanged(input, want.Input) || j.Input.Extra(new[] { input }) != null))
@@ -783,7 +797,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             // A "keep getting new episodes" request held while a new season it follows was being sent (over Seerr's quota,
             // say): approving sends that season again, with this approval's authority (its charge stays as it was).
-            var followed = edits == null && !targetChanged
+            var followed = (edits == null || restamp) && !targetChanged
                 ? HeldFollows(c, t, want).Select(j => j.Input).DistinctBy(i => i.Fingerprint).ToArray()
                 : Array.Empty<MutationInput>();
             foreach (var parked in Jobs(c, t, "want_id=$id AND state='parked' AND " + KnownUnsent, ("$id", id)))
