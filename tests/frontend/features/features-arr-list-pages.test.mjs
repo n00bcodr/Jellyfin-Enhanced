@@ -525,7 +525,7 @@ test('the collection section follows the server order (release date, TBA last), 
   assert.equal(page.querySelector('.je-list-section'), null, 'and the section went at once');
 });
 
-test('the Playlists grid asks once for 170 cards, marks incomplete lists instead of the played check, and re-decorates a re-used card', async t => {
+test('the Playlists grid asks about 170 cards in two calls (the first cards first), marks incomplete lists instead of the played check, and re-decorates a re-used card', async t => {
   const ids = Array.from({ length: 170 }, (_, i) => ITEM(0x1000 + i));
   const asked = [];
   const h = setup(t, {
@@ -538,9 +538,12 @@ test('the Playlists grid asks once for 170 cards, marks incomplete lists instead
   h.document.body.appendChild(grid);
   h.window.location.hash = '#/list?parentId=x';
   await h.start();
-  await h.settle(200);
-  assert.equal(asked.length, 1);
-  assert.equal(asked[0].length, 170);
+  for (let i = 0; i < 100 && !(asked.length === 2 && grid.querySelector('.card').classList.contains('je-list-incomplete')); i++) await sleep(20);
+  await h.settle(60);
+  // The cards seen first are asked about alone (marked quickly), then the rest in one call.
+  assert.equal(asked.length, 2);
+  assert.equal(asked[0].length, 24);
+  assert.equal(asked[1].length, 146);
   const cards = [...grid.querySelectorAll('.card')];
   assert.ok(cards[0].classList.contains('je-list-incomplete'));
   assert.equal(cards[0].querySelector('.je-list-grid-indicator').getAttribute('aria-label'), '3 titles not in your library');
@@ -551,7 +554,7 @@ test('the Playlists grid asks once for 170 cards, marks incomplete lists instead
   h.bodySubs.get('arr-list-grid')([{ addedNodes: [cards[0]] }]);
   await h.settle(200);
   assert.ok(!cards[0].classList.contains('je-list-incomplete'));
-  assert.equal(asked.length, 1);
+  assert.equal(asked.length, 2);
   // Opting out removes every mark.
   h.JE.currentSettings.listPlaylistUi = false;
   h.JE.arrListPages.settingsChanged();

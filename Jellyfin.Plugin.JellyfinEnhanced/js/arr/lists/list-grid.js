@@ -20,6 +20,8 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Lists:';
 
     const MAX_IDS = 200;
+    /** The first call of a page asks about the cards seen first only, so they are marked quickly (the rest follow). */
+    const FIRST_IDS = 24;
     const BATCH_MS = 120;
     const TTL_MS = 60000;
     const PENDING_RETRY_MS = 4000;
@@ -127,7 +129,7 @@
     async function flush() {
         timer = null;
         if (!queue.size) return;
-        const ids = [...queue].slice(0, MAX_IDS);
+        const ids = [...queue].slice(0, known.size === 0 && inflight.size === 0 ? FIRST_IDS : MAX_IDS);
         ids.forEach((id) => { queue.delete(id); inflight.add(id); });
         if (queue.size) timer = setTimeout(flush, BATCH_MS);
         const started = generation;
