@@ -174,4 +174,31 @@ public class ListsRequestRoutesTests
         Assert.True(applied.Applied);
         Assert.Equal("import", r.H.Store.Load(id)!.Reconcile);
     }
+
+    [Fact]
+    public async Task AShareRevokedWhileTheAsksWentInKeepsTheirResultsButAnswersWithoutTheList()
+    {
+        using var r = new Rig();
+        var list = r.R.ListIdN;
+        // The playlist is public while the confirmation is checked, then made private while the first entry is asked for.
+        r.R.Policy.Before = (_, _) =>
+        {
+            r.R.Playlist.Info = r.R.Playlist.Info with { OpenAccess = false };
+            return Task.CompletedTask;
+        };
+
+        var asked = Body<ListRequestSubmitDto>(await r.As(r.Member).SubmitRequests(list, Submit("c-revoked", r.First.Id), None));
+
+        // The ask that went in is kept and answered; the list's current contents are not.
+        var outcome = Assert.IsType<Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestOutcome>(Assert.Single(asked.Results).Result);
+        Assert.Equal(201, outcome.HttpStatus);
+        Assert.Null(asked.View);
+        Assert.Equal(1, r.R.Rows("wants"));
+
+        // With the share still there, the answer carries the view.
+        r.R.Policy.Before = null;
+        r.R.Playlist.Info = r.R.Playlist.Info with { OpenAccess = true };
+        var again = Body<ListRequestSubmitDto>(await r.As(r.Member).SubmitRequests(list, Submit("c-kept", r.Second.Id), None));
+        Assert.NotNull(again.View);
+    }
 }
