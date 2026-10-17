@@ -206,6 +206,31 @@ public class ApiSeerrTests
     }
 
     [Theory]
+    [InlineData(404, true)]
+    [InlineData(500, false)]
+    public async Task ASeriesRottenTomatoesDoesNotKnowHasNoRatingsRatherThanAFailedRequest(int status, bool none)
+    {
+        using var f = new SeerrFixture();
+        f.Reply = request => request.RequestUri!.AbsolutePath == "/api/v1/tv/1849/ratings"
+            ? IntegrationTransport.Response("{\"message\":\"Rotten Tomatoes ratings not found.\"}", status)
+            : IntegrationTransport.Response("{}");
+        var result = await f.Controller.GetTvRatingsCombined(1849);
+        if (none)
+        {
+            var content = Assert.IsType<ContentResult>(result);
+            Assert.Equal("null", content.Content);
+            Assert.Equal("application/json", content.ContentType);
+        }
+        else
+        {
+            Assert.Equal(status, Assert.IsType<ObjectResult>(result).StatusCode);
+        }
+
+        f.Reply = _ => IntegrationTransport.Response("{\"criticsScore\":96}");
+        Assert.Contains("96", Assert.IsType<ContentResult>(await f.Controller.GetTvRatingsCombined(83867)).Content, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData(403)]
     [InlineData(409)]
     [InlineData(429)]

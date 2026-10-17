@@ -185,11 +185,14 @@ public class ApiNativeDetailsTests
         public Task<SourceAnswer> MovieAsync(int tmdb, Guid viewer, CancellationToken ct) => PagesBusy ? Task.FromResult(SourceAnswer.Throttled) : MovieAsync(tmdb, ct);
         public Task<SourceAnswer> SeriesAsync(int tmdb, Guid viewer, CancellationToken ct) => PagesBusy ? Task.FromResult(SourceAnswer.Throttled) : SeriesAsync(tmdb, ct);
         public List<string> RatingCalls { get; } = new();
+        /// <summary>The source knows no ratings for any title (Seerr's 404 for a series Rotten Tomatoes doesn't know).</summary>
+        public bool NoRatings { get; set; }
         public Task<SourceAnswer> RatingsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct)
         {
             Calls++;
             RatingCalls.Add((movie ? "movie:" : "tv:") + tmdb.ToString(System.Globalization.CultureInfo.InvariantCulture));
             if (Busy) return Task.FromResult(SourceAnswer.Throttled);
+            if (NoRatings) return Task.FromResult(Answer(false, "{}"));
             return Task.FromResult(Answer(movie ? tmdb == 693134 : tmdb == 83867, movie ? """{"rt":{"criticsScore":92},"imdb":{"criticsScore":8.5}}""" : """{"criticsScore":96}"""));
         }
 
@@ -2042,6 +2045,12 @@ public class ApiNativeDetailsTests
         // Unknown, invalid, busy and down answer like the other feeds.
         Assert.Equal(FeedOutcome.NotFound, (await rig.Feeds.TitleAsync(unlinked, true, 77, CancellationToken.None)).Outcome);
         Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.TitleAsync(unlinked, true, 0, CancellationToken.None)).Outcome);
+        // A known title without ratings is an empty answer (no 404 for the page to log), not "no such title".
+        rig.Source.NoRatings = true;
+        var none = await rig.Feeds.RatingsAsync(unlinked, false, 83867, CancellationToken.None);
+        Assert.Equal(FeedOutcome.Ok, none.Outcome);
+        Assert.Equal("null", none.Json);
+        rig.Source.NoRatings = false;
         rig.Source.Busy = true;
         Assert.Equal(FeedOutcome.Busy, (await rig.Feeds.RatingsAsync(unlinked, true, 693134, CancellationToken.None)).Outcome);
         rig.Source.Busy = false;

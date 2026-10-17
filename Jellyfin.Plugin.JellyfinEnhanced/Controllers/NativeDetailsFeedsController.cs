@@ -90,7 +90,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Answer(await _feeds.TitleAsync(viewer, type == "movie", tmdbId, ct).ConfigureAwait(false));
         }
 
-        /// <summary>A title's ratings for its native page, under <see cref="Title"/>'s rule, admitted like <see cref="Filmography"/>.</summary>
+        /// <summary>A title's ratings for its native page, under <see cref="Title"/>'s rule, admitted like <see cref="Filmography"/>; <c>null</c> when the title has none.</summary>
         /// <param name="type">movie or tv.</param>
         /// <param name="tmdbId">TMDB id.</param>
         /// <param name="ct">Cancellation.</param>

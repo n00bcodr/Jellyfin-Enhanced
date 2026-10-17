@@ -2506,11 +2506,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/recommendations?page={page}", HttpMethod.Get);
         }
 
+        /// <summary>A series' Rotten Tomatoes ratings; <c>null</c> when it has none.</summary>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <returns>The ratings, null, or the proxy's error.</returns>
         [HttpGet("jellyseerr/tv/{tmdbId}/ratings")]
         [Authorize]
-        public Task<IActionResult> GetTvRatingsCombined(int tmdbId)
+        public async Task<IActionResult> GetTvRatingsCombined(int tmdbId)
         {
-            return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/ratings", HttpMethod.Get);
+            var result = await ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/ratings", HttpMethod.Get).ConfigureAwait(false);
+            // Seerr answers 404 when Rotten Tomatoes doesn't know a series: no ratings, which is an answer
+            // (the page would otherwise log a failed request for every such series).
+            return result is ObjectResult { StatusCode: 404 } ? Content("null", "application/json") : result;
         }
 
         [HttpGet("jellyseerr/discover/tv/network/{networkId}")]
