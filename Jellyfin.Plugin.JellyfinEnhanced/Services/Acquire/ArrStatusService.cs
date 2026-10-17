@@ -306,7 +306,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var title = key.Title;
             var gather = await GatherAsync(viewer, new[] { title }, loadEpisodes: title.IsMovie ? null : new[] { title }, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
             var request = _requests.ForPart(title, fourK, seasons, episodes, viewer);
-            var scope = new RequestScope(seasons, fourK, request, Episodes: episodes);
+            // Seerr's word on that edition being available, composed as the Requests page composes its row (with no 4K
+            // instance in Jellyfin Enhanced it is all there is to go by for a 4K copy).
+            var availability = _requests.AvailabilityForPart(title, fourK, seasons, episodes, viewer);
+            var scope = new RequestScope(seasons, fourK, request, availability?.Available == true, availability?.AvailableAt, availability?.JellyfinItemId, episodes);
             var cacheKey = CacheKey(viewer, "part", title + "@" + scope + "|" + (request == null ? string.Empty : JsonSerializer.Serialize(request)), gather.Revision);
             if (Cache.Get(cacheKey) is { } hit) return hit;
             var composed = Compose(viewer, gather, title, detail: false, scope);

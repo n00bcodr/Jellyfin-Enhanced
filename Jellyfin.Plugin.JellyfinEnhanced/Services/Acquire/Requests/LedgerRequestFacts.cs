@@ -149,6 +149,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return FactsOf(Wants(titleKey).Where(Covers), viewer.UserId, () => _ledger.Dispatches(Canonical(titleKey)));
         }
 
+        /// <inheritdoc />
+        /// <remarks>Seerr mode: Seerr's word (as the Requests page reads it); Jellyfin Enhanced mode judges by the arrs (null).</remarks>
+        public PartAvailability? AvailabilityForPart(TitleKey titleKey, bool fourK, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, StatusViewer viewer)
+            => Direct ? null : _seerr.AvailabilityForPart(titleKey, fourK, seasons, episodes, viewer);
+
         private RequestFacts? HeldFacts(TitleKey key, IEnumerable<RequestWant> held, StatusViewer viewer)
         {
             var list = held as IReadOnlyCollection<RequestWant> ?? held.ToList();

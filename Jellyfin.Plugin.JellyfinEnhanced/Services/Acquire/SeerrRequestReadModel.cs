@@ -430,6 +430,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return FactsOf(ForTitle(titleKey).Where(r => r.Is4k == fourK && (r.IsMovie || parts.Count == 0 || r.Seasons.Count == 0 || r.Seasons.Any(parts.Contains))).ToList(), viewer.UserId);
         }
 
+        /// <inheritdoc />
+        /// <remarks>That edition's requests naming any of the part's seasons (as <see cref="ForPart"/>), composed as the Requests page composes a row.</remarks>
+        public PartAvailability? AvailabilityForPart(TitleKey titleKey, bool fourK, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, StatusViewer viewer)
+        {
+            var parts = seasons.Concat(episodes.Select(e => e.Season)).ToHashSet();
+            var records = ForTitle(titleKey).Where(r => r.Is4k == fourK && (r.IsMovie || parts.Count == 0 || r.Seasons.Count == 0 || r.Seasons.Any(parts.Contains))).ToList();
+            return records.Count == 0 ? null : AvailabilityOf(records);
+        }
+
+        /// <summary>
+        /// Seerr's word on the edition some requests for one title asked for (the Requests page's row and a list entry
+        /// share it): available when an active request's media is available in that edition, since its last change, and
+        /// for a 4K-only ask the Jellyfin item Seerr matched the 4K copy to (a hint for Play, used only when the viewer can
+        /// open it).
+        /// </summary>
+        /// <param name="records">Requests for one title (not empty).</param>
+        /// <returns>The availability.</returns>
+        internal static PartAvailability AvailabilityOf(IReadOnlyList<SeerrRequestRecord> records)
+        {
+            var asked = records.Where(r => r.Active).DefaultIfEmpty(records[0]).ToList();
+            var only4k = asked.All(r => r.Is4k);
+            var available = asked.Where(r => r.Active && r.MediaStatus == 5).ToList();
+            return new PartAvailability(
+                available.Count > 0,
+                available.Select(r => r.UpdatedAt ?? r.CreatedAt).Where(d => d.HasValue).DefaultIfEmpty(null).Max(),
+                only4k ? asked.OrderByDescending(r => r.UpdatedAt ?? r.CreatedAt).Select(r => r.JellyfinItemId).FirstOrDefault(id => id.HasValue) : null);
+        }
+
         /// <summary>The request facts of some requests (one title's, or the part of it one person asked for), as <paramref name="userId"/> sees them; null when there are none.</summary>
         internal static RequestFacts? FactsOf(IReadOnlyList<SeerrRequestRecord> requests, Guid userId)
         {
