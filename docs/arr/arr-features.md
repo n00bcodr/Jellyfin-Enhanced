@@ -255,7 +255,8 @@ rest" (its seasons and episodes say which parts are missing).
   (and the request controls of a series, and the *Missing* line of a season): when requests already sent every
   episode there that is missing for a long while, Sonarr searches again for exactly those (at most 50 at a time,
   leaving out the specials of a whole series, episodes already here, and ones Jellyfin hides from that person), in
-  one search; this works for a series that isn't in the library yet too. Only the standard copy the request went to
+  one search; with more than 50, the next press searches the next ones nobody searched yet, not the same first 50
+  again. This works for a series that isn't in the library yet too. Only the standard copy the request went to
   is searched (never a 4K copy; a request sent before that instance's address or API key changed still counts), and with Seerr handling requests only once Seerr has OK'd the request (a request
   still waiting for an OK in Seerr is asked for as usual instead). It says what happened the same way (*Found a copy
   — downloading*, *Nothing found yet · searched just now*). The household gets one such search per episode or movie

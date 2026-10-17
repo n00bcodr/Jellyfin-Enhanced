@@ -19,7 +19,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// </summary>
     public sealed class RequestSearchService
     {
-        /// <summary>The most episodes one Search of a series or season searches (one EpisodeSearch command).</summary>
+        /// <summary>
+        /// The most episodes one Search of a series or season searches (one EpisodeSearch command): the first ones nobody
+        /// searched in this "still looking" period, so the next press searches the next ones.
+        /// </summary>
         internal const int MaxEpisodes = 50;
 
         /// <summary>Above this many remembered searches, spent ones (older than the longest looking period) are dropped.</summary>
@@ -42,14 +45,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>
         /// Searches again for <paramref name="key"/> (a movie key, or a series key: alone, with a season, or with a
         /// season and an episode) as <paramref name="viewer"/>. A series or season searches its standard copy's
-        /// monitored, aired episodes that are missing for a long while (not here yet, and not hidden from the viewer), at most
-        /// <see cref="MaxEpisodes"/>, in one EpisodeSearch, when requests already sent every one of them; of those, only
-        /// the ones nobody searched in this "still looking" period. Not this route's to do (outcome <c>skipped</c>, 200,
+        /// monitored, aired episodes that are missing for a long while (not here yet, and not hidden from the viewer) and
+        /// that nobody searched in this "still looking" period, the first <see cref="MaxEpisodes"/> of them in episode
+        /// order, in one EpisodeSearch, when requests already sent every one of them (a longer series gets its next ones
+        /// on the next press). Not this route's to do (outcome <c>skipped</c>, 200,
         /// nothing searched; the caller asks instead): <c>not_requested</c> (nothing was sent for it yet)
         /// and <c>not_searchable</c> (not missing for long enough, or nothing to search). Refusals:
         /// <c>invalid_input</c> (400), the request policy's own (not visible, no requests, <c>low_disk</c> when the
         /// drive of the title's own folder is below the low-disk threshold: the download couldn't be imported, ...),
-        /// <c>searched_recently</c> (429) and <c>search_failed</c> (502).
+        /// <c>searched_recently</c> (429: every part in scope was searched in this period) and <c>search_failed</c> (502).
         /// </summary>
         /// <param name="viewer">The caller (a person).</param>
         /// <param name="key">Title key in scope.</param>
@@ -63,8 +67,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 64)
                 return (RequestOutcome.Refused("invalid_input", 400), null);
             var many = !scope.IsMovie && scope.Episode == null;
-            // A series or season: exactly its episodes missing for a long while, per standard copy.
-            var candidates = many ? await _manage.Status.SearchableEpisodesAsync(viewer, scope, MaxEpisodes, ct).ConfigureAwait(false) : null;
+            var hours = Math.Clamp(_requests.Policy.Configuration.ArrStatusLookingHours, 1, 720);
+            var now = _now();
+            // Search slots are kept under the title's canonical key, whichever id the page used.
+            var title = _requests.CanonicalTitle(scope.Title);
+            // A series or season: exactly its episodes missing for a long while, per standard copy, the first ones nobody
+            // searched in this period (a peek: the claims below still decide), so a long series doesn't get the same
+            // first MaxEpisodes searched on every press while the rest never are.
+            var candidates = many
+                ? await _manage.Status.SearchableEpisodesAsync(viewer, scope, MaxEpisodes, (s, e) => Searched(title.WithEpisode(s, e).ToString(), now, hours), ct).ConfigureAwait(false)
+                : null;
             if (candidates is { Count: 0 })
                 return (Skipped("not_searchable", "Still looking for it; nothing to search for yet."), null);
             MutationInput? Input(ArrStatusService.SearchableEpisodes? part) => _requests.NormalizeInput(scope.IsMovie
@@ -104,12 +116,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (instanceId == null)
                 return (Skipped("not_searchable", "Still looking for it; nothing to search for yet."), null);
 
-            var hours = Math.Clamp(_requests.Policy.Configuration.ArrStatusLookingHours, 1, 720);
-            var now = _now();
             // One search per part (the movie, or each episode, under the title's canonical key whichever id the page
             // used) per "still looking" period, for the whole household, two presses at once included: a series or
             // season searches only its episodes nobody searched in that period, and is refused when that leaves none.
-            var title = TitleKey.Parse(input.Key)!;
             var parts = part != null
                 ? part.Episodes.Select(e => (Slot: title.WithEpisode(e.Season, e.Episode).ToString(), Id: (int?)e.Id)).ToList()
                 : new List<(string Slot, int? Id)> { ((scope.IsMovie ? title : title.WithEpisode(scope.Season!.Value, scope.Episode!.Value)).ToString(), null) };
@@ -130,6 +139,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             foreach (var p in claimed) _last.TryRemove(new KeyValuePair<string, DateTimeOffset>(p.Slot, now));
             return (RequestOutcome.Refused("search_failed", 502, "unavailable") with { Message = "Couldn't search right now. Try again later." }, null);
         }
+
+        /// <summary>Whether a part was searched within this "still looking" period (a peek; <see cref="Claim"/> decides).</summary>
+        private bool Searched(string slot, DateTimeOffset now, int hours)
+            => _last.TryGetValue(slot, out var at) && now - at < TimeSpan.FromHours(hours);
 
         /// <summary>Takes a part's search slot for this "still looking" period; false when it was searched within it.</summary>
         private bool Claim(string slot, DateTimeOffset now, int hours)

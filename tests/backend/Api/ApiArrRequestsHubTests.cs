@@ -1538,6 +1538,64 @@ public class ApiArrRequestsHubTests
     }
 
     [Fact]
+    public async Task FamilySearchOfALongSeriesSearchesTheNextEpisodesNobodySearchedYetNotTheSameFirstOnes()
+    {
+        // Breaking Bad in Sonarr (not in Jellyfin yet): 65 episodes of season 1, monitored, out for years, nothing
+        // grabbed. One Search covers at most RequestSearchService.MaxEpisodes (50) of them.
+        var ids = Enumerable.Range(1, 65).Select(e => 2000 + e).ToArray();
+        using var rig = await Ready(r =>
+        {
+            r.Sonarr.Series.Add(FakeArr.SeriesRow(2, 81189, "Breaking Bad"));
+            foreach (var e in Enumerable.Range(1, 65))
+                r.Sonarr.Episodes.Add(new JsonObject { ["id"] = 2000 + e, ["seriesId"] = 2, ["seasonNumber"] = 1, ["episodeNumber"] = e, ["airDateUtc"] = "2008-01-20T00:00:00Z", ["hasFile"] = false, ["monitored"] = true });
+        });
+        rig.Arr.Plugin.Plugin.Configuration.ArrPhase3Enabled = true;
+        rig.Arr.Plugin.Plugin.Configuration.ArrStatusLookingHours = 24;
+        rig.Sonarr.CommandStarted = rig.Arr.Now.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
+        var policy = new IntegrationRequestLedgerTests.Policy();
+        policy.People[rig.Emma.UserId] = new(rig.Emma.UserId, "Member", true, false, false, true, "r1", "je", "", "", 7, 7, 0, "null");
+        using var db = new AcquireDatabase(Path.Combine(rig.Arr.Plugin.Core.Root, "family-search-long.db"));
+        var ledger = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(db);
+        var requests = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService(ledger, policy, rig.View, rig.Feed, () => rig.Arr.Now);
+        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, rig.Manage, () => rig.Arr.Now);
+        async Task<(int Status, JsonElement Body)> Press(string key, string idem)
+        {
+            var c = new AcquireRequestsController(requests, null, search) { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
+            c.HttpContext.User = TestCallers.Principal(rig.Emma.UserId, false);
+            var reply = await Send(c, () => c.Search(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchBody(key, idem), default));
+            return (reply.Status, Root(reply));
+        }
+        static (int, string?, string?) Said((int Status, JsonElement Body) r) => (r.Status, r.Body.GetProperty("outcome").GetString(), r.Body.GetProperty("reason").GetString());
+        List<int[]> Searched() => rig.Sonarr.Writes.Where(w => w.Path == "/api/v3/command").Select(w => JsonNode.Parse(w.Body)!)
+            .Where(c => (string?)c["name"] == "EpisodeSearch").Select(c => c["episodeIds"]!.AsArray().Select(i => (int)i!).ToArray()).ToList();
+        const string Series = "tv:tvdb:81189";
+
+        // Emma's ask for season 1 goes out.
+        var input = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput { Key = Series, Scope = "seasons", Seasons = new[] { 1 } };
+        Assert.Equal(201, (await requests.CreateAsync(rig.Emma.UserId, new("ask-bb-long", input), default)).HttpStatus);
+        await new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestOutbox(ledger, policy, new IntegrationRequestLedgerTests.Backend(),
+            new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestTitleLocks(), rig.Feed, rig.Audit, () => rig.Arr.Now).TickAsync(default);
+        Assert.Equal("sent", ledger.List(rig.Emma.UserId, false).Single().Status);
+
+        // The first Search: the first 50 episodes.
+        Assert.Equal((200, "accepted", "searched"), Said(await Press(Series, "l1")));
+        Assert.Equal(ids.Take(50).ToArray(), Assert.Single(Searched()));
+        // The next press in the same period: the 15 nobody searched yet, not the same 50 again (a season too).
+        Assert.Equal((200, "accepted", "searched"), Said(await Press(Series, "l2")));
+        Assert.Equal(ids.Skip(50).ToArray(), Searched().Last());
+        // Now every one of them was searched a little while ago.
+        foreach (var key in new[] { Series, Series + ":s1" })
+            Assert.Equal((429, "blocked", "searched_recently"), Said(await Press(key, "l3" + key)));
+        Assert.Equal(2, Searched().Count);
+        Assert.Single(ledger.List(rig.Emma.UserId, false));
+
+        // The next looking period: the first 50 again.
+        rig.Arr.Now += TimeSpan.FromHours(25);
+        Assert.Equal((200, "accepted", "searched"), Said(await Press(Series + ":s1", "l4")));
+        Assert.Equal(ids.Take(50).ToArray(), Searched().Last());
+    }
+
+    [Fact]
     public async Task TheRequestClockIsPhaseThreesOnlyAnOkInSeerrLeavesTheStatusAsBeforeWithItOff()
     {
         // A movie Radarr has listed for a month with nothing grabbed; Seerr OK'd a request for it an hour ago.

@@ -439,10 +439,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// specials, as its status does): per standard (never 4K) Sonarr copy, its monitored, aired episodes in scope that have been missing for a long while (as each episode's
         /// own status says: nothing grabbed for longer than the "still looking" hours, a request going out restarting that
         /// clock), leaving out episodes the viewer already has in Jellyfin and ones Jellyfin hides from them; at most
-        /// <paramref name="max"/> per copy, in episode order. Copies with none are left out; empty when the viewer may not
-        /// search the series (<see cref="SeriesSearchView"/>: a series not in Jellyfin yet included).
+        /// <paramref name="max"/> per copy, in episode order, taken from the ones <paramref name="searched"/> doesn't
+        /// name (searched in this "still looking" period), so a long series gets its next episodes searched, not the same
+        /// first ones again. A copy whose every such episode was searched gives its first <paramref name="max"/> of
+        /// them (the caller says so). Copies with none are left out; empty when the viewer may not search the series
+        /// (<see cref="SeriesSearchView"/>: a series not in Jellyfin yet included).
         /// </summary>
-        internal async Task<IReadOnlyList<SearchableEpisodes>> SearchableEpisodesAsync(StatusViewer viewer, TitleKey key, int max, CancellationToken cancellationToken)
+        /// <param name="viewer">The caller.</param>
+        /// <param name="key">The series, or one season of it.</param>
+        /// <param name="max">The most episodes per copy.</param>
+        /// <param name="searched">True for a (season, episode) searched in this period; null: none was.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        internal async Task<IReadOnlyList<SearchableEpisodes>> SearchableEpisodesAsync(StatusViewer viewer, TitleKey key, int max, Func<int, int, bool>? searched, CancellationToken cancellationToken)
         {
             var result = new List<SearchableEpisodes>();
             if (key.IsMovie || key.Episode != null) return result;
@@ -454,17 +462,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var c = Context(viewer);
             foreach (var copy in facts.Copies.Where(x => x.Instance.Role != "4k" && x.Series != null && x.Episodes != null))
             {
+                // Not searched in this period first; the searched ones only stand in when there are no others.
                 var found = new List<(int Season, int Episode, int Id)>();
-                var sent = true;
+                var spent = new List<(int Season, int Episode, int Id)>();
                 foreach (var arr in copy.Episodes!.Episodes.Where(e => key.Season is int only ? e.SeasonNumber == only : e.SeasonNumber > 0).OrderBy(e => e.SeasonNumber).ThenBy(e => e.EpisodeNumber))
                 {
                     if (found.Count >= max) break;
                     if (view.Hidden?.Hides(arr.SeasonNumber, arr.EpisodeNumber) == true || view.Have.Contains((arr.SeasonNumber, arr.EpisodeNumber))) continue;
                     if (StatusComposer.EpisodeFromArr(copy, arr.SeasonNumber, arr.EpisodeNumber, arr, c, facts.Request).Reason != StatusReasonCode.NoReleaseYet) continue;
-                    found.Add((arr.SeasonNumber, arr.EpisodeNumber, arr.Id));
-                    sent &= facts.Request?.SentFor(false, arr.SeasonNumber, arr.EpisodeNumber) != null;
+                    var into = searched?.Invoke(arr.SeasonNumber, arr.EpisodeNumber) == true ? spent : found;
+                    if (into.Count < max) into.Add((arr.SeasonNumber, arr.EpisodeNumber, arr.Id));
                 }
-                if (found.Count > 0) result.Add(new SearchableEpisodes(copy.Instance.Id, found, sent));
+                var picked = found.Count > 0 ? found : spent;
+                var sent = picked.All(e => facts.Request?.SentFor(false, e.Season, e.Episode) != null);
+                if (picked.Count > 0) result.Add(new SearchableEpisodes(copy.Instance.Id, picked, sent));
             }
             return result;
         }

@@ -48,6 +48,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
         /// <summary>An input as the ledger keys it (normalized, the title under its canonical key); null when invalid.</summary>
         internal MutationInput? NormalizeInput(MutationInput? input) => Normalize(input);
+        /// <summary>A title under the canonical key the ledger keys it by (whichever id the caller used).</summary>
+        internal TitleKey CanonicalTitle(TitleKey title) => _aliases?.Canonical(title) ?? title;
         /// <summary>Creates one durable request after bounded prerequisite preparation.</summary>
         /// <param name="user">The requester.</param>
         /// <param name="body">Client id and input.</param>
