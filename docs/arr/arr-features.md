@@ -1036,7 +1036,8 @@ lists requests made through Jellyfin Enhanced.
   for Admins ("Stuck · their access changed since the OK"); the reason code is under the card's **Details**. A Manager who can't approve a card (such as a Seerr-mode Manager without Seerr's request-management
   permission) sees it read-only.
 - **Household** lists the people who share at least one library with a Manager (everyone, for Admins), each with
-  their role, request use and open requests, each saying where it has got to (*Downloading 45%*, *Almost ready*, ...). Admins can also set each person's role and request limit, the house rules
+  their role, request use and open requests, each saying where it has got to (*Downloading 45%*, *Almost ready*, ...).
+  A Manager sees only the requests, seasons and episodes they could see themselves. Admins can also set each person's role and request limit, the house rules
   (who needs an OK, the role for everyone else, the household limit and per-role limits) and see who may ask for 4K.
   **Save** asks for a confirmation first. Jellyfin administrators are always Admin; nobody can be made Admin here.
 - **My requests** adds your own requests to the list, one row per title, grouped like the existing rows. Requests not

@@ -112,20 +112,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // One row (and one count) per title edition: a person's ask and the Seerr request it was linked to when
             // requests moved are one title, not two.
             var open = new Dictionary<Guid, List<RequestWant>>();
+            var shown = new Dictionary<Guid, List<RequestWant>>();
             var rows = new List<TitleRequests>();
             foreach (var person in people)
             {
-                var own = LedgerRequestFacts.PerTitle(Service.Ledger.List(person.Id, false)
+                var wants = Service.Ledger.List(person.Id, false)
                     .Where(w => w.Status is "pending" or "queued" or "sent" or "stale")
-                    .OrderByDescending(w => w.CreatedAt));
-                open[person.Id] = own.Select(r => r.Row).ToList();
-                rows.AddRange(own.Where(r => Service.Policy.Evaluate(caller.UserId, r.Members[0].Input).Visible).Take(MaxRequestsPerPerson));
+                    .OrderByDescending(w => w.CreatedAt).ToList();
+                open[person.Id] = LedgerRequestFacts.PerTitle(wants).Select(r => r.Row).ToList();
+                // The rows shown are built from the requests the caller can see, so a merged row never carries the
+                // seasons, status or progress of a member hidden from them.
+                var visible = LedgerRequestFacts.PerTitle(wants.Where(w => Service.Policy.Evaluate(caller.UserId, w.Input).Visible)).Take(MaxRequestsPerPerson).ToList();
+                shown[person.Id] = visible.Select(r => r.Row).ToList();
+                rows.AddRange(visible);
             }
-            var shownWants = rows.Select(r => r.Row).ToList();
-            var meta = await _hub.MetaAsync(shownWants.Select(w => w.Input.Key), caller, ct).ConfigureAwait(false);
+            var meta = await _hub.MetaAsync(rows.Select(r => r.Row.Input.Key), caller, ct).ConfigureAwait(false);
             // Where each shown request's part has got to (downloading, almost ready, ...), not just "on the way".
             var parts = await _hub.PartStatusesAsync(rows, caller, ct).ConfigureAwait(false);
-            var shownIds = shownWants.Select(w => w.Id).ToHashSet(StringComparer.Ordinal);
             var list = people.Select(p =>
             {
                 var facts = Service.Identity(p.Id);
@@ -142,7 +145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     quota = new { used = quota.Used, limit = quota.Limit, available = quota.Available },
                     active = own.Count,
                     waiting = own.Count(w => w.Status == "pending"),
-                    requests = own.Where(w => shownIds.Contains(w.Id)).Select(w =>
+                    requests = shown[p.Id].Select(w =>
                     {
                         var title = meta.GetValueOrDefault(w.Input.Key) ?? new HubTitleMeta();
                         return new

@@ -432,6 +432,61 @@ public class IntegrationRequestHouseholdTests
     }
 
     [Fact]
+    public async Task AManagerSeesOnlyThePartsOfAMergedTitleTheyCanSee()
+    {
+        using var h = new Hub();
+        var r = h.R;
+        // Mum (a Manager) may not see season 2 of the series; Jake (an administrator) sees all of it.
+        r.Policy.Adjust = (user, input, facts) => user == r.Manager && input.Key == "tv:tvdb:78874" && input.Seasons.Contains(2) ? facts with { Visible = false } : facts;
+        // Leo's waiting ask for season 1, and seasons 1 and 2 already sent (the Seerr request it was linked to when
+        // requests moved): one merged row, led by the waiting season 1.
+        var first = await r.Create(r.Kid, IntegrationRequestLedgerTests.Seasons(1));
+        r.Now = r.Now.AddMinutes(1);
+        var both = await r.Create(r.Kid, IntegrationRequestLedgerTests.Seasons(1, 2));
+        r.Db.Write((c, t) => { using var cmd = RequestLedger.Cmd(c, t, "UPDATE wants SET status='sent',reason='looking' WHERE id=$w", ("$w", both.RequestId)); return cmd.ExecuteNonQuery(); });
+        Assert.Equal(("pending", "sent"), (r.Ledger.Find(first.RequestId!)!.Status, r.Ledger.Find(both.RequestId!)!.Status));
+
+        static JsonElement Leo(JsonElement body) => body.GetProperty("people").EnumerateArray().First(p => p.GetProperty("name").GetString() == "Leo");
+        static int[] Seasons(JsonElement row) => row.GetProperty("seasons").EnumerateArray().Select(s => s.GetInt32()).ToArray();
+        var admin = Assert.Single(Leo(Json(await h.As(r.Admin).Household(default))).GetProperty("requests").EnumerateArray());
+        Assert.Equal(new[] { 1, 2 }, Seasons(admin));
+
+        // Mum gets the waiting season 1 only: no season 2, and nothing taken from the sent request she can't see.
+        var leo = Leo(Json(await h.As(r.Manager).Household(default)));
+        var row = Assert.Single(leo.GetProperty("requests").EnumerateArray());
+        Assert.Equal((first.RequestId, "pending"), (row.GetProperty("id").GetString(), row.GetProperty("status").GetString()));
+        Assert.Equal(new[] { 1 }, Seasons(row));
+        Assert.Equal("seasons", row.GetProperty("scope").GetString());
+
+        // When only the sent seasons 1 and 2 are left, Mum sees none of the title.
+        Assert.Equal(200, r.Service.Close(first.RequestId!, r.Kid, null).HttpStatus);
+        Assert.Empty(Leo(Json(await h.As(r.Manager).Household(default))).GetProperty("requests").EnumerateArray());
+        Assert.Equal(new[] { 1, 2 }, Seasons(Assert.Single(Leo(Json(await h.As(r.Admin).Household(default))).GetProperty("requests").EnumerateArray())));
+    }
+
+    [Fact]
+    public async Task AManagerSeesNoEpisodeOfAMergedTitleTheyCannotSee()
+    {
+        using var h = new Hub();
+        var r = h.R;
+        // Mum (a Manager) may not see anything of season 2.
+        r.Policy.Adjust = (user, input, facts) => user == r.Manager && (input.Seasons.Contains(2) || input.Episodes.Any(e => e.Season == 2)) ? facts with { Visible = false } : facts;
+        // Leo asks for episode 1 of seasons 1 and 2, later for all of season 1: both wait, and the newer ask leads.
+        await r.Create(r.Kid, new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1), new RequestEpisode(2, 1) } });
+        r.Now = r.Now.AddMinutes(1);
+        var season = await r.Create(r.Kid, IntegrationRequestLedgerTests.Seasons(1));
+        Assert.Equal("pending", r.Ledger.Find(season.RequestId!)!.Status);
+
+        static JsonElement Row(JsonElement body) => Assert.Single(body.GetProperty("people").EnumerateArray().First(p => p.GetProperty("name").GetString() == "Leo").GetProperty("requests").EnumerateArray());
+        static string Parts(JsonElement row) => string.Join(",", row.GetProperty("seasons").EnumerateArray().Select(s => "S" + s.GetInt32()))
+            + "|" + string.Join(",", row.GetProperty("episodes").EnumerateArray().Select(e => "S" + e.GetProperty("season").GetInt32() + "E" + e.GetProperty("episode").GetInt32()));
+        Assert.Equal("S1|S2E1", Parts(Row(Json(await h.As(r.Admin).Household(default)))));
+        var manager = Row(Json(await h.As(r.Manager).Household(default)));
+        Assert.Equal(season.RequestId, manager.GetProperty("id").GetString());
+        Assert.Equal("S1|", Parts(manager));
+    }
+
+    [Fact]
     public void OnlyAdministratorsSaveTheHouseholdAndEveryInputIsCheckedBeforeAnythingIsWritten()
     {
         using var h = new Hub();
