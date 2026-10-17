@@ -262,6 +262,43 @@ test('JE mode: the collection picker leaves out movies that are not out yet (no 
   assert.deepEqual(['2026-10-17', '2026-10-18', '', '2026-10', null].map(d => released({ releaseDate: d }, '2026-10-17')), [true, false, false, false, false]);
 });
 
+test('JE mode: the collection picker says Paused for movies whose drive is full, leaves them unticked and asks only for the others', async t => {
+  // Mixed storage: The Matrix Reloaded is held on a full drive (the server pauses it); Revolutions would land on a roomy one.
+  const block = { reason: 'low_disk', instance: 'Radarr (full)', folder: '/data/full/The Matrix Reloaded (2003)', free: 2097152, freePercent: 3, limitPercent: 10 };
+  const h = setup(t, { check: (key, variant) => (key === 'movie:tmdb:604' ? { key, variant, canRequest: false, blocked: { reason: 'low_disk' } } : { key, variant, canRequest: true }) });
+  let options = null;
+  h.JE.jellyseerrModal.create = (o) => { options = o; return { show() {}, close() {} }; };
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {});
+  await settle();
+  assert.deepEqual(h.checks, [{ key: 'movie:tmdb:604', variant: 'standard' }, { key: 'movie:tmdb:605', variant: 'standard' }],
+    'every movie that could be asked for is checked first (not the one in the library)');
+  const body = h.document.createElement('div');
+  body.innerHTML = options.bodyHtml;
+  const rows = [...body.querySelectorAll('.jellyseerr-collection-movie-row')];
+  assert.deepEqual(rows.map(r => { const b = r.querySelector('.jellyseerr-collection-checkbox'); return [b.dataset.tmdbId, b.disabled, b.checked, 'jeAskable' in b.dataset]; }),
+    [['603', true, false, false], ['604', true, false, false], ['605', false, true, true]]);
+  assert.deepEqual(rows.map(r => r.lastElementChild.textContent), [translate('jellyseerr_btn_available'), translate('arr_ask_paused_storage'), '']);
+  const notes = [...body.querySelectorAll('.je-ask-paused-note')];
+  assert.equal(notes.length, 1, 'the paused line says why, once');
+  assert.equal(notes[0].querySelector('.je-ask-paused-title').textContent, translate('arr_ask_paused_storage'));
+  assert.equal(notes[0].querySelector('.je-ask-paused-text').textContent, translate('arr_ask_paused_storage_text', { contact: 'Dad' }));
+  await options.onSave(body, h.document.createElement('button'), () => {});
+  await settle();
+  assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:605'], 'the paused movie is not asked for');
+
+  // An administrator reads where and how much is free; every movie paused: nothing is ticked.
+  const admin = setup(t, { me: { ...MEMBER, role: 'admin' }, check: (key, variant) => ({ key, variant, canRequest: false, blocked: block }) });
+  let adminOptions = null;
+  admin.JE.jellyseerrModal.create = (o) => { adminOptions = o; return { show() {}, close() {} }; };
+  await admin.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {});
+  await settle();
+  const adminBody = admin.document.createElement('div');
+  adminBody.innerHTML = adminOptions.bodyHtml;
+  assert.equal(adminBody.querySelectorAll('.jellyseerr-collection-checkbox:checked').length, 0);
+  assert.equal(adminBody.querySelectorAll('.je-ask-paused-note').length, 1, 'one line for one drive');
+  assert.match(adminBody.querySelector('.je-ask-paused-text').textContent, /\/data\/full\/The Matrix Reloaded \(2003\)/);
+});
+
 test('JE mode: a collection with 20 or fewer movies to ask for ticks them all and has no limit note', async t => {
   const h = setup(t);
   let options = null;

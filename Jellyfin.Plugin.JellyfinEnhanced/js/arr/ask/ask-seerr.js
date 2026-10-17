@@ -118,9 +118,12 @@
      * Seerr's collection request in JE mode: the collection's movies (Seerr's collection details) in Seerr's request
      * window; the first 20 that are out and not already available are ticked and at most 20 can be (a note says so
      * when there are more); movies not out yet are listed, can't be ticked and say "Not out yet", as on a collection
-     * page; the button asks Jellyfin Enhanced for each ticked movie in turn and says what happened, as a collection
-     * page's "Get the N missing" does. No Seerr servers, profiles or folders, no Seerr write. Without an id (or the
-     * window) it says to ask one movie at a time.
+     * page. Each movie that could be asked for is checked with Jellyfin Enhanced first (JE.arrAsk.check): one the
+     * server can't take now (its drive is nearly full: its own folder's when Radarr has it, else the default root's)
+     * says "Paused: storage full", can't be ticked, and a line above the list says why (where and how much is free,
+     * for administrators), as on a collection page. The button asks Jellyfin Enhanced for each ticked movie in turn
+     * and says what happened, as a collection page's "Get the N missing" does. No Seerr servers, profiles or folders,
+     * no Seerr write. Without an id (or the window) it says to ask one movie at a time.
      * @param {number|string} [collectionId] TMDB collection id.
      * @param {string} [collectionName] Collection name.
      * @returns {Promise<void>}
@@ -157,28 +160,45 @@
         let ticked = 0;
         const today = new Date().toISOString().slice(0, 10);
         // Seerr's media status 5: available (in Jellyfin).
-        const askable = parts.filter(movie => movie.mediaInfo?.status !== 5 && released(movie, today)).length;
+        const candidates = parts.filter(movie => movie.mediaInfo?.status !== 5 && released(movie, today));
+        // The server's answer for each of them (read at once): a movie it can't take now is paused, not offered.
+        const answers = await Promise.all(candidates.map(movie => (typeof JE.arrAsk.check === 'function'
+            ? JE.arrAsk.check(`movie:tmdb:${movie.id}`, 'standard') : null)));
+        const paused = new Map();
+        candidates.forEach((movie, i) => {
+            const answer = answers[i];
+            const words = answer && !answer.canRequest && answer.blocked ? JE.arrAsk.blockWords?.(answer.blocked, caps) : null;
+            if (words) paused.set(movie.id, words);
+        });
+        const askable = candidates.length - paused.size;
+        // One line per different explanation (family members read one sentence; administrators one per drive).
+        const lines = new Map();
+        for (const words of paused.values()) lines.set(`${words.chip}|${words.detail || words.text}`, words);
+        const notes = [...lines.values()].map(words => JE.arrAsk.pausedNote(words).outerHTML).join('');
         const rows = parts.map((movie) => {
             const here = movie.mediaInfo?.status === 5;
             const out = released(movie, today);
-            const tick = !here && out && ticked < MAX_COLLECTION;
+            const words = paused.get(movie.id) || null;
+            const tick = !here && out && !words && ticked < MAX_COLLECTION;
             if (tick) ticked++;
             const date = String(movie.releaseDate || '');
             const year = /^\d{4}/.test(date) ? date.slice(0, 4) : '';
             const poster = typeof movie.posterPath === 'string' && /^\/[A-Za-z0-9_.-]{1,80}$/.test(movie.posterPath)
                 ? `<img src="https://image.tmdb.org/t/p/w92${esc(movie.posterPath)}" alt="" class="jellyseerr-collection-movie-poster">` : '<div></div>';
             return `<div class="jellyseerr-collection-movie-row">
-                <input type="checkbox" class="jellyseerr-collection-checkbox" data-tmdb-id="${esc(movie.id)}" aria-label="${esc(movie.title || movie.name || '')}" ${here || !out ? 'disabled' : `data-je-askable="1"${tick ? ' checked' : ''}`}>
+                <input type="checkbox" class="jellyseerr-collection-checkbox" data-tmdb-id="${esc(movie.id)}" aria-label="${esc(movie.title || movie.name || '')}" ${here || !out || words ? 'disabled' : `data-je-askable="1"${tick ? ' checked' : ''}`}>
                 ${poster}
                 <div class="jellyseerr-collection-movie-details"><div class="title">${esc(movie.title || movie.name || '')}</div><div class="year">${esc(year)}</div></div>
                 ${here ? `<div class="jellyseerr-season-status jellyseerr-season-status-available">${esc(JE.arrAsk.tr('jellyseerr_btn_available'))}</div>`
-                    : !out ? `<div class="jellyseerr-season-status je-arr-collection-not-out">${esc(JE.arrAsk.tr('arr_collection_not_out'))}</div>` : '<div></div>'}
+                    : !out ? `<div class="jellyseerr-season-status je-arr-collection-not-out">${esc(JE.arrAsk.tr('arr_collection_not_out'))}</div>`
+                        : words ? `<div class="jellyseerr-season-status je-arr-collection-paused">${esc(words.chip)}</div>` : '<div></div>'}
             </div>`;
         }).join('');
         const instance = modal.create({
             title: JE.arrAsk.tr('jellyseerr_modal_request_collection'),
             subtitle: String(collectionName || details.name || ''),
             bodyHtml: (askable > MAX_COLLECTION ? `<p class="je-arr-collection-cap" style="margin: 0 0 0.75em; opacity: 0.85;">${esc(JE.arrAsk.tr('arr_seerr_collection_cap', { n: MAX_COLLECTION }))}</p>` : '')
+                + notes
                 + `<div class="jellyseerr-collection-list" style="max-height: 600px; overflow-y: auto;">${rows}</div>`,
             backdropPath: details.backdropPath || details.backdrop_path,
             buttonText: JE.arrAsk.tr('jellyseerr_modal_request_selected_movies'),

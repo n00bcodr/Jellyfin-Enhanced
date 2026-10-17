@@ -279,7 +279,8 @@ full* on the episode's row, one line for the season above its episodes (or on th
 and episode pages (also the pages of titles that aren't in the library, where a season page says it once, on its
 episodes), in the request sheet, on Discover and search cards, in Seerr's more-info window (JE mode: the paused line
 takes the place of **Request**, or of **Request in 4K** when that edition is paused, before anything is pressed; a
-standard pause keeps **Request in 4K** when 4K can still be asked for), on collection pages and in My requests. Family
+standard pause keeps **Request in 4K** when 4K can still be asked for), on collection pages, in a collection's
+**Request** list and in My requests. Family
 members read a plain sentence ("There's no room for new downloads right now, so asking is paused. Dad can free up
 some space."); administrators read which Sonarr/Radarr, which folder and how much is free ("Sonarr: /tv/Firefly
 has 1.2 TB free (3%), under the 10% low-disk limit"). In JE mode the drive measured is the one the download would be
@@ -973,7 +974,8 @@ tap unless the sheet is needed (the button then reads *Asked!*); series open the
 episodes (afterwards the button reads **Request more** and opens the sheet again for the rest); the 4K buttons and
 the 4K menu ask for the 4K copy. A collection's **Request** lists the collection's movies (the ones already in your
 library can't be ticked; movies not out yet, with no release date or a later one, are listed as *Not out yet* and
-can't be ticked either, as on a collection page) and asks Jellyfin Enhanced for each ticked one, then says what happened ("Asked
+can't be ticked either, as on a collection page; a movie whose drive is nearly full says *Paused: storage full*, can't
+be ticked, and a line above the list says why) and asks Jellyfin Enhanced for each ticked one, then says what happened ("Asked
 for 2 · 1 waits for Dad's OK"). Up to 20 can be asked for at a time: with more than that missing, the first 20 are
 ticked, a note says so, and no more can be ticked until one is unticked. Seerr's own request windows (with its servers, profiles and folders) are never shown
 in JE mode, and Seerr's "only Seerr results" search filter (double-tap on its icon) does nothing there: the icon's
