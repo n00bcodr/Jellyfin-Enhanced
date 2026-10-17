@@ -54,6 +54,9 @@ USER_PREFERENCE_CLASSES = {
     "ListPlaceholders": {"class": "display", "unset": "follow-admin"},
     "ListStatus": {"class": "display", "unset": "follow-admin"},
     "ListSwapIn": {"class": "consent", "unset": "off"},
+    # Phase 4e: acquisition badges (web) and the native-poster stamps follow the administrator.
+    "AcquisitionBadges": {"class": "display", "unset": "follow-admin"},
+    "NativeAcquisitionStamps": {"class": "display", "unset": "follow-admin"},
 }
 
 # "overview-*" fieldsets are read-only dashboard status widgets, not admin

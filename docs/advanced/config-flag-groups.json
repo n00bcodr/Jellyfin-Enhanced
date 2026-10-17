@@ -19,6 +19,8 @@
     "AnalyticsShareDataSizes": "Usage Statistics",
     "AnalyticsShareFeatureFlags": "Usage Statistics",
     "AnalyticsShareUsageCounts": "Usage Statistics",
+    "ArrAcquisitionNewDays": "Requests & downloads (new)",
+    "ArrAcquisitionUpgradedDays": "Requests & downloads (new)",
     "ArrActivityLogMirror": "Requests & downloads (new)",
     "ArrAutomationDeltaWorkPerHour": "Requests & downloads (new)",
     "ArrAutomationFree": "Requests & downloads (new)",
@@ -52,6 +54,7 @@
     "ArrPhase1Enabled": "Requests & downloads (new)",
     "ArrPhase2Enabled": "Requests & downloads (new)",
     "ArrPhase3Enabled": "Requests & downloads (new)",
+    "ArrPhase4AcquisitionBadgesEnabled": "Requests & downloads (new)",
     "ArrPhase4AutomationEnabled": "Requests & downloads (new)",
     "ArrPhase4Enabled": "Requests & downloads (new)",
     "ArrPhase4ListAuthoringEnabled": "Requests & downloads (new)",
@@ -61,6 +64,7 @@
     "ArrPhase4ListRequestsEnabled": "Requests & downloads (new)",
     "ArrPhase4ListStatusEnabled": "Requests & downloads (new)",
     "ArrPhase4ListSwapInEnabled": "Requests & downloads (new)",
+    "ArrPhase4NativeStampsEnabled": "Requests & downloads (new)",
     "ArrRequest4kMoviesEnabled": "Requests & downloads (new)",
     "ArrRequest4kSeriesEnabled": "Requests & downloads (new)",
     "ArrRequestBackend": "Requests & downloads (new)",
@@ -423,6 +427,8 @@
     "AnalyticsShareDataSizes": "Data file sizes (bytes only, never contents)",
     "AnalyticsShareFeatureFlags": "Feature toggle states (on/off only)",
     "AnalyticsShareUsageCounts": "Feature usage counts",
+    "ArrAcquisitionNewDays": "Days a title stays \"New for you\" (1\u201330)",
+    "ArrAcquisitionUpgradedDays": "Days a title stays \"Upgraded\" (1\u201330)",
     "ArrActivityLogMirror": "Copy actions into Jellyfin's activity log",
     "ArrAutomationDeltaWorkPerHour": "Linked-list changes applied per hour",
     "ArrAutomationFree": "Automatic requests are free (they cost nobody's allowance)",
@@ -456,6 +462,7 @@
     "ArrPhase1Enabled": "Show where things have got to (status on pages)",
     "ArrPhase2Enabled": "Tell me, and admin essentials (phase 2)",
     "ArrPhase3Enabled": "Ask for it (durable requests, phase 3)",
+    "ArrPhase4AcquisitionBadgesEnabled": "Poster badges: New for you, Upgraded, 4K",
     "ArrPhase4AutomationEnabled": "Automation engine (recipe modes, budgets, kill switches)",
     "ArrPhase4Enabled": "Everywhere and gentle automation (phase 4)",
     "ArrPhase4ListAuthoringEnabled": "Adding and editing list entries",
@@ -465,6 +472,7 @@
     "ArrPhase4ListRequestsEnabled": "Ask for list entries",
     "ArrPhase4ListStatusEnabled": "Show request status on list entries",
     "ArrPhase4ListSwapInEnabled": "Swap in titles that arrive",
+    "ArrPhase4NativeStampsEnabled": "Draw the badges into posters for TV and phone apps",
     "ArrRequest4kMoviesEnabled": "Allow 4K movie requests",
     "ArrRequest4kSeriesEnabled": "Allow 4K series requests",
     "ArrRequestBackend": "Request handling",
@@ -815,6 +823,8 @@
     "AnalyticsShareDataSizes": "Admin",
     "AnalyticsShareFeatureFlags": "Admin",
     "AnalyticsShareUsageCounts": "Admin",
+    "ArrAcquisitionNewDays": "*arr",
+    "ArrAcquisitionUpgradedDays": "*arr",
     "ArrActivityLogMirror": "*arr",
     "ArrAutomationDeltaWorkPerHour": "*arr",
     "ArrAutomationFree": "*arr",
@@ -848,6 +858,7 @@
     "ArrPhase1Enabled": "*arr",
     "ArrPhase2Enabled": "*arr",
     "ArrPhase3Enabled": "*arr",
+    "ArrPhase4AcquisitionBadgesEnabled": "*arr",
     "ArrPhase4AutomationEnabled": "*arr",
     "ArrPhase4Enabled": "*arr",
     "ArrPhase4ListAuthoringEnabled": "*arr",
@@ -857,6 +868,7 @@
     "ArrPhase4ListRequestsEnabled": "*arr",
     "ArrPhase4ListStatusEnabled": "*arr",
     "ArrPhase4ListSwapInEnabled": "*arr",
+    "ArrPhase4NativeStampsEnabled": "*arr",
     "ArrRequest4kMoviesEnabled": "*arr",
     "ArrRequest4kSeriesEnabled": "*arr",
     "ArrRequestBackend": "*arr",
@@ -1275,6 +1287,8 @@
     "AnalyticsShareDataSizes": true,
     "AnalyticsShareFeatureFlags": true,
     "AnalyticsShareUsageCounts": true,
+    "ArrAcquisitionNewDays": 7,
+    "ArrAcquisitionUpgradedDays": 7,
     "ArrActivityLogMirror": true,
     "ArrAutomationBackfillPerHour": 10,
     "ArrAutomationDeltaWorkPerHour": 500,
@@ -1310,6 +1324,7 @@
     "ArrPhase1Enabled": false,
     "ArrPhase2Enabled": false,
     "ArrPhase3Enabled": false,
+    "ArrPhase4AcquisitionBadgesEnabled": false,
     "ArrPhase4AutomationEnabled": false,
     "ArrPhase4Enabled": false,
     "ArrPhase4ListAuthoringEnabled": false,
@@ -1319,6 +1334,7 @@
     "ArrPhase4ListRequestsEnabled": false,
     "ArrPhase4ListStatusEnabled": false,
     "ArrPhase4ListSwapInEnabled": false,
+    "ArrPhase4NativeStampsEnabled": false,
     "ArrRequest4kMoviesEnabled": false,
     "ArrRequest4kSeriesEnabled": false,
     "ArrRequestBackend": "seerr",
@@ -1674,6 +1690,10 @@
     "WatchlistMemoryRetentionDays": 365
   },
   "userPreferences": {
+    "AcquisitionBadges": {
+      "class": "display",
+      "unset": "follow-admin"
+    },
     "AutoMovieRequests": {
       "class": "consent",
       "unset": "follow-admin"
@@ -1693,6 +1713,10 @@
     "ListSwapIn": {
       "class": "consent",
       "unset": "off"
+    },
+    "NativeAcquisitionStamps": {
+      "class": "display",
+      "unset": "follow-admin"
     },
     "UseNativePosterTags": {
       "class": "display",

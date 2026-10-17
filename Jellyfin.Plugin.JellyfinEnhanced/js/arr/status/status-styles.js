@@ -1,7 +1,8 @@
 /**
  * @file Requests & downloads, phase 1: styles for the status pill, journey strip, admin lines,
- * poster badges, episode chips and the season banner. Colour is never the only signal: every
- * state also has an icon and words. Phone (≤ 600 px) and TV layouts are handled here.
+ * poster badges (and phase 4e's acquisition stamps), episode chips and the season banner. Colour
+ * is never the only signal: every state also has an icon and words. Phone (≤ 600 px) and TV
+ * layouts are handled here.
  */
 (function (JE) {
     'use strict';
@@ -82,6 +83,11 @@ button.je-arr-pill:focus-visible, .layout-tv button.je-arr-pill:focus { outline:
   background: rgba(0,0,0,0.72); color: color-mix(in srgb, var(--je-arr-tone, #9aa0a6) 55%, #fff);
   border: 1px solid color-mix(in srgb, var(--je-arr-tone, #9aa0a6) 75%, transparent); line-height: 16px; }
 .je-arr-badge-icon { font-size: 14px; }
+.je-arr-tone-new { --je-arr-tone: #52b54b; }
+.je-arr-tone-upgraded { --je-arr-tone: #22d3ee; }
+.je-arr-tone-fourK { --je-arr-tone: #e5a00d; }
+/* Phase 4e: the stamp's word sits 2px after its icon (the chip's gap). */
+.je-arr-badge-word { font-size: 11px; font-weight: 700; white-space: nowrap; }
 .je-arr-ring { position: relative; width: 28px; height: 28px; display: inline-block; border-radius: 50%; background: rgba(0,0,0,0.72); }
 .je-arr-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
 .je-arr-ring-track { fill: none; stroke: rgba(255,255,255,0.2); stroke-width: 4; }
@@ -103,6 +109,7 @@ button.je-arr-pill:focus-visible, .layout-tv button.je-arr-pill:focus { outline:
 .layout-tv .je-arr-ring { width: 48px; height: 48px; }
 .layout-tv .je-arr-ring-text { font-size: 13px; }
 .layout-tv .je-arr-badge-chip { font-size: 14px; line-height: 20px; }
+.layout-tv .je-arr-badge-word { font-size: 14px; }
 .je-arr-modal-status { margin: 0.4em 0 0.8em; }
 .je-arr-modal-status .je-arr-status { margin: 0; }
 .je-arr-modal-status .je-arr-modal-manage { margin-top: 0.6em; }

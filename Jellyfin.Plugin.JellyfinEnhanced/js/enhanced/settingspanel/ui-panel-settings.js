@@ -201,6 +201,22 @@
                 resetAutoCloseTimer();
             });
         }
+        // Phase 4e: acquisition badges per person ("" = null: follow the household; "off" = false: hide).
+        for (const [id, key] of [['acquisitionBadgesSelect', 'acquisitionBadges'], ['nativeAcquisitionStampsSelect', 'nativeAcquisitionStamps']]) {
+            document.getElementById(id)?.addEventListener('change', (event) => {
+                if (JE.pluginConfig?.ArrAcquisitionBadgesEnabled !== true) return;
+                const value = event.target.value === 'off' ? false : null;
+                JE.userConfig = JE.userConfig || {};
+                JE.userConfig.settings = JE.userConfig.settings || {};
+                JE.userConfig.settings[key] = value;
+                JE.currentSettings[key] = value;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.toast(JE.t('toast_badge_settings_saved'));
+                // The web posters follow the new choice without a reload.
+                if (key === 'acquisitionBadges') JE.internals?.arrStatusCards?.reset?.();
+                resetAutoCloseTimer();
+            });
+        }
         addSettingToggleListener('qualityTagsToggle', 'qualityTagsEnabled', 'feature_quality_tags', true);
         // Show or hide the nested category section when the master quality-tags toggle changes
         const qualityMasterToggle = document.getElementById('qualityTagsToggle');

@@ -87,6 +87,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquisitionStampsController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAddController.cs",
       "category": "Controllers"
     },
@@ -756,6 +760,26 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrRequestReadModel.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStamp.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStampFeeder.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStampResolver.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStampSources.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStampStore.cs",
       "category": "Services"
     },
     {
@@ -2619,6 +2643,15 @@
       "method": "LabDelete",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
       "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/stamps",
+      "method": "GetStamps",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquisitionStampsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
     },
     {
       "verb": "GET",
@@ -6532,6 +6565,38 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrPhase4AcquisitionBadgesEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4NativeStampsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAcquisitionNewDays",
+      "type": "int",
+      "initializer": "7",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAcquisitionUpgradedDays",
+      "type": "int",
+      "initializer": "7",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrPhase1Enabled",
       "type": "bool",
       "initializer": null,
@@ -8524,6 +8589,22 @@
     },
     {
       "class": "UserSettings",
+      "name": "AcquisitionBadges",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSettings",
+      "name": "NativeAcquisitionStamps",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSettings",
       "name": "QualityTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -9733,6 +9814,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/DiscoverService.cs"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStampSources.cs"
+    },
+    {
       "literal": "bookmark.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/AnalyticsReportingService.cs"
     },
@@ -10141,10 +10226,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 567,
-    "routes": 269,
-    "configuration_properties": 605,
-    "storage_references": 87,
+    "files": 573,
+    "routes": 270,
+    "configuration_properties": 611,
+    "storage_references": 88,
     "scheduled_tasks": 15,
     "locales": 33
   }
