@@ -481,6 +481,44 @@ public class IntegrationHouseholdRulesTests
         Assert.Equal("rule_review", r.Rig.Ledger.ApprovalNeededAtSend(secondJob, r.Policy.Evaluate(r.Member.UserId, secondJob.Input), r.Policy, r.Now));
     }
 
+    [Fact]
+    public async Task ALaterApprovedExcessNeverHoldsAnEarlierAskThatWasWithinTheAllowance()
+    {
+        using var r = new Rules();
+        r.Config.ArrPhase4HouseholdRulesEnabled = false;
+        r.Config.ArrRequestQuotaLimit = 2;
+        var first = await r.Ask(r.Member, 1);
+        r.Now = r.Now.AddMinutes(1);
+        var second = await r.Ask(r.Member, 2);
+        r.Now = r.Now.AddMinutes(1);
+        var third = await r.Ask(r.Member, 3);
+        Assert.Equal(("queued", "queued", "pending"), (r.Want(first).Status, r.Want(second).Status, r.Want(third).Status));
+        r.Now = r.Now.AddMinutes(1);
+        Assert.Equal(200, (await r.Service.ApproveAsync(third.RequestId!, r.Admin.UserId, null, default)).HttpStatus);
+        Assert.Equal(3, r.Service.Quota(r.Member.UserId).Used);
+        foreach (var id in new[] { first.RequestId!, second.RequestId!, third.RequestId! })
+        {
+            var job = r.Rig.Ledger.ForWant(id).Single();
+            Assert.Null(r.Rig.Ledger.ApprovalNeededAtSend(job, r.Policy.Evaluate(r.Member.UserId, job.Input), r.Policy, r.Now));
+        }
+        await r.Runner().TickAsync(default);
+        Assert.Equal(3, r.Rig.Backend.Sends);
+    }
+
+    [Fact]
+    public async Task TheHardGbCapStaysHardWhateverTheRulesSay()
+    {
+        using var r = new Rules();
+        r.Config.ArrRequestQuotaGb = 10;
+        r.Tmdb.Movie(603, "en", new[] { 16 }, new() { ["US"] = "G" });
+        r.Tmdb.Movie(604, "en", new[] { 16 }, new() { ["US"] = "G" });
+        r.Set(new { roles = new { trusted = new { rating = new { max = "PG", country = "US", match = "approve", otherwise = "none" } } } });
+        Assert.Equal("queued", r.Want(await r.Ask(r.Trusted, 603)).Status);   // 8 GB estimate
+        var over = await r.Ask(r.Trusted, 604);
+        Assert.Equal((429, "quota_exceeded"), (over.HttpStatus, over.Reason));
+        r.Config.ArrRequestQuotaGb = 0;
+    }
+
     // ------------------------------------------------------------------ group pools
 
     private static void Pools(Rules r, params object[] pools)

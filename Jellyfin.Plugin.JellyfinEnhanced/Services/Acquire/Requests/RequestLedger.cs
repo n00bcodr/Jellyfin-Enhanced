@@ -319,7 +319,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var want = Wants(c, null, "id=$id", ("$id", job.WantId)).SingleOrDefault();
                 if (want == null) return true;
                 var own = Wants(c, null, "user_id=$u", ("$u", Id(requester.UserId))).Where(w => w.Id != want.Id && w.CreatedAt <= want.CreatedAt && w.Status != "pending").ToArray();
-                return OverQuota(requester, Charges(c, null, requester.UserId), 0, 0, now) ||
+                // Only charges made up to this job's own: a later ask an approver let past the limit (soft excess) never
+                // holds a request that was within the allowance when it was made.
+                var charged = Scalar(c, null, "SELECT MAX(charged_at) FROM reservations WHERE (job_id=$j OR (want_id=$w AND scope='initial')) AND state='charged'", ("$j", job.Id), ("$w", want.Id));
+                var cutoff = charged == null ? now : DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(charged, CultureInfo.InvariantCulture));
+                return OverQuota(requester, Charges(c, null, requester.UserId).Where(ch => ch.At <= cutoff).ToArray(), 0, 0, now) ||
                     OverSeries(requester, want.Input, own, policy.Configuration.ArrRequestSeriesThreshold);
             }) ? "authorization_changed" : null;
         }
