@@ -409,7 +409,7 @@ You can reveal selected information for your own account while keeping the rest 
 
 Changes save immediately. Only admin-enabled categories appear; **Advanced per-category reveals** appears only when advanced mode is on. The inherited defaults below appear checked when their rows are available.
 
-![Personal Spoiler Guard preferences with checked metadata categories, advanced reveals, and an unchecked disable-confirmation preference](overrides.webp)
+![Personal Spoiler Guard preferences with checked metadata categories, seek previews, advanced reveals, and an unchecked disable-confirmation preference](overrides.webp)
 
 | Setting | Default | What it does |
 |---|---|---|
