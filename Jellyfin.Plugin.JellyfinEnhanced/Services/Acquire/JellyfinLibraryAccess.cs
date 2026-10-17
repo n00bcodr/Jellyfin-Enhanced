@@ -313,10 +313,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public int RemoveMissingTwins(string filePath)
         {
             if (_libraryManager.FindByPath(Native(filePath), false) is not Episode { IsMissingEpisode: false } episode || episode.Series is not { } series) return 0;
-            if (episode.ParentIndexNumber is not int season || episode.IndexNumber is not int number) return -1;
-            var twins = series.GetRecursiveChildren(i => i is Episode e && e.IsMissingEpisode && e.ParentIndexNumber == season && e.IndexNumber == number).ToList();
+            if (episode.ParentIndexNumber is null || episode.IndexNumber is null) return -1;
+            var twins = series.GetRecursiveChildren(i => IsMissingTwin(episode, series.Id, i)).ToList();
             foreach (var twin in twins) _libraryManager.DeleteItem(twin, new DeleteOptions { DeleteFileLocation = false }, false);
             return twins.Count;
         }
+
+        /// <summary>
+        /// Jellyfin's own rule for a missing episode a file now fills (its series refresh,
+        /// <c>SeriesMetadataService.RemoveObsoleteEpisodes</c>): a virtual or missing episode of the same season whose
+        /// number the file's episode contains (<see cref="Episode.ContainsEpisodeNumber"/>, so an S01E04-E05 file fills
+        /// E04 and E05). Narrower than Jellyfin's on purpose: the same series item, numbered, and never an item with a
+        /// path (an episode with a file is never removed). <paramref name="seriesId"/> is the file's series item.
+        /// </summary>
+        internal static bool IsMissingTwin(Episode file, Guid seriesId, BaseItem candidate)
+            => candidate is Episode e
+                && e.Id != file.Id
+                && string.IsNullOrEmpty(e.Path)
+                && (e.IsVirtualItem || e.IsMissingEpisode)
+                && !string.IsNullOrEmpty(file.Path)
+                && !seriesId.Equals(Guid.Empty)
+                && e.SeriesId.Equals(seriesId)
+                && e.ParentIndexNumber is int season && season == file.ParentIndexNumber
+                && e.IndexNumber is int number && file.ContainsEpisodeNumber(number);
     }
 }

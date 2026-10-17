@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
@@ -325,6 +326,46 @@ public class IntegrationArrBridgeTests
         await Task.Delay(100);
         Assert.DoesNotContain("/media/tv/Firefly (2002)/Season 01/E6.mkv", rig.Library.TwinRemovals);
         Assert.True(rig.Library.MissingTwins.ContainsKey("/media/tv/Firefly (2002)/Season 01/E6.mkv"));
+    }
+
+    [Fact]
+    public void AMissingEpisodeIsATwinByJellyfinsOwnRuleAndNothingElseIs()
+    {
+        // The rule the bridge removes missing episodes by (JellyfinLibraryAccess.RemoveMissingTwins), on Jellyfin's
+        // own items: the missing episodes of the same series and season whose number the file's episode contains
+        // (Episode.ContainsEpisodeNumber, IndexNumber..IndexNumberEnd), as Jellyfin's series refresh removes them.
+        var series = Guid.NewGuid();
+        Episode File(int season, int number, int? end = null) => new() { Id = Guid.NewGuid(), SeriesId = series, ParentIndexNumber = season, IndexNumber = number, IndexNumberEnd = end, Path = $"/media/tv/Firefly (2002)/Season 0{season}/E{number}.mkv" };
+        // As Jellyfin adds a missing episode: no path, IsVirtualItem.
+        Episode Missing(int season, int? number, Guid? of = null) => new() { Id = Guid.NewGuid(), SeriesId = of ?? series, ParentIndexNumber = season, IndexNumber = number, IsVirtualItem = true };
+
+        bool Twin(Episode file, BaseItem candidate) => JellyfinLibraryAccess.IsMissingTwin(file, series, candidate);
+
+        // An S01E04-E05 file fills both missing slots.
+        var double45 = File(1, 4, 5);
+        Assert.True(Twin(double45, Missing(1, 4)));
+        Assert.True(Twin(double45, Missing(1, 5)));
+        Assert.False(Twin(double45, Missing(1, 3)));
+        Assert.False(Twin(double45, Missing(1, 6)));
+        var single = File(1, 3);
+        Assert.True(Twin(single, Missing(1, 3)));
+        Assert.False(Twin(single, Missing(1, 4)));
+
+        // Never another season, another series, an unnumbered missing episode, an episode with a file (the
+        // file's own included), or anything that isn't an episode.
+        Assert.False(Twin(double45, Missing(2, 4)));
+        Assert.False(Twin(double45, Missing(1, 4, Guid.NewGuid())));
+        Assert.False(Twin(double45, Missing(1, null)));
+        Assert.False(Twin(double45, File(1, 4)));
+        Assert.False(Twin(double45, File(1, 5)));
+        Assert.False(Twin(double45, double45));
+        Assert.False(JellyfinLibraryAccess.IsMissingTwin(double45, Guid.Empty, Missing(1, 4)));
+        var flagged = File(1, 4);
+        flagged.IsVirtualItem = true;
+        Assert.False(Twin(double45, flagged));
+        Assert.False(Twin(double45, new Season { Id = Guid.NewGuid(), SeriesId = series, IndexNumber = 1 }));
+        // A file Jellyfin hasn't numbered yet fills nothing (the bridge looks again later).
+        Assert.False(Twin(new Episode { Id = Guid.NewGuid(), SeriesId = series, ParentIndexNumber = 1, Path = "/media/tv/x.mkv" }, Missing(1, 4)));
     }
 
     [Fact]

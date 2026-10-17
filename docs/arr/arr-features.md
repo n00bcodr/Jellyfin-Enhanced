@@ -54,7 +54,11 @@ own message ("Manual Import required") and what would fix it.
   that item in the same history entry (Back goes where it went before). This follows the page's own status updates
   and Jellyfin's library change messages, whichever comes first. It waits while you type in a field, have a dialog,
   menu or sheet open, or play something, and happens once the page is yours again; a page reloaded in place keeps
-  your scroll position.
+  your scroll position. Before the page moves to another item, Jellyfin is asked again whether you can still open it
+  (your library access or parental limits may have changed while it waited). The page stays in the copy of the series
+  it showed (a 4K copy, or the series in another library, is its own copy). A season or series page you come back to
+  catches up on episodes that arrived while you were elsewhere, and while a season pack arrives file by file it is
+  redrawn once things settle (at most 30 seconds after the first arrival).
 - **Posters**: a small badge while something downloads, is almost ready or takes longer than usual.
 - **Seerr's more-info window**: the same pill and journey for titles that aren't in the library yet, e.g.
   "Downloading · 42%" with "Asked by someone in your household → OK'd → Downloading".
@@ -182,8 +186,9 @@ Imports of the last 30 minutes are looked at again when Jellyfin starts, so one 
 still shows up. On Windows, folders that differ only in upper/lower case are the same folder.
 When Jellyfin shows missing episodes, it keeps listing the missing (virtual) episode of a slot next to the one
 the file brought until its next refresh of the series; Jellyfin Enhanced removes it as soon as Jellyfin has
-numbered the new episode (same series, season and episode number, as Jellyfin's own series refresh does; no file
-is touched), so the season lists the episode once, ready to play.
+numbered the new episode (same series and season, and an episode number the file covers, so a two-episode file
+replaces both missing episodes: Jellyfin's own rule at its series refresh; only missing episodes, no file is
+touched), so the season lists the episode once, ready to play.
 
 **OK'd in Seerr, but nothing happens.** When Seerr has OK'd a request and, after 15 minutes, no Sonarr/Radarr
 has the title, administrators see "OK'd in Seerr 20 min ago, but none of the Sonarr/Radarr Jellyfin Enhanced

@@ -8,8 +8,9 @@
  * Jellyfin's own. It follows the page's status reads (status-details hands each one over; JE's change
  * feed starts them) and Jellyfin's LibraryChanged message about the page's item, season or series,
  * whichever comes first. A change waits while the viewer types, plays or has a dialog open, is checked
- * again right before it happens, happens once (reloads of one page are spaced out), and is dropped when
- * the viewer leaves the page or the user changes.
+ * again right before it happens (a move reads its destination again as the viewer first), happens once
+ * (reloads of one page are spaced out), and is dropped when the viewer leaves the page or the user
+ * changes. A page Jellyfin restores as it was drawn catches up on what arrived while it was away.
  */
 (function (JE) {
     'use strict';
@@ -30,6 +31,8 @@
          * Jellyfin bridge does that a few seconds after each file), make one reload.
          */
         batch: 6000,
+        /** The longest a season or series page waits for its arrivals to settle, from the first one. */
+        batchMax: 30000,
         /**
          * After the item a page showed was deleted with nothing in its place yet, when to look again
          * (Jellyfin adds the file's item a moment after it drops the missing one); then the page gives up.
@@ -43,20 +46,30 @@
     const INTENTS = ['wheel', 'touchmove', 'keydown', 'mousedown'];
 
     /**
-     * The page followed now: { view, id, key, kind, base, pending, timer, probeTimer, reloadedAt, tried, parents }.
+     * The page followed now: { view, id, key, series, kind, base, pending, timer, probeTimer, reloadedAt, tried, parents }.
      * `base` is what the page was drawn with (its first status, then each change acted on).
      * @type {Object|null}
      */
     let page = null;
+    /** Counts the pages followed (a destination check that answers after the page changed is dropped). */
+    let generation = 0;
     /** Jellyfin's message subscription: { client, off }. */
     let socket = null;
     /**
-     * The scope key each item's page showed lately (item id -> key): a page shown again after Jellyfin
-     * deleted its item (the viewer was on other pages meanwhile) still finds its successor.
-     * @type {Map<string, string>}
+     * The scope key (and series item) each item's page showed lately (item id -> { key, series }): a page
+     * shown again after Jellyfin deleted its item (the viewer was on other pages meanwhile) still finds
+     * its successor, in the same series copy.
+     * @type {Map<string, {key: string|null, series: string|null}>}
      */
     const keys = new Map();
     const KEYS_KEPT = 50;
+    /**
+     * What each details view was last drawn with (view -> { id, base, reloadedAt }). Jellyfin restores a
+     * view it showed before as it was drawn, without reading its item again (Back from a series page to
+     * its season): the view's first status read is compared with that, not taken as what it shows.
+     * @type {WeakMap<HTMLElement, {id: string, base: Object, reloadedAt: number}>}
+     */
+    let drawn = new WeakMap();
 
     /**
      * An item id in one form (no dashes, lower case).
@@ -179,11 +192,16 @@
         if (!view || !itemId) return null;
         if (page && page.view === view && page.id === itemId) return page;
         drop();
+        const known = keys.get(norm(itemId));
+        const last = drawn.get(view);
+        const shownBefore = last && last.id === itemId ? last : null;
         const state = {
-            view, id: itemId, key: keys.get(norm(itemId)) || null, kind: null, base: null, pending: null, timer: null, probeTimer: null,
-            lostTimer: null, lostTries: 0, reloadedAt: 0, tried: new Set(), parents: new Set([norm(itemId)])
+            view, id: itemId, key: known?.key || null, series: known?.series || null, kind: null,
+            base: shownBefore?.base || null, pending: null, timer: null, probeTimer: null, checking: false,
+            lostTimer: null, lostTries: 0, reloadedAt: shownBefore?.reloadedAt || 0, tried: new Set(), parents: new Set([norm(itemId)])
         };
         page = state;
+        generation++;
         if (enabled()) {
             listen();
             learnParents(state);
@@ -209,7 +227,33 @@
         Promise.resolve(read).then((item) => {
             if (page !== state || !item) return;
             [item.SeriesId, item.SeasonId].forEach((id) => { if (id) state.parents.add(norm(id)); });
+            if (item.SeriesId) {
+                state.series = norm(item.SeriesId);
+                remember(state);
+            }
         }).catch(() => { /* the item itself is still followed */ });
+    }
+
+    /**
+     * Remembers the page's scope key and series item under its item id (the most recent 50).
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function remember(state) {
+        if (!state.key) return;
+        const id = norm(state.id);
+        keys.delete(id);
+        keys.set(id, { key: state.key, series: state.series });
+        if (keys.size > KEYS_KEPT) keys.delete(keys.keys().next().value);
+    }
+
+    /**
+     * Records what the page is drawn with now.
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function drew(state) {
+        drawn.set(state.view, { id: state.id, base: state.base, reloadedAt: state.reloadedAt });
     }
 
     /**
@@ -223,6 +267,7 @@
         clearTimeout(state.probeTimer);
         clearTimeout(state.lostTimer);
         page = null;
+        generation++;
     }
 
     /**
@@ -280,7 +325,7 @@
         const self = norm(state.id);
         const removedFromPage = (data.FoldersRemovedFrom || []).some(id => norm(id) === self) && !(data.ItemsRemoved || []).some(id => norm(id) === self);
         if (removedFromPage && state.base && libraryId(state.id) && (state.kind === 'season' || state.kind === 'series')) {
-            plan(state, { kind: 'reload', base: state.base });
+            plan(state, { kind: 'reload', base: state.base, listed: true });
         }
         if (state.probeTimer) return;
         state.probeTimer = setTimeout(() => {
@@ -292,8 +337,9 @@
     /**
      * The details surface read the page's status (each read, after drawing it). A successor item named
      * by the status opens in the page's place; more of the title than the page was drawn with reloads
-     * Jellyfin's page (the first read is what the page was drawn with, unless Jellyfin restored the page
-     * still marked missing although the item has its file now).
+     * Jellyfin's page. The first read is what the page was drawn with, unless Jellyfin restored a view
+     * it drew before (then that is what it shows), or the page is still marked missing although the
+     * item has its file now.
      * @param {HTMLElement} view Details page.
      * @param {string} itemId Its item (or native page) id.
      * @param {Object} status Status read.
@@ -305,10 +351,7 @@
         if (!state) return;
         if (status.key) {
             state.key = status.key;
-            const id = norm(itemId);
-            keys.delete(id);
-            keys.set(id, status.key);
-            if (keys.size > KEYS_KEPT) keys.delete(keys.keys().next().value);
+            remember(state);
         }
         if (status.kind) state.kind = status.kind;
         const target = libraryId(status.openItemId);
@@ -321,6 +364,7 @@
         const now = signature(status);
         if (!state.base) {
             state.base = now;
+            drew(state);
             if (now.ready && state.kind === 'episode' && missingShown(view)) plan(state, { kind: 'reload', base: now });
             return;
         }
@@ -351,7 +395,7 @@
         const state = follow(view, itemId);
         if (!state?.key) return false;
         if (state.lostTries > timing.lost.length) return false;
-        const answer = await JE.arrStatus.fetchArrival(state.key, libraryId(state.id));
+        const answer = await JE.arrStatus.fetchArrival(state.key, libraryId(state.id), state.series);
         if (page !== state) return false;
         const target = libraryId(answer?.itemId);
         if (target && target !== norm(state.id)) {
@@ -388,17 +432,44 @@
     }
 
     /**
-     * Sets what the page is to do (moving to another item wins over a reload) and tries it.
+     * The signature with the most of the title available of two.
+     * @param {{ready: boolean, count: number|null}} a Signature.
+     * @param {{ready: boolean, count: number|null}} b Signature.
+     * @returns {{ready: boolean, count: number|null}} The higher.
+     */
+    function higher(a, b) {
+        const counts = [a.count, b.count].filter(n => n != null);
+        return { ready: a.ready || b.ready, count: counts.length ? Math.max(...counts) : null };
+    }
+
+    /**
+     * Sets what the page is to do (moving to another item wins over a reload) and tries it. A season
+     * or series page waits for its arrivals to settle: the wait starts again only when more of the
+     * title is available, or Jellyfin removed something the page lists (the same count read again,
+     * a download moving along, is no change), and never runs past `batchMax` from the first change.
      * @param {Object} state Page state.
-     * @param {{kind: 'replace'|'reload', target?: string, base?: Object}} action Action.
+     * @param {{kind: 'replace'|'reload', target?: string, base?: Object, listed?: boolean}} action Action.
      * @returns {void}
      */
     function plan(state, action) {
         if (page !== state) return;
         if (action.kind === 'replace' && state.tried.has(action.target)) return;
-        if (action.kind === 'reload' && state.pending?.kind === 'replace') return;
-        state.pending = action;
-        schedule(state, action.kind === 'reload' && listPage(state) ? timing.batch : 0);
+        const prior = state.pending;
+        if (action.kind === 'reload' && prior?.kind === 'replace') return;
+        if (action.kind !== 'reload' || !listPage(state)) {
+            state.pending = action;
+            schedule(state, 0);
+            return;
+        }
+        const now = Date.now();
+        const waiting = prior?.kind === 'reload' ? prior : null;
+        const next = waiting
+            ? { kind: 'reload', base: higher(waiting.base, action.base), since: waiting.since }
+            : { kind: 'reload', base: action.base, since: now };
+        state.pending = next;
+        const changed = !waiting || action.listed || more(next.base, waiting.base);
+        if (!changed && (state.timer || state.checking)) return;
+        schedule(state, Math.min(timing.batch, next.since + timing.batchMax - now));
     }
 
     /**
@@ -432,6 +503,10 @@
      */
     function run(state) {
         if (page !== state || !state.pending) return;
+        if (state.checking) {
+            schedule(state, timing.recheck);
+            return;
+        }
         if (!shown(state)) {
             if (hashId() !== state.id) drop();
             else schedule(state, timing.recheck);
@@ -449,12 +524,73 @@
                 return;
             }
         }
-        state.pending = null;
         if (action.kind === 'replace') {
-            state.tried.add(action.target);
-            move(state, action.target);
-        } else {
-            reload(state, action.base);
+            go(state, action).catch(() => { /* the page stays as it is */ });
+            return;
+        }
+        state.pending = null;
+        reload(state, action.base);
+    }
+
+    /**
+     * Moves to the pending item once Jellyfin answers that the viewer can still open it. A move can wait
+     * a long while (a dialog, playback), and their library access or parental limits can change
+     * meanwhile, so the item is read again as the signed-in viewer right before: an item they can't
+     * open drops the move. The user, the page and the viewer are checked again after the answer.
+     * @param {Object} state Page state.
+     * @param {{kind: 'replace', target: string}} action The move.
+     * @returns {Promise<void>} Done.
+     */
+    async function go(state, action) {
+        const epoch = JE.session?.getEpoch?.();
+        const followed = generation;
+        state.checking = true;
+        let open = false;
+        try {
+            open = await openable(action.target);
+        } finally {
+            state.checking = false;
+        }
+        if (page !== state || generation !== followed) return;
+        if (typeof JE.session?.isCurrent === 'function' && !JE.session.isCurrent(epoch)) {
+            drop();
+            return;
+        }
+        // A newer change for the page took over meanwhile (it is scheduled).
+        if (state.pending !== action) return;
+        if (!open) {
+            state.pending = null;
+            return;
+        }
+        if (!shown(state)) {
+            if (hashId() !== state.id) drop();
+            else schedule(state, timing.recheck);
+            return;
+        }
+        if (busy()) {
+            schedule(state, timing.recheck);
+            return;
+        }
+        state.pending = null;
+        state.tried.add(action.target);
+        move(state, action.target);
+    }
+
+    /**
+     * True when Jellyfin gives the signed-in viewer the item (its own library access and parental
+     * checks): read afresh, never from a cache.
+     * @param {string} target Library item id.
+     * @returns {Promise<boolean>} They can open it.
+     */
+    async function openable(target) {
+        const client = window.ApiClient;
+        const user = client?.getCurrentUserId?.();
+        if (!user || typeof client.getItem !== 'function') return false;
+        try {
+            const item = await client.getItem(user, target);
+            return norm(item?.Id) === target;
+        } catch {
+            return false;
         }
     }
 
@@ -491,6 +627,7 @@
     function reload(state, base) {
         state.base = base;
         state.reloadedAt = Date.now();
+        drew(state);
         const scroller = document.scrollingElement || document.documentElement;
         const top = scroller.scrollTop;
         const focused = document.activeElement && document.activeElement !== document.body && state.view.contains(document.activeElement) ? document.activeElement : null;
@@ -521,6 +658,7 @@
         drop();
         unlisten();
         keys.clear();
+        drawn = new WeakMap();
     });
 
     JE.internals = JE.internals || {};

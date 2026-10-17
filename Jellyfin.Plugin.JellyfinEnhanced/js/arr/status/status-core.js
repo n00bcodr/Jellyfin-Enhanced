@@ -139,12 +139,14 @@
      * replaced or deleted the item the page showed): the item of that scope the viewer can open.
      * @param {string} key The page's scope key (movie, series, season or episode).
      * @param {string} [itemId] The item the page showed.
+     * @param {string} [seriesId] The series item it belonged to (the answer stays in that copy).
      * @param {AbortSignal} [signal] Abort signal.
      * @returns {Promise<{itemId: string|null}|null>} The answer, or null when it couldn't be read.
      */
-    function fetchArrival(key, itemId, signal) {
+    function fetchArrival(key, itemId, seriesId, signal) {
         const q = [`key=${encodeURIComponent(key)}`];
         if (itemId) q.push(`itemId=${encodeURIComponent(itemId)}`);
+        if (seriesId) q.push(`seriesId=${encodeURIComponent(seriesId)}`);
         return read(`/acquire/status/arrival?${q.join('&')}`, { signal });
     }
 

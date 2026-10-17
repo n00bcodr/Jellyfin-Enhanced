@@ -101,13 +101,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>
         /// Where a details page goes once its title arrives: Jellyfin can replace or delete the item the
         /// page showed (a missing episode or season gets a new id when its file is there). For the page's
-        /// scope <paramref name="key"/> (a movie, series, season or episode key) and the id it showed, the
-        /// item of that scope the caller can open: <c>{"itemId": "…"}</c>, or <c>{"itemId": null}</c>
-        /// when there is none (also for titles the caller can't see). Never calls an arr.
+        /// scope <paramref name="key"/> (a movie, series, season or episode key), the id it showed and the
+        /// series item it belonged to (<paramref name="seriesId"/>: a standard and a 4K copy, or one series in
+        /// two libraries, are separate series items), the item of that scope the caller can open:
+        /// <c>{"itemId": "…"}</c>, or <c>{"itemId": null}</c> when there is none (also for titles the caller
+        /// can't see). Never calls an arr.
         /// </summary>
         [HttpGet("acquire/status/arrival")]
         [Authorize]
-        public IActionResult GetArrival([FromQuery] string? key, [FromQuery] string? itemId)
+        public IActionResult GetArrival([FromQuery] string? key, [FromQuery] string? itemId, [FromQuery] string? seriesId = null)
         {
             if (!_service.Enabled) return StatusCode(403, new { code = "feature_disabled" });
             if (Viewer() is not { } viewer) return StatusCode(403, new { code = "user_required" });
@@ -118,10 +120,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (!Guid.TryParse(itemId, out var id)) return BadRequest(new { code = "invalid_id" });
                 shown = id;
             }
+            Guid? series = null;
+            if (!string.IsNullOrEmpty(seriesId))
+            {
+                if (!Guid.TryParse(seriesId, out var id)) return BadRequest(new { code = "invalid_id" });
+                series = id;
+            }
 
             using var scope = _service.Store.BeginRequest("acquire/status/arrival");
-            var arrived = _service.ArrivedItem(viewer, title, shown);
-            Response.Headers["Cache-Control"] = "private, no-cache";
+            var arrived = _service.ArrivedItem(viewer, title, shown, series);
+            // What one person may open right now: never kept by a browser or proxy.
+            Response.Headers["Cache-Control"] = "private, no-store";
             return Ok(new { itemId = arrived?.ToString("N", CultureInfo.InvariantCulture) });
         }
 
