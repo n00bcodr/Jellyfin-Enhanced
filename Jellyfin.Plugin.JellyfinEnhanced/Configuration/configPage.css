@@ -1371,12 +1371,14 @@
     font-size: 11px !important;
 }
 /* Checkbox labels are a fixed-height single row, so a badge squeezes long label text into a
-   narrow column. Let the badge wrap under the text instead when the row runs out of room. */
+   narrow column. Let the badge wrap under the text instead when the row runs out of room,
+   keeping the usual row height so a badged setting isn't shorter than its neighbours. */
 .emby-checkbox-label:has(> .je-new-badge) {
     flex-wrap: wrap;
     column-gap: 8px;
     row-gap: 4px;
     height: auto;
+    min-height: 2.35em;
 }
 .emby-checkbox-label > .je-new-badge {
     margin-left: 0;
