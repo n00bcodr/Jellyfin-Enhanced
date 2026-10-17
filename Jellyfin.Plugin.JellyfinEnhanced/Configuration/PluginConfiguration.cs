@@ -998,6 +998,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Lists: show where each entry's request stands (the shared request status). Off by default.</summary>
         public bool ArrPhase4ListStatusEnabled { get; set; }
 
+        // ---- Phase 4e: acquisition badges (web) and per-viewer native poster stamps ----
+
+        /// <summary>
+        /// Acquisition badges: one badge per poster card for what changed for the viewer — Upgraded (a better copy
+        /// replaced the file), New for you (something they asked for or follow arrived) and 4K (they can open a 4K copy),
+        /// after the download ring. Needs <see cref="ArrPhase4Enabled"/>. Off by default; each person may hide them.
+        /// </summary>
+        public bool ArrPhase4AcquisitionBadgesEnabled { get; set; }
+
+        /// <summary>
+        /// Acquisition badges on native apps: the same state drawn into each viewer's own poster images (native poster
+        /// tags). Needs <see cref="ArrPhase4AcquisitionBadgesEnabled"/> and <see cref="NativePosterTagsEnabled"/>. Off by
+        /// default; each person may turn them off.
+        /// </summary>
+        public bool ArrPhase4NativeStampsEnabled { get; set; }
+
+        /// <summary>Acquisition badges: days a "New for you" badge lasts unless watched first (1–30, default 7).</summary>
+        public int ArrAcquisitionNewDays { get; set; } = 7;
+
+        /// <summary>Acquisition badges: days an "Upgraded" badge lasts unless watched first (1–30, default 7).</summary>
+        public int ArrAcquisitionUpgradedDays { get; set; } = 7;
+
         // ---- Requests & downloads, phase 1: status on pages and live updates ----
 
         /// <summary>

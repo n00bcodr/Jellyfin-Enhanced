@@ -1482,6 +1482,35 @@ list feature (its `list-placeholders` folder) with `GET /JellyfinEnhanced/arr/ad
 changes nothing) and `POST` (the import). The old files are only read. Lists whose playlist or collection is gone are
 left out, unreadable files are copied aside, and imported lists start with swap-in off and any linked source paused.
 
+### Acquisition badges: New for you, Upgraded, 4K (phase 4)
+
+With *Poster badges: New for you, Upgraded, 4K* on (under phase 4, off by default), a poster card can carry one small
+badge about what changed for the person looking at it. At most one per card, in this order:
+
+1. The download ring (and the *taking longer* and *almost ready* badges) of the phase-1 poster badges, while something
+   is on its way. Season cards keep their ✓ / ◐ ready count next to it.
+2. **Upgraded**: Sonarr or Radarr replaced the file with a better copy (its history says the old file was deleted for an
+   upgrade, and Jellyfin has the new file). Everyone who can open the new copy sees it until they play it after the
+   upgrade (a played mark carried over from the old file doesn't count), or for 7 days.
+3. **New for you**: something this person asked for (a request, also through Seerr) or follows arrived for the first
+   time after they asked, and they can open it. It goes when they play it or mark it played, or after 7 days. A 4K
+   request waits for a 4K copy; a replacement of something already there is never "new".
+4. **4K**: the person can open a 4K copy (a video at least 3200 pixels wide or 2000 high) of this movie or series, or of
+   this season or episode.
+
+A series or season card shows New or Upgraded when one of its episodes does. Badges come from what the server already
+knows (no call to Sonarr, Radarr or Seerr when a page or a poster loads), and a badge whose time is up is gone at once,
+without waiting for anything to run. A badge never shows a title the person can't open, and nothing is requested or
+changed by a badge.
+
+**On TV and phone apps** (*Draw the badges into posters for TV and phone apps*, which also needs
+[Native Poster Tags](../enhanced/enhanced-features.md)): the same badge is drawn into the poster images that person's
+apps load, as a small icon (NEW, an upgrade arrow, or 4K) in the first corner no poster tag uses. Each person gets their
+own poster address, so one person's badge never shows on another's screen, and an address changes when the badge does
+(watched, upgraded, expired). An app that still holds an old address gets the current picture, cached for an hour.
+
+Each person can hide the web badges, or turn off the drawn ones, in the Jellyfin Enhanced panel (*Poster badges*).
+
 ### Privacy and Seerr scans
 
 - **Download progress from Seerr.** Seerr's title answers include the download rows it copies from Sonarr/Radarr's

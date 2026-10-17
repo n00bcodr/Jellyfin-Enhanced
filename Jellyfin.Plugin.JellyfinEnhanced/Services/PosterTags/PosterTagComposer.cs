@@ -101,7 +101,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             CancellationToken cancellationToken,
             PosterTagDataSnapshot? snapshot = null)
         {
-            var data = await _data.GetRenderDataAsync(httpContext, item, user, snapshot, cancellationToken).ConfigureAwait(false);
+            var data = await _data.GetRenderDataAsync(httpContext, item, user, snapshot, cancellationToken, settings).ConfigureAwait(false);
             if (data == null) return new PosterTagComposeResult(PosterTagComposeStatus.NoData, null, string.Empty, false);
 
             var key = CompositeKey(image, settings.Digest, topRightOffset, data.DataKey, quality);
@@ -211,7 +211,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 Played: topRightOffset,
                 UnplayedItemCount: null,
                 UserReviewAverage: data.Reviews.Average,
-                UserReviewCount: data.Reviews.Count);
+                UserReviewCount: data.Reviews.Count,
+                Stamp: data.Stamp);
             var layout = PosterTagResolver.Resolve(data.Entry, settings, context, landscape);
             if (layout == null || layout.IsEmpty) return CompositeImageCache.Passthrough;
 

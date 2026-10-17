@@ -543,6 +543,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>For failures: the arr's message (admin only).</summary>
         public string? Message { get; init; }
+
+        /// <summary>
+        /// For deleted files: why the arr deleted it ("Upgrade" when a better copy replaced it, "Manual", ...). Kept
+        /// server-side only (acquisition badges confirm upgrades with it).
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string? Reason { get; init; }
     }
 
     /// <summary>Recent history of one instance, newest first, with the catch-up watermark.</summary>

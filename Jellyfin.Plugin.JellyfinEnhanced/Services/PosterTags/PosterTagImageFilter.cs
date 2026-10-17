@@ -222,7 +222,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             var userId = identity.Candidates[0];
             var settings = _settings.Get(userId);
-            if (!settings.NativeEnabled || !settings.AnyGroupEnabled) return null;
+            if (!settings.NativeEnabled || !settings.AnyContentEnabled) return null;
 
             if (!_tokens.Verify(token, userId, itemId, settings.Digest, PosterTagComposer.PixelVersion, out var variant)) return null;
 
@@ -237,7 +237,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             // Taken once: the composite is drawn from this very snapshot, so a
             // tag-cache update between the check and the render can't put new
             // data under the old token's immutable response.
-            var snapshot = _data.GetPinnedSnapshot(itemId, user);
+            var snapshot = _data.GetPinnedSnapshot(itemId, user, settings);
             var strong = !variant.IsWeak
                 && snapshot != null
                 && string.Equals(variant.DataHash, snapshot.PinnedHash, StringComparison.Ordinal);

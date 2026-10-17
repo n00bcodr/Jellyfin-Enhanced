@@ -24,7 +24,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// and has none (or its key is invalid), which the web shows as a dash chip; null when review
     /// data is not available for this item, which draws no user-review chip.
     /// </param>
-    public sealed record PosterTagItemContext(string ItemType, bool Played, int? UnplayedItemCount, double? UserReviewAverage, int? UserReviewCount);
+    /// <param name="Stamp">
+    /// The viewer's acquisition stamp for the image owner (phase 4e), drawn only when the settings enable stamps;
+    /// taken from the pinned snapshot the token was checked against.
+    /// </param>
+    public sealed record PosterTagItemContext(string ItemType, bool Played, int? UnplayedItemCount, double? UserReviewAverage, int? UserReviewCount, Acquire.Stamps.AcquisitionStamp Stamp = Acquire.Stamps.AcquisitionStamp.None);
 
     /// <summary>
     /// Decides which tags the web would draw on a card, from JE's tag-cache entry and the user's
@@ -61,7 +65,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             ArgumentNullException.ThrowIfNull(entry);
             ArgumentNullException.ThrowIfNull(settings);
             ArgumentNullException.ThrowIfNull(context);
-            if (!settings.AnyGroupEnabled) return null;
+            var stamp = settings.AcquisitionStampsEnabled ? context.Stamp : Acquire.Stamps.AcquisitionStamp.None;
+            if (!settings.AnyGroupEnabled && stamp == Acquire.Stamps.AcquisitionStamp.None) return null;
 
             // DOM order of the tag containers = paint and stack order. Renderers run in registration
             // order (quality, genre, rating, age rating, language), except that quality registers
@@ -119,6 +124,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             if (quality is not null && settings.UsesJellyfinAudioPreference) groups.Add(quality);
             if (reviewOnly is not null) groups.Add(reviewOnly);
+            if (stamp != Acquire.Stamps.AcquisitionStamp.None)
+            {
+                // Phase 4e: one stamp, in the corner the settings chose, after every tag group.
+                groups.Add(new PosterTagGroupLayout(PosterTagGroup.Acquisition, PosterTagSettings.CornerOf(settings.AcquisitionStampPosition), new PosterTag[] { new AcquisitionStampTag(stamp) }));
+            }
+
             if (groups.Count == 0) return null;
 
             return new PosterTagLayout(groups, HasTopRightOffset(groups, settings, context), landscape, settings.Styles);

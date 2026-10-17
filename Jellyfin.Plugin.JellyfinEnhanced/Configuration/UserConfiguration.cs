@@ -51,6 +51,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool? ListStatus { get; set; }
         /// <summary>Requests &amp; downloads lists: automatic swap-in may change lists this person turned it on for (their consent). Null and false: no.</summary>
         public bool? ListSwapIn { get; set; }
+        // Phase 4e (acquisition badges): per-person display preferences.
+        /// <summary>Requests &amp; downloads: Upgraded / New for you / 4K badges on poster cards (web). Null follows the administrator; false hides them for this person.</summary>
+        public bool? AcquisitionBadges { get; set; }
+        /// <summary>Requests &amp; downloads: the same badges drawn into this person's poster images on native apps. Null follows the administrator; false turns them off for this person.</summary>
+        public bool? NativeAcquisitionStamps { get; set; }
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
         public bool ShowSourceTag { get; set; } = true;

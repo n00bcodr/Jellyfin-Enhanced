@@ -583,6 +583,23 @@
                                 ${JE.pluginConfig?.ArrListSwapInEnabled === true ? select('listSwapInSelect', 'listSwapIn', 'panel_settings_lists_swapin', [['', 'panel_settings_lists_swapin_no'], ['on', 'panel_settings_lists_swapin_yes']]) : ''}
                             </div>`;
                             })() : ''}
+                            ${JE.pluginConfig?.ArrAcquisitionBadgesEnabled === true ? (() => {
+                                // Phase 4e: per-person acquisition badges (Upgraded, New for you, 4K). "" follows the household
+                                // (null), "off" hides them for this person.
+                                const pick = (key) => (JE.currentSettings?.[key] ?? JE.userConfig?.settings?.[key]) === false ? 'off' : '';
+                                const select = (id, key, labelKey) => `
+                                    <label for="${id}" style="display:block; font-size:12px; color:rgba(255,255,255,0.6); margin:10px 0 4px;">${escapeHtml(JE.t(labelKey))}</label>
+                                    <select id="${id}" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
+                                        ${[['', 'panel_settings_badges_follow'], ['off', 'panel_settings_badges_hide']].map(([value, optionKey]) => `<option value="${value}" ${pick(key) === value ? 'selected' : ''}>${escapeHtml(JE.t(optionKey))}</option>`).join('')}
+                                    </select>`;
+                                return `
+                            <div style="margin-top: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <div style="font-weight:500;">${escapeHtml(JE.t('panel_settings_badges'))}</div>
+                                <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_settings_badges_desc'))}</div>
+                                ${select('acquisitionBadgesSelect', 'acquisitionBadges', 'panel_settings_badges_web')}
+                                ${JE.pluginConfig?.ArrNativeStampsEnabled === true ? select('nativeAcquisitionStampsSelect', 'nativeAcquisitionStamps', 'panel_settings_badges_native') : ''}
+                            </div>`;
+                            })() : ''}
                         </div>
                     </section>
                     ${/* Hidden Content settings — only rendered when the module is initialized (controlled by HiddenContentEnabled config) */ ''}

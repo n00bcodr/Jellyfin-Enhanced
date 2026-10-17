@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -21,7 +22,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <param name="DataKey">Hash of everything here that can change the drawing (entry content and review data).</param>
     /// <param name="SpoilerStripped">True when Spoiler Guard removed something for this viewer.</param>
     /// <param name="Reviews">The viewer's user-review chip data.</param>
-    public sealed record PosterTagRenderData(TagCacheEntry Entry, string DataKey, bool SpoilerStripped, PosterTagReviewSummary Reviews);
+    /// <param name="Stamp">The viewer's acquisition stamp (phase 4e; None unless stamps are on for them).</param>
+    public sealed record PosterTagRenderData(TagCacheEntry Entry, string DataKey, bool SpoilerStripped, PosterTagReviewSummary Reviews, AcquisitionStamp Stamp = AcquisitionStamp.None);
 
     /// <summary>
     /// The live tag data a variant token's data hash is checked against, kept so the composite is drawn from
@@ -30,7 +32,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <param name="Entry">The live, unstripped tag-cache entry.</param>
     /// <param name="Reviews">The viewer's user-review chip data for it.</param>
     /// <param name="PinnedHash">The 6-hex data hash a token pins for this data (never <see cref="PosterTagVariantToken.WeakDataHash"/>).</param>
-    public sealed record PosterTagDataSnapshot(TagCacheEntry Entry, PosterTagReviewSummary Reviews, string PinnedHash);
+    /// <param name="Stamp">
+    /// The viewer's acquisition stamp when the hash was taken (phase 4e): part of the hash, and what the composite draws,
+    /// so a stamp that expires between validation and drawing can't put other pixels under this token.
+    /// </param>
+    public sealed record PosterTagDataSnapshot(TagCacheEntry Entry, PosterTagReviewSummary Reviews, string PinnedHash, AcquisitionStamp Stamp = AcquisitionStamp.None);
 
     // Where native poster tags gets an item's tag data — the same data the web
     // overlays draw from with the server tag cache on (renderFromServerCache):
@@ -64,6 +70,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private readonly SpoilerTagDataStripper _stripper;
         private readonly SpoilerUserResolver _spoilerResolver;
         private readonly PosterTagReviewRatings _reviews;
+        private readonly AcquisitionStampResolver _stamps;
         private readonly Logger _logger;
 
         private readonly ConcurrentDictionary<Guid, MemoEntry> _memo = new();
@@ -84,6 +91,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             SpoilerTagDataStripper stripper,
             SpoilerUserResolver spoilerResolver,
             PosterTagReviewRatings reviews,
+            AcquisitionStampResolver stamps,
             Logger logger)
         {
             _tagCache = tagCache;
@@ -91,6 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _stripper = stripper;
             _spoilerResolver = spoilerResolver;
             _reviews = reviews;
+            _stamps = stamps;
             _logger = logger;
 
             _libraryManager.ItemAdded += OnItemChanged;
@@ -103,20 +112,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// (unstripped) and the viewer's review chip data; <see cref="PosterTagVariantToken.WeakDataHash"/>
         /// when the cache has no entry (cache off or not yet built). Cheap: no I/O.
         /// </summary>
-        public string GetPinnedDataHash(Guid ownerId, JUser viewer)
-            => GetPinnedSnapshot(ownerId, viewer)?.PinnedHash ?? PosterTagVariantToken.WeakDataHash;
+        public string GetPinnedDataHash(Guid ownerId, JUser viewer, PosterTagSettings? settings = null)
+            => GetPinnedSnapshot(ownerId, viewer, settings)?.PinnedHash ?? PosterTagVariantToken.WeakDataHash;
 
         /// <summary>
         /// The live tag data (and the hash a token pins for it) for an image owner as <paramref name="viewer"/>
-        /// sees it, or null when the tag cache has no entry (cache off or not yet built). Cheap: no I/O.
+        /// sees it, or null when the tag cache has no entry (cache off or not yet built). With acquisition stamps on in
+        /// <paramref name="settings"/>, the viewer's stamp is resolved now and pinned with it. Cheap: no I/O.
         /// </summary>
-        public PosterTagDataSnapshot? GetPinnedSnapshot(Guid ownerId, JUser viewer)
+        public PosterTagDataSnapshot? GetPinnedSnapshot(Guid ownerId, JUser viewer, PosterTagSettings? settings = null)
         {
             if (!_tagCache.TryGetEntry(ownerId, out var entry)) return null;
             var reviews = _reviews.Get(entry, viewer);
-            var hash = DataKey(entry, reviews).Substring(0, 6);
+            var stamp = StampFor(ownerId, viewer, settings);
+            return new PosterTagDataSnapshot(entry, reviews, PinnedHash(entry, reviews, stamp), stamp);
+        }
+
+        /// <summary>The 6-hex hash a token pins for this data (never <see cref="PosterTagVariantToken.WeakDataHash"/>).</summary>
+        /// <param name="entry">Unstripped tag-cache entry.</param>
+        /// <param name="reviews">Review chip data.</param>
+        /// <param name="stamp">Acquisition stamp (None: the hash is exactly the pre-phase-4e one).</param>
+        /// <returns>The hash.</returns>
+        internal static string PinnedHash(TagCacheEntry entry, PosterTagReviewSummary reviews, AcquisitionStamp stamp)
+        {
+            var hash = DataKey(entry, reviews, stamp).Substring(0, 6);
             // Never collide with the "not pinned" value.
-            return new PosterTagDataSnapshot(entry, reviews, hash == PosterTagVariantToken.WeakDataHash ? "000001" : hash);
+            return hash == PosterTagVariantToken.WeakDataHash ? "000001" : hash;
         }
 
         /// <summary>The live tag cache entry for an item, if any (no build).</summary>
@@ -128,7 +149,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <paramref name="snapshot"/> the entry and review data are taken from it (only the Spoiler Guard
         /// strip is applied), so the drawing matches the data a token was validated against.
         /// </summary>
-        public async Task<PosterTagRenderData?> GetRenderDataAsync(HttpContext httpContext, BaseItem item, JUser user, PosterTagDataSnapshot? snapshot, CancellationToken cancellationToken)
+        public async Task<PosterTagRenderData?> GetRenderDataAsync(HttpContext httpContext, BaseItem item, JUser user, PosterTagDataSnapshot? snapshot, CancellationToken cancellationToken, PosterTagSettings? settings = null)
         {
             TagCacheEntry entry;
             if (snapshot != null)
@@ -152,8 +173,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             // Reviews key on TmdbId and Type, which the strip never touches, so
             // the snapshot's chip (computed on the unstripped entry) is the same.
             var reviews = snapshot?.Reviews ?? _reviews.Get(entry, user);
-            return new PosterTagRenderData(entry, DataKey(entry, reviews), stripped, reviews);
+            // The stamp the token pinned; without a snapshot (a weak token) the viewer's stamp now.
+            var stamp = snapshot?.Stamp ?? StampFor(item.Id, user, settings);
+            return new PosterTagRenderData(entry, DataKey(entry, reviews, stamp), stripped, reviews, stamp);
         }
+
+        /// <summary>
+        /// The viewer's acquisition stamp for an image owner now (None unless <paramref name="settings"/> draw stamps).
+        /// In-memory; no I/O.
+        /// </summary>
+        /// <param name="ownerId">Image owner.</param>
+        /// <param name="viewer">Viewer.</param>
+        /// <param name="settings">The viewer's effective settings.</param>
+        /// <returns>The stamp.</returns>
+        public AcquisitionStamp StampOf(Guid ownerId, JUser viewer, PosterTagSettings settings) => StampFor(ownerId, viewer, settings);
+
+        // The viewer's acquisition stamp when their settings draw stamps (else None, so nothing about stamps reaches the
+        // hash, the composite key or the pixels).
+        private AcquisitionStamp StampFor(Guid ownerId, JUser viewer, PosterTagSettings? settings)
+            => settings?.AcquisitionStampsEnabled == true ? _stamps.Resolve(ownerId, viewer.Id) : AcquisitionStamp.None;
 
         public void Dispose()
         {
@@ -171,11 +209,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 return Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(copy))).ToLowerInvariant();
             });
 
-        private static string DataKey(TagCacheEntry entry, PosterTagReviewSummary reviews)
+        private static string DataKey(TagCacheEntry entry, PosterTagReviewSummary reviews, AcquisitionStamp stamp)
         {
             var input = ContentHash(entry) + "|r:"
                 + (reviews.Count?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-") + ":"
                 + (reviews.Average?.ToString("R", System.Globalization.CultureInfo.InvariantCulture) ?? "-");
+            // Phase 4e: only a stamp changes the input, so a poster without one keeps its pre-4e hash and URL.
+            if (stamp != AcquisitionStamp.None) input += "|s:" + ((int)stamp).ToString(System.Globalization.CultureInfo.InvariantCulture);
             return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
         }
 

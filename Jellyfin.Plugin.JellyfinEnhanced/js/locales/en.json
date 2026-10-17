@@ -1868,5 +1868,16 @@
     "panel_settings_lists_swapin": "Let titles that arrive take their place in lists I turned this on for",
     "panel_settings_lists_swapin_no": "No",
     "panel_settings_lists_swapin_yes": "Yes",
-    "toast_list_settings_saved": "List settings saved"
+    "toast_list_settings_saved": "List settings saved",
+    "arr_badge_new_title": "New for you",
+    "arr_badge_upgraded": "Upgraded",
+    "arr_badge_upgraded_title": "Upgraded to a better copy",
+    "arr_badge_fourk_title": "You can watch this in 4K",
+    "panel_settings_badges": "Poster badges",
+    "panel_settings_badges_desc": "New for you, Upgraded and 4K marks on posters.",
+    "panel_settings_badges_web": "Badges on poster cards",
+    "panel_settings_badges_native": "Badges drawn into posters on TV and phone apps",
+    "panel_settings_badges_follow": "Show (household setting)",
+    "panel_settings_badges_hide": "Hide",
+    "toast_badge_settings_saved": "Poster badge settings saved"
 }

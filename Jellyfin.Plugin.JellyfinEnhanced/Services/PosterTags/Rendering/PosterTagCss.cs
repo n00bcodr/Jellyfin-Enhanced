@@ -32,6 +32,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// <summary>Fixed size of the user-review <c>person_heart</c> icon (<c>font-size: 14px !important</c>).</summary>
         public const float UserReviewIconSize = 14f;
 
+        /// <summary>The acquisition stamp's glyph size: a little larger than a genre glyph (its icons carry letters).</summary>
+        /// <param name="css">The card's CSS.</param>
+        /// <returns>Size in CSS px.</returns>
+        public static float StampGlyphSize(PosterTagCss css) => css.GenreGlyphSize * 1.25f;
+
         /// <summary>Synthesised small caps: lowercase letters drawn as capitals at this fraction of the font size (rounded).</summary>
         public const float SmallCapsScale = 0.7f;
 

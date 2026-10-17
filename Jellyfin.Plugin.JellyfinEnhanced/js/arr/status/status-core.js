@@ -37,6 +37,17 @@
     /** @type {Map<string, Set<Function>>} key -> refresh callbacks of surfaces showing it */
     const subscribers = new Map();
     let disabled = false;
+    /** The stamps route answered 403 (feature_disabled) in this page load (phase 4e). */
+    let stampsDisabled = false;
+    /**
+     * Acquisition stamp chips (phase 4e): icon, short word and title per stamp. The fiber_new and 4k
+     * glyphs spell their word themselves; only Upgraded's arrow gets one.
+     */
+    const STAMPS = {
+        upgraded: { icon: 'upgrade', word: 'arr_badge_upgraded', title: 'arr_badge_upgraded_title' },
+        new: { icon: 'fiber_new', word: null, title: 'arr_badge_new_title' },
+        fourK: { icon: '4k', word: null, title: 'arr_badge_fourk_title' }
+    };
 
     /**
      * Translates a key with {name} parameters.
@@ -105,21 +116,70 @@
      */
     async function read(path, options) {
         if (!enabled()) return null;
-        const api = JE.core?.api;
         try {
-            if (api?.plugin) {
-                return await api.plugin(path, { priority: options?.priority, signal: options?.signal, skipRetry: true });
-            }
-            const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced${path}`), {
-                headers: { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' },
-                signal: options?.signal
-            });
-            if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
-            return await response.json();
+            return await send(path, options);
         } catch (err) {
             if (err?.name === 'AbortError') return null;
             if (err?.status === 403) disabled = true;
             console.warn(`${logPrefix} status request failed (${err?.status || err?.message || err})`);
+            return null;
+        }
+    }
+
+    /**
+     * The transport behind {@link read} and {@link fetchStamps}: JE.core.api.plugin when present,
+     * else a plain authorized fetch. Throws on failure (the HTTP status on `err.status`).
+     * @param {string} path Path under /JellyfinEnhanced.
+     * @param {{priority?: 'low', signal?: AbortSignal}} [options] Fetch options.
+     * @returns {Promise<Object>} The response.
+     */
+    async function send(path, options) {
+        const api = JE.core?.api;
+        if (api?.plugin) {
+            return await api.plugin(path, { priority: options?.priority, signal: options?.signal, skipRetry: true });
+        }
+        const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced${path}`), {
+            headers: { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' },
+            signal: options?.signal
+        });
+        if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
+        return await response.json();
+    }
+
+    // ------------------------------------------------------------------ acquisition stamps (phase 4e)
+
+    /**
+     * True when poster cards may show acquisition badges (Upgraded / New for you / 4K): the
+     * administrator turned them on, this person didn't hide them in their own settings, and the
+     * stamps route didn't answer feature_disabled during this page load.
+     * @returns {boolean} Enabled.
+     */
+    function stampsEnabled() {
+        if (stampsDisabled || JE?.pluginConfig?.ArrAcquisitionBadgesEnabled !== true) return false;
+        const own = JE.currentSettings?.acquisitionBadges ?? JE.userConfig?.settings?.acquisitionBadges;
+        return own !== false;
+    }
+
+    /**
+     * The acquisition stamps of many items at once (poster cards), low priority. Only items that
+     * have a stamp come back. A 403 (feature_disabled) switches stamps off for this page load
+     * without touching the status routes.
+     * @param {string[]} ids Jellyfin item ids (≤ 100).
+     * @param {AbortSignal} [signal] Abort signal.
+     * @returns {Promise<{items: Array<{itemId: string, stamp: string}>}|null>} The response, or null on failure.
+     */
+    async function fetchStamps(ids, signal) {
+        if (!stampsEnabled()) return null;
+        // Titles that aren't in the library have no stamp (same rule as fetchBatch).
+        if (ids?.length && JE.titleDetails?.isSynthetic) ids = ids.filter(id => !JE.titleDetails.isSynthetic(id));
+        if (!ids?.length) return { items: [] };
+        try {
+            const data = await send(`/acquire/stamps?ids=${ids.map(encodeURIComponent).join(',')}`, { priority: 'low', signal });
+            return data && typeof data === 'object' ? data : null;
+        } catch (err) {
+            if (err?.name === 'AbortError') return null;
+            if (err?.status === 403) stampsDisabled = true;
+            console.warn(`${logPrefix} stamps request failed (${err?.status || err?.message || err})`);
             return null;
         }
     }
@@ -692,12 +752,17 @@
 
     /**
      * A poster-card badge for a status, or null when there is nothing to show (quiet).
-     * Downloading ring > attention > almost ready; season cards also show ✓ or "◐ ready/aired".
-     * @param {Object} status Card status.
+     * Attention > downloading ring > almost ready > the acquisition stamp (phase 4e: Upgraded,
+     * New for you or 4K, as the server resolved it for this person); season cards also show ✓ or
+     * "◐ ready/aired" first.
+     * @param {Object|null} [status] Card status (null: none known; a stamp alone still draws).
+     * @param {'upgraded'|'new'|'fourK'|null} [stamp] Acquisition stamp.
      * @returns {HTMLElement|null} Badge host content.
      */
-    function buildBadge(status) {
-        if (!status) return null;
+    function buildBadge(status, stamp) {
+        const chip = Object.prototype.hasOwnProperty.call(STAMPS, stamp) ? STAMPS[stamp] : null;
+        if (!status && !chip) return null;
+        status = status || {};
         const s = status.summary;
         const box = el('div', 'je-arr-badge');
         box.dataset.jeArrKey = status.key || '';
@@ -731,6 +796,13 @@
             almost.appendChild(icon('hourglass_bottom', 'je-arr-badge-icon'));
             almost.title = tr('arr_status_almost_ready');
             box.appendChild(almost);
+            any = true;
+        } else if (chip) {
+            const mark = el('span', `je-arr-badge-chip je-arr-tone-${stamp} je-arr-badge-stamp`);
+            mark.appendChild(icon(chip.icon, 'je-arr-badge-icon'));
+            if (chip.word) mark.appendChild(el('span', 'je-arr-badge-word', tr(chip.word)));
+            mark.title = tr(chip.title);
+            box.appendChild(mark);
             any = true;
         }
         if (!any) return null;
@@ -846,12 +918,15 @@
     JE.session?.onUserChange?.('arr-status', () => {
         subscribers.clear();
         disabled = false;
+        stampsDisabled = false;
     });
 
     JE.arrStatus = Object.freeze({
         enabled,
+        stampsEnabled,
         fetchItem,
         fetchBatch,
+        fetchStamps,
         fetchKey,
         feedPosition,
         familyText,
