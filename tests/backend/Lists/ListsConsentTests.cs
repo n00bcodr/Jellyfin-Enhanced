@@ -283,6 +283,59 @@ public class ListsConsentTests
         Assert.Empty(h.Host.Resolved(playlist.Info.Id));
     }
 
+    [Fact]
+    public async Task AnEditShareRemovedWhileAPassWaitsForTheListInsertsNothing()
+    {
+        using var h = new ListsHarness();
+        var owner = h.NewUser("owner");
+        var editor = h.NewUser("editor");
+        var playlist = h.Host.AddPlaylist(owner, true, new ListShare(editor.Id, true));
+        var access = h.AccessFor(playlist, editor);
+        var movie = Movie(520);
+        Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(access, new[] { movie }, null, null, null, None));
+        await h.Consent(access);
+        h.Host.AddItem(tmdb: 520);
+        h.Host.Calls.Clear();
+
+        // The pass reads the list, then waits for the lock; meanwhile the consenting editor's share is removed (the
+        // public playlist stays visible to them).
+        Task<SwapPassResult> pass;
+        using (await h.Store.LockAsync(access.ListIdN))
+        {
+            pass = h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+            playlist.Info = playlist.Info with { Shares = Array.Empty<ListShare>() };
+        }
+
+        Assert.Equal(default, await pass);
+        Assert.Empty(h.Host.Calls);
+        Assert.Empty(h.Host.Resolved(playlist.Info.Id));
+        Assert.Single(h.Store.Load(access.ListIdN)!.Items);
+    }
+
+    [Fact]
+    public async Task AnEditShareRemovedBetweenTwoSwapsStopsThePassBeforeTheSecondInsert()
+    {
+        using var h = new ListsHarness();
+        var owner = h.NewUser("owner");
+        var editor = h.NewUser("editor");
+        var playlist = h.Host.AddPlaylist(owner, false, new ListShare(editor.Id, true));
+        var access = h.AccessFor(playlist, editor);
+        var first = Movie(521);
+        var second = Movie(522);
+        Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(access, new[] { first, second }, null, null, null, None));
+        await h.Consent(access);
+        var firstCopy = h.Host.AddItem(tmdb: 521);
+        h.Host.AddItem(tmdb: 522);
+        // Jellyfin takes the first title, then the editor's share is made read-only.
+        h.Host.AfterAdd = _ => playlist.Info = playlist.Info with { Shares = new[] { new ListShare(editor.Id, false) } };
+
+        var result = await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+
+        Assert.Equal(1, result.Inserted);
+        Assert.Equal(new[] { firstCopy }, h.Host.Resolved(playlist.Info.Id));
+        Assert.Equal(second.Id, Assert.Single(h.Store.Load(access.ListIdN)!.Items).Id);
+    }
+
     private static Action Set(Action apply, Action restore)
     {
         apply();

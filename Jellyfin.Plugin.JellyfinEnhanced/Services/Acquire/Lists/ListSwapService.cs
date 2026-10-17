@@ -193,6 +193,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return _access.Evaluate(list, consenter).Permissions.CanEdit;
         }
 
+        // Whether the pass may still insert: consent judged again on the list as Jellyfin has it now (a share removed or
+        // made read-only during an earlier insert of the same pass stops the rest).
+        private bool StillInserting(PassContext context)
+        {
+            if (context.Inserts && (_host.GetList(context.List.Id) is not { } current || !InsertsAllowed(current, context.Doc)))
+            {
+                context.Inserts = false;
+            }
+
+            return context.Inserts;
+        }
+
         /// <summary>Test seam: decides the consent check for a consenting user id (the switch and the list's consent still apply).</summary>
         internal Func<Guid, bool>? InsertsAllowedForTest { get; set; }
 
@@ -486,6 +498,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             using (await _store.LockAsync(listIdN, cancellationToken).ConfigureAwait(false))
             {
+                // The list as Jellyfin has it now: its owner and shares may have changed while metadata was read.
+                list = _host.GetList(list.Id);
+                if (list == null)
+                {
+                    ForgetList(listIdN);
+                    return default;
+                }
+
                 var doc = _store.LoadForUpdate(listIdN, list.Kind);
                 User? owner = list.Kind == ListKinds.Playlist && list.OwnerId != Guid.Empty ? _userManager.GetUserById(list.OwnerId) : null;
                 var outcome = await SwapLockedAsync(list, owner, doc, placeholderIds, metadata, null, mode, cancellationToken).ConfigureAwait(false);
@@ -532,7 +552,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             MetadataMode passMode,
             CancellationToken cancellationToken)
         {
-            var context = new PassContext(list, owner, doc, UtcNow()) { Inserts = InsertsAllowed(list, doc) };
+            // Consent is judged on the list as Jellyfin has it now (the caller's copy may predate a removed share), and
+            // judged again before every insert (each one waits for Jellyfin).
+            var current = _host.GetList(list.Id);
+            var context = new PassContext(current ?? list, owner, doc, UtcNow()) { Inserts = current != null && InsertsAllowed(current, doc) };
             var fresh = new HashSet<string>(freshMetadata ?? (IEnumerable<string>)Array.Empty<string>(), StringComparer.Ordinal);
             foreach (var pair in metadata ?? new Dictionary<string, PlaceholderMetadata>())
             {
@@ -584,6 +607,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 if (placeholder == null)
                 {
                     continue;
+                }
+
+                if (!StillInserting(context))
+                {
+                    break;
                 }
 
                 bool ok;
