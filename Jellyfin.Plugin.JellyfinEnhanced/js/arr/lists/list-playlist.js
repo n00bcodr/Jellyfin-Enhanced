@@ -162,6 +162,8 @@
         /** @returns {Object} Drawing context. */
         ctrl.context = () => ({
             tv: isTv(),
+            // Jellyfin's rows start with a drag handle when the person may reorder: entries keep the same indent.
+            handleSpace: !!container.querySelector(':scope > .listItem > .listViewDragHandle'),
             statusShown: ctrl.view?.statusShown === true,
             statusContext: {},
             requests: JE.pluginConfig?.ArrListRequestsEnabled === true && (ctrl.view?.actions || []).includes('request'),
