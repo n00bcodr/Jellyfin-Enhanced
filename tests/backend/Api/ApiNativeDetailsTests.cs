@@ -1068,7 +1068,7 @@ public class ApiNativeDetailsTests
         var e2 = new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), IndexNumber = 2, ParentIndexNumber = 1, SeriesId = series.Id };
         var hidden = new HashSet<Guid>();
         // Unscoped queries (no user): what the library holds, whoever may see it.
-        rig.Library.Setup(l => l.GetItemList(It.Is<MediaBrowser.Controller.Entities.InternalItemsQuery>(q => q.User == null && q.IncludeItemTypes.Contains(BaseItemKind.Series) && q.HasAnyProviderId.ContainsKey("Tmdb") && q.HasAnyProviderId["Tmdb"] == "83867")))
+        rig.Library.Setup(l => l.GetItemList(It.Is<MediaBrowser.Controller.Entities.InternalItemsQuery>(q => q.User == null && q.IncludeItemTypes.Contains(BaseItemKind.Series) && q.HasAnyProviderId != null && q.HasAnyProviderId.ContainsKey("Tmdb") && q.HasAnyProviderId["Tmdb"] == "83867")))
             .Returns(new List<MediaBrowser.Controller.Entities.BaseItem> { series });
         rig.Library.Setup(l => l.GetItemList(It.Is<MediaBrowser.Controller.Entities.InternalItemsQuery>(q => q.User == null && q.IncludeItemTypes.Contains(BaseItemKind.Season) && q.AncestorIds.Contains(series.Id))))
             .Returns(new List<MediaBrowser.Controller.Entities.BaseItem> { s1, s2 });
