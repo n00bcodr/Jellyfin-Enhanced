@@ -217,6 +217,15 @@ CREATE INDEX reservations_pool ON reservations(pool_id,state,charged_at);
 ",
         };
 
+        // Schema 4 extension (phase 4b, review round 4): the order charges were made in. Each reservation gets the next
+        // sequence when it becomes charged, so two charges in the same millisecond keep their order; existing charges are
+        // numbered by when they were charged, then by when they were written.
+        internal const string SchemaFourChargeOrder = @"
+ALTER TABLE reservations ADD COLUMN charge_seq INTEGER;
+UPDATE reservations SET charge_seq=(SELECT n FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY charged_at, rowid) AS n FROM reservations WHERE state='charged') o WHERE o.id=reservations.id) WHERE state='charged';
+CREATE INDEX reservations_order ON reservations(charge_seq);
+";
+
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
         // Part of the unreleased schema 2; an existing schema-2 database gets them idempotently at start-up.
         private const string Phase3dTables = @"
@@ -592,6 +601,23 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;
                         extend.CommandText = Phase3dTables;
+                        extend.ExecuteNonQuery();
+                        transaction.Commit();
+                    }
+                }
+                // Schema 4 (phase 4b) is extended while unreleased: a database that ran an earlier schema-4 build (and a fresh
+                // one, right after the step) gets the extension once, in one transaction, copied first when it holds rows.
+                using (var columns = connection.CreateCommand())
+                {
+                    columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('reservations') WHERE name='charge_seq'";
+                    if (UserVersion(connection) >= 4 && Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+                    {
+                        columns.CommandText = "SELECT COUNT(*) FROM reservations";
+                        if (existed && !extensionBackedUp && Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) > 0) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
+                        using var transaction = connection.BeginTransaction(deferred: false);
+                        using var extend = connection.CreateCommand();
+                        extend.Transaction = transaction;
+                        extend.CommandText = SchemaFourChargeOrder;
                         extend.ExecuteNonQuery();
                         transaction.Commit();
                     }

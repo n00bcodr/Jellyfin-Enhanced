@@ -227,9 +227,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (Exec(c, t, "UPDATE jobs SET state='cancelled',reason=$r WHERE id=$j AND state IN ('queued','retry','parked') AND " + KnownUnsent, ("$j", job), ("$r", reason)) == 1)
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id=$j AND scope NOT LIKE 's%'", ("$j", job));
         }
-        private static List<QuotaCharge> Charges(SqliteConnection c, SqliteTransaction? t, Guid user, bool unsentOnly = false)
+        // upTo: only charges made up to that one, in charge order (see ChargedUpTo).
+        private static List<QuotaCharge> Charges(SqliteConnection c, SqliteTransaction? t, Guid user, bool unsentOnly = false, ChargeOrder? upTo = null)
         {
-            using var cmd = Cmd(c, t, "SELECT cost,charged_at,estimated_gb,want_id FROM reservations WHERE user_id=$u AND state='charged'" + (unsentOnly ? " AND want_id IN (SELECT id FROM wants WHERE status IN ('queued','pending')) AND (job_id IS NULL OR job_id NOT IN (SELECT id FROM jobs WHERE state='succeeded'))" : ""), ("$u", Id(user)));
+            using var cmd = Cmd(c, t, "SELECT cost,charged_at,estimated_gb,want_id FROM reservations WHERE user_id=$u AND state='charged'" + (unsentOnly ? " AND want_id IN (SELECT id FROM wants WHERE status IN ('queued','pending')) AND (job_id IS NULL OR job_id NOT IN (SELECT id FROM jobs WHERE state='succeeded'))" : "") +
+                (upTo == null ? "" : " AND " + ChargedBy), ("$u", Id(user)), ("$upto", upTo?.At), ("$seq", upTo?.Seq));
             using var r = cmd.ExecuteReader();
             var list = new List<QuotaCharge>();
             while (r.Read()) list.Add(new(r.GetInt32(0), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(1)), r.GetDouble(2), r.GetString(3)));
@@ -303,7 +305,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     var pool = GroupQuotaPolicy.ById(GroupQuotaPolicy.Parse(policy.Configuration.ArrGroupQuotaPools), bound, policy.Configuration.ArrRequestQuotaWindowDays);
                     // Like the personal allowance below: only pool charges made up to this job's own, so a later excess an
                     // approver let into the pool never holds a request that was within it (the current limit and window apply).
-                    return pool != null && PoolUsed(c, null, pool.Id, pool.WindowDays, now, ChargedUpTo(c, job, job.WantId, now)) > pool.Limit;
+                    return pool != null && PoolUsed(c, null, pool.Id, pool.WindowDays, now, ChargedUpTo(c, job, job.WantId)) > pool.Limit;
                 })) return GroupQuota;
             }
             if (requester.Role != "Member" || requester.Backend != "je") return null;
@@ -315,8 +317,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var own = Wants(c, null, "user_id=$u", ("$u", Id(requester.UserId))).Where(w => w.Id != want.Id && w.CreatedAt <= want.CreatedAt && w.Status != "pending").ToArray();
                 // Only charges made up to this job's own: a later ask an approver let past the limit (soft excess) never
                 // holds a request that was within the allowance when it was made.
-                var cutoff = ChargedUpTo(c, job, want.Id, now);
-                return OverQuota(requester, Charges(c, null, requester.UserId).Where(ch => ch.At <= cutoff).ToArray(), 0, 0, now) ||
+                return OverQuota(requester, Charges(c, null, requester.UserId, upTo: ChargedUpTo(c, job, want.Id)), 0, 0, now) ||
                     OverSeries(requester, want.Input, own, policy.Configuration.ArrRequestSeriesThreshold);
             }) ? "authorization_changed" : null;
         }
@@ -330,11 +331,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public void HeldByRules(string wantId, HouseholdRuleVerdict verdict)
             => _db.Write((c, t) => Exec(c, t, "UPDATE wants SET rule_detail=$rules WHERE id=$id AND status='pending'", ("$rules", verdict.Json), ("$id", wantId)));
 
-        // When the job's own charge was made (now when it has none): the send-time allowance and pool checks count only
-        // charges made up to it.
-        private static DateTimeOffset ChargedUpTo(SqliteConnection c, RequestJob job, string wantId, DateTimeOffset now)
-            => Scalar(c, null, "SELECT MAX(charged_at) FROM reservations WHERE (job_id=$j OR (want_id=$w AND scope='initial')) AND state='charged'", ("$j", job.Id), ("$w", wantId)) is { } charged
-                ? DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(charged, CultureInfo.InvariantCulture)) : now;
+        /// <summary>
+        /// A charge's place in the order charges were made (review round 4, 4b-B12): when it was charged, then the sequence
+        /// it was given when it became charged (two charges in the same millisecond keep the order they were made in).
+        /// </summary>
+        /// <param name="At">When it was charged (Unix milliseconds).</param>
+        /// <param name="Seq">Its charge sequence.</param>
+        internal readonly record struct ChargeOrder(long At, long Seq);
+        // The next charge sequence, for a reservation becoming charged (one writer at a time).
+        private const string NextCharge = "(SELECT COALESCE(MAX(charge_seq),0)+1 FROM reservations)";
+        // A charge made up to the one at ($upto, $seq) in charge order.
+        private const string ChargedBy = "(charged_at<$upto OR (charged_at=$upto AND COALESCE(charge_seq,0)<=$seq))";
+        // The job's own charge (the latest of it and its request's initial one; null when it has none, so every charge up to
+        // now counts): the send-time allowance and pool checks count only charges made up to it, in charge order.
+        private static ChargeOrder? ChargedUpTo(SqliteConnection c, RequestJob job, string wantId)
+        {
+            using var cmd = Cmd(c, null, "SELECT charged_at,COALESCE(charge_seq,0) FROM reservations WHERE (job_id=$j OR (want_id=$w AND scope='initial')) AND state='charged' ORDER BY charged_at DESC,COALESCE(charge_seq,0) DESC LIMIT 1", ("$j", job.Id), ("$w", wantId));
+            using var r = cmd.ExecuteReader();
+            return r.Read() ? new ChargeOrder(r.GetInt64(0), r.GetInt64(1)) : null;
+        }
 
         /// <summary>Creates intent, quota reservation and (when approved) a job in one commit.</summary>
         /// <param name="user">The requester.</param>
@@ -666,14 +681,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // pool: the group pool the initial reservation is bound to (phase 4b); every later charge of the want (an
         // approval's extra scope, a future season) is bound to the same pool, so spend never moves between pools.
         private static void Reserve(SqliteConnection c, SqliteTransaction t, string id, Guid user, int cost, double gb, string state, DateTimeOffset now, string scope, string? pool = null)
-            => Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count,pool_id) VALUES($id,$w,$u,$cost,$gb,$state,$at,$scope,COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$w AND $scope='initial'),0)," + PoolOf + ")", ("$id", NewId()), ("$w", id), ("$u", Id(user)), ("$cost", cost), ("$gb", gb), ("$state", state), ("$at", Ms(now)), ("$scope", scope), ("$pool", pool));
+            => Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count,pool_id,charge_seq) VALUES($id,$w,$u,$cost,$gb,$state,$at,$scope,COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$w AND $scope='initial'),0)," + PoolOf + ",CASE WHEN $state='charged' THEN " + NextCharge + " END)", ("$id", NewId()), ("$w", id), ("$u", Id(user)), ("$cost", cost), ("$gb", gb), ("$state", state), ("$at", Ms(now)), ("$scope", scope), ("$pool", pool));
         // The pool a new reservation of want $w is bound to: the one named ($pool, the initial reservation), else the
         // pool of the want's initial reservation.
         private const string PoolOf = "COALESCE($pool,(SELECT pool_id FROM reservations WHERE want_id=$w AND scope='initial' LIMIT 1))";
-        /// <summary>Requests charged to a group pool in its rolling window (charged reservations bound to it), up to <paramref name="upTo"/> when given.</summary>
-        private static int PoolUsed(SqliteConnection c, SqliteTransaction? t, string pool, int days, DateTimeOffset now, DateTimeOffset? upTo = null)
-            => int.Parse(Scalar(c, t, "SELECT COALESCE(SUM(cost),0) FROM reservations WHERE pool_id=$p AND state='charged' AND charged_at>$since AND charged_at<=$at",
-                ("$p", pool), ("$since", Ms(now.AddDays(-days))), ("$at", Ms(upTo is { } u && u < now ? u : now)))!, CultureInfo.InvariantCulture);
+        /// <summary>Requests charged to a group pool in its rolling window (charged reservations bound to it), up to <paramref name="upTo"/> in charge order when given.</summary>
+        private static int PoolUsed(SqliteConnection c, SqliteTransaction? t, string pool, int days, DateTimeOffset now, ChargeOrder? upTo = null)
+            => int.Parse(Scalar(c, t, "SELECT COALESCE(SUM(cost),0) FROM reservations WHERE pool_id=$p AND state='charged' AND charged_at>$since AND charged_at<=$at" + (upTo == null ? "" : " AND " + ChargedBy),
+                ("$p", pool), ("$since", Ms(now.AddDays(-days))), ("$at", Ms(now)), ("$upto", upTo?.At), ("$seq", upTo?.Seq))!, CultureInfo.InvariantCulture);
         /// <summary>True when <paramref name="cost"/> more would take the pool over its limit.</summary>
         private static bool PoolOver(SqliteConnection c, SqliteTransaction? t, GroupPoolBinding? pool, int cost, DateTimeOffset now)
             => pool != null && cost > 0 && PoolUsed(c, t, pool.Id, pool.WindowDays, now) + cost > pool.Limit;
@@ -814,9 +829,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ("$a", acquisition), ("$input", stored.Canonical), ("$owned", extra?.Canonical), ("$v", stored.Variant), ("$state", confirmedScope ? "sent" : "queued"), ("$reason", confirmedScope ? "looking" : "queued_outage"), ("$cost", priorCost + cost), ("$p", requester.ParentalSignature), ("$follower", extra == null && existingJobs.Count == 0), ("$at", Ms(now)), ("$id", id));
             Exec(c, t, "UPDATE wants SET target_key=$target WHERE id=$id", ("$target", TargetKey(requester)), ("$id", id));
             if (existingJobs.Count == 0)
-                Exec(c, t, "UPDATE reservations SET job_id=NULL,state='charged',cost=$cost,estimated_gb=$gb,charged_at=$at,episode_count=COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$id),0) WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", gb), ("$at", Ms(now)), ("$id", id));
+                Exec(c, t, "UPDATE reservations SET job_id=NULL,state='charged',charge_seq=" + NextCharge + ",cost=$cost,estimated_gb=$gb,charged_at=$at,episode_count=COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$id),0) WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", gb), ("$at", Ms(now)), ("$id", id));
             else if (extra != null)
-                Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count,pool_id) VALUES($rid,$id,$u,$cost,$gb,'charged',$at,$scope,$episodes,(SELECT pool_id FROM reservations WHERE want_id=$id AND scope='initial' LIMIT 1))",
+                Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count,pool_id,charge_seq) VALUES($rid,$id,$u,$cost,$gb,'charged',$at,$scope,$episodes,(SELECT pool_id FROM reservations WHERE want_id=$id AND scope='initial' LIMIT 1)," + NextCharge + ")",
                     ("$rid", NewId()), ("$id", id), ("$u", Id(want.UserId)), ("$cost", cost), ("$gb", gb), ("$at", Ms(now)), ("$scope", "approval:" + NewId()), ("$episodes", extra.Scope == "episodes" ? extra.Episodes.Length : 0));
             Fault?.Invoke("reservation");
             var auth = Authorize(requester, approver, extra ?? stored, edits != null);
@@ -872,7 +887,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var sent = follower.Input.Extra(Confirmed(c, t, wants, follower.TargetKey)) == null;
                 Exec(c, t, "UPDATE wants SET status=$s,reason=$r,owned_input=NULL,is_follower=1,cost=0,updated_at=$at WHERE id=$id",
                     ("$s", sent ? "sent" : "queued"), ("$r", sent ? "looking" : "queued_outage"), ("$at", Ms(now)), ("$id", follower.Id));
-                Exec(c, t, "UPDATE reservations SET state='charged',cost=0,estimated_gb=0,episode_count=0,charged_at=$at WHERE want_id=$id AND scope='initial' AND state='held'", ("$at", Ms(now)), ("$id", follower.Id));
+                Exec(c, t, "UPDATE reservations SET state='charged',charge_seq=" + NextCharge + ",cost=0,estimated_gb=0,episode_count=0,charged_at=$at WHERE want_id=$id AND scope='initial' AND state='held'", ("$at", Ms(now)), ("$id", follower.Id));
                 Record(c, t, follower.Id, null, actor, "merged", "accepted", sent ? "looking" : "queued_outage", follower.Input.Key, now);
             }
         }

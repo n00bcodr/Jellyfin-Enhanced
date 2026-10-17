@@ -769,6 +769,9 @@ Quota uses a rolling window. Movies and seasons cost one; the first five single 
 another group of five costs one. Episode allowance follows the reservation's approval date, including delayed approvals.
 The optional estimated GB limit is a hard cap for every role: create and approval return 429 `quota_exceeded` when
 exceeded, and queued jobs re-check it before sending. Approval can grant count-quota and series-threshold excess.
+When a queued request is checked again before sending, only the charges made up to its own count (the personal
+allowance and a group pool alike), in the order they were made, even within the same millisecond: an excess approved
+later never holds a request that was within the allowance.
 Overlapping asks charge only additional scope. An existing user's covered scope reuses
 their want; another user follows covered intent without a charge. Sharing requires the same backend, resolved instance,
 connection generation and Seerr source. A request for another target creates its own work. Members need approval after their cumulative scope

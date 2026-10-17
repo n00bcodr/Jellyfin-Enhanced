@@ -438,7 +438,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
 * **`/Services/Acquire/Requests/`**: Durable request server core. `RequestModels.cs` contains normalized scopes, outcomes
   and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility; `RequestLedger.cs`
   commits intent, reservations, approvals, events and outbox jobs in acquire.db (schema 3 adds each want's server-built
-  origin and provenance and its operation); `RequestOperations.cs` keeps durable batch/confirmation operations and derives
+  origin and provenance and its operation; schema 4 the household-rule verdict, each reservation's group pool and the
+  order charges were made in); `RequestOperations.cs` keeps durable batch/confirmation operations and derives
   each title's request id from the operation (a retry or restart reuses it, a new confirmation gets new ones). `RequestService.cs` orchestrates
   policy preparation and private list projections. `RequestOutbox.cs` provides local title locks, restart recovery,
   final-send authorization and a network-free fallback transport. `RequestBackends.cs` sends each job through the
