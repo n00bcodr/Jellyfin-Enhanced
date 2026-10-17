@@ -57,4 +57,87 @@ public class ListsRecheckTests
         Assert.Empty(h.Host.Resolved(playlist.Info.Id));
         Assert.Empty(h.Store.Load(access.ListIdN)?.Items ?? new List<Placeholder>());
     }
+
+    // The general sweep: what a caller may see is read again under the lock with the rights the change uses.
+    private sealed class Rated : IDisposable
+    {
+        public ListsHarness H { get; } = new(seerr: true);
+        public Jellyfin.Database.Implementations.Entities.User Owner { get; }
+        public ListAccess Access { get; }
+        public Placeholder Kept { get; } = Movie(910, "2020-01-01");
+        public Placeholder RatedR { get; } = Movie(911, "2020-01-01");
+
+        public Rated()
+        {
+            H.MovieCertifications[910] = "G";
+            H.MovieCertifications[911] = "R";
+            H.MovieCertifications[912] = "R";
+            Owner = H.NewUser("owner");
+            Access = H.AccessFor(H.Host.AddPlaylist(Owner), Owner);
+            Ok<ApplyResultDto>(H.Service.AddPlaceholdersAsync(Access, new[] { Kept, RatedR }, null, null, null, None).GetAwaiter().GetResult());
+        }
+
+        public int Rev => H.Store.Load(Access.ListIdN)!.Rev;
+
+        // Starts a change while the list is locked, gives the owner a parental limit while it waits, then lets it run.
+        public async Task<ListOutcome> WhileLimited(Func<Task<ListOutcome>> change)
+        {
+            Task<ListOutcome> running;
+            using (await H.Store.LockAsync(Access.ListIdN))
+            {
+                running = change();
+                Assert.False(running.IsCompleted);
+                Owner.MaxParentalRatingScore = 10;
+            }
+
+            return await running;
+        }
+
+        public void Dispose() => H.Dispose();
+    }
+
+    [Fact]
+    public async Task ADeleteOrNoteOnAnEntryALimitHidMeanwhileIsNotFoundAndChangesNothing()
+    {
+        using var r = new Rated();
+        var rev = r.Rev;
+
+        Error(await r.WhileLimited(() => r.H.Service.DeleteAsync(r.Access, r.RatedR.Id, rev, null, None)), 404, "not_found");
+        r.Owner.MaxParentalRatingScore = null;
+        Error(await r.WhileLimited(() => r.H.Service.PatchAsync(r.Access, r.RatedR.Id, rev, "note", null, null, None)), 404, "not_found");
+
+        var doc = r.H.Store.Load(r.Access.ListIdN)!;
+        Assert.Equal(rev, doc.Rev);
+        Assert.Null(doc.Items.Single(p => p.Id == r.RatedR.Id).Note);
+    }
+
+    [Fact]
+    public async Task LinkingACustomEntryToATitleALimitBlocksMeanwhileIsRefused()
+    {
+        using var r = new Rated();
+        var custom = Ph("{\"kind\":\"custom\",\"title\":\"Mine\"}", r.Owner.Id.ToString("N"));
+        Ok<ApplyResultDto>(await r.H.Service.AddPlaceholdersAsync(r.Access, new[] { custom }, null, null, null, None));
+        var rev = r.Rev;
+        // The limit arrives while the linked title's poster is read (after the check before the lock).
+        var reply = r.H.Reply;
+        r.H.ReplyAsync = (request, _) =>
+        {
+            r.Owner.MaxParentalRatingScore = 10;
+            return Task.FromResult(reply(request));
+        };
+
+        Error(await r.H.Service.PatchAsync(r.Access, custom.Id, rev, null, Movie(912, "2020-01-01"), null, None), 403, "parental_block");
+        Assert.Equal(PlaceholderKinds.Custom, r.H.Store.Load(r.Access.ListIdN)!.Items.Single(p => p.Id == custom.Id).Kind);
+    }
+
+    [Fact]
+    public async Task TheSwapInSwitchsAnswerLeavesOutWhatALimitHidMeanwhile()
+    {
+        using var r = new Rated();
+        var rev = r.Rev;
+
+        var view = Ok<ListViewDto>(await r.WhileLimited(() => r.H.Service.SetSwapInAsync(r.Access, rev, true, null, None)));
+
+        Assert.Equal(new[] { r.Kept.Id }, view.Placeholders.Select(p => p.Id));
+    }
 }

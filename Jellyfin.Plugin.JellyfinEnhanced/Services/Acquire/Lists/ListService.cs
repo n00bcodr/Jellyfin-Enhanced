@@ -1151,7 +1151,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             // right away when it is already in the library.
             var linkFresh = link != null && HasTmdb(link)
                 && (await ReadCompletionMetadataAsync(new[] { link }, DateTime.UtcNow, cancellationToken).ConfigureAwait(false)).Count > 0;
-            var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
+            // The parental lookups run before the lock (they can take seconds); what the caller may see is read again
+            // under it, with the rights the change uses (a limit added meanwhile counts), from the warmed cache.
+            await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
             var outcome = await RunLockedAsync(access, "patch", request, cancellationToken, async () =>
             {
                 var (denied, current) = RecheckAccess(access);
@@ -1162,6 +1164,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 access = current!;
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
+                var visibility = await VisibilityAsync(doc, access.User, cancellationToken).ConfigureAwait(false);
+                if (link != null && HasTmdb(link) && await _access.IsTitleBlockedAsync(link.MediaType, link.TmdbId!.Value, access.User, cancellationToken).ConfigureAwait(false))
+                {
+                    return ListOutcome.Error(403, "parental_block", "This title isn't available for your account.");
+                }
+
                 if (doc.Rev != rev)
                 {
                     return Conflict(access, "rev_conflict", "The list changed; reload it.", visibility);
@@ -1253,27 +1261,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The outcome (<see cref="ListViewDto"/>).</returns>
         public async Task<ListOutcome> DeleteAsync(ListAccess access, string placeholderId, int rev, ListRequestKey? request, CancellationToken cancellationToken)
         {
-            var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
-            return await RunLockedAsync(access, "delete", request, cancellationToken, () =>
+            // The parental lookups run before the lock (they can take seconds); what the caller may see is read again
+            // under it, with the rights the change uses (a limit added meanwhile counts), from the warmed cache.
+            await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
+            return await RunLockedAsync(access, "delete", request, cancellationToken, async () =>
             {
                 // The parental lookups and the lock wait (a sync may hold it) can take seconds; the share may be gone.
                 var (denied, current) = RecheckAccess(access);
                 if (denied != null)
                 {
-                    return Task.FromResult(denied);
+                    return denied;
                 }
 
                 access = current!;
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
+                var visibility = await VisibilityAsync(doc, access.User, cancellationToken).ConfigureAwait(false);
                 if (doc.Rev != rev)
                 {
-                    return Task.FromResult(Conflict(access, "rev_conflict", "The list changed; reload it.", visibility));
+                    return Conflict(access, "rev_conflict", "The list changed; reload it.", visibility);
                 }
 
                 var placeholder = doc.Items.FirstOrDefault(p => p.Id == placeholderId);
                 if (placeholder == null || !visibility.IsVisible(placeholder))
                 {
-                    return Task.FromResult(ListOutcome.Error(404, "not_found", "Placeholder not found."));
+                    return ListOutcome.Error(404, "not_found", "Placeholder not found.");
                 }
 
                 doc.Items.Remove(placeholder);
@@ -1291,7 +1302,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var saved = _store.Save(doc);
-                return Task.FromResult(ListOutcome.Ok(BuildView(access, saved, canonical, visibility)));
+                return ListOutcome.Ok(BuildView(access, saved, canonical, visibility));
             }).ConfigureAwait(false);
         }
 
@@ -1312,7 +1323,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The outcome (<see cref="ListViewDto"/>, or 409 with the fresh view).</returns>
         public async Task<ListOutcome> ReorderAsync(ListAccess access, int rev, IReadOnlyList<string> requested, string? moved, ListRequestKey? request, CancellationToken cancellationToken)
         {
-            var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
+            // The parental lookups run before the lock (they can take seconds); what the caller may see is read again
+            // under it, with the rights the change uses (a limit added meanwhile counts), from the warmed cache.
+            await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
 
             return await RunLockedAsync(access, "order", request, cancellationToken, async () =>
             {
@@ -1326,6 +1339,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 access = current!;
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
+                var visibility = await VisibilityAsync(doc, access.User, cancellationToken).ConfigureAwait(false);
                 if (doc.Rev != rev)
                 {
                     return Conflict(access, "rev_conflict", "The list changed; reload it.", visibility);
@@ -1620,20 +1634,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The outcome (<see cref="ListViewDto"/>).</returns>
         public async Task<ListOutcome> SetSwapInAsync(ListAccess access, int rev, bool enabled, ListRequestKey? request, CancellationToken cancellationToken)
         {
-            var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
-            var outcome = await RunLockedAsync(access, "swap_in", request, cancellationToken, () =>
+            // The parental lookups run before the lock (they can take seconds); what the caller may see is read again
+            // under it, with the rights the change uses (a limit added meanwhile counts), from the warmed cache.
+            await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
+            var outcome = await RunLockedAsync(access, "swap_in", request, cancellationToken, async () =>
             {
                 var (denied, current) = RecheckAccess(access);
                 if (denied != null)
                 {
-                    return Task.FromResult(denied);
+                    return denied;
                 }
 
                 access = current!;
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
+                var visibility = await VisibilityAsync(doc, access.User, cancellationToken).ConfigureAwait(false);
                 if (doc.Rev != rev)
                 {
-                    return Task.FromResult(Conflict(access, "rev_conflict", "The list changed; reload it.", visibility));
+                    return Conflict(access, "rev_conflict", "The list changed; reload it.", visibility);
                 }
 
                 doc.SwapIn = enabled
@@ -1647,7 +1664,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var saved = _store.Save(doc);
-                return Task.FromResult(ListOutcome.Ok(BuildView(access, saved, canonical, visibility)));
+                return ListOutcome.Ok(BuildView(access, saved, canonical, visibility));
             }).ConfigureAwait(false);
             if (enabled && outcome.StatusCode < 300)
             {
