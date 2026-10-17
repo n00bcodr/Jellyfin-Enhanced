@@ -234,6 +234,12 @@ CREATE TABLE title_aliases (alias TEXT PRIMARY KEY, canonical TEXT NOT NULL, lea
 CREATE INDEX title_aliases_canonical ON title_aliases(canonical);
 ";
 
+        // Schema-4 extension (phase 4b, review round 5, 4b-B13): a merged title whose requests couldn't all be settled when it
+        // was merged (one was being sent, or its send is unconfirmed) is noted here and finished once that work settles.
+        internal const string SchemaFourTitleReconcile = @"
+CREATE TABLE title_reconcile (acquisition_id TEXT PRIMARY KEY, noted_at INTEGER NOT NULL);
+";
+
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
         // Part of the unreleased schema 2; an existing schema-2 database gets them idempotently at start-up.
         private const string Phase3dTables = @"
@@ -640,6 +646,20 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;
                         extend.CommandText = SchemaFourTitleAliases;
+                        extend.ExecuteNonQuery();
+                        transaction.Commit();
+                    }
+                }
+                using (var tables = connection.CreateCommand())
+                {
+                    tables.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='title_reconcile'";
+                    if (UserVersion(connection) >= 4 && Convert.ToInt32(tables.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+                    {
+                        // Additive only (a new empty table), so no pre-migration copy is needed.
+                        using var transaction = connection.BeginTransaction(deferred: false);
+                        using var extend = connection.CreateCommand();
+                        extend.Transaction = transaction;
+                        extend.CommandText = SchemaFourTitleReconcile;
                         extend.ExecuteNonQuery();
                         transaction.Commit();
                     }

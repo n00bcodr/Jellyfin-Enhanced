@@ -141,6 +141,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // Only a title whose requests moved is worth a line (most passes only remember an alias).
                 if (merge.People.Count > 0) _logger?.Info($"Requests: {string.Join(", ", merge.Keys.Skip(1))} are {merge.Canonical} too; its requests are held as one title ({merge.Acquisitions} merged, {merge.Followers} now follow another request of it).");
             }
+            // Merges that met work in flight, finished once it settled (the outbox does this too, after each send).
+            foreach (var settled in _ledger.SettleMerges(_policy, _now()))
+            {
+                _feed?.Bump(settled.Keys.Concat(settled.People.Select(ArrTitleKey.UserRequests)).Append(ArrTitleKey.RequestsState).ToArray());
+                _logger?.Info($"Requests: the merged requests of {settled.Canonical} are settled now that what was being sent is ({settled.Followers} now follow another request of it).");
+            }
             return changed;
         }
 

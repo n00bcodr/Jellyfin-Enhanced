@@ -400,6 +400,175 @@ public class IntegrationTitleIdentityTableTests
         Assert.Single(mine);
     }
 
+    // ------------------------------------------------------------------ a merge that meets work in flight (review round 5, 4b-B13)
+
+    /// <summary>How the request in flight is when the title's two ids are learned.</summary>
+    public enum Flight
+    {
+        /// <summary>Its POST is going out (the merge happens while Seerr answers).</summary>
+        Sending,
+        /// <summary>Its POST went out but the answer was lost; a read-back finds it there.</summary>
+        ReadBack,
+        /// <summary>Its POST got an HTTP 500 (it may or may not be there); a read-back finds it never was.</summary>
+        ReadBackUnsent,
+    }
+
+    public static TheoryData<Flight, bool, bool, bool> InFlight()
+    {
+        var rows = new TheoryData<Flight, bool, bool, bool>();
+        foreach (var flight in Enum.GetValues<Flight>())
+            foreach (var newer in new[] { true, false })
+                foreach (var otherSent in new[] { false, true }) rows.Add(flight, newer, otherSent, true);
+        // A merge an earlier build made without noting it: the send-time check alone stops the second POST and gives the charge back.
+        rows.Add(Flight.Sending, true, false, false);
+        rows.Add(Flight.ReadBack, true, false, false);
+        return rows;
+    }
+
+    // Every request's status and charge, its jobs and its reservations: what a settled title looks like.
+    private static string Settled(Rig rig, params string[] ids) => string.Join("\n", ids.Select(id =>
+    {
+        var w = rig.Ledger.Find(id)!;
+        var reservations = rig.Db.Read(c =>
+        {
+            using var cmd = RequestLedger.Cmd(c, null, "SELECT state||':'||cost FROM reservations WHERE want_id=$w ORDER BY rowid", ("$w", id));
+            using var r = cmd.ExecuteReader();
+            var list = new List<string>();
+            while (r.Read()) list.Add(r.GetString(0));
+            return string.Join(",", list);
+        });
+        return $"{w.Status}/{w.Reason} follower={w.Follower} cost={w.Cost} jobs={string.Join(",", rig.Ledger.ForWant(id).Select(j => j.State))} charges={reservations}";
+    }));
+
+    /// <summary>
+    /// The title's two ids are learned (the background pass merges its two requests) while one of them is in flight: being
+    /// sent, or written with its answer lost (a read-back decides). The merge can't decide who follows whom until that work
+    /// settles, so it is noted and finished once it has: the send-time check never POSTs what went out (or is going out)
+    /// already, the request that follows gets its charge back exactly once, and nothing changes when it all runs again.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(InFlight))]
+    public async Task AMergeThatMeetsWorkInFlightIsFinishedOnceThatWorkSettles(Flight flight, bool newerInFlight, bool otherSent, bool recorded)
+    {
+        using var rig = new Rig();
+        rig.WithoutIdentity();
+        await rig.Series(false);
+        var older = (await rig.Ask(rig.Admin, Input(SeriesTmdb))).RequestId!;
+        await rig.Series(true);
+        rig.Lab.Now = rig.Lab.Now.AddMinutes(2);
+        var newer = (await rig.Ask(rig.Admin2, Input(SeriesTvdb))).RequestId!;
+        var (flying, other) = newerInFlight ? (newer, older) : (older, newer);
+        void Due(string want, bool due) => rig.Db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE jobs SET next_attempt=$at WHERE want_id=$w AND state IN ('queued','retry','maybe_sent')", ("$at", due ? 0L : 4_000_000_000_000L), ("$w", want)));
+        if (otherSent)
+        {
+            Due(flying, false);
+            await rig.Outbox.TickAsync(default);
+            Assert.Equal("sent", rig.Ledger.Find(other)!.Status);
+        }
+        Due(other, false);
+        Due(flying, true);
+        var identity = rig.Identity();
+        var merged = 0;
+        // An earlier build's merge: nothing noted (the send-time check alone has to stop the second POST).
+        void Forget()
+        {
+            if (!recorded && rig.Scalar<long>("SELECT COUNT(*) FROM sqlite_master WHERE name='title_reconcile'") == 1)
+                rig.Db.Write((c, t) => RequestLedger.Exec(c, t, "DELETE FROM title_reconcile"));
+        }
+        switch (flight)
+        {
+            case Flight.Sending:
+                rig.Fake.OnPost = _ =>
+                {
+                    merged += identity.Reconcile();
+                    Forget();
+                    return null;
+                };
+                await rig.Outbox.TickAsync(default);
+                break;
+            default:
+                // The read-back right after the POST can't reach Seerr either: the job is left for a later read-back.
+                if (flight == Flight.ReadBack)
+                {
+                    rig.Fake.AfterPost = () =>
+                    {
+                        rig.Fake.FailWith = 503;
+                        throw new HttpRequestException("The answer was lost.");
+                    };
+                    // With the season already requested Seerr creates nothing; the answer is lost all the same.
+                    if (otherSent)
+                        rig.Fake.OnPost = _ =>
+                        {
+                            rig.Fake.FailWith = 503;
+                            throw new HttpRequestException("The answer was lost.");
+                        };
+                }
+                else
+                    rig.Fake.OnPost = _ =>
+                    {
+                        rig.Fake.FailWith = 503;
+                        return IntegrationTransport.Response("{\"message\":\"Internal error\"}", 500);
+                    };
+                await rig.Outbox.TickAsync(default);
+                rig.Fake.AfterPost = null;
+                rig.Fake.OnPost = null;
+                rig.Fake.FailWith = 0;
+                Assert.Equal("maybe_sent", Assert.Single(rig.Ledger.ForWant(flying)).State);
+                merged += identity.Reconcile();
+                Forget();
+                break;
+        }
+        rig.Fake.OnPost = null;
+        Assert.Equal(1, merged);
+        Assert.Equal(1L, rig.Scalar<long>("SELECT COUNT(*) FROM acquisitions"));
+        if (flight != Flight.Sending && !otherSent && Assert.Single(rig.Ledger.ForWant(other)).State == "queued")
+        {
+            // While the read-back can't settle it, the other request's job (covered only by that unconfirmed work) waits:
+            // it isn't claimed or sent.
+            Due(other, true);
+            rig.Fake.FailWith = 503;
+            await rig.Outbox.TickAsync(default);
+            rig.Fake.FailWith = 0;
+            Assert.Equal("maybe_sent", Assert.Single(rig.Ledger.ForWant(flying)).State);
+            var waiting = Assert.Single(rig.Ledger.ForWant(other));
+            Assert.Equal(("queued", 0), (waiting.State, waiting.Attempts));
+        }
+
+        // Everything is due again for a few passes: read-backs, retries, the background pass.
+        for (var pass = 0; pass < 3; pass++)
+        {
+            Due(older, true);
+            Due(newer, true);
+            rig.Lab.Now = rig.Lab.Now.AddMinutes(1);
+            await rig.Outbox.TickAsync(default);
+            identity.Reconcile();
+        }
+        var settled = Settled(rig, older, newer);
+        var posts = rig.Fake.Posts.Count;
+        // Seerr holds one request for the season, and both requests are sent: one owns it, one follows it.
+        Assert.Single(rig.Fake.Shows[Tmdb]["mediaInfo"]!["requests"]!.AsArray());
+        var a = rig.Ledger.Find(older)!;
+        var b = rig.Ledger.Find(newer)!;
+        Assert.True((a.Status, b.Status) == ("sent", "sent"), settled);
+        Assert.True(a.Follower != b.Follower, settled);
+        // One charge for the one season, given back to the follower exactly once.
+        Assert.True(rig.Scalar<long>("SELECT COALESCE(SUM(cost),0) FROM reservations WHERE state='charged'") == 1, settled);
+        Assert.True(rig.Scalar<long>("SELECT COUNT(*) FROM reservations WHERE state='refunded'") == 1, settled);
+        Assert.Equal(0, (a.Follower ? a : b).Cost);
+
+        // Nothing more goes out, and running it all again changes nothing.
+        for (var pass = 0; pass < 2; pass++)
+        {
+            Due(older, true);
+            Due(newer, true);
+            rig.Lab.Now = rig.Lab.Now.AddMinutes(1);
+            await rig.Outbox.TickAsync(default);
+            identity.Reconcile();
+        }
+        Assert.Equal(posts, rig.Fake.Posts.Count);
+        Assert.Equal(settled, Settled(rig, older, newer));
+    }
+
     // ------------------------------------------------------------------ one key from the entry on (review round 5, 4b-B14)
 
     /// <summary>How the title's other id is known when it is asked for by its IMDb id.</summary>
@@ -503,7 +672,10 @@ public class IntegrationTitleIdentityTableTests
         Assert.Equal(expected, result);
     }
 
-    /// <summary>A schema-4 database from before the identity work gets its alias table once, in the same extension.</summary>
+    /// <summary>
+    /// A schema-4 database from before the identity work gets its alias table once, and one from before review round 5 its
+    /// table of merges left to finish, in the same extension.
+    /// </summary>
     [Fact]
     public void ASchemaFourDatabaseWithoutTheAliasTableGetsItOnce()
     {
@@ -517,16 +689,16 @@ public class IntegrationTitleIdentityTableTests
             {
                 c.Open();
                 using var cmd = c.CreateCommand();
-                cmd.CommandText = "DROP TABLE title_aliases;";
+                cmd.CommandText = "DROP TABLE title_aliases; DROP TABLE title_reconcile;";
                 cmd.ExecuteNonQuery();
             }
             using (var db = new AcquireDatabase(path))
             {
                 Assert.True(db.Available);
-                Assert.Equal(1L, db.Read(c =>
+                Assert.Equal(2L, db.Read(c =>
                 {
                     using var cmd = c.CreateCommand();
-                    cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='title_aliases'";
+                    cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('title_aliases','title_reconcile')";
                     return (long)cmd.ExecuteScalar()!;
                 }));
             }

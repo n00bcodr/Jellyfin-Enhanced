@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
@@ -156,6 +157,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // Open 4K requests nothing can take now say so (and are released when a 4K target is back).
             foreach (var held in _ledger.HoldWithout4k(_policy.Has4kTarget, _now()))
                 _feed.Bump(new[] { held.Input.Key, ArrTitleKey.UserRequests(held.UserId), ArrTitleKey.RequestsState });
+            // Merges that met work in flight are finished once it settled (after a restart too).
+            Settle();
             foreach (var job in _ledger.Due(_now()))
             {
                 ct.ThrowIfCancellationRequested();
@@ -164,7 +167,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (_seerrWrites != null && job.Authorization.Backend == "seerr" && job.State != "maybe_sent" && seerrWrite == null) continue;
                 using var titleLock = await _locks.TakeAsync(job.Input, ct).ConfigureAwait(false);
                 var generation = _ledger.Database.Generation;
-                if (!_ledger.Claim(job, generation, _now())) continue;
+                // The one send-time redundancy check: what went out for the title already is never sent again.
+                var claim = _ledger.ClaimForDispatch(job, generation, _now());
+                if (claim == RequestLedger.DispatchClaim.Served) _feed.Bump(new[] { job.Input.Key, ArrTitleKey.UserRequests(job.Authorization.Requester), ArrTitleKey.RequestsState });
+                if (claim != RequestLedger.DispatchClaim.Claimed) continue;
                 RequestBackendResult result;
                 // The household-rule verdict the guard held the job with (phase 4b): kept as the request's rationale.
                 HouseholdRuleVerdict? heldRules = null;
@@ -290,12 +296,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (completed) _automation?.Observe(job, want, result, transportStarted, settledByRead);
                 if (completed) _feed.Bump(new[] { job.Input.Key, ArrTitleKey.UserRequests(job.Authorization.Requester), ArrTitleKey.RequestsState });
                 if (completed && result.Confirmed) _events?.RaiseConfirmed(job);
+                if (completed) Settle();
                 if (!completed && !transportStarted && job.State != "maybe_sent") continue;
                 // The same wait again (still no Seerr account, a season still not listed): one audit row for it, not one per check.
                 if (completed && RequestLedger.RepeatsWait(job, result)) continue;
                 _audit.Append(new ArrAuditEntry { Id = job.Id, Time = _now(), UserId = _ledger.AuditActor(job.Authorization.Approver ?? job.Authorization.Requester), Action = "request.dispatch", Tier = 2,
                     InstanceId = job.Authorization.InstanceId, Target = job.Input.Key, Outcome = result.Outcome.Certainty.ToString().ToLowerInvariant(), Error = result.Outcome.Reason, Message = result.Outcome.Message });
             }
+        }
+        // Finishes noted merges whose work settled (RequestLedger.SettleMerges); lists showing them are told.
+        private void Settle()
+        {
+            foreach (var merge in _ledger.SettleMerges(_policy, _now()))
+                _feed.Bump(merge.Keys.Concat(merge.People.Select(ArrTitleKey.UserRequests)).Append(ArrTitleKey.RequestsState).ToArray());
         }
         /// <inheritdoc />
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)

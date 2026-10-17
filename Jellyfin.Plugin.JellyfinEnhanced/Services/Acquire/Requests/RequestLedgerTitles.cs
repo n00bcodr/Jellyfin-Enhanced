@@ -197,7 +197,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // A merged acquisition: each request another one of it already covers follows it, as it would have had the title been
         // one from the start. What went out stays its own (requests with sent work keep their place first, then by when they
         // were asked); a follower's unsent work is cancelled and its charge given back; one waiting for an OK that a queued
-        // request covers is released like any. Returns how many now follow.
+        // request covers is released like any. A request whose work is in flight (being sent, or unconfirmed) can't be
+        // placed yet: the merge is noted (title_reconcile) and finished by SettleMerges once that work settles (review round
+        // 5, 4b-B13). Returns how many now follow.
         private static int FollowWithin(SqliteConnection c, SqliteTransaction t, string acquisition, IRequestPolicy policy, DateTimeOffset now)
         {
             var wants = Wants(c, t, "acquisition_id=$a", ("$a", acquisition));
@@ -205,9 +207,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var ordered = wants.OrderBy(w => Sent(w) ? 0 : 1).ThenBy(w => w.CreatedAt).ThenBy(w => w.Id, StringComparer.Ordinal).ToList();
             var earlier = new List<RequestWant>();
             var followers = 0;
+            var unsettled = false;
             foreach (var want in ordered)
             {
-                var uncertain = Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND (state IN ('sending','maybe_sent') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$w", want.Id)) != null;
+                var uncertain = InFlight(c, t, want.Id);
+                unsettled |= uncertain && !want.Follower && Active(want);
                 if (want.Follower || !Active(want) || uncertain || earlier.Count == 0 || want.Input.Extra(Coverage(c, t, earlier, want.TargetKey, want.Status == "pending")) != null)
                 {
                     earlier.Add(want);
@@ -226,7 +230,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             var before = Wants(c, t, "acquisition_id=$a AND status='pending' AND is_follower=0", ("$a", acquisition)).Count;
             ReleasePendingFollowers(c, t, acquisition, null, policy, now, false);
+            // Noted while work of a request of it is in flight and another request of it owns work too; else finished.
+            if (unsettled && wants.Count(w => Active(w) && !w.Follower) > 1)
+                Exec(c, t, "INSERT INTO title_reconcile(acquisition_id,noted_at) VALUES($a,$at) ON CONFLICT(acquisition_id) DO NOTHING", ("$a", acquisition), ("$at", Ms(now)));
+            else
+                Exec(c, t, "DELETE FROM title_reconcile WHERE acquisition_id=$a", ("$a", acquisition));
             return followers + before - Wants(c, t, "acquisition_id=$a AND status='pending' AND is_follower=0", ("$a", acquisition)).Count;
+        }
+
+        // A request has work that may have gone out and isn't settled: being sent, waiting for a read-back, or written with its
+        // certainty unknown (held after the write included).
+        private static bool InFlight(SqliteConnection c, SqliteTransaction? t, string wantId)
+            => Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND (state IN ('sending','maybe_sent') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$w", wantId)) != null;
+
+        /// <summary>
+        /// Finishes the merges that met work in flight (review round 5, 4b-B13): for each noted title whose requests' work has
+        /// all settled now (confirmed, or proven unsent), who follows whom is worked out as the merge would have (a request
+        /// another already covers follows it, its unsent work cancelled and its charge given back, once). A title whose work
+        /// is still in flight stays noted. Persisted, so a restart in between loses nothing. Returns the requests' title keys
+        /// and people whose lists changed (empty when nothing did).
+        /// </summary>
+        /// <param name="policy">Current policy.</param>
+        /// <param name="now">Now.</param>
+        public IReadOnlyList<TitleMerge> SettleMerges(IRequestPolicy policy, DateTimeOffset now)
+        {
+            if (!_db.Available || _db.Read(c => Scalar(c, null, "SELECT acquisition_id FROM title_reconcile LIMIT 1")) == null) return Array.Empty<TitleMerge>();
+            return _db.Write((c, t) =>
+            {
+                var settled = new List<TitleMerge>();
+                Exec(c, t, "DELETE FROM title_reconcile WHERE acquisition_id NOT IN (SELECT id FROM acquisitions)");
+                var noted = new List<string>();
+                using (var cmd = Cmd(c, t, "SELECT acquisition_id FROM title_reconcile ORDER BY noted_at,acquisition_id"))
+                using (var r = cmd.ExecuteReader())
+                    while (r.Read()) noted.Add(r.GetString(0));
+                foreach (var acquisition in noted)
+                {
+                    var wants = Wants(c, t, "acquisition_id=$a", ("$a", acquisition));
+                    if (wants.Any(w => InFlight(c, t, w.Id))) continue;
+                    var followers = FollowWithin(c, t, acquisition, policy, now);
+                    Exec(c, t, "DELETE FROM title_reconcile WHERE acquisition_id=$a", ("$a", acquisition));
+                    if (followers == 0 || wants.Count == 0) continue;
+                    var key = Scalar(c, t, "SELECT title_key FROM acquisitions WHERE id=$a", ("$a", acquisition)) ?? wants[0].Input.Key;
+                    Changed(c, t);
+                    settled.Add(new TitleMerge(key, new[] { key }, wants.Select(w => w.UserId).Distinct().ToList(), 0, followers));
+                }
+                return (IReadOnlyList<TitleMerge>)settled;
+            });
         }
     }
 }

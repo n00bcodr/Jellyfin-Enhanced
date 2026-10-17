@@ -779,7 +779,9 @@ decision): the title's facts for household rules, the rules and every check use 
 go ahead" answers the same whichever id the title was asked by. Dedup, coverage, following, the decline cooldown, approvals,
 imports and My requests all see it once. Requests a former version held apart for one title are merged soon after start: everyone's
 request is kept with its history; one that another request of the title already covers follows it and gets its charge
-back; nothing that went out is sent again.
+back; nothing that went out is sent again. When the ids are learned while one of the requests is being sent (or its
+send isn't confirmed yet), the merge is finished once that settles: a request whose part already went out (or is going
+out) for the title is never sent a second time, and the one that follows gets its charge back once.
 Overlapping asks charge only additional scope. An existing user's covered scope reuses
 their want; another user follows covered intent without a charge. Sharing requires the same backend, resolved instance,
 connection generation and Seerr source. A request for another target creates its own work. Members need approval after their cumulative scope

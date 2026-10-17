@@ -463,9 +463,13 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   key across its TMDB, TVDB and IMDb ids: the aliases it has learned (`title_aliases`) resolve every key that comes in,
   and learning one moves the title's requests, jobs and acquisitions to its canonical key and merges what was held apart
   (a request another one of the title already covers then follows it, with its charge given back; nothing is sent
-  again). `RequestTitleIdentity.cs` hands what the arr libraries and Seerr's requests say about a title's ids to it: for
-  each ask and approval first, and in a background pass over every stored title (after start, after an arr library read
-  changes, and every few minutes).
+  again). A merge that meets work in flight (being sent, or unconfirmed) is noted (`title_reconcile`) and finished once
+  that work settles (`SettleMerges`, after each send and in the background pass), and the ledger's one send-time check
+  (`ClaimForDispatch`) never sends what already went out for the title. `RequestTitleIdentity.cs` hands what the arr
+  libraries and Seerr's requests say about a title's ids to it, and is the one place every way into the ledger (an ask,
+  a preview, a batch, an approval, a family Search) resolves the title's key before anything is prepared (`Entry`); it
+  also runs a background pass over every stored title (after start, after an arr library read changes, and every few
+  minutes).
   `AcquireRequestsController.cs` exposes the authenticated server API.
   In Seerr mode `SeerrBackend.cs` also reads Seerr's Radarr/Sonarr servers (profiles, root folders, the options stamp)
   for administrator Seerr request options, checks a chosen server, profile and folder again right before the POST and

@@ -1094,9 +1094,83 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public IReadOnlyList<RequestJob> ForWant(string id) => _db.Read(c => Jobs(c, null, "want_id=$id", ("$id", id)));
         /// <summary>Recovers uncertain writes after a process restart, never blindly re-sending them.</summary>
         public void Recover(DateTimeOffset now) => _db.Write((c, t) => Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at WHERE state='sending' OR (state='parked' AND json_extract(outcome,'$.certainty')='Unknown')", ("$at", Ms(now))));
-        /// <summary>Claims a due row under a database generation fence.</summary>
-        public bool Claim(RequestJob job, long generation, DateTimeOffset now) => _db.WriteIf(generation, (c, t) =>
-            Exec(c, t, "UPDATE jobs SET state='sending',attempts=attempts+1,updated_at=$at WHERE id=$id AND state=$state AND next_attempt<=$at", ("$at", Ms(now)), ("$id", job.Id), ("$state", job.State)) == 1, false).Result;
+        /// <summary>Claims a due row under a database generation fence (after the send-time redundancy check: see <see cref="ClaimForDispatch"/>).</summary>
+        public bool Claim(RequestJob job, long generation, DateTimeOffset now) => ClaimForDispatch(job, generation, now) == DispatchClaim.Claimed;
+        /// <summary>What claiming a due job for its send did.</summary>
+        public enum DispatchClaim
+        {
+            /// <summary>Claimed: it is being sent now.</summary>
+            Claimed,
+            /// <summary>Not claimed: it changed meanwhile (or the database was restored).</summary>
+            Lost,
+            /// <summary>Not sent: what it would send already went out for the title, so it was cancelled and its charge given back.</summary>
+            Served,
+            /// <summary>Not sent yet: what it would send is being sent (or is unconfirmed) for the title; it waits for that to settle.</summary>
+            Waits,
+        }
+        /// <summary>How long a job waits when work in flight for its title would cover it (see <see cref="DispatchClaim.Waits"/>).</summary>
+        internal static readonly TimeSpan InFlightWait = TimeSpan.FromSeconds(30);
+        /// <summary>
+        /// Claims a due job for its send under a database generation fence, after the one send-time redundancy check (review
+        /// round 5, 4b-B13): a job whose scope another job or request of the title already sent there (the same destination,
+        /// <see cref="RequestDestination.Serves(MutationInput, string, MutationInput, string)"/>) is never POSTed: it is
+        /// cancelled and its charge given back once, and a request left with nothing of its own follows what went out (free).
+        /// One whose scope is covered only together with work in flight there (being sent, or unconfirmed) waits for that work
+        /// to settle. A read-back (<c>maybe_sent</c>) is always claimed: it only reads.
+        /// </summary>
+        /// <param name="job">The due job.</param>
+        /// <param name="generation">The database generation it was read in.</param>
+        /// <param name="now">Now.</param>
+        public DispatchClaim ClaimForDispatch(RequestJob job, long generation, DateTimeOffset now) => _db.WriteIf(generation, (c, t) =>
+        {
+            if (job.State != "maybe_sent" && Redundancy(c, t, job, now) is { } settled) return settled;
+            return Exec(c, t, "UPDATE jobs SET state='sending',attempts=attempts+1,updated_at=$at WHERE id=$id AND state=$state AND next_attempt<=$at", ("$at", Ms(now)), ("$id", job.Id), ("$state", job.State)) == 1
+                ? DispatchClaim.Claimed : DispatchClaim.Lost;
+        }, DispatchClaim.Lost).Result;
+        // The send-time redundancy check (see ClaimForDispatch): null when the job goes out.
+        private static DispatchClaim? Redundancy(SqliteConnection c, SqliteTransaction t, RequestJob job, DateTimeOffset now)
+        {
+            var want = Wants(c, t, "id=$id", ("$id", job.WantId)).SingleOrDefault();
+            if (want == null || !Active(want)) return null;
+            var target = TargetKey(job.Authorization);
+            var title = Wants(c, t, "acquisition_id=$a", ("$a", want.AcquisitionId)).Where(Active).ToList();
+            var sent = new List<MutationInput>();
+            var going = new List<MutationInput>();
+            foreach (var other in title)
+            {
+                foreach (var work in Jobs(c, t, "want_id=$w AND id<>$j", ("$w", other.Id), ("$j", job.Id)).Where(j => RequestDestination.Serves(job.Input, target, j.Input, TargetKey(j.Authorization))))
+                {
+                    if (work.State == "succeeded") sent.Add(work.Input);
+                    else if (work.State is "sending" or "maybe_sent" || work.Uncertain) going.Add(work.Input);
+                }
+                if (LinkedScope(c, t, other) is { } linked && RequestDestination.Serves(job.Input, target, linked, other.TargetKey)) sent.Add(linked);
+            }
+            if (job.Input.Extra(sent) != null)
+            {
+                if (job.Input.Extra(sent.Concat(going)) != null) return null;
+                // Covered only with work in flight: it waits for that to settle (a merge noted it, and SettleMerges finishes it).
+                return Exec(c, t, "UPDATE jobs SET next_attempt=$next WHERE id=$j AND state=$s", ("$next", Ms(now + InFlightWait)), ("$j", job.Id), ("$s", job.State)) == 1 ? DispatchClaim.Waits : DispatchClaim.Lost;
+            }
+            // What it would send went out already: cancelled, and its own charge given back (once: only a charged one is).
+            if (Exec(c, t, "UPDATE jobs SET state='cancelled',reason='merged',updated_at=$at WHERE id=$j AND state=$s", ("$at", Ms(now)), ("$j", job.Id), ("$s", job.State)) != 1) return DispatchClaim.Lost;
+            Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id=$j AND state='charged'", ("$j", job.Id));
+            var own = Jobs(c, t, "want_id=$w AND " + LiveJobs, ("$w", want.Id));
+            var confirmed = Confirmed(c, t, title, want.TargetKey).ToList();
+            if (own.Count == 0 && want.Input.Extra(confirmed) == null)
+            {
+                // Nothing of its own is left: it follows what went out, free (every charge of it given back).
+                Exec(c, t, "UPDATE reservations SET state='refunded' WHERE want_id=$w AND state IN ('charged','held')", ("$w", want.Id));
+                Exec(c, t, "UPDATE wants SET status='sent',reason='looking',is_follower=1,owned_input=NULL,cost=0,updated_at=$at WHERE id=$w", ("$at", Ms(now)), ("$w", want.Id));
+            }
+            else
+            {
+                var whole = want.Input.Extra(confirmed) == null;
+                Exec(c, t, "UPDATE wants SET status=CASE WHEN $sent THEN 'sent' ELSE status END,reason=CASE WHEN $sent THEN 'looking' ELSE reason END,cost=(SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=wants.id AND state='charged'),updated_at=$at WHERE id=$w",
+                    ("$sent", whole), ("$at", Ms(now)), ("$w", want.Id));
+            }
+            Record(c, t, want.Id, job.Id, null, "merged", "accepted", "looking", want.Input.Key, now);
+            return DispatchClaim.Served;
+        }
         /// <summary>Commits a job outcome, its intent state, audit, event and notification together.</summary>
         public bool Complete(RequestJob job, long generation, RequestBackendResult result, DateTimeOffset now)
         {
