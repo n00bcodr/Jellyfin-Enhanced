@@ -47,6 +47,7 @@ public class PosterBlurFilterTests
         public readonly Mock<IChapterManager> Chapters=new();
         public readonly User User=new("test","default","default");
         private readonly List<Guid> extraUsers=[];
+        private readonly ILibraryManager? previousLibrary=BaseItem.LibraryManager;
         public readonly SpoilerBlurImageFilter Filter;
         private readonly SpoilerNextUnwatchedService next;
         public Fixture(bool guarded=true)
@@ -80,12 +81,29 @@ public class PosterBlurFilterTests
             var key=UserId.ToString("N"); var state=Plugin.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(key,"spoilerblur.json"); state.Prefs=prefs;
             Plugin.Core.Manager.SaveUserConfiguration(key,"spoilerblur.json",state); SpoilerUserResolver.InvalidateUser(key);
         }
-        /// <summary>Runs a trickplay tile request (Videos/{id}/Trickplay/{width}/{index}.jpg); with an ip it is anonymous and resolved by session-on-IP.</summary>
-        public Task<(ActionExecutedContext Executed,DefaultHttpContext Http)> RunTrickplay(IActionResult original,Guid item,IPAddress? ip=null)
-            => Run(original,controller:"Trickplay",action:"GetTrickplayTileImage",item:item,ip:ip);
-        public async Task<(ActionExecutedContext Executed,DefaultHttpContext Http)> Run(IActionResult original,string type="Primary",string method="GET",string controller="Image",string action="GetItemImage",Guid? viewer=null,string query="",Guid? item=null,IPAddress? ip=null)
+        /// <summary>
+        /// Adds an unwatched movie that is NOT on the user's Movies list but belongs to a BoxSet the user opted in,
+        /// so it is in spoiler scope only through collection membership (BoxSet.LinkedChildren).
+        /// </summary>
+        public Movie AddCollectionOnlyMovie()
         {
-            var http=new DefaultHttpContext(); var response=new ResponseFeature(); http.Features.Set<IHttpResponseFeature>(response);
+            var movie=new Movie{Id=Guid.NewGuid()};
+            var boxSet=new BoxSet{Id=Guid.NewGuid(),LinkedChildren=[new LinkedChild{ItemId=movie.Id}]};
+            Library.Setup(l=>l.GetItemById(movie.Id)).Returns(movie);Library.Setup(l=>l.GetItemById(boxSet.Id)).Returns(boxSet);
+            // 10.11 resolves linked children one by one through GetItemById; 12 batches them through GetItemList(ItemIds).
+            Library.Setup(l=>l.GetItemList(It.Is<InternalItemsQuery>(q=>q.ItemIds.Contains(movie.Id)))).Returns(new BaseItem[]{movie});
+            BaseItem.LibraryManager=Library.Object;
+            UserData.Setup(u=>u.GetUserData(User,movie)).Returns(new UserItemData{Key="collection-movie",Played=false});
+            var key=UserId.ToString("N"); var state=Plugin.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(key,"spoilerblur.json");
+            state.Collections[boxSet.Id.ToString("N")]=new(); Assert.False(state.Movies.ContainsKey(movie.Id.ToString("N")));
+            Plugin.Core.Manager.SaveUserConfiguration(key,"spoilerblur.json",state); SpoilerUserResolver.InvalidateUser(key); return movie;
+        }
+        /// <summary>Runs a trickplay tile request (Videos/{id}/Trickplay/{width}/{index}.jpg); with an ip it is anonymous and resolved by session-on-IP.</summary>
+        public Task<(ActionExecutedContext Executed,DefaultHttpContext Http)> RunTrickplay(IActionResult original,Guid item,IPAddress? ip=null,Action<HttpContext>? arrange=null)
+            => Run(original,controller:"Trickplay",action:"GetTrickplayTileImage",item:item,ip:ip,arrange:arrange);
+        public async Task<(ActionExecutedContext Executed,DefaultHttpContext Http)> Run(IActionResult original,string type="Primary",string method="GET",string controller="Image",string action="GetItemImage",Guid? viewer=null,string query="",Guid? item=null,IPAddress? ip=null,Action<HttpContext>? arrange=null)
+        {
+            var http=new DefaultHttpContext(); var response=new ResponseFeature(); http.Features.Set<IHttpResponseFeature>(response); arrange?.Invoke(http);
             http.Request.Method=method; http.Request.QueryString=new QueryString(query);
             if(ip==null) http.User=new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-UserId",(viewer??UserId).ToString())],"Test"));
             else http.Connection.RemoteIpAddress=ip;
@@ -100,7 +118,7 @@ public class PosterBlurFilterTests
             await Filter.OnActionExecutionAsync(executing,()=>{http.Response.Headers.CacheControl="public, max-age=31536000";http.Response.Headers.ETag="original";http.Response.Headers.LastModified="yesterday";return Task.FromResult(executed);});
             await response.Start(); return(executed,http);
         }
-        public void Dispose(){Filter.Dispose();next.Dispose();SpoilerUserResolver.InvalidateUser(UserId.ToString("N"));foreach(var id in extraUsers) SpoilerUserResolver.InvalidateUser(id.ToString("N"));Plugin.Dispose();}
+        public void Dispose(){Filter.Dispose();next.Dispose();SpoilerUserResolver.InvalidateUser(UserId.ToString("N"));foreach(var id in extraUsers) SpoilerUserResolver.InvalidateUser(id.ToString("N"));BaseItem.LibraryManager=previousLibrary!;Plugin.Dispose();}
     }
     private static void Private(HttpContext http,bool chapter=false)
     {
@@ -255,6 +273,38 @@ public class PosterBlurFilterTests
         var original=new FileContentResult(PosterBlurTests.Source(),"image/jpeg");var(executed,http)=await f.RunTrickplay(original,f.Episode.Id);
         Assert.Same(original,executed.Result);Private(http);
         f.Trickplay.Verify(t=>t.GetTrickplayResolutions(f.Episode.Id),admin?Times.Once():Times.Never());
+    }
+    // A spoilerblur.json with no Prefs object (or "Prefs": null) predates per-user prefs; it inherits trickplay protection.
+    // The loader always materialises an empty Prefs, so "memory" seeds the per-request state cache with a genuinely null Prefs.
+    [Theory]
+    [InlineData("absent")][InlineData("null-on-disk")][InlineData("memory")]
+    public async Task Trickplay_tiles_stay_protected_when_the_user_has_no_prefs_object(string source)
+    {
+        using var f=new Fixture();var key=f.UserId.ToString("N");var seriesKey=f.Episode.SeriesId.ToString("N");
+        Action<HttpContext>? arrange=null;
+        if(source=="absent") f.Plugin.Core.Manager.SaveUserConfiguration(key,"spoilerblur.json",new{Series=new Dictionary<string,object>{{seriesKey,new{}}}});
+        else if(source=="null-on-disk") f.SetPrefs(null!);
+        else
+        {
+            var state=new UserSpoilerBlur{Prefs=null!};state.Series[seriesKey]=new();
+            arrange=http=>http.Items[SpoilerUserResolver.ContextKeyUserState+":"+key]=state;
+        }
+        SpoilerUserResolver.InvalidateUser(key);
+        if(source=="absent") Assert.DoesNotContain("Prefs",File.ReadAllText(Path.Combine(f.Plugin.Core.ConfigRoot,key,"spoilerblur.json")));
+        var bytes=PosterBlurTests.Source();var(executed,http)=await f.RunTrickplay(new FileContentResult(bytes,"image/jpeg"),f.Episode.Id,arrange:arrange);
+        Protected(bytes,executed,http);
+    }
+    // A movie in scope only through an opted-in collection follows the same admin switch and per-user opt-out.
+    [Theory]
+    [InlineData(true,null,true)][InlineData(true,true,true)][InlineData(true,false,false)][InlineData(false,null,false)]
+    public async Task Trickplay_tiles_of_a_collection_only_movie_follow_admin_switch_and_user_opt_out(bool admin,bool? hideTrickplay,bool protect)
+    {
+        using var f=new Fixture(guarded:false);var movie=f.AddCollectionOnlyMovie();
+        f.Plugin.Plugin.Configuration.SpoilerBlurTrickplay=admin;f.SetPrefs(new SpoilerBlurUserPrefs{HideTrickplay=hideTrickplay});
+        var bytes=PosterBlurTests.Source();var original=new FileContentResult(bytes,"image/jpeg");
+        var(executed,http)=await f.RunTrickplay(original,movie.Id);
+        // Opted out still registers no-store; an out-of-scope movie would instead keep its ETag and public cache headers.
+        if(protect) Protected(bytes,executed,http); else { Assert.Same(original,executed.Result);Private(http); }
     }
     private static int ipCounter;
     // Anonymous tile request on an IP shared by two guarded users: the opt-out applies only when every in-scope user chose it.
