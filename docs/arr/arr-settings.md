@@ -564,10 +564,16 @@ Enhanced handles requests, a Seerr choice is refused (`invalid_defaults`).
 A choice is never answered by another request somewhere else: asking for a title at one server, profile and folder
 while your own or someone else's request went to another (or to Seerr's defaults) makes a request of its own, checked
 when it is sent, instead of "already recorded" or "someone already asked". Asking again with the same choice, or
-without one, answers with the request already there. The new seasons a "Keep getting new episodes" request asks Seerr
-for go to the same server, profile and folder, checked again when each is sent. When one is held because Seerr's
-servers changed, approving the request with the same server, profile and folder chosen again (read fresh) sends it;
-choosing another destination for a request that already went out is refused (`request_changed`).
+without one, answers with the request already there; asking for several seasons at once answers with one of the
+requests at that choice, never one somewhere else. The new seasons a "Keep getting new episodes" request asks Seerr
+for go to the same server, profile and folder, checked again when each is sent. Someone's request for that season
+somewhere else (or not sent yet, or waiting for an OK somewhere else) doesn't stop it; one at the same choice does, and
+so does Seerr already having the season from anyone. When one is held because Seerr's servers changed, approving the
+request with the same server, profile and folder chosen again (read fresh) sends it. The same works for a request held
+because Seerr stored it without the choice, once it's put right in Seerr: approving it with the choice read fresh checks
+Seerr again first and nothing is sent twice. Choosing another destination for a request that already went out is
+refused (`request_changed`), and so is approving one after Jellyfin Enhanced was pointed at another Seerr (another
+address or key): what went out to the first Seerr is never asked for again at the new one.
 
 While the switch is on, the older Seerr pages follow the same boundary: for anyone who isn't a Jellyfin administrator,
 the server, profile, root folder, language profile and tags are removed from requests (even with Seerr's advanced

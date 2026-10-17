@@ -454,7 +454,10 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   marks it fulfilled (Ready, never stale).
   `FutureSeasonCharges.cs` charges the owner of a "Keep getting new episodes" request once per new season a Sonarr
   library read shows started; in Seerr mode it also asks Seerr for each new started season every few hours (Seerr
-  doesn't follow new seasons itself).
+  doesn't follow new seasons itself). `RequestDestination.cs` is the one rule for where a request goes (its target, and
+  an administrator's Seerr server, profile, root folder and options stamp): every ledger and charges path where one
+  request covers, dedups, follows or stands for another asks it, and so does every approval that re-confirms or edits
+  one (a fresh stamp re-confirms only on the request's own Seerr; what went out never moves).
   `AcquireRequestsController.cs` exposes the authenticated server API.
   In Seerr mode `SeerrBackend.cs` also reads Seerr's Radarr/Sonarr servers (profiles, root folders, the options stamp)
   for administrator Seerr request options, checks a chosen server, profile and folder again right before the POST and

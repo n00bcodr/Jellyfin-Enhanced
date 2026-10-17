@@ -782,9 +782,13 @@ seerr_options_invalid` (the edition, profile or folder doesn't belong to that se
 request whose choice stops fitting is held with the same reasons; nobody else's request answers include the choice.
 A request with a choice is only ever answered by a request going to the same server, profile and folder against the
 same stamp (otherwise it is a request of its own, checked when it is sent), and new seasons of a "keep getting"
-request carry the choice. Approving a held request with only a new stamp for the same server, profile and folder
-re-confirms it (`200`): what it sent stays, and what was held goes out with the new stamp. Another destination for a
-request that already went out is `409 request_changed`.
+request carry the choice. Only a request at the same destination (sent, queued or waiting) keeps a "keep getting"
+request from following a new season. Approving a held request with only a new stamp for the same server, profile and
+folder on the same Seerr re-confirms it (`200`): what it sent stays, what was held goes out with the new stamp, and a
+part Seerr already has but that wasn't confirmed is read back first (it stays uncertain until then). Another
+destination for a request that already went out, or any approval (as it is included) that would send what went out to
+another Seerr, is `409 request_changed`; a part that was written resumes only where it was (`409 request_in_flight`
+otherwise).
 
 The Sonarr/Radarr data of the routes above comes from in-memory snapshots, refreshed in the background
 while a page uses them (queue and history at the Requests page's poll interval, calendar and library
