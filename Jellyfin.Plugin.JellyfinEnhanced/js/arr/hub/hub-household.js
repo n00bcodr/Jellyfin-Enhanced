@@ -6,7 +6,9 @@
  * request limit, see 4K holders and a parental-limit hint, and set the house rules (preset, default
  * role, household and per-role limits); Save asks for a confirmation, then POSTs only what changed
  * to /JellyfinEnhanced/acquire/household and says how it went. Cards, no wide tables; every
- * control is a real, focusable button or select (TV and 420 px friendly).
+ * control is a real, focusable button or select (TV and 420 px friendly). Phase 4b: while household
+ * rules are on (settings.rules) the Trusted role can be given, a person's shared allowance is named,
+ * and administrators get the request conditions below the house rules (arr/household/household-rules.js).
  */
 (function (JE) {
     'use strict';
@@ -108,6 +110,8 @@
         if (!state.unfollow) {
             state.unfollow = X.follow(['req:state'], () => {
                 if (!state.shown) return;
+                // Phase 4b: the request conditions read again on their own terms (kept while they are edited).
+                H.rules?.changed?.();
                 // Never throw away an administrator's unsaved edits: say the household changed instead.
                 if (dirty() || state.saving) {
                     state.stale = true;
@@ -140,7 +144,17 @@
      * @returns {string} Text.
      */
     function roleText(role) {
+        if (role === 'trusted') return X.tr('arr_rules_role_trusted');
         return X.tr(`arr_approvals_role_${ROLES.includes(role) || role === 'admin' ? role : 'watcher'}`);
+    }
+
+    /**
+     * The roles an administrator may give: Trusted too while household rules are on (phase 4b).
+     * @param {Object|null} settings Served settings.
+     * @returns {string[]} Roles.
+     */
+    function givableRoles(settings) {
+        return settings?.rules?.trusted === true ? ['watcher', 'kid', 'member', 'trusted', 'manager'] : ROLES;
     }
 
     /**
@@ -266,7 +280,7 @@
         })));
         section.appendChild(X.el('div', 'je-household-help', X.tr(`arr_household_preset_${preset}_help`)));
         const defaultRole = e.defaultRole ?? settings.defaultRole;
-        section.appendChild(field(X.tr('arr_household_default_role'), choiceSelect(ROLES.map(r => [r, roleText(r)]), defaultRole, 'household:default-role', X.tr('arr_household_default_role'), (v) => {
+        section.appendChild(field(X.tr('arr_household_default_role'), choiceSelect(givableRoles(settings).map(r => [r, roleText(r)]), defaultRole, 'household:default-role', X.tr('arr_household_default_role'), (v) => {
             e.defaultRole = v === settings.defaultRole ? null : v;
             state.confirming = false;
             state.result = null;
@@ -312,7 +326,7 @@
         if (person.you) name.appendChild(X.el('span', 'je-household-you', X.tr('arr_household_you')));
         head.appendChild(name);
         const role = X.el('span', `je-household-role je-household-role-${person.role}`);
-        role.appendChild(X.icon(person.role === 'admin' ? 'supervisor_account' : person.role === 'manager' ? 'how_to_reg' : person.role === 'kid' ? 'child_care' : 'person'));
+        role.appendChild(X.icon(person.role === 'admin' ? 'supervisor_account' : person.role === 'manager' ? 'how_to_reg' : person.role === 'kid' ? 'child_care' : person.role === 'trusted' ? 'verified_user' : 'person'));
         role.appendChild(document.createTextNode(roleText(person.role)));
         head.appendChild(role);
         if (person.admin?.fourK) {
@@ -322,6 +336,8 @@
         node.appendChild(head);
         const usage = [quotaText(person.quota), X.tr('arr_household_open', { active: person.active | 0, waiting: person.waiting | 0 })].filter(Boolean).join(' · ');
         node.appendChild(X.el('div', 'je-approval-meta', usage));
+        // Phase 4b: the shared allowance (group pool) the person's requests draw on (administrators).
+        if (typeof person.admin?.pool === 'string' && person.admin.pool) node.appendChild(X.el('div', 'je-approval-meta je-household-pool', X.tr('arr_rules_person_pool', { name: person.admin.pool })));
         if (Array.isArray(person.requests) && person.requests.length) {
             const list = X.el('ul', 'je-household-requests');
             for (const request of person.requests) {
@@ -344,7 +360,7 @@
             } else {
                 const current = personOverride(person);
                 const defaultRole = state.edits.defaultRole ?? settings?.defaultRole ?? 'watcher';
-                const choices = [['', X.tr('arr_household_role_default', { role: roleText(defaultRole) })], ...ROLES.map(r => [r, roleText(r)])];
+                const choices = [['', X.tr('arr_household_role_default', { role: roleText(defaultRole) })], ...givableRoles(settings).map(r => [r, roleText(r)])];
                 controls.appendChild(field(X.tr('arr_household_role'), choiceSelect(choices, current.role || '', `household:role:${person.id}`,
                     X.tr('arr_household_role_for', { name: person.name }), v => editPerson(person, { role: v || null }))));
                 controls.appendChild(field(X.tr('arr_household_person_limit'), limitSelect(current.quotaLimit, 'arr_household_inherit', `household:quota:${person.id}`,
@@ -458,6 +474,8 @@
         const data = state.data;
         const canEdit = data.canEdit === true && !!data.settings;
         if (canEdit) box.appendChild(rulesSection(data.settings));
+        // Phase 4b: the request conditions, Seerr's rules or why they don't apply, while household rules are on.
+        if (canEdit && data.settings.rules && H.rules?.section) box.appendChild(H.rules.section({ people: data.people, redraw: draw }));
         const people = X.el('section', 'je-household-people');
         people.appendChild(X.el('h2', 'je-hub-group-title', X.tr('arr_household_people')));
         if (!data.people.length) people.appendChild(X.el('div', 'je-hub-empty', X.tr('arr_household_empty')));
@@ -467,7 +485,8 @@
         box.appendChild(people);
         const bar = canEdit ? saveBar() : null;
         if (bar) box.appendChild(bar);
-        X.restoreFocus(panel, focus, ['household:save', 'household:preset']);
+        // Focus that was in the request conditions stays there (their Save, else the first role).
+        X.restoreFocus(panel, focus, String(focus).startsWith('rules:') ? ['rules:save', 'rules:kid:open', 'household:preset'] : ['household:save', 'household:preset']);
     }
 
     // The page redraws for the new user once their capabilities are known; the tab reads then.

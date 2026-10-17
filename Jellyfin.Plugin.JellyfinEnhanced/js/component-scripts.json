@@ -240,6 +240,8 @@
     "arr/hub/hub-extra-styles.js",
     "arr/hub/hub-approvals.js",
     "arr/hub/hub-household.js",
+    "// Phase 4b: household rules (the Household tab's request conditions, Seerr's rules read-only, rule verdicts in words); after hub-extra-core.js.",
+    "arr/household/household-rules.js",
     "arr/hub/hub-mine-ledger.js",
     "arr/hub/hub-chipbar.js",
     "arr/hub/hub-page.js",

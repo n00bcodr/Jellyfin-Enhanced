@@ -8,6 +8,8 @@
  * and bulk approve (up to 20, each one checked again; a 207 answer puts each card's own outcome on
  * it and the ones that failed stay). Swipe right to approve, left for the decline reasons, with the
  * buttons always there. Every outcome is said honestly. ?show=stuck lists only the stuck ones.
+ * Phase 4b: the household rules' verdict in plain words, the rule and shared-allowance reasons, and
+ * the requester's shared allowance (arr/household/household-rules.js words them).
  */
 (function (JE) {
     'use strict';
@@ -549,11 +551,17 @@
         body.appendChild(title);
         const who = item.requester?.name || X.tr('arr_approvals_someone');
         body.appendChild(X.el('div', 'je-approval-meta', [who, X.ago(item.createdAt), X.scopeText(item)].filter(Boolean).join(' · ')));
-        const role = item.requester?.role ? X.tr(`arr_approvals_role_${item.requester.role}`) : '';
+        const role = item.requester?.role ? (item.requester.role === 'trusted' ? X.tr('arr_rules_role_trusted') : X.tr(`arr_approvals_role_${item.requester.role}`)) : '';
         const quota = quotaText(item.requester?.quota);
         if (role || quota) body.appendChild(X.el('div', 'je-approval-meta je-approval-role', [role, quota].filter(Boolean).join(' · ')));
+        // Phase 4b: the shared allowance their requests draw on, and why the household rules want a look.
+        const pool = H.rules?.poolText?.(item.requester?.pool);
+        if (pool) body.appendChild(X.el('div', 'je-approval-meta je-approval-pool', pool));
         const rating = ratingLine(item, who);
         if (rating) body.appendChild(rating);
+        // A card still waits for an OK, so a verdict that would have let it go ahead (a Kid's, say) didn't decide it.
+        const rules = item.rules?.verdict === 'approve' ? null : H.rules?.why?.(item.rules);
+        if (rules) body.appendChild(rules);
         // The part asked for may already be on its way or here (someone else's request, an arr outside JE).
         // A request held after its OK: the stuck chip says why; "OK'd! Getting started" would contradict it.
         const heldAfterOk = item.okd === true && item.stuck === true && ['approved', 'asked'].includes(item.partStatus?.stage);
@@ -583,6 +591,9 @@
         }
         const chips = X.el('div', 'je-approval-chips');
         if (item.overQuota) chips.appendChild(chip('je-approval-chip-quota', 'data_usage', X.tr('arr_approvals_over_quota')));
+        if (item.reason === 'rule_review') chips.appendChild(chip('je-approval-chip-quota', 'rule', X.tr('arr_rules_chip_review')));
+        else if (item.reason === 'group_quota') chips.appendChild(chip('je-approval-chip-quota', 'data_usage', X.tr('arr_rules_chip_pool')));
+        else if (item.reason === 'household_rule') chips.appendChild(chip('je-approval-chip-stuck', 'block', X.tr('arr_rules_chip_refused')));
         if (typeof item.estimateGb === 'number' && item.estimateGb > 0) chips.appendChild(chip('je-approval-chip-estimate', 'storage', X.tr('arr_approvals_estimate', { gb: Math.round(item.estimateGb) })));
         if (item.stuck) chips.appendChild(chip('je-approval-chip-stuck', 'schedule', stuckText(item)));
         if (chips.childNodes.length) body.appendChild(chips);

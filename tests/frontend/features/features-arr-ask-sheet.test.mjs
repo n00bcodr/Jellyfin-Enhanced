@@ -1054,6 +1054,8 @@ test('collection preview for kids and the summary words', async t => {
   assert.equal(C.summarize([{ state: 'waiting' }, { state: 'waiting' }, { state: 'nothing' }, { state: 'failed' }, { state: 'denied' }], MEMBER),
     "2 wait for Dad's OK · 1 already here or on the way · 2 couldn't be asked");
   assert.equal(C.summarize([{ state: 'asked' }, { state: 'merged' }, { state: 'unknown' }], MEMBER), 'Asked for 3');
+  // Phase 4b: refused by the household rules is said as such, not as a failure.
+  assert.equal(C.summarize([{ state: 'asked' }, { state: 'ruled' }, { state: 'ruled' }], MEMBER), "Asked for 1 · 2 not allowed by the household's rules");
 });
 
 test('a collection answer is shown only while its page, user and request are still current', async t => {
@@ -1781,4 +1783,25 @@ test('Seerr with partial requests off: one "Get the whole series" on the series 
   await settle(20);
   same(h.posts.at(-1).body.input.seasons, [1, 2, 3]);
   await pending;
+});
+
+// ------------------------------------------------------------------ household rules (phase 4b)
+
+test('phase 4b: the sheet names the shared allowance after its note, and a wait for the household rules says so', async t => {
+  const h = setup(t, {
+    quota: { used: 3, limit: 7, remaining: 4, available: true },
+    routes: (method, path) => (path.startsWith('/acquire/requests/quota')
+      ? { body: { outcome: 'accepted', reason: 'quota', quota: { used: 3, limit: 7, remaining: 4, available: true }, pool: { name: 'Kids', used: 3, limit: 7, remaining: 4 } } }
+      : null),
+    answer: () => ({ status: 201, body: { outcome: 'accepted', reason: 'rule_review', certainty: 'Succeeded', requestId: 'c'.repeat(32), rules: { verdict: 'review', hits: [] } } })
+  });
+  const pending = h.Sheet.open(SERIES);
+  await settle();
+  const note = h.document.querySelector('.je-sheet-note');
+  assert.equal(note.hidden, false);
+  assert.equal(note.querySelector('.je-sheet-note-pool').textContent, 'Shared allowance Kids: 3 of 7 used');
+  click(h, primary(h));
+  const result = await pending;
+  assert.equal(result.state, 'waiting');
+  assert.deepEqual(h.toasts, ["Sent to Dad for an OK: the household's rules want a look."]);
 });
