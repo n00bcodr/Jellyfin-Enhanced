@@ -460,11 +460,14 @@ public class IntegrationAutoRequestLedgerTests
         release.SetResult();
     }
 
-    private static string Root()
+    // The repository: above the build output, the working directory, or (build output elsewhere) this source file.
+    private static string Root([System.Runtime.CompilerServices.CallerFilePath] string here = "")
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         root ??= new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
+        root ??= string.IsNullOrEmpty(here) ? null : new FileInfo(here).Directory;
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         Assert.NotNull(root);
         return root!.FullName;

@@ -889,7 +889,7 @@ public class IntegrationAutomationTests
             lab.Radarr.OnWrite = (method, path, _) => method == "POST" && path == "/api/v3/movie" ? IntegrationTransport.Response("{\"message\":\"bad gateway\"}", 502) : null;
             var job = lab.Job(Movie(961), "Radarr");
             var lost = await lab.Direct.SendAsync(job, () => null, guard.Admission(job, AutomaticWant(job)), default);
-            Assert.Equal(ArrActionStatusOf(lost), Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrActionStatus.Unknown);
+            Assert.Equal(Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrActionStatus.Unknown, ArrActionStatusOf(lost));
             var usage = budgets.Usage(BudgetCategories.HouseholdAdd, BudgetCategories.Household).Single();
             Assert.Equal((1, 1), (usage.Used, usage.Uncertain));
             // The read-back finds nothing there: released.

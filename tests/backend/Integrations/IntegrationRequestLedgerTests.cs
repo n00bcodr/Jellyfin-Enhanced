@@ -945,12 +945,16 @@ public class IntegrationRequestLedgerTests
     }
 
     [Fact]
-    public void NoProductionCSharpDeclaresAsyncVoid()
+    public void NoProductionCSharpDeclaresAsyncVoid() => NoAsyncVoid();
+
+    private static void NoAsyncVoid([System.Runtime.CompilerServices.CallerFilePath] string here = "")
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
-        // External output folders do not have the repository as an ancestor.
+        // External output folders do not have the repository as an ancestor: the working directory, or this source file.
         root ??= new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
+        root ??= string.IsNullOrEmpty(here) ? null : new FileInfo(here).Directory;
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         Assert.NotNull(root);
         var files = Directory.EnumerateFiles(Path.Combine(root!.FullName, "Jellyfin.Plugin.JellyfinEnhanced"), "*.cs", SearchOption.AllDirectories).Where(f => !f.Contains("/obj/") && !f.Contains("/bin/"));
