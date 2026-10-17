@@ -139,6 +139,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (want == null) return RequestOutcome.Refused("not_found", 404);
             var input = body?.Input == null ? want.Input : Normalize(body.Input);
             if (input == null) return RequestOutcome.Refused("invalid_input", 400);
+            // An edit names the request's own title by any of its ids: it keeps the key the request was made with (once a
+            // series reaches Sonarr its canonical key can change to its TVDB id while the stored request keeps its TMDB key).
+            if (body?.Input != null && input.Key != want.Input.Key && TitleKey.Parse(want.Input.Key) is { } stored && CanonicalTitle(stored).ToString() == input.Key)
+                input = input with { Key = want.Input.Key };
             if (!_policy.IsAdmin(actor) && RequestLedger.RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
             await _policy.PrepareAsync(want.UserId, input, ct).ConfigureAwait(false);
             await _policy.PrepareAsync(actor, input, ct).ConfigureAwait(false);

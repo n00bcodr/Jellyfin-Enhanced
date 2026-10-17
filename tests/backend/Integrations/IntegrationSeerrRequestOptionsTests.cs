@@ -541,6 +541,15 @@ public class IntegrationSeerrRequestOptionsTests
         var keep = await rig.Ask(rig.Admin, choice);
         await rig.Outbox.TickAsync(default);
         Assert.Equal("sent", rig.Ledger.Find(keep.RequestId!)!.Status);
+        // Season 1 reached Sonarr, which knows the series by its TVDB id too: the title's canonical key is now that one,
+        // while the request keeps the key it was asked with.
+        rig.Lab.Arr.Sonarr.Series.Add(new JsonObject
+        {
+            ["id"] = 77, ["tvdbId"] = 99731, ["tmdbId"] = 1731, ["title"] = "Followed", ["titleSlug"] = "followed", ["monitored"] = true, ["path"] = "/tv-anime/Followed",
+            ["qualityProfileId"] = 4, ["seasons"] = new JsonArray(new JsonObject { ["seasonNumber"] = 1, ["monitored"] = true }, new JsonObject { ["seasonNumber"] = 2, ["monitored"] = false }),
+        });
+        Assert.True((await rig.Lab.Arr.Store.RefreshLibraryNowAsync(rig.Lab.Arr.Instance("Sonarr"), default)).Ok);
+        Assert.Equal("tv:tmdb:1731", rig.Ledger.Find(keep.RequestId!)!.Input.Key);
         // Seerr's Sonarr gets another root folder, then season 2 starts: its request is held (the stamp changed).
         AnimeRoot(rig.Fake, "/tv-kids");
         rig.Lab.Now = rig.Lab.Now.AddMinutes(2);
@@ -556,8 +565,9 @@ public class IntegrationSeerrRequestOptionsTests
         var fresh = await rig.Stamp(0, movie: false);
         Assert.Equal("request_changed", (await rig.Service.ApproveAsync(keep.RequestId!, rig.Admin.UserId, new ApproveRequest(choice with { SeerrRootFolder = "/tv-kids", SeerrOptions = fresh }), default)).Reason);
         Assert.Single(rig.Fake.Posts);
-        // The same server, profile and root folder chosen again against Seerr's current facts: season 2 goes there, with
-        // the new stamp, and season 1 (already sent) isn't asked for again.
+        // The same server, profile and root folder chosen again against Seerr's current facts (the edit naming the title by
+        // the key the administrator was shown, whichever alias is canonical now): season 2 goes there, with the new stamp,
+        // and season 1 (already sent) isn't asked for again.
         var approved = await rig.Service.ApproveAsync(keep.RequestId!, rig.Admin.UserId, new ApproveRequest(choice with { SeerrOptions = fresh }), default);
         Assert.True(approved.HttpStatus == 200, approved.Reason + ": " + approved.Message);
         var season2 = Assert.Single(rig.Ledger.ForWant(keep.RequestId!), j => j.State == "queued");
