@@ -123,14 +123,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         }
 
         /// <summary>
-        /// Removes documents whose list no longer exists: candidates are re-checked after <paramref name="confirmDelay"/>.
+        /// Removes documents whose list no longer exists, and imported collage markers left behind by such a list (from
+        /// before markers went with their list's document): candidates are re-checked after <paramref name="confirmDelay"/>.
         /// </summary>
         /// <param name="confirmDelay">Delay between the two checks.</param>
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>Number of removed documents.</returns>
         internal async Task<int> CollectOrphansAsync(TimeSpan confirmDelay, CancellationToken cancellationToken)
         {
-            var candidates = _store.EnumerateListIds().Where(IsMissing).ToList();
+            var candidates = _store.EnumerateListIds().Concat(_store.EnumerateCollageMarkerIds()).Distinct(StringComparer.Ordinal).Where(IsMissing).ToList();
             if (candidates.Count == 0)
             {
                 return 0;
@@ -138,6 +139,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             await Task.Delay(confirmDelay, cancellationToken).ConfigureAwait(false);
             var removed = 0;
+            var markersBefore = _store.EnumerateCollageMarkerIds().Count;
             foreach (var listIdN in candidates.Where(IsMissing))
             {
                 using (await _store.LockAsync(listIdN, cancellationToken).ConfigureAwait(false))
@@ -153,6 +155,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             if (removed > 0)
             {
                 _logger.Info($"[Lists] Removed placeholders of {removed} deleted list(s).");
+            }
+
+            var markers = markersBefore - _store.EnumerateCollageMarkerIds().Count;
+            if (markers > 0)
+            {
+                _logger.Info($"[Lists] Removed {markers} imported collage marker(s) of deleted lists.");
             }
 
             return removed;

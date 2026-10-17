@@ -41,6 +41,7 @@
         isLoaded: internal.isLoaded,
         confirmDisableSpoiler: internal.confirmDisableSpoiler,
         getUserPrefs: internal.getUserPrefs,
+        guardedIds: internal.guardedIds,
         setUserPrefs: internal.setUserPrefs,
     };
 

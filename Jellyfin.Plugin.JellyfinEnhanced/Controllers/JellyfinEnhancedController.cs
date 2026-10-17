@@ -4078,6 +4078,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Phase 4e: effective acquisition badge switches (parents included; per-person preferences are in user settings).
                 ArrAcquisitionBadgesEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.Badges(config),
                 ArrNativeStampsEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.NativeStamps(config),
+                // Phase 4c3a: list pages (each person may still hide them).
+                ArrListPlaylistUiEnabled = Services.Acquire.Lists.ListFlags.PlaylistUi(config),
+                ArrListCollectionUiEnabled = Services.Acquire.Lists.ListFlags.CollectionUi(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
@@ -5406,6 +5409,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 // Diff against the existing config so the log shows what actually changed
                 var existing = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
+                // Phase 4c1: the list swap-in consent is the person's own. An administrator saving someone else's settings
+                // (this save replaces the whole file) keeps it as it is.
+                if (UserHelper.GetCurrentUserId(User)?.ToString("N") != authorizedUserId)
+                {
+                    userConfiguration.ListSwapIn = existing?.ListSwapIn;
+                }
+
                 var changes = new System.Collections.Generic.List<string>();
                 var isIdentical = false;
                 if (existing != null)
@@ -8333,6 +8343,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 try
                 {
+                    // Phase 4c1: a reset never sets or clears a person's own list swap-in consent.
+                    defaultUserSettings.ListSwapIn = _userConfigurationManager.UserConfigurationExists(userId, "settings.json")
+                        ? _userConfigurationManager.GetUserConfiguration<UserSettings>(userId, "settings.json").ListSwapIn
+                        : null;
                     _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
                     userCount++;
                 }

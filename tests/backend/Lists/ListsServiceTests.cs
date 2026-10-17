@@ -1081,18 +1081,21 @@ public class ListsServiceTests
         h.Host.AfterCreate = null;
         var created = Ok<CreateListResultDto>(await h.Service.CreateListAsync(user, ListKinds.Playlist, "Fresh", false, entries, K("create-none"), None));
         Assert.NotNull(h.Host.GetList(Guid.Parse(created.ListId)));
-        Assert.Equal(2, h.Host.Calls.Count(c => c == "create-playlist:Fresh"));
+        // Each attempt runs under a name carrying its marker (round 3), and the list then gets its chosen name.
+        Assert.Equal(2, h.Host.Calls.Count(c => c.StartsWith("create-playlist:Fresh (", StringComparison.Ordinal)));
+        Assert.Equal("Fresh", h.Host.GetList(Guid.Parse(created.ListId))!.Name);
 
         // A namesake made by hand next to the first attempt's list: the retry continues with the marked one only (round 2;
         // round 1 refused with create_uncertain because it went by name and time).
         h.Host.AfterCreate = _ => throw new IOException("the server stopped");
         await Assert.ThrowsAsync<IOException>(() => h.Service.CreateListAsync(user, ListKinds.Playlist, "Twice", false, entries, K("create-twice"), None));
         h.Host.AfterCreate = null;
-        var first = Assert.Single(h.Host.Lists.Values, l => l.Info.Name == "Twice").Info.Id;
+        var first = Assert.Single(h.Host.Lists.Values, l => l.Info.Name.StartsWith("Twice (", StringComparison.Ordinal)).Info.Id;
         var twin = h.Host.AddPlaylist(user);
         twin.Info = twin.Info with { Name = "Twice", CreatedAt = DateTime.UtcNow };
         Assert.Equal(first.ToString("N"), Ok<CreateListResultDto>(await h.Service.CreateListAsync(user, ListKinds.Playlist, "Twice", false, entries, K("create-twice"), None)).ListId);
-        Assert.Single(h.Host.Calls, c => c == "create-playlist:Twice");
+        Assert.Single(h.Host.Calls, c => c.StartsWith("create-playlist:Twice (", StringComparison.Ordinal));
+        Assert.Equal("Twice", h.Host.GetList(first)!.Name);
     }
 
     // #936 DuringASeerrOutageViewsDontWaitForStatusRetries: status now comes from the shared status service; when it

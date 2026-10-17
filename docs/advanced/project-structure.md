@@ -445,7 +445,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   `ListOrder.cs` the pure order algebra (real-entry tokens, projections, Jellyfin's move coordinates); `ListRules.cs`
   entry validation, identity, edition and the request a list ask makes; `ListHost.cs` the Jellyfin seam (lists, shares,
   inserts and moves on 12 and 10.11); `ListAccess.cs` who may see and edit a list and the parental filter of entries; `ListGate.cs` the one list access
-  gate, read right before every Jellyfin write (its single-use `ListWrite` grant) and every answer with list contents;
+  gate, read right before every Jellyfin write (its single-use `ListWrite` grant) and every answer with list contents
+  (with the person's policy revision, which statuses are bound to);
   `ListResolver.cs` which library items stand for an entry (and fill progress); `ListPlaylistPlacement.cs` putting new
   items at their spot; `ListService.cs` views and every change (durable operations); `ListAcquisition.cs` Request one /
   Request all missing through the request service; `ListSwapService.cs`/`ListSwapMonitor.cs` swap-in on arrivals

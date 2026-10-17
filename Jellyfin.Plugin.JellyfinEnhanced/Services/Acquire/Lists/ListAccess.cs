@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data;
+using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
@@ -163,7 +164,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The stamp.</returns>
         internal string ParentalStamp(User user)
         {
-            if (!_parentalFilter.TryGetRestrictedPolicy(user.Id.ToString("N", System.Globalization.CultureInfo.InvariantCulture), out var policy))
+            // The person as the caller just read them (the gate reads them right before): not read again.
+            if (!_parentalFilter.TryGetRestrictedPolicy(user, out var policy))
             {
                 return "-";
             }
@@ -177,6 +179,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 policy.BlockUnratedSeries ? "s" : string.Empty,
                 Tags(policy.BlockedTags),
                 Tags(policy.AllowedTags));
+        }
+
+        /// <summary>
+        /// A person's policy revision as text (see <see cref="ListGate.Policy"/>): disabled, administrator, collection
+        /// management, library access (all, enabled and blocked folders), Jellyfin's parental limits (rating, tags, unrated
+        /// kinds) and the Seerr parental policy (<see cref="ParentalStamp"/>). Equal stamps decide the same things, so
+        /// something composed for the person under one stamp (a status with an administrator's details) is theirs only
+        /// while the stamp holds.
+        /// </summary>
+        /// <param name="user">User (as just read).</param>
+        /// <returns>The stamp.</returns>
+        internal string PolicyStamp(User user)
+        {
+            static string Joined<T>(IEnumerable<T> values) => string.Join(",", values.Select(v => System.Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture)).OrderBy(v => v, StringComparer.Ordinal));
+            var allFolders = user.HasPermission(PermissionKind.EnableAllFolders);
+            return string.Join(
+                "|",
+                user.HasPermission(PermissionKind.IsDisabled) ? "d" : string.Empty,
+                IsAdmin(user) ? "a" : string.Empty,
+                CanManageCollections(user) ? "c" : string.Empty,
+                allFolders ? "*" : Joined(user.GetPreferenceValues<Guid>(PreferenceKind.EnabledFolders)),
+                Joined(user.GetPreferenceValues<Guid>(PreferenceKind.BlockedMediaFolders)),
+                user.MaxParentalRatingScore?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                user.MaxParentalRatingSubScore?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Joined(user.GetPreferenceValues<UnratedItem>(PreferenceKind.BlockUnratedItems)),
+                Joined(user.GetPreference(PreferenceKind.BlockedTags) ?? Array.Empty<string>()),
+                Joined(user.GetPreference(PreferenceKind.AllowedTags) ?? Array.Empty<string>()),
+                ParentalStamp(user));
         }
 
         /// <summary>Evaluates the caller's permissions on an already resolved list.</summary>
@@ -242,7 +272,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="user">User.</param>
         /// <returns>Whether the user is restricted.</returns>
         public bool IsRestricted(User user) =>
-            _parentalFilter.TryGetRestrictedPolicy(user.Id.ToString("N", System.Globalization.CultureInfo.InvariantCulture), out _);
+            _parentalFilter.TryGetRestrictedPolicy(user, out _);
 
         /// <summary>
         /// The users with parental controls who may see a list (Jellyfin's visibility or JE's own view permission).
@@ -293,19 +323,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The decision.</returns>
         public async Task<bool?> CheckTitleAsync(string mediaType, int tmdbId, string userIdN, CancellationToken cancellationToken)
         {
-            if (!_parentalFilter.TryGetRestrictedPolicy(userIdN, out _))
+            if (!_parentalFilter.TryGetRestrictedPolicy(userIdN, out var policy))
             {
                 return true;
             }
 
-            if (await _parentalFilter.MaySeeAbsentAsync(mediaType, tmdbId, userIdN, cancellationToken).ConfigureAwait(false))
+            return await CheckTitleAsync(mediaType, tmdbId, policy, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// <see cref="CheckTitleAsync(string, int, string, CancellationToken)"/> under a policy already resolved for the
+        /// person (many titles of one list are checked with one read of the person).
+        /// </summary>
+        /// <param name="mediaType">"movie" or "tv".</param>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <param name="policy">The person's parental policy.</param>
+        /// <param name="cancellationToken">Cancellation (the overall budget).</param>
+        /// <returns>The decision.</returns>
+        internal async Task<bool?> CheckTitleAsync(string mediaType, int tmdbId, SeerrParentalFilter.Policy policy, CancellationToken cancellationToken)
+        {
+            if (!policy.IsRestricted)
+            {
+                return true;
+            }
+
+            if (await _parentalFilter.MaySeeAbsentAsync(mediaType, tmdbId, policy, cancellationToken).ConfigureAwait(false))
             {
                 return true;
             }
 
             cancellationToken.ThrowIfCancellationRequested();
             // A verified signature that the limits refuse is a decision; no (or an unrated) signature is unknown.
-            return _parentalFilter.MaySeeAbsent(mediaType, tmdbId, userIdN, out var facts) ? true : facts != null ? false : null;
+            return _parentalFilter.MaySeeAbsent(mediaType, tmdbId, policy, out var facts) ? true : facts != null ? false : null;
         }
 
         /// <summary>Whether a TMDB title is blocked for the user (false for unrestricted users, no lookups).</summary>
@@ -333,7 +382,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public async Task<HashSet<string>> GetHiddenPlaceholderIdsAsync(IReadOnlyList<Placeholder> placeholders, User user, CancellationToken cancellationToken, ISet<string>? unverified = null)
         {
             var hidden = new HashSet<string>(StringComparer.Ordinal);
-            if (placeholders.Count == 0 || !IsRestricted(user))
+            // The person's limits as the caller just read them, once for every title (not one read of the person each).
+            if (placeholders.Count == 0 || !_parentalFilter.TryGetRestrictedPolicy(user, out var policy))
             {
                 return hidden;
             }
@@ -373,7 +423,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     await gate.WaitAsync(budget.Token).ConfigureAwait(false);
                     try
                     {
-                        var allowed = await CheckTitleAsync(placeholder.MediaType, placeholder.TmdbId!.Value, userIdN, budget.Token).ConfigureAwait(false);
+                        var allowed = await CheckTitleAsync(placeholder.MediaType, placeholder.TmdbId!.Value, policy, budget.Token).ConfigureAwait(false);
                         blocked = allowed.HasValue ? !allowed.Value : null;
                     }
                     finally

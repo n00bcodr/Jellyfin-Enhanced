@@ -56,6 +56,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool? AcquisitionBadges { get; set; }
         /// <summary>Requests &amp; downloads: the same badges drawn into this person's poster images on native apps. Null follows the administrator; false turns them off for this person.</summary>
         public bool? NativeAcquisitionStamps { get; set; }
+        // Phase 4c3a (list pages): per-person display preferences.
+        /// <summary>Requests &amp; downloads lists: draw "not in your library" entries on playlist pages and mark incomplete playlists. Null follows the administrator; false hides them for this person.</summary>
+        public bool? ListPlaylistUi { get; set; }
+        /// <summary>Requests &amp; downloads lists: the "Not in your library" section on collection pages. Null follows the administrator; false hides it for this person.</summary>
+        public bool? ListCollectionUi { get; set; }
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
         public bool ShowSourceTag { get; set; } = true;

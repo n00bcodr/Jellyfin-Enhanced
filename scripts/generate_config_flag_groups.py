@@ -57,6 +57,9 @@ USER_PREFERENCE_CLASSES = {
     # Phase 4e: acquisition badges (web) and the native-poster stamps follow the administrator.
     "AcquisitionBadges": {"class": "display", "unset": "follow-admin"},
     "NativeAcquisitionStamps": {"class": "display", "unset": "follow-admin"},
+    # Phase 4c3a: list pages (display preferences).
+    "ListPlaylistUi": {"class": "display", "unset": "follow-admin"},
+    "ListCollectionUi": {"class": "display", "unset": "follow-admin"},
 }
 
 # "overview-*" fieldsets are read-only dashboard status widgets, not admin

@@ -1450,12 +1450,17 @@ follows Jellyfin's own rights and the household's request rules:
   someone else's playlist adds real items as its owner, and only items the owner can open). A collection is seen by
   everyone who can open it and edited by administrators and collection managers. Seeing a list never lets anyone edit
   it, and editing it never lets anyone ask for something the request rules don't allow. Rights are checked again right
-  before every change reaches Jellyfin and before every answer: someone who loses a list (or gets a new limit) while a
-  change or a confirmation is on its way gets nothing more written for them and no look at the list; what Jellyfin
-  already took stays and is reported.
+  before every change reaches Jellyfin and before every answer: someone who loses a list (or gets a new limit, or is
+  disabled) while a change or a confirmation is on its way gets nothing more written for them and no look at the list;
+  what Jellyfin already took stays and is reported. Nothing is written as a disabled playlist owner. Request statuses in
+  an answer are the ones for the person's role as it is when the answer is made (an administrator demoted meanwhile
+  doesn't get an administrator's details).
 - **Creating a list.** A create that is sent again (a retry, also after the server stopped in the middle) continues with
-  the list its first attempt made (Jellyfin keeps a mark of it), never with another list of the same name. A collection
-  name the server already has is refused: Jellyfin keeps one collection per name and would replace the other one.
+  the list its first attempt made (Jellyfin keeps a mark of it in the list's own folder), never with another list of the
+  same name. A new list never replaces another one: two people creating the same collection name at once get one
+  collection and a `name taken` answer, and a collection someone makes in Jellyfin itself meanwhile is left alone. A
+  collection name the server's collections folder already has is refused; a `[boxset]` folder of the same name in a
+  library doesn't count. JE never adds a share to a list it creates, so deleting its owner hands it to nobody.
 - **Order.** Entries keep their place among the real items, also when the same item is in a playlist twice. Dragging an
   entry moves it; dragging a real item moves it in Jellyfin too (only the first copy of a duplicated item can move).
   Collections list their entries by release date, undated (TBA) ones last.
@@ -1488,7 +1493,8 @@ follows Jellyfin's own rights and the household's request rules:
   really in Jellyfin before anything new goes in.
 
 Each person can, in the Jellyfin Enhanced panel (*Lists*): hide entries, hide their status, and agree that titles that
-arrive may take their place in lists they turned swap-in on for (off until they choose it).
+arrive may take their place in lists they turned swap-in on for (off until they choose it). That agreement is theirs
+alone: an administrator saving their settings, or resetting everyone's, leaves it as it is.
 
 **Lists from the experimental list feature.** Administrators can bring over the lists of the earlier experimental
 list feature (its `list-placeholders` folder) with `GET /JellyfinEnhanced/arr/admin/lists/import` (a dry run that

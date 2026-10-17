@@ -29,8 +29,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>Puts items into a collection.</summary>
         CollectionAdd,
 
-        /// <summary>Takes the create marker off a list JE made.</summary>
-        ClearMarker,
+        /// <summary>Gives a list JE just created the name the person chose (it was created under a name carrying its marker).</summary>
+        FinishCreate,
     }
 
     /// <summary>
@@ -78,10 +78,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <summary>A caller's access to a list as the gate read it right before an answer, and what they may see of it.</summary>
     internal sealed class ListGrant
     {
-        internal ListGrant(ListAccess access, PlaceholderVisibility visibility)
+        internal ListGrant(ListAccess access, PlaceholderVisibility visibility, string policy)
         {
             Access = access;
             Visibility = visibility;
+            Policy = policy;
         }
 
         /// <summary>The caller's current access.</summary>
@@ -89,6 +90,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>The placeholders they may see, checked against their current limits.</summary>
         public PlaceholderVisibility Visibility { get; }
+
+        /// <summary>
+        /// The caller's policy revision when the grant was made (<see cref="ListGate.Policy"/>): anything composed for them
+        /// earlier under another revision (statuses) is not theirs to see now.
+        /// </summary>
+        public string Policy { get; }
     }
 
     /// <summary>The gate refused a write: what to answer (null for background work, which just stops).</summary>
@@ -105,8 +112,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
     /// <summary>
     /// The one list access gate. Everything about who may do what with a list is read here, at the moment it matters:
-    /// the person (read again: a removed share, a new limit, lost collection management count), the list as Jellyfin has
-    /// it now (owner, shares, public), the owner a playlist write runs as, the list's swap-in consent, which placeholders
+    /// the person (read again: a removed share, a new limit, lost collection management, being disabled count), the list
+    /// as Jellyfin has it now (owner, shares, public), the owner a playlist write runs as, the list's swap-in consent, which placeholders
     /// the person's parental limits let them see and which items they and the owner can open. Called right before every
     /// Jellyfin write (<see cref="Write"/>, <see cref="SwapWrite"/>, <see cref="CreateWrite"/>, whose
     /// <see cref="ListWrite"/> the write takes as its first argument) and before every answer with list contents
@@ -132,16 +139,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>
         /// The caller's access to the list now: the person read again and the list as Jellyfin has it now. Null when the
-        /// person or the list is gone or they can no longer see it.
+        /// person or the list is gone, the person is disabled or they can no longer see it.
         /// </summary>
         /// <param name="access">The access checked earlier.</param>
         /// <returns>The current access, or null.</returns>
         public ListAccess? Current(ListAccess access)
         {
-            var user = _users.GetUserById(access.User.Id);
+            var user = Active(access.User.Id);
             var current = user == null ? null : _access.Resolve(access.List.Id, user);
             return current is { Permissions.CanView: true } ? current : null;
         }
+
+        /// <summary>
+        /// A person's policy revision: everything about them that decides what they may see or do (role, disabled,
+        /// collection management, library access, parental limits). Equal revisions decide the same things.
+        /// </summary>
+        /// <param name="user">The person (as just read).</param>
+        /// <returns>The revision.</returns>
+        internal string Policy(User user) => _access.PolicyStamp(user);
 
         /// <summary>The caller's right to change the list now: 404 when they can't see it, 403 when they can't edit it.</summary>
         /// <param name="access">The access checked earlier.</param>
@@ -183,9 +198,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             var mover = kind == ListWriteKind.Move && current.Permissions.NativeCanEdit ? user : current.Owner;
-            if (mover == null)
+            if (mover == null || mover.HasPermission(PermissionKind.IsDisabled))
             {
-                throw new ListAccessLostException(ListOutcome.Error(409, "owner_missing", "The playlist owner no longer exists."), "The playlist has no owner.");
+                // The owner the write would run as is gone or disabled: nothing runs as them.
+                throw new ListAccessLostException(ListOutcome.Error(409, "owner_missing", "The playlist owner no longer exists or is disabled."), "The playlist has no usable owner.");
             }
 
             if (kind is ListWriteKind.Move or ListWriteKind.Place)
@@ -201,35 +217,63 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         }
 
         /// <summary>
-        /// A person's create, allowed now or refused with <see cref="ListAccessLostException"/>: the person still exists
-        /// and, for a collection, may still manage collections.
+        /// A person's create, allowed now or refused with <see cref="ListAccessLostException"/>: the person still exists, isn't
+        /// disabled and, for a collection, may still manage collections.
         /// </summary>
         /// <param name="user">The person.</param>
         /// <param name="kind">List kind.</param>
         /// <returns>The single-use grant (runs as the person).</returns>
         internal ListWrite CreateWrite(User user, string kind)
         {
-            var fresh = Person(user.Id, kind) ?? throw new ListAccessLostException(
-                kind == ListKinds.Collection && _users.GetUserById(user.Id) != null ? Forbidden("You can't manage collections.") : ListOutcome.Error(403, "user_required", "Sign in as a person to use lists."),
-                "The person can't create this list any more.");
+            var fresh = Person(user.Id, kind) ?? throw new ListAccessLostException(CreateRefusal(user.Id), "The person can't create this list any more.");
             return new ListWrite(Guid.Empty, fresh.Id, ListWriteKind.Create);
         }
 
-        /// <summary>The person read again, when they may still create a list of this kind (collections: collection management).</summary>
+        /// <summary>
+        /// Giving a list the person just created its chosen name, allowed now or refused with
+        /// <see cref="ListAccessLostException"/>: they may still create a list of its kind and, for a playlist, still own it
+        /// (the rename runs as them).
+        /// </summary>
+        /// <param name="list">The list as Jellyfin has it now.</param>
+        /// <param name="user">The person who created it.</param>
+        /// <returns>The single-use grant.</returns>
+        internal ListWrite FinishWrite(ListInfo list, User user)
+        {
+            var fresh = Person(user.Id, list.Kind) ?? throw new ListAccessLostException(CreateRefusal(user.Id), "The person can't create this list any more.");
+            if (list.Kind == ListKinds.Playlist && list.OwnerId != fresh.Id)
+            {
+                throw new ListAccessLostException(NotFound(), "The playlist isn't the person's any more.");
+            }
+
+            return new ListWrite(list.Id, fresh.Id, ListWriteKind.FinishCreate);
+        }
+
+        /// <summary>
+        /// The person read again, when they may still create a list of this kind: they exist, aren't disabled and, for a
+        /// collection, may manage collections.
+        /// </summary>
         /// <param name="userId">The person.</param>
         /// <param name="kind">List kind.</param>
         /// <returns>The person, or null.</returns>
         internal User? Person(Guid userId, string kind)
         {
-            var fresh = _users.GetUserById(userId);
+            var fresh = Active(userId);
             return fresh == null || (kind == ListKinds.Collection && !ListAccessService.CanManageCollections(fresh)) ? null : fresh;
         }
 
-        /// <summary>Takes the create marker off a list JE made (as the person who made it; the grant needs no other right).</summary>
-        /// <param name="list">The list.</param>
-        /// <param name="user">The person who created it.</param>
-        /// <returns>The single-use grant.</returns>
-        internal ListWrite MarkerWrite(ListInfo list, User user) => new(list.Id, list.Kind == ListKinds.Playlist ? list.OwnerId : user.Id, ListWriteKind.ClearMarker);
+        /// <summary>Why a person may not create a list now: gone or disabled (403 user_required), else no collection management.</summary>
+        /// <param name="userId">The person.</param>
+        /// <returns>The refusal.</returns>
+        internal ListOutcome CreateRefusal(Guid userId) => Active(userId) == null
+            ? ListOutcome.Error(403, "user_required", "Sign in as a person to use lists.")
+            : Forbidden("You can't manage collections.");
+
+        // The person read again; null when they are gone or disabled.
+        private User? Active(Guid userId)
+        {
+            var user = _users.GetUserById(userId);
+            return user == null || user.HasPermission(PermissionKind.IsDisabled) ? null : user;
+        }
 
         // ── Swap-in (the list's recorded consent, no person's request) ──────
 
@@ -284,8 +328,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return items.All(id => _host.GetItem(id) != null);
             }
 
-            var current = owner == null || list.OwnerId != owner.Id ? null : _users.GetUserById(owner.Id);
-            if (current == null || current.HasPermission(PermissionKind.IsDisabled))
+            var current = owner == null || list.OwnerId != owner.Id ? null : Active(owner.Id);
+            if (current == null)
             {
                 return false;
             }
@@ -332,7 +376,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 if (visibility.Matches(_access.ParentalStamp(final.User)))
                 {
-                    return build(new ListGrant(final, visibility));
+                    return build(new ListGrant(final, visibility, Policy(final.User)));
                 }
 
                 known = null;

@@ -222,6 +222,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Stamps.AcquisitionStampFeeder>());
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Stamps.AcquisitionStampUserPurge>();
             // ---- end Phase 4e ----
+            // ---- Phase 4c3a: list pages. Playlists page summaries (which lists have entries not in the library). ----
+            serviceCollection.AddSingleton<Services.Acquire.Lists.IListPagePreferences, Services.Acquire.Lists.UserSettingsListPreferences>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListSummaryService>();
+            // ---- end Phase 4c3a ----
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             // "Keep getting new episodes": charges each new season once when a Sonarr library read shows it started.
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();

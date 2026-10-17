@@ -180,6 +180,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly IListMetadataSource? _metadata;
         private readonly ListSwapService? _swap;
         private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _createLocks = new();
+        // One collection create per destination at a time, across people (keyed by the full path, without case).
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _destinationLocks = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Creates the service.</summary>
         /// <param name="store">Placeholder store.</param>
@@ -239,7 +241,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// replayed create): their access is read again first, the canonical order reconciled with Jellyfin's current
         /// entries (and persisted when it changed: A1, always the canonical order, never a projection), the statuses read
         /// (which can take a while with a slow Sonarr/Radarr), and the view built by the gate with their access and limits
-        /// as they are then. Null when they can no longer see the list.
+        /// as they are then. The statuses are composed for the caller's policy (an administrator's carry more), so they go
+        /// into the view only when the caller's policy is still the one they were read under; else they are read again,
+        /// and left out when it keeps changing. Null when they can no longer see the list.
         /// </summary>
         /// <param name="access">The access checked earlier (CanView).</param>
         /// <param name="cancellationToken">Cancellation.</param>
@@ -259,9 +263,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 _swap?.RequestViewPass(current.ListIdN);
             }
 
-            var visibility = await _gate.VisibilityAsync(items, current.User, cancellationToken).ConfigureAwait(false);
-            var statuses = await StatusesAsync(current, items.Where(visibility.IsVisible).ToList(), cancellationToken).ConfigureAwait(false);
-            return await _gate.ProjectAsync(current, items, visibility, grant => BuildView(grant, doc, canonical, statuses), cancellationToken).ConfigureAwait(false);
+            for (var attempt = 0; ; attempt++)
+            {
+                var visibility = await _gate.VisibilityAsync(items, current.User, cancellationToken).ConfigureAwait(false);
+                var policy = _gate.Policy(current.User);
+                var statuses = await StatusesAsync(current, items.Where(visibility.IsVisible).ToList(), cancellationToken).ConfigureAwait(false);
+                var stale = false;
+                var view = await _gate.ProjectAsync(current, items, visibility, grant => BuildView(grant, doc, canonical, Fresh(grant, policy, statuses, ref stale)), cancellationToken).ConfigureAwait(false);
+                if (view == null || !stale || attempt >= 2)
+                {
+                    return view;
+                }
+
+                // The caller's policy changed while the statuses were read: read them again as they are now.
+                current = _gate.Current(current) ?? current;
+            }
+        }
+
+        // Statuses read under the caller's policy revision, kept only while it is still theirs (else none, and the caller
+        // reads them again).
+        private static IReadOnlyDictionary<string, JsonElement>? Fresh(ListGrant grant, string policy, IReadOnlyDictionary<string, JsonElement>? statuses, ref bool stale)
+        {
+            if (string.Equals(grant.Policy, policy, StringComparison.Ordinal))
+            {
+                return statuses;
+            }
+
+            stale = true;
+            return null;
         }
 
         // A playlist's document with its order reconciled to Jellyfin's current entries, saved when that changed (the
@@ -1659,11 +1688,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 .ThenBy(l => l.Name, StringComparer.Ordinal);
 
         /// <summary>
-        /// POST /playlists and POST /collections: creates a list owned by/visible to the caller, then applies entries. The
-        /// create carries a marker of its operation into Jellyfin in the same write (<see cref="IListHost.CreatePlaylistAsync"/>),
-        /// so a retry after a crash between Jellyfin's create and its record continues with exactly that list; a list of the
-        /// same name, anyone's, is never taken for it. A collection name Jellyfin already has a collection for is refused
-        /// (Jellyfin would replace that collection).
+        /// POST /playlists and POST /collections: creates a list owned by/visible to the caller, then applies entries.
+        /// <list type="bullet">
+        /// <item>The create runs under a name carrying its operation's marker (<see cref="CreateName"/>), so Jellyfin keeps the
+        /// marker in the list's own folder (and a collection's provider id) from the create write on, and gives the list a
+        /// folder no other list has: a collection create never lands on (and replaces) another collection. The list then
+        /// gets its chosen name (<see cref="IListHost.FinishCreateAsync"/>); a retry after a crash in between finishes it.
+        /// A list never carries a share for nobody (Jellyfin would hand a deleted owner's playlist to it).</item>
+        /// <item>A retry continues with exactly the list carrying its marker; a list of the same name, anyone's, is never
+        /// taken for it.</item>
+        /// <item>Collections: one create of a destination at a time, whoever asks (Jellyfin keeps one folder per name):
+        /// the name check (by the full destination in Jellyfin's collections folder), the create, its record and its name
+        /// happen together. A name a collection already has there is refused (409 name_taken); so is a list another
+        /// operation already recorded (409 create_uncertain), before any entry is applied.</item>
+        /// </list>
         /// </summary>
         /// <param name="user">Caller (already authorised for collections).</param>
         /// <param name="kind">List kind.</param>
@@ -1679,17 +1717,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var scope = "create-" + kind;
             var turn = _createLocks.GetOrAdd(user.Id, _ => new SemaphoreSlim(1, 1));
             await turn.WaitAsync(cancellationToken).ConfigureAwait(false);
+            SemaphoreSlim? destinationTurn = null;
             ListOperation? operation = null;
             try
             {
-                // A create can wait for an earlier one of the person's: their rights are read again now (collections
-                // need collection management).
+                string? destination = null;
+                if (kind == ListKinds.Collection)
+                {
+                    if (_gate.Person(user.Id, kind) == null)
+                    {
+                        return _gate.CreateRefusal(user.Id);
+                    }
+
+                    destination = await _host.CollectionDestinationAsync(name).ConfigureAwait(false);
+                    if (destination == null)
+                    {
+                        return ListOutcome.Error(500, "list_update_failed", "Jellyfin could not create the collection.");
+                    }
+
+                    destinationTurn = _destinationLocks.GetOrAdd(destination, _ => new SemaphoreSlim(1, 1));
+                    await destinationTurn.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                // A create can wait for an earlier one: the person is read again now (not disabled; collections need
+                // collection management).
                 var fresh = _gate.Person(user.Id, kind);
                 if (fresh == null)
                 {
-                    return _userManager.GetUserById(user.Id) == null
-                        ? ListOutcome.Error(403, "user_required", "Sign in as a person to use lists.")
-                        : ListOutcome.Error(403, "forbidden", "You can't manage collections.");
+                    return _gate.CreateRefusal(user.Id);
                 }
 
                 user = fresh;
@@ -1739,6 +1794,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var marker = CreateMarker(operation?.Id ?? Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
+                var markedName = CreateName(name, marker);
                 Guid id;
                 if (list != null)
                 {
@@ -1746,36 +1802,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
                 else
                 {
-                    if (kind == ListKinds.Collection && _host.CollectionNameTaken(name))
+                    if (destination != null && _host.CollectionNameTaken(destination))
                     {
-                        // Jellyfin keeps one folder per collection name: creating it again would replace the other one.
-                        var taken = ListOutcome.Error(409, "name_taken", "A collection with this name already exists. Choose another name.");
-                        if (operation != null)
-                        {
-                            _operations!.Finish(operation.Id, false, taken.StatusCode, null, Now());
-                        }
-
-                        return taken;
+                        // A collection already has the name: Jellyfin would keep both under one name in its folder.
+                        return Finished(operation, ListOutcome.Error(409, "name_taken", "A collection with this name already exists. Choose another name."));
                     }
 
+                    // Under the name carrying the marker: a folder no other list has, so nothing is replaced, and the marker
+                    // is Jellyfin's own record of which operation made the list.
                     id = kind == ListKinds.Playlist
-                        ? await _host.CreatePlaylistAsync(_gate.CreateWrite(user, kind), name, isPublic, marker).ConfigureAwait(false)
-                        : await _host.CreateCollectionAsync(_gate.CreateWrite(user, kind), name, marker).ConfigureAwait(false);
+                        ? await _host.CreatePlaylistAsync(_gate.CreateWrite(user, kind), markedName, isPublic).ConfigureAwait(false)
+                        : await _host.CreateCollectionAsync(_gate.CreateWrite(user, kind), markedName, marker).ConfigureAwait(false);
                     _logger.Info($"[Lists] {user.Username} created {kind} \"{name}\" ({id:N}).");
                     if (operation != null && !_operations!.ClaimList(operation.Id, id.ToString("N", CultureInfo.InvariantCulture), Now()))
                     {
-                        _logger.Warning($"[Lists] The {kind} {id:N} just created is recorded by another operation.");
+                        // Another operation recorded this list first: it isn't this create's to fill.
+                        _logger.Warning($"[Lists] The {kind} {id:N} just created is recorded by another operation; nothing is applied to it.");
+                        return Finished(operation, ListOutcome.Error(409, "create_uncertain", "An earlier attempt may already have created this list. Check your lists, or create it again as a new request."));
                     }
 
-                    list = _host.GetList(id) ?? new ListInfo(id, kind, name, kind == ListKinds.Playlist ? user.Id : Guid.Empty, isPublic, Array.Empty<ListShare>());
+                    list = _host.GetList(id) ?? new ListInfo(id, kind, markedName, kind == ListKinds.Playlist ? user.Id : Guid.Empty, isPublic, Array.Empty<ListShare>());
                 }
 
-                if (list.Kind == ListKinds.Playlist)
+                if (string.Equals(list.Name, markedName, StringComparison.Ordinal))
                 {
-                    // Recorded: the marker share comes off the playlist (a leftover one grants nothing).
-                    await ClearCreateMarkerAsync(list, user, marker).ConfigureAwait(false);
+                    // The list still carries the name with its marker (just created, or a retry after a crash right after
+                    // the create): it gets its chosen name. A failure leaves the operation retryable; the retry finishes it.
+                    await _host.FinishCreateAsync(_gate.FinishWrite(list, user), name).ConfigureAwait(false);
                     list = _host.GetList(id) ?? list;
                 }
+
+                // Named: the next create of this destination may check it.
+                destinationTurn?.Release();
+                destinationTurn = null;
 
                 // A recovered list (or one Jellyfin changed meanwhile) still needs the person's current right to edit it.
                 var access = _access.Evaluate(list, user);
@@ -1793,13 +1852,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var error = applied.Value as ListErrorDto ?? new ListErrorDto { Code = "list_update_failed", Message = "Jellyfin could not update the list." };
                     error.ListId = listIdN;
                     error.ListKind = kind;
-                    var failed = new ListOutcome { StatusCode = applied.StatusCode >= 300 ? applied.StatusCode : 500, Value = error };
-                    if (operation != null)
-                    {
-                        _operations!.Finish(operation.Id, false, failed.StatusCode, null, Now());
-                    }
-
-                    return failed;
+                    return Finished(operation, new ListOutcome { StatusCode = applied.StatusCode >= 300 ? applied.StatusCode : 500, Value = error });
                 }
 
                 var body = new CreateListResultDto
@@ -1816,8 +1869,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 return ListOutcome.Ok(body);
             }
+            catch (ListAccessLostException lost) when (lost.Outcome != null)
+            {
+                // The gate refused the create or its name (the person was disabled or lost collection management meanwhile).
+                return Finished(operation, lost.Outcome);
+            }
             finally
             {
+                destinationTurn?.Release();
                 turn.Release();
             }
         }
@@ -1831,22 +1890,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         internal static Guid CreateMarker(string operationId) =>
             new(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("je-list-create|" + operationId)).AsSpan(0, 16));
 
-        // Takes a playlist's create marker off; a failure only leaves a share for nobody (logged, retried by a retry).
-        private async Task ClearCreateMarkerAsync(ListInfo list, User user, Guid marker)
+        /// <summary>
+        /// The name a create runs under: the chosen name with the marker, so Jellyfin makes the list's folder from it (a
+        /// folder no other list has, which keeps the marker) before the list gets its chosen name.
+        /// </summary>
+        /// <param name="name">The chosen name.</param>
+        /// <param name="marker">The create operation's marker.</param>
+        /// <returns>The name to create under.</returns>
+        internal static string CreateName(string name, Guid marker) => name + " (" + marker.ToString("N", CultureInfo.InvariantCulture) + ")";
+
+        // A create's answer, recorded on its operation as not completed (a retry with the same request id runs again).
+        private ListOutcome Finished(ListOperation? operation, ListOutcome outcome)
         {
-            if (!list.Shares.Any(s => s.UserId == marker))
+            if (operation != null)
             {
-                return;
+                _operations!.Finish(operation.Id, false, outcome.StatusCode, null, Now());
             }
 
-            try
-            {
-                await _host.ClearCreateMarkerAsync(_gate.MarkerWrite(list, user), marker).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"[Lists] Taking the create marker off playlist {list.Id:N} failed: {ex.Message}");
-            }
+            return outcome;
         }
 
         /// <summary>

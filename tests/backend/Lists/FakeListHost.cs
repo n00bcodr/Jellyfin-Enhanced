@@ -18,7 +18,15 @@ internal sealed class FakeListHost : IListHost
     {
         public required ListInfo Info { get; set; }
         public List<RawEntry> Raw { get; } = new();
+        /// <summary>Where Jellyfin keeps the list (its item id is derived from it).</summary>
+        public string Path { get; set; } = string.Empty;
     }
+
+    /// <summary>Jellyfin's managed collections folder (CollectionManager.GetCollectionsFolderPath).</summary>
+    public const string CollectionsRoot = "/config/data/collections";
+
+    /// <summary>Jellyfin's playlists folder.</summary>
+    public const string PlaylistsRoot = "/config/data/playlists";
 
     public sealed record FakeSeries(Guid Id, int? Tmdb, int? Tvdb, string? Imdb);
 
@@ -88,14 +96,14 @@ internal sealed class FakeListHost : IListHost
 
     public FakeList AddPlaylist(User owner, bool openAccess = false, params ListShare[] shares)
     {
-        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, "Playlist", owner.Id, openAccess, shares) };
+        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, "Playlist", owner.Id, openAccess, shares), Path = PlaylistPath("Playlist") };
         Lists[list.Info.Id] = list;
         return list;
     }
 
     public FakeList AddCollection(string name = "Collection")
     {
-        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Collection, name, Guid.Empty, false, Array.Empty<ListShare>()) };
+        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Collection, name, Guid.Empty, false, Array.Empty<ListShare>()), Path = CollectionsRoot + "/" + ValidFilename(name) + " [boxset]" };
         Lists[list.Info.Id] = list;
         return list;
     }
@@ -349,7 +357,7 @@ internal sealed class FakeListHost : IListHost
         return FailAdds != null ? Task.FromException(FailAdds) : Task.CompletedTask;
     }
 
-    public Task<Guid> CreatePlaylistAsync(ListWrite write, string name, bool isPublic, Guid marker)
+    public Task<Guid> CreatePlaylistAsync(ListWrite write, string name, bool isPublic)
     {
         write.Spend(Guid.Empty, ListWriteKind.Create);
         var ownerId = write.ActAs;
@@ -361,8 +369,7 @@ internal sealed class FakeListHost : IListHost
             throw FailCreates;
         }
 
-        // Jellyfin keeps the shares with the playlist in the same write.
-        var id = MakePlaylist(name, ownerId, isPublic, new[] { new ListShare(marker, false) });
+        var id = MakePlaylist(name, ownerId, isPublic, Array.Empty<ListShare>());
         OnAwait?.Invoke("create:after");
         AfterCreate?.Invoke(id);
         return Task.FromResult(id);
@@ -385,49 +392,116 @@ internal sealed class FakeListHost : IListHost
         return Task.FromResult(id);
     }
 
-    public Task ClearCreateMarkerAsync(ListWrite write, Guid marker)
+    /// <summary>Throws from the next N FinishCreateAsync calls (before renaming).</summary>
+    public int FailFinishes { get; set; }
+
+    public Task FinishCreateAsync(ListWrite write, string name)
     {
-        write.Spend(write.ListId, ListWriteKind.ClearMarker);
-        Calls.Add("clear-marker");
-        if (Lists.TryGetValue(write.ListId, out var list) && list.Info.Kind == ListKinds.Playlist)
+        write.Spend(write.ListId, ListWriteKind.FinishCreate);
+        Calls.Add($"finish:{name}");
+        OnWrite?.Invoke("finish", write.ListId, write.ActAs, Array.Empty<Guid>());
+        OnAwait?.Invoke("finish:before");
+        if (FailFinishes > 0)
         {
-            list.Info = list.Info with { Shares = list.Info.Shares.Where(s => s.UserId != marker).ToList() };
+            FailFinishes--;
+            throw new IOException("Jellyfin could not save the list");
         }
 
+        // The list keeps its folder (Jellyfin renames only the item).
+        if (Lists.TryGetValue(write.ListId, out var list))
+        {
+            list.Info = list.Info with { Name = name };
+        }
+
+        OnAwait?.Invoke("finish:after");
         return Task.CompletedTask;
     }
 
     public ListInfo? FindCreated(string kind, Guid marker, Guid ownerId) => kind == ListKinds.Playlist
-        ? Lists.Values.Select(l => l.Info).FirstOrDefault(i => i.Kind == ListKinds.Playlist && i.OwnerId == ownerId && i.Shares.Any(s => s.UserId == marker))
+        ? Lists.Values.Where(l => l.Info.Kind == ListKinds.Playlist && l.Info.OwnerId == ownerId && l.Path.Contains(marker.ToString("N"), StringComparison.OrdinalIgnoreCase)).Select(l => l.Info).FirstOrDefault()
         : Lists.Values.Where(l => l.Info.Kind == ListKinds.Collection && CollectionProviderIds.TryGetValue(l.Info.Id, out var ids)
             && ids.TryGetValue(JellyfinListHost.CreateMarkerKey, out var value) && value == marker.ToString("N")).Select(l => l.Info).FirstOrDefault();
 
-    public bool CollectionNameTaken(string name) =>
-        Lists.Values.Any(l => l.Info.Kind == ListKinds.Collection && string.Equals(l.Info.Name, name, StringComparison.OrdinalIgnoreCase));
+    public Task<string?> CollectionDestinationAsync(string name)
+    {
+        OnAwait?.Invoke("destination");
+        return Task.FromResult<string?>(CollectionsRoot + "/" + ValidFilename(name) + " [boxset]");
+    }
+
+    // JellyfinListHost.CollectionNameTaken: a collection in the collections folder kept at the destination or named so it
+    // would be (compared without case); a [boxset] folder elsewhere doesn't count.
+    public bool CollectionNameTaken(string destination)
+    {
+        var root = destination[..destination.LastIndexOf('/')];
+        var folder = destination[(destination.LastIndexOf('/') + 1)..];
+        return Lists.Values.Any(l => l.Info.Kind == ListKinds.Collection && l.Path.LastIndexOf('/') is var cut and > 0
+            && string.Equals(l.Path[..cut], root, StringComparison.OrdinalIgnoreCase)
+            && (string.Equals(l.Path[(cut + 1)..], folder, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ValidFilename(l.Info.Name) + " [boxset]", folder, StringComparison.OrdinalIgnoreCase)));
+    }
 
     /// <summary>A playlist someone made in Jellyfin itself (no JE marker).</summary>
     public Task<Guid> CreateHandMadePlaylistAsync(string name, Guid ownerId) => Task.FromResult(MakePlaylist(name, ownerId, false, Array.Empty<ListShare>()));
 
-    /// <summary>A collection someone made in Jellyfin itself (no JE marker), with Jellyfin's one-folder-per-name rule.</summary>
-    public Task<Guid> CreateHandMadeCollectionAsync(string name) => Task.FromResult(MakeCollection(name, null));
+    /// <summary>
+    /// A collection someone made in Jellyfin itself (no JE marker), with Jellyfin's one-folder-per-name rule; or, with
+    /// <paramref name="folder"/>, a <c>[boxset]</c> folder found in some library (not Jellyfin's collections folder).
+    /// </summary>
+    public Task<Guid> CreateHandMadeCollectionAsync(string name, string? folder = null) => Task.FromResult(MakeCollection(name, null, folder));
+
+    /// <summary>
+    /// Jellyfin deleting a user (PlaylistManager.RemovePlaylistsAsync, 10.11 and 12.2): each of their playlists goes to
+    /// its first share (editors first), the rest stay shares; a private playlist without shares is deleted.
+    /// </summary>
+    public void RemoveUser(Guid userId)
+    {
+        foreach (var list in Lists.Values.Where(l => l.Info.Kind == ListKinds.Playlist && l.Info.OwnerId == userId).ToList())
+        {
+            var shares = list.Info.Shares.OrderByDescending(s => s.CanEdit).ToList();
+            if (shares.Count > 0)
+            {
+                list.Info = list.Info with { OwnerId = shares[0].UserId, Shares = shares.Skip(1).ToList() };
+            }
+            else if (!list.Info.OpenAccess)
+            {
+                Lists.Remove(list.Info.Id);
+            }
+        }
+    }
+
+    /// <summary>Jellyfin's file-name rule (FileSystem.GetValidFilename) for the characters tests use.</summary>
+    public static string ValidFilename(string name) => name.Replace('/', ' ').Replace(':', ' ');
+
+    // PlaylistManager.CreatePlaylist: "<playlists>/<valid name>", with "1" appended while that folder exists.
+    private string PlaylistPath(string name)
+    {
+        var path = PlaylistsRoot + "/" + ValidFilename(name);
+        while (Lists.Values.Any(l => string.Equals(l.Path, path, StringComparison.Ordinal)))
+        {
+            path += "1";
+        }
+
+        return path;
+    }
 
     /// <summary>The provider ids of each collection (Jellyfin keeps them with the item).</summary>
     public Dictionary<Guid, Dictionary<string, string>> CollectionProviderIds { get; } = new();
 
     private Guid MakePlaylist(string name, Guid ownerId, bool isPublic, IReadOnlyList<ListShare> shares)
     {
-        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, name, ownerId, isPublic, shares, CreatedAt: DateTime.UtcNow) };
+        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, name, ownerId, isPublic, shares, CreatedAt: DateTime.UtcNow), Path = PlaylistPath(name) };
         Lists[list.Info.Id] = list;
         return list.Info.Id;
     }
 
-    // Jellyfin 10.11/12 CollectionManager.CreateCollectionAsync: the folder is "<valid name> [boxset]" and the item id is
-    // derived from that path, so a second collection of a name replaces the first item (its members are gone).
-    private Guid MakeCollection(string name, Dictionary<string, string>? providerIds)
+    // Jellyfin 10.11/12 CollectionManager.CreateCollectionAsync: the folder is "<collections>/<valid name> [boxset]" and the
+    // item id is derived from that path, so a second collection of a name replaces the first item (its members are gone).
+    private Guid MakeCollection(string name, Dictionary<string, string>? providerIds, string? folder = null)
     {
-        var existing = Lists.Values.FirstOrDefault(l => l.Info.Kind == ListKinds.Collection && string.Equals(l.Info.Name, name, StringComparison.Ordinal));
+        var path = (folder ?? CollectionsRoot) + "/" + ValidFilename(name) + " [boxset]";
+        var existing = Lists.Values.FirstOrDefault(l => l.Info.Kind == ListKinds.Collection && string.Equals(l.Path, path, StringComparison.Ordinal));
         var id = existing?.Info.Id ?? Guid.NewGuid();
-        var list = new FakeList { Info = new ListInfo(id, ListKinds.Collection, name, Guid.Empty, false, Array.Empty<ListShare>(), CreatedAt: DateTime.UtcNow) };
+        var list = new FakeList { Info = new ListInfo(id, ListKinds.Collection, name, Guid.Empty, false, Array.Empty<ListShare>(), CreatedAt: DateTime.UtcNow), Path = path };
         Lists[id] = list;
         CollectionProviderIds[id] = new Dictionary<string, string>(providerIds ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
         return id;

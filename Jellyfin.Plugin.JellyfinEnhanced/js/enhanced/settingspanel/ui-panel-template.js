@@ -581,6 +581,8 @@
                                 ${select('listPlaceholdersSelect', 'listPlaceholders', 'panel_settings_lists_entries', display)}
                                 ${JE.pluginConfig?.ArrListStatusEnabled === true ? select('listStatusSelect', 'listStatus', 'panel_settings_lists_status', display) : ''}
                                 ${JE.pluginConfig?.ArrListSwapInEnabled === true ? select('listSwapInSelect', 'listSwapIn', 'panel_settings_lists_swapin', [['', 'panel_settings_lists_swapin_no'], ['on', 'panel_settings_lists_swapin_yes']]) : ''}
+                                ${JE.pluginConfig?.ArrListPlaylistUiEnabled === true ? select('listPlaylistUiSelect', 'listPlaylistUi', 'panel_settings_lists_playlist_ui', display) : ''}
+                                ${JE.pluginConfig?.ArrListCollectionUiEnabled === true ? select('listCollectionUiSelect', 'listCollectionUi', 'panel_settings_lists_collection_ui', display) : ''}
                             </div>`;
                             })() : ''}
                             ${JE.pluginConfig?.ArrAcquisitionBadgesEnabled === true ? (() => {
