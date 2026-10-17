@@ -87,6 +87,90 @@ test('a status saying the account may not view issues means no issue read at all
 });
 
 /**
+ * The Seerr API with a session whose user can switch, and answers the test releases by hand.
+ * @param {object} t Test context.
+ * @returns {object} Harness, the API, the calls made, the pending answers and a user switch.
+ */
+function switchingApi(t) {
+  const calls = [];
+  const pending = [];
+  const listeners = [];
+  let epoch = 0;
+  const h = createHarness({
+    JE: {
+      t: key => key,
+      session: { getEpoch: () => epoch, isCurrent: e => e === epoch, onUserChange: (_name, fn) => listeners.push(fn) },
+      core: { api: { fetch: url => {
+        calls.push(url);
+        return new Promise((resolve, reject) => pending.push({ url, resolve, reject }));
+      } } },
+    },
+    apiClient: { getUrl: path => path },
+  });
+  t.after(() => h.close());
+  h.load('jellyseerr/api.js');
+  const api = h.JE.jellyseerrAPI;
+  api.surfaceUserStatusBanner = () => {};
+  const switchUser = () => { epoch++; listeners.forEach(fn => fn()); };
+  /** @param {string} part @returns {object} The oldest unanswered call whose URL holds part. */
+  const take = part => {
+    const at = pending.findIndex(p => p.url.includes(part));
+    assert.ok(at >= 0, `a ${part} call is waiting`);
+    return pending.splice(at, 1)[0];
+  };
+  const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+  return { h, api, calls, take, switchUser, tick };
+}
+
+test('a status that answers the previous user after a switch doesn\'t stop the next user\'s issue reads', async t => {
+  const { api, calls, take, switchUser, tick } = switchingApi(t);
+  // User A's issue read waits for their status; user B signs in before it answers.
+  const a = api.fetchIssuesForMedia(603, 'movie');
+  await tick();
+  switchUser();
+  take('/user-status').resolve({ active: true, userFound: true, reason: 'linked', canViewIssues: false });
+  assert.deepEqual(JSON.parse(JSON.stringify(await a)), { results: [], forbidden: true });
+  // A's late answer reads nothing more, and B's issues still load.
+  assert.deepEqual(calls.filter(u => u.includes('/issue')), []);
+  const b = api.fetchIssuesForMedia(603, 'movie');
+  await tick();
+  take('/user-status').resolve({ active: true, userFound: true, reason: 'linked', canViewIssues: true });
+  await tick();
+  take('/issue').resolve({ results: [{ id: 7, media: { tmdbId: 603, mediaType: 'movie' } }] });
+  assert.deepEqual((await b).results.map(i => i.id), [7]);
+});
+
+test('a status that lets the previous user view issues, answered after a switch, reads nothing for them', async t => {
+  const { api, calls, take, switchUser, tick } = switchingApi(t);
+  const a = api.fetchIssuesForMedia(603, 'movie');
+  await tick();
+  switchUser();
+  take('/user-status').resolve({ active: true, userFound: true, reason: 'linked', canViewIssues: true });
+  await tick();
+  assert.deepEqual(calls.filter(u => u.includes('/issue')), []);
+  assert.deepEqual(JSON.parse(JSON.stringify(await a)), { results: [] });
+});
+
+test('an issue list refused for the previous user after a switch doesn\'t stop the next user\'s issue reads', async t => {
+  const { api, calls, take, switchUser, tick } = switchingApi(t);
+  const a = api.fetchIssuesForMedia(603, 'movie');
+  await tick();
+  take('/user-status').resolve({ active: true, userFound: true, reason: 'linked', canViewIssues: true });
+  await tick();
+  // A's issue read is refused (403), but only after B has signed in.
+  switchUser();
+  take('/issue').reject(Object.assign(new Error('HTTP 403'), { status: 403 }));
+  assert.deepEqual(JSON.parse(JSON.stringify(await a)), { results: [], forbidden: true });
+  const b = api.fetchIssuesForMedia(603, 'movie');
+  await tick();
+  take('/user-status').resolve({ active: true, userFound: true, reason: 'linked', canViewIssues: true });
+  await tick();
+  assert.equal(calls.filter(u => u.includes('/issue')).length, 2);
+  take('/issue').resolve({ results: [{ id: 8, media: { tmdbId: 603, mediaType: 'movie' } }] });
+  assert.deepEqual((await b).results.map(i => i.id), [8]);
+});
+
+/**
  * The issue reporter on a details page whose item read fails with the given error.
  * @param {object} t Test context.
  * @param {*} failure What reading the item rejects with.

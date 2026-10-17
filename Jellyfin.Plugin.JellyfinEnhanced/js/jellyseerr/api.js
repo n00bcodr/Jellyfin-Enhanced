@@ -728,11 +728,16 @@
         // session and carried by the page bootstrap): nothing to show, and no call the proxy would refuse with a 403
         // on every page load.
         if (issuesRefused) return { results: [], forbidden: true };
+        // Answers that land after a user switch belong to the previous user: they answer this call, but never
+        // refuse the next user's reads, and nothing more is read for the previous user.
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
         const status = await api.checkUserStatus();
         if (status?.canViewIssues === false) {
-            issuesRefused = true;
+            if (isCurrent()) issuesRefused = true;
             return { results: [], forbidden: true };
         }
+        if (!isCurrent()) return { results: [] };
         try {
             const query = new URLSearchParams({
                 take: String(take),
@@ -756,7 +761,7 @@
             // Seerr's own permission (VIEW_ISSUES) is missing (403), or there is no Seerr account (404): an
             // expected answer, not an error.
             if (error?.status === 403 || error?.status === 404) {
-                issuesRefused = true;
+                if (isCurrent()) issuesRefused = true;
                 console.debug(`${logPrefix} Issues aren't available to this account (${error.status}); the issue list stays hidden.`);
                 return { results: [], forbidden: true };
             }
