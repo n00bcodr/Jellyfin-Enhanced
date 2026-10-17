@@ -247,7 +247,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         {
                             result = await _backend.ReadBackAsync(job, ct).ConfigureAwait(false);
                             settledByRead = true;
-                            if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes) result = RequestBackendResult.Uncertain(job.WantId);
+                            // A hold after the write (Seerr has the request, not as chosen) stays held for a person.
+                            if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked) result = RequestBackendResult.Uncertain(job.WantId);
                             else if (result.VerifiedNotSent && !result.Confirmed)
                                 result = result with { Retryable = true, Parked = false };
                         }
@@ -268,7 +269,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                                 // As stored now: the send may have bound what it went out with (Seerr's account and seasons).
                                 result = await _backend.ReadBackAsync(_ledger.Job(job.Id) ?? job, ct).ConfigureAwait(false);
                                 settledByRead = true;
-                                if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes) result = RequestBackendResult.Uncertain(job.WantId);
+                                if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked) result = RequestBackendResult.Uncertain(job.WantId);
                             }
                         }
                     }
@@ -278,7 +279,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     result = transportStarted || job.State == "maybe_sent" ? RequestBackendResult.Uncertain(job.WantId) :
                         new RequestBackendResult(RequestOutcome.Refused("backend_unavailable", 503, "unavailable"), Retryable: true, VerifiedNotSent: true);
                 }
-                if (job.State == "maybe_sent" && !result.Confirmed && !result.VerifiedNotSent && !result.Resumes)
+                if (job.State == "maybe_sent" && !result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked)
                     result = result with { Outcome = RequestBackendResult.Uncertain(job.WantId).Outcome with { Reason = result.Outcome.Reason }, Retryable = false };
                 // A job whose last outcome left upstream state unknown stays uncertain until a fresh read settles it: a
                 // later attempt that is refused or fails before writing proves nothing about what the earlier one wrote.

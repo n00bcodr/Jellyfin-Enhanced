@@ -595,6 +595,19 @@ public class IntegrationSeerrRequestOptionsTests
         await rig.Outbox.TickAsync(default);
         Assert.Single(rig.Fake.Posts);
         Assert.NotEqual("sent", rig.Ledger.Find(ask.RequestId!)!.Status);
+        // After a restart the uncertain job is read back first: the read still shows the mismatch, so it stays held with
+        // its reason (never turned back into "checking again" over and over), and nothing is sent again.
+        rig.Ledger.Recover(rig.Lab.Now);
+        Assert.Equal("maybe_sent", rig.Ledger.Job(job.Id)!.State);
+        for (var i = 0; i < 3; i++)
+        {
+            rig.Lab.Now = rig.Lab.Now.AddMinutes(10);
+            await rig.Outbox.TickAsync(default);
+        }
+        var after = rig.Ledger.Job(job.Id)!;
+        Assert.Equal(("parked", "seerr_options_changed", true), (after.State, after.Reason, after.Uncertain));
+        Assert.Equal(("pending", "seerr_options_changed"), (rig.Ledger.Find(ask.RequestId!)!.Status, rig.Ledger.Find(ask.RequestId!)!.Reason));
+        Assert.Single(rig.Fake.Posts);
     }
 
     [Fact]
