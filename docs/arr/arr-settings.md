@@ -520,6 +520,20 @@ budget window with what is used, what is waiting for a read-back and when it has
 per target (with *Try again now*), automatic requests waiting at send by reason, the request backend's boundary and the
 one-time setup with its notice (*Got it* hides it).
 
+#### Household rules and group quotas (phase 4)
+
+| Setting | Default | What it does |
+|---|---|---|
+| Household rules (`ArrPhase4HouseholdRulesEnabled`) | off | The Trusted role and, with Jellyfin Enhanced handling requests, fixed conditions per role. Needs phase 4 and phase 3. |
+| Group quotas (`ArrPhase4GroupQuotasEnabled`) | off | Shared request pools. Needs household rules and Jellyfin Enhanced handling. |
+| Administrators pick Seerr's server, profile and folder (`ArrPhase4SeerrRequestOptionsEnabled`) | off | Seerr handling: Jellyfin administrators with Seerr's advanced request permission choose them for their own requests. Needs phase 4 and phase 3. |
+
+The conditions, streaming country and services, and pools (`ArrHouseholdRules`, `ArrHouseholdStreamingCountry`,
+`ArrHouseholdStreamingServices`, `ArrGroupQuotaPools`) are edited on the Requests page's **Household** tab, not on the
+configuration page; a configuration-page save keeps the server's values. With Seerr handling requests, Seerr's own rules
+apply and the tab shows them read-only. What the rules do is described in
+[Household rules, Trusted and group quotas](arr-features.md#household-rules-trusted-and-group-quotas-phase-4).
+
 #### Administrator Seerr request options
 
 `ArrPhase4SeerrRequestOptionsEnabled` (off) needs phase 4 and phase 3 and only matters while Seerr handles requests.
