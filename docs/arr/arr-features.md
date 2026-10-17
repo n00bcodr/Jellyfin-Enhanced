@@ -48,6 +48,13 @@ own message ("Manual Import required") and what would fix it.
   in the series or season summary. When Sonarr's episode list of a series can't be read, the series and its seasons
   follow Sonarr's season counts, missing episodes get no row or chip until it can, and administrators see
   "Sonarr … episode list … can't be read".
+  When the title arrives, the open page becomes the normal playable page by itself, with no manual refresh: Play,
+  media info, versions and Jellyfin's own badges appear (the *Missing* badge goes). The same item is reloaded in
+  place; a missing episode or season, which Jellyfin replaces with a new item once its file is there, is swapped for
+  that item in the same history entry (Back goes where it went before). This follows the page's own status updates
+  and Jellyfin's library change messages, whichever comes first. It waits while you type in a field, have a dialog,
+  menu or sheet open, or play something, and happens once the page is yours again; a page reloaded in place keeps
+  your scroll position.
 - **Posters**: a small badge while something downloads, is almost ready or takes longer than usual.
 - **Seerr's more-info window**: the same pill and journey for titles that aren't in the library yet, e.g.
   "Downloading · 42%" with "Asked by someone in your household → OK'd → Downloading".
@@ -173,6 +180,10 @@ it runs are gathered into the next refresh of that folder, and a file whose refr
 is carried the rest of the way once that refresh has run (unless the setting was switched off meanwhile).
 Imports of the last 30 minutes are looked at again when Jellyfin starts, so one made while it was restarting
 still shows up. On Windows, folders that differ only in upper/lower case are the same folder.
+When Jellyfin shows missing episodes, it keeps listing the missing (virtual) episode of a slot next to the one
+the file brought until its next refresh of the series; Jellyfin Enhanced removes it as soon as Jellyfin has
+numbered the new episode (same series, season and episode number, as Jellyfin's own series refresh does; no file
+is touched), so the season lists the episode once, ready to play.
 
 **OK'd in Seerr, but nothing happens.** When Seerr has OK'd a request and, after 15 minutes, no Sonarr/Radarr
 has the title, administrators see "OK'd in Seerr 20 min ago, but none of the Sonarr/Radarr Jellyfin Enhanced
@@ -933,7 +944,9 @@ Discover tab open these pages too, and the request is followed on the page and i
 
 The status comes from Sonarr or Radarr when one holds the title (downloading, looking, almost ready…), otherwise every
 aired episode is simply not here and later ones are *not out yet*. The page's id is never taken for a copy: once one
-arrives that the person can open, the page offers **Open**.
+arrives that the person can open, the page turns into that library title's page in its place (the same rule as a
+library page whose title arrives: it waits while they type, play or have a dialog open, and **Open** is offered
+meanwhile).
 Its cast, crew, genres, studios and tags lead to the library's own pages or to pages made the same way (a person's
 page with their filmography, a genre's or studio's discovery page; see
 [Seerr](../seerr/seerr-features.md#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental)), where a

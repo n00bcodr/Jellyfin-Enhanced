@@ -1348,11 +1348,17 @@
         const destination = await where;
         if (state.aborted || current !== state) return;
         if (destination?.itemId && !isSynthetic(destination.itemId) && /^[0-9a-f-]{32,36}$/i.test(destination.itemId)) {
-            // A deep link to a title that is here now: its library page, in this page's place.
-            checking(page, false);
-            dispose();
-            go(destination.itemId, true);
-            return;
+            // A deep link to a title that is here now: its library page, in this page's place, by the one
+            // arrival rule (status-arrival.js). While the viewer types, plays or has a dialog open it waits,
+            // and this page is drawn meanwhile (with Open).
+            const arrival = JE.internals?.arrStatusArrival;
+            if (!arrival?.open || !arrival.busy()) {
+                checking(page, false);
+                dispose();
+                if (!arrival?.open?.(page, id, destination.itemId)) go(destination.itemId, true);
+                return;
+            }
+            arrival.open(page, id, destination.itemId);
         }
         checking(page, false);
         page.dataset.jeNativeShown = id;

@@ -299,6 +299,56 @@ public class IntegrationArrBridgeTests
     }
 
     [Fact]
+    public async Task AnImportedEpisodeReplacesTheMissingEpisodeJellyfinStillListsForItsSlot()
+    {
+        using var rig = new Rig();
+        // Jellyfin shows missing episodes: E4 is listed as missing; its file arrives in the existing season folder.
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E1.mkv", indexed: true);
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E4.mkv", indexed: false);
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E5.mkv", indexed: false);
+        rig.Library.MissingTwins["/media/tv/Firefly (2002)/Season 01/E4.mkv"] = 1;
+        await rig.History(rig.Sonarr, "SonarrZ");
+        rig.Sonarr.History.Add(Rig.Import(2, rig.Arr.Now.UtcDateTime.AddSeconds(-2), "/data/tv/Firefly (2002)/Season 01/E4.mkv"));
+        await rig.History(rig.Sonarr, "SonarrZ");
+        await Until(() => rig.Bridge.Recent().Count >= 1 && rig.Library.TwinRemovals.Count >= 1);
+        // Once Jellyfin has the file, the missing episode of its slot goes.
+        Assert.Contains("/media/tv/Firefly (2002)/Season 01/E4.mkv", rig.Library.TwinRemovals);
+        Assert.False(rig.Library.MissingTwins.ContainsKey("/media/tv/Firefly (2002)/Season 01/E4.mkv"));
+
+        // A file the refresh didn't bring in leaves the missing episode alone.
+        rig.Library.RefreshFinds = false;
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E6.mkv", indexed: false);
+        rig.Library.MissingTwins["/media/tv/Firefly (2002)/Season 01/E6.mkv"] = 1;
+        rig.Sonarr.History.Add(Rig.Import(3, rig.Arr.Now.UtcDateTime.AddSeconds(-1), "/data/tv/Firefly (2002)/Season 01/E6.mkv", episode: 6));
+        await rig.History(rig.Sonarr, "SonarrZ");
+        await Until(() => rig.Bridge.Recent().Any(r => r.JellyfinPath.EndsWith("E6.mkv", StringComparison.Ordinal)));
+        await Task.Delay(100);
+        Assert.DoesNotContain("/media/tv/Firefly (2002)/Season 01/E6.mkv", rig.Library.TwinRemovals);
+        Assert.True(rig.Library.MissingTwins.ContainsKey("/media/tv/Firefly (2002)/Season 01/E6.mkv"));
+    }
+
+    [Fact]
+    public async Task AnEpisodeJellyfinHasntNumberedYetHasItsMissingTwinRemovedOnceItIs()
+    {
+        using var rig = new Rig();
+        rig.Bridge.MissingTwinWaits = new[] { TimeSpan.FromMilliseconds(30), TimeSpan.FromMilliseconds(30) };
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E1.mkv", indexed: true);
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E4.mkv", indexed: false);
+        rig.Library.MissingTwins["/media/tv/Firefly (2002)/Season 01/E4.mkv"] = 1;
+        // Jellyfin's resolver adds the episode without its numbers; its metadata numbers it a moment later.
+        rig.Library.NumberedLater.Add("/media/tv/Firefly (2002)/Season 01/E4.mkv");
+        await rig.History(rig.Sonarr, "SonarrZ");
+        rig.Sonarr.History.Add(Rig.Import(2, rig.Arr.Now.UtcDateTime.AddSeconds(-2), "/data/tv/Firefly (2002)/Season 01/E4.mkv"));
+        await rig.History(rig.Sonarr, "SonarrZ");
+        await Until(() => rig.Library.MissingTwins.Count == 0);
+        Assert.Empty(rig.Library.MissingTwins);
+        Assert.Equal(2, rig.Library.TwinRemovals.Count);
+        // Nothing more once it is done (no twin left: no retries).
+        await Task.Delay(150);
+        Assert.Equal(2, rig.Library.TwinRemovals.Count);
+    }
+
+    [Fact]
     public async Task AfterARestartTheBridgeReadsTheHistoryItselfAndRefreshesTheLastHalfHoursImports()
     {
         using var rig = new Rig();

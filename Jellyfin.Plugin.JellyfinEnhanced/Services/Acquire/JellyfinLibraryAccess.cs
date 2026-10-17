@@ -96,6 +96,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// validating the nearest item it has recursively: only for libraries with real-time monitoring on.
         /// </summary>
         void ReportChanged(string path);
+
+        /// <summary>
+        /// Removes the missing (virtual) episodes Jellyfin still lists for the slot an episode file now fills
+        /// (same series, season and episode number), as Jellyfin's own series refresh does; no file is
+        /// touched. Returns how many it removed: 0 when the path isn't an episode with a file, -1 while
+        /// Jellyfin hasn't numbered that episode yet (its metadata does, a moment after it is added).
+        /// </summary>
+        int RemoveMissingTwins(string filePath);
     }
 
     /// <summary><see cref="IJellyfinLibraryAccess"/> over the real library, provider and task managers.</summary>
@@ -300,5 +308,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <inheritdoc />
         public void ReportChanged(string path) => _libraryMonitor.ReportFileSystemChanged(Native(path));
+
+        /// <inheritdoc />
+        public int RemoveMissingTwins(string filePath)
+        {
+            if (_libraryManager.FindByPath(Native(filePath), false) is not Episode { IsMissingEpisode: false } episode || episode.Series is not { } series) return 0;
+            if (episode.ParentIndexNumber is not int season || episode.IndexNumber is not int number) return -1;
+            var twins = series.GetRecursiveChildren(i => i is Episode e && e.IsMissingEpisode && e.ParentIndexNumber == season && e.IndexNumber == number).ToList();
+            foreach (var twin in twins) _libraryManager.DeleteItem(twin, new DeleteOptions { DeleteFileLocation = false }, false);
+            return twins.Count;
+        }
     }
 }

@@ -1591,6 +1591,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/status/status-arrival.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/status/status-cards.js",
       "category": "js"
     },
@@ -3019,6 +3023,15 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/acquire/status/item/{itemId}",
       "method": "GetItemStatus",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrStatusController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/status/arrival",
+      "method": "GetArrival",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrStatusController.cs",
       "following_attributes": [
         "Authorize"
@@ -10385,8 +10398,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 585,
-    "routes": 277,
+    "files": 586,
+    "routes": 278,
     "configuration_properties": 618,
     "storage_references": 87,
     "scheduled_tasks": 15,

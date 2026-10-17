@@ -220,6 +220,8 @@
     "// (JE.arrStatus), status-styles.js last (JE.initializeArrStatus).",
     "arr/status/status-core.js",
     "arr/status/status-episodes.js",
+    "// status-arrival.js before status-details.js, which hands it each status read.",
+    "arr/status/status-arrival.js",
     "arr/status/status-details.js",
     "arr/status/status-cards.js",
     "arr/status/status-modal.js",

@@ -292,6 +292,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         internal TimeSpan ScanNowQueueWait { get; set; } = TimeSpan.FromSeconds(40);
 
+        /// <summary>
+        /// How long to wait, one after the other, for Jellyfin to number an imported episode (its metadata does, a
+        /// moment after the refresh adds it) before the missing episode of its slot can be told apart.
+        /// </summary>
+        internal TimeSpan[] MissingTwinWaits { get; set; } = { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30) };
+
         /// <summary>How long Jellyfin's monitor gets to add a new top folder before it is refreshed once (its own delay is 60 s).</summary>
         internal TimeSpan NewFolderFollowUp { get; set; } = TimeSpan.FromSeconds(90);
         private static readonly TimeSpan ScanWait = TimeSpan.FromSeconds(30);
@@ -1040,7 +1046,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 });
                 while (_recent.Count > RecentSize) _recent.RemoveLast();
             }
-            if (found) RaiseIndexed(instance, arrPath);
+            if (!found) return;
+            RemoveMissingTwins(file);
+            RaiseIndexed(instance, arrPath);
+        }
+
+        /// <summary>
+        /// Jellyfin keeps listing a missing (virtual) episode for a slot a file now fills until its next
+        /// series refresh, which removes it ("a physical episode now exists for this slot"). A targeted
+        /// refresh of a season folder doesn't refresh the series, so the bridge removes those by Jellyfin's
+        /// own rule: the season, Next up and an open page of the missing episode then have the one that plays.
+        /// Jellyfin numbers the new episode a moment after adding it; until then the bridge looks again
+        /// after each of <see cref="MissingTwinWaits"/>.
+        /// </summary>
+        private void RemoveMissingTwins(string file, int attempt = 0)
+        {
+            int removed;
+            try
+            {
+                removed = _library.RemoveMissingTwins(file);
+            }
+            catch (Exception ex)
+            {
+                _logger?.Warning($"Jellyfin bridge: removing the missing episode {file} fills failed ({ex.GetType().Name}).");
+                return;
+            }
+            if (removed > 0) _logger?.Info($"Jellyfin bridge: removed {removed} missing (virtual) episode(s) that {file} now fills.");
+            if (removed >= 0 || attempt >= MissingTwinWaits.Length) return;
+            var wait = MissingTwinWaits[attempt];
+            TryTrack(async () =>
+            {
+                try
+                {
+                    await _delay(wait, _stop.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+                {
+                    return;
+                }
+                if (RefreshEnabled) RemoveMissingTwins(file, attempt + 1);
+            }, out _);
         }
 
         /// <summary>
