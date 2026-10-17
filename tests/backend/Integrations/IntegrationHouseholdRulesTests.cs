@@ -535,6 +535,20 @@ public class IntegrationHouseholdRulesTests
         Assert.Equal(0, r.Rig.Backend.Sends);
         Assert.Equal(("pending", "rule_review"), (r.Want(queued).Status, r.Want(queued).Reason));
         Assert.All(r.Rig.Ledger.List(r.Trusted.UserId, false), w => Assert.Equal(("pending", "rule_review"), (w.Status, w.Reason)));
+        // The card says why: the rating isn't known now (not the PG-13 it was asked with), after a restart too.
+        var directory = new IntegrationRequestHouseholdTests.FakeDirectory();
+        directory.People[r.Member.UserId] = new HouseholdPerson { Id = r.Member.UserId, Name = "Sam", IsAdmin = false };
+        async Task<JsonNode> HeldCard(RequestService service)
+        {
+            var projection = new RequestHubProjection(service, directory, null, (_, _, _) => Task.FromResult<HubTitleMeta?>(null), () => r.Now);
+            return JsonNode.Parse((await projection.MineAsync(r.View.Viewer(r.Member.UserId)!, default)).Json)!["items"]!.AsArray().Single(i => (string)i!["key"]! == "movie:tmdb:606")!;
+        }
+        Assert.Null((bool?)(await HeldCard(r.Service))["rules"]!["hits"]![0]!["matched"]);
+        var fresh = new HouseholdRuleFacts((t, _) => Task.FromResult(t.NumericId), (_, _) => Task.FromResult<string?>(null), Score, () => r.Now);
+        var restarted = new RequestService(r.Rig.Ledger, new RequestPolicy(r.View, r.Lab.Store, new ArrInstanceLibraries(r.Lab.Store, new FakeLibraryAccess()), new TitleAliases(r.Lab.Store, null), null!, r.Lab.Arr.Factory, new UnavailableRequestBackend(), fresh), r.View, r.Rig.Feed, () => r.Now);
+        var afterRestart = await HeldCard(restarted);
+        Assert.Equal("review", (string)afterRestart["rules"]!["verdict"]!);
+        Assert.Null((bool?)afterRestart["rules"]!["hits"]![0]!["matched"]);
         // A new ask for a title last read as PG-13 waits too (Member and Trusted alike), with the rating unknown.
         var member = await r.Ask(r.Member, 608);
         var trusted = await r.Ask(r.Trusted, 609);

@@ -338,6 +338,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }) ? "authorization_changed" : null;
         }
 
+        /// <summary>
+        /// Records the household-rule verdict a waiting request was held with at send (phase 4b) as its rationale, so it
+        /// says why it waits (a rating that changed, or that isn't known now), after a restart too.
+        /// </summary>
+        /// <param name="wantId">The request.</param>
+        /// <param name="verdict">The verdict it was held with.</param>
+        public void HeldByRules(string wantId, HouseholdRuleVerdict verdict)
+            => _db.Write((c, t) => Exec(c, t, "UPDATE wants SET rule_detail=$rules WHERE id=$id AND status='pending'", ("$rules", verdict.Json), ("$id", wantId)));
+
         // When the job's own charge was made (now when it has none): the send-time allowance and pool checks count only
         // charges made up to it.
         private static DateTimeOffset ChargedUpTo(SqliteConnection c, RequestJob job, string wantId, DateTimeOffset now)

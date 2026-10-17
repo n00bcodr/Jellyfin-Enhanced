@@ -166,6 +166,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var generation = _ledger.Database.Generation;
                 if (!_ledger.Claim(job, generation, _now())) continue;
                 RequestBackendResult result;
+                // The household-rule verdict the guard held the job with (phase 4b): kept as the request's rationale.
+                HouseholdRuleVerdict? heldRules = null;
                 var transportStarted = false;
                 var settledByRead = false;
                 // Automatic work (recipes, list sync) and work only phase 4 creates: held at send by the kill switches,
@@ -224,7 +226,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             }
                             if (RequestPolicy.Check(requester, approver, job.Input, approver != null) != null) return "authorization_changed";
                             // A Kid, the household's rules or a group pool (phase 4b), a Member's preset, quota or series threshold.
-                            if (_ledger.ApprovalNeededAtSend(job, requester, _policy, _now()) is { } needed) return needed;
+                            if (_ledger.ApprovalNeededAtSend(job, requester, _policy, _now()) is { } needed)
+                            {
+                                if (needed is RequestLedger.RuleReview or RequestLedger.HouseholdRule) heldRules = requester.Rules;
+                                return needed;
+                            }
                             if (job.Authorization.Edited && approver?.Role != "Admin" && RequestLedger.HasRouting(job.Input)) return "authorization_changed";
                             // Seerr answered that no Seerr account is linked to the person (not "Seerr didn't answer"): nothing can be
                             // sent as them, so the request is held with that reason and checked again now and then, not every pass.
@@ -279,6 +285,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (job.Uncertain && !settledByRead && !result.Confirmed && result.Outcome.Certainty != ArrActionStatus.Unknown)
                     result = result with { Outcome = result.Outcome with { Certainty = ArrActionStatus.Unknown }, VerifiedNotSent = false, Parked = result.Parked || !result.Retryable };
                 var completed = _ledger.Complete(job, generation, result, _now());
+                if (completed && heldRules != null && result.Outcome.Reason is RequestLedger.RuleReview or RequestLedger.HouseholdRule) _ledger.HeldByRules(job.WantId, heldRules);
                 if (completed) _automation?.Observe(job, want, result, transportStarted, settledByRead);
                 if (completed) _feed.Bump(new[] { job.Input.Key, ArrTitleKey.UserRequests(job.Authorization.Requester), ArrTitleKey.RequestsState });
                 if (completed && result.Confirmed) _events?.RaiseConfirmed(job);
