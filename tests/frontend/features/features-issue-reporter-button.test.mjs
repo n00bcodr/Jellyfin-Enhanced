@@ -143,3 +143,157 @@ test('on a row without More… (a native page) the icon stands before Spoiler Gu
   await call;
   assert.deepEqual(h.row(), ['je-native-absent-primary', 'jellyseerr-report-issue-icon', 'je-spoiler-pending-detail', 'je-notify-follow-details', 'je-manage-open']);
 });
+
+// Q-3I-10: an action row replaced by a copy of itself carries dead copies of JE's buttons (a copy
+// has none of the original's listeners). Each module counts only the buttons it drew itself, so the
+// copies go and one working button stands in its usual place.
+
+for (const active of [true, false]) {
+  test(`a row replaced by a copy of itself gets one working ${active ? 'Report issue' : 'unavailable'} icon at the next look`, async t => {
+    const h = page(t, { active });
+    const opened = [];
+    h.reporter.showReportModal = (...args) => opened.push(args);
+    const first = h.reporter.tryAddButton();
+    await tick();
+    h.reads.shift().resolve(movie('a'));
+    assert.equal(await first, true);
+    const row = h.document.querySelector('.mainDetailButtons');
+    const copy = row.cloneNode(true);
+    row.replaceWith(copy);
+    const dead = copy.querySelector(ICONS);
+    const look = h.reporter.tryAddButton();
+    await tick();
+    for (const r of h.reads.splice(0)) r.resolve(movie(r.id));
+    assert.equal(await look, true);
+    const icons = h.document.querySelectorAll(ICONS);
+    assert.equal(icons.length, 1, 'one icon');
+    assert.equal(dead.isConnected, false, 'the dead copy is gone');
+    assert.deepEqual(h.row(), ['btnPlay', active ? 'jellyseerr-report-issue-icon' : 'jellyseerr-report-unavailable-icon', 'btnMoreCommands']);
+    // The unavailable icon is a disabled button (a browser sends it no click), so only the working
+    // one is clicked; the unavailable one is checked to be a new one, not the copy.
+    if (active) {
+      icons[0].click();
+      assert.deepEqual(opened.map(a => a[0]), ['603'], 'the icon opens the issue dialog');
+    }
+    // A later look keeps the working icon.
+    assert.equal(await h.reporter.tryAddButton(), true);
+    assert.equal(h.reads.length, 0);
+    assert.equal(h.document.querySelector(ICONS), icons[0]);
+  });
+}
+
+test('an icon the reporter did not draw (a copy kept beside its own) is removed at the next look', async t => {
+  const h = page(t);
+  const opened = [];
+  h.reporter.showReportModal = (...args) => opened.push(args);
+  const first = h.reporter.tryAddButton();
+  await tick();
+  h.reads.shift().resolve(movie('a'));
+  await first;
+  const own = h.document.querySelector(ICONS);
+  own.before(own.cloneNode(true));
+  assert.equal(await h.reporter.tryAddButton(), true);
+  assert.deepEqual([...h.document.querySelectorAll(ICONS)], [own]);
+  own.click();
+  assert.equal(opened.length, 1);
+});
+
+const DETAILS = '<div id="itemDetailPage" class="page libraryPage itemDetailPage"><div class="itemMiscInfo itemMiscInfo-primary"><div class="mediaInfoItem">2025</div></div>'
+  + '<div class="mainDetailButtons"><button class="btnPlay detailButton">Play</button><button class="btnMoreCommands detailButton">More</button></div></div>';
+
+/**
+ * A library details page with JE's three row buttons: Hide and Spoiler Guard (features-details-page.js
+ * and spoilerguard/detail-button.js, run on the page's mutations) and Report issue (on viewshow).
+ * @param {object} t Test context.
+ * @returns {object} Harness, the runs and what each button's click reached.
+ */
+function libraryPage(t) {
+  const debounced = {};
+  const hidden = [], guarded = [], opened = [];
+  const item = id => ({ Id: id, Type: 'Movie', Name: `Movie ${id}`, ProviderIds: { Tmdb: id === 'a' ? '603' : '604' } });
+  const h = createHarness({
+    url: 'http://jellyfin.test/web/index.html#!/details?id=a',
+    html: DETAILS,
+    globals: { requestAnimationFrame: fn => { fn(); return 1; } },
+    JE: {
+      pluginConfig: { JellyseerrEnabled: true, JellyseerrShowReportButton: true, SpoilerBlurEnabled: true },
+      currentSettings: {},
+      t: key => key,
+      jellyseerrAPI: { checkUserStatus: async () => ({ active: true, userFound: true }) },
+      hiddenContent: {
+        getSettings: () => ({ enabled: true, showHideButtons: true, showButtonDetails: true }),
+        isHidden: () => false,
+        confirmAndHide: data => hidden.push(data.itemId),
+      },
+      helpers: {
+        getItemCached: async id => item(id),
+        debounce: (fn, wait) => { debounced[wait] = fn; return () => {}; },
+        createObserver: () => {}, onViewPage: () => {}, addCSS: () => {},
+      },
+      core: { navigation: { onViewPage: () => {}, onNavigate: () => {} } },
+      internals: {
+        spoilerGuard: {
+          isStateLoaded: () => true,
+          kindOf: () => 'movie',
+          isEnabledForKind: () => false,
+          enableForMovie: id => { guarded.push(id); return new Promise(() => {}); },
+        },
+      },
+    },
+    apiClient: { ajax: async () => ({ active: true }) },
+  });
+  t.after(() => h.close());
+  h.load('core/ui-kit.js');
+  h.load('enhanced/spoilerguard/detail-button.js');
+  h.JE.spoilerBlur = { addSpoilerBlurButton: h.JE.internals.spoilerGuard.addSpoilerBlurButton };
+  h.load('enhanced/itemdetails/features-details-page.js');
+  h.load('jellyseerr/issue-reporter.js');
+  const reporter = h.JE.jellyseerrIssueReporter;
+  reporter.showReportModal = (...args) => opened.push(args);
+  const row = () => [...h.document.querySelector('.mainDetailButtons').children].map(n => n.className.split(' ').find(c => /^(btn|je-|jellyseerr-)/.test(c)));
+  // The page's mutations settle (Hide and Spoiler Guard) and Jellyfin's viewshow (Report issue).
+  const look = async () => {
+    debounced[100]();
+    await reporter.tryAddButton();
+    await new Promise(resolve => setImmediate(resolve));
+  };
+  return { ...h, look, row, hidden, guarded, opened };
+}
+
+test('a library row replaced by a copy of itself gets working Hide, Report issue and Spoiler Guard back, in their places', async t => {
+  const h = libraryPage(t);
+  await h.look();
+  await h.look();
+  const expected = ['btnPlay', 'je-detail-hide-btn', 'jellyseerr-report-issue-icon', 'je-spoiler-blur-btn', 'btnMoreCommands'];
+  assert.deepEqual(h.row(), expected);
+  for (let round = 1; round <= 2; round++) {
+    const row = h.document.querySelector('.mainDetailButtons');
+    row.replaceWith(row.cloneNode(true));
+    await h.look();
+    assert.deepEqual(h.row(), expected, `round ${round}: one of each, in order`);
+    h.document.querySelector('.je-detail-hide-btn').click();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(h.hidden.length, round, `round ${round}: Hide works`);
+    h.document.querySelector('.jellyseerr-report-issue-icon').click();
+    assert.equal(h.opened.length, round, `round ${round}: Report issue works`);
+    const spoiler = h.document.querySelector('.je-spoiler-blur-btn');
+    spoiler.click();
+    assert.equal(h.guarded.length, round, `round ${round}: Spoiler Guard works`);
+    // The toggle in flight keeps it disabled; let the next round click a fresh one.
+    spoiler.disabled = false;
+  }
+});
+
+test('a page element reused for the next title gets a Hide button for that title, not the last one\'s', async t => {
+  const h = libraryPage(t);
+  await h.look();
+  await h.look();
+  h.window.location.hash = '#!/details?id=b';
+  await h.look();
+  await h.look();
+  const hides = h.document.querySelectorAll('.je-detail-hide-btn');
+  assert.equal(hides.length, 1);
+  hides[0].click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.hidden, ['b']);
+});

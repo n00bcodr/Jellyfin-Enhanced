@@ -38,6 +38,10 @@
     // Types that support hiding
     const HIDE_SUPPORTED_TYPES = ['Movie', 'Series', 'Episode', 'Season'];
 
+    // The Hide buttons this module drew, each with the item it hides. A copy of one (an action row
+    // replaced by a copy of itself) has no click handler, so it never counts.
+    const hideButtons = new WeakMap();
+
     /**
      * Adds a "Hide" button to the item detail page action buttons area.
      * Supports Movies, Series, Episodes, and Seasons.
@@ -57,8 +61,14 @@
             if (!HIDE_SUPPORTED_TYPES.includes(lastDetailsItemType)) return;
         }
 
-        // Don't add duplicate
-        if (visiblePage.querySelector('.je-detail-hide-btn')) return;
+        // Don't add duplicate: keep the working button for this item; any other (a dead copy, or the
+        // last title's in a reused page) goes.
+        let live = null;
+        for (const existing of visiblePage.querySelectorAll('.je-detail-hide-btn')) {
+            if (!live && hideButtons.get(existing) === itemId) live = existing;
+            else existing.remove();
+        }
+        if (live) return;
 
         const selectors = [
             '.detailButtons',
@@ -227,6 +237,7 @@
         }
 
         // Before Report issue and Spoiler Guard, and before Jellyfin's overflow menu (three-dots).
+        hideButtons.set(button, itemId);
         JE.core.ui.placeDetailAction(buttonContainer, button);
     }
 

@@ -101,6 +101,10 @@
         });
     }
 
+    // The buttons this module drew. A copy of one (an action row replaced by a copy of itself) has no
+    // click handler, so it never counts and goes.
+    const drawnButtons = new WeakSet();
+
     internal.addSpoilerBlurButton = function(itemId, visiblePage, itemType) {
         if (JE.pluginConfig?.SpoilerBlurEnabled !== true || !itemId || !visiblePage) return;
         if (!internal.isStateLoaded()) return;
@@ -111,9 +115,14 @@
 
         const enabled = internal.isEnabledForKind(kind, itemId);
         const state = enabled ? 'on' : 'off';
-        let button = visiblePage.querySelector('.je-spoiler-blur-btn');
+        let button = null;
+        for (const existing of visiblePage.querySelectorAll('.je-spoiler-blur-btn')) {
+            if (!button && drawnButtons.has(existing)) button = existing;
+            else existing.remove();
+        }
         if (!button) {
             button = document.createElement('button');
+            drawnButtons.add(button);
             button.setAttribute('is', 'emby-button');
             button.className = 'button-flat detailButton emby-button je-spoiler-blur-btn';
             button.type = 'button';

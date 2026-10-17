@@ -629,6 +629,48 @@ test('a row copied and left before the next look has one live Request when the p
 });
 
 /**
+ * The issue reporter on the same page: Seerr up, the viewer has an account, and each click on a
+ * Report issue icon recorded (the issue dialog is not drawn).
+ * @param {object} h Harness from setup().
+ * @returns {{reporter: object, opened: Array}} The reporter and the dialogs its icons opened.
+ */
+function withReporter(h) {
+  const opened = [];
+  Object.assign(h.JE.pluginConfig, { JellyseerrEnabled: true, JellyseerrShowReportButton: true });
+  h.JE.jellyseerrAPI = { checkUserStatus: async () => ({ active: true, userFound: true }) };
+  h.window.ApiClient.ajax = async () => ({ active: true });
+  h.load('jellyseerr/issue-reporter.js');
+  const reporter = h.JE.jellyseerrIssueReporter;
+  reporter.showReportModal = (...args) => opened.push(args);
+  return { reporter, opened };
+}
+
+test('a native row replaced by a copy of itself gets one working Report issue icon at the next look, before Spoiler Guard', async t => {
+  // Q-3I-10: the copy's icon is dead; the reporter counted it and drew none.
+  const h = setup(t, {
+    html: PAGE, ask: false, seerr: true, modalData: {}, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`,
+    getItem: async () => ({ Id: MOVIE, Type: 'Movie', Name: 'Dune', ProviderIds: { Tmdb: '693134' } }),
+    resolve: path => (path === '/native-details/title/movie/693134' ? { id: 693134, status: 'Released', relatedVideos: [] } : null),
+  });
+  h.JE.internals.spoilerGuard.buildSeerrToggle = () => Object.assign(h.document.createElement('button'), { className: 'button-flat detailButton je-spoiler-pending-detail' });
+  const { reporter, opened } = withReporter(h);
+  const nd = h.JE.internals.nativeDetails;
+  // Jellyfin's viewshow reaches both.
+  const look = () => Promise.all([nd.onView(), reporter.tryAddButton()]);
+  await look();
+  const row = () => h.document.querySelector('.mainDetailButtons');
+  const kinds = () => [...row().children].map(n => n.className.split(' ').find(c => /^(btn|je-|jellyseerr-)/.test(c)));
+  const expected = ['je-native-absent-primary', 'btnPlay', 'jellyseerr-report-issue-icon', 'je-spoiler-pending-detail'];
+  assert.deepEqual(kinds(), expected);
+  row().replaceWith(row().cloneNode(true));
+  await look();
+  assert.deepEqual(kinds(), expected, 'one icon, in its place');
+  assert.equal(h.document.querySelectorAll('.jellyseerr-report-issue-icon').length, 1);
+  h.document.querySelector('.jellyseerr-report-issue-icon').click();
+  assert.deepEqual(opened.map(a => a[0]), ['693134'], 'the icon opens the issue dialog');
+});
+
+/**
  * A small seeded generator (mulberry32), so a failing sequence can be replayed from its seed.
  * @param {number} seed Seed.
  * @returns {() => number} Numbers in [0, 1).
@@ -655,6 +697,7 @@ for (const ask of [false, true]) {
     const page = h.document.getElementById('itemDetailPage');
     const doc = h.document;
     const spoilerClicks = [];
+    const { reporter, opened } = withReporter(h);
     h.JE.internals.spoilerGuard.buildSeerrToggle = () => {
       const b = Object.assign(doc.createElement('button'), { className: 'button-flat detailButton je-spoiler-pending-detail' });
       b.addEventListener('click', () => spoilerClicks.push(b));
@@ -711,11 +754,21 @@ for (const ask of [false, true]) {
     let trail = [];
     const look = async () => {
       const drawn = nd.current()?.drawn && nd.current().id === MOVIE && h.window.location.hash.includes(MOVIE);
-      const pending = nd.onView();
+      const pending = Promise.all([nd.onView(), reporter.tryAddButton()]);
       // A page shown again starts its look from its live controls, before its item is read again.
       if (drawn) structure(`${trail.join(' → ')} (look starts)`);
       await pending;
       await wait(1);
+    };
+    // After a look: exactly one Report issue icon, in the row before Spoiler Guard, and it opens the dialog.
+    const reportWorks = (step) => {
+      const icons = all('.jellyseerr-report-issue-icon, .jellyseerr-report-unavailable-icon');
+      assert.equal(icons.length, 1, `${step}: one Report issue icon (${icons.length})`);
+      assert.equal(icons[0].parentElement, rowNow(), `${step}: the icon is in the row`);
+      assert.equal(icons[0].nextElementSibling, nd.current().spoiler, `${step}: the icon stands just before Spoiler Guard`);
+      const n = opened.length;
+      icons[0].click();
+      assert.equal(opened.length, n + 1, `${step}: the icon opens the issue dialog`);
     };
     const check = async (step) => {
       structure(step);
@@ -782,6 +835,7 @@ for (const ask of [false, true]) {
     const names = Object.keys(ops);
     await look();
     await check('first look');
+    reportWorks('first look');
     for (const seed of [1, 7, 42, 2026]) {
       const rnd = seeded(seed);
       trail = [];
@@ -795,9 +849,11 @@ for (const ask of [false, true]) {
         if (rnd() < 0.3) continue;
         await look();
         await check(`seed ${seed}: ${trail.join(' → ')}`);
+        reportWorks(`seed ${seed}: ${trail.join(' → ')}`);
       }
       await look();
       await check(`seed ${seed}: ${trail.join(' → ')} → look`);
+      reportWorks(`seed ${seed}: ${trail.join(' → ')} → look`);
     }
     // Leaving the page takes everything away, copies included.
     ops.clone();

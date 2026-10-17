@@ -815,20 +815,24 @@
     // reporter's own first look on a fresh load) share it instead of each adding an icon.
     const pendingLooks = new WeakMap();
 
+    // The icons the reporter placed, each with the item it reports. A copy of one (an action row
+    // replaced by a copy of itself) looks the same but has no click handler, so it never counts.
+    const placedIcons = new WeakMap();
+
     /**
-     * The page's report icon if it is for this item; the icon of the title shown before (Jellyfin
-     * reuses the page element) is removed.
+     * The page's working report icon if it is for this item. Any other icon goes: the icon of the
+     * title shown before (Jellyfin reuses the page element) and dead copies of the reporter's icons.
      * @param {HTMLElement} page
      * @param {string} itemId
      * @returns {Element|null}
      */
     function iconFor(page, itemId) {
-        const icon = page.querySelector(REPORT_ICONS);
-        if (icon && icon.getAttribute('data-je-item-id') !== itemId) {
-            icon.remove();
-            return null;
+        let live = null;
+        for (const icon of page.querySelectorAll(REPORT_ICONS)) {
+            if (!live && placedIcons.get(icon) === itemId) live = icon;
+            else icon.remove();
         }
-        return icon;
+        return live;
     }
 
     /**
@@ -848,6 +852,7 @@
         }
         if (iconFor(page, itemId)) return true;
         button.setAttribute('data-je-item-id', itemId);
+        placedIcons.set(button, itemId);
         JE.core.ui.placeDetailAction(row, button);
         return true;
     }
