@@ -261,15 +261,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (viewer != null)
             {
                 var copies = _view.Copies(key, viewer, _aliases.Of(key));
+                var target = Landing(input, key, instance);
                 if (copies.Count > 0)
                 {
-                    var target = instance == null ? new ArrLibraryTarget(null, null, "no_instance") : input.RootFolder == null ? _libraries.ResolveTitle(instance, key) : _libraries.Resolve(instance, input.RootFolder);
                     visible = copies.Any(c => c.Visible && NativeScopeAllowed(input, c, viewer)) && viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, target, _libraries.Libraries());
                 }
                 else
                 {
-                    var libraries = instance == null ? new ArrLibraryTarget(null, null, "no_instance") : input.RootFolder == null ? _libraries.ResolveTitle(instance, key) : _libraries.Resolve(instance, input.RootFolder);
-                    visible = viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, libraries, _libraries.Libraries());
+                    visible = viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, target, _libraries.Libraries());
                     if (viewer.HasParentalLimit)
                     {
                         var tmdb = _aliases.Of(key).Append(key).FirstOrDefault(k => k.Provider == "tmdb")?.NumericId ?? 0;
@@ -312,6 +311,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota, disk, seerrMode && binding.SeerrWholeSeries, seerrMode && binding.SeerrUnlinked,
                 size, Rules(config, role, key, input, size),
                 HouseholdFlags.Pools(config) ? GroupQuotaPolicy.For(GroupQuotaPolicy.Parse(config.ArrGroupQuotaPools), userId, role, windowDays) : null);
+        }
+        /// <summary>
+        /// The Jellyfin libraries a request like <paramref name="input"/> lands in, which decide who may see it (review
+        /// round 5, security-r5-1): where it ACTUALLY goes, never only where the title usually is.
+        /// <list type="bullet">
+        /// <item>An administrator's Seerr choice: the root folder chosen on the Seerr server chosen, resolved through the
+        /// instance linked to that Seerr server (imported from Seerr; same kind), else through the instance the title's kind
+        /// and edition go to. Seerr adds a title it doesn't have yet there, so the title's own folder doesn't count.</item>
+        /// <item>An arr folder named (administrators): that folder on the instance.</item>
+        /// <item>Otherwise the title's own folder on the instance (the default root for a title it doesn't have).</item>
+        /// </list>
+        /// A folder that resolves to no library needs every library (see <see cref="ArrInstanceLibraries.CanOpen(User, ArrLibraryTarget, IReadOnlyList{JfLibraryRoot})"/>).
+        /// </summary>
+        /// <param name="input">The request.</param>
+        /// <param name="key">Its title key.</param>
+        /// <param name="instance">The instance its kind and edition go to.</param>
+        private ArrLibraryTarget Landing(MutationInput input, TitleKey key, ArrConnection? instance)
+        {
+            if (input.HasSeerrOptions && input.SeerrRootFolder is { } seerrFolder)
+            {
+                var kind = key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr;
+                var linked = input.SeerrServerId is int server ? _store.Registry.All().Where(i => i.Kind == kind && i.SeerrServerId == server).OrderByDescending(i => i.Usable).FirstOrDefault() : null;
+                var through = linked ?? instance;
+                return through == null ? new ArrLibraryTarget(null, null, ArrLibraryProblem.NoInstance) : _libraries.Resolve(through, seerrFolder);
+            }
+            if (instance == null) return new ArrLibraryTarget(null, null, ArrLibraryProblem.NoInstance);
+            return input.RootFolder == null ? _libraries.ResolveTitle(instance, key) : _libraries.Resolve(instance, input.RootFolder);
         }
         /// <summary>
         /// What the household's fixed conditions say about this request for a person of <paramref name="role"/> (memory

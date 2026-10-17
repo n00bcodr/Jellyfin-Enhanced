@@ -38,6 +38,8 @@ public class IntegrationSeerrRequestOptionsTests
         public RequestPolicy Policy { get; }
         public RequestService Service { get; }
         public RequestOutbox Outbox { get; }
+        /// <summary>Jellyfin's libraries as the production policy reads them (none unless a test adds some).</summary>
+        public FakeLibraryAccess Access { get; } = new();
         public PluginConfiguration Config => Lab.Config;
         public FakeSeerr Fake => Lab.Seerr;
 
@@ -63,7 +65,7 @@ public class IntegrationSeerrRequestOptionsTests
             Ledger = new RequestLedger(Db);
             Seerr = new SeerrBackend(Fake.Transport, Lab.Model, aliases, () => Config, () => Lab.Now, Ledger.BindSeerrSend);
             var router = new RequestBackendRouter(Lab.Arr.Direct, Seerr, () => Config);
-            Policy = new RequestPolicy(View, Lab.Arr.Store, new ArrInstanceLibraries(Lab.Arr.Store, new FakeLibraryAccess()), aliases, null!, Lab.Arr.Arr.Factory, router);
+            Policy = new RequestPolicy(View, Lab.Arr.Store, new ArrInstanceLibraries(Lab.Arr.Store, Access), aliases, null!, Lab.Arr.Arr.Factory, router);
             var audit = new ArrAuditLog(Path.Combine(Lab.Arr.Arr.Plugin.Core.Root, "seerr-options-audit.jsonl"), 100000, 1);
             Service = new RequestService(Ledger, Policy, View, new ArrChangeFeed(), () => Lab.Now, aliases);
             Outbox = new RequestOutbox(Ledger, Policy, router, new RequestTitleLocks(), new ArrChangeFeed(), audit, () => Lab.Now);

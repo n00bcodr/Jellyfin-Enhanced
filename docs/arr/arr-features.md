@@ -804,7 +804,9 @@ retried, held or refused) is cancelled and refunded, and the request is sent aga
 request are never left waiting on nothing: a cancel withdraws what they followed, and a decline makes each of them the
 owner of what nobody else is asking for, waiting for an OK. Whether someone may cancel or decline a request never
 depends on its routing still fitting (a Seerr server choice that stopped fitting, or an arr that's gone, is often why it
-waits), but only someone who can see where it goes (its library folder) may decline it. An uncertain outgoing action keeps its reservation until a fresh read of the original
+waits), but only someone who can see where it goes may decline it (or approve it, or see it in the list): its library
+folder, which for an administrator's Seerr server choice is the root folder chosen on that Seerr server (read through the
+Sonarr/Radarr instance imported from that Seerr server, else the default one), not the title's usual folder. An uncertain outgoing action keeps its reservation until a fresh read of the original
 connection resolves it, even after authority changes. Deleting an approver anonymizes retained job contexts and preserves
 send certainty; only known-unsent queued approvals return to review, refunding just their own scope's charges. Charges
 for surviving jobs still count toward count, estimated GB and episode allowances. Deleting a requester anonymizes
