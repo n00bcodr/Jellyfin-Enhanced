@@ -464,7 +464,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             Quality = Intern(r.Quality?.Quality?.Name),
             ImportedPath = DataString(r.Data, "importedPath"),
             Message = Clip(DataString(r.Data, "message")),
+            Reason = Clip(DataStringAnyCase(r.Data, "reason")),
         };
+
+        /// <summary>A string value of a history record's <c>data</c> map whatever the key's case (capped), or null.</summary>
+        private static string? DataStringAnyCase(Dictionary<string, JsonElement>? data, string name)
+        {
+            if (data == null) return null;
+            foreach (var (key, value) in data)
+            {
+                if (!string.Equals(key, name, StringComparison.OrdinalIgnoreCase) || value.ValueKind != JsonValueKind.String) continue;
+                var text = value.GetString();
+                return string.IsNullOrWhiteSpace(text) || text.Length > 1024 ? null : text;
+            }
+
+            return null;
+        }
 
         /// <summary>A string value of a history record's <c>data</c> map (capped), or null.</summary>
         private static string? DataString(Dictionary<string, JsonElement>? data, string name)

@@ -235,6 +235,24 @@ CREATE TABLE IF NOT EXISTS list_events (
     created_at INTEGER NOT NULL, delivered_at INTEGER);
 CREATE INDEX IF NOT EXISTS list_events_pending ON list_events(delivered_at);
 ",
+            // 6: reserved for phase 4d (home rows, collection completion); its step takes this slot when the tracks are
+            // joined. Empty here, so this build's step 7 doesn't depend on it.
+            "",
+            // 7: phase 4e acquisition badges. A person's own first arrivals ("new") and confirmed replacements ("upgraded",
+            // user_id '' = everyone who can open the item), per movie or episode; which arrivals were judged; the first
+            // arrival of each movie edition and episode number (so a renamed upgrade isn't a first arrival). Expiry and
+            // "watched" are decided at read time. Every statement is guarded so the step doesn't depend on another
+            // phase-4 step.
+            @"
+CREATE TABLE IF NOT EXISTS acquisition_stamps (
+    item_id TEXT NOT NULL, user_id TEXT NOT NULL, kind TEXT NOT NULL, title_key TEXT, series_id TEXT, season_id TEXT,
+    at INTEGER NOT NULL, source TEXT NOT NULL, created_at INTEGER NOT NULL,
+    PRIMARY KEY (item_id,user_id,kind));
+CREATE INDEX IF NOT EXISTS acquisition_stamps_at ON acquisition_stamps(at);
+CREATE INDEX IF NOT EXISTS acquisition_stamps_user ON acquisition_stamps(user_id);
+CREATE TABLE IF NOT EXISTS acquisition_seen (item_id TEXT PRIMARY KEY, seen_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS acquisition_arrivals (part_key TEXT PRIMARY KEY, first_at INTEGER NOT NULL, item_id TEXT NOT NULL);
+",
         };
 
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
