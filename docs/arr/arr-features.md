@@ -976,7 +976,8 @@ the 4K menu ask for the 4K copy. A collection's **Request** lists the collection
 library can't be ticked; movies not out yet, with no release date or a later one, are listed as *Not out yet* and
 can't be ticked either, as on a collection page; a movie whose drive is nearly full says *Paused: storage full*, can't
 be ticked, and a line above the list says why; a movie already asked for, on its way or already here says so, "Looking
-for it" for example, and isn't offered again) and asks Jellyfin Enhanced for each ticked one, then says what happened ("Asked
+for it" for example, and isn't offered again; when the arrs can't be read and nobody asked for it, the movie can still
+be ticked, as the server allows) and asks Jellyfin Enhanced for each ticked one, then says what happened ("Asked
 for 2 · 1 waits for Dad's OK"). Up to 20 can be asked for at a time: with more than that missing, the first 20 are
 ticked, a note says so, and no more can be ticked until one is unticked. Seerr's own request windows (with its servers, profiles and folders) are never shown
 in JE mode, and Seerr's "only Seerr results" search filter (double-tap on its icon) does nothing there: the icon's

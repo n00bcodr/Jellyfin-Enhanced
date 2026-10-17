@@ -328,6 +328,33 @@ test('JE mode: the collection picker shows a movie already asked for (on its way
   assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:605']);
 });
 
+test('JE mode: the collection picker still offers a movie whose status is unknown (the arrs can\'t be read) or a stage it doesn\'t know', async t => {
+  const h = setup(t);
+  // No request and Radarr's library can't be read: "nothing known" (service down), not an ask. A newer server's stage: not one either.
+  const statuses = {
+    'movie:tmdb:604': { key: 'movie:tmdb:604', kind: 'movie', stage: 'none', reason: { code: 'service_down' }, attention: false, quiet: true, actions: [] },
+    'movie:tmdb:605': { key: 'movie:tmdb:605', kind: 'movie', stage: 'someNewStage', reason: { code: 'some_new_reason' }, attention: false, quiet: true, actions: [] }
+  };
+  h.JE.core.api.plugin = async (path) => {
+    const keys = decodeURIComponent((/[?&]keys=([^&]*)/.exec(path) || [])[1] || '').split(',').filter(Boolean);
+    return path.startsWith('/acquire/status?') ? { contact: 'Dad', lookingHours: 24, items: keys.map(key => statuses[key]).filter(Boolean) } : null;
+  };
+  let options = null;
+  h.JE.jellyseerrModal.create = (o) => { options = o; return { show() {}, close() {} }; };
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {});
+  await settle();
+  const body = h.document.createElement('div');
+  body.innerHTML = options.bodyHtml;
+  const rows = [...body.querySelectorAll('.jellyseerr-collection-movie-row')];
+  assert.deepEqual(rows.map(r => { const b = r.querySelector('.jellyseerr-collection-checkbox'); return [b.dataset.tmdbId, b.disabled, b.checked]; }),
+    [['603', true, false], ['604', false, true], ['605', false, true]]);
+  assert.equal(body.querySelector('.je-arr-collection-known'), null, 'no status words for a movie nobody asked for');
+  assert.deepEqual(h.checks.map(c => c.key), ['movie:tmdb:604', 'movie:tmdb:605'], 'the title check decides');
+  await options.onSave(body, h.document.createElement('button'), () => {});
+  await settle();
+  assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:604', 'movie:tmdb:605']);
+});
+
 test('JE mode: a collection with 20 or fewer movies to ask for ticks them all and has no limit note', async t => {
   const h = setup(t);
   let options = null;

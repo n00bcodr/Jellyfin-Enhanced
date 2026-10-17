@@ -115,8 +115,15 @@
     }
 
     /**
+     * The status stages that say a movie is already asked for, on its way or here: a journey stop. "Not here" (declined
+     * included), "nothing known" (no arr has it, or the arrs can't be read) and a stage this client doesn't know (a newer
+     * server) aren't: the title check decides those.
+     */
+    const KNOWN_STAGES = new Set(['asked', 'approved', 'notOut', 'looking', 'downloading', 'almostReady', 'ready']);
+
+    /**
      * What Jellyfin Enhanced already knows of titles Seerr doesn't list as available: the ones asked for, on their way or
-     * here (any status stage but "not here"; a declined one is left to the title check) with the words their status
+     * here (a stage in {@link KNOWN_STAGES}; a declined one is left to the title check) with the words their status
      * says ("Looking for it"), by TMDB id. One status read per 50 titles; empty when it can't be read.
      * @param {string[]} keys Movie keys.
      * @returns {Promise<Map<number, string>>} Status words by TMDB id.
@@ -134,7 +141,7 @@
             }
             for (const status of Array.isArray(answer?.items) ? answer.items : []) {
                 const id = Number.parseInt(String(status?.key || '').replace(/^movie:tmdb:/, ''), 10);
-                if (!Number.isInteger(id) || !status.stage || status.stage === 'notHere' || status.reason?.code === 'declined') continue;
+                if (!Number.isInteger(id) || !KNOWN_STAGES.has(status.stage) || status.reason?.code === 'declined') continue;
                 known.set(id, S.familyText(status, answer));
             }
         }
