@@ -57,6 +57,13 @@ internal sealed class FakeSeerr : IDisposable
     /// <summary><c>GET /api/v1/service/{kind}/{id}</c> by <c>"{kind}/{id}"</c> (missing: 404).</summary>
     public Dictionary<string, JsonObject> ServiceDetails { get; } = new();
 
+    /// <summary>
+    /// How Seerr reaches each of its servers (<c>hostname</c>, <c>port</c>, <c>useSsl</c>, <c>baseUrl</c>, <c>apiKey</c>) by
+    /// <c>"{kind}/{id}"</c>: only <c>GET /api/v1/settings/radarr|sonarr</c> (administrators) carries them, merged into the
+    /// server rows of <see cref="Services"/>; a server without one gets <c>{kind}{id}.lan</c> and a fixed key.
+    /// </summary>
+    public Dictionary<string, JsonObject> Connections { get; } = new();
+
     /// <summary>True: a request POST is created without the server, profile and root folder it named (Seerr ignoring them).</summary>
     public bool DropAdvanced { get; set; }
 
@@ -133,6 +140,19 @@ internal sealed class FakeSeerr : IDisposable
             var rest = path["/api/v1/service/".Length..];
             if (!rest.Contains('/')) return IntegrationTransport.Response((Services.GetValueOrDefault(rest) ?? new JsonArray()).ToJsonString());
             return ServiceDetails.TryGetValue(rest, out var detail) ? IntegrationTransport.Response(detail.ToJsonString()) : IntegrationTransport.Response("{\"message\":\"Not found\"}", 404);
+        }
+        if (path is "/api/v1/settings/radarr" or "/api/v1/settings/sonarr")
+        {
+            var kind = path["/api/v1/settings/".Length..];
+            var rows = (Services.GetValueOrDefault(kind) ?? new JsonArray()).Select(row =>
+            {
+                var full = row!.DeepClone().AsObject();
+                var id = (int)full["id"]!;
+                var connection = Connections.GetValueOrDefault(kind + "/" + id) ?? new JsonObject { ["hostname"] = kind + id + ".lan", ["port"] = kind == "radarr" ? 7878 : 8989, ["useSsl"] = false, ["baseUrl"] = "", ["apiKey"] = kind.ToUpperInvariant() + "-KEY-" + id };
+                foreach (var (name, value) in connection) full[name] = value?.DeepClone();
+                return (JsonNode)full;
+            }).ToArray();
+            return IntegrationTransport.Response(new JsonArray(rows).ToJsonString());
         }
         if (path == "/api/v1/settings/main") return MainSettings == null ? IntegrationTransport.Response("{}", 404) : IntegrationTransport.Response(MainSettings.ToJsonString());
         if (path == "/api/v1/settings/jobs") return Jobs == null ? IntegrationTransport.Response("{}", 404) : IntegrationTransport.Response(Jobs.ToJsonString());

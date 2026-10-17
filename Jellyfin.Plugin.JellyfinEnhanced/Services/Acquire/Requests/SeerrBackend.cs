@@ -160,7 +160,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private sealed record Raw(Delivery Delivery, int Status, bool Json, string Body);
 
-        private sealed record ServerEntry(int Id, string Name, bool Is4k, bool IsDefault, int? ActiveProfileId, string? ActiveDirectory);
+        // Connection: a digest of where and how Seerr reaches the server (its address, port, SSL, base URL and API key),
+        // private: only ever part of the options stamp, so a server repointed under the same name is a changed choice.
+        private sealed record ServerEntry(int Id, string Name, bool Is4k, bool IsDefault, int? ActiveProfileId, string? ActiveDirectory, string Connection);
 
         private sealed record ServerList(IReadOnlyList<ServerEntry> Servers, DateTimeOffset At);
 
@@ -282,12 +284,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>
         /// The options stamp of one Seerr server: a hash of the Seerr source, the media kind, the server's id, name and
-        /// edition, its profiles (ids and names) and its root folders, sorted. Deterministic, no secrets.
+        /// edition, the digest of its connection (where Seerr sends to), its profiles (ids and names) and its root folders,
+        /// sorted. Deterministic; no address or key can be read from it.
         /// </summary>
         private static string OptionsStamp(string source, string kind, ServerEntry server, ServerDetails details)
             => MutationInput.Hash(JsonSerializer.Serialize(new object[]
             {
-                source, kind, server.Id, server.Name, server.Is4k,
+                source, kind, server.Id, server.Name, server.Is4k, server.Connection,
                 details.Profiles.OrderBy(p => p.Id).Select(p => new object[] { p.Id, p.Name }).ToArray(),
                 details.Roots.OrderBy(r => r, StringComparer.Ordinal).ToArray(),
             }));
@@ -322,21 +325,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return (OptionsValid, stamp);
         }
 
-        // Seerr's servers of one kind (GET /api/v1/service/radarr|sonarr), cached per Seerr source for ServersFor; fresh
-        // reads always go to Seerr (and replace what is held). Null when Seerr didn't answer with a list.
+        // Seerr's servers of one kind (GET /api/v1/service/radarr|sonarr) with where Seerr reaches each (its settings,
+        // GET /api/v1/settings/radarr|sonarr, read with Jellyfin Enhanced's administrator key; only a digest is kept),
+        // cached per Seerr source for ServersFor; fresh reads always go to Seerr (and replace what is held). Null when
+        // Seerr didn't answer with both lists, or a server's connection isn't in its settings (never guessed).
         private async Task<ServerList?> ServerListAsync(PluginConfiguration config, string source, string kind, bool fresh, CancellationToken ct, string? only = null)
         {
             var cacheKey = source + "|" + kind;
             if (!fresh && _serverLists.TryGetValue(cacheKey, out var held) && _now() - held.At < ServersFor) return held;
             if (await GetAsync(config, "/api/v1/service/" + kind, ct, only).ConfigureAwait(false) is not { ValueKind: JsonValueKind.Array } json) return null;
+            if (await GetAsync(config, "/api/v1/settings/" + kind, ct, only).ConfigureAwait(false) is not { ValueKind: JsonValueKind.Array } settings) return null;
+            var connections = new Dictionary<int, string>();
+            foreach (var row in settings.EnumerateArray())
+            {
+                if (row.ValueKind != JsonValueKind.Object || Int(row, "id") is not int id) continue;
+                connections[id] = MutationInput.Hash(JsonSerializer.Serialize(new object?[]
+                {
+                    Str(row, "hostname")?.Trim().ToLowerInvariant(), Int(row, "port"), row.TryGetProperty("useSsl", out var ssl) && ssl.ValueKind == JsonValueKind.True,
+                    Str(row, "baseUrl")?.Trim().TrimEnd('/'), MutationInput.Hash(Str(row, "apiKey") ?? string.Empty),
+                }));
+            }
             var servers = new List<ServerEntry>();
             foreach (var row in json.EnumerateArray())
             {
                 if (servers.Count >= MaxServers) break;
                 if (row.ValueKind != JsonValueKind.Object || Int(row, "id") is not int id || id < 0 || servers.Any(s => s.Id == id)) continue;
+                if (!connections.TryGetValue(id, out var connection)) return null;
                 servers.Add(new ServerEntry(id, Bounded(Str(row, "name")) ?? string.Empty, row.TryGetProperty("is4k", out var k) && k.ValueKind == JsonValueKind.True,
                     row.TryGetProperty("isDefault", out var d) && d.ValueKind == JsonValueKind.True, Int(row, "activeProfileId") is int profile && profile > 0 ? profile : null,
-                    Str(row, "activeDirectory") is { Length: > 0 and <= 1024 } directory ? directory : null));
+                    Str(row, "activeDirectory") is { Length: > 0 and <= 1024 } directory ? directory : null, connection));
             }
             var list = new ServerList(servers, _now());
             if (_serverLists.Count >= MaxCachedServerReads) _serverLists.Clear();

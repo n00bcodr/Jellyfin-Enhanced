@@ -776,7 +776,7 @@ four or none, never together with `InstanceId`, `ProfileId` or `RootFolder` (`40
 of the stored request and its fingerprint (an input without them keeps the fingerprint it always had). Refusals:
 `403 admin_required` (not a Jellyfin administrator), `403 seerr_options_disabled` (switch off), `403
 seerr_advanced_required` (the Seerr account it goes out as lacks Seerr's advanced-request permission), `409
-seerr_options_changed` (the server is gone or its facts changed since the stamp; read the options again), `400
+seerr_options_changed` (the server is gone or its facts changed since the stamp, including where Seerr reaches it; read the options again), `400
 seerr_options_invalid` (the edition, profile or folder doesn't belong to that server), `503 backend_unavailable`
 (Seerr's servers can't be read now) and `400 invalid_defaults` while Jellyfin Enhanced handles requests. A waiting
 request whose choice stops fitting is held with the same reasons; nobody else's request answers include the choice.

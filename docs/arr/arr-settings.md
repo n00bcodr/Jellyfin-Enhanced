@@ -549,8 +549,9 @@ Seerr as Seerr's `serverId`, `profileId` and `rootFolder`, as the person who ask
 
 A choice is checked against Seerr's servers (read from Seerr, cached for about a minute) when the request is made,
 when it is approved and again, read fresh, right before it is sent. A server, profile or folder that no longer exists,
-a renamed server, or a server whose 4K setting changed holds the request with `seerr_options_changed` instead of
-sending it to Seerr's defaults. Turning the switch off holds waiting requests that carry a choice
+a renamed server, a server whose 4K setting changed, or a server Seerr now reaches at another address or with another
+key (even under the same name, profiles and folders) holds the request with `seerr_options_changed` instead of sending
+it to Seerr's defaults. Turning the switch off holds waiting requests that carry a choice
 (`seerr_options_disabled`); a lost Seerr permission holds them with `seerr_advanced_required`. A request Seerr stored
 without the chosen options doesn't count as sent: it is held for an administrator to check in Seerr. When Seerr answers
 that the title is already requested (or has no seasons left to request), that counts only if the request already there

@@ -89,8 +89,9 @@ public class IntegrationSeerrRequestOptionsTests
         }
     }
 
-    // Seerr has three Radarr servers (standard default, a second standard one for kids, a 4K one) and one Sonarr. The
-    // details carry the address and key Seerr knows them by, which must never leave the plugin.
+    // Seerr has three Radarr servers (standard default, a second standard one for kids, a 4K one) and one Sonarr. Seerr's
+    // settings carry the address and key it reaches them by, which must never leave the plugin (Seerr's service details
+    // don't carry them).
     private static void Servers(FakeSeerr seerr)
     {
         static JsonObject Server(int id, string name, bool is4k, bool isDefault, int profile, string directory)
@@ -98,7 +99,7 @@ public class IntegrationSeerrRequestOptionsTests
         static JsonObject Details(JsonObject server, (int Id, string Name)[] profiles, params string[] roots)
             => new()
             {
-                ["server"] = new JsonObject { ["id"] = server["id"]!.DeepClone(), ["name"] = server["name"]!.DeepClone(), ["hostname"] = "radarr-secret-host.lan", ["port"] = 7878, ["apiKey"] = "ARR-SECRET-KEY" },
+                ["server"] = server.DeepClone(),
                 ["profiles"] = new JsonArray(profiles.Select(p => (JsonNode)new JsonObject { ["id"] = p.Id, ["name"] = p.Name }).ToArray()),
                 ["rootFolders"] = new JsonArray(roots.Select((r, i) => (JsonNode)new JsonObject { ["id"] = i + 1, ["path"] = r, ["freeSpace"] = 1_000_000 }).ToArray()),
                 ["tags"] = new JsonArray(),
@@ -108,6 +109,8 @@ public class IntegrationSeerrRequestOptionsTests
         seerr.ServiceDetails["radarr/0"] = Details(radarr[0], new[] { (4, "HD-1080p"), (5, "Ultra-HD") }, "/movies");
         seerr.ServiceDetails["radarr/1"] = Details(radarr[1], new[] { (4, "HD-1080p"), (6, "Kids") }, "/kids", "/kids-extra");
         seerr.ServiceDetails["radarr/2"] = Details(radarr[2], new[] { (5, "Ultra-HD") }, "/movies4k");
+        foreach (var server in radarr)
+            seerr.Connections["radarr/" + server["id"]] = new JsonObject { ["hostname"] = "radarr-secret-host-" + server["id"] + ".lan", ["port"] = 7878, ["useSsl"] = false, ["baseUrl"] = "", ["apiKey"] = "ARR-SECRET-KEY-" + server["id"] };
         var sonarr = Server(0, "Sonarr", false, true, 4, "/tv");
         seerr.Services["sonarr"] = new JsonArray(sonarr.DeepClone());
         seerr.ServiceDetails["sonarr/0"] = Details(sonarr, new[] { (4, "HD-1080p") }, "/tv");
@@ -258,6 +261,8 @@ public class IntegrationSeerrRequestOptionsTests
     [InlineData("4k ask on a standard server", "seerr_options_invalid", 400)]
     [InlineData("jellyfin enhanced handles requests", "invalid_defaults", 400)]
     [InlineData("seerr servers unreadable", "backend_unavailable", 503)]
+    [InlineData("seerr connections unreadable", "backend_unavailable", 503)]
+    [InlineData("server repointed after the options were read", "seerr_options_changed", 409)]
     public async Task AChoiceThatCantBeHonouredNowIsRefusedWithItsReasonAndNothingIsRecorded(string change, string reason, int status)
     {
         using var rig = new Rig(adminPermissions: change == "no advanced permission" ? 32 : 2);
@@ -279,6 +284,16 @@ public class IntegrationSeerrRequestOptionsTests
                 rig.Fake.BeforeRequest = uri => uri.AbsolutePath.StartsWith("/api/v1/service/", StringComparison.Ordinal)
                     ? Task.FromException(new HttpRequestException(HttpRequestError.ConnectionError, "refused")) : Task.CompletedTask;
                 break;
+            case "seerr connections unreadable":
+                // Where Seerr reaches its servers (its settings) can't be read: the options aren't known, never guessed.
+                rig.Lab.Now = rig.Lab.Now.AddMinutes(2);
+                rig.Fake.BeforeRequest = uri => uri.AbsolutePath.StartsWith("/api/v1/settings/radarr", StringComparison.Ordinal)
+                    ? Task.FromException(new HttpRequestException(HttpRequestError.ConnectionError, "refused")) : Task.CompletedTask;
+                break;
+            case "server repointed after the options were read":
+                rig.Lab.Now = rig.Lab.Now.AddMinutes(2);
+                rig.Fake.Connections["radarr/1"]["hostname"] = "another-radarr.lan";
+                break;
         }
         var ask = await rig.Ask(rig.Admin, input);
         Assert.Equal((reason, status), (ask.Reason, ask.HttpStatus));
@@ -296,6 +311,9 @@ public class IntegrationSeerrRequestOptionsTests
         { "folder removed", "seerr_options_changed" },
         { "server becomes 4k", "seerr_options_changed" },
         { "server removed", "seerr_options_changed" },
+        { "server repointed, same name, edition, profiles and folders", "seerr_options_changed" },
+        { "server's key changed", "seerr_options_changed" },
+        { "server's port, ssl or base url changed", "seerr_options_changed" },
         { "seerr permission revoked", "seerr_advanced_required" },
         { "switch off", "seerr_options_disabled" },
         { "no longer a jellyfin administrator", "admin_required" },
@@ -319,6 +337,9 @@ public class IntegrationSeerrRequestOptionsTests
             case "folder removed": details["rootFolders"] = new JsonArray(new JsonObject { ["id"] = 2, ["path"] = "/kids-extra" }); break;
             case "server becomes 4k": kids["is4k"] = true; break;
             case "server removed": rig.Fake.Services["radarr"].Remove(kids); break;
+            case "server repointed, same name, edition, profiles and folders": rig.Fake.Connections["radarr/1"]["hostname"] = "another-radarr.lan"; break;
+            case "server's key changed": rig.Fake.Connections["radarr/1"]["apiKey"] = "ANOTHER-KEY"; break;
+            case "server's port, ssl or base url changed": rig.Fake.Connections["radarr/1"]["baseUrl"] = "/radarr"; break;
             case "seerr permission revoked": rig.Fake.Users.Single(u => (int)u["id"]! == 9)["permissions"] = 32; break;
             case "switch off": rig.Config.ArrPhase4SeerrRequestOptionsEnabled = false; break;
             case "no longer a jellyfin administrator": rig.View.Users[rig.Admin.UserId] = new StatusViewer { UserId = rig.Admin.UserId, IsAdmin = false, PolicyRevision = "pU", Handle = rig.View.Users[rig.Admin.UserId].Handle }; break;
