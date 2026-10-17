@@ -256,8 +256,11 @@ button.je-list-card-main { cursor: pointer; }
             if (expected > 0) {
                 const aired = Math.min(count(ph.airedCount), expected);
                 const parts = [];
-                if (aired > 0) parts.push(tr('arr_lists_fill_aired', { filled, aired }));
-                else if (filled > 0) parts.push(tr('arr_lists_fill_in_list', { count: filled }));
+                // None of it in the list yet: how many episodes it has (aired), not "0 of N".
+                if (filled === 0) {
+                    if (aired > 0) parts.push(tn('arr_lists_episodes', { count: aired }));
+                } else if (aired > 0) parts.push(tr('arr_lists_fill_aired', { filled, aired }));
+                else parts.push(tr('arr_lists_fill_in_list', { count: filled }));
                 if (expected > aired) parts.push(tr('arr_lists_fill_upcoming', { count: expected - aired }));
                 return parts;
             }
@@ -290,15 +293,6 @@ button.je-list-card-main { cursor: pointer; }
         if (!ctx?.statusShown) return null;
         const status = ph?.status;
         return status && typeof status === 'object' && typeof status.stage === 'string' ? status : null;
-    }
-
-    /**
-     * Whether the entry is Ready to watch by its shared status (the only thing that may say so).
-     * @param {Object|null} status Status.
-     * @returns {boolean} Ready.
-     */
-    function isReady(status) {
-        return !!status && status.stage === 'ready';
     }
 
     /**
@@ -395,6 +389,8 @@ button.je-list-card-main { cursor: pointer; }
         img.alt = '';
         img.loading = 'lazy';
         img.decoding = 'async';
+        // A poster that can't load (offline, blocked) gives way to the neutral icon, never a broken image.
+        img.addEventListener('error', () => img.replaceWith(icon(ph.mediaType === 'tv' ? 'tv' : 'movie')), { once: true });
         img.src = url;
         return img;
     }
@@ -448,7 +444,8 @@ button.je-list-card-main { cursor: pointer; }
         const sub = subtitle(ph, ctx);
         body.appendChild(el('span', 'secondary listItemBodyText je-list-sub', sub));
         const status = statusOf(ph, ctx);
-        const absent = isReady(status) || addingItemId(ph) ? null : el('span', 'secondary listItemBodyText je-list-absent');
+        // "Not in your library" when nothing else says where it stands (no status shown, or none known).
+        const absent = status || addingItemId(ph) ? null : el('span', 'secondary listItemBodyText je-list-absent');
         if (absent) {
             absent.appendChild(icon('cloud_off'));
             absent.appendChild(el('span', null, tr('arr_lists_not_in_library')));
@@ -490,7 +487,7 @@ button.je-list-card-main { cursor: pointer; }
         if (ph.kind === 'season' || ph.kind === 'episodes' || ph.kind === 'custom') main.appendChild(el('span', 'je-list-chip je-list-chip-kind', kindLabel(ph)));
         const fill = fillParts(ph).join(' · ');
         if (fill) main.appendChild(el('span', 'je-list-chip je-list-chip-fill', fill));
-        const sub = [dateLabel(ph), isReady(statusOf(ph, ctx)) || addingItemId(ph) ? '' : tr('arr_lists_not_in_library')].filter(Boolean).join(' · ');
+        const sub = [dateLabel(ph), statusOf(ph, ctx) || addingItemId(ph) ? '' : tr('arr_lists_not_in_library')].filter(Boolean).join(' · ');
         main.setAttribute('aria-label', [ph.title || '', kindLabel(ph), fill, sub].filter(Boolean).join(', '));
         node.appendChild(main);
         const title = el('div', 'je-list-card-title');
