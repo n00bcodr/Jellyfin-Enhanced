@@ -479,7 +479,7 @@ test('a stuck card says why in plain words; the reason code is only in an admini
 
 test('phase 4b holds of administrator Seerr choices say why to an administrator (rule and allowance holds have their own chips)', async t => {
   const reasons = {
-    seerr_options_changed: "Stuck · Seerr's servers changed since the choice",
+    seerr_options_changed: "Stuck · Seerr doesn't match the server choice",
     seerr_options_disabled: 'Stuck · Seerr server choices are switched off',
     seerr_advanced_required: "Stuck · their Seerr account can't choose servers any more",
     admin_required: "Stuck · an administrator's choice needs an administrator"

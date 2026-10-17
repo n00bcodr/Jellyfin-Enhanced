@@ -59,7 +59,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// The account named in <c>X-Api-User</c> is confirmed by a fresh read right before every POST.
     /// A POST whose answer is lost is "maybe sent" and is never sent to another Seerr address; a fresh,
     /// scoped read of the title settles it. A 409 or a 202 "No seasons available" counts as success only
-    /// with a JSON body and a fresh read that shows the scope already requested or available.
+    /// with a JSON body and a fresh read that shows the scope already requested or available; for a request with
+    /// administrator Seerr options, only by requests at the chosen server, profile and root folder (else it is held).
     /// </summary>
     public sealed class SeerrBackend : IRequestBackend
     {
@@ -609,6 +610,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 case 202 when raw.Json && Message(raw.Body) is { } message && message.Contains("no seasons", StringComparison.OrdinalIgnoreCase):
                 {
                     var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
+                    if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
                     return verify.Matched == true
                         ? BackendResults.Done(job.WantId, "nothing_to_request", verify.Reason, "Every season asked for is already requested or available in Seerr.")
                         : BackendResults.Failed("seerr_conflict", "Seerr said there were no seasons to request, but a fresh read doesn't show them requested.");
@@ -616,6 +618,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 case 409 when raw.Json:
                 {
                     var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
+                    if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
                     return verify.Matched == true
                         ? BackendResults.Done(job.WantId, "already_requested", verify.Reason, "Already requested in Seerr; following that request.")
                         : BackendResults.Failed("seerr_conflict", "Seerr reported a conflict, but a fresh read doesn't show the title requested.");
@@ -718,6 +721,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static RequestBackendResult OptionsNotApplied(RequestJob job)
             => BackendResults.HoldAfterWrite(job.WantId, "seerr_options_changed", "Seerr has this person's request, but not with the server, profile or root folder chosen; check it in Seerr.");
 
+        // Seerr created nothing (a 409 or a 202 "no seasons") because the title is already requested or on its way, but not
+        // with the server, profile or root folder chosen: held for a person, never counted as this request's success.
+        private static RequestBackendResult CoveredElsewhere()
+            => BackendResults.Hold("seerr_options_changed", "Seerr already has this title requested or on its way, but not with the server, profile or root folder chosen; nothing new was sent.");
+
         // A Seerr request carries the chosen server, profile and root folder.
         private static bool SameOptions(JsonElement request, MutationInput input)
             => Int(request, "serverId") == input.SeerrServerId && Int(request, "profileId") == input.SeerrProfileId
@@ -742,10 +750,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (relevant.Count > 0 && !relevant.Any(r => SameOptions(r, job.Input))) return (false, OptionsMismatch, false);
                 mine = mine.Where(r => SameOptions(r, job.Input)).ToList();
             }
+            // Seerr created nothing (409, 202): with Seerr options, only requests at the chosen server, profile and root
+            // folder count as covering it. Covered only by another request's options, or by the title already processing
+            // or available (no request shows where), it is not a match: OptionsMismatch.
+            var routed = own == null && job.Input.HasSeerrOptions;
+            if (routed) mine = edition.Where(r => SameOptions(r, job.Input)).ToList();
             var reason = mine.Any(r => Int(r, "status") == 1) && !mine.Any(r => Int(r, "status") is 2 or 5) ? "awaiting_approval" : "looking";
             if (key.IsMovie)
             {
                 if (own != null) return (mine.Count > 0, reason, mine.Count > 0);
+                if (routed)
+                    return mine.Count > 0 ? (true, reason, false)
+                        : edition.Count > 0 || Int(media, is4k ? "status4k" : "status") is >= 3 and <= 5 ? (false, OptionsMismatch, false) : (false, "looking", false);
                 if (edition.Count > 0) return (true, reason, false);
                 return (Int(media, is4k ? "status4k" : "status") is >= 3 and <= 5, "looking", false);
             }
@@ -758,6 +774,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
             }
             var all = seasons.Length > 0 && seasons.All(covered.Contains);
+            if (routed)
+            {
+                var atChoice = mine.SelectMany(SeasonsOf).ToHashSet();
+                return seasons.Length > 0 && seasons.All(atChoice.Contains) ? (true, reason, false) : all ? (false, OptionsMismatch, false) : (false, reason, false);
+            }
             if (own == null) return (all, reason, false);
             var theirs = created != null ? mine.Count > 0 : mine.Any(r => SeasonsOf(r).Any(seasons.Contains));
             return (all && theirs, reason, theirs);

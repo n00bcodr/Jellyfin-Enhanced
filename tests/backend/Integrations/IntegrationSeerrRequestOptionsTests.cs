@@ -365,6 +365,56 @@ public class IntegrationSeerrRequestOptionsTests
         Assert.True((await lab.Backend.ReadBackAsync(job, default)).Confirmed);
     }
 
+    // Someone else's request already in Seerr, with its server, profile and root folder.
+    private static JsonObject Existing(int id, int server, int profile, string root, params int[] seasons)
+        => new()
+        {
+            ["id"] = id, ["status"] = 2, ["is4k"] = false, ["requestedBy"] = new JsonObject { ["id"] = 50 },
+            ["serverId"] = server, ["profileId"] = profile, ["rootFolder"] = root,
+            ["seasons"] = new JsonArray(seasons.Select(n => (JsonNode)new JsonObject { ["seasonNumber"] = n, ["status"] = 2 }).ToArray()),
+        };
+
+    [Theory]
+    [InlineData("movie 409", false)]
+    [InlineData("movie 409", true)]
+    [InlineData("series 202", false)]
+    [InlineData("series 202", true)]
+    public async Task ASeerrConflictOrNoSeasonsAnswerCountsOnlyWhenTheCoveringRequestHasTheChosenOptions(string answer, bool sameOptions)
+    {
+        using var lab = new IntegrationRequestBackendsTests.SeerrLab(permissions: 2 | 8192);
+        lab.Config.ArrRequestBackend = "seerr";
+        lab.Config.ArrPhase4Enabled = true;
+        lab.Config.ArrPhase4SeerrRequestOptionsEnabled = true;
+        Servers(lab.Seerr);
+        MutationInput input;
+        if (answer == "movie 409")
+        {
+            // Someone else asked for it on the default server; the administrator chose the kids' server.
+            var other = sameOptions ? Existing(40, 1, 6, "/kids") : Existing(40, 0, 4, "/movies");
+            lab.Seerr.Movies[603] = new JsonObject { ["id"] = 603, ["mediaInfo"] = new JsonObject { ["status"] = 2, ["status4k"] = 1, ["requests"] = new JsonArray(other), ["seasons"] = new JsonArray() } };
+            input = Choice((await lab.Backend.RequestOptionsAsync(true, default))!.Single(s => s.Id == 1).Options);
+        }
+        else
+        {
+            // Season 1 is already requested by someone else, into another root folder than the one chosen.
+            var other = sameOptions ? Existing(41, 0, 4, "/tv", 1) : Existing(41, 0, 4, "/tv-anime", 1);
+            lab.Seerr.Shows[1731] = new JsonObject { ["id"] = 1731, ["seasons"] = new JsonArray(new JsonObject { ["seasonNumber"] = 1 }), ["mediaInfo"] = new JsonObject { ["status"] = 2, ["status4k"] = 1, ["requests"] = new JsonArray(other), ["seasons"] = new JsonArray() } };
+            input = new MutationInput { Key = "tv:tmdb:1731", Scope = "seasons", Seasons = new[] { 1 }, SeerrServerId = 0, SeerrProfileId = 4, SeerrRootFolder = "/tv", SeerrOptions = (await lab.Backend.RequestOptionsAsync(false, default))!.Single(s => s.Id == 0).Options };
+        }
+        var result = await lab.Backend.SendAsync(lab.Job(input), () => null, default);
+        Assert.Single(lab.Seerr.Posts);
+        if (sameOptions)
+        {
+            Assert.True(result.Confirmed, result.Outcome.Message);
+            return;
+        }
+        // Covered, but at another destination than chosen: held for a person with its reason, never a success.
+        Assert.False(result.Confirmed);
+        Assert.Equal(("seerr_options_changed", true), (result.Outcome.Reason, result.Parked));
+        // Seerr created nothing (it answered 409 / 202), so nothing is left uncertain.
+        Assert.True(result.VerifiedNotSent, result.Outcome.Message);
+    }
+
     [Fact]
     public async Task ARequestSeerrStoredWithOtherOptionsIsNotAMatchAndIsNeverSentAgain()
     {

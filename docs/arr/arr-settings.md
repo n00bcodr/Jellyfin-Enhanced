@@ -552,7 +552,9 @@ when it is approved and again, read fresh, right before it is sent. A server, pr
 a renamed server, or a server whose 4K setting changed holds the request with `seerr_options_changed` instead of
 sending it to Seerr's defaults. Turning the switch off holds waiting requests that carry a choice
 (`seerr_options_disabled`); a lost Seerr permission holds them with `seerr_advanced_required`. A request Seerr stored
-without the chosen options doesn't count as sent: it is held for an administrator to check in Seerr. While Jellyfin
+without the chosen options doesn't count as sent: it is held for an administrator to check in Seerr. When Seerr answers
+that the title is already requested (or has no seasons left to request), that counts only if the request already there
+has the chosen server, profile and folder; covered anywhere else, it is held with `seerr_options_changed`. While Jellyfin
 Enhanced handles requests, a Seerr choice is refused (`invalid_defaults`).
 
 While the switch is on, the older Seerr pages follow the same boundary: for anyone who isn't a Jellyfin administrator,

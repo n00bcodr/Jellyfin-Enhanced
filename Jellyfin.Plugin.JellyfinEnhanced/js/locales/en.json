@@ -1848,7 +1848,7 @@
     "arr_rules_stuck_household_rule": "Stuck · the household's rules now refuse it",
     "arr_rules_stuck_rule_review": "Stuck · the household's rules now want a look",
     "arr_rules_stuck_group_quota": "Stuck · its shared allowance is used up",
-    "arr_rules_stuck_seerr_options_changed": "Stuck · Seerr's servers changed since the choice",
+    "arr_rules_stuck_seerr_options_changed": "Stuck · Seerr doesn't match the server choice",
     "arr_rules_stuck_seerr_options_disabled": "Stuck · Seerr server choices are switched off",
     "arr_rules_stuck_seerr_advanced_required": "Stuck · their Seerr account can't choose servers any more",
     "arr_rules_stuck_admin_required": "Stuck · an administrator's choice needs an administrator"
