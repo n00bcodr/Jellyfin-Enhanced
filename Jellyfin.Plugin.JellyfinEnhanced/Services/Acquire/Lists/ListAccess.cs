@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data;
+using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
@@ -177,6 +178,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 policy.BlockUnratedSeries ? "s" : string.Empty,
                 Tags(policy.BlockedTags),
                 Tags(policy.AllowedTags));
+        }
+
+        /// <summary>
+        /// A person's policy revision as text (see <see cref="ListGate.Policy"/>): disabled, administrator, collection
+        /// management, library access (all, enabled and blocked folders), Jellyfin's parental limits (rating, tags, unrated
+        /// kinds) and the Seerr parental policy (<see cref="ParentalStamp"/>). Equal stamps decide the same things, so
+        /// something composed for the person under one stamp (a status with an administrator's details) is theirs only
+        /// while the stamp holds.
+        /// </summary>
+        /// <param name="user">User (as just read).</param>
+        /// <returns>The stamp.</returns>
+        internal string PolicyStamp(User user)
+        {
+            static string Joined<T>(IEnumerable<T> values) => string.Join(",", values.Select(v => System.Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture)).OrderBy(v => v, StringComparer.Ordinal));
+            var allFolders = user.HasPermission(PermissionKind.EnableAllFolders);
+            return string.Join(
+                "|",
+                user.HasPermission(PermissionKind.IsDisabled) ? "d" : string.Empty,
+                IsAdmin(user) ? "a" : string.Empty,
+                CanManageCollections(user) ? "c" : string.Empty,
+                allFolders ? "*" : Joined(user.GetPreferenceValues<Guid>(PreferenceKind.EnabledFolders)),
+                Joined(user.GetPreferenceValues<Guid>(PreferenceKind.BlockedMediaFolders)),
+                user.MaxParentalRatingScore?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                user.MaxParentalRatingSubScore?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Joined(user.GetPreferenceValues<UnratedItem>(PreferenceKind.BlockUnratedItems)),
+                Joined(user.GetPreference(PreferenceKind.BlockedTags) ?? Array.Empty<string>()),
+                Joined(user.GetPreference(PreferenceKind.AllowedTags) ?? Array.Empty<string>()),
+                ParentalStamp(user));
         }
 
         /// <summary>Evaluates the caller's permissions on an already resolved list.</summary>

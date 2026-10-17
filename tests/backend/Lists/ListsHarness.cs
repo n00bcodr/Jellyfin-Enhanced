@@ -257,20 +257,27 @@ internal sealed class FakeListStatusSource : IListStatusSource
     /// <summary>Runs during each title status read (e.g. a share removed while the statuses load).</summary>
     public Action? During { get; set; }
 
+    /// <summary>
+    /// Composes each title status for the viewer as the read starts (before <see cref="During"/>), like the status
+    /// service does by their role: (viewer, key, stored JSON) → JSON.
+    /// </summary>
+    public Func<Guid, string, string, string>? Compose { get; set; }
+
     public Task<IReadOnlyDictionary<string, JsonElement>> StatusesAsync(Guid user, IReadOnlyList<TitleKey> keys, CancellationToken cancellationToken)
     {
         Calls.Add((user, keys.Select(k => k.ToString()).ToList()));
+        var composed = keys
+            .Select(k => k.ToString())
+            .Where(ByKey.ContainsKey)
+            .Distinct()
+            .ToDictionary(k => k, k => Compose?.Invoke(user, k, ByKey[k]) ?? ByKey[k], StringComparer.Ordinal);
         During?.Invoke();
         if (Fail != null)
         {
             throw Fail;
         }
 
-        IReadOnlyDictionary<string, JsonElement> result = keys
-            .Select(k => k.ToString())
-            .Where(ByKey.ContainsKey)
-            .Distinct()
-            .ToDictionary(k => k, k => JsonDocument.Parse(ByKey[k]).RootElement.Clone(), StringComparer.Ordinal);
+        IReadOnlyDictionary<string, JsonElement> result = composed.ToDictionary(p => p.Key, p => JsonDocument.Parse(p.Value).RootElement.Clone(), StringComparer.Ordinal);
         return Task.FromResult(result);
     }
 

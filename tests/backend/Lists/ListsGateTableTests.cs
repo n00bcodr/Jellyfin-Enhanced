@@ -20,6 +20,8 @@ namespace JE.Tests;
 //   edit, every item open to both);
 // - the answer may hold no list contents the caller can't see now (none at all once the list is lost);
 // - the document gains no placeholder the caller can't see now, and nothing at all after the list was lost.
+// Review round 3 adds: the caller disabled, the playlist's owner disabled (no write may run as them), and two creators of
+// one name racing, the rival starting at every await of the first create.
 [Collection("Plugin singleton")]
 public class ListsGateTableTests
 {
@@ -28,6 +30,8 @@ public class ListsGateTableTests
         Revoke,
         Limits,
         Owner,
+        Disable,
+        OwnerDisabled,
     }
 
     private static readonly string[] Paths =
@@ -38,8 +42,8 @@ public class ListsGateTableTests
 
     public static IEnumerable<object[]> Rows() =>
         from path in Paths
-        from change in new[] { Change.Revoke, Change.Limits, Change.Owner }
-        where change != Change.Owner || !(path.Contains("collection", StringComparison.Ordinal) || path.StartsWith("create", StringComparison.Ordinal))
+        from change in new[] { Change.Revoke, Change.Limits, Change.Owner, Change.Disable, Change.OwnerDisabled }
+        where change is not (Change.Owner or Change.OwnerDisabled) || !(path.Contains("collection", StringComparison.Ordinal) || path.StartsWith("create", StringComparison.Ordinal))
         select new object[] { path, change };
 
     [Theory]
@@ -107,6 +111,113 @@ public class ListsGateTableTests
         }
 
         Assert.True(failures.Count == 0, $"{path} × {change} ({points} await points):\n" + string.Join("\n", failures));
+    }
+
+    public static IEnumerable<object[]> RaceRows() =>
+        from kind in new[] { ListKinds.Playlist, ListKinds.Collection }
+        from rival in new[] { "je", "hand" }
+        select new object[] { kind, rival };
+
+    // Two creators of one name: while the first create waits at any of its awaits, another collection manager creates a
+    // list of the same name through JE ("je"), or someone makes one in Jellyfin itself, hidden from the first ("hand").
+    // Neither list is replaced: every create that answers 200 has its own list with its own entries, and the hand-made one
+    // keeps its name and members.
+    [Theory]
+    [MemberData(nameof(RaceRows))]
+    public async Task TwoCreatorsOfOneNameNeverReplaceEachOtherAtAnyAwait(string kind, string rival)
+    {
+        var path = kind == ListKinds.Playlist ? "create-playlist" : "create-collection";
+        int points;
+        using (var control = new Rig(path))
+        {
+            Ok<CreateListResultDto>((ListOutcome)(await control.Run())!);
+            points = control.Probe.Seen.Count;
+        }
+
+        Assert.True(points > 0, "the create passed no await point");
+        var failures = new List<string>();
+        for (var at = 1; at <= points; at++)
+        {
+            using var rig = new Rig(path);
+            rig.H.Host.OnWrite = null; // the rival writes as itself
+            var name = "Fresh " + kind;
+            var rivalUser = rig.H.NewUser("rival", collections: true);
+            var member = rig.H.Host.AddItem();
+            Task<ListOutcome>? theirs = null;
+            Guid? handMade = null;
+            rig.Probe.Target = at;
+            rig.Probe.Change = () =>
+            {
+                if (rival == "je")
+                {
+                    theirs = rig.H.Service.CreateListAsync(rivalUser, kind, name, false, new[] { new ApplyEntry(0, member, null) }, K("rival-1"), CancellationToken.None);
+                    return;
+                }
+
+                handMade = (kind == ListKinds.Playlist
+                    ? rig.H.Host.CreateHandMadePlaylistAsync(name, rivalUser.Id)
+                    : rig.H.Host.CreateHandMadeCollectionAsync(name)).GetAwaiter().GetResult();
+                rig.H.Host.Lists[handMade.Value].Raw.Add(new RawEntry(member, true));
+                rig.H.Host.ListHiddenFrom[rig.Caller.Id] = new HashSet<Guid> { handMade.Value };
+            };
+
+            ListOutcome mine;
+            ListOutcome? other;
+            try
+            {
+                mine = (ListOutcome)(await rig.Run())!;
+                other = theirs == null ? null : await theirs;
+            }
+            catch (Exception ex) when (ex is not Xunit.Sdk.XunitException)
+            {
+                failures.Add($"@{at} {rig.Probe.Point}: threw {ex.GetType().Name}: {ex.Message}");
+                continue;
+            }
+
+            var made = new List<Guid>();
+            foreach (var (outcome, item, who) in new[] { (mine, rig.RealB, "the first"), (other, member, "the rival") })
+            {
+                if (outcome == null)
+                {
+                    continue;
+                }
+
+                if (outcome.StatusCode == 200)
+                {
+                    var id = Guid.Parse(((CreateListResultDto)outcome.Value!).ListId);
+                    if (!rig.H.Host.Lists.ContainsKey(id) || !rig.H.Host.Resolved(id).Contains(item))
+                    {
+                        failures.Add($"@{at} {rig.Probe.Point}: {who} answered 200 but its list doesn't hold its entry");
+                    }
+
+                    made.Add(id);
+                }
+                else if (!(outcome.StatusCode == 409 && outcome.Value is ListErrorDto { Code: "name_taken" }))
+                {
+                    failures.Add($"@{at} {rig.Probe.Point}: {who} answered {outcome.StatusCode}");
+                }
+            }
+
+            if (made.Count != made.Distinct().Count())
+            {
+                failures.Add($"@{at} {rig.Probe.Point}: two creates answered with the same list");
+            }
+
+            if (handMade is { } hand)
+            {
+                if (!rig.H.Host.Lists.TryGetValue(hand, out var list) || list.Info.Name != name || !rig.H.Host.Resolved(hand).SequenceEqual(new[] { member }))
+                {
+                    failures.Add($"@{at} {rig.Probe.Point}: the hand-made list was replaced or changed");
+                }
+
+                if (made.Contains(hand))
+                {
+                    failures.Add($"@{at} {rig.Probe.Point}: JE answered with the hand-made list");
+                }
+            }
+        }
+
+        Assert.True(failures.Count == 0, $"{kind} × {rival} ({points} await points):\n" + string.Join("\n", failures));
     }
 
     /// <summary>Counts await points; at the target one it makes the change; records Jellyfin writes and asks.</summary>
@@ -321,6 +432,12 @@ public class ListsGateTableTests
 
                     List.Info = List.Info with { OwnerId = NewOwner.Id };
                     break;
+                case Change.Disable:
+                    Caller.SetPermission(PermissionKind.IsDisabled, true);
+                    break;
+                case Change.OwnerDisabled:
+                    Owner.SetPermission(PermissionKind.IsDisabled, true);
+                    break;
             }
         }
 
@@ -382,6 +499,7 @@ public class ListsGateTableTests
             switch (change)
             {
                 case Change.Revoke:
+                case Change.Disable:
                     if (views.Count > 0)
                     {
                         problems.Add($"answered with {views.Count} view(s) of a list the caller lost");
@@ -609,6 +727,20 @@ public class ListsGateTableTests
         private string? Invalid(string op, Guid listId, Guid actAs, IReadOnlyList<Guid> items)
         {
             var principal = H.Users.Object.GetUserById(Caller.Id);
+            if (principal != null && principal.HasPermission(PermissionKind.IsDisabled))
+            {
+                return Swap ? "the consenting editor is disabled" : "the caller is disabled";
+            }
+
+            if (op == "finish")
+            {
+                var made = H.Host.GetList(listId);
+                return principal == null ? "the caller is gone"
+                    : made == null ? "the list is gone"
+                    : made.Kind == ListKinds.Collection ? (ListAccessService.CanManageCollections(principal) ? null : "the caller can't manage collections")
+                    : made.OwnerId == principal.Id && actAs == principal.Id ? null : "renames a playlist that isn't the caller's";
+            }
+
             if (op.StartsWith("create", StringComparison.Ordinal))
             {
                 return principal == null ? "the caller is gone"
@@ -644,6 +776,11 @@ public class ListsGateTableTests
                 return $"runs as {Short(actAs)}, not the current owner";
             }
 
+            if (owner.HasPermission(PermissionKind.IsDisabled))
+            {
+                return "runs as a disabled owner";
+            }
+
             if (!items.All(i => H.Host.CanAccessItem(i, owner)))
             {
                 return "an item the owner can't open";
@@ -657,7 +794,7 @@ public class ListsGateTableTests
         {
             var principal = H.Users.Object.GetUserById(Caller.Id);
             var list = H.Host.GetList(List.Info.Id);
-            if (principal == null || list == null || !H.Access.Evaluate(list, principal).Permissions.CanView)
+            if (principal == null || list == null || principal.HasPermission(PermissionKind.IsDisabled) || !H.Access.Evaluate(list, principal).Permissions.CanView)
             {
                 return "the caller lost the list";
             }

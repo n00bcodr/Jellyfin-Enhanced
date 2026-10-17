@@ -168,7 +168,7 @@ public class ListsRecheckTests
 
         Ok<CreateListResultDto>(await first);
         Error(await second, 403, "forbidden");
-        Assert.DoesNotContain(h.Host.Calls, c => c == "create-collection:Second");
+        Assert.DoesNotContain(h.Host.Calls, c => c.StartsWith("create-collection:Second", StringComparison.Ordinal));
     }
 
     [Fact]
