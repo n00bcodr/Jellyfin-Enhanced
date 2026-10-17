@@ -292,7 +292,7 @@ internal sealed class FakeListHost : IListHost
 
     public Task<Guid> CreatePlaylistAsync(string name, Guid ownerId, bool isPublic)
     {
-        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, name, ownerId, isPublic, Array.Empty<ListShare>()) };
+        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, name, ownerId, isPublic, Array.Empty<ListShare>(), CreatedAt: DateTime.UtcNow) };
         Lists[list.Info.Id] = list;
         Calls.Add($"create-playlist:{name}");
         AfterCreate?.Invoke(list.Info.Id);
@@ -302,11 +302,15 @@ internal sealed class FakeListHost : IListHost
     public Task<Guid> CreateCollectionAsync(string name)
     {
         var list = AddCollection(name);
+        list.Info = list.Info with { CreatedAt = DateTime.UtcNow };
         Calls.Add($"create-collection:{name}");
+        AfterCreate?.Invoke(list.Info.Id);
         return Task.FromResult(list.Info.Id);
     }
 
     public IReadOnlyList<ListInfo> GetAllPlaylists() => Lists.Values.Select(l => l.Info).Where(i => i.Kind == ListKinds.Playlist).ToList();
+
+    public IReadOnlyList<ListInfo> GetAllCollections() => Lists.Values.Select(l => l.Info).Where(i => i.Kind == ListKinds.Collection).ToList();
 
     public IReadOnlyList<ListInfo> GetVisibleCollections(User user) =>
         Lists.Values.Select(l => l.Info).Where(i => i.Kind == ListKinds.Collection && IsListVisible(i.Id, user)).ToList();

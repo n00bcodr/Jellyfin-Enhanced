@@ -19,7 +19,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <param name="Status">HTTP status of the finished operation.</param>
     /// <param name="ListId">Create: the list it made (a retry goes to that list).</param>
     /// <param name="Result">Bounded result identity (ids added/skipped; never a projected view).</param>
-    public sealed record ListOperation(string Id, Guid UserId, string Scope, string ClientId, string Kind, string Fingerprint, string State, int? Status, string? ListId, string? Result);
+    /// <param name="CreatedAt">When the operation was first recorded (before anything it does), or null when not read.</param>
+    public sealed record ListOperation(string Id, Guid UserId, string Scope, string ClientId, string Kind, string Fingerprint, string State, int? Status, string? ListId, string? Result, DateTimeOffset? CreatedAt = null);
 
     /// <summary>The answer of <see cref="ListOperations.Begin"/>.</summary>
     /// <param name="Operation">The operation (new, or the earlier one for the same request id).</param>
@@ -91,7 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var id = RequestLedger.NewId();
                 RequestLedger.Exec(c, t, "INSERT INTO list_operations(id,user_id,scope,client_id,kind,fingerprint,state,created_at,updated_at) VALUES($id,$u,$s,$c,$k,$f,'open',$at,$at)",
                     ("$id", id), ("$u", RequestLedger.Id(user)), ("$s", scope), ("$c", clientId), ("$k", kind), ("$f", fingerprint), ("$at", RequestLedger.Ms(now)));
-                return new ListOperationStart(new ListOperation(id, user, scope, clientId, kind, fingerprint, "open", null, null, null), false, false);
+                return new ListOperationStart(new ListOperation(id, user, scope, clientId, kind, fingerprint, "open", null, null, null, now), false, false);
             });
         }
 
@@ -101,6 +102,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="now">Now.</param>
         public void SetList(string id, string listId, DateTimeOffset now)
             => _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE list_operations SET list_id=$l,updated_at=$at WHERE id=$id", ("$l", listId), ("$at", RequestLedger.Ms(now)), ("$id", id)));
+
+        /// <summary>Whether any operation recorded this list as the one it created.</summary>
+        /// <param name="listId">List ("N").</param>
+        /// <returns>True when one did.</returns>
+        public bool Claimed(string listId)
+            => _db.Available && _db.Read(c =>
+            {
+                using var cmd = RequestLedger.Cmd(c, null, "SELECT 1 FROM list_operations WHERE list_id=$l LIMIT 1", ("$l", listId));
+                return cmd.ExecuteScalar() != null;
+            });
 
         /// <summary>Finishes an operation with its status and result identity.</summary>
         /// <param name="id">Operation.</param>
@@ -141,11 +152,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private static ListOperation? Read(SqliteConnection c, SqliteTransaction? t, string where, params (string, object?)[] args)
         {
-            using var cmd = RequestLedger.Cmd(c, t, "SELECT id,user_id,scope,client_id,kind,fingerprint,state,status,list_id,result FROM list_operations WHERE " + where + " LIMIT 1", args);
+            using var cmd = RequestLedger.Cmd(c, t, "SELECT id,user_id,scope,client_id,kind,fingerprint,state,status,list_id,result,created_at FROM list_operations WHERE " + where + " LIMIT 1", args);
             using var r = cmd.ExecuteReader();
             return r.Read()
                 ? new ListOperation(r.GetString(0), Guid.Parse(r.GetString(1)), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5), r.GetString(6),
-                    r.IsDBNull(7) ? null : r.GetInt32(7), r.IsDBNull(8) ? null : r.GetString(8), r.IsDBNull(9) ? null : r.GetString(9))
+                    r.IsDBNull(7) ? null : r.GetInt32(7), r.IsDBNull(8) ? null : r.GetString(8), r.IsDBNull(9) ? null : r.GetString(9),
+                    DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(10)))
                 : null;
         }
     }

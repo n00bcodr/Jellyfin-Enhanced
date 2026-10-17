@@ -165,6 +165,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly ListResolver _resolver;
         private readonly IListMetadataSource? _metadata;
         private readonly ListSwapService? _swap;
+        // Jellyfin's creation time of a list against the operation's (both this server's clock, stored at different precisions).
+        private static readonly TimeSpan CreateClockSkew = TimeSpan.FromSeconds(2);
+
         private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _createLocks = new();
 
         /// <summary>Creates the service.</summary>
@@ -1505,6 +1508,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                                 : await ReplayCreatedAsync(user, list, operation, cancellationToken).ConfigureAwait(false);
                         }
                     }
+                    else if (operation != null && start.Replayed)
+                    {
+                        // The first attempt may have died after Jellyfin created the list but before it was recorded: the
+                        // list it made is continued with, never a second one created; when that can't be told, nothing is.
+                        var (made, uncertain) = UnrecordedCreate(user, kind, name, operation);
+                        if (uncertain)
+                        {
+                            return ListOutcome.Error(409, "create_uncertain", "An earlier attempt may already have created this list. Check your lists, or create it again as a new request.");
+                        }
+
+                        if (made != null)
+                        {
+                            _logger.Info($"[Lists] Continuing with {kind} \"{name}\" ({made.Id:N}), created by an earlier attempt that wasn't recorded.");
+                            _operations.SetList(operation.Id, made.Id.ToString("N", CultureInfo.InvariantCulture), Now());
+                            list = made;
+                        }
+                    }
                 }
 
                 Guid id;
@@ -1563,6 +1583,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 gate.Release();
             }
+        }
+
+        // The list an earlier attempt of this create operation made in Jellyfin without recording it (it died between the
+        // two): the caller's playlist, or a collection, of that kind and name, created since the operation began and
+        // recorded by no operation. Several such lists: uncertain (the caller decides; nothing is created or adopted).
+        private (ListInfo? List, bool Uncertain) UnrecordedCreate(User user, string kind, string name, ListOperation operation)
+        {
+            if (operation.CreatedAt is not { } began)
+            {
+                return (null, false);
+            }
+
+            var since = began.UtcDateTime - CreateClockSkew;
+            var candidates = (kind == ListKinds.Playlist ? _host.GetAllPlaylists().Where(l => l.OwnerId == user.Id) : _host.GetAllCollections())
+                .Where(l => l.Kind == kind && string.Equals(l.Name, name, StringComparison.Ordinal) && l.CreatedAt is { } at && at >= since)
+                .Where(l => !_operations!.Claimed(l.Id.ToString("N", CultureInfo.InvariantCulture)))
+                .ToList();
+            return candidates.Count switch
+            {
+                0 => (null, false),
+                1 => (candidates[0], false),
+                _ => (null, true),
+            };
         }
 
         /// <summary>

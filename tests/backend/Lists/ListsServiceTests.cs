@@ -1007,6 +1007,67 @@ public class ListsServiceTests
         Assert.Single(resumed.Result.Added);
     }
 
+    // Review round 1 (4c1-B4): the process dies after Jellyfin created the list but before the operation recorded it. The
+    // retry finds the list Jellyfin made for the operation (same kind, name and owner, created since the operation
+    // began, recorded by no other operation) and continues with it; with several such lists it refuses to guess.
+    [Theory]
+    [InlineData(ListKinds.Playlist)]
+    [InlineData(ListKinds.Collection)]
+    public async Task ARetryAfterACrashBetweenJellyfinsCreateAndItsRecordUsesTheListJellyfinMade(string kind)
+    {
+        using var h = new ListsHarness();
+        var user = h.NewUser("user", admin: true);
+        var item = h.Host.AddItem();
+        var entries = new[] { new ApplyEntry(0, item, null) };
+        // A same-named list made earlier by hand, and another person's playlist of that name made meanwhile: not candidates.
+        var earlier = kind == ListKinds.Playlist ? h.Host.AddPlaylist(user) : h.Host.AddCollection("Watch next");
+        earlier.Info = earlier.Info with { Name = "Watch next", CreatedAt = DateTime.UtcNow.AddHours(-1) };
+        var other = h.Host.AddPlaylist(h.NewUser("other"));
+        other.Info = other.Info with { Name = "Watch next", CreatedAt = DateTime.UtcNow };
+        h.Host.AfterCreate = _ => throw new IOException("the server stopped");
+
+        await Assert.ThrowsAsync<IOException>(() => h.Service.CreateListAsync(user, kind, "Watch next", false, entries, K("create-crash"), None));
+        h.Host.AfterCreate = null;
+        var made = Assert.Single(h.Host.Lists.Values, l => l.Info.Kind == kind && l.Info.Id != earlier.Info.Id && l.Info.Id != other.Info.Id).Info.Id;
+
+        var retry = Ok<CreateListResultDto>(await h.Service.CreateListAsync(user, kind, "Watch next", false, entries, K("create-crash"), None));
+
+        Assert.Equal(made.ToString("N"), retry.ListId);
+        Assert.Single(h.Host.Calls, c => c.StartsWith("create-" + kind, StringComparison.Ordinal));
+        Assert.Equal(new[] { item }, h.Host.Resolved(made));
+        // Replayed from now on.
+        Assert.Equal(retry.ListId, Ok<CreateListResultDto>(await h.Service.CreateListAsync(user, kind, "Watch next", false, entries, K("create-crash"), None)).ListId);
+    }
+
+    [Fact]
+    public async Task ARetryWhoseFirstAttemptCreatedNothingCreatesAndOneThatCantTellWhichListIsItsRefuses()
+    {
+        using var h = new ListsHarness();
+        var user = h.NewUser("user");
+        var entries = Array.Empty<ApplyEntry>();
+
+        // Jellyfin refused the first attempt: nothing of it exists, so the retry creates the list.
+        h.Host.AfterCreate = id =>
+        {
+            h.Host.Lists.Remove(id);
+            throw new InvalidOperationException("Jellyfin refused");
+        };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => h.Service.CreateListAsync(user, ListKinds.Playlist, "Fresh", false, entries, K("create-none"), None));
+        h.Host.AfterCreate = null;
+        var created = Ok<CreateListResultDto>(await h.Service.CreateListAsync(user, ListKinds.Playlist, "Fresh", false, entries, K("create-none"), None));
+        Assert.NotNull(h.Host.GetList(Guid.Parse(created.ListId)));
+        Assert.Equal(2, h.Host.Calls.Count(c => c == "create-playlist:Fresh"));
+
+        // Two lists could be the first attempt's: the retry doesn't guess and creates nothing.
+        h.Host.AfterCreate = _ => throw new IOException("the server stopped");
+        await Assert.ThrowsAsync<IOException>(() => h.Service.CreateListAsync(user, ListKinds.Playlist, "Twice", false, entries, K("create-twice"), None));
+        h.Host.AfterCreate = null;
+        var twin = h.Host.AddPlaylist(user);
+        twin.Info = twin.Info with { Name = "Twice", CreatedAt = DateTime.UtcNow };
+        Error(await h.Service.CreateListAsync(user, ListKinds.Playlist, "Twice", false, entries, K("create-twice"), None), 409, "create_uncertain");
+        Assert.Single(h.Host.Calls, c => c == "create-playlist:Twice");
+    }
+
     // #936 DuringASeerrOutageViewsDontWaitForStatusRetries: status now comes from the shared status service; when it
     // fails, the view still answers at once, without statuses.
     [Fact]

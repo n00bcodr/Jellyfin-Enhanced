@@ -29,7 +29,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <param name="OpenAccess">Playlist is public.</param>
     /// <param name="Shares">Playlist shares.</param>
     /// <param name="SortName">Jellyfin's sort name (forced sort name, or the name without leading articles); null when unknown.</param>
-    public sealed record ListInfo(Guid Id, string Kind, string Name, Guid OwnerId, bool OpenAccess, IReadOnlyList<ListShare> Shares, string? SortName = null);
+    /// <param name="CreatedAt">When Jellyfin created the list (UTC); null when unknown.</param>
+    public sealed record ListInfo(Guid Id, string Kind, string Name, Guid OwnerId, bool OpenAccess, IReadOnlyList<ListShare> Shares, string? SortName = null, DateTime? CreatedAt = null);
 
     /// <summary>The facts JE needs about a library item.</summary>
     /// <param name="Id">Item id.</param>
@@ -169,6 +170,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="user">User.</param>
         /// <returns>Collections.</returns>
         IReadOnlyList<ListInfo> GetVisibleCollections(User user);
+
+        /// <summary>Every collection on the server (unfiltered; callers apply access rules).</summary>
+        /// <returns>Collections.</returns>
+        IReadOnlyList<ListInfo> GetAllCollections();
 
         /// <summary>Swap-in facts of a library item (null when it doesn't exist).</summary>
         /// <param name="itemId">Item.</param>
@@ -378,6 +383,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             .ToList();
 
         /// <inheritdoc />
+        public IReadOnlyList<ListInfo> GetAllCollections() =>
+            _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { BaseItemKind.BoxSet },
+                Recursive = true,
+            })
+            .Select(ToInfo)
+            .OfType<ListInfo>()
+            .ToList();
+
+        /// <inheritdoc />
         public IReadOnlyList<ListInfo> GetVisibleCollections(User user) =>
             _libraryManager.GetItemList(new InternalItemsQuery(user)
             {
@@ -517,6 +533,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return ids;
         }
 
+        private static DateTime? Utc(DateTime created) => created == default ? null : DateTime.SpecifyKind(created, DateTimeKind.Utc);
+
         private static ListInfo? ToInfo(BaseItem? item) => item switch
         {
             Playlist playlist => new ListInfo(
@@ -526,8 +544,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 playlist.OwnerUserId,
                 playlist.OpenAccess,
                 (playlist.Shares ?? Array.Empty<PlaylistUserPermissions>()).Select(s => new ListShare(s.UserId, s.CanEdit)).ToList(),
-                playlist.SortName),
-            BoxSet boxSet => new ListInfo(boxSet.Id, ListKinds.Collection, boxSet.Name ?? string.Empty, Guid.Empty, false, Array.Empty<ListShare>(), boxSet.SortName),
+                playlist.SortName,
+                Utc(playlist.DateCreated)),
+            BoxSet boxSet => new ListInfo(boxSet.Id, ListKinds.Collection, boxSet.Name ?? string.Empty, Guid.Empty, false, Array.Empty<ListShare>(), boxSet.SortName, Utc(boxSet.DateCreated)),
             _ => null,
         };
     }
