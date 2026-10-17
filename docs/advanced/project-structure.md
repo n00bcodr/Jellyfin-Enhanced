@@ -420,7 +420,9 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   `AutomationAdmission.cs` the send guard for queued automatic work (per-write budget admission, breaker counting),
   `AutomationWriteGate.cs` the one write gate every automatic outbound write passes immediately before it leaves (Direct
   and Seerr backends, the old recipes' direct Seerr POST: every switch, kill, mode, consent, eligibility, breaker, disk
-  and budget gate read live), `AutomationRecordSnapshot.cs` every live setting a recorded automatic intent depends on
+  and budget gate read live; asked again after the per-write budget admission, which waits for the database; the test
+  `tests/backend/Integrations/WriteGateWalk.cs` walks the code from each gate to the HTTP send and fails on any wait in
+  between), `AutomationRecordSnapshot.cs` every live setting a recorded automatic intent depends on
   (compared as a whole before the ledger write and before a Shadow decision is saved), `AutomationStore.cs` decisions, recorded grants, breakers and the
   migration record, `AutomationMigration.cs` the one-time start-up migration, `AutomationConsents.cs` each person's
   recipe preference, `AutomationRisk.cs` which risk classes may ever be automatic, and `AutomationStatus.cs` the

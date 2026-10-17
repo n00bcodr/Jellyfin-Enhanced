@@ -1351,7 +1351,9 @@ either is off, the automatic requests above behave exactly as described there. W
   immediately before it leaves, reading every switch as it is at that moment: the recipe's own switch, the rollout
   guard, request handling (integration, phase 1 and 3, who handles requests, Seerr), phase 4 and the engine, the kill
   switches, the recipe's mode, the person's opt-out, whether an OK is needed, the instance's breaker, low disk and
-  unknown free space, and the budgets. Whatever changed while the request was being prepared counts. On the recording
+  unknown free space, and the budgets. Whatever changed while the request was being prepared counts, including while
+  the send was being counted against its budget (that waits for the database, so the check runs again after it and
+  nothing waits between its last answer and the send). On the recording
   side, a recipe compares every setting its request depends on (including *Free automatic requests*, eligibility and
   the instance it would go to) right before it records the request or a *Shadow* decision, and starts over if any
   changed, so a request is never recorded under settings that no longer apply.

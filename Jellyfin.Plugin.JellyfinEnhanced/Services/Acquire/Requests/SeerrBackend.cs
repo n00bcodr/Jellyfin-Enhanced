@@ -381,6 +381,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // whatever Seerr's settings or account links say by then.
             if (_bind != null && !_bind(job.Id, seerrUser, seasons))
                 return BackendResults.Retry("backend_unavailable", "The request couldn't be recorded before sending; nothing was sent.");
+            // Admitting and recording wait for the database (one writer at a time, none during a restore): the gate is
+            // asked again after them, so nothing waits between its last answer and the POST. Refused here, nothing went out.
+            if (finalGuard() is { } last)
+            {
+                admission?.Settled(SendWriteKind.Post, "post", SendWriteResult.NotSent);
+                return Refused(job, last);
+            }
+
             var raw = await RawAsync(HttpMethod.Post, url + "/api/v1/request", config.GetJellyseerrApiKey(), seerrUser, body, WriteTimeout, ct).ConfigureAwait(false);
             // Any answer means the POST reached Seerr (a refusal included); a lost answer may have.
             admission?.Settled(SendWriteKind.Post, "post", raw.Delivery switch { Delivery.NotSent => SendWriteResult.NotSent, Delivery.MaybeSent => SendWriteResult.MaybeSent, _ => SendWriteResult.Sent });

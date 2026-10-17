@@ -201,7 +201,45 @@ public class IntegrationAutomationWriteGateTests
         }
     }
 
-    private static async Task<(bool Wrote, string? Reason, bool Flipped)> OutboxAsync(string site, string flipId)
+    // ------------------------------------------------------------------ flipped while the write is admitted (round 5)
+
+    /// <summary>The sites whose write is admitted against a budget right before it leaves: a Radarr add and search, a
+    /// Sonarr add and monitor, and the Seerr POST.</summary>
+    public static readonly string[] AdmittedSites = { "direct_movie_add", "direct_movie_search", "direct_series_add", "direct_seasonpass", "seerr_post" };
+
+    /// <summary>Flips this table doesn't make, and why.</summary>
+    internal static readonly Dictionary<string, string> NotWhileAdmitted = new(StringComparer.Ordinal)
+    {
+        ["engine_on"] = "queued with the engine off, the job isn't admitted against a budget: there is no admission to flip it in",
+        ["budget_zero"] = "the admission is the budget's own check: a limit lowered during it applies from the next admission on (the next slot of the same write included)",
+    };
+
+    public static IEnumerable<object[]> AdmissionCells()
+        => from site in AdmittedSites from flip in Flips where !NotWhileAdmitted.ContainsKey(flip.Id) select new object[] { site, flip.Id };
+
+    /// <summary>
+    /// 4a review round 5: the per-write budget admission sits between the gate and the send, and it waits for the
+    /// database (one writer at a time, none during a restore). Each gate is flipped inside that admission (after the gate
+    /// answered): the write must not go, and the job holds that gate's reason. Before the fix only the first gate was
+    /// asked, so these writes went out.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AdmissionCells))]
+    public async Task EveryGateFlippedWhileTheWriteIsAdmittedStopsThatWrite(string site, string flipId)
+    {
+        var flip = Flips.Single(f => f.Id == flipId);
+        var blocks = NotApplicable(site, flipId) == null;
+        var (wrote, reason, flipped) = await OutboxAsync(site, flipId, whileAdmitted: true);
+        Assert.True(flipped, "the flip ran inside the write's admission");
+        Assert.Equal(!blocks, wrote);
+        if (blocks) Assert.Equal(flip.Reason, reason);
+    }
+
+    // Whether the budgets are being asked to admit a write of a queued job right now.
+    private static bool Admitting()
+        => new System.Diagnostics.StackTrace().GetFrames().Any(f => f.GetMethod() is { Name: "Admit", DeclaringType.Name: "JobAdmission" });
+
+    private static async Task<(bool Wrote, string? Reason, bool Flipped)> OutboxAsync(string site, string flipId, bool whileAdmitted = false)
     {
         var seerr = site == "seerr_post";
         using var seerrLab = seerr ? new IntegrationRequestBackendsTests.SeerrLab() : null;
@@ -239,7 +277,7 @@ public class IntegrationAutomationWriteGateTests
             input = IntegrationRequestLedgerTests.Movie(22596);
             target = AutomationFlags.SeerrTarget;
             // The account check right before the POST is the last awaited step.
-            seerrLab.Seerr.BeforeRequest = uri => { if (uri.AbsolutePath == "/api/v1/user/9") Once(flipNow); return Task.CompletedTask; };
+            if (!whileAdmitted) seerrLab.Seerr.BeforeRequest = uri => { if (uri.AbsolutePath == "/api/v1/user/9") Once(flipNow); return Task.CompletedTask; };
             wrote = () => seerrLab.Seerr.Posts.Count > 0;
         }
         else
@@ -250,11 +288,13 @@ public class IntegrationAutomationWriteGateTests
             var generation = lab.Arr.Factory.ConnectionGeneration(instance)!;
             target = instance;
             e.R.Policy.Adjust = (_, _, facts) => facts with { InstanceId = instance, ConnectionGeneration = generation };
-            fixture.Host.Before = (path, _) => { if (path == fixture.During) Once(flipNow); return Task.CompletedTask; };
+            if (!whileAdmitted) fixture.Host.Before = (path, _) => { if (path == fixture.During) Once(flipNow); return Task.CompletedTask; };
             wrote = () => fixture.Host.Writes.Any(fixture.Write);
         }
 
         var asked = await e.Auto(user, input, recipe);
+        // Inside the first admission of a write (the budgets read the clock there, after the gate answered).
+        if (whileAdmitted) e.BudgetClock = () => { if (Admitting()) Once(flipNow); return e.R.Now; };
         Assert.NotNull(asked.WantId);
         var want = e.R.Ledger.Find(asked.WantId!)!;
         Assert.Equal("queued", want.Status);
@@ -561,14 +601,30 @@ public class IntegrationAutomationWriteGateTests
         ("AutoSeasonRequestService", "requestUri", "legacy_season_post"),
     };
 
-    // The awaited code between a gate call and the write it guards: none may be there.
-    private static void NoAwaitBetween(string source, string gate, int write, string what)
+    // The gate each rule's writes are walked from (WriteGateWalk: syntax and symbols, from the gate down to the HTTP send).
+    private static readonly Dictionary<string, string> RuleGates = new(StringComparer.Ordinal) { ["seerr"] = "finalGuard()", ["legacy"] = "DirectStop()" };
+
+    /// <summary>
+    /// Every walk from a gate to what it guards, with no wait on the way: the 17 write sites (the Direct funnel walks the
+    /// client from its <c>proceed</c> to the send, and <c>Proceed</c> from the gate to its return) and the two recorded
+    /// intents.
+    /// </summary>
+    internal static List<string> Walks(WriteGateWalk walk)
     {
-        var at = source.LastIndexOf(gate, write, StringComparison.Ordinal);
-        Assert.True(at >= 0, what + ": no " + gate + " before the write");
-        var between = source[at..source.LastIndexOf('\n', write)];
-        Assert.DoesNotContain("await ", between, StringComparison.Ordinal);
-        Assert.DoesNotMatch(new System.Text.RegularExpressions.Regex(@"\n\s*(private|public|internal|protected) "), between);
+        var problems = new List<string>();
+        // Direct (sites 1–12): after the connection-slot wait the client asks proceed(), then sends through SendOnceAsync.
+        // A write leaves the retry loop before its back-off (only a GET is idempotent).
+        problems.AddRange(walk.GateToSend("Services/Arr/ArrClient.cs", "SendOnceAsync<T>(method, url", "proceed()", writeExit: "!idempotent"));
+        // Proceed: the outbox guard (the gate), then the per-write admission, then back to the send.
+        problems.AddRange(walk.GateToReturn("Services/Acquire/Requests/DirectArrBackend.cs", "if ((refusal = run.Guard()) != null) return false;", "run.Guard()"));
+        // Seerr (13), and the old recipes' POST at every address (14–17).
+        problems.AddRange(walk.GateToSend("Services/Acquire/Requests/SeerrBackend.cs", "HttpMethod.Post, url + \"/api/v1/request\"", "finalGuard()"));
+        problems.AddRange(walk.GateToSend("Services/AutoMovieRequestService.cs", "HttpMethod.Post, requestUri", "DirectStop()"));
+        problems.AddRange(walk.GateToSend("Services/AutoSeasonRequestService.cs", "HttpMethod.Post, requestUri", "DirectStop()"));
+        // The record side: the caller's recheck right before the ledger write, and the recorder's before a Shadow decision.
+        problems.AddRange(walk.GateToCall("Services/Acquire/Requests/RequestService.cs", "_ledger.Create(", "recheck?.Invoke()"));
+        problems.AddRange(walk.GateToCall("Services/AutoRequest/AutoRequestRecorder.cs", "_store.Record(decision, _now())", "Changed()"));
+        return problems;
     }
 
     [Fact]
@@ -585,7 +641,11 @@ public class IntegrationAutomationWriteGateTests
         // And the list holds nothing stale.
         Assert.Equal(WriteSites.Keys.OrderBy(n => n), found.OrderBy(n => n));
 
+        // The walk follows symbols, so the plugin it reads must compile.
+        var walk = WriteGateWalk.Plugin;
+        Clean(walk.Errors());
         var seen = new List<string>();
+        var waits = new List<string>();
         foreach (var (type, (file, rule)) in WriteSites)
         {
             var source = Source(file);
@@ -606,11 +666,13 @@ public class IntegrationAutomationWriteGateTests
                         Assert.Contains("WriteAsync<", line, StringComparison.Ordinal);
                         break;
                     case "seerr":
-                        NoAwaitBetween(source, "finalGuard()", index, type);
-                        Assert.Contains("admission?.Admit(", source[source.LastIndexOf("finalGuard()", index, StringComparison.Ordinal)..index], StringComparison.Ordinal);
+                        waits.AddRange(walk.GateToSend(file, index, RuleGates[rule]));
+                        // The gate, the per-write admission (and the bind), then the gate again right before the POST.
+                        var last = source.LastIndexOf("finalGuard()", index, StringComparison.Ordinal);
+                        Assert.Contains("admission?.Admit(", source[source.LastIndexOf("finalGuard()", last - 1, StringComparison.Ordinal)..last], StringComparison.Ordinal);
                         break;
                     case "legacy":
-                        NoAwaitBetween(source, "DirectStop()", index, type);
+                        waits.AddRange(walk.GateToSend(file, index, RuleGates[rule]));
                         Assert.Contains("private string? DirectStop() => _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;", source, StringComparison.Ordinal);
                         break;
                 }
@@ -624,14 +686,15 @@ public class IntegrationAutomationWriteGateTests
         var direct = Source("Services/Acquire/Requests/DirectArrBackend.cs");
         var proceed = IntegrationAutoRequestLedgerTests.Body(direct, "bool Proceed()");
         Assert.True(proceed.IndexOf("run.Guard()", StringComparison.Ordinal) is >= 0 and var g && g < proceed.IndexOf("run.Admission.Admit(", StringComparison.Ordinal));
+        // And again after the admission (it waits for the database), right before the call leaves.
+        Assert.True(proceed.LastIndexOf("run.Guard()", StringComparison.Ordinal) > proceed.LastIndexOf("run.Admission.Admit(", StringComparison.Ordinal));
         Assert.Contains("SendCheckedAsync<T>(method, path, body, Proceed, run.Ct)", direct, StringComparison.Ordinal);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(direct, @"SendCheckedAsync|\.SendAsync<"));
         var client = IntegrationAutoRequestLedgerTests.Body(Source("Services/Arr/ArrClient.cs"), "private async Task<ArrResult<T>> SendCoreAsync<T>(");
-        var wait = client.IndexOf("await _gate.WaitAsync", StringComparison.Ordinal);
-        var ask = client.IndexOf("proceed()", StringComparison.Ordinal);
-        var send = client.IndexOf("SendOnceAsync<T>", StringComparison.Ordinal);
-        Assert.True(wait >= 0 && wait < ask && ask < send);
-        Assert.Contains("!idempotent", client, StringComparison.Ordinal);
+        Assert.Contains("var idempotent = method == HttpMethod.Get;", client, StringComparison.Ordinal);
+        // From each gate to its send (or recorded intent), nothing on the way waits: see WriteGateWalk.
+        waits.AddRange(Walks(walk));
+        Clean(waits);
 
         // The outbox: the gate before any transport and inside the guard every backend asks right before each write.
         var outbox = Source("Services/Acquire/Requests/RequestOutbox.cs");
@@ -651,14 +714,81 @@ public class IntegrationAutomationWriteGateTests
     [Fact]
     public void EveryRecordedIntentIsComparedAgainstTheWholeSnapshotWithNoAwaitInBetween()
     {
-        // The ledger write: the caller's recheck right before it.
-        var service = IntegrationAutoRequestLedgerTests.Body(Source("Services/Acquire/Requests/RequestService.cs"), "public async Task<RequestOutcome> CreateAsync(");
-        NoAwaitBetween(service, "recheck?.Invoke()", service.IndexOf("_ledger.Create(", StringComparison.Ordinal), "CreateAsync");
+        // The ledger write: the caller's recheck right before it (no wait in between: Walks, above).
+        var walk = WriteGateWalk.Plugin;
+        Clean(walk.GateToCall("Services/Acquire/Requests/RequestService.cs", "_ledger.Create(", "recheck?.Invoke()"));
         // The recorder: its recheck compares the whole snapshot, and a Shadow decision is saved only after it.
         var recorder = Source("Services/AutoRequest/AutoRequestRecorder.cs");
         var once = IntegrationAutoRequestLedgerTests.Body(recorder, "private async Task<AutoRequestOutcome?> RecordOnceAsync(");
         Assert.Contains("string? Changed() => Snapshot(_requests.Policy.Configuration, recipe, user, input) != snapshot", once, StringComparison.Ordinal);
         Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(once, @"CreateAsync\([^;]*Changed\)").Count);
-        NoAwaitBetween(once, "Changed()", once.IndexOf("_store.Record(decision, _now())", StringComparison.Ordinal), "the Shadow decision");
+        Clean(walk.GateToCall("Services/AutoRequest/AutoRequestRecorder.cs", "_store.Record(decision, _now())", "Changed()"));
+    }
+
+    // ------------------------------------------------------------------ the walk catches every bypass (4a review round 5)
+
+    private const string ArrFile = "Services/Arr/ArrClient.cs";
+    private const string SeerrFile = "Services/Acquire/Requests/SeerrBackend.cs";
+
+    // Each case plants a wait between a gate and what it guards in a copy of the plugin's source (each change replaces
+    // text that is there once; the copy must still compile), and the walks must report it. Round 5 found two that line
+    // and substring matching let through: an await on the write's own line, and one inside ArrClient.SendOnceAsync.
+    private static readonly Dictionary<string, (string File, (string Text, string Planted)[] Changes, string Reported)> Bypasses = new(StringComparer.Ordinal)
+    {
+        // (a) On the write's own line, or in its arguments.
+        ["seerr_await_on_the_write_line"] = (SeerrFile, new[] { ("var raw = await RawAsync(HttpMethod.Post", "await Task.Yield(); var raw = await RawAsync(HttpMethod.Post") }, "an await at SeerrBackend.cs"),
+        ["seerr_await_in_the_write_arguments"] = (SeerrFile, new[] { ("seerrUser, body, WriteTimeout", "seerrUser, await Task.FromResult(body).ConfigureAwait(false), WriteTimeout") }, "an await at SeerrBackend.cs"),
+        ["arr_await_on_the_send_line"] = (ArrFile, new[] { ("var outcome = await SendOnceAsync<T>(method, url", "await Task.Yield(); var outcome = await SendOnceAsync<T>(method, url") }, "an await at ArrClient.cs"),
+        ["legacy_movie_await_on_the_write_line"] = ("Services/AutoMovieRequestService.cs", new[] { ("HttpMethod.Post, requestUri, config.GetJellyseerrApiKey()", "HttpMethod.Post, requestUri, await Task.FromResult(config.GetJellyseerrApiKey())") }, "an await at AutoMovieRequestService.cs"),
+        ["legacy_season_await_on_the_write_line"] = ("Services/AutoSeasonRequestService.cs", new[] { ("jellyseerrUserId, jsonContent);", "jellyseerrUserId, jsonContent); await Task.Yield();") }, "an await at AutoSeasonRequestService.cs"),
+        ["record_await_on_the_ledger_line"] = ("Services/Acquire/Requests/RequestService.cs", new[] { ("var outcome = _ledger.Create(", "await Task.Yield(); var outcome = _ledger.Create(") }, "an await at RequestService.cs"),
+        ["record_await_on_the_decision_line"] = ("Services/AutoRequest/AutoRequestRecorder.cs", new[] { ("_store.Record(decision, _now());", "await Task.Yield(); _store.Record(decision, _now());") }, "an await at AutoRequestRecorder.cs"),
+        // (b) Hidden in the transport helpers and what they call before the HTTP send.
+        ["arr_await_in_SendOnceAsync"] = (ArrFile, new[] { ("ArrCallCounter.Current.Value?.Increment();", "ArrCallCounter.Current.Value?.Increment(); await Task.Yield();") }, "an await at ArrClient.cs"),
+        ["arr_blocking_wait_in_the_call_counter"] = ("Services/Arr/ArrCallAttribution.cs", new[] { ("internal void Increment() => Interlocked.Increment(ref _calls);", "internal void Increment() { Thread.Sleep(1); Interlocked.Increment(ref _calls); }") }, "a blocking wait (Thread.Sleep)"),
+        ["seerr_await_in_RawAsync"] = (SeerrFile, new[] { ("var client = SeerrHttpHelper.CreateClient(_http);", "await Task.Yield(); var client = SeerrHttpHelper.CreateClient(_http);") }, "an await at SeerrBackend.cs"),
+        ["seerr_blocking_wait_in_BuildRequest"] = ("Helpers/Jellyseerr/SeerrHttpHelper.cs", new[] { ("var req = new HttpRequestMessage(method, url);", "Thread.Sleep(1); var req = new HttpRequestMessage(method, url);") }, "SeerrHttpHelper.BuildRequest"),
+        ["direct_blocking_wait_after_the_gate_in_Proceed"] = ("Services/Acquire/Requests/DirectArrBackend.cs", new[] { ("if ((refusal = run.Guard()) != null) return false;", "if ((refusal = run.Guard()) != null) return false; Thread.Sleep(1);") }, "a blocking wait (Thread.Sleep)"),
+        // The per-write admission (it waits for the database) after the last gate, as before round 5's fix.
+        ["seerr_admission_after_the_last_gate"] = (SeerrFile, new[] { ("var raw = await RawAsync(HttpMethod.Post", "admission?.Admit(SendWriteKind.Post, \"post\"); var raw = await RawAsync(HttpMethod.Post") }, "a blocking wait (SemaphoreSlim.Wait)"),
+        ["direct_admission_after_the_last_gate"] = ("Services/Acquire/Requests/DirectArrBackend.cs", new[] { ("if ((refusal = run.Guard()) == null) return true;", "if ((refusal = run.Guard()) == null) { run.Admission.Admit(SendWriteKind.Search, \"again\"); return true; }") }, "a blocking wait (SemaphoreSlim.Wait)"),
+        // A call the walk can't see into (the bind is a database write).
+        ["seerr_delegate_after_the_last_gate"] = (SeerrFile, new[] { ("var raw = await RawAsync(HttpMethod.Post", "_bind?.Invoke(job.Id, seerrUser, seasons); var raw = await RawAsync(HttpMethod.Post") }, "a call through a delegate the walk can't follow (_bind)"),
+        // The gate moved, made conditional or dropped, and a write sent again after the retry back-off.
+        ["arr_gate_before_the_slot_wait"] = (ArrFile, new[] { ("if (proceed != null && !proceed())", "if (proceed != null && false)"), ("await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);", "if (proceed != null && !proceed()) return ArrResult<T>.Failure(ArrErrorKind.NotConfigured, \"stopped\"); await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);") }, "an await at ArrClient.cs"),
+        ["arr_write_retried_after_the_back_off"] = (ArrFile, new[] { ("if (outcome.Result.Ok || !idempotent || ", "if (outcome.Result.Ok || ") }, "the loop sends the write again"),
+        ["seerr_gate_in_a_branch"] = (SeerrFile, new[] { ("if (finalGuard() is { } last)", "if (ct.CanBeCanceled) if (finalGuard() is { } last)") }, "doesn't always run before the write"),
+        ["seerr_gate_short_circuited"] = (SeerrFile, new[] { ("if (finalGuard() is { } last)", "if (ct.CanBeCanceled && finalGuard() is { } last)") }, "doesn't always run before the write"),
+        ["seerr_last_gate_removed"] = (SeerrFile, new[] { ("if (finalGuard() is { } last)", "if (job.Id == null)"), ("return Refused(job, last);", "return Refused(job, \"none\");") }, "a blocking wait (SemaphoreSlim.Wait)"),
+        ["direct_last_gate_removed"] = ("Services/Acquire/Requests/DirectArrBackend.cs", new[] { ("if ((refusal = run.Guard()) == null) return true;", "if (refusal == null) return true;") }, "a blocking wait (SemaphoreSlim.Wait)"),
+    };
+
+    // None, or every one in the failure message, one per line (Assert.Empty shows a cut-down list).
+    private static void Clean(List<string> problems)
+    {
+        if (problems.Count > 0) throw new Xunit.Sdk.XunitException(string.Join("\n", problems));
+    }
+
+    public static IEnumerable<object[]> BypassCases() => Bypasses.Keys.Select(k => new object[] { k });
+
+    [Theory]
+    [MemberData(nameof(BypassCases))]
+    public void TheWriteGateWalkReportsEveryWaitPlantedBetweenAGateAndItsWrite(string bypass)
+    {
+        var (file, changes, reported) = Bypasses[bypass];
+        var planted = WriteGateWalk.Plugin.With(file, source =>
+        {
+            foreach (var (text, replacement) in changes)
+            {
+                var at = source.IndexOf(text, StringComparison.Ordinal);
+                Assert.True(at >= 0 && source.IndexOf(text, at + 1, StringComparison.Ordinal) < 0, bypass + ": \"" + text + "\" must be there once");
+                source = source[..at] + replacement + source[(at + text.Length)..];
+            }
+
+            return source;
+        });
+        Clean(planted.Errors(file));
+        var problems = Walks(planted);
+        Assert.Contains(problems, p => p.Contains(reported, StringComparison.Ordinal));
     }
 }

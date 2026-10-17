@@ -170,7 +170,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         // A write or search. The guard is asked once more after the client's wait for a free connection slot, right
         // before the call leaves (slow calls can hold every slot for a while): refused there, this call sends nothing.
-        // Automatic work then admits the write against its budgets (admit: what it counts as), and is told how it ended.
+        // Automatic work then admits the write against its budgets (admit: what it counts as), the guard is asked once
+        // more after that wait, and the write is told how it ended.
         // wrote: whether an earlier step of this attempt wrote.
         private static async Task<(ArrResult<T> Result, RequestBackendResult? Stop)> WriteAsync<T>(Run run, bool wrote, HttpMethod method, string path, object body, params (SendWriteKind Kind, string Detail)[] admit)
         {
@@ -192,7 +193,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     }
                     admitted.Add(slot);
                 }
-                return true;
+                // Admitting waits for the database (one writer at a time, none during a restore): the guard is asked again
+                // after it, so nothing waits between its last answer and the call leaving.
+                if ((refusal = run.Guard()) == null) return true;
+                foreach (var taken in admitted) run.Admission.Settled(taken.Kind, taken.Detail, SendWriteResult.NotSent);
+                admitted.Clear();
+                return false;
             }
             var result = await run.Client.SendCheckedAsync<T>(method, path, body, Proceed, run.Ct).ConfigureAwait(false);
             if (run.Admission != null && admitted.Count > 0)

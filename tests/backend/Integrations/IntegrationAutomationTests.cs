@@ -47,6 +47,8 @@ public class IntegrationAutomationTests
         public AutomationSendGuard Guard { get; private set; } = null!;
         public AutoRequestRecorder Recorder { get; private set; } = null!;
         public Consents Consent { get; } = new();
+        /// <summary>The budgets' clock, when a test needs to act while a budget is being read or written.</summary>
+        public Func<DateTimeOffset>? BudgetClock { get; set; }
         public Trust Trusted { get; } = new();
 
         public Engine(bool engine = true)
@@ -61,7 +63,7 @@ public class IntegrationAutomationTests
         public void Build()
         {
             Store = new(R.Db);
-            Budgets = new(R.Db, () => C, () => R.Now);
+            Budgets = new(R.Db, () => C, () => BudgetClock?.Invoke() ?? R.Now);
             Eligibility = new(Store, Trusted);
             Decider = new(R.Service, Budgets, Eligibility);
             Guard = new(R.Policy, Budgets, Store, Eligibility, () => R.Now, Consent);
