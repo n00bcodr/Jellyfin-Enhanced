@@ -108,6 +108,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// is concluded then). Reads memory only.
         /// </summary>
         bool? Has4kTarget(bool movie) => null;
+        /// <summary>
+        /// Whether the low-disk guard can reach a verdict for a request like <paramref name="input"/> now (Sonarr/Radarr
+        /// handling with the guard on): the target instance's disk facts, and whether it holds the title, are in memory and
+        /// the drive of the folder it would land on is listed. False starts the missing reads. True when nothing needs
+        /// knowing (guard off, Seerr handling, no usable instance: the send refuses then). Automatic sends wait while false.
+        /// </summary>
+        bool DiskKnown(MutationInput input) => true;
     }
     /// <summary>Central role, parental, destination, edition and disk policy.</summary>
     public sealed class RequestPolicy : IRequestPolicy
@@ -377,6 +384,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (TitleKey.Parse(input.Key) is not { } key) return null;
             var (instance, _, _) = Target(input, key);
             return instance is { Usable: true } ? LowDisk(Configuration, instance, input, key) : null;
+        }
+        /// <inheritdoc />
+        public bool DiskKnown(MutationInput input)
+        {
+            var config = Configuration;
+            if (config.ArrLowDiskPercent <= 0 || config.ArrRequestBackend != "je" || TitleKey.Parse(input.Key) is not { } key) return true;
+            var (instance, _, _) = Target(input, key);
+            if (instance is not { Usable: true }) return true;
+            var system = _store.PeekSystem(instance.Id);
+            var library = _store.PeekLibrary(instance.Id);
+            if (system == null) _ = Quietly(_store.WarmSystem(instance) ?? Task.CompletedTask);
+            if (library == null) _ = Quietly(_store.GetLibraryAsync(instance, CancellationToken.None));
+            if (system == null || library == null) return false;
+            var folder = HeldFolder(library, key.Title) ?? input.RootFolder ?? instance.Defaults?.RootFolderPath;
+            if (string.IsNullOrWhiteSpace(folder)) return true;
+            return system.DiskSpace.Any(d => d.Path != null && BridgePaths.IsUnder(folder, d.Path) && d.TotalSpace is > 0 && d.FreeSpace != null);
         }
         /// <inheritdoc />
         public RequestDiskFacts? AddPause(bool movie)

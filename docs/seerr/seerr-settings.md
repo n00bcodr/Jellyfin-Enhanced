@@ -129,7 +129,8 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
 ### Auto Import Jellyfin Users to Seerr
 
 - Just-in-time import when a user first accesses Seerr search and is not linked yet
-- Scheduled bulk import via **Import Jellyfin Users to Seerr** task
+- Scheduled bulk import via **Import Jellyfin Users to Seerr** task (it checks the switch and the blocklist again before
+  trying the next Seerr address, so turning auto import off or blocking someone during a run counts)
 - Manual bulk import via **Import Users Now** button
 - Blocklist support to exclude selected Jellyfin users from lookup/import
 

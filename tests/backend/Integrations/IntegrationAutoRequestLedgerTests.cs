@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest;
 using MediaBrowser.Controller.Entities;
@@ -25,7 +26,7 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class IntegrationAutoRequestLedgerTests
 {
-    private sealed class Auto : IDisposable
+    internal sealed class Auto : IDisposable
     {
         public ApiPluginFixture F { get; } = new();
         public IntegrationRequestLedgerTests.Rig R { get; } = new();
@@ -40,6 +41,8 @@ public class IntegrationAutoRequestLedgerTests
             c.ArrIntegrationEnabled = true; c.ArrPhase1Enabled = true; c.ArrPhase3Enabled = true; c.ArrRequestBackend = "je";
             c.AutoMovieRequestEnabled = true; c.AutoSeasonRequestEnabled = true; c.TMDB_API_KEY = "test-tmdb"; c.AutoMovieRequestCheckReleaseDate = true;
             c.AutoSeasonRequestThresholdValue = 2;
+            // The request service reads its own configuration (the same live object in production).
+            R.Policy.Configuration.AutoMovieRequestEnabled = true; R.Policy.Configuration.AutoSeasonRequestEnabled = true;
             if (seerr) { c.JellyseerrEnabled = true; c.JellyseerrUrls = "http://seerr.test"; c.JellyseerrApiKey = "test-seerr"; }
             Recorder = new AutoRequestRecorder(R.Service, R.View, null, () => R.Now);
             Transport = new IntegrationTransport((request, _) =>
@@ -59,7 +62,7 @@ public class IntegrationAutoRequestLedgerTests
         public void Dispose() { Transport.Dispose(); R.Dispose(); F.Dispose(); }
     }
 
-    private static HttpResponseMessage? Collection(HttpRequestMessage request, int tmdbStatus = 200)
+    internal static HttpResponseMessage? Collection(HttpRequestMessage request, int tmdbStatus = 200)
         => request.RequestUri!.AbsolutePath switch
         {
             "/3/movie/123" => IntegrationTransport.Response("{\"belongs_to_collection\":{\"id\":9,\"name\":\"Saga\"}}", tmdbStatus),
@@ -67,7 +70,7 @@ public class IntegrationAutoRequestLedgerTests
             _ => null,
         };
 
-    private static Movie Watched() => new() { Id = Guid.NewGuid(), Name = "First", ProviderIds = new() { ["Tmdb"] = "123" }, RunTimeTicks = TimeSpan.FromMinutes(100).Ticks };
+    internal static Movie Watched() => new() { Id = Guid.NewGuid(), Name = "First", ProviderIds = new() { ["Tmdb"] = "123" }, RunTimeTicks = TimeSpan.FromMinutes(100).Ticks };
 
     [Theory]
     [InlineData("Member", "awaiting_approval", "pending", 0)]
@@ -167,7 +170,270 @@ public class IntegrationAutoRequestLedgerTests
         Assert.Single(a.R.Ledger.ForTitle("movie:tmdb:124"));
     }
 
-    private static (Series Series, Episode Episode, Mock<ILibraryManager> Library) Show(int episode)
+    [Fact]
+    public async Task TheRolloutShadowOverrideStopsTheDirectSeerrPathWithPhaseThreeOffAndSendsNothing()
+    {
+        using var a = new Auto(seerr: true);
+        a.Answer = r => r.RequestUri!.AbsolutePath == "/api/v1/collection/9"
+            ? IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new object[] { new { id = 123, title = "First", releaseDate = "2000-01-01" }, new { id = 124, title = "Second", releaseDate = "2001-01-01" } } }))
+            : r.Method == HttpMethod.Post && r.RequestUri.AbsolutePath == "/api/v1/request" ? IntegrationTransport.Response("{\"id\":1}", 201)
+            : Collection(r);
+        a.F.Plugin.Configuration.ArrPhase3Enabled = false;
+        a.F.Plugin.Configuration.ArrAutomationShadowOverride = true;
+        var member = a.Person("Member");
+        var held = await a.Movies().CheckMovieForCollectionRequestAsync(Watched(), member);
+        Assert.Equal((AutoRequestOutcomeKind.DefinitiveNoop, "shadow_override", "movie:tmdb:124"), (held.Kind, held.Reason, held.TitleKey));
+        Assert.DoesNotContain(a.Urls, u => u == "POST /api/v1/request");
+        Assert.Empty(a.R.Ledger.ForTitle("movie:tmdb:124"));
+
+        // Override off: the existing direct Seerr request goes out as before.
+        a.F.Plugin.Configuration.ArrAutomationShadowOverride = false;
+        var other = a.Person("Member");
+        var answer = a.Answer;
+        a.Answer = r => r.RequestUri!.AbsolutePath == "/api/v1/user"
+            ? IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new object[] { new { id = 5, jellyfinUserId = other.ToString("N") } } }))
+            : answer(r);
+        var sent = await a.Movies().CheckMovieForCollectionRequestAsync(Watched(), other);
+        Assert.Contains(a.Urls, u => u == "POST /api/v1/request");
+        Assert.Equal(AutoRequestOutcomeKind.WantRecorded, sent.Kind);
+    }
+
+    // An administrator's save: Jellyfin replaces the configuration object, so a reference taken earlier goes stale.
+    private static void SaveOverride(ApiPluginFixture f, bool on) => Save(f, c => c.ArrAutomationShadowOverride = on);
+
+    internal static void Save(ApiPluginFixture f, Action<Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration> change)
+    {
+        var copy = (Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration)typeof(object).GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(f.Plugin.Configuration, null)!;
+        change(copy);
+        f.Plugin.UpdateConfiguration(copy);
+    }
+
+    internal static HttpResponseMessage? SeerrShow(HttpRequestMessage request)
+        => request.RequestUri!.AbsolutePath == "/api/v1/tv/42"
+            ? IntegrationTransport.Response(JsonSerializer.Serialize(new { numberOfSeasons = 2, seasons = new object[] { new { seasonNumber = 1, episodeCount = 10, status = 5 }, new { seasonNumber = 2, episodeCount = 10, status = 1 } } }))
+            : null;
+
+    [Theory]
+    [InlineData("movie", "lookup")]
+    [InlineData("movie", "retry")]
+    [InlineData("season", "lookup")]
+    [InlineData("season", "retry")]
+    public async Task TheRolloutShadowOverrideSavedWhileADirectSeerrSendWaitsStopsEveryPostIncludingTheNextUrl(string recipe, string when)
+    {
+        using var a = new Auto(seerr: true);
+        a.F.Plugin.Configuration.ArrPhase3Enabled = false;
+        a.F.Plugin.Configuration.JellyseerrUrls = "http://seerr.test,http://seerr2.test";
+        var person = a.Person("Member");
+        var posts = 0;
+        a.Answer = r =>
+        {
+            var path = r.RequestUri!.AbsolutePath;
+            if (path == "/api/v1/user")
+            {
+                // Saved on while the send is reading Seerr's accounts (after the override was checked).
+                if (when == "lookup") SaveOverride(a.F, true);
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new object[] { new { id = 5, jellyfinUserId = person.ToString("N") } } }));
+            }
+            if (r.Method == HttpMethod.Post && path == "/api/v1/request")
+            {
+                posts++;
+                // Saved on while the first Seerr URL's POST fails: the next URL is not tried.
+                SaveOverride(a.F, true);
+                return IntegrationTransport.Response("{\"message\":\"down\"}", 503);
+            }
+            if (path == "/api/v1/collection/9")
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new object[] { new { id = 123, title = "First", releaseDate = "2000-01-01" }, new { id = 124, title = "Second", releaseDate = "2001-01-01" } } }));
+            return SeerrShow(r) ?? Collection(r);
+        };
+        AutoRequestOutcome outcome;
+        if (recipe == "movie") outcome = await a.Movies(recorder: false).CheckMovieForCollectionRequestAsync(Watched(), person);
+        else
+        {
+            var (series, episode, library) = Show(9);
+            var previous = BaseItem.LibraryManager;
+            BaseItem.LibraryManager = library.Object;
+            try { outcome = await new AutoSeasonRequestService(a.Transport, a.F.Core.Logger, a.Users.Object, null!, library.Object, a.Recorder).CheckEpisodeCompletionAsync(episode, person); }
+            finally { BaseItem.LibraryManager = previous; }
+        }
+        Assert.Contains(a.Urls, u => u == "GET /api/v1/user");
+        Assert.Equal(when == "lookup" ? 0 : 1, posts);
+        Assert.Equal((AutoRequestOutcomeKind.DefinitiveNoop, "shadow_override"), (outcome.Kind, outcome.Reason));
+        Assert.True(a.F.Plugin.Configuration.ArrAutomationShadowOverride);
+    }
+
+    // The recorder as the plugin builds it: modes, kills, consent and budgets decide once the engine applies.
+    private static AutoRequestRecorder EngineRecorder(Auto a)
+    {
+        var store = new AutomationStore(a.R.Db);
+        var budgets = new AutomationBudgets(a.R.Db, () => a.R.Policy.Configuration, () => a.R.Now);
+        var eligibility = new AutomationEligibility(store, new IntegrationAutomationTests.Trust());
+        return new AutoRequestRecorder(a.R.Service, a.R.View, null, () => a.R.Now, new AutomationDecider(a.R.Service, budgets, eligibility), store, new IntegrationAutomationTests.Consents());
+    }
+
+    private static void EngineOn(Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration c, AutomationMode mode)
+    {
+        c.ArrPhase4Enabled = true;
+        c.ArrPhase4AutomationEnabled = true;
+        c.ArrAutomationRecipes = AutomationModes.Write(new Dictionary<string, AutomationRecipeSettings>
+        {
+            [AutomationRecipes.AutoMovie] = new() { Mode = AutomationModes.Name(mode) },
+            [AutomationRecipes.AutoSeason] = new() { Mode = AutomationModes.Name(mode) },
+        });
+    }
+
+    // 4a-security-r2-1: an old recipe running its direct Seerr path (phase 3 off, the engine's other switches and the
+    // recipe's mode stored) while an administrator turns phase 3 on, during the account lookup or between two Seerr
+    // addresses. The engine applies from then on: the attempt stops and starts again through the ledger under the
+    // current rules (Shadow records only, Ask waits for an OK), and nothing is POSTed. Switching the recipe or Seerr off
+    // stops it the same way.
+    [Theory]
+    [InlineData("movie", "lookup", "shadow")]
+    [InlineData("movie", "retry", "shadow")]
+    [InlineData("movie", "lookup", "ask")]
+    [InlineData("movie", "retry", "off")]
+    [InlineData("season", "lookup", "shadow")]
+    [InlineData("season", "retry", "shadow")]
+    [InlineData("season", "retry", "ask")]
+    [InlineData("season", "lookup", "off")]
+    public async Task TurningPhaseThreeOnWhileADirectSeerrSendWaitsSendsItThroughTheEngineInsteadOfPosting(string recipe, string when, string change)
+    {
+        using var a = new Auto(seerr: true);
+        a.F.Plugin.Configuration.ArrPhase3Enabled = false;
+        a.F.Plugin.Configuration.JellyseerrUrls = "http://seerr.test,http://seerr2.test";
+        var mode = change == "ask" ? AutomationMode.Ask : AutomationMode.Shadow;
+        EngineOn(a.F.Plugin.Configuration, mode);
+        EngineOn(a.R.Policy.Configuration, mode);
+        var recorder = EngineRecorder(a);
+        var person = a.Person("Admin");
+        var posts = 0;
+        var saved = false;
+        void Change()
+        {
+            if (saved) return;
+            saved = true;
+            Save(a.F, c =>
+            {
+                if (change == "off") { c.AutoMovieRequestEnabled = false; c.AutoSeasonRequestEnabled = false; }
+                else c.ArrPhase3Enabled = true;
+            });
+        }
+        a.Answer = r =>
+        {
+            var path = r.RequestUri!.AbsolutePath;
+            if (path == "/api/v1/user")
+            {
+                if (when == "lookup") Change();
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new object[] { new { id = 5, jellyfinUserId = person.ToString("N") } } }));
+            }
+            if (r.Method == HttpMethod.Post && path == "/api/v1/request")
+            {
+                posts++;
+                Change();
+                return IntegrationTransport.Response("{\"message\":\"down\"}", 503);
+            }
+            if (path == "/api/v1/collection/9")
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new object[] { new { id = 123, title = "First", releaseDate = "2000-01-01" }, new { id = 124, title = "Second", releaseDate = "2001-01-01" } } }));
+            return SeerrShow(r) ?? Collection(r);
+        };
+        AutoRequestOutcome outcome;
+        if (recipe == "movie") outcome = await new AutoMovieRequestService(a.Transport, a.F.Core.Logger, a.Users.Object, null!, recorder).CheckMovieForCollectionRequestAsync(Watched(), person);
+        else
+        {
+            var (series, episode, library) = Show(9);
+            var previous = BaseItem.LibraryManager;
+            BaseItem.LibraryManager = library.Object;
+            try { outcome = await new AutoSeasonRequestService(a.Transport, a.F.Core.Logger, a.Users.Object, null!, library.Object, recorder).CheckEpisodeCompletionAsync(episode, person); }
+            finally { BaseItem.LibraryManager = previous; }
+        }
+        Assert.True(saved);
+        Assert.Equal(when == "lookup" ? 0 : 1, posts);
+        var key = recipe == "movie" ? "movie:tmdb:124" : "tv:tvdb:4242";
+        var wants = a.R.Ledger.ForTitle(key).ToList();
+        var decisions = a.Count("SELECT COUNT(*) FROM automation_decisions");
+        switch (change)
+        {
+            case "shadow":
+                // Recorded as a Shadow decision under the engine; no want, approval or job.
+                Assert.Equal(AutoRequestOutcomeKind.DefinitiveNoop, outcome.Kind);
+                Assert.StartsWith("shadow_", outcome.Reason, StringComparison.Ordinal);
+                Assert.Empty(wants);
+                Assert.Equal(1, decisions);
+                break;
+            case "ask":
+                // An Admin's ask, which the old path would have sent at once, waits for an OK.
+                Assert.Equal(AutoRequestOutcomeKind.WantRecorded, outcome.Kind);
+                Assert.Equal("pending", Assert.Single(wants).Status);
+                Assert.Equal(0, a.Count("SELECT COUNT(*) FROM jobs"));
+                break;
+            default:
+                Assert.Equal((AutoRequestOutcomeKind.DefinitiveNoop, "disabled"), (outcome.Kind, outcome.Reason));
+                Assert.Empty(wants);
+                break;
+        }
+    }
+
+    // 4a-B-r3-1 / 4a-security-r3-1: the old recipe's own enable switch turned off during its metadata lookups (TMDB's
+    // collection or the series details) is read again before anything is recorded: with phase 3 on, by the recorder
+    // (under the engine in Auto, or without it); with phase 3 off and the rollout Shadow override on, before the direct
+    // Seerr path would record its Shadow decision. Nothing is recorded (no want, job or decision) and nothing is POSTed.
+    [Theory]
+    [InlineData("movie", "engine")]
+    [InlineData("movie", "ledger")]
+    [InlineData("movie", "direct_override")]
+    [InlineData("season", "engine")]
+    [InlineData("season", "ledger")]
+    [InlineData("season", "direct_override")]
+    public async Task AnOldRecipeSwitchedOffDuringItsLookupsRecordsNothing(string recipe, string path)
+    {
+        var direct = path == "direct_override";
+        using var a = new Auto(seerr: direct);
+        if (path == "engine")
+        {
+            EngineOn(a.F.Plugin.Configuration, AutomationMode.Auto);
+            EngineOn(a.R.Policy.Configuration, AutomationMode.Auto);
+        }
+        if (direct)
+        {
+            a.F.Plugin.Configuration.ArrPhase3Enabled = false;
+            a.F.Plugin.Configuration.ArrAutomationShadowOverride = true;
+        }
+        var recorder = path == "ledger" ? a.Recorder : EngineRecorder(a);
+        var person = a.Person("Admin");
+        var saved = false;
+        a.Answer = r =>
+        {
+            var at = r.RequestUri!.AbsolutePath;
+            if (!saved && at is "/3/movie/123" or "/3/tv/42" or "/api/v1/tv/42")
+            {
+                saved = true;
+                Save(a.F, c => { c.AutoMovieRequestEnabled = false; c.AutoSeasonRequestEnabled = false; });
+                IntegrationAutomationTests.Switch(a.R.Policy.Configuration, recipe == "movie" ? AutomationRecipes.AutoMovie : AutomationRecipes.AutoSeason, false);
+            }
+            if (at == "/api/v1/user")
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new object[] { new { id = 5, jellyfinUserId = person.ToString("N") } } }));
+            if (at == "/api/v1/collection/9")
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new object[] { new { id = 123, title = "First", releaseDate = "2000-01-01" }, new { id = 124, title = "Second", releaseDate = "2001-01-01" } } }));
+            if (r.Method == HttpMethod.Post && at == "/api/v1/request") return IntegrationTransport.Response("{\"id\":1}", 201);
+            return recipe == "movie" ? Collection(r) : SeerrShow(r) ?? TmdbShow(r);
+        };
+        AutoRequestOutcome outcome;
+        if (recipe == "movie") outcome = await new AutoMovieRequestService(a.Transport, a.F.Core.Logger, a.Users.Object, null!, recorder).CheckMovieForCollectionRequestAsync(Watched(), person);
+        else
+        {
+            var (_, episode, library) = Show(9);
+            var previous = BaseItem.LibraryManager;
+            BaseItem.LibraryManager = library.Object;
+            try { outcome = await new AutoSeasonRequestService(a.Transport, a.F.Core.Logger, a.Users.Object, null!, library.Object, recorder).CheckEpisodeCompletionAsync(episode, person); }
+            finally { BaseItem.LibraryManager = previous; }
+        }
+        Assert.True(saved);
+        Assert.Equal((AutoRequestOutcomeKind.DefinitiveNoop, "disabled"), (outcome.Kind, outcome.Reason));
+        Assert.Empty(a.R.Ledger.ForTitle(recipe == "movie" ? "movie:tmdb:124" : "tv:tvdb:4242"));
+        Assert.Equal(0, a.Count("SELECT COUNT(*) FROM wants") + a.Count("SELECT COUNT(*) FROM jobs") + a.Count("SELECT COUNT(*) FROM automation_decisions"));
+        Assert.DoesNotContain(a.Urls, u => u == "POST /api/v1/request");
+    }
+
+    internal static (Series Series, Episode Episode, Mock<ILibraryManager> Library) Show(int episode)
     {
         var series = new Series { Id = Guid.NewGuid(), Name = "Show", ProviderIds = new() { ["Tmdb"] = "42", ["Tvdb"] = "4242" } };
         var item = new Episode { Id = Guid.NewGuid(), Name = "Ep", SeriesId = series.Id, ParentIndexNumber = 1, IndexNumber = episode, RunTimeTicks = TimeSpan.FromMinutes(40).Ticks };
@@ -373,17 +639,20 @@ public class IntegrationAutoRequestLedgerTests
 
     private static string ThisFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
 
-    private static string Root()
+    // The repository: from this source file (build output elsewhere has it neither as an ancestor nor as the working directory).
+    internal static string Root([System.Runtime.CompilerServices.CallerFilePath] string here = "")
     {
         // From this source file: an output folder outside the repository (--artifacts-path) has it neither as
         // an ancestor nor as the test host's working directory.
         var root = new DirectoryInfo(Path.GetDirectoryName(ThisFile())!);
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
+        root ??= string.IsNullOrEmpty(here) ? null : new FileInfo(here).Directory;
+        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         Assert.NotNull(root);
         return root!.FullName;
     }
 
-    private static string Body(string source, string signature)
+    internal static string Body(string source, string signature)
     {
         var start = source.IndexOf(signature, StringComparison.Ordinal);
         Assert.True(start >= 0, signature);

@@ -1305,6 +1305,83 @@ While that read is still loading or incomplete, a newly added title is checked a
 being treated as unrequested. When Seerr holds more requests than that read keeps, the title's own request list is
 asked from Seerr, so people who asked long ago aren't missed.
 
+### Automation with phase 4: modes, budgets and kill switches
+
+Phase 4 (*Everywhere and gentle automation*, off by default) adds an **automation engine** with its own switch. While
+either is off, the automatic requests above behave exactly as described there. With the engine on:
+
+- **Every automatic feature is a recipe with a mode.** *Off* does nothing. *Shadow* decides and records what it would
+  have done, and nothing else: no request, no approval, no allowance used, nothing sent to Sonarr, Radarr or Seerr.
+  *Ask* always creates a request waiting for an OK, even for an administrator. *Auto* asks under the usual household
+  rules. The next-season keeper and the collection completer are the first two recipes; the others listed on the
+  configuration page arrive with later parts of phase 4 and do nothing until then.
+- **Who goes ahead without an OK.** In *Auto* only administrators, and Managers with a recorded permission, have their
+  automatic requests go ahead; anyone else's wait for an OK. Kids always wait and Watchers never ask. A Member's
+  automatic request still waits in Jellyfin Enhanced mode, as before.
+- **Turning it on the first time.** A new install starts every recipe in *Shadow*. On an upgrade, the next-season keeper
+  and the collection completer start in *Auto* if Auto Season Request / Auto Movie Request were on, and *Off* if they
+  were off. If either was on, every Manager at that moment gets a recorded permission so their automatic requests keep
+  going ahead, and administrators see a one-time notice listing them (Requests page, Overview, and the configuration
+  page's automation status). This happens once: later switches never redo it. Each person can turn the two recipes off
+  for themselves in the Jellyfin Enhanced panel (*Automatic requests*); until they choose, the household setting applies.
+  Turning one off also holds that recipe's requests of theirs that haven't been sent yet, until they turn it back on (a
+  send whose answer was lost is still read back).
+- **Kill switches.** A global switch, one per recipe and one per Sonarr/Radarr instance (and one for the requests
+  Jellyfin Enhanced sends to Seerr). A killed recipe asks for nothing new, and nothing new is recorded for an
+  instance (or Seerr) whose switch is on, though *Shadow* still records what it would have done; automatic requests
+  already waiting stay waiting and go out once the switch is off. The switches are checked again right before every add, monitoring change
+  and search, so turning one on stops what hasn't been sent yet. A send whose answer was lost is still read back.
+- **Budgets.** With Jellyfin Enhanced handling requests: at most 20 titles added (or newly monitored) per 24 hours for
+  the whole household, and 30 searches per hour and 300 per 24 hours on each instance (an add that makes Sonarr/Radarr
+  search counts as a search too). With Seerr handling them: at most 20 requests sent to Seerr per 24 hours. Windows are
+  rolling (the last hour, the last 24 hours, UTC). Only what is actually sent counts: a title the instance already
+  had, or the same request sent again after a restart, doesn't count twice; a send whose answer was lost keeps counting
+  until a fresh read shows whether it landed. When a budget is used up, automatic requests wait until it has room; the
+  status shows when. If the request database can't be used, nothing automatic is sent. Turning the engine on or off
+  while an automatic request is being sent stops it before its next add or search; it starts again half a minute later
+  under the new rules, budgets included.
+- **Breakers and storage.** Five failed automatic sends in a row to one instance pause automatic sends to it for 15
+  minutes (an administrator can retry at once from the status). An automatic request whose download would land on a
+  drive below the low-disk threshold waits, measured at the folder it would actually land in; while that drive's free
+  space isn't known yet it waits too. Both are checked again right before every add, monitoring change and search, so
+  turning the low-disk guard on while a request is being sent holds it until the drive's free space is known.
+- **Seerr handling is narrower.** Jellyfin Enhanced can only hold back its own requests to Seerr: the Seerr budget
+  counts those, and the kill switches and storage check stop only those. Once Seerr accepts a request, Seerr and its
+  Sonarr/Radarr decide what happens next (its approval, the folder, the searches): Jellyfin Enhanced can't cap their
+  searches or stop that work. Recipes that need Sonarr/Radarr handling (the release-day search) don't run in Seerr mode.
+- **Rollout guard.** *Rollout guard: Shadow only* makes every automatic request only record what it would have done,
+  with or without phase 4, through Seerr or Jellyfin Enhanced, and holds automatic requests already waiting to be
+  sent. It is checked again right before every request sent, so turning it on stops one that is already on its way
+  (and its retry to a second Seerr address). It stays on through every other switch and upgrade until an
+  administrator turns it off. People's own requests are never affected.
+- **Switches changed while a recipe is working.** A recipe reads the switches when it starts, and its lookups take a
+  moment. Whatever an administrator saves in the meantime counts: with phase 3 off, the next-season keeper and the
+  collection completer look again right before each request they send straight to Seerr (each Seerr address
+  included). If phase 3 has been turned on, nothing is sent that way: the check starts again under the engine, so a
+  recipe in *Shadow* only records, *Ask* waits for an OK, and kill switches, opt-outs and budgets apply. If the recipe
+  or Seerr has been turned off, nothing is sent. Under the engine, a mode change, the engine turned on or a person
+  opting out while a request is being prepared is read again right before it is recorded, and it starts over under
+  the new rules. Turning Auto Season Request or Auto Movie Request off works the same way, with the engine on or off:
+  a request it is preparing is not recorded (not even what *Shadow* would have done), and its requests that haven't
+  been sent yet wait until it is on again, checked right before every add, search and Seerr request (a send whose
+  answer was lost is still read back).
+- **One check before every automatic send.** Every automatic add, monitoring change, search, series refresh and Seerr
+  request (Jellyfin Enhanced's own, and the old recipes' direct ones at each Seerr address) passes the same check
+  immediately before it leaves, reading every switch as it is at that moment: the recipe's own switch, the rollout
+  guard, request handling (integration, phase 1 and 3, who handles requests, Seerr), phase 4 and the engine, the kill
+  switches, the recipe's mode, the person's opt-out, whether an OK is needed, the instance's breaker, low disk and
+  unknown free space, and the budgets. Whatever changed while the request was being prepared counts, including while
+  the send was being counted against its budget (that waits for the database, so the check runs again after it and
+  nothing waits between its last answer and the send). On the recording
+  side, a recipe compares every setting its request depends on (including *Free automatic requests*, eligibility and
+  the instance it would go to) right before it records the request or a *Shadow* decision, and starts over if any
+  changed, so a request is never recorded under settings that no longer apply.
+
+What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
+Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic
+requests and the Seerr boundary on the Requests page (Overview) and with *Show automation status* on the
+configuration page.
+
 ### Privacy and Seerr scans
 
 - **Download progress from Seerr.** Seerr's title answers include the download rows it copies from Sonarr/Radarr's
@@ -1319,3 +1396,5 @@ asked from Seerr, so people who asked long ago aren't missed.
   already running that scan, Jellyfin Enhanced waits for it and asks once more afterwards instead of interrupting it,
   and it asks only the first of your Seerr addresses that answers. In Jellyfin Enhanced request mode, a title Jellyfin
   Enhanced adds to Radarr or Sonarr also triggers Seerr's Radarr or Sonarr scan, so Seerr shows it as requested.
+  If the trigger (or Seerr) is turned off while a scan waits for its debounce, it isn't sent. *Trigger scan now* is
+  unaffected.

@@ -83,6 +83,17 @@
 .je-ops-dialog label { display: flex; gap: 0.5em; align-items: center; margin: 0.5em 0; min-height: 2.4em; }
 .je-ops-dialog input[type="text"] { font: inherit; width: 100%; padding: 0.5em; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.06); color: inherit; }
 .je-ops-dialog-buttons { display: flex; flex-wrap: wrap; gap: 0.5em; justify-content: flex-end; margin-top: 1em; }
+.je-ops-automation { display: flex; flex-direction: column; gap: 0.45em; }
+.je-ops-automation .je-ops-box-title { margin-bottom: 0.2em; }
+.je-ops-automation .je-ops-banner { margin: 0; }
+.je-ops-auto-line { font-size: 0.92em; overflow-wrap: anywhere; }
+.je-ops-auto-list { margin: 0; padding-left: 1.2em; font-size: 0.92em; }
+.je-ops-auto-list li { padding: 0.1em 0; overflow-wrap: anywhere; }
+.je-ops-auto-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em 0.8em; padding-top: 0.45em; border-top: 1px solid rgba(255,255,255,0.07); }
+.je-ops-auto-row .je-ops-auto-line { flex: 1 1 16em; }
+.je-ops-auto-notice { display: block; }
+.je-ops-auto-notice .je-ops-auto-line + .je-ops-auto-line { margin-top: 0.3em; }
+.je-ops-auto-notice .je-ops-btn { margin-top: 0.5em; }
 .je-ops-warnbox { padding: 0.6em 0.8em; border-radius: 8px; background: rgba(229,57,53,0.14); border-left: 3px solid #e53935; }
 @media (max-width: 900px) { .je-ops-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) {

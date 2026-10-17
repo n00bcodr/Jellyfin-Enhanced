@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
@@ -55,7 +56,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="body">Client id and input.</param>
         /// <param name="ct">Cancellation.</param>
         /// <param name="origin">Automation origin; null for a person's own ask.</param>
-        public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null)
+        /// <param name="recheck">
+        /// Asked after the preparation reads, right before the ledger write: a reason stops the create (nothing is
+        /// recorded). Automatic callers re-read there the rules they decided under.
+        /// </param>
+        public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null, Func<string?>? recheck = null)
         {
             var input = Normalize(body?.Input);
             if (body == null || input == null) return RequestOutcome.Refused("invalid_input", 400);
@@ -68,10 +73,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var pending in _ledger.ForTitle(input.Key).Where(w => w.Status == "pending" && w.Input.Variant == input.Variant))
                     await _policy.PrepareAsync(pending.UserId, pending.Input, ct).ConfigureAwait(false);
             }
+            // The caller's own recheck first: a recipe whose settings changed during the reads above starts over under the
+            // current ones (so a kill flipped meanwhile is recorded the way it would have been had it been on already).
+            if (recheck?.Invoke() is { } changed) return RequestOutcome.Refused(changed, 409, "blocked");
+            // Automatic work under the engine: a kill switch on now (checked after the reads above, against the target the
+            // request would go to) records nothing, so killed work never piles up to go out when the switch is released.
+            var config = _policy.Configuration;
+            if (origin?.Automatic == true && AutomationFlags.Engine(config) && AutomationSendGuard.Killed(config, origin.Recipe, AutomationSendGuard.Target(_policy.Evaluate(user, input))))
+                return RequestOutcome.Refused(AutomationHolds.Killed, 409, "blocked");
             var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin);
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(user), ArrTitleKey.RequestsState });
             if (outcome.Reason == "queued_outage") Signal?.Pulse();
             return outcome;
+        }
+        /// <summary>
+        /// What <see cref="CreateAsync"/> would do now, with nothing written (the no-write decision seam): the same
+        /// normalization and bounded preparation reads, then <see cref="RequestLedger.Preview"/>. No change-feed bump and no
+        /// outbox wake-up.
+        /// </summary>
+        /// <param name="user">The requester.</param>
+        /// <param name="body">Client id and input.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <param name="origin">Where the ask would come from.</param>
+        public async Task<RequestPreview> PreviewAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null)
+        {
+            var input = Normalize(body?.Input);
+            if (body == null || input == null) return new RequestPreview(RequestOutcome.Refused("invalid_input", 400));
+            if (!Enabled) return new RequestPreview(RequestOutcome.Refused("feature_disabled"));
+            if (!_ledger.Database.Available) return new RequestPreview(RequestOutcome.Refused("database_unavailable", 503, "unavailable"));
+            if (!_policy.IsAdmin(user) && RequestLedger.HasRouting(input)) return new RequestPreview(RequestOutcome.Refused("admin_required"));
+            await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
+            return _ledger.Preview(user, body with { Input = input }, _policy, _now(), origin);
         }
         /// <summary>Approves with fresh requester and approver prerequisites.</summary>
         public async Task<RequestOutcome> ApproveAsync(string id, Guid actor, ApproveRequest? body, CancellationToken ct)

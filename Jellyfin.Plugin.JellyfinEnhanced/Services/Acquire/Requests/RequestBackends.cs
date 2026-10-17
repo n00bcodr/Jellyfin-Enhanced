@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
@@ -44,7 +45,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <inheritdoc />
         public Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, CancellationToken ct)
-            => For(job)?.SendAsync(job, finalGuard, ct) ?? Task.FromResult(RequestBackendResult.Hold("configuration_changed"));
+            => SendAsync(job, finalGuard, null, ct);
+
+        /// <inheritdoc />
+        public Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, ISendAdmission? admission, CancellationToken ct)
+            => For(job)?.SendAsync(job, finalGuard, admission, ct) ?? Task.FromResult(RequestBackendResult.Hold("configuration_changed"));
 
         /// <inheritdoc />
         public Task<RequestBackendResult> ReadBackAsync(RequestJob job, CancellationToken ct)
@@ -124,6 +129,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var resume = RequestBackendResult.Resume(wantId);
             return resume with { Outcome = resume.Outcome with { Message = message } };
+        }
+
+        /// <summary>
+        /// An automatic request held by a wait that ends by itself (a kill switch, a full budget, the Shadow override):
+        /// nothing more is sent now and it is checked again after <paramref name="wait"/>. Before anything was written it is
+        /// simply not sent; after a write the written part stays upstream, so its certainty stays unknown (no cancel or
+        /// refund) and the next attempt reads before it writes.
+        /// </summary>
+        public static RequestBackendResult Held(string wantId, bool wrote, string reason, string message, TimeSpan wait)
+        {
+            if (!wrote) return Later(reason, message, wait);
+            var resume = Resume(wantId, message);
+            return resume with { Outcome = resume.Outcome with { Reason = reason }, RetryAfter = wait };
         }
 
         /// <summary>

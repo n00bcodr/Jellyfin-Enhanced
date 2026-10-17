@@ -227,12 +227,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             lock (_stateLock) owner.Last = dispatch;
         }
 
+        // The automatic scan trigger is on (live configuration).
+        private bool On() => _config() is { TriggerSeerrScanOnItemAdded: true, JellyseerrEnabled: true };
+
         private async Task DispatchOwnerAsync(Owner owner, string source, int batch)
         {
             var requeue = false;
             try
             {
                 if (_config() is not PluginConfiguration config || SourceOf(config) != source) return;
+                // The switch was checked when the changes arrived, up to an hour ago: read it again here and right
+                // before each run; turned off since, the batch is dropped.
+                if (!On()) return;
                 var apiKey = config.GetJellyseerrApiKey();
                 var urls = ParseUrls(config.JellyseerrUrls);
                 if (urls.Count == 0 || string.IsNullOrEmpty(apiKey))
@@ -251,6 +257,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         requeue = true;
                         return;
                     }
+                    if (!On()) return;
                     var result = await PostScanTrigger(url, apiKey, owner.Job).ConfigureAwait(false);
                     if (result.Success)
                     {

@@ -4048,6 +4048,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ArrRequestsJeMode = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend == "je",
                 // Kids don't get the JE-mode search row (the search route refuses them too).
                 config.ArrKidsHideSearch,
+                // Phase 4 automation engine in effect: each person's automatic-request preferences show only then.
+                ArrAutomationEngineEnabled = Services.Acquire.Automation.AutomationFlags.Engine(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,

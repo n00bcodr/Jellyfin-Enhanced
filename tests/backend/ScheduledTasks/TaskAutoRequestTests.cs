@@ -99,6 +99,49 @@ public class TaskAutoRequestTests
         Assert.Equal(1, await NextCollectionMovieRequests(today, CultureInfo.CurrentCulture));
     }
 
+    // Seerr lists a collection's parts in TMDB's order, which isn't release order (live: Zootopia 3, Zootopia, Zootopia 2).
+    // The next movie is the next one released, as on the TMDB path: not whatever follows in the list, and not "last in
+    // the collection" for a movie listed last. A part with no date (planned, rumoured: live, Moana 3 after Moana 2) sorts
+    // last and isn't released, so it is never asked for (0: nothing asked).
+    [Theory]
+    [InlineData("123:2000,125:2004,124:2002", 124)]
+    [InlineData("124:2002,123:2000", 124)]
+    [InlineData("125:2004,123:2000,124:2002", 124)]
+    [InlineData("123:2000,126:", 0)]
+    [InlineData("126:,123:2000,124:2002", 124)]
+    public async Task MovieCollectionNextMovieIsTheNextReleasedWhateverOrderSeerrListsThem(string listed, int expected)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.AutoMovieRequestEnabled = true;
+        config.JellyseerrEnabled = true;
+        config.TMDB_API_KEY = "test-tmdb";
+        config.JellyseerrUrls = "http://seerr.test";
+        config.JellyseerrApiKey = "test-seerr";
+        config.AutoMovieRequestCheckReleaseDate = true;
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var users = new Mock<IUserManager>();
+        users.Setup(u => u.GetUserById(user.Id)).Returns(user);
+        var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        var parts = listed.Split(',').Select(p => p.Split(':')).Select(p => new { id = int.Parse(p[0], CultureInfo.InvariantCulture), title = "Part " + p[0], releaseDate = p[1].Length == 0 ? string.Empty : p[1] + "-01-01", mediaInfo = new { status = p[0] == "123" ? 5 : 1 } }).ToArray();
+        var asked = new List<int>();
+        using var transport = new IntegrationTransport(async (request, ct) =>
+        {
+            switch (request.RequestUri!.AbsolutePath)
+            {
+                case "/3/movie/123": return IntegrationTransport.Response("{\"belongs_to_collection\":{\"id\":9,\"name\":\"Saga\"}}");
+                case "/api/v1/collection/9": return IntegrationTransport.Response(JsonSerializer.Serialize(new { parts }));
+                case "/api/v1/user": return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 22, jellyfinUserId = user.Id.ToString("N") } } }));
+                case "/api/v1/request":
+                    using (var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct))) asked.Add(body.RootElement.GetProperty("mediaId").GetInt32());
+                    return IntegrationTransport.Response("{}", 201);
+                default: throw new InvalidOperationException("Unexpected URL " + request.RequestUri);
+            }
+        });
+        await new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!).CheckMovieForCollectionRequestAsync(movie, user.Id);
+        Assert.Equal(expected == 0 ? Array.Empty<int>() : new[] { expected }, asked);
+    }
+
     // Runs the collection check for an available first movie whose sequel has the given release date,
     // under the given culture, and returns how many requests reached Seerr.
     private static async Task<int> NextCollectionMovieRequests(string releaseDate, CultureInfo culture)

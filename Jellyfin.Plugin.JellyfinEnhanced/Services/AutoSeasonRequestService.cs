@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest;
 using MediaBrowser.Controller.Entities;
@@ -24,6 +25,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public const string Recipe = "auto_season";
 
         private readonly AutoRequestRecorder? _recorder;
+        // The automatic-write gate over the live configuration (the same gate as the ledger's sends; the engine can't be in
+        // effect on this path, so its engine-only gates never apply here).
+        private readonly AutomationWriteGate _gate = new(() => JellyfinEnhanced.Instance?.Configuration);
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly Logger _logger;
         private readonly IUserManager _userManager;
@@ -226,6 +230,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // The outcome is typed: a failed details lookup is a PreparationFailed, never "nothing to do".
         public async Task<AutoRequestOutcome> CheckEpisodeCompletionAsync(BaseItem episodeItem, Guid userId, CancellationToken ct = default)
         {
+            // Phase 3 turned on while a direct Seerr send was being prepared: the check starts again and goes through the
+            // ledger under the rules in effect now (modes, kills, consent, budgets) instead of POSTing. A switch flipped
+            // back and forth leaves it to the next trigger.
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                if (await CheckOnceAsync(episodeItem, userId, ct) is { } outcome) return outcome;
+            }
+            return AutoRequestOutcome.Failed(AutomationHolds.EngineChanged);
+        }
+
+        // The write gate for a direct Seerr POST (phase 3 off), read from the live configuration (an administrator's save
+        // replaces it) right before the lookups and again immediately before each POST, every Seerr address included: the
+        // recipe's own switch or Seerr turned off ("disabled": nothing is sent or recorded, not even a Shadow decision); the
+        // rollout Shadow override; phase 3 on since the check began (EngineChanged: the decision now belongs to the
+        // ledger). Null: it may go.
+        private string? DirectStop() => _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;
+
+        // One check; null when the direct path stopped for phase 3 and the check has to start again.
+        private async Task<AutoRequestOutcome?> CheckOnceAsync(BaseItem episodeItem, Guid userId, CancellationToken ct)
+        {
             var config = JellyfinEnhanced.Instance?.Configuration;
             var ledger = LedgerMode(config);
             if (config == null || !config.AutoSeasonRequestEnabled || (!ledger && !config.JellyseerrEnabled))
@@ -262,7 +286,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Checks if a specific season needs its next season requested
-        private async Task<AutoRequestOutcome> CheckSeasonForAutoRequest(Series series, int currentSeasonNumber, int currentEpisodeNumber, JUser user, bool ledger, CancellationToken ct)
+        private async Task<AutoRequestOutcome?> CheckSeasonForAutoRequest(Series series, int currentSeasonNumber, int currentEpisodeNumber, JUser user, bool ledger, CancellationToken ct)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
@@ -436,10 +460,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return AutoRequestOutcome.Noop("already_requested", seriesKey?.ToString());
             }
 
-            // Season exists, not available, not requested - proceed with request
-            var success = await RequestNextSeason(tmdbId, nextSeasonNumber, user.Id.ToString());
+            // Stopped before a POST (see DirectStop), here or right before every POST: with the rollout Shadow override,
+            // what would have been asked is recorded and nothing is sent; with phase 3 now on, the check starts again.
+            AutoRequestOutcome? Stopped(string stop)
+            {
+                lock (_requestCacheLock)
+                {
+                    _requestedSeasons.Remove(cacheKey);
+                }
+                if (stop == AutomationHolds.EngineChanged)
+                {
+                    _logger.Info($"[Auto-Season-Request] Phase 3 was turned on before '{series.Name}' S{nextSeasonNumber} was sent to Seerr; checking again under the current rules");
+                    return null;
+                }
+                if (stop != AutomationHolds.ShadowOverride)
+                {
+                    _logger.Info($"[Auto-Season-Request] '{series.Name}' S{nextSeasonNumber} not sent to Seerr: the recipe or Seerr was turned off since the check began");
+                    return AutoRequestOutcome.Noop(stop, seriesKey?.ToString());
+                }
+                _recorder?.ShadowOverride(Recipe, user.Id, seriesKey?.ToString(), nextSeasonNumber);
+                _logger.Info($"[Auto-Season-Request] Shadow override: would have requested '{series.Name}' S{nextSeasonNumber} for {user.Username}; nothing sent");
+                return AutoRequestOutcome.Noop(AutomationHolds.ShadowOverride, seriesKey?.ToString());
+            }
 
-            if (success)
+            if (DirectStop() is { } early)
+            {
+                return Stopped(early);
+            }
+
+            // Season exists, not available, not requested - proceed with request
+            var (sent, stop) = await RequestNextSeason(tmdbId, nextSeasonNumber, user.Id.ToString());
+            if (stop != null)
+            {
+                return Stopped(stop);
+            }
+
+            if (sent)
             {
                 _logger.Info($"[Auto-Season-Request] ✓ Requested '{series.Name}' S{nextSeasonNumber} (TMDB: {tmdbId}) for {user.Username}");
                 return AutoRequestOutcome.Recorded("seerr_request", seriesKey?.ToString());
@@ -699,14 +755,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return null;
         }
 
-        // Requests the next season from Jellyseerr
-        private async Task<bool> RequestNextSeason(string tmdbId, int seasonNumber, string jellyfinUserId)
+        // Requests the next season from Jellyseerr: Sent, or why it stopped right before a POST (see DirectStop; nothing
+        // more is sent). Neither: it failed.
+        private async Task<(bool Sent, string? Stopped)> RequestNextSeason(string tmdbId, int seasonNumber, string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Auto-Season-Request] Jellyseerr configuration is missing");
-                return false;
+                return (false, null);
             }
 
             // Get Jellyseerr user ID
@@ -714,7 +771,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (string.IsNullOrEmpty(jellyseerrUserId))
             {
                 _logger.Warning($"[Auto-Season-Request] Could not find Jellyseerr user for Jellyfin user {jellyfinUserId}");
-                return false;
+                return (false, null);
             }
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
@@ -735,6 +792,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);
 
+                    // Read live right before each POST (the next Seerr URL included).
+                    if (DirectStop() is { } stop)
+                    {
+                        return (false, stop);
+                    }
+
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
                         HttpMethod.Post, requestUri, config.GetJellyseerrApiKey(), jellyseerrUserId, jsonContent);
                     using var response = await httpClient.SendAsync(request);
@@ -742,7 +805,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (error == null)
                     {
-                        return true;
+                        return (true, null);
                     }
                     _logger.Warning($"[Auto-Season-Request] Jellyseerr request failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                 }
@@ -752,7 +815,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            return false;
+            return (false, null);
         }
 
         // Gets the Jellyseerr user ID for a Jellyfin user

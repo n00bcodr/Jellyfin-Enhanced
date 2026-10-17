@@ -177,6 +177,37 @@ CREATE TABLE request_notices (
 CREATE TABLE request_deleted_users (user_hash TEXT PRIMARY KEY);
 " + Phase3dTables + @"
 ",
+            // 3: phase 4 foundation. Request origins and their server-built provenance; durable batch/confirmation
+            // operations; automation budgets (durable admission), decisions (Shadow and every other mode), recorded
+            // eligibility grants and per-target circuit breakers.
+            @"
+ALTER TABLE wants ADD COLUMN origin_detail TEXT;
+ALTER TABLE wants ADD COLUMN operation_id TEXT;
+CREATE INDEX wants_operation ON wants(operation_id);
+CREATE TABLE request_operations (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, client_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL, subject TEXT, size INTEGER NOT NULL, state TEXT NOT NULL, payload TEXT,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+    UNIQUE(user_id,kind,client_id));
+CREATE TABLE automation_budget (
+    id TEXT PRIMARY KEY, category TEXT NOT NULL, scope TEXT NOT NULL, unique_key TEXT NOT NULL,
+    job_id TEXT, recipe TEXT, state TEXT NOT NULL, outcome TEXT,
+    reserved_at INTEGER NOT NULL, settled_at INTEGER,
+    UNIQUE(category,scope,unique_key));
+CREATE INDEX automation_budget_window ON automation_budget(category,scope,reserved_at);
+CREATE INDEX automation_budget_job ON automation_budget(job_id);
+CREATE TABLE automation_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, decision_key TEXT NOT NULL UNIQUE, recipe TEXT NOT NULL,
+    user_id TEXT, title_key TEXT, mode TEXT NOT NULL, outcome TEXT NOT NULL, reason TEXT NOT NULL,
+    backend TEXT, detail TEXT, repeats INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE INDEX automation_decisions_at ON automation_decisions(updated_at);
+CREATE INDEX automation_decisions_user ON automation_decisions(user_id);
+CREATE TABLE automation_grants (
+    user_id TEXT PRIMARY KEY, source TEXT NOT NULL, detail TEXT, granted_at INTEGER NOT NULL);
+CREATE TABLE automation_breakers (
+    target TEXT PRIMARY KEY, failures INTEGER NOT NULL, opened_until INTEGER, last_reason TEXT, updated_at INTEGER NOT NULL);
+",
         };
 
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
@@ -480,9 +511,12 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                     _logger?.Error("Requests & downloads: " + _unavailable);
                     return;
                 }
+                // One copy per start: the schema-2 extensions below don't take a second one after a migration took it.
+                var backedUp = false;
                 if (version < Migrations.Count && existed && version > 0)
                 {
                     BackupBeforeMigration(connection, version);
+                    backedUp = true;
                 }
                 for (var v = version; v < Migrations.Count; v++)
                 {
@@ -496,14 +530,14 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                     transaction.Commit();
                     _logger?.Info($"Requests & downloads: database migrated to schema {v + 1}.");
                 }
-                var extensionBackedUp = false;
+                var extensionBackedUp = backedUp;
                 // Earlier phase-3a installations already have schema 2. Extend that migration idempotently.
                 using (var columns = connection.CreateCommand())
                 {
                     columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('reservations') WHERE name='episode_count'";
                     if (Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
                     {
-                        if (existed && version == 2) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
+                        if (existed && version == 2 && !extensionBackedUp) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
                         using var transaction = connection.BeginTransaction(deferred: false);
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;

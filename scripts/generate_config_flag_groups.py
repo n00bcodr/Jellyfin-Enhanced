@@ -19,7 +19,14 @@ Also derives each tab's icon (Material Icons ligature, or the real public
 jsDelivr URL for an <img data-je-cdn="..."> like Seerr's -- the docs site is
 static and has no plugin backend to proxy CdnAssetService.cs's route through).
 
-Output shape: {"groups": {...}, "labels": {...}, "tabs": {...}, "tabIcons": {TabLabel: {...}}, "defaults": {PropertyName: value}}
+Also lists each person's on/off settings that may be left unchosen (`bool?` in UserConfiguration.cs's UserSettings)
+with the class they belong to (Requests & downloads phase 4, decision D29): "display" (a display preference: unset
+follows the administrator's switch, false opts out) or "consent" (the person allows something to be done or sent on
+their behalf: unset means the class rule, see USER_PREFERENCE_CLASSES). Deliberate actions (a person pressing a button)
+have no per-person switch and are never listed. A new nullable setting without a class stops the generator.
+
+Output shape: {"groups": {...}, "labels": {...}, "tabs": {...}, "tabIcons": {TabLabel: {...}}, "defaults": {PropertyName: value},
+"userPreferences": {PropertyName: {"class": ..., "unset": ...}}}
 
 Run manually with: python scripts/generate_config_flag_groups.py
 CI (.github/workflows/docs.yml) runs this before every docs build.
@@ -33,6 +40,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PAGE = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "Configuration" / "configPage.html"
 PLUGIN_CONFIG_CS = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "Configuration" / "PluginConfiguration.cs"
 OUTPUT = REPO_ROOT / "docs" / "advanced" / "config-flag-groups.json"
+USER_CONFIG_CS = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "Configuration" / "UserConfiguration.cs"
+
+# The D29 class of every per-person on/off setting that may be left unchosen, and what unset means. "follow-admin":
+# the administrator's switch decides until the person chooses. "off": nothing happens until the person says yes.
+# The two existing automatic-request recipes (migrated from their old switches) follow the administrator; every new
+# consent (acquire-ahead, list/sync requests, Ready playlist and messages, report delivery) is "off".
+USER_PREFERENCE_CLASSES = {
+    "UseNativePosterTags": {"class": "display", "unset": "follow-admin"},
+    "AutoSeasonRequests": {"class": "consent", "unset": "follow-admin"},
+    "AutoMovieRequests": {"class": "consent", "unset": "follow-admin"},
+}
 
 # "overview-*" fieldsets are read-only dashboard status widgets, not admin
 # settings: their ids (e.g. "overview-quick-actions-section") don't
@@ -363,6 +381,19 @@ def extract_defaults(cs_source):
     return defaults
 
 
+def extract_user_preferences(cs_source):
+    """The nullable on/off settings of UserSettings, each with its D29 class (raises for one without a class)."""
+    match = re.search(r"public class UserSettings\s*\{", cs_source)
+    if not match:
+        raise RuntimeError("Could not find the UserSettings class")
+    body = brace_scan(cs_source, match.end() - 1)
+    found = re.findall(r"public bool\? (\w+)\s*\{\s*get;\s*set;\s*\}", body)
+    missing = [name for name in found if name not in USER_PREFERENCE_CLASSES]
+    if missing:
+        raise RuntimeError("Per-person settings without a D29 class (add them to USER_PREFERENCE_CLASSES): " + ", ".join(missing))
+    return {name: USER_PREFERENCE_CLASSES[name] for name in sorted(found)}
+
+
 def main():
     markup = CONFIG_PAGE.read_text(encoding="utf-8")
     parser = ConfigPageParser()
@@ -392,6 +423,7 @@ def main():
         "tabs": dict(sorted(parser.tabs.items())),
         "tabIcons": dict(sorted(tab_icons.items())),
         "defaults": dict(sorted(defaults.items())),
+        "userPreferences": extract_user_preferences(USER_CONFIG_CS.read_text(encoding="utf-8")),
     }
     OUTPUT.write_text(json.dumps(output, indent=2) + "\n", encoding="utf-8")
     print(

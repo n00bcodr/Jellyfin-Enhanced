@@ -23,6 +23,13 @@ public class IntegrationRequestLedgerTests
         public Func<Guid, MutationInput, RequestPolicyFacts, RequestPolicyFacts>? Adjust { get; set; }
         public Func<bool, bool?>? FourK { get; set; }
         public bool? Has4kTarget(bool movie) => FourK?.Invoke(movie);
+        /// <summary>The destination's disk facts are in memory (as <see cref="RequestPolicy.DiskKnown"/> reads them).</summary>
+        public bool DiskFacts { get; set; } = true;
+        /// <summary>Non-null: the drive the request would land on is below the low-disk threshold.</summary>
+        public RequestDiskFacts? Pause { get; set; }
+        public RequestDiskFacts? TitlePause(MutationInput input) => Pause;
+        // Like production: known when the guard is off or Seerr handles requests; else when the facts are in memory.
+        public bool DiskKnown(MutationInput input) => Configuration.ArrLowDiskPercent <= 0 || Configuration.ArrRequestBackend != "je" || DiskFacts;
         public Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct) => Task.CompletedTask;
         public Task PrepareAsync(Guid user, MutationInput input, CancellationToken ct) => Before?.Invoke(user, input) ?? Task.CompletedTask;
         /// <summary>Runs when the rating facts a person's visibility needs are loaded (tests make visibility depend on it).</summary>
@@ -542,9 +549,9 @@ public class IntegrationRequestLedgerTests
         {
             c.Open(); using var command = c.CreateCommand(); command.CommandText = AcquireDatabase.Migrations[0] + " PRAGMA user_version=1;"; command.ExecuteNonQuery();
         }
-        using (var old = new AcquireDatabase(path)) { Assert.True(old.Available); Assert.Equal(2, old.Version); }
+        using (var old = new AcquireDatabase(path)) { Assert.True(old.Available); Assert.Equal(AcquireDatabase.Migrations.Count, old.Version); }
         Assert.Single(Directory.GetFiles(r.Root, "old.db.pre-v1.*"));
-        using var reopened = new AcquireDatabase(path); Assert.Equal(2, reopened.Version);
+        using var reopened = new AcquireDatabase(path); Assert.Equal(AcquireDatabase.Migrations.Count, reopened.Version);
         Assert.Single(Directory.GetFiles(r.Root, "old.db.pre-v1.*"));
     }
 
@@ -947,11 +954,15 @@ public class IntegrationRequestLedgerTests
     private static string ThisFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
 
     [Fact]
-    public void NoProductionCSharpDeclaresAsyncVoid()
+    public void NoProductionCSharpDeclaresAsyncVoid() => NoAsyncVoid();
+
+    private static void NoAsyncVoid([System.Runtime.CompilerServices.CallerFilePath] string here = "")
     {
         // From this source file: an output folder outside the repository (--artifacts-path) has it neither as
         // an ancestor nor as the test host's working directory.
         var root = new DirectoryInfo(Path.GetDirectoryName(ThisFile())!);
+        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
+        root ??= string.IsNullOrEmpty(here) ? null : new FileInfo(here).Directory;
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         Assert.NotNull(root);
         var files = Directory.EnumerateFiles(Path.Combine(root!.FullName, "Jellyfin.Plugin.JellyfinEnhanced"), "*.cs", SearchOption.AllDirectories).Where(f => !f.Contains("/obj/") && !f.Contains("/bin/"));

@@ -74,6 +74,22 @@ public class IntegrationScanNudgeTests
         Assert.Single(r.Runs());
     }
 
+    // The switch is checked when a change arrives; the batch goes out up to an hour later. Turned off in between (or
+    // Seerr turned off), the batch is dropped instead of triggering a scan nobody wants now.
+    [Theory]
+    [InlineData("scan")]
+    [InlineData("seerr")]
+    public async Task ABatchWaitingWhenTheScanSwitchIsTurnedOffIsDropped(string off)
+    {
+        using var r = new Rig();
+        r.Service.Nudge(SeerrScanTriggerService.ScanJobId);
+        if (off == "scan") r.Config.TriggerSeerrScanOnItemAdded = false;
+        else r.Config.JellyseerrEnabled = false;
+        await r.Service.FireAsync(SeerrScanTriggerService.ScanJobId);
+        Assert.Empty(r.Runs());
+        Assert.Null(r.Service.DueIn(SeerrScanTriggerService.ScanJobId));
+    }
+
     [Fact]
     public async Task AnUnreadableJobListStillRunsTheScanAsBefore()
     {

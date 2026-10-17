@@ -37,6 +37,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShowAudioLanguages { get; set; }
         /// <summary>Native poster tags preference; null (never chosen) and true are on, false is off.</summary>
         public bool? UseNativePosterTags { get; set; }
+        /// <summary>
+        /// Requests &amp; downloads, automation engine on: the next-season keeper may ask for this person. Null (never
+        /// chosen) follows the administrator's recipe setting; false opts out. Ignored while the engine is off.
+        /// </summary>
+        public bool? AutoSeasonRequests { get; set; }
+        /// <summary>As <see cref="AutoSeasonRequests"/>, for the collection completer (next movie in a collection).</summary>
+        public bool? AutoMovieRequests { get; set; }
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
         public bool ShowSourceTag { get; set; } = true;

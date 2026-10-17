@@ -377,6 +377,7 @@ Automatically sync watchlist items between Seerr and Jellyfin in both directions
 - Only syncs items that have a TMDB ID and a linked Seerr account
 - Skips items already present in the Seerr watchlist
 - Runs via the **Sync Watchlist from Jellyfin to Seerr** scheduled task (default: daily at 03:30)
+- Turning the sync off during a run stops it before the next item; a user blocked during a run is skipped from then on
 
 #### Configuration:
 
@@ -511,7 +512,8 @@ Automatically request media based on viewing behavior.
 
 - Trigger on playback start
 - Trigger after X minutes watched
-- Check release date (only request if released)
+- Check release date (only request if released; a movie with no release date yet counts as not released)
+- The next movie is the next one released in the collection, whatever order Seerr or TMDB lists the collection in
 
 With **Requests & downloads** phase 3 ("Ask for it") on, both record their requests in Jellyfin Enhanced under the
 household rules instead of sending them to Seerr directly; see

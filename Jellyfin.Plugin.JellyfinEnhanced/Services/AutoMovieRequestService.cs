@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest;
 using MediaBrowser.Controller.Entities;
@@ -28,6 +29,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IUserManager _userManager;
         private readonly ILibraryManager _libraryManager;
         private readonly AutoRequestRecorder? _recorder;
+        // The automatic-write gate over the live configuration (the same gate as the ledger's sends; the engine can't be in
+        // effect on this path, so its engine-only gates never apply here).
+        private readonly AutomationWriteGate _gate = new(() => JellyfinEnhanced.Instance?.Configuration);
 
         // Track which movies have already been requested to avoid duplicates (with timestamps for expiry)
         private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
@@ -89,6 +93,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Event-driven entry point called (from the recipe worker) when a user starts watching a movie.
         // The outcome is typed: a failed TMDB or Seerr lookup is a PreparationFailed, never "not in a collection".
         public async Task<AutoRequestOutcome> CheckMovieForCollectionRequestAsync(BaseItem movieItem, Guid userId, CancellationToken ct = default)
+        {
+            // Phase 3 turned on while a direct Seerr send was being prepared: the check starts again and goes through the
+            // ledger under the rules in effect now (modes, kills, consent, budgets) instead of POSTing. A switch flipped
+            // back and forth leaves it to the next trigger.
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                if (await CheckOnceAsync(movieItem, userId, ct) is { } outcome) return outcome;
+            }
+            return AutoRequestOutcome.Failed(AutomationHolds.EngineChanged);
+        }
+
+        // The write gate for a direct Seerr POST (phase 3 off), read from the live configuration (an administrator's save
+        // replaces it) right before the lookups and again immediately before each POST, every Seerr address included: the
+        // recipe's own switch or Seerr turned off ("disabled": nothing is sent or recorded, not even a Shadow decision); the
+        // rollout Shadow override; phase 3 on since the check began (EngineChanged: the decision now belongs to the
+        // ledger). Null: it may go.
+        private string? DirectStop() => _gate.Check(AutomationWrite.LegacySeerr(Recipe, _recorder != null))?.Reason;
+
+        // One check; null when the direct path stopped for phase 3 and the check has to start again.
+        private async Task<AutoRequestOutcome?> CheckOnceAsync(BaseItem movieItem, Guid userId, CancellationToken ct)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             var ledger = LedgerMode(config);
@@ -211,13 +235,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _requestedMovies[user.Id.ToString()][requestKey] = DateTime.Now;
             }
 
+            // Stopped before a POST (see DirectStop), here or right before every POST: with the rollout Shadow override,
+            // what would have been asked is recorded and nothing is sent; with phase 3 now on, the check starts again.
+            AutoRequestOutcome? Stopped(string stop)
+            {
+                lock (_movieCacheLock)
+                {
+                    if (_requestedMovies.ContainsKey(user.Id.ToString())) _requestedMovies[user.Id.ToString()].Remove(requestKey);
+                }
+                if (stop == AutomationHolds.EngineChanged)
+                {
+                    _logger.Info($"[Auto-Movie-Request] Phase 3 was turned on before '{nextMovieInfo.Title}' was sent to Seerr; checking again under the current rules");
+                    return null;
+                }
+                if (stop != AutomationHolds.ShadowOverride)
+                {
+                    _logger.Info($"[Auto-Movie-Request] '{nextMovieInfo.Title}' not sent to Seerr: the recipe or Seerr was turned off since the check began");
+                    return AutoRequestOutcome.Noop(stop, key.ToString());
+                }
+                _recorder?.ShadowOverride(Recipe, user.Id, key.ToString());
+                _logger.Info($"[Auto-Movie-Request] Shadow override: would have requested '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}; nothing sent");
+                return AutoRequestOutcome.Noop(AutomationHolds.ShadowOverride, key.ToString());
+            }
+
+            if (DirectStop() is { } early)
+            {
+                return Stopped(early);
+            }
+
             // Resolve quality profile settings based on configuration mode
             var qualitySettings = await ResolveQualityProfileAsync(tmdbId);
 
             // Request the movie
-            var success = await RequestMovie(nextMovieInfo.TmdbId.ToString(), user.Id.ToString(), qualitySettings);
+            var (sent, stop) = await RequestMovie(nextMovieInfo.TmdbId.ToString(), user.Id.ToString(), qualitySettings);
+            if (stop != null)
+            {
+                return Stopped(stop);
+            }
 
-            if (success)
+            if (sent)
             {
                 _logger.Info($"[Auto-Movie-Request] ✓ Requested '{nextMovieInfo.Title}' (TMDB {nextMovieInfo.TmdbId}) for {user.Username}");
                 return AutoRequestOutcome.Recorded("seerr_request", key.ToString());
@@ -360,8 +416,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 int? currentIndex = null;
                                 int? nextIndex = null;
 
-                                // Find current movie and next movie
-                                var parts = partsArray.EnumerateArray().ToList();
+                                // Find current movie and next movie. Seerr lists the parts in TMDB's order, which isn't
+                                // release order: sorted as on the TMDB path (undated last).
+                                var parts = partsArray.EnumerateArray()
+                                    .OrderBy(p => p.TryGetProperty("releaseDate", out var r) && r.ValueKind == JsonValueKind.String && DateTime.TryParse(r.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var date) ? date : DateTime.MaxValue)
+                                    .ThenBy(p => p.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number ? id.GetInt32() : int.MaxValue)
+                                    .ToList();
                                 for (int i = 0; i < parts.Count; i++)
                                 {
                                     var part = parts[i];
@@ -392,22 +452,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                         }
                                     }
 
-                                    // Check release date if configured
-                                    if (config.AutoMovieRequestCheckReleaseDate && nextPart.TryGetProperty("releaseDate", out var releaseDateProp))
+                                    // Check release date if configured. Seerr sends ISO dates ("2001-01-01"); a
+                                    // culture-sensitive parse reads the year in the server's calendar (Persian, Thai
+                                    // Buddhist) and misjudges the release. A date-only value parses as the server's local
+                                    // midnight, so a title counts as released from the start of its release day in the
+                                    // server's time zone. A part with no date (planned, rumoured) isn't released, as on the
+                                    // TMDB path.
+                                    if (config.AutoMovieRequestCheckReleaseDate)
                                     {
-                                        var releaseDateStr = releaseDateProp.GetString();
-                                        // Seerr sends ISO dates ("2001-01-01"); a culture-sensitive parse reads the year
-                                        // in the server's calendar (Persian, Thai Buddhist) and misjudges the release.
-                                        // A date-only value parses as the server's local midnight, so a title counts as
-                                        // released from the start of its release day in the server's time zone.
-                                        if (!string.IsNullOrEmpty(releaseDateStr) && DateTime.TryParse(releaseDateStr, System.Globalization.CultureInfo.InvariantCulture,
-                                            System.Globalization.DateTimeStyles.None, out var releaseDate))
+                                        var releaseDateStr = nextPart.TryGetProperty("releaseDate", out var releaseDateProp) && releaseDateProp.ValueKind == JsonValueKind.String ? releaseDateProp.GetString() : null;
+                                        if (string.IsNullOrEmpty(releaseDateStr) || !DateTime.TryParse(releaseDateStr, System.Globalization.CultureInfo.InvariantCulture,
+                                            System.Globalization.DateTimeStyles.None, out var releaseDate) || releaseDate > DateTime.Now)
                                         {
-                                            if (releaseDate > DateTime.Now)
-                                            {
-                                                _logger.Debug($"[Auto-Movie-Request] Next movie is not yet released (release date: {releaseDateStr}), skipping");
-                                                return new NextMovie(null, "not_released", false);
-                                            }
+                                            _logger.Debug($"[Auto-Movie-Request] Next movie is not yet released (release date: {releaseDateStr ?? "none"}), skipping");
+                                            return new NextMovie(null, "not_released", false);
                                         }
                                     }
 
@@ -660,14 +718,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return null;
         }
 
-        // Requests a movie from Jellyseerr
-        private async Task<bool> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
+        // Requests a movie from Jellyseerr: Sent, or why it stopped right before a POST (see DirectStop; nothing more is
+        // sent). Neither: it failed.
+        private async Task<(bool Sent, string? Stopped)> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Auto-Movie-Request] Jellyseerr configuration is missing");
-                return false;
+                return (false, null);
             }
 
             // Get Jellyseerr user ID
@@ -675,7 +734,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (string.IsNullOrEmpty(jellyseerrUserId))
             {
                 _logger.Warning($"[Auto-Movie-Request] Could not find Jellyseerr user for Jellyfin user {jellyfinUserId}");
-                return false;
+                return (false, null);
             }
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
@@ -707,6 +766,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);
 
+                    // Read live right before each POST (the next Seerr URL included).
+                    if (DirectStop() is { } stop)
+                    {
+                        return (false, stop);
+                    }
+
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
                         HttpMethod.Post, requestUri, config.GetJellyseerrApiKey(), jellyseerrUserId, jsonContent);
                     using var response = await httpClient.SendAsync(request);
@@ -714,7 +779,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (error == null)
                     {
-                        return true;
+                        return (true, null);
                     }
                     _logger.Warning($"[Auto-Movie-Request] Jellyseerr request failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                 }
@@ -724,7 +789,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            return false;
+            return (false, null);
         }
 
         // Gets the Jellyseerr user ID for a Jellyfin user

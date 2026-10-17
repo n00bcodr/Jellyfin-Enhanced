@@ -568,6 +568,9 @@
     function renderOverview(panel, data, ctx) {
         const grid = el('div', 'je-ops-grid');
         const main = el('div', 'je-ops-main');
+        // Phase 4: the Automation card (admin-automation.js), only when there is something to show.
+        const automation = A.automationCard?.();
+        if (automation) main.appendChild(automation);
         const cards = el('div', 'je-ops-cards');
         for (const card of data.instances || []) cards.appendChild(instanceCard(card));
         if (!(data.instances || []).length) cards.appendChild(el('div', 'je-ops-empty', tr('arr_ops_no_instances')));
@@ -1132,4 +1135,5 @@
     A.itemTitle = itemTitle;
     A.size = size;
     A.downloadKey = downloadKey;
+    A.when = when;
 })(window.JellyfinEnhanced);
