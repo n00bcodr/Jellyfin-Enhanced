@@ -98,15 +98,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 && _clientPolicy.IsNativeClient(httpContext.User);
 
         /// <summary>
-        /// Starts stamping one response, or null when the user's native poster tags are off or no tag group
-        /// is enabled (their image tags then stay untouched).
+        /// Starts stamping one response, or null when the user's native poster tags are off or nothing can be drawn
+        /// (no tag group and no acquisition stamps; their image tags then stay untouched).
         /// </summary>
         public NativePosterTagStampSession? Begin(HttpContext httpContext, Guid userId)
         {
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (cfg?.NativePosterTagsEnabled != true || !_clientPolicy.IsNativeClient(httpContext.User)) return null;
             var settings = _settings.Get(userId);
-            if (!settings.NativeEnabled || !settings.AnyGroupEnabled) return null;
+            if (!settings.NativeEnabled || !settings.AnyContentEnabled) return null;
             var user = _users.Get(userId);
             if (user == null) return null;
             var spoilerState = cfg.SpoilerBlurEnabled ? _spoilerResolver.LoadUserState(httpContext, userId) : null;
@@ -168,13 +168,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 flags |= PosterTagVariantFlags.SpoilerScoped;
             }
 
+            var snapshot = _data.GetPinnedSnapshot(ownerId, session.User, session.Settings);
+            // Only acquisition stamps can be drawn for this user (no tag group on): a poster without a stamp keeps its
+            // plain URL, so nothing changes for it.
+            if (!session.Settings.AnyGroupEnabled
+                && (snapshot?.Stamp ?? _data.StampOf(ownerId, session.User, session.Settings)) == Acquire.Stamps.AcquisitionStamp.None)
+            {
+                return tag;
+            }
+
             var token = _tokens.Mint(
                 session.User.Id,
                 ownerId,
                 session.Settings.Digest,
                 PosterTagComposer.PixelVersion,
                 flags,
-                _data.GetPinnedDataHash(ownerId, session.User));
+                snapshot?.PinnedHash ?? PosterTagVariantToken.WeakDataHash);
             var stamped = ImageTagDecoration.WithVariant(tag, token, session.Marker);
             if (dto != null && !ReferenceEquals(stamped, tag)) ReKeyPrimaryBlurhash(dto, tag, stamped);
             return stamped;

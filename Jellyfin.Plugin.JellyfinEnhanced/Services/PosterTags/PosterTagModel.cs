@@ -22,6 +22,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         Rating,
         AgeRating,
         Language,
+
+        /// <summary>The Requests &amp; downloads acquisition stamp (phase 4e): painted last, stacked after its corner's groups.</summary>
+        Acquisition,
     }
 
     /// <summary>Rating chip source.</summary>
@@ -64,6 +67,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
     /// <summary>An age rating badge. <paramref name="ColorKey"/> is the normalised key used by the web's rating colours.</summary>
     public sealed record AgeRatingTag(string Text, string ColorKey) : PosterTag;
+
+    /// <summary>
+    /// The acquisition stamp (Upgraded, New for you, 4K): a fixed value, drawn as an icon chip. Never a progress figure.
+    /// </summary>
+    public sealed record AcquisitionStampTag(Acquire.Stamps.AcquisitionStamp Stamp) : PosterTag;
 
     /// <summary>The tags of one group and where they go.</summary>
     public sealed record PosterTagGroupLayout(PosterTagGroup Group, PosterTagCorner Corner, IReadOnlyList<PosterTag> Tags);

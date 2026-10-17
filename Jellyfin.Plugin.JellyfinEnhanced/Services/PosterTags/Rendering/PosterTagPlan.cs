@@ -175,6 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     RatingTag r when group.Group == PosterTagGroup.Rating => MeasureRating(r, css, keepEnd, styles),
                     AgeRatingTag a when group.Group == PosterTagGroup.AgeRating => MeasureAge(a, css, keepEnd, styles),
                     LanguageTag l when group.Group == PosterTagGroup.Language => MeasureFlag(l, css),
+                    AcquisitionStampTag a when group.Group == PosterTagGroup.Acquisition => MeasureStamp(a, css),
                     _ => null,
                 };
                 if (item is not null)
@@ -373,6 +374,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             float width = PosterTagCss.Lu(css.FlagWidth);
             float height = PosterTagCss.Lu(width * 0.75f);
             return new PlannedItem(PosterTagTileKind.Flag, tag, code, tag.Partial ? "partial" : string.Empty, width, height);
+        }
+
+        /// <summary>
+        /// The acquisition stamp (phase 4e): a pill as high as a genre circle holding one Material Icons glyph, in the
+        /// web badge's look (dark fill, tone border, tone-tinted glyph). Its Text is the stamp's icon key.
+        /// </summary>
+        private PlannedItem? MeasureStamp(AcquisitionStampTag tag, PosterTagCss css)
+        {
+            var key = PosterTagRenderer.StampIconKey(tag.Stamp);
+            if (key is null || _assets.GetIcon(key) is null)
+            {
+                return null;
+            }
+
+            float height = PosterTagCss.Lu(css.GenreSize) + 2f;
+            float iconSize = PosterTagCss.StampGlyphSize(css);
+            float width = GlyphBoxWidth(key, iconSize) + (2 * PosterTagCss.Lu(css.ChipPaddingH)) + 2f;
+            return new PlannedItem(PosterTagTileKind.Stamp, tag, key, ((int)tag.Stamp).ToString(CultureInfo.InvariantCulture), Math.Max(width, height), height)
+            {
+                IconWidth = GlyphBoxWidth(key, iconSize),
+                IconHeight = PosterTagCss.Lu(iconSize),
+            };
         }
 
         /// <summary>An icon glyph's inline box width: its advance, rounded to whole px like any hinted advance.</summary>

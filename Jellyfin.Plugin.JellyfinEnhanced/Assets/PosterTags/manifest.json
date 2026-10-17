@@ -308,8 +308,8 @@
  },
  "outputs": {
   "THIRD_PARTY_NOTICES.md": {
-   "bytes": 19280,
-   "sha256": "cd1ee2442b7350ab708e7a1cfb3cdd821f5347c138a65616e1e7f4a308151d9c"
+   "bytes": 19311,
+   "sha256": "7c58b528ac89f53944a887cb5626190c932286cf75172c0c2bf1b8cbd1933865"
   },
   "age-rating-colours.json": {
    "bytes": 9177,
@@ -1332,8 +1332,8 @@
    "sha256": "6f5045aea2ab498087da840b5128a5644a3961d56f8b1482b2c3941103b1952b"
   },
   "icons.json": {
-   "bytes": 23726,
-   "sha256": "a249cbadf75c4df7a63d0dc1b42d70be21bbf98f3a749b6db2a80016ebda9640"
+   "bytes": 24813,
+   "sha256": "12b98db93db9990e8b9566f4bdbe1e76c926a20d909feb1e50d4674d4b761ba9"
   },
   "quality-colours.json": {
    "bytes": 2800,
