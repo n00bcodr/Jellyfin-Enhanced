@@ -441,6 +441,12 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   one-time importer of the experimental lists; `ListFlags.cs` the switches and per-person preferences. Routes in
   **`Controllers/AcquireListsController.cs`**, models in **`Model/ListPlaceholders/`**, the daily task in
   **`ScheduledTasks/ListMaintenanceTask.cs`** and the client transport in **`js/arr/lists/list-api.js`** (`JE.arrLists`).
+  `ListSummaries.cs` answers the Playlists page (which lists have entries the person can see), with its models in
+  `Model/ListPlaceholders/ListPageDtos.cs`. The pages themselves are in **`js/arr/lists/`**: `list-render.js` (rows,
+  collection cards, styles, the Spoiler Guard rule), `list-playlist.js` (entries inline on playlist pages),
+  `list-collection.js` (the collection section and the covered keys), `list-grid.js` (the Playlists page mark),
+  `list-request.js` (Request on one entry through the shared sheet) and `list-pages.js` (when they draw and stop,
+  `JE.arrListPages`).
 
 * **`/Services/Acquire/Requests/`**: Durable request server core. `RequestModels.cs` contains normalized scopes, outcomes
   and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility; `RequestLedger.cs`
