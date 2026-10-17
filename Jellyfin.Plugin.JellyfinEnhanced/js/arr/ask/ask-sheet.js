@@ -22,6 +22,11 @@
  *     one. A refused ask keeps the sheet open with the reason.
  *     `have` counts the copies in the library, whatever their quality: it marks seasons complete for
  *     the standard copy only (for 4K nothing is known to be here, so every season stays offered).
+ *     options.fixed (phase 4c3a, list entries) = { scope: string (what is asked for, e.g. "Season 2"), input: Object
+ *       (anything truthy: the scope is fixed), cost?: number (the preview's), note?: string (what the list's preview
+ *       says), send: () =>
+ *       Promise<JE.arrAsk result> } shows no scope cards and no Standard/4K toggle (the entry fixes both) and sends
+ *       through `send` (the list's own request route) instead of JE.arrAsk.ask.
  *   openOrAsk(title, options?) → Promise<result|null>   movies: one tap unless the sheet is needed.
  *   close() → void   closes the sheet (its promise resolves with null).
  *
@@ -362,7 +367,7 @@
         const variant = can4k && options?.variant === '4k' ? '4k' : 'standard';
         const [quota, shown, check] = await Promise.all([
             options && 'quota' in options ? options.quota : JE.arrAsk.quota(kind === 'movie' ? 'movie' : 'tv'),
-            kind === 'series' ? withSeasons(title) : title,
+            kind === 'series' && !options?.fixed ? withSeasons(title) : title,
             // Whether this title can be asked for now (e.g. "Paused: storage full"), said before anything is picked.
             JE.arrAsk.check ? JE.arrAsk.check(title.key, variant) : null
         ]);
@@ -421,7 +426,9 @@
             title, kind, caps, quota, opener, resolve, busy: false, done: false, ...returnPoints(opener),
             variant: can4k && options?.variant === '4k' ? '4k' : 'standard',
             choice: null, picked: new Set(), episodeSeason: null, episodes: new Set(), cards: [], key: title.key,
-            blocks: { ...(options?.blocks || {}) }
+            blocks: { ...(options?.blocks || {}) },
+            // A list entry (phase 4c3a): its scope and edition are the entry's, and it is asked for through the list.
+            fixed: options?.fixed && typeof options.fixed.send === 'function' ? options.fixed : null
         };
         const backdrop = el('div', 'je-sheet-backdrop');
         if (isTv()) backdrop.classList.add('je-sheet-tv');
@@ -447,14 +454,14 @@
         const heading = el('h2', 'je-sheet-title', caps.asksFirst ? tr('arr_sheet_title_ask', { contact, name: title.name || '' }) : tr('arr_sheet_title', { name: title.name || '' }));
         heading.id = titleId;
         headText.appendChild(heading);
-        const facts = factsLine(title, kind);
+        const facts = state.fixed ? state.fixed.scope || '' : factsLine(title, kind);
         if (facts) headText.appendChild(el('div', 'je-sheet-facts', facts));
         head.appendChild(headText);
         sheet.appendChild(head);
 
-        if (can4k) sheet.appendChild(variantToggle(state));
+        if (can4k && !state.fixed) sheet.appendChild(variantToggle(state));
 
-        if (kind === 'series') {
+        if (kind === 'series' && !state.fixed) {
             const group = el('div', 'je-sheet-cards');
             group.setAttribute('role', 'group');
             group.setAttribute('aria-label', tr('arr_sheet_choices'));
@@ -673,6 +680,7 @@
      * @returns {Object|null} Input.
      */
     function currentInput(state) {
+        if (state.fixed) return state.fixed.input || {};
         const variant = state.variant;
         if (state.kind === 'movie') return JE.arrAsk.movieInput(state.key, variant);
         const card = state.cards.find(c => c.id === state.choice);
@@ -712,7 +720,8 @@
         state.sheet?.querySelectorAll('.je-sheet-episode').forEach((b) => b.setAttribute('aria-pressed', String(state.episodes.has(Number(b.dataset.episode)))));
 
         const input = currentInput(state);
-        const cost = input ? costOf(input, caps, quota) : 0;
+        // A list entry's cost is the one the list's preview gave (the server's own rounding).
+        const cost = state.fixed ? (Number.isInteger(state.fixed.cost) ? state.fixed.cost : 0) : input ? costOf(input, caps, quota) : 0;
         const over = limited(quota) && input != null && cost > quota.remaining;
         const used = limited(quota) && quota.remaining <= 0;
         const seerrBlocked = (caps.backend === 'seerr' && over) || !!paused;
@@ -748,7 +757,13 @@
         } else {
             state.note.hidden = true;
         }
-        if (state.kind === 'movie') {
+        if (state.fixed?.note && state.note.hidden && !used) {
+            // A list entry: what the list's preview says it would do and cost.
+            state.note.hidden = false;
+            state.note.classList.add('je-sheet-note-info');
+            state.note.appendChild(icon('confirmation_number', 'je-sheet-note-icon'));
+            state.note.appendChild(el('span', null, state.fixed.note));
+        } else if (state.kind === 'movie' && !state.fixed) {
             // A movie has no cards: its cost goes under the note.
             const line = costLine(JE.arrAsk.movieInput(state.key, state.variant), caps, quota);
             if (line.text && !used) {
@@ -799,7 +814,7 @@
         showMessage(state, '', false);
         let result;
         try {
-            result = await JE.arrAsk.ask(input);
+            result = state.fixed ? await state.fixed.send() : await JE.arrAsk.ask(input);
         } catch (err) {
             result = { ok: false, status: 0, state: 'failed', outcome: '', reason: err?.name === 'AbortError' ? 'aborted' : 'network', certainty: '', requestId: null };
         }
