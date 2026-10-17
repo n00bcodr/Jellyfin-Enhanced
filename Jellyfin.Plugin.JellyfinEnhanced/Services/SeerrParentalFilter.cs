@@ -175,6 +175,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return policy.IsRestricted;
         }
 
+        /// <summary>
+        /// <see cref="TryGetRestrictedPolicy(string?, out Policy)"/> for a person already read: no second read of the
+        /// user (Jellyfin 12 reads users from its database on every lookup, so per-title checks must not repeat it).
+        /// </summary>
+        /// <param name="user">The person, as just read.</param>
+        /// <param name="policy">The policy.</param>
+        /// <returns>Whether the person has limits.</returns>
+        public bool TryGetRestrictedPolicy(Jellyfin.Database.Implementations.Entities.User? user, out Policy policy)
+        {
+            policy = default;
+            if (!IsEnabled() || user == null)
+            {
+                return false;
+            }
+
+            policy = PolicyFor(user);
+            return policy.IsRestricted;
+        }
+
         /// <summary>Jellyfin's rating and tag policy, independent of plugin flags and transport configuration.</summary>
         public static Policy PolicyFor(Jellyfin.Database.Implementations.Entities.User user)
         {
@@ -442,6 +461,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             facts = null;
             if (!TryGetRestrictedPolicy(userId, out var policy)) return true;
+            return MaySeeAbsent(mediaType, tmdbId, policy, out facts);
+        }
+
+        /// <summary>Cache-only absent-title decision under a policy already resolved (see <see cref="TryGetRestrictedPolicy(Jellyfin.Database.Implementations.Entities.User?, out Policy)"/>).</summary>
+        /// <param name="mediaType">"movie" or "tv".</param>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <param name="policy">The person's policy (restricted).</param>
+        /// <param name="facts">The verified signature, when there is one.</param>
+        /// <returns>Whether the person may see it.</returns>
+        public bool MaySeeAbsent(string mediaType, int tmdbId, Policy policy, out AbsentSignature? facts)
+        {
+            facts = null;
+            if (!policy.IsRestricted) return true;
             if (tmdbId <= 0 || (policy.HasTagRules && !HasSeerr())) return false;
             var key = mediaType + ":" + tmdbId.ToString(CultureInfo.InvariantCulture) + ":" + Region();
             if (!TryGetFreshSignature(key, policy.HasTagRules, out var signature) || signature?.Score == null) return false;
@@ -453,13 +485,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, string userId, CancellationToken ct)
         {
             if (!TryGetRestrictedPolicy(userId, out var policy)) return true;
+            return await MaySeeAbsentAsync(mediaType, tmdbId, policy, ct).ConfigureAwait(false);
+        }
+
+        /// <summary>Bounded absent-title check under a policy already resolved; lookup failures and unrated titles refuse.</summary>
+        /// <param name="mediaType">"movie" or "tv".</param>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <param name="policy">The person's policy.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>Whether the person may see it.</returns>
+        public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, Policy policy, CancellationToken ct)
+        {
+            if (!policy.IsRestricted) return true;
             if (tmdbId <= 0 || (policy.HasTagRules && !HasSeerr())) return false;
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(TimeSpan.FromSeconds(8));
                 await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, timeout.Token).ConfigureAwait(false);
-                return MaySeeAbsent(mediaType, tmdbId, userId, out _);
+                return MaySeeAbsent(mediaType, tmdbId, policy, out _);
             }
             catch (Exception) { return false; }
         }

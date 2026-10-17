@@ -94,6 +94,31 @@ public class ListsAccessTests
     }
 
     [Fact]
+    public async Task ManyTitlesOfOneListAreCheckedWithOneReadOfThePerson()
+    {
+        // Jellyfin 12 reads users from its database on every GetUserById. The list gate hands the parental checks the
+        // person it just read; the checks must not read them again per title (4,247 entries for a Kid took over 10 s).
+        using var h = new ListsHarness(seerr: true);
+        for (var i = 1; i <= 40; i++)
+        {
+            h.MovieCertifications[i] = i % 2 == 0 ? "G" : "R";
+        }
+
+        var kid = h.NewUser("kid", maxRating: 10);
+        var entries = Enumerable.Range(1, 40).Select(i => ListsHarness.Movie(i)).ToList();
+        h.Users.Invocations.Clear();
+
+        var hidden = await h.Access.GetHiddenPlaceholderIdsAsync(entries, kid, CancellationToken.None);
+        var stamp = h.Access.ParentalStamp(kid);
+
+        Assert.Equal(20, hidden.Count);
+        Assert.NotEqual("-", stamp);
+        Assert.True(h.Access.IsRestricted(kid));
+        var reads = h.Users.Invocations.Count(i => i.Method.Name == nameof(MediaBrowser.Controller.Library.IUserManager.GetUserById));
+        Assert.True(reads == 0, $"the person was read {reads} times for 40 titles");
+    }
+
+    [Fact]
     public async Task CheckTitleTellsAllowedBlockedAndUnknownApart()
     {
         // The arr branch's SeerrParentalFilter seam (TryGetRestrictedPolicy, MaySeeAbsentAsync, MaySeeAbsent) behind
