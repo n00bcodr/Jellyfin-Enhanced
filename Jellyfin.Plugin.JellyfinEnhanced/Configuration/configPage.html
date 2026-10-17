@@ -3311,6 +3311,8 @@
     </div>
 <script type="text/javascript">
         (() => {
+            // Never use template-literal placeholders (a dollar sign followed by "{") anywhere in this file:
+            // the dashboard passes it through globalize.translateHtml, which rewrites each one as a translation key.
             const pluginId = 'f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b';
 
             const page = document.querySelector('#JellyfinEnhancedPage');
@@ -4284,7 +4286,7 @@
                         break;
                     }
                 } catch (e) {
-                    console.error(`Seerr validation failed for ${url}:`, e);
+                    console.error('Seerr validation failed for ' + url + ':', e);
                     // Jellyfin's ApiClient.ajax rejects with the Response object
                     // (modern fetch), which doesn't expose responseText/responseJSON.
                     // Read the body asynchronously so connectionErrorMessage can
@@ -7941,7 +7943,7 @@
 
             const maxFileSize = 10 * 1024 * 1024; // 10MB
             if (file.size > maxFileSize) {
-                statusDiv.textContent = `✗ File too large (max ${maxFileSize / (1024 * 1024)}MB)`;
+                statusDiv.textContent = '✗ File too large (max ' + (maxFileSize / (1024 * 1024)) + 'MB)';
                 statusDiv.style.color = '#ff6b6b';
                 return;
             }
@@ -7962,7 +7964,7 @@
                     const img = new Image();
                     img.onload = function() {
                         if (dimensionsDiv) {
-                            dimensionsDiv.textContent = `${img.width} × ${img.height}px`;
+                            dimensionsDiv.textContent = img.width + ' × ' + img.height + 'px';
                             dimensionsDiv.style.display = 'block';
                         }
                         URL.revokeObjectURL(objectUrl);
@@ -7999,12 +8001,12 @@
                     setTimeout(() => { statusDiv.textContent = ''; }, 3000);
                 } else {
                     const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Upload failed'}`;
+                    statusDiv.textContent = '✗ ' + (error || 'Upload failed');
                     statusDiv.style.color = '#ff6b6b';
                 }
             } catch (error) {
                 console.error('Upload exception:', error);
-                statusDiv.textContent = `✗ ${error.message || 'Upload error'}`;
+                statusDiv.textContent = '✗ ' + (error.message || 'Upload error');
                 statusDiv.style.color = '#ff6b6b';
             }
         }
@@ -8083,11 +8085,11 @@
                     setTimeout(() => { statusDiv.textContent = ''; }, 2000);
                 } else {
                     const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Delete failed'}`;
+                    statusDiv.textContent = '✗ ' + (error || 'Delete failed');
                     statusDiv.style.color = '#ff6b6b';
                 }
             } catch (err) {
-                statusDiv.textContent = `✗ ${err.message || 'Delete error'}`;
+                statusDiv.textContent = '✗ ' + (err.message || 'Delete error');
                 statusDiv.style.color = '#ff6b6b';
             }
         }
@@ -8147,7 +8149,7 @@
                     if (!displayName && code.includes('-')) {
                         const baseName = cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName;
                         displayName = baseName && localeSet.has(code.split('-')[0].toLowerCase())
-                            ? `${baseName} (${code.split('-')[1]})`
+                            ? baseName + ' (' + code.split('-')[1] + ')'
                             : baseName;
                     }
                     return { code, displayName: displayName || code };
@@ -11381,14 +11383,14 @@
                     if (parts.length >= 2 && parts[0] && parts[1]) {
                         validLinks.push({ name: parts[0], icon: parts[1] });
                     } else {
-                        invalidLines.push(`Line ${index + 1}: "${trimmedLine}"`);
+                        invalidLines.push('Line ' + (index + 1) + ': "' + trimmedLine + '"');
                     }
                 });
 
                 if (invalidLines.length > 0) {
                     Dashboard.alert({
                         title: 'Invalid Format',
-                        message: `The following lines have invalid format:\n\n${invalidLines.join('\n')}\n\nPlease use the format: Configuration Page Name | icon_name`
+                        message: 'The following lines have invalid format:\n\n' + invalidLines.join('\n') + '\n\nPlease use the format: Configuration Page Name | icon_name'
                     });
                     return;
                 }
