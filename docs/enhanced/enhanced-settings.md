@@ -318,6 +318,7 @@ Choose which types of spoilers you want hidden. Your personal choices inherit th
 | **Taglines** | Checked; inherit admin policy | Hides protected taglines. |
 | **Tags** | Checked; inherit admin policy | Hides protected metadata tags. |
 | **Reviews** | Checked; inherit admin policy | Hides reviews in the protected web interface. |
+| **Seek previews** | Checked; inherit admin policy | Hides trickplay thumbnails while seeking through protected unwatched episodes and movies. |
 | **Advanced per-category reveals** | Checked; inherit admin policy | Uses the admin's enabled advanced reveals; unchecking restores stricter uniform protection. |
 | **Don't ask me to confirm when turning Spoiler Guard off** | Off | Skips the disable-confirmation dialog. |
 

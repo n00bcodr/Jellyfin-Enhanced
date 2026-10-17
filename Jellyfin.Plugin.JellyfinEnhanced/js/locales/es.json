@@ -564,6 +564,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Desmárcalo para ver etiquetas de la historia como \"Muerte de un personaje principal\".",
     "panel_settings_spoiler_guard_override_reviews": "Reseñas",
     "panel_settings_spoiler_guard_override_reviews_desc": "Desmárcalo para ver el panel de reseñas de TMDB / usuarios en las páginas de detalles de series.",
+    "panel_settings_spoiler_guard_override_trickplay": "Vistas previas de la barra de progreso",
+    "panel_settings_spoiler_guard_override_trickplay_desc": "Desmárcalo para ver las miniaturas de trickplay al desplazarte por un episodio o una película no vistos.",
     "panel_settings_spoiler_guard_override_advanced": "Revelaciones avanzadas por categoría",
     "panel_settings_spoiler_guard_override_advanced_desc": "Desmarca para volver a ocultarlo todo (incluido el título del próximo episodio) en lugar de las revelaciones por categoría que activó tu administrador.",
     "panel_settings_spoiler_guard_skip_confirm": "No pedirme confirmación al desactivar la protección contra spoilers",

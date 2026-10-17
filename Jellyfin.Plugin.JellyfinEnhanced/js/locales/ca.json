@@ -564,6 +564,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Desmarca-ho per veure etiquetes argumentals com \"Mort d'un personatge principal\".",
     "panel_settings_spoiler_guard_override_reviews": "Ressenyes",
     "panel_settings_spoiler_guard_override_reviews_desc": "Desmarca-ho per veure el tauler de ressenyes de TMDB / usuaris a les pàgines de detalls de les sèries.",
+    "panel_settings_spoiler_guard_override_trickplay": "Previsualitzacions de la barra de progrés",
+    "panel_settings_spoiler_guard_override_trickplay_desc": "Desmarca-ho per veure les miniatures de trickplay mentre et desplaces per un episodi o una pel·lícula no vistos.",
     "panel_settings_spoiler_guard_override_advanced": "Revelacions avançades per categoria",
     "panel_settings_spoiler_guard_override_advanced_desc": "Desmarqueu per tornar a amagar-ho tot (incloent-hi el títol del proper episodi) en lloc de les revelacions per categoria que ha activat l'administrador.",
     "panel_settings_spoiler_guard_skip_confirm": "No em demanis confirmació quan desactivi la protecció contra espòilers",

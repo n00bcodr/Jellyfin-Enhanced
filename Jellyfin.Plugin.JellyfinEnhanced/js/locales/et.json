@@ -569,6 +569,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Eemalda linnuke, et näha süžeesilte nagu \"Peategelase surm\".",
     "panel_settings_spoiler_guard_override_reviews": "Arvustused",
     "panel_settings_spoiler_guard_override_reviews_desc": "Eemalda linnuke, et näha sarja detailide lehel TMDB / kasutajate arvustuste paneeli.",
+    "panel_settings_spoiler_guard_override_trickplay": "Kerimise eelvaated",
+    "panel_settings_spoiler_guard_override_trickplay_desc": "Eemalda linnuke, et näha vaatamata episoodi või filmi kerimisel trickplay-pisipilte.",
     "panel_settings_spoiler_guard_override_advanced": "Täpsemad kategooriapõhised paljastused",
     "panel_settings_spoiler_guard_override_advanced_desc": "Eemalda linnuke, et peita kõik uuesti (sh järgmise episoodi pealkiri) selle asemel, et kasutada sinu administraatori lubatud kategooriapõhiseid paljastusi.",
     "panel_settings_spoiler_guard_skip_confirm": "Ära küsi kinnitust, kui lülitan spoilerikaitse välja",

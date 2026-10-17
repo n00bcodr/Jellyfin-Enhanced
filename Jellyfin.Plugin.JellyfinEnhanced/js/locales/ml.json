@@ -569,6 +569,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "\"ഒരു പ്രധാന കഥാപാത്രത്തിന്റെ മരണം\" പോലുള്ള കഥാ ടാഗുകൾ കാണാൻ അൺചെക്ക് ചെയ്യുക.",
     "panel_settings_spoiler_guard_override_reviews": "അവലോകനങ്ങൾ",
     "panel_settings_spoiler_guard_override_reviews_desc": "സീരീസ് വിവര പേജുകളിൽ TMDB / ഉപയോക്തൃ അവലോകന പാനൽ കാണാൻ അൺചെക്ക് ചെയ്യുക.",
+    "panel_settings_spoiler_guard_override_trickplay": "സീക്ക് പ്രിവ്യൂകൾ",
+    "panel_settings_spoiler_guard_override_trickplay_desc": "കണ്ടിട്ടില്ലാത്ത എപ്പിസോഡിലൂടെയോ സിനിമയിലൂടെയോ സീക്ക് ചെയ്യുമ്പോൾ trickplay തംബ്നെയിലുകൾ കാണാൻ അൺചെക്ക് ചെയ്യുക.",
     "panel_settings_spoiler_guard_override_advanced": "വിപുലമായ വിഭാഗം തിരിച്ചുള്ള വെളിപ്പെടുത്തലുകൾ",
     "panel_settings_spoiler_guard_override_advanced_desc": "നിങ്ങളുടെ അഡ്മിൻ പ്രവർത്തനക്ഷമമാക്കിയ വിഭാഗം തിരിച്ചുള്ള വെളിപ്പെടുത്തലുകൾക്ക് പകരം (അടുത്ത എപ്പിസോഡിന്റെ ടൈറ്റിൽ ഉൾപ്പെടെ) എല്ലാം വീണ്ടും മറയ്ക്കാൻ അൺചെക്ക് ചെയ്യുക.",
     "panel_settings_spoiler_guard_skip_confirm": "സ്‌പോയിലർ ഗാർഡ് ഓഫാക്കുമ്പോൾ എന്നോട് സ്ഥിരീകരണം ചോദിക്കരുത്",

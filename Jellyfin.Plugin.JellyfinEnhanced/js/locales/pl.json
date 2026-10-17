@@ -564,6 +564,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Odznacz, aby zobaczyć tagi fabuły, takie jak \"Śmierć głównego bohatera\".",
     "panel_settings_spoiler_guard_override_reviews": "Recenzje",
     "panel_settings_spoiler_guard_override_reviews_desc": "Odznacz, aby zobaczyć panel recenzji TMDB / użytkowników na stronach szczegółów seriali.",
+    "panel_settings_spoiler_guard_override_trickplay": "Podgląd podczas przewijania",
+    "panel_settings_spoiler_guard_override_trickplay_desc": "Odznacz, aby zobaczyć miniatury trickplay podczas przewijania nieobejrzanego odcinka lub filmu.",
     "panel_settings_spoiler_guard_override_advanced": "Zaawansowane odsłanianie według kategorii",
     "panel_settings_spoiler_guard_override_advanced_desc": "Odznacz, aby ponownie ukryć wszystko (w tym tytuł następnego odcinka) zamiast odsłaniania według kategorii włączonego przez administratora.",
     "panel_settings_spoiler_guard_skip_confirm": "Nie pytaj o potwierdzenie przy wyłączaniu ochrony przed spoilerami",

@@ -564,6 +564,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Abwählen, um Story-Tags wie \"Tod einer Hauptfigur\" zu sehen.",
     "panel_settings_spoiler_guard_override_reviews": "Rezensionen",
     "panel_settings_spoiler_guard_override_reviews_desc": "Abwählen, um das Panel mit TMDB- / Benutzerrezensionen auf Seriendetailseiten zu sehen.",
+    "panel_settings_spoiler_guard_override_trickplay": "Vorschaubilder beim Spulen",
+    "panel_settings_spoiler_guard_override_trickplay_desc": "Abwählen, um beim Spulen in ungesehenen Episoden oder Filmen Trickplay-Vorschaubilder zu sehen.",
     "panel_settings_spoiler_guard_override_advanced": "Erweiterte Freigaben pro Kategorie",
     "panel_settings_spoiler_guard_override_advanced_desc": "Abwählen, um wieder alles zu verbergen (einschließlich des Titels der nächsten Episode) statt der vom Administrator aktivierten Freigaben pro Kategorie.",
     "panel_settings_spoiler_guard_skip_confirm": "Beim Ausschalten von Spoiler Guard nicht nach Bestätigung fragen",

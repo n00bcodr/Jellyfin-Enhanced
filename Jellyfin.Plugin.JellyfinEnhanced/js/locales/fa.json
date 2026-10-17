@@ -564,6 +564,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "تیک را بردارید تا برچسب‌های داستانی مانند «مرگ یک شخصیت اصلی» دیده شود.",
     "panel_settings_spoiler_guard_override_reviews": "نقدها",
     "panel_settings_spoiler_guard_override_reviews_desc": "تیک را بردارید تا پنل نقدهای TMDB/کاربران در صفحه جزئیات سریال دیده شود.",
+    "panel_settings_spoiler_guard_override_trickplay": "پیش‌نمایش‌های نوار پیشرفت",
+    "panel_settings_spoiler_guard_override_trickplay_desc": "تیک را بردارید تا تصاویر بند انگشتی trickplay هنگام جابه‌جایی در قسمت یا فیلم دیده‌نشده دیده شود.",
     "panel_settings_spoiler_guard_override_advanced": "آشکارسازی پیشرفته بر اساس دسته‌بندی",
     "panel_settings_spoiler_guard_override_advanced_desc": "تیک را بردارید تا همه‌چیز دوباره پنهان شود (از جمله عنوان قسمت بعدی) به‌جای آشکارسازی‌های دسته‌بندی‌شده‌ای که مدیر فعال کرده است.",
     "panel_settings_spoiler_guard_skip_confirm": "هنگام خاموش کردن محافظ اسپویلر از من تأیید نخواه",

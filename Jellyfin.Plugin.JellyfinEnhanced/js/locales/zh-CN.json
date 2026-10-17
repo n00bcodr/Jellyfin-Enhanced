@@ -564,6 +564,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "取消勾选可查看剧情标签，例如“主角死亡”。",
     "panel_settings_spoiler_guard_override_reviews": "评论",
     "panel_settings_spoiler_guard_override_reviews_desc": "取消勾选可在剧集详情页查看 TMDB / 用户评论面板。",
+    "panel_settings_spoiler_guard_override_trickplay": "进度条预览",
+    "panel_settings_spoiler_guard_override_trickplay_desc": "取消勾选可在拖动未观看分集或电影的进度条时查看 trickplay 缩略图。",
     "panel_settings_spoiler_guard_override_advanced": "按类别的高级显示",
     "panel_settings_spoiler_guard_override_advanced_desc": "取消勾选可重新隐藏全部内容（包括下一集的标题），不使用管理员启用的按类别显示。",
     "panel_settings_spoiler_guard_skip_confirm": "关闭 Spoiler Guard 时不再要求我确认",
