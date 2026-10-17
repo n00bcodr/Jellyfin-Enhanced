@@ -772,6 +772,12 @@ exceeded, and queued jobs re-check it before sending. Approval can grant count-q
 When a queued request is checked again before sending, only the charges made up to its own count (the personal
 allowance and a group pool alike), in the order they were made, even within the same millisecond: an excess approved
 later never holds a request that was within the allowance.
+A title is one title whichever of its ids it was asked by: a series asked for before it reached Sonarr (known by its
+TMDB id) and asked for again once Sonarr has it (its TVDB id), or a movie asked for by its IMDb id before Radarr had
+it, is held as one title under one key. Dedup, coverage, following, the decline cooldown, approvals, imports and
+My requests all see it once. Requests a former version held apart for one title are merged soon after start: everyone's
+request is kept with its history; one that another request of the title already covers follows it and gets its charge
+back; nothing that went out is sent again.
 Overlapping asks charge only additional scope. An existing user's covered scope reuses
 their want; another user follows covered intent without a charge. Sharing requires the same backend, resolved instance,
 connection generation and Seerr source. A request for another target creates its own work. Members need approval after their cumulative scope

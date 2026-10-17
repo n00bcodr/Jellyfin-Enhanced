@@ -458,7 +458,14 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   doesn't follow new seasons itself). `RequestDestination.cs` is the one rule for where a request goes (its target, and
   an administrator's Seerr server, profile, root folder and options stamp): every ledger and charges path where one
   request covers, dedups, follows or stands for another asks it, and so does every approval that re-confirms or edits
-  one (a fresh stamp re-confirms only on the request's own Seerr; what went out never moves).
+  one (a fresh stamp re-confirms only on the request's own Seerr; what went out never moves); it also says when two
+  requests are for the same title and edition. `RequestLedgerTitles.cs` (part of the ledger) holds every title under one
+  key across its TMDB, TVDB and IMDb ids: the aliases it has learned (`title_aliases`) resolve every key that comes in,
+  and learning one moves the title's requests, jobs and acquisitions to its canonical key and merges what was held apart
+  (a request another one of the title already covers then follows it, with its charge given back; nothing is sent
+  again). `RequestTitleIdentity.cs` hands what the arr libraries and Seerr's requests say about a title's ids to it: for
+  each ask and approval first, and in a background pass over every stored title (after start, after an arr library read
+  changes, and every few minutes).
   `AcquireRequestsController.cs` exposes the authenticated server API.
   In Seerr mode `SeerrBackend.cs` also reads Seerr's Radarr/Sonarr servers (profiles, root folders, the options stamp)
   for administrator Seerr request options, checks a chosen server, profile and folder again right before the POST and
