@@ -944,13 +944,14 @@ public class IntegrationRequestLedgerTests
         Assert.DoesNotContain("private", outcome.Message); Assert.Equal("private, no-store", http.Response.Headers.CacheControl.ToString());
     }
 
+    private static string ThisFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
+
     [Fact]
     public void NoProductionCSharpDeclaresAsyncVoid()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
-        // External output folders do not have the repository as an ancestor.
-        root ??= new DirectoryInfo(Directory.GetCurrentDirectory());
+        // From this source file: an output folder outside the repository (--artifacts-path) has it neither as
+        // an ancestor nor as the test host's working directory.
+        var root = new DirectoryInfo(Path.GetDirectoryName(ThisFile())!);
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         Assert.NotNull(root);
         var files = Directory.EnumerateFiles(Path.Combine(root!.FullName, "Jellyfin.Plugin.JellyfinEnhanced"), "*.cs", SearchOption.AllDirectories).Where(f => !f.Contains("/obj/") && !f.Contains("/bin/"));

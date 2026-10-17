@@ -1005,19 +1005,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch (Exception) { return false; }
         }
 
-        private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
+        // upstreamNotFound: the JSON to answer when Seerr itself answers 404 (never for the proxy's own 404s, e.g. "unlinked").
+        private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null, string? upstreamNotFound = null)
         {
             if (method == HttpMethod.Get || !apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase))
-                return await ProxyJellyseerrRequestCore(apiPath, method, content);
+                return await ProxyJellyseerrRequestCore(apiPath, method, content, upstreamNotFound);
             // After the hand-over to Jellyfin Enhanced (phase 3, JE request handling) JE never writes a request
             // to Seerr again: new asks, approvals and cancels go through JE's own request API. While a move runs
             // the write waits outside (refused); one already running holds the move off until it is done.
             using var write = EnterSeerrRequestWrite(out var refusal);
             if (refusal != null) return refusal;
-            return await ProxyJellyseerrRequestCore(apiPath, method, content);
+            return await ProxyJellyseerrRequestCore(apiPath, method, content, upstreamNotFound);
         }
 
-        private async Task<IActionResult> ProxyJellyseerrRequestCore(string apiPath, HttpMethod method, string? content)
+        private async Task<IActionResult> ProxyJellyseerrRequestCore(string apiPath, HttpMethod method, string? content, string? upstreamNotFound)
         {
             // Propagate client disconnects (superseded search queries, page
             // navigations) to the upstream Seerr/TMDB call so we stop doing
@@ -1308,6 +1309,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             ? await ApplyParentalFilterAsync(json, apiPath, jellyfinUserId)
                             : ProjectForCaller(json);
                     }
+
+                    if (upstreamNotFound != null && error is { Code: Helpers.Jellyseerr.SeerrErrorCode.UpstreamError, HttpStatus: 404 })
+                        return Content(upstreamNotFound, "application/json");
 
                     _logger.Warning($"Seerr request failed for user {ResolveUserDisplay(jellyfinUserId)} at {trimmedUrl}: code={error!.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
 
@@ -2511,12 +2515,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <returns>The ratings, null, or the proxy's error.</returns>
         [HttpGet("jellyseerr/tv/{tmdbId}/ratings")]
         [Authorize]
-        public async Task<IActionResult> GetTvRatingsCombined(int tmdbId)
+        public Task<IActionResult> GetTvRatingsCombined(int tmdbId)
         {
-            var result = await ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/ratings", HttpMethod.Get).ConfigureAwait(false);
             // Seerr answers 404 when Rotten Tomatoes doesn't know a series: no ratings, which is an answer
-            // (the page would otherwise log a failed request for every such series).
-            return result is ObjectResult { StatusCode: 404 } ? Content("null", "application/json") : result;
+            // (the page would otherwise log a failed request for every such series). The proxy's own 404
+            // (a viewer without a Seerr account) stays as it is.
+            return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/ratings", HttpMethod.Get, upstreamNotFound: "null");
         }
 
         [HttpGet("jellyseerr/discover/tv/network/{networkId}")]

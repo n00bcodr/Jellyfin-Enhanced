@@ -230,6 +230,24 @@ public class ApiSeerrTests
         Assert.Contains("96", Assert.IsType<ContentResult>(await f.Controller.GetTvRatingsCombined(83867)).Content, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task OnlySeerrsOwnNotFoundMeansASeriesHasNoRatings()
+    {
+        using var f = new SeerrFixture();
+        f.Reply = request => request.RequestUri!.AbsolutePath == "/api/v1/tv/1849/ratings"
+            ? IntegrationTransport.Response("{\"message\":\"Rotten Tomatoes ratings not found.\"}", 404)
+            : IntegrationTransport.Response("{}");
+        // A viewer without a Seerr account keeps the proxy's own 404 ("unlinked"), not "no ratings".
+        f.SetUser(Guid.NewGuid());
+        var unlinked = Assert.IsAssignableFrom<ObjectResult>(await f.Controller.GetTvRatingsCombined(1849));
+        Assert.Equal(404, unlinked.StatusCode);
+        Assert.Equal("unlinked", Body(JsonSerializer.Serialize(unlinked.Value)).GetProperty("code").GetString());
+        Assert.DoesNotContain(f.Calls, call => call.Path.EndsWith("/ratings", StringComparison.Ordinal));
+        // A linked viewer's upstream 404 is still "no ratings".
+        f.SetUser(f.UserId);
+        Assert.Equal("null", Assert.IsType<ContentResult>(await f.Controller.GetTvRatingsCombined(1849)).Content);
+    }
+
     [Theory]
     [InlineData(403)]
     [InlineData(409)]

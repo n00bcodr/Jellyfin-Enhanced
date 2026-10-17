@@ -371,11 +371,13 @@ public class IntegrationAutoRequestLedgerTests
         release.SetResult();
     }
 
+    private static string ThisFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
+
     private static string Root()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
-        root ??= new DirectoryInfo(Directory.GetCurrentDirectory());
+        // From this source file: an output folder outside the repository (--artifacts-path) has it neither as
+        // an ancestor nor as the test host's working directory.
+        var root = new DirectoryInfo(Path.GetDirectoryName(ThisFile())!);
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         Assert.NotNull(root);
         return root!.FullName;

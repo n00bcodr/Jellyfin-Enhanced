@@ -2050,6 +2050,8 @@ public class ApiNativeDetailsTests
         var none = await rig.Feeds.RatingsAsync(unlinked, false, 83867, CancellationToken.None);
         Assert.Equal(FeedOutcome.Ok, none.Outcome);
         Assert.Equal("null", none.Json);
+        // Only Seerr's own answer means that: the feed's own refusals keep their error.
+        Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.RatingsAsync(unlinked, false, 0, CancellationToken.None)).Outcome);
         rig.Source.NoRatings = false;
         rig.Source.Busy = true;
         Assert.Equal(FeedOutcome.Busy, (await rig.Feeds.RatingsAsync(unlinked, true, 693134, CancellationToken.None)).Outcome);
