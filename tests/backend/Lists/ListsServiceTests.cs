@@ -647,7 +647,7 @@ public class ListsServiceTests
     public async Task CreatingAPlaylistAppliesEntriesAndReplaysByRequestId()
     {
         using var h = new ListsHarness();
-        var user = h.NewUser("user");
+        var user = h.NewUser("user", collections: true); // collections: collection managers (checked again by the service)
         var item = h.Host.AddItem();
         var entries = new[] { new ApplyEntry(0, item, null), new ApplyEntry(1, null, Movie(5)) };
 

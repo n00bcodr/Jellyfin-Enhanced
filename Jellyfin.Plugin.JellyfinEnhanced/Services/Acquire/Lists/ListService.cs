@@ -1496,6 +1496,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             ListOperation? operation = null;
             try
             {
+                // A create can wait for an earlier one of the person's: their rights are read again now (collections
+                // need collection management).
+                var fresh = _userManager.GetUserById(user.Id);
+                if (fresh == null)
+                {
+                    return ListOutcome.Error(403, "user_required", "Sign in as a person to use lists.");
+                }
+
+                if (kind == ListKinds.Collection && !ListAccessService.CanManageCollections(fresh))
+                {
+                    return ListOutcome.Error(403, "forbidden", "You can't manage collections.");
+                }
+
+                user = fresh;
                 ListInfo? list = null;
                 if (request != null && _operations?.Available == true)
                 {

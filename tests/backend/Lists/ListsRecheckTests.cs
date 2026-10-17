@@ -1,3 +1,4 @@
+using Jellyfin.Data;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
 using static JE.Tests.ListsHarness;
@@ -139,5 +140,34 @@ public class ListsRecheckTests
         var view = Ok<ListViewDto>(await r.WhileLimited(() => r.H.Service.SetSwapInAsync(r.Access, rev, true, null, None)));
 
         Assert.Equal(new[] { r.Kept.Id }, view.Placeholders.Select(p => p.Id));
+    }
+
+    [Fact]
+    public async Task ACollectionCreateThatWaitedForAnEarlierOneChecksCollectionManagementAgain()
+    {
+        using var h = new ListsHarness();
+        var manager = h.NewUser("manager", collections: true);
+        var item = h.Host.AddItem();
+        // The first create (a playlist) holds the person's create turn while Jellyfin takes its entries.
+        var adding = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        h.Host.BeforeAdd = async (_, _, _) =>
+        {
+            adding.TrySetResult();
+            await release.Task;
+        };
+        var first = h.Service.CreateListAsync(manager, ListKinds.Playlist, "First", false, new[] { new ApplyEntry(0, item, null) }, K("create-first"), None);
+        await adding.Task;
+        var second = h.Service.CreateListAsync(manager, ListKinds.Collection, "Second", false, Array.Empty<ApplyEntry>(), K("create-second"), None);
+        Assert.False(second.IsCompleted);
+
+        // Collection management is taken away while the second create waits.
+        manager.SetPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.EnableCollectionManagement, false);
+        h.Host.BeforeAdd = null;
+        release.SetResult();
+
+        Ok<CreateListResultDto>(await first);
+        Error(await second, 403, "forbidden");
+        Assert.DoesNotContain(h.Host.Calls, c => c == "create-collection:Second");
     }
 }
