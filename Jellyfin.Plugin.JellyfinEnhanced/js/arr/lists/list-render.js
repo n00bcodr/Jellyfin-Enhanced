@@ -30,6 +30,10 @@
     const CSS = `
 .je-list-row { display: flex; align-items: center; gap: 0.25em; padding: 0.25em 0.25em 0.25em 0.5em; position: relative; content-visibility: auto; contain-intrinsic-block-size: auto 5.75em; }
 .je-list-handle-space { visibility: hidden; }
+/* TV: jellyfin-web's D-pad goes to the nearest focusable to the right, and a full-width real row below counts at no
+   distance; Request sits right after the entry, so Right reaches it first (then the status pill). */
+.layout-tv .je-list-row .je-list-side .je-list-request { order: -1; }
+.layout-tv .je-list-row .je-list-side { margin-left: 0.25em; }
 .je-list-row-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 0.75em; padding: 0.25em 0; margin: 0; background: transparent; border: 0; color: inherit; font: inherit; text-align: start; }
 button.je-list-row-main { cursor: pointer; }
 .je-list-row-main:focus-visible, .layout-tv .je-list-row-main:focus { outline: 2px solid var(--jf-palette-primary-main, #00a4dc); outline-offset: -2px; border-radius: 0.3em; }
@@ -363,6 +367,8 @@ button.je-list-card-main { cursor: pointer; }
                 pill.title = words;
                 if (!pill.hasAttribute('aria-label')) pill.setAttribute('aria-label', words);
             }
+            // TV: the journey pill (a button) is reachable with the D-pad like the rest of the row.
+            if (ctx.tv && pill?.tagName === 'BUTTON') pill.classList.add('focusable');
             return block;
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Lists: status pill failed', err);
