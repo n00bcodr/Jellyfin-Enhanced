@@ -99,7 +99,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 if (Learn(_ledger, _policy, _aliases, _feed, key, _now(), _logger) is not { } merge) continue;
                 changed++;
-                _logger?.Info($"Requests: {string.Join(", ", merge.Keys.Skip(1))} are {merge.Canonical} too; its requests are held as one title ({merge.Acquisitions} merged, {merge.Followers} now follow another request of it).");
+                // Only a title whose requests moved is worth a line (most passes only remember an alias).
+                if (merge.People.Count > 0) _logger?.Info($"Requests: {string.Join(", ", merge.Keys.Skip(1))} are {merge.Canonical} too; its requests are held as one title ({merge.Acquisitions} merged, {merge.Followers} now follow another request of it).");
             }
             return changed;
         }
