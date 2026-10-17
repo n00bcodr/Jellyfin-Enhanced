@@ -208,6 +208,13 @@ CREATE TABLE automation_grants (
 CREATE TABLE automation_breakers (
     target TEXT PRIMARY KEY, failures INTEGER NOT NULL, opened_until INTEGER, last_reason TEXT, updated_at INTEGER NOT NULL);
 ",
+            // 4: phase 4b household rules and group quotas. The household-rule verdict a want was created with (its
+            // rationale, shown to the requester and approvers), and the group pool each reservation is bound to.
+            @"
+ALTER TABLE wants ADD COLUMN rule_detail TEXT;
+ALTER TABLE reservations ADD COLUMN pool_id TEXT;
+CREATE INDEX reservations_pool ON reservations(pool_id,state,charged_at);
+",
         };
 
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.

@@ -20,6 +20,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             (nameof(PluginConfiguration.ArrRequestRoles), c => c.ArrRequestRoles ?? string.Empty, (to, from) => to.ArrRequestRoles = from.ArrRequestRoles),
             (nameof(PluginConfiguration.ArrRequestUsers), c => c.ArrRequestUsers ?? string.Empty, (to, from) => to.ArrRequestUsers = from.ArrRequestUsers),
             (nameof(PluginConfiguration.ArrRequestQuotaLimit), c => c.ArrRequestQuotaLimit.ToString(CultureInfo.InvariantCulture), (to, from) => to.ArrRequestQuotaLimit = from.ArrRequestQuotaLimit),
+            // Phase 4b: household rules and group pools are edited on the Household tab.
+            (nameof(PluginConfiguration.ArrHouseholdRules), c => c.ArrHouseholdRules ?? string.Empty, (to, from) => to.ArrHouseholdRules = from.ArrHouseholdRules),
+            (nameof(PluginConfiguration.ArrHouseholdStreamingCountry), c => c.ArrHouseholdStreamingCountry ?? string.Empty, (to, from) => to.ArrHouseholdStreamingCountry = from.ArrHouseholdStreamingCountry),
+            (nameof(PluginConfiguration.ArrHouseholdStreamingServices), c => c.ArrHouseholdStreamingServices ?? string.Empty, (to, from) => to.ArrHouseholdStreamingServices = from.ArrHouseholdStreamingServices),
+            (nameof(PluginConfiguration.ArrGroupQuotaPools), c => c.ArrGroupQuotaPools ?? string.Empty, (to, from) => to.ArrGroupQuotaPools = from.ArrGroupQuotaPools),
         };
 
         /// <summary>
