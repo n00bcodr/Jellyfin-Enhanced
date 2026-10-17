@@ -978,6 +978,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var noneLanded = !run.Any(e => e.ItemId.HasValue && landedNow.Contains(e.ItemId.Value.ToString("N", CultureInfo.InvariantCulture)));
                 // The person's rights now decide whether the placeholders this attempt added are kept.
                 var (denied, current) = _gate.Edit(access);
+                var droppedNow = new List<Placeholder>();
                 if (denied != null || (isPlaylist && hooks?.Place == null && standaloneItems.Count > 0 && noneLanded))
                 {
                     // None of the new real items reached Jellyfin (one insert, so all or nothing): keep none of the
@@ -986,7 +987,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     // in order at its position. A run whose only real items are a TV scope's present episodes keeps its
                     // placeholders: swap-in inserts those episodes next to their placeholder later. (The sync places by
                     // source neighbours on every run: unchanged.) Nor are any kept once the person can't change the list.
-                    DropAdded(doc, order, result);
+                    droppedNow = DropAdded(doc, order, result);
                 }
 
                 changed = DropLandedCompleteScopes(doc, accepted, result, order);
@@ -1003,7 +1004,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var saved = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || settled || regrouped);
                 if (denied != null)
                 {
-                    return denied;
+                    // The person lost the list during Jellyfin's writes: what Jellyfin already took is the write's result
+                    // (answered without the list); with nothing taken, the refusal.
+                    result.AddedAsItems.RemoveAll(id => !landedNow.Contains(id));
+                    if (result.AddedAsItems.Count == 0)
+                    {
+                        return denied;
+                    }
+
+                    skipped.AddRange(droppedNow.Select(p => new SkippedEntryDto { Index = accepted.First(e => ReferenceEquals(e.Placeholder, p)).Index, Reason = "accessLost" }));
+                    result.Skipped = skipped.OrderBy(x => x.Index).ToList();
+                    return ListOutcome.Ok(result);
                 }
 
                 var failure = ex is ListAccessLostException { Outcome: { } refused } ? (ListErrorDto)refused.Value! : new ListErrorDto { Code = "list_update_failed", Message = "Jellyfin could not update the list." };
