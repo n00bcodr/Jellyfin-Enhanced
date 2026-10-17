@@ -442,6 +442,17 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   **`Controllers/AcquireListsController.cs`**, models in **`Model/ListPlaceholders/`**, the daily task in
   **`ScheduledTasks/ListMaintenanceTask.cs`** and the client transport in **`js/arr/lists/list-api.js`** (`JE.arrLists`).
 
+* **`/Services/Acquire/Stamps/`**: Phase-4 acquisition badges (New for you, Upgraded, 4K). `AcquisitionStamp.cs` holds
+  the fixed stamp values, the switches and lifetimes (`AcquisitionStampFlags`), the 4K copy rule and the seams;
+  `AcquisitionStampStore.cs` the facts in acquire.db (schema 7: a person's first arrivals, confirmed upgrades, judged
+  arrivals and first arrival per part) with an in-memory index; `AcquisitionStampFeeder.cs` the background writer
+  (library arrivals, the arrs' history in memory, catch-up and housekeeping); `AcquisitionStampResolver.cs` the pure
+  in-memory decision per viewer and item that web cards and native posters share; `AcquisitionStampSources.cs` the
+  Jellyfin, request/follow and arr-history adapters, the per-person preference reader and the deleted-user purge.
+  Route in **`Controllers/AcquisitionStampsController.cs`** (`GET acquire/stamps`); native posters draw the stamp through
+  `Services/PosterTags/` (an `Acquisition` group, pinned in the poster's data hash); the web badge is built by
+  `JE.arrStatus.buildBadge` in **`js/arr/status/`**.
+
 * **`/Services/Acquire/Requests/`**: Durable request server core. `RequestModels.cs` contains normalized scopes, outcomes
   and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility; `RequestLedger.cs`
   commits intent, reservations, approvals, events and outbox jobs in acquire.db (schema 3 adds each want's server-built
