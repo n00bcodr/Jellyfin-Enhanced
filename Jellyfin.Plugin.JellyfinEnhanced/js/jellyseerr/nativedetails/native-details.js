@@ -683,8 +683,8 @@
             button = null;
         }
         if (!button) return;
-        const more = row.querySelector('.btnMoreCommands');
-        row.insertBefore(button, more && more.parentNode === row ? more : null);
+        // Where a library title has it: after Report issue, just before More….
+        JE.core.ui.placeDetailAction(row, button);
         state.spoiler = button;
     }
 

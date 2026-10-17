@@ -226,13 +226,8 @@
             setHideState();
         }
 
-        // Keep Jellyfin's overflow menu (three-dots) as the last action button.
-        const moreButton = buttonContainer.querySelector('.btnMoreCommands');
-        if (moreButton) {
-            buttonContainer.insertBefore(button, moreButton);
-        } else {
-            buttonContainer.appendChild(button);
-        }
+        // Before Report issue and Spoiler Guard, and before Jellyfin's overflow menu (three-dots).
+        JE.core.ui.placeDetailAction(buttonContainer, button);
     }
 
     // The chips JE adds to Jellyfin's primary info row.

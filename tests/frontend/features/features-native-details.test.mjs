@@ -58,6 +58,7 @@ function setup(t, { cap = { Enabled: true, ContractVersion: 1 }, url = 'http://j
   // jellyfin-web's router numbers its entries: idx > 0 is a page reached from inside Jellyfin.
   if (inApp) h.window.history.replaceState({ usr: null, key: 'k', idx: 1 }, '');
   t.after(() => h.close());
+  h.load('core/ui-kit.js');
   h.load('jellyseerr/nativedetails/native-details.js');
   return { ...h, td: h.JE.titleDetails, shown, modal, mounts, fetched, back, resolved, toggles, collections, userChanges };
 }
@@ -278,6 +279,8 @@ test('Spoiler Guard is an icon button in the native action row before More…, w
   const button = page.querySelector('.je-spoiler-pending-detail');
   assert.ok(button);
   assert.equal(button.parentElement, page.querySelector('.mainDetailButtons'));
+  // After Report issue, just before More…, the order a library title's row has.
+  assert.ok(button.previousElementSibling.classList.contains('jellyseerr-report-issue-icon'));
   assert.ok(button.nextElementSibling.classList.contains('btnMoreCommands'));
   assert.deepEqual(JSON.parse(JSON.stringify(built)), [[693134, 'Dune: Part Two', 'movie', { detail: true }]]);
   // Not a second switch under the page.

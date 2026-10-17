@@ -7,7 +7,7 @@
 // (shared by the Seerr results row, cards and request buttons).
 //
 // Public surface: JE.core.ui { escapeHtml, toast, injectCss, removeCss,
-// addTouchTapListener, addDelegatedTouchTapListener }.
+// addTouchTapListener, addDelegatedTouchTapListener, placeDetailAction }.
 // Aliases kept: JE.escapeHtml, JE.toast, JE.helpers.addCSS/removeCSS/escHtml.
 (function(JE) {
     'use strict';
@@ -280,6 +280,49 @@
         root.addEventListener('touchend', (e) => { trackerFor(e, false)?.end(e); }, { passive: false });
     }
 
+    /**
+     * JE's own buttons in a details page's action row, in the order they stand. Hide, Report issue
+     * and Spoiler Guard go before Jellyfin's More… (the order a library title's row has always
+     * settled in); Notify me and Manage are appended after it, so on a row without More… the
+     * others still stand before them.
+     */
+    const DETAIL_ACTION_ORDER = [
+        ['je-detail-hide-btn'],
+        ['jellyseerr-report-issue-icon', 'jellyseerr-report-unavailable-icon'],
+        ['je-spoiler-blur-btn', 'je-spoiler-pending-detail'],
+        ['je-notify-follow-details'],
+        ['je-manage-open']
+    ];
+
+    /**
+     * @param {Element} el
+     * @returns {number} The button's place in DETAIL_ACTION_ORDER, or -1 for any other element.
+     */
+    function detailActionRank(el) {
+        return DETAIL_ACTION_ORDER.findIndex(names => names.some(name => el.classList.contains(name)));
+    }
+
+    /**
+     * Puts one of JE's details-page buttons in its fixed place in the action row: after the JE
+     * buttons that come before it, before those that come after it and before More…. The order
+     * doesn't depend on which module draws first, and a button already in place isn't moved (the
+     * page's observers see no change).
+     * @param {HTMLElement} row - The action row (.mainDetailButtons or .detailButtons).
+     * @param {HTMLElement} button - The button to place.
+     */
+    function placeDetailAction(row, button) {
+        const rank = detailActionRank(button);
+        const anchor = (/** @type {Element} */ el) => el.classList.contains('btnMoreCommands') || detailActionRank(el) >= 0;
+        const before = Array.from(row.children).find(el => el !== button
+            && (el.classList.contains('btnMoreCommands') || detailActionRank(el) > rank)) || null;
+        if (button.parentNode === row) {
+            let next = button.nextElementSibling;
+            while (next && next !== before && !anchor(next)) next = next.nextElementSibling;
+            if (next === before) return;
+        }
+        row.insertBefore(button, before);
+    }
+
     JE.core.ui = {
         escapeHtml,
         toast,
@@ -287,7 +330,8 @@
         injectCss,
         removeCss,
         addTouchTapListener,
-        addDelegatedTouchTapListener
+        addDelegatedTouchTapListener,
+        placeDetailAction
     };
 
     // Frozen-contract aliases: these are the canonical implementations now.

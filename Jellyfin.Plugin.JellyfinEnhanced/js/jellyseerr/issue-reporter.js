@@ -806,8 +806,55 @@
         }
     };
 
+    const REPORT_ICONS = '.jellyseerr-report-issue-icon, .jellyseerr-report-unavailable-icon';
+
+    /** @returns {string|null} The id of the item the page shows (same way as reviews.js). */
+    const pageItemId = () => new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+
+    // The look under way per details page element. Looks that overlap (Jellyfin's viewshow and the
+    // reporter's own first look on a fresh load) share it instead of each adding an icon.
+    const pendingLooks = new WeakMap();
+
     /**
-     * Attempts to add the report issue button to the current detail page
+     * The page's report icon if it is for this item; the icon of the title shown before (Jellyfin
+     * reuses the page element) is removed.
+     * @param {HTMLElement} page
+     * @param {string} itemId
+     * @returns {Element|null}
+     */
+    function iconFor(page, itemId) {
+        const icon = page.querySelector(REPORT_ICONS);
+        if (icon && icon.getAttribute('data-je-item-id') !== itemId) {
+            icon.remove();
+            return null;
+        }
+        return icon;
+    }
+
+    /**
+     * Places a report icon for the item in the page's action row, unless the viewer has moved on
+     * or another look placed one meanwhile.
+     * @param {HTMLElement} row
+     * @param {HTMLElement} button
+     * @param {HTMLElement} page
+     * @param {string} itemId
+     * @param {function(): boolean} current - The look is still the page's look at this item.
+     * @returns {boolean} The page has an icon for the item now.
+     */
+    function placeIcon(row, button, page, itemId, current) {
+        if (!current()) {
+            console.debug(`${logPrefix} Page moved on before the report button was ready`);
+            return false;
+        }
+        if (iconFor(page, itemId)) return true;
+        button.setAttribute('data-je-item-id', itemId);
+        JE.core.ui.placeDetailAction(row, button);
+        return true;
+    }
+
+    /**
+     * Attempts to add the report issue button to the current detail page (once per page view).
+     * @returns {Promise<boolean>} The page has a report button.
      */
     issueReporter.tryAddButton = async function () {
         const itemDetailPage = document.querySelector('#itemDetailPage:not(.hide)');
@@ -820,20 +867,39 @@
             return false;
         }
 
+        const itemId = pageItemId();
+        if (!itemId) {
+            console.debug(`${logPrefix} No item ID in URL`);
+            return false;
+        }
+
         // Check if we already added the button (either active or unavailable)
-        if (itemDetailPage.querySelector('.jellyseerr-report-issue-icon, .jellyseerr-report-unavailable-icon')) {
+        if (iconFor(itemDetailPage, itemId)) {
             console.debug(`${logPrefix} Report button already exists`);
             return true;
         }
 
-        try {
-            // Get item ID from URL hash (same way as reviews.js)
-            const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-            if (!itemId) {
-                console.debug(`${logPrefix} No item ID in URL`);
-                return false;
-            }
+        const running = pendingLooks.get(itemDetailPage);
+        if (running && running.itemId === itemId) return running.promise;
+        const look = { itemId, promise: Promise.resolve(false) };
+        const current = () => pendingLooks.get(itemDetailPage) === look && pageItemId() === itemId
+            && itemDetailPage.isConnected && !itemDetailPage.classList.contains('hide');
+        pendingLooks.set(itemDetailPage, look);
+        look.promise = addButton(itemDetailPage, itemId, current).finally(() => {
+            if (pendingLooks.get(itemDetailPage) === look) pendingLooks.delete(itemDetailPage);
+        });
+        return look.promise;
+    };
 
+    /**
+     * Reads the item and adds its report (or unavailable) button to the page.
+     * @param {HTMLElement} itemDetailPage
+     * @param {string} itemId
+     * @param {function(): boolean} current - The look is still the page's look at this item.
+     * @returns {Promise<boolean>} The page has a report button.
+     */
+    async function addButton(itemDetailPage, itemId, current) {
+        try {
             // Fetch item data from Jellyfin API (same way as reviews.js)
             const userId = ApiClient.getCurrentUserId();
             if (!userId) {
@@ -932,12 +998,7 @@
                 if (buttonContainerUnavail) {
                     const unavailButton = issueReporter.createUnavailableButton(buttonContainerUnavail, '', '', availability);
                     if (unavailButton) {
-                        const moreButton = buttonContainerUnavail.querySelector('.btnMoreCommands');
-                        if (moreButton) {
-                            buttonContainerUnavail.insertBefore(unavailButton, moreButton);
-                        } else {
-                            buttonContainerUnavail.appendChild(unavailButton);
-                        }
+                        if (!placeIcon(buttonContainerUnavail, unavailButton, itemDetailPage, itemId, current)) return false;
                         console.log(`${logPrefix} Added unavailable report button (${availability})`);
                         return true;
                     }
@@ -1050,13 +1111,10 @@
             );
 
             if (button) {
-                // Try to insert before btnMoreCommands, otherwise append
-                const moreButton = buttonContainer.querySelector('.btnMoreCommands');
-                if (moreButton) {
-                    buttonContainer.insertBefore(button, moreButton);
-                } else {
-                    buttonContainer.appendChild(button);
-                }
+                // In its fixed place in the row (before More…), once.
+                if (!placeIcon(buttonContainer, button, itemDetailPage, itemId, current)) return false;
+                // The item's icon was already there: nothing more to do.
+                if (button.parentNode !== buttonContainer) return true;
                 console.log(`${logPrefix} ✓ Report issue button added to ${item.Name} (${mediaType}, TMDB: ${tmdbId})`);
                 // Fire-and-forget: colour button orange + count badge when open issues exist
                 issueReporter.applyIssueIndicator(button, tmdbId, mediaType);
@@ -1070,7 +1128,7 @@
         }
 
         return false;
-    };
+    }
 
     /**
      * Initializes issue reporter on item detail pages

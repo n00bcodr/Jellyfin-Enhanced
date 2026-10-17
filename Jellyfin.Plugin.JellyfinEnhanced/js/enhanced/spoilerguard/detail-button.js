@@ -25,15 +25,6 @@
         button.appendChild(content);
     }
 
-    function placeButton(button, container) {
-        const moreButton = container.querySelector('.btnMoreCommands');
-        if (moreButton) {
-            if (button.nextElementSibling !== moreButton) container.insertBefore(button, moreButton);
-        } else if (button.parentNode !== container) {
-            container.appendChild(button);
-        }
-    }
-
     function performToggle(button, itemId, kind, page, enable) {
         let displayName = '';
         if ((kind === 'movie' || kind === 'collection') && page) {
@@ -126,7 +117,7 @@
             button.setAttribute('is', 'emby-button');
             button.className = 'button-flat detailButton emby-button je-spoiler-blur-btn';
             button.type = 'button';
-            placeButton(button, container);
+            JE.core.ui.placeDetailAction(container, button);
             button.addEventListener('click', function(event) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -142,7 +133,7 @@
             return;
         }
 
-        placeButton(button, container);
+        JE.core.ui.placeDetailAction(container, button);
         const previousId = button.getAttribute('data-je-item-id');
         const previousKind = button.getAttribute('data-je-spoiler-kind');
         button.setAttribute('data-je-item-id', itemId);
