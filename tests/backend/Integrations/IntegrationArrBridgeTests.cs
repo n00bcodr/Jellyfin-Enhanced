@@ -329,6 +329,34 @@ public class IntegrationArrBridgeTests
     }
 
     [Fact]
+    public async Task AMultiEpisodeFileHasItsMissingTwinsRemovedOnceThoughSonarrReportsOneImportPerEpisode()
+    {
+        using var rig = new Rig();
+        rig.Bridge.MissingTwinWaits = new[] { TimeSpan.FromMilliseconds(30), TimeSpan.FromMilliseconds(30) };
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E1.mkv", indexed: true);
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E4-E5.mkv", indexed: false);
+        rig.Library.MissingTwins["/media/tv/Firefly (2002)/Season 01/E4-E5.mkv"] = 2;
+        // Jellyfin numbers the episode a moment after adding it: the first look finds nothing to tell apart yet.
+        rig.Library.NumberedLater.Add("/media/tv/Firefly (2002)/Season 01/E4-E5.mkv");
+        await rig.History(rig.Sonarr, "SonarrZ");
+        // Sonarr's history has the S01E04-E05 file twice: once for E04, once for E05.
+        rig.Sonarr.History.Add(Rig.Import(2, rig.Arr.Now.UtcDateTime.AddSeconds(-2), "/data/tv/Firefly (2002)/Season 01/E4-E5.mkv", episode: 4));
+        rig.Sonarr.History.Add(Rig.Import(3, rig.Arr.Now.UtcDateTime.AddSeconds(-2), "/data/tv/Firefly (2002)/Season 01/E4-E5.mkv", episode: 5));
+        await rig.History(rig.Sonarr, "SonarrZ");
+        await Until(() => rig.Library.MissingTwins.Count == 0);
+        await Task.Delay(200);
+        // One look, then one look again once numbered: the second import neither looks nor starts its own retries.
+        Assert.Equal(2, rig.Library.TwinRemovals.Count);
+
+        // Done with it: a later import of the same file (an upgrade) is handled again.
+        rig.Library.MissingTwins["/media/tv/Firefly (2002)/Season 01/E4-E5.mkv"] = 1;
+        rig.Sonarr.History.Add(Rig.Import(4, rig.Arr.Now.UtcDateTime.AddSeconds(-1), "/data/tv/Firefly (2002)/Season 01/E4-E5.mkv", episode: 4));
+        await rig.History(rig.Sonarr, "SonarrZ");
+        await Until(() => rig.Library.MissingTwins.Count == 0);
+        Assert.Equal(3, rig.Library.TwinRemovals.Count);
+    }
+
+    [Fact]
     public void AMissingEpisodeIsATwinByJellyfinsOwnRuleAndNothingElseIs()
     {
         // The rule the bridge removes missing episodes by (JellyfinLibraryAccess.RemoveMissingTwins), on Jellyfin's

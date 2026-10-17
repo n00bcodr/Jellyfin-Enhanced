@@ -315,6 +315,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly Dictionary<Guid, QueuedRefresh> _waiting = new();
         private readonly HashSet<string> _followUps = new(StringComparer.Ordinal);
         private readonly HashSet<string> _historyLoads = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Files whose missing twins are being removed (with their retries), under the bridge's lock.</summary>
+        private readonly HashSet<string> _twinFiles = new(StringComparer.Ordinal);
         private readonly CancellationTokenSource _stop = new();
         private readonly List<Pending> _pending = new();
         private readonly LinkedList<BridgeRefresh> _recent = new();
@@ -1057,35 +1059,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// refresh of a season folder doesn't refresh the series, so the bridge removes those by Jellyfin's
         /// own rule: the season, Next up and an open page of the missing episode then have the one that plays.
         /// Jellyfin numbers the new episode a moment after adding it; until then the bridge looks again
-        /// after each of <see cref="MissingTwinWaits"/>.
+        /// after each of <see cref="MissingTwinWaits"/>. A file is handled once at a time (Sonarr reports a
+        /// multi-episode file once per episode).
         /// </summary>
-        private void RemoveMissingTwins(string file, int attempt = 0)
+        private void RemoveMissingTwins(string file)
         {
-            int removed;
+            lock (_lock)
+            {
+                if (!_twinFiles.Add(file)) return;
+            }
+            RemoveMissingTwins(file, 0);
+        }
+
+        private void RemoveMissingTwins(string file, int attempt)
+        {
+            var again = false;
             try
             {
-                removed = _library.RemoveMissingTwins(file);
-            }
-            catch (Exception ex)
-            {
-                _logger?.Warning($"Jellyfin bridge: removing the missing episode {file} fills failed ({ex.GetType().Name}).");
-                return;
-            }
-            if (removed > 0) _logger?.Info($"Jellyfin bridge: removed {removed} missing (virtual) episode(s) that {file} now fills.");
-            if (removed >= 0 || attempt >= MissingTwinWaits.Length) return;
-            var wait = MissingTwinWaits[attempt];
-            TryTrack(async () =>
-            {
+                int removed;
                 try
                 {
-                    await _delay(wait, _stop.Token).ConfigureAwait(false);
+                    removed = _library.RemoveMissingTwins(file);
                 }
-                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+                catch (Exception ex)
                 {
+                    _logger?.Warning($"Jellyfin bridge: removing the missing episode {file} fills failed ({ex.GetType().Name}).");
                     return;
                 }
-                if (RefreshEnabled) RemoveMissingTwins(file, attempt + 1);
-            }, out _);
+                if (removed > 0) _logger?.Info($"Jellyfin bridge: removed {removed} missing (virtual) episode(s) that {file} now fills.");
+                if (removed >= 0 || attempt >= MissingTwinWaits.Length) return;
+                var wait = MissingTwinWaits[attempt];
+                again = TryTrack(async () =>
+                {
+                    try
+                    {
+                        await _delay(wait, _stop.Token).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+                    {
+                        Done(file);
+                        return;
+                    }
+                    if (RefreshEnabled) RemoveMissingTwins(file, attempt + 1);
+                    else Done(file);
+                }, out _);
+            }
+            finally
+            {
+                if (!again) Done(file);
+            }
+
+            void Done(string path)
+            {
+                lock (_lock) _twinFiles.Remove(path);
+            }
         }
 
         /// <summary>
