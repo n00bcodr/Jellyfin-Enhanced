@@ -12,7 +12,16 @@
  * An entry is guarded when Spoiler Guard is on and the person guards its title (a pending guard from Seerr, or the
  * library copy's series/movie, mapped by TMDB id), the collection page it is on, or when the state couldn't be read
  * (fails closed). A guarded entry shows no episode titles and no note (the list editor's free text may give the story
- * away) in its text, tooltips or labels. Overviews are never drawn on list pages.
+ * away) in its text, tooltips or labels, and, while Spoiler Guard hides air dates (the admin's "premiere date" strip
+ * and the person's own "hide air dates", as on the server), no air date either: no "Coming <date>", and no year for a
+ * season or episode. Overviews are never drawn on list pages.
+ *
+ * A library match (inLibraryItemId) reads "Available, adding it…" only while swap-in is on and running for the list;
+ * otherwise (an imported list, swap-in off, the list reconciling) it reads "In your library", with nothing promised.
+ *
+ * The page header (jellyfin-web's played button): Jellyfin calls a list played when it has no unplayed real item, so a
+ * list of entries only reads as watched. While a page draws entries, {@link headerMark} keeps that button from looking
+ * played (the colour, and its tooltip says how many titles aren't in the library). Played state is never changed.
  */
 (function (JE) {
     'use strict';
@@ -57,6 +66,10 @@ button.je-list-row-main { cursor: pointer; }
 .je-list-request:focus-visible, .layout-tv .je-list-request:focus { outline: 3px solid #fff; outline-offset: 2px; }
 .je-list-request .material-icons { font-size: 1.2em; }
 .je-list-adding { color: #52b54b; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 0.25em; }
+.je-list-in-library { color: inherit; opacity: 0.85; text-decoration: none; display: inline-flex; align-items: center; gap: 0.25em; }
+.je-list-adding .material-icons, .je-list-in-library .material-icons { font-size: 1.15em; }
+/* A list whose real items are all played while entries are still missing: Jellyfin's header doesn't read as played. */
+.je-list-incomplete-page .btnPlaystate .playstatebutton-icon-played { color: inherit !important; }
 .je-list-section { margin-top: 1em; }
 .je-list-section .sectionTitle { display: flex; align-items: baseline; gap: 0.5em; }
 .je-list-section-count { font-size: 0.7em; opacity: 0.7; font-weight: normal; }
@@ -241,13 +254,29 @@ button.je-list-card-main { cursor: pointer; }
     }
 
     /**
-     * Release text: the year once out, "Coming <date>" before, "Date to be announced" without one (a season or
-     * episodes entry without its own date is TBA: the year it carries is the show's).
+     * Whether Spoiler Guard keeps an entry's air date from the person (guarded entry, air dates hidden).
      * @param {Object} ph Entry.
+     * @param {Object} [ctx] Context (guarded, from {@link spoilerPolicy}).
+     * @returns {boolean} Hidden.
+     */
+    function airDateHidden(ph, ctx) {
+        return ctx?.guarded?.(ph) === true && ctx.guarded.airDates === true;
+    }
+
+    /**
+     * Release text: the year once out, "Coming <date>" before, "Date to be announced" without one (a season or
+     * episodes entry without its own date is TBA: the year it carries is the show's). With its air date guarded: a
+     * released movie or show keeps its year, nothing else is said.
+     * @param {Object} ph Entry.
+     * @param {Object} [ctx] Context (guarded).
      * @returns {string} Text, or empty for custom entries without a date.
      */
-    function dateLabel(ph) {
+    function dateLabel(ph, ctx) {
         const m = DATE_RE.exec(ph.releaseDate || '');
+        if (airDateHidden(ph, ctx)) {
+            if (ph.kind === 'season' || ph.kind === 'episodes' || !ph.released) return '';
+            return m ? m[1] : ph.year ? String(ph.year) : '';
+        }
         if (m) return ph.released ? m[1] : tr('arr_lists_coming', { date: formatDate(ph.releaseDate) });
         if (ph.year && ph.kind !== 'season' && ph.kind !== 'episodes') return String(ph.year);
         return ph.kind === 'custom' ? '' : tr('arr_lists_tba');
@@ -285,12 +314,22 @@ button.je-list-card-main { cursor: pointer; }
     }
 
     /**
-     * The library item a pending swap-in matched ("Available — adding…"), only when the server named one.
+     * The library item that matched an entry, only when the server named one (and the person may open it).
      * @param {Object} ph Entry.
      * @returns {string|null} Item id.
      */
-    function addingItemId(ph) {
+    function libraryItemId(ph) {
         return ph?.inLibraryItemId ? normalizeId(ph.inLibraryItemId) : null;
+    }
+
+    /**
+     * Whether the matched item is being added to the list now: swap-in on and running (not while reconciling).
+     * @param {Object} ph Entry.
+     * @param {Object} ctx Context (swapActive).
+     * @returns {boolean} Adding.
+     */
+    function addingNow(ph, ctx) {
+        return !!libraryItemId(ph) && ctx?.swapActive === true;
     }
 
     /**
@@ -314,7 +353,7 @@ button.je-list-card-main { cursor: pointer; }
      * @returns {boolean} Offered.
      */
     function canRequest(ph, ctx) {
-        if (!ctx?.requests || !Array.isArray(ph?.actions) || !ph.actions.includes('request') || addingItemId(ph)) return false;
+        if (!ctx?.requests || !Array.isArray(ph?.actions) || !ph.actions.includes('request') || libraryItemId(ph)) return false;
         const status = statusOf(ph, ctx);
         if (!status) return true;
         if (JE.arrStatus?.searchable?.(status)) return false;
@@ -335,24 +374,25 @@ button.je-list-card-main { cursor: pointer; }
             parts.push(ph.episodes[0].title);
         }
         parts.push(...fillParts(ph));
-        parts.push(dateLabel(ph));
+        parts.push(dateLabel(ph, ctx));
         return parts.filter(Boolean).join(' · ');
     }
 
     /**
-     * The status block of an entry: "Available — adding…" while a swap-in runs, else the shared pill (icon, family
-     * words, journey), else nothing (not shown, or unknown).
+     * The status block of an entry: its library match ("Available, adding it…" while a swap-in runs, else "In your
+     * library"), else the shared pill (icon, family words, journey), else nothing (not shown, or unknown).
      * @param {Object} ph Entry.
      * @param {Object} ctx Context.
      * @returns {HTMLElement|null} Block.
      */
     function statusBlock(ph, ctx) {
-        const adding = addingItemId(ph);
-        if (adding) {
-            const link = el('a', 'je-list-adding');
-            link.href = `#/details?id=${adding}`;
-            link.appendChild(icon('library_add_check'));
-            link.appendChild(el('span', null, tr('arr_lists_adding')));
+        const match = libraryItemId(ph);
+        if (match) {
+            const adding = addingNow(ph, ctx);
+            const link = el('a', adding ? 'je-list-adding' : 'je-list-in-library');
+            link.href = `#/details?id=${match}`;
+            link.appendChild(icon(adding ? 'library_add_check' : 'video_library'));
+            link.appendChild(el('span', null, tr(adding ? 'arr_lists_adding' : 'arr_lists_in_library')));
             return link;
         }
         const status = statusOf(ph, ctx);
@@ -385,7 +425,7 @@ button.je-list-card-main { cursor: pointer; }
      */
     function statusLine(ph, ctx, cls) {
         const status = statusOf(ph, ctx);
-        if (!status || addingItemId(ph) || typeof JE.arrStatus?.familyText !== 'function') return null;
+        if (!status || libraryItemId(ph) || typeof JE.arrStatus?.familyText !== 'function') return null;
         const line = el('span', cls, JE.arrStatus.familyText(status, ctx.statusContext || {}));
         // The pill (beside it, with the same words as its label) is what assistive tech reads.
         line.setAttribute('aria-hidden', 'true');
@@ -488,7 +528,7 @@ button.je-list-card-main { cursor: pointer; }
         body.appendChild(el('span', 'secondary listItemBodyText je-list-sub', sub));
         const status = statusOf(ph, ctx);
         // "Not in your library" when nothing else says where it stands (no status shown, or none known).
-        const absent = status || addingItemId(ph) ? null : el('span', 'secondary listItemBodyText je-list-absent');
+        const absent = status || libraryItemId(ph) ? null : el('span', 'secondary listItemBodyText je-list-absent');
         if (absent) {
             absent.appendChild(icon('cloud_off'));
             absent.appendChild(el('span', null, tr('arr_lists_not_in_library')));
@@ -536,7 +576,7 @@ button.je-list-card-main { cursor: pointer; }
         if (ph.kind === 'season' || ph.kind === 'episodes' || ph.kind === 'custom') main.appendChild(el('span', 'je-list-chip je-list-chip-kind', kindLabel(ph)));
         const fill = fillParts(ph).join(' · ');
         if (fill) main.appendChild(el('span', 'je-list-chip je-list-chip-fill', fill));
-        const sub = [dateLabel(ph), statusOf(ph, ctx) || addingItemId(ph) ? '' : tr('arr_lists_not_in_library')].filter(Boolean).join(' · ');
+        const sub = [dateLabel(ph, ctx), statusOf(ph, ctx) || libraryItemId(ph) ? '' : tr('arr_lists_not_in_library')].filter(Boolean).join(' · ');
         main.setAttribute('aria-label', [ph.title || '', kindLabel(ph), fill, sub].filter(Boolean).join(', '));
         box.appendChild(main);
         const title = el('div', 'cardText cardTextCentered cardText-first je-list-card-title');
@@ -572,7 +612,8 @@ button.je-list-card-main { cursor: pointer; }
         }
         return [ph.title, ph.note, ph.posterPath, ph.releaseDate, ph.released, ph.filledCount, ph.expectedCount, ph.airedCount,
             ph.inLibraryItemId, (ph.actions || []).join(','), (ph.episodes || []).map(e => `${e?.e}:${e?.title || ''}`).join(','),
-            status, ctx?.guarded?.(ph) ? 'g' : '', ctx?.requests ? 'r' : '', ctx?.tv ? 't' : '', ctx?.handleSpace ? 'h' : ''].join('|');
+            status, ctx?.guarded?.(ph) ? 'g' : '', airDateHidden(ph, ctx) ? 'd' : '', ctx?.swapActive ? 's' : '', ctx?.requests ? 'r' : '',
+            ctx?.tv ? 't' : '', ctx?.handleSpace ? 'h' : ''].join('|');
     }
 
     // ------------------------------------------------------------------ Spoiler Guard
@@ -626,28 +667,101 @@ button.je-list-card-main { cursor: pointer; }
     }
 
     /**
+     * A guard test with whether it hides air dates.
+     * @param {function(Object): boolean} test guarded(entry).
+     * @param {boolean} airDates Guarded entries lose their air dates.
+     * @returns {function(Object): boolean & {airDates: boolean}} Policy.
+     */
+    function policy(test, airDates) {
+        const guarded = (ph) => test(ph);
+        guarded.airDates = airDates;
+        return guarded;
+    }
+
+    /**
      * Reads the Spoiler Guard state needed to draw a list (before anything is painted) and returns the guard test.
-     * With Spoiler Guard off nothing is guarded; when its state or the guarded titles can't be read, everything is.
+     * With Spoiler Guard off nothing is guarded; when its state or the guarded titles can't be read, everything is
+     * (air dates too). Air dates of guarded entries are hidden as the server strips them: the admin's premiere-date
+     * strip on and the person's "hide air dates" not turned off.
      * @param {{listKind: string, listId: string}} list The list.
-     * @returns {Promise<function(Object): boolean>} guarded(entry).
+     * @returns {Promise<function(Object): boolean & {airDates: boolean}>} guarded(entry), with .airDates.
      */
     async function spoilerPolicy(list) {
-        if (JE.pluginConfig?.SpoilerBlurEnabled !== true || !JE.spoilerBlur) return () => false;
+        if (JE.pluginConfig?.SpoilerBlurEnabled !== true || !JE.spoilerBlur) return policy(() => false, false);
         const sg = JE.spoilerBlur;
         try {
             await sg.whenLoaded?.();
         } catch {
-            return () => true;
+            return policy(() => true, true);
         }
-        if (sg.isLoadOk?.() !== true) return () => true;
-        if (list.listKind === 'collection' && sg.isCollectionEnabledFor?.(list.listId) === true) return () => true;
+        if (sg.isLoadOk?.() !== true) return policy(() => true, true);
+        let prefs = null;
+        try {
+            prefs = sg.getUserPrefs?.() || null;
+        } catch {
+            prefs = null;
+        }
+        const airDates = JE.pluginConfig?.SpoilerStripPremiereDate !== false && prefs?.HideAirDate !== false;
+        if (list.listKind === 'collection' && sg.isCollectionEnabledFor?.(list.listId) === true) return policy(() => true, airDates);
         const tmdb = await guardedTmdb();
-        return (ph) => {
+        return policy((ph) => {
             if (!ph || ph.kind === 'custom' || !ph.tmdbId) return tmdb === null;
             const media = ph.mediaType === 'movie' ? 'movie' : 'tv';
             if (sg.isTmdbEnabled?.(media, ph.tmdbId) === true) return true;
             return tmdb === null || tmdb.has(`${media}:${ph.tmdbId}`);
+        }, tmdb === null ? true : airDates);
+    }
+
+    // ------------------------------------------------------------------ the page header
+
+    const HEADER_CLASS = 'je-list-incomplete-page';
+
+    /**
+     * Keeps jellyfin-web's played button of a list page from reading as played while the page draws entries (its own
+     * state, click and UserData are left alone): the page gets a class (the icon loses the played colour) and a played
+     * button's tooltip says how many titles aren't in the library. Follows jellyfin-web setting its state again.
+     * @param {HTMLElement} page Details page.
+     * @returns {{set: function(number): void, clear: function(): void}} Handle.
+     */
+    function headerMark(page) {
+        let label = '';
+        let observer = null;
+        /** @param {HTMLElement} button Jellyfin's played button. */
+        const relabel = (button) => {
+            if (!label || !button.classList.contains('playstatebutton-played')) return;
+            if (button.title === label) return;
+            button.__jeListTitle = button.title;
+            button.title = label;
         };
+        const buttons = () => Array.from(page.querySelectorAll('.btnPlaystate'));
+        const clear = () => {
+            observer?.disconnect();
+            observer = null;
+            page.classList.remove(HEADER_CLASS);
+            for (const button of buttons()) {
+                if (label && button.title === label) button.title = button.__jeListTitle || '';
+                delete button.__jeListTitle;
+            }
+            label = '';
+        };
+        const set = (missing) => {
+            if (!(missing > 0)) {
+                if (label || page.classList.contains(HEADER_CLASS)) clear();
+                return;
+            }
+            ensureStyles();
+            label = tn('arr_lists_header_incomplete', { count: missing });
+            page.classList.add(HEADER_CLASS);
+            const list = buttons();
+            list.forEach(relabel);
+            if (!observer && list.length && typeof MutationObserver !== 'undefined') {
+                observer = new MutationObserver((records) => {
+                    for (const record of records) relabel(/** @type {HTMLElement} */ (record.target));
+                });
+                for (const button of list) observer.observe(button, { attributes: true, attributeFilter: ['class', 'title'] });
+            }
+        };
+        return { set, clear };
     }
 
     JE.session?.onUserChange?.('arr-list-render', () => {
@@ -656,7 +770,7 @@ button.je-list-card-main { cursor: pointer; }
 
     lp.render = {
         ensureStyles, tr, tn, normalizeId, el, icon, posterUrl, formatDate, episodeLabel, kindLabel, dateLabel, fillParts,
-        addingItemId, statusOf, canRequest, subtitle, statusBlock, statusLine, requestButton, row, card, signature, opensTitle,
-        spoilerPolicy, guardedTmdb, STYLE_ID
+        libraryItemId, addingNow, airDateHidden, statusOf, canRequest, subtitle, statusBlock, statusLine, requestButton, row,
+        card, signature, opensTitle, spoilerPolicy, guardedTmdb, headerMark, STYLE_ID
     };
 })(window.JellyfinEnhanced);

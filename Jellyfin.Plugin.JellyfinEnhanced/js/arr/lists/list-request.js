@@ -7,6 +7,8 @@
  * Flow: the list's preview for this one entry (nothing is written) → if it can be asked for, the shared request sheet
  * in its fixed mode (no scope cards, the preview's cost and what it would do) → one confirmation id per opened sheet,
  * reused only when the same confirmation is sent again after a lost answer → the shared wording for the result.
+ * Answers go through the one acceptance rule: the preview only opens the sheet while the page it was asked from is
+ * still the one shown (session, page show, route, list); the confirmation's outcome only while the session is the same.
  */
 (function (JE) {
     'use strict';
@@ -74,9 +76,11 @@
      */
     async function send(listId, placeholderId, clientId) {
         const interpret = JE.arrAsk.interpret;
+        const rule = JE.arrLists.ticket(listId);
         let answer;
         try {
             answer = await JE.arrLists.requestEntries(listId, { clientId, placeholderIds: [placeholderId] });
+            if (!rule.current()) return { ok: false, stale: true, state: 'failed', status: 0 };
         } catch (err) {
             if (err?.stale) return { ok: false, stale: true, state: 'failed', status: 0 };
             throw err;
@@ -92,7 +96,8 @@
 
     /**
      * Request on an entry: preview, then the shared sheet in its fixed mode.
-     * @param {{listId: string, epoch: number, onDone?: function(): void}} list The list (and the epoch it was drawn in).
+     * @param {{listId: string, ticket?: function(): Object, onDone?: function(): void}} list The list (its page's
+     *   acceptance rule, taken when Request is pressed).
      * @param {Object} ph The entry (as drawn).
      * @param {HTMLElement|null} opener The button (focus returns to it).
      * @returns {Promise<Object|null>} The result, or null when nothing was sent.
@@ -102,18 +107,20 @@
         const key = `${list.listId}|${ph.id}`;
         if (busy.has(key) || !JE.arrLists || !JE.arrAskSheet?.open || !JE.arrAsk?.interpret) return null;
         busy.add(key);
-        const started = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
+        // The page's rule (session, page show, route, list) for the preview; the session's for the outcome.
+        const rule = typeof list.ticket === 'function' ? list.ticket() : JE.arrLists.ticket(list.listId);
+        const session = JE.arrLists.ticket(list.listId);
         if (opener) opener.disabled = true;
         try {
             let preview;
             try {
                 preview = await JE.arrLists.previewRequests(list.listId, { placeholderIds: [ph.id] });
+                if (!rule.current()) return null;
             } catch (err) {
                 if (err?.stale) return null;
-                JE.arrAsk.toast?.(tr('arr_ask_toast_failed'));
+                if (rule.current()) JE.arrAsk.toast?.(tr('arr_ask_toast_failed'));
                 return null;
             }
-            if ((JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== started) return null;
             if (preview.status !== 200) {
                 JE.arrAsk.toast?.(JE.arrAsk.describe(JE.arrAsk.interpret(preview.status, { reason: preview.body?.code || '' })).text);
                 if (preview.status === 404 || preview.status === 409) list.onDone?.();
@@ -154,6 +161,7 @@
                     send: () => send(list.listId, ph.id, clientId)
                 }
             });
+            if (!session.current()) return null;
             if (result) list.onDone?.();
             return result;
         } finally {

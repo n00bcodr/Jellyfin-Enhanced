@@ -6,7 +6,11 @@
  *   and turning a preference off removes what is drawn at once.
  * - A details page of a playlist or collection that is shown gets one controller (made once per page element; a page
  *   jellyfin-web keeps hidden is paused: no reads, timers or subscriptions; it reads again when shown).
- * - Stops and removes everything on a person change; answers from before it are dropped by the transport.
+ * - Stops and removes everything on a person change.
+ * - One acceptance rule for every answer a page uses ({@link ticket}): the transport's (the session it was asked in, the
+ *   list asked about) plus the page show it was asked for (a generation bumped on every show) and the route still
+ *   naming that list. It is asked after every await, before anything is cached or drawn, so neither an answer from
+ *   before a person switch nor the late lookup of a list shown before on a re-used page element is ever drawn.
  * - Refreshes: a list change made through JE.arrLists (its new view), the shared status feed of the titles shown
  *   (JE.arrStatus.subscribe, inside the controllers), and Jellyfin's LibraryChanged (the list's own items, or new items
  *   that may be an entry arriving), each debounced and bounded per list.
@@ -14,6 +18,7 @@
  *   the list and focus goes back to the entry that was opened.
  *
  * Public: JE.arrListPages { uiOn(kind), coveredKeys(listId) → Promise<{keys, entries}|null>, settingsChanged() }.
+ * Internal: lp.pages.ticket(ctrl, extra?) is the rule the controllers use.
  */
 (function (JE) {
     'use strict';
@@ -31,6 +36,8 @@
     let offLibrary = null;
     let libraryClient = null;
     let viewHook = null;
+    /** Bumped on every page show: an answer asked for an earlier show is never drawn. */
+    let viewGeneration = 0;
 
     /**
      * A person's own list setting (null when never chosen).
@@ -64,6 +71,38 @@
         if (!value.includes('details')) return null;
         const query = value.split('?')[1];
         return query ? lp.render.normalizeId(new URLSearchParams(query).get('id')) : null;
+    }
+
+    /**
+     * The pages' part of the acceptance rule, taken now: the same page show, the route still names the list, and the
+     * page is still the one on screen.
+     * @param {HTMLElement} page Details page.
+     * @param {string} listId List id (N form).
+     * @param {function(): boolean} [extra] The caller's own condition (a controller's newest read).
+     * @returns {function(): boolean} Scope.
+     */
+    function scopeOf(page, listId, extra) {
+        const generation = viewGeneration;
+        return () => generation === viewGeneration && idFromHash(window.location.hash) === listId
+            && !!page && page.isConnected && !page.classList.contains('hide') && (typeof extra !== 'function' || extra() === true);
+    }
+
+    /**
+     * The acceptance rule of a controller's request: session and list (the transport's), plus page show and route.
+     * @param {{listId: string, page: HTMLElement}} ctrl Controller.
+     * @param {function(): boolean} [extra] The controller's own condition.
+     * @returns {{epoch: number, listId: string, current: function(): boolean, accepts: function(Object=): boolean}} Ticket.
+     */
+    function ticket(ctrl, extra) {
+        return JE.arrLists.ticket(ctrl.listId, scopeOf(ctrl.page, ctrl.listId, extra));
+    }
+
+    /**
+     * The current session epoch.
+     * @returns {number} Epoch.
+     */
+    function currentEpoch() {
+        return JE.session?.getEpoch ? JE.session.getEpoch() : 0;
     }
 
     /**
@@ -104,20 +143,22 @@
      * @returns {Promise<void>}
      */
     async function onViewShow(element, hash) {
+        viewGeneration++;
         const page = element?.classList?.contains('itemDetailPage') ? element : document.querySelector('.itemDetailPage:not(.hide)');
         prune(page);
         if (!uiOn('playlist') && !uiOn('collection')) return;
         lp.grid.scan();
         const id = idFromHash(hash || window.location.hash);
         if (!id || !page) return;
-        const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
+        // The page element may be shown for another list (or another person) before this lookup answers.
+        const rule = JE.arrLists.ticket(id, scopeOf(page, id));
         let item;
         try {
             item = JE.helpers?.getItemCached ? await JE.helpers.getItemCached(id) : await ApiClient.getItem(ApiClient.getCurrentUserId(), id);
+            if (!rule.current()) return;
         } catch {
             return;
         }
-        if ((JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== epoch || !page.isConnected || page.classList.contains('hide')) return;
         if (lp.render.normalizeId(item?.Id) !== id) return;
         const kind = item.Type === 'Playlist' ? 'playlist' : item.Type === 'BoxSet' ? 'collection' : null;
         if (!kind || !uiOn(kind)) return;
@@ -188,20 +229,30 @@
         }
     }
 
+    /**
+     * A list changed through JE.arrLists: its new view goes to the controllers showing it, when the change is this
+     * session's and the view is that list's (else the list is read again).
+     * @param {string} listId List id.
+     * @param {Object|null} view The new view.
+     * @param {{epoch: number}} [origin] The session of the change.
+     */
+    function onListChange(listId, view, origin) {
+        if (!origin || origin.epoch !== currentEpoch()) return;
+        const id = lp.render.normalizeId(listId);
+        lp.grid.invalidate(id);
+        for (const ctrl of controllers) {
+            if (ctrl.listId !== id || ctrl.paused) continue;
+            if (view && lp.render.normalizeId(view.listId) === id) ctrl.applyView(view, { fromChange: true });
+            else ctrl.scheduleRefetch(500);
+        }
+    }
+
     /** Starts the pages (once, while on); stops them when they are off for this person. */
     function sync() {
         const on = uiOn('playlist') || uiOn('collection');
         if (on && !started) {
             started = true;
-            offChange = JE.arrLists.onChange((listId, view) => {
-                lp.grid.invalidate(listId);
-                const id = lp.render.normalizeId(listId);
-                for (const ctrl of controllers) {
-                    if (ctrl.listId !== id || ctrl.paused) continue;
-                    if (view) ctrl.applyView(view, { fromChange: true });
-                    else ctrl.scheduleRefetch(500);
-                }
-            });
+            offChange = JE.arrLists.onChange(onListChange);
             subscribeLibrary();
             lp.grid.start();
             const onView = JE.core?.navigation?.onViewPage || JE.helpers?.onViewPage;
@@ -232,10 +283,12 @@
     async function coveredKeys(listId) {
         const id = lp.render.normalizeId(listId);
         if (!id || !uiOn('collection')) return null;
-        const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
+        // Session and list, the same page show, and the route still on this collection.
+        const generation = viewGeneration;
+        const rule = JE.arrLists.ticket(id, () => generation === viewGeneration && idFromHash(window.location.hash) === id);
         try {
-            const answer = await JE.arrLists.getList(id);
-            if ((JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== epoch || answer.status !== 200 || answer.body?.listKind !== 'collection') return null;
+            const answer = await JE.arrLists.getList(id, { ticket: rule });
+            if (!rule.current() || answer.status !== 200 || !rule.accepts(answer.body) || answer.body?.listKind !== 'collection') return null;
             return lp.collection.coveredOf(answer.body);
         } catch {
             return null;
@@ -253,7 +306,7 @@
         setTimeout(sync, 0);
     });
 
-    lp.pages = { uiOn, idFromHash, onViewShow, openEntry, onLibraryChanged, sync, controllers, disposeAll };
+    lp.pages = { uiOn, idFromHash, onViewShow, openEntry, onLibraryChanged, onListChange, ticket, sync, controllers, disposeAll };
     JE.arrListPages = Object.freeze({ uiOn, coveredKeys, settingsChanged: sync });
 
     // No network and no DOM work while the bundle loads: the first look happens a moment later.

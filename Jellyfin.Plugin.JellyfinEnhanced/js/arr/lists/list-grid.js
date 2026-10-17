@@ -9,8 +9,11 @@
  *
  * Bounded: the ids of the cards that appear are batched (one call per burst, at most MAX_IDS per call) to the cheap
  * summary route (no statuses or metadata); answers are kept per person for a minute and dropped when a list changes.
- * A card that Jellyfin re-uses for another list (a new data-id) is re-decorated. Lists the person can't see or with no
- * entry they can see aren't answered, so the mark never reveals a hidden entry.
+ * Cards jellyfin-web replaces (sort, filter, next page) are new nodes and are looked at as they come; a card whose
+ * identity changes in place (its data-id / data-type: a re-used element) is watched by a small attribute observer and
+ * looked at again, and so is a card whose insides were rebuilt (jellyfin-web's user-data update puts the played check
+ * back). Lists the person can't see or with no entry they can see aren't answered, so the mark never reveals a hidden
+ * entry. A summary is used only while the rule accepts it (the session it was asked in, and no reset since).
  */
 (function (JE) {
     'use strict';
@@ -28,6 +31,7 @@
     const PENDING_RETRIES = 2;
     const OBSERVER_ID = 'arr-list-grid';
     const CARD_SELECTOR = '.card[data-id][data-type="Playlist"], .card[data-id][data-type="BoxSet"]';
+    const EMPTY_ID = '0'.repeat(32);
 
     /** @type {Map<string, {missing: number, at: number}>} list id → summary (missing 0 = none to show) */
     const known = new Map();
@@ -40,6 +44,8 @@
     let timer = null;
     let observing = false;
     let generation = 0;
+    /** @type {MutationObserver|null} card identity changes (data-id / data-type of an element in place) */
+    let identity = null;
 
     /**
      * Whether a kind's mark is on for this person (admin switch and their preferences).
@@ -95,7 +101,9 @@
      * @returns {string|null} The id still to ask about, or null.
      */
     function apply(card) {
-        const id = lp.render.normalizeId(card.getAttribute('data-id'));
+        const raw = lp.render.normalizeId(card.getAttribute('data-id'));
+        // The empty id is no list (and the summary route refuses a batch holding it).
+        const id = raw && raw !== EMPTY_ID ? raw : null;
         const type = card.getAttribute('data-type');
         if (!id || !shownFor(type)) {
             if (card.dataset.jeListGrid) decorate(card, '', 0);
@@ -133,7 +141,8 @@
         ids.forEach((id) => { queue.delete(id); inflight.add(id); });
         if (queue.size) timer = setTimeout(flush, BATCH_MS);
         const started = generation;
-        const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
+        // The one acceptance rule: the session it was asked in, and nothing reset since (person, settings).
+        const rule = JE.arrLists.ticket(null, () => started === generation);
         let answer = null;
         try {
             const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/acquire/lists/summaries'), {
@@ -142,13 +151,17 @@
                 body: JSON.stringify({ listIds: ids }),
                 cache: 'no-store'
             });
+            if (!rule.current()) return;
             answer = response.ok ? await response.json() : null;
+            if (!rule.current()) return;
         } catch (err) {
-            console.warn(`${logPrefix} list summaries failed`, err?.message || err);
+            if (rule.current()) console.warn(`${logPrefix} list summaries failed`, err?.message || err);
+            return;
         } finally {
-            ids.forEach(id => inflight.delete(id));
+            // A reset since cleared what was in flight (and may have asked for the same ids again).
+            if (started === generation) ids.forEach(id => inflight.delete(id));
         }
-        if (started !== generation || (JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== epoch || !answer) return;
+        if (!answer) return;
         const now = Date.now();
         const pending = new Set((answer.pending || []).map(lp.render.normalizeId).filter(Boolean));
         const missing = new Map((answer.lists || []).map(s => [lp.render.normalizeId(s.listId), Number(s.missing) || 0]));
@@ -169,7 +182,8 @@
     }
 
     /**
-     * New nodes on the page: cards (or containers holding cards) that appeared.
+     * New nodes on the page: cards (or containers holding cards) that appeared, and cards whose insides were rebuilt
+     * (their mark goes back in). Our own mark going in is not a change.
      * @param {MutationRecord[]} records Records.
      */
     function onMutations(records) {
@@ -179,8 +193,30 @@
                 if (node.nodeType !== 1) continue;
                 const element = /** @type {Element} */ (node);
                 if (element.matches?.(CARD_SELECTOR)) cards.add(element);
-                else if (element.firstElementChild && element.querySelectorAll) element.querySelectorAll(CARD_SELECTOR).forEach(c => cards.add(c));
+                else if (element.classList?.contains('je-list-grid-indicator')) continue;
+                else if (element.firstElementChild && element.querySelector?.(CARD_SELECTOR)) element.querySelectorAll(CARD_SELECTOR).forEach(c => cards.add(c));
+                else {
+                    const card = element.closest?.(CARD_SELECTOR);
+                    if (card) cards.add(card);
+                }
             }
+        }
+        if (cards.size) scan(cards);
+    }
+
+    /**
+     * A card's identity changed in place (an element re-used for another list): look at the card again.
+     * @param {MutationRecord[]} records Attribute records (data-id / data-type).
+     */
+    function onIdentity(records) {
+        const cards = new Set();
+        for (const record of records || []) {
+            const target = /** @type {Element} */ (record.target);
+            const card = target?.closest?.('.card');
+            if (!card) continue;
+            if (card.matches(CARD_SELECTOR)) cards.add(card);
+            // No longer a list card (another kind of item): its mark goes.
+            else if (card.getAttribute('data-je-list-grid')) decorate(/** @type {HTMLElement} */ (card), '', 0);
         }
         if (cards.size) scan(cards);
     }
@@ -191,6 +227,12 @@
         observing = true;
         // Priority: runs before the next paint, so a list already known never shows Jellyfin's check first.
         if (JE.core?.dom?.onBodyMutation) JE.core.dom.onBodyMutation(OBSERVER_ID, onMutations, { priority: 1 });
+        // The shared body observer hears added and removed nodes only; a card's identity changing in place is an
+        // attribute change, watched here for those two attributes alone.
+        if (typeof MutationObserver !== 'undefined' && document.body) {
+            identity = new MutationObserver(onIdentity);
+            identity.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-id', 'data-type'] });
+        }
         scan();
     }
 
@@ -198,6 +240,8 @@
     function stop() {
         observing = false;
         JE.core?.dom?.removeBodySubscriber?.(OBSERVER_ID);
+        identity?.disconnect();
+        identity = null;
         reset();
         document.querySelectorAll('.card[data-je-list-grid]').forEach(card => decorate(/** @type {HTMLElement} */ (card), '', 0));
     }
@@ -222,5 +266,5 @@
         if (id) known.delete(id);
     }
 
-    lp.grid = { start, stop, scan, reset, invalidate, decorate, onMutations, known, MAX_IDS };
+    lp.grid = { start, stop, scan, reset, invalidate, decorate, onMutations, onIdentity, known, MAX_IDS };
 })(window.JellyfinEnhanced);

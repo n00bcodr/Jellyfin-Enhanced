@@ -8,6 +8,9 @@
  * section already offers: `movie:tmdb:<id>` / `tv:tvdb:<id>` per standard entry (`…@4k` for a 4K entry, which doesn't
  * cover the standard copy), plus `tv:…:s<n>` for a season entry. Hidden entries are never in the view, so they never
  * suppress a gap or change a count.
+ *
+ * Answers go through the one acceptance rule (lp.pages.ticket: session, page show, route, list) plus this controller's
+ * newest read, after every await.
  */
 (function (JE) {
     'use strict';
@@ -64,7 +67,8 @@
             statusOff: null,
             paused: false,
             disposed: false,
-            focusOnRender: null
+            focusOnRender: null,
+            header: lp.render.headerMark(page)
         };
 
         /** @returns {boolean} The page is still in the document. */
@@ -86,6 +90,7 @@
             statusShown: ctrl.view?.statusShown === true,
             statusContext: {},
             requests: JE.pluginConfig?.ArrListRequestsEnabled === true && (ctrl.view?.actions || []).includes('request'),
+            swapActive: ctrl.view?.swapIn === true && ctrl.view?.reconciling !== true,
             guarded: ctrl.guarded
         });
 
@@ -183,6 +188,7 @@
             if (lp.playlist.isOlder(view, ctrl.view)) return;
             const swapped = ctrl.swappedSince(ctrl.view, view);
             ctrl.view = view;
+            ctrl.header.set((view.placeholders || []).length);
             ctrl.render();
             ctrl.follow();
             if (swapped) ctrl.refreshNative();
@@ -238,30 +244,33 @@
             ctrl.abort?.abort();
             const abort = new AbortController();
             ctrl.abort = abort;
-            const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
+            // The one acceptance rule (session, page show, route, list), plus: this is still the newest read.
+            const rule = lp.pages.ticket(ctrl, () => seq === ctrl.seq && !abort.signal.aborted && ctrl.isShown() && !ctrl.paused);
             let answer;
             let since;
             let guarded;
             try {
                 since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : undefined;
+                if (!rule.current()) return;
                 [answer, guarded] = await Promise.all([
-                    JE.arrLists.getList(listId, { signal: abort.signal }),
+                    JE.arrLists.getList(listId, { signal: abort.signal, ticket: rule }),
                     lp.render.spoilerPolicy({ listKind: 'collection', listId })
                 ]);
+                if (!rule.current()) return;
             } catch (err) {
                 if (!err?.stale && err?.name !== 'AbortError') console.warn(`${logPrefix} the collection couldn't be read`, err?.message || err);
                 return;
             }
-            if (seq !== ctrl.seq || abort.signal.aborted || !ctrl.isShown() || ctrl.paused || (JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== epoch) return;
             if (answer.status === 404 || answer.status === 403) {
                 ctrl.view = null;
+                ctrl.header.clear();
                 ctrl.removeSection();
                 ctrl.statusOff?.();
                 ctrl.statusOff = null;
                 ctrl.statusKeys = '';
                 return;
             }
-            if (answer.status !== 200 || !answer.body) return;
+            if (answer.status !== 200 || !answer.body || !rule.accepts(answer.body)) return;
             ctrl.since = since;
             ctrl.guarded = guarded;
             ctrl.applyView(answer.body);
@@ -310,7 +319,7 @@
             e.preventDefault();
             e.stopPropagation();
             if (request) {
-                if (!request.disabled) lp.request.open({ listId, onDone: () => ctrl.scheduleRefetch(500) }, ph, request);
+                if (!request.disabled) lp.request.open({ listId, ticket: () => lp.pages.ticket(ctrl), onDone: () => ctrl.scheduleRefetch(500) }, ph, request);
                 return;
             }
             lp.pages.openEntry(ctrl, ph);
@@ -350,6 +359,7 @@
             ctrl.pause();
             ctrl.disposed = true;
             ctrl.removeSection();
+            ctrl.header.clear();
             ctrl.view = null;
             if (page.__jeListCollectionCtrl === ctrl) delete page.__jeListCollectionCtrl;
         };
