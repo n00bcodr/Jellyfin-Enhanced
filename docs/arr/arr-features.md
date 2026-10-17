@@ -790,7 +790,10 @@ sent or uncertain scope returns 409. Future-season owners pay once per observed
 new season, including an overdraft; followers do not. A season counts once Sonarr monitors it and it has started
 (an aired episode or a file), seen in a Sonarr library read of the instance and connection the request went to; a
 season someone else asked for themselves is theirs to pay for. *Charge future seasons when they start* turns it off. Declines have a configurable cooldown. Cancel before sending or
-decline refunds the reservation. An uncertain outgoing action keeps its reservation until a fresh read of the original
+decline refunds the reservation. A request waiting for an OK after part of it went out (a new season it followed,
+held) can be declined or cancelled too: what went out stays, the held part is cancelled and refunded, and the request
+is sent again. Whether someone may cancel or decline a request never depends on where it was going (a Seerr server
+choice that stopped fitting, or an arr that's gone, is often why it waits). An uncertain outgoing action keeps its reservation until a fresh read of the original
 connection resolves it, even after authority changes. Deleting an approver anonymizes retained job contexts and preserves
 send certainty; only known-unsent queued approvals return to review, refunding just their own scope's charges. Charges
 for surviving jobs still count toward count, estimated GB and episode allowances. Deleting a requester anonymizes
@@ -1090,6 +1093,10 @@ lists requests made through Jellyfin Enhanced.
 | GET | `acquire/requests/attention` | Manager or Admin; `needOk` and `stuck` counts for visible titles (no network) |
 | GET | `acquire/household` | Manager (people sharing a library) or Admin (everyone, overrides and house rules) |
 | POST | `acquire/household` | Jellyfin administrator; saves roles, per-person limits, role limits, the preset and the default role |
+| GET | `acquire/household/rules` | Jellyfin administrator, household rules on (phase 4); Seerr mode: Seerr's own rules, read-only |
+| POST | `acquire/household/rules` | Jellyfin administrator; saves conditions, streaming settings and group pools (Jellyfin Enhanced handling only) |
+| GET | `acquire/household/streaming-services` | Jellyfin administrator; TMDB's streaming services for a country |
+| POST | `acquire/requests/preview` | Anyone who may ask (phase 4): what a batch of up to 20 asks would do, nothing written |
 
 The household save body names only what changes, for example
 `{"preset":"ask_first","users":{"<user id>":{"role":"Kid","quotaLimit":3}},"roles":{"Member":{"quotaLimit":7}}}`.
@@ -1381,6 +1388,42 @@ What each recipe decided (in every mode) is kept for 90 days; the same playback 
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic
 requests and the Seerr boundary on the Requests page (Overview) and with *Show automation status* on the
 configuration page.
+
+### Household rules, Trusted and group quotas (phase 4)
+
+*Household rules* and *Group quotas* are phase-4 switches, both off by default (see [the settings](arr-settings.md#household-rules-and-group-quotas-phase-4)):
+
+- **Trusted role** (with *Household rules* on): a Trusted person asks without an OK and has no request limit, like a
+  Manager, but approves nothing and doesn't see the Approvals or Household tabs. Trusted people count as eligible for
+  automatic requests. Pick it for a person, or as the role for everyone else, on the **Household** tab.
+- **Request conditions** (with Jellyfin Enhanced handling requests): fixed conditions per role, for Kids, Members and
+  Trusted people (Managers and administrators aren't ruled). *Rating* matches when the title's certification in a
+  chosen country is at or below a limit; *Genre* when it has any listed genre; *Original language* when it is one of
+  the listed languages; *Size* when the request's size estimate is at or below a number of GB; *Streaming* when it
+  streams on one of the household's services (inactive until a streaming country and services are set). Each condition
+  says what happens when it matches and otherwise: nothing, goes ahead without an OK, waits for an OK, or refused.
+  Refused beats waits, which beats goes ahead. A fact that isn't known (no rating in that country, say) means it waits
+  for an OK. *Goes ahead* only lifts a Member's *Approve everything* preset; Kids always wait for an OK, and quotas,
+  the series limit and shared allowances still apply. Approving a request overrides the conditions; the request is
+  checked again before it is sent when nobody approved it.
+- **Shared allowances** (with *Group quotas* on too): pools that count requests together, per household window, on top
+  of each person's own limit. A person draws on the first pool naming them, else the first naming their role (or
+  *Everyone*); administrators never do. A request is bound to its pool when it is made. Going over a pool waits for an OK.
+- **Where people see it.** Administrators edit the conditions, the streaming services and the pools on the
+  **Household** tab (*Request conditions*); **Save** asks for a confirmation and sends only what changed. Approval
+  cards say what the rules found ("Needs a look: rated R (limit PG-13)", "Not known: rating") with a *Rules want a
+  look* or *Shared allowance used up* chip and the requester's pool ("Kids: 7 of 7 used (shared)"). My requests says
+  why a request waits, and the request controls say it when asking ("The household's rules don't allow this one
+  (genre Horror)."). The request sheet names the caller's shared allowance.
+- **Seerr mode.** Seerr's own rules apply; Jellyfin Enhanced adds no conditions or pools. The Household tab shows Seerr's
+  override rules (what they apply to and what they set), whether new users' requests are approved automatically and
+  Seerr's default quotas, read-only; what Seerr can't describe reads *Not known*.
+
+| Method | Route | Access and purpose |
+|---|---|---|
+| GET | `acquire/household/rules` | Jellyfin administrator; the conditions, streaming settings, pools with their use, the choices, and Seerr's rules in Seerr mode |
+| POST | `acquire/household/rules` | Jellyfin administrator, Jellyfin Enhanced handling; saves `rules`, `streamingCountry`, `streamingServices` and `pools` (only the parts named) |
+| GET | `acquire/household/streaming-services?country=GB` | Jellyfin administrator; the services TMDB lists for a country |
 
 ### Privacy and Seerr scans
 

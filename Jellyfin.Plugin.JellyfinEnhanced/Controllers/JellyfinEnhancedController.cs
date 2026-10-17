@@ -965,6 +965,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
+        /// A read of Seerr's Radarr/Sonarr servers or one server's profiles and folders (<c>/api/v1/service/…</c>), other
+        /// than the Sonarr title lookup (<c>/api/v1/service/sonarr/lookup/…</c>) that requests for some series need.
+        /// </summary>
+        private static bool IsSeerrServiceRead(string apiPath)
+            => apiPath.StartsWith("/api/v1/service/", StringComparison.OrdinalIgnoreCase)
+               && !apiPath.StartsWith("/api/v1/service/sonarr/lookup/", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
         /// A request was made, answered or removed through Jellyfin Enhanced: the Requests &amp;
         /// downloads read model of Seerr's requests reads them again in about a second (it is a
         /// no-op while that feature is off).
@@ -1040,6 +1048,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Warning("Could not resolve Jellyfin user ID from the authenticated principal.");
                 return Forbid();
             }
+
+            // Administrator Seerr request options (phase 4): while that switch is on, choosing a Seerr server,
+            // profile or root folder is a Jellyfin administrator's alone, whatever the person's Seerr permissions.
+            // Others can't read Seerr's servers (the title lookup some series need stays open: it names no server,
+            // profile or folder), and their request bodies are sent without those choices. Switch off: as before.
+            var seerrOptionsBoundary = Services.Acquire.Requests.HouseholdFlags.SeerrOptions(config) && !IsAdminUser();
+            if (seerrOptionsBoundary && method == HttpMethod.Get && IsSeerrServiceRead(apiPath))
+                return StatusCode(403, new { code = "admin_required", message = "Only an administrator can see Seerr's servers." });
+            if (seerrOptionsBoundary && method == HttpMethod.Post && content != null && apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase))
+                content = StripAdvancedRequestOptions(content);
 
             // resolve the Seerr user ONCE up-front and reuse for
             // both ID-extraction and the non-admin permission check below.

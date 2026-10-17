@@ -29,6 +29,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <param name="Declined">Seasons a request for the edition named and Seerr declined, and nothing covers.</param>
     public sealed record SeerrSeasonFacts(IReadOnlyList<int> Started, IReadOnlySet<int> Covered, IReadOnlySet<int> Declined);
 
+    /// <summary>A quality profile of a Seerr Radarr/Sonarr server (see <see cref="SeerrServerOptions"/>).</summary>
+    /// <param name="Id">The arr's profile id.</param>
+    /// <param name="Name">Its name.</param>
+    public sealed record SeerrProfileOption(int Id, string Name);
+
+    /// <summary>
+    /// What an administrator may choose on a Seerr request for one of Seerr's Radarr/Sonarr servers: its id, name,
+    /// edition and defaults, its quality profiles and root folders, and the options stamp a choice is made against
+    /// (bound to the Seerr source, the media kind and these facts; no address or key of Seerr or the arr).
+    /// </summary>
+    /// <param name="Id">Seerr's server id (starts at 0).</param>
+    /// <param name="Name">The server's name in Seerr.</param>
+    /// <param name="Is4k">The server takes 4K requests.</param>
+    /// <param name="IsDefault">Seerr's default server for its edition.</param>
+    /// <param name="DefaultProfileId">The profile Seerr uses when none is chosen.</param>
+    /// <param name="DefaultRootFolder">The root folder Seerr uses when none is chosen.</param>
+    /// <param name="Profiles">Quality profiles.</param>
+    /// <param name="RootFolders">Root folder paths.</param>
+    /// <param name="Options">The options stamp.</param>
+    public sealed record SeerrServerOptions(int Id, string Name, bool Is4k, bool IsDefault, int? DefaultProfileId, string? DefaultRootFolder,
+        IReadOnlyList<SeerrProfileOption> Profiles, IReadOnlyList<string> RootFolders, string Options);
+
     /// <summary>
     /// Seerr request mode: sends each approved request to Seerr as the person who asked
     /// (<c>X-Api-User</c> with JE's key), so Seerr's own permissions, quotas, approvals and override rules
@@ -37,7 +59,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// The account named in <c>X-Api-User</c> is confirmed by a fresh read right before every POST.
     /// A POST whose answer is lost is "maybe sent" and is never sent to another Seerr address; a fresh,
     /// scoped read of the title settles it. A 409 or a 202 "No seasons available" counts as success only
-    /// with a JSON body and a fresh read that shows the scope already requested or available.
+    /// with a JSON body and a fresh read that shows the scope already requested or available; for a request with
+    /// administrator Seerr options, only by requests at the chosen server, profile and root folder (else it is held).
+    /// A created request (and a read-back) with options counts only when every season asked for is covered there.
     /// </summary>
     public sealed class SeerrBackend : IRequestBackend
     {
@@ -63,7 +87,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<TitleKey, CancellationToken, Task<int?>>? _findTmdb;
         private readonly ConcurrentDictionary<Guid, Prepared> _prepared = new();
         private readonly ConcurrentDictionary<string, (int? Id, DateTimeOffset At)> _ids = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, ServerList> _serverLists = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, ServerDetails> _serverDetails = new(StringComparer.Ordinal);
         private SettingsRead? _settings;
+
+        /// <summary>The binding verdict for Seerr options that fit Seerr's servers now.</summary>
+        internal const string OptionsValid = "valid";
+        /// <summary>The binding verdict while Seerr's servers aren't known lately (never a guess).</summary>
+        internal const string OptionsUnknown = "unknown";
+        /// <summary>How long a read of Seerr's servers (and of one server's profiles and folders) counts.</summary>
+        internal static readonly TimeSpan ServersFor = TimeSpan.FromSeconds(60);
+        private const int MaxServers = 16;
+        private const int MaxProfiles = 500;
+        private const int MaxRoots = 200;
+        private const int MaxCachedServerReads = 256;
 
         /// <summary>
         /// Creates the backend (DI); each send is bound on its ledger job before it leaves, and a person's requests waiting
@@ -124,6 +161,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private sealed record Raw(Delivery Delivery, int Status, bool Json, string Body);
 
+        // Connection: a digest of where and how Seerr reaches the server (its address, port, SSL, base URL and API key),
+        // private: only ever part of the options stamp, so a server repointed under the same name is a changed choice.
+        private sealed record ServerEntry(int Id, string Name, bool Is4k, bool IsDefault, int? ActiveProfileId, string? ActiveDirectory, string Connection);
+
+        private sealed record ServerList(IReadOnlyList<ServerEntry> Servers, DateTimeOffset At);
+
+        private sealed record ServerDetails(IReadOnlyList<SeerrProfileOption> Profiles, IReadOnlyList<string> Roots, DateTimeOffset At);
+
         // ---------------- identity, permissions, quota ----------------
 
         /// <inheritdoc />
@@ -135,6 +180,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 _prepared.TryRemove(user, out _);
                 return;
+            }
+            // Seerr options: Seerr's servers and the chosen one's profiles and folders (read briefly cached), for the binding.
+            if (input.HasSeerrOptions && input.SeerrServerId is int server && TitleKey.Parse(input.Key) is { } titleKey)
+            {
+                var kind = ServiceKind(titleKey.IsMovie);
+                if (await ServerListAsync(config, source, kind, fresh: false, ct).ConfigureAwait(false) is { } list && list.Servers.Any(s => s.Id == server))
+                    await ServerDetailsAsync(config, source, kind, server, fresh: false, ct).ConfigureAwait(false);
             }
             var settings = await SettingsAsync(config, source, fresh: false, ct).ConfigureAwait(false);
             int? id = null;
@@ -186,7 +238,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
-            if (source == null || !_prepared.TryGetValue(user, out var p) || p.Source != source || _now() - p.At > PreparedFor) return new RequestBackendBinding(Source: source);
+            var (options, optionsStamp) = source != null && input.HasSeerrOptions ? HeldOptions(source, input) : (null, null);
+            if (source == null || !_prepared.TryGetValue(user, out var p) || p.Source != source || _now() - p.At > PreparedFor) return new RequestBackendBinding(Source: source, SeerrOptions: options, SeerrOptionsStamp: optionsStamp);
             var movie = TitleKey.Parse(input.Key)?.IsMovie ?? true;
             bool Has(JellyseerrPermission bit) => (p.Permissions & (long)bit) == (long)bit;
             var admin = Has(JellyseerrPermission.ADMIN);
@@ -199,8 +252,149 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var wholeSeries = p.Settings is { Partial: not true };
             // Prepared facts say who the person is: no account means Seerr answered that none is linked to them.
             return new RequestBackendBinding(source, p.SeerrUser, p.SeerrUser == null ? 0 : p.Permissions, fourKEnabled, can4k, canManage,
-                movie ? p.Movie : p.Tv, movie ? p.MovieDays : p.TvDays, canRequest, wholeSeries, SeerrUnlinked: p.SeerrUser == null);
+                movie ? p.Movie : p.Tv, movie ? p.MovieDays : p.TvDays, canRequest, wholeSeries, SeerrUnlinked: p.SeerrUser == null, SeerrOptions: options, SeerrOptionsStamp: optionsStamp);
         }
+
+        // ---------------- administrator Seerr request options ----------------
+
+        private static string ServiceKind(bool movie) => movie ? "radarr" : "sonarr";
+
+        /// <summary>
+        /// Seerr's Radarr (movies) or Sonarr (series) servers and, for each, its quality profiles, root folders and options
+        /// stamp, for an administrator's choice: read from the Seerr configured now (briefly cached), never including an
+        /// address or key. Null when Seerr isn't configured or couldn't be read completely (nothing is guessed then).
+        /// </summary>
+        /// <param name="movie">Movies (Radarr) or series (Sonarr).</param>
+        /// <param name="ct">Cancellation.</param>
+        public async Task<IReadOnlyList<SeerrServerOptions>?> RequestOptionsAsync(bool movie, CancellationToken ct)
+        {
+            var config = _config();
+            var source = config == null ? null : _model.SourceOf(config);
+            if (config == null || source == null) return null;
+            var kind = ServiceKind(movie);
+            if (await ServerListAsync(config, source, kind, fresh: false, ct).ConfigureAwait(false) is not { } list) return null;
+            var servers = new List<SeerrServerOptions>(list.Servers.Count);
+            foreach (var server in list.Servers)
+            {
+                if (await ServerDetailsAsync(config, source, kind, server.Id, fresh: false, ct).ConfigureAwait(false) is not { } details) return null;
+                servers.Add(new SeerrServerOptions(server.Id, server.Name, server.Is4k, server.IsDefault, server.ActiveProfileId, server.ActiveDirectory,
+                    details.Profiles, details.Roots, OptionsStamp(source, kind, server, details)));
+            }
+            return servers;
+        }
+
+        /// <summary>
+        /// The options stamp of one Seerr server: a hash of the Seerr source, the media kind, the server's id, name and
+        /// edition, the digest of its connection (where Seerr sends to), its profiles (ids and names) and its root folders,
+        /// sorted. Deterministic; no address or key can be read from it.
+        /// </summary>
+        private static string OptionsStamp(string source, string kind, ServerEntry server, ServerDetails details)
+            => MutationInput.Hash(JsonSerializer.Serialize(new object[]
+            {
+                source, kind, server.Id, server.Name, server.Is4k, server.Connection,
+                details.Profiles.OrderBy(p => p.Id).Select(p => new object[] { p.Id, p.Name }).ToArray(),
+                details.Roots.OrderBy(r => r, StringComparer.Ordinal).ToArray(),
+            }));
+
+        /// <summary>
+        /// Whether an input's Seerr options fit Seerr's servers as last read (memory only, within <see cref="ServersFor"/>):
+        /// <see cref="OptionsValid"/>; <c>seerr_options_changed</c> when the server is gone or its stamp differs (the facts
+        /// the choice was made against changed); <c>seerr_options_invalid</c> when the stamp matches but the edition,
+        /// profile or folder doesn't belong to that server; <see cref="OptionsUnknown"/> when they aren't known lately.
+        /// With the server's current stamp when known.
+        /// </summary>
+        private (string Verdict, string? Stamp) HeldOptions(string source, MutationInput input)
+        {
+            if (TitleKey.Parse(input.Key) is not { } key || input.SeerrServerId is not int server) return (OptionsUnknown, null);
+            var kind = ServiceKind(key.IsMovie);
+            var list = _serverLists.TryGetValue(source + "|" + kind, out var heldList) && _now() - heldList.At < ServersFor ? heldList : null;
+            var details = _serverDetails.TryGetValue(source + "|" + kind + "|" + server.ToString(CultureInfo.InvariantCulture), out var heldDetails) && _now() - heldDetails.At < ServersFor ? heldDetails : null;
+            return CheckOptions(source, kind, input, list, details);
+        }
+
+        private static (string Verdict, string? Stamp) CheckOptions(string source, string kind, MutationInput input, ServerList? list, ServerDetails? details)
+        {
+            if (list == null) return (OptionsUnknown, null);
+            var server = list.Servers.FirstOrDefault(s => s.Id == input.SeerrServerId);
+            if (server == null) return ("seerr_options_changed", null);
+            if (details == null) return (OptionsUnknown, null);
+            var stamp = OptionsStamp(source, kind, server, details);
+            if (!string.Equals(stamp, input.SeerrOptions, StringComparison.OrdinalIgnoreCase)) return ("seerr_options_changed", stamp);
+            if (server.Is4k != (input.Variant == "4k") || !details.Profiles.Any(p => p.Id == input.SeerrProfileId)
+                || input.SeerrRootFolder == null || !details.Roots.Any(r => BridgePaths.SamePath(r, input.SeerrRootFolder)))
+                return ("seerr_options_invalid", stamp);
+            return (OptionsValid, stamp);
+        }
+
+        // Seerr's servers of one kind (GET /api/v1/service/radarr|sonarr) with where Seerr reaches each (its settings,
+        // GET /api/v1/settings/radarr|sonarr, read with Jellyfin Enhanced's administrator key; only a digest is kept),
+        // cached per Seerr source for ServersFor; fresh reads always go to Seerr (and replace what is held). Null when
+        // Seerr didn't answer with both lists, or a server's connection isn't in its settings (never guessed).
+        private async Task<ServerList?> ServerListAsync(PluginConfiguration config, string source, string kind, bool fresh, CancellationToken ct, string? only = null)
+        {
+            var cacheKey = source + "|" + kind;
+            if (!fresh && _serverLists.TryGetValue(cacheKey, out var held) && _now() - held.At < ServersFor) return held;
+            if (await GetAsync(config, "/api/v1/service/" + kind, ct, only).ConfigureAwait(false) is not { ValueKind: JsonValueKind.Array } json) return null;
+            if (await GetAsync(config, "/api/v1/settings/" + kind, ct, only).ConfigureAwait(false) is not { ValueKind: JsonValueKind.Array } settings) return null;
+            var connections = new Dictionary<int, string>();
+            foreach (var row in settings.EnumerateArray())
+            {
+                if (row.ValueKind != JsonValueKind.Object || Int(row, "id") is not int id) continue;
+                connections[id] = MutationInput.Hash(JsonSerializer.Serialize(new object?[]
+                {
+                    Str(row, "hostname")?.Trim().ToLowerInvariant(), Int(row, "port"), row.TryGetProperty("useSsl", out var ssl) && ssl.ValueKind == JsonValueKind.True,
+                    Str(row, "baseUrl")?.Trim().TrimEnd('/'), MutationInput.Hash(Str(row, "apiKey") ?? string.Empty),
+                }));
+            }
+            var servers = new List<ServerEntry>();
+            foreach (var row in json.EnumerateArray())
+            {
+                if (servers.Count >= MaxServers) break;
+                if (row.ValueKind != JsonValueKind.Object || Int(row, "id") is not int id || id < 0 || servers.Any(s => s.Id == id)) continue;
+                if (!connections.TryGetValue(id, out var connection)) return null;
+                servers.Add(new ServerEntry(id, Bounded(Str(row, "name")) ?? string.Empty, row.TryGetProperty("is4k", out var k) && k.ValueKind == JsonValueKind.True,
+                    row.TryGetProperty("isDefault", out var d) && d.ValueKind == JsonValueKind.True, Int(row, "activeProfileId") is int profile && profile > 0 ? profile : null,
+                    Str(row, "activeDirectory") is { Length: > 0 and <= 1024 } directory ? directory : null, connection));
+            }
+            var list = new ServerList(servers, _now());
+            if (_serverLists.Count >= MaxCachedServerReads) _serverLists.Clear();
+            _serverLists[cacheKey] = list;
+            return list;
+        }
+
+        // One server's quality profiles and root folders (GET /api/v1/service/{kind}/{id}), cached like the list.
+        private async Task<ServerDetails?> ServerDetailsAsync(PluginConfiguration config, string source, string kind, int server, bool fresh, CancellationToken ct, string? only = null)
+        {
+            var cacheKey = source + "|" + kind + "|" + server.ToString(CultureInfo.InvariantCulture);
+            if (!fresh && _serverDetails.TryGetValue(cacheKey, out var held) && _now() - held.At < ServersFor) return held;
+            if (await GetAsync(config, "/api/v1/service/" + kind + "/" + server.ToString(CultureInfo.InvariantCulture), ct, only).ConfigureAwait(false) is not { ValueKind: JsonValueKind.Object } json) return null;
+            var profiles = new List<SeerrProfileOption>();
+            if (json.TryGetProperty("profiles", out var p) && p.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var row in p.EnumerateArray())
+                {
+                    if (profiles.Count >= MaxProfiles) break;
+                    if (row.ValueKind == JsonValueKind.Object && Int(row, "id") is int id && id > 0 && profiles.All(x => x.Id != id))
+                        profiles.Add(new SeerrProfileOption(id, Bounded(Str(row, "name")) ?? string.Empty));
+                }
+            }
+            var roots = new List<string>();
+            if (json.TryGetProperty("rootFolders", out var r) && r.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var row in r.EnumerateArray())
+                {
+                    if (roots.Count >= MaxRoots) break;
+                    if (row.ValueKind == JsonValueKind.Object && Str(row, "path") is { Length: > 0 and <= 1024 } path && !roots.Contains(path, StringComparer.Ordinal))
+                        roots.Add(path);
+                }
+            }
+            var details = new ServerDetails(profiles, roots, _now());
+            if (_serverDetails.Count >= MaxCachedServerReads) _serverDetails.Clear();
+            _serverDetails[cacheKey] = details;
+            return details;
+        }
+
+        private static string? Bounded(string? text) => text == null ? null : text.Length <= 200 ? text : text[..200];
 
         // Seerr's quota for one media type; "used" must be a real number or nothing is known.
         private (QuotaProjection? Projection, int Days) Quota(JsonElement quota, string type, Guid user, bool movie, string source)
@@ -327,17 +521,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     ? BackendResults.Later("seerr_user_unlinked", "The person has no Seerr account linked; the request goes out once they have one.", RequestOutbox.UnlinkedRecheck)
                     : BackendResults.Retry("backend_unavailable", "The person's Seerr account isn't known.");
             var input = job.Input;
-            if (RequestLedger.HasRouting(input))
+            if (input.HasArrRouting)
                 return BackendResults.Hold("invalid_defaults", "Instance, profile and folder choices can't be sent to Seerr; Seerr picks its own server.");
+            // Seerr options are checked again right before the POST (below); while the switch is off nothing is read.
+            if (input.HasSeerrOptions && !HouseholdFlags.SeerrOptions(config))
+                return BackendResults.Hold("seerr_options_disabled", "Seerr server, profile and folder choices are turned off; nothing was sent.");
             var key = TitleKey.Parse(input.Key);
             if (key == null) return BackendResults.Failed("invalid_input", "The request's title key can't be read.");
             if (await TmdbOfAsync(key, ct).ConfigureAwait(false) is not int tmdb) return BackendResults.Hold("title_not_found", "Seerr needs the title's TMDB id, which isn't known yet.");
             var is4k = input.Variant == "4k";
-            string body;
+            System.Text.Json.Nodes.JsonObject payload;
             int[] seasons = Array.Empty<int>();
             if (key.IsMovie)
             {
-                body = JsonSerializer.Serialize(new { mediaType = "movie", mediaId = tmdb, is4k });
+                payload = new System.Text.Json.Nodes.JsonObject { ["mediaType"] = "movie", ["mediaId"] = tmdb, ["is4k"] = is4k };
             }
             else
             {
@@ -360,7 +557,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             : "Seerr's partial-request setting couldn't be read as on or off, so only whole-series requests are sent.");
                     seasons = all.OrderBy(s => s).ToArray();
                 }
-                body = JsonSerializer.Serialize(new { mediaType = "tv", mediaId = tmdb, is4k, seasons });
+                payload = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["mediaType"] = "tv", ["mediaId"] = tmdb, ["is4k"] = is4k,
+                    ["seasons"] = new System.Text.Json.Nodes.JsonArray(seasons.Select(n => (System.Text.Json.Nodes.JsonNode?)n).ToArray()),
+                };
             }
             // One address only: a POST is never repeated against another Seerr address, and the account check and the
             // reads that confirm the request are made at that same address.
@@ -375,6 +576,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     : BackendResults.Retry("backend_unavailable", "Seerr couldn't confirm the person's account; nothing was sent.");
             if (!string.Equals(Str(linked, "jellyfinUserId"), job.Authorization.Requester.ToString("N"), StringComparison.OrdinalIgnoreCase))
                 return Unlinked(job.Authorization.Requester, source, "That Seerr account is no longer linked to the person who asked.");
+            if (input.HasSeerrOptions)
+            {
+                // The account it goes out as must still hold Seerr's advanced-request permission (Seerr applies the
+                // choices for that account), and the choices must still fit Seerr's servers, read fresh at this address.
+                // Anything else holds the request: never Seerr's defaults instead, never another backend.
+                if (!(linked.TryGetProperty("permissions", out var bits) && bits.ValueKind == JsonValueKind.Number && bits.TryGetInt64(out var permissions) && RequestPolicy.SeerrAdvanced(permissions)))
+                    return BackendResults.Hold("seerr_advanced_required", "The Seerr account no longer has Seerr's advanced request permission; nothing was sent.");
+                var kind = ServiceKind(key.IsMovie);
+                if (await ServerListAsync(config, source, kind, fresh: true, ct, url).ConfigureAwait(false) is not { } servers)
+                    return BackendResults.Retry("backend_unavailable", "Seerr's servers couldn't be read; nothing was sent.");
+                ServerDetails? details = null;
+                if (input.SeerrServerId is int serverId && servers.Servers.Any(x => x.Id == serverId)
+                    && (details = await ServerDetailsAsync(config, source, kind, serverId, fresh: true, ct, url).ConfigureAwait(false)) == null)
+                    return BackendResults.Retry("backend_unavailable", "Seerr's server details couldn't be read; nothing was sent.");
+                if (CheckOptions(source, kind, input, servers, details).Verdict != OptionsValid)
+                    return BackendResults.Hold("seerr_options_changed", "Seerr's servers, profiles or root folders changed since this request was made; nothing was sent.");
+                payload["serverId"] = input.SeerrServerId;
+                payload["profileId"] = input.SeerrProfileId;
+                payload["rootFolder"] = input.SeerrRootFolder;
+            }
+            var body = payload.ToJsonString();
             if (finalGuard() is { } late) return Refused(job, late);
             if (admission?.Admit(SendWriteKind.Post, "post") is { } limited) return BackendResults.Held(job.WantId, false, limited.Reason, "Seerr: " + limited.Message, limited.Wait);
             // What goes out is recorded first (the account and the exact seasons), so a read-back looks for exactly that,
@@ -406,6 +628,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     // Seerr leaves out seasons that are already requested or on their way and creates the rest: the request
                     // counts once a fresh read shows every sent season covered and this person's new request among them.
                     var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, seerrUser, CreatedId(raw.Body), ct).ConfigureAwait(false);
+                    if (verify.Reason == OptionsMismatch) return OptionsNotApplied(job);
+                    if (verify.Reason == PartlyElsewhere) return PartlyNotApplied(job);
                     return verify.Matched == true
                         ? BackendResults.Done(job.WantId, "accepted", verify.Reason, "Asked in Seerr.", 201)
                         : BackendResults.Maybe(job.WantId, "Seerr accepted the request, but a fresh read doesn't show it yet.");
@@ -413,6 +637,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 case 202 when raw.Json && Message(raw.Body) is { } message && message.Contains("no seasons", StringComparison.OrdinalIgnoreCase):
                 {
                     var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
+                    if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
                     return verify.Matched == true
                         ? BackendResults.Done(job.WantId, "nothing_to_request", verify.Reason, "Every season asked for is already requested or available in Seerr.")
                         : BackendResults.Failed("seerr_conflict", "Seerr said there were no seasons to request, but a fresh read doesn't show them requested.");
@@ -420,6 +645,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 case 409 when raw.Json:
                 {
                     var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, null, null, ct).ConfigureAwait(false);
+                    if (verify.Reason == OptionsMismatch) return CoveredElsewhere();
                     return verify.Matched == true
                         ? BackendResults.Done(job.WantId, "already_requested", verify.Reason, "Already requested in Seerr; following that request.")
                         : BackendResults.Failed("seerr_conflict", "Seerr reported a conflict, but a fresh read doesn't show the title requested.");
@@ -490,6 +716,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 own = found;
             }
             var verify = await VerifyAsync(config, url, job, key, tmdb, seasons, own, null, ct).ConfigureAwait(false);
+            if (verify.Reason == OptionsMismatch) return OptionsNotApplied(job);
+            if (verify.Reason == PartlyElsewhere) return PartlyNotApplied(job);
             return verify.Matched switch
             {
                 true => BackendResults.Done(job.WantId, "accepted", verify.Reason, "Confirmed in Seerr."),
@@ -510,6 +738,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <paramref name="created"/> (from Seerr's answer), else a request of theirs for the movie or for at least one
         /// of the asked seasons. <c>Theirs</c>: that own part is there (even when the seasons aren't all covered).
         /// </summary>
+        /// <summary>
+        /// <see cref="VerifyAsync"/>'s reason when the job carries Seerr options and the person's request is there, but
+        /// not with the chosen server, profile or root folder.
+        /// </summary>
+        private const string OptionsMismatch = "seerr_options_mismatch";
+
+        /// <summary>
+        /// <see cref="VerifyAsync"/>'s reason when the job carries Seerr options and the person's request is there with them,
+        /// but not every season asked for is covered at the chosen destination (some only elsewhere).
+        /// </summary>
+        private const string PartlyElsewhere = "seerr_options_partly_elsewhere";
+
+        // Seerr made the person's request with the options chosen, but some seasons asked for are requested or on their way
+        // elsewhere: held for a person after the write (certainty unknown: neither cancelled nor sent again).
+        private static RequestBackendResult PartlyNotApplied(RequestJob job)
+            => BackendResults.HoldAfterWrite(job.WantId, "seerr_options_changed", "Seerr has this person's request at the server, profile and root folder chosen, but some seasons asked for are requested or on their way elsewhere; check it in Seerr.");
+
+        // The person's request is in Seerr with other options than chosen: held for a person (the written request stays;
+        // its certainty stays unknown, so it is neither cancelled nor sent again).
+        private static RequestBackendResult OptionsNotApplied(RequestJob job)
+            => BackendResults.HoldAfterWrite(job.WantId, "seerr_options_changed", "Seerr has this person's request, but not with the server, profile or root folder chosen; check it in Seerr.");
+
+        // Seerr created nothing (a 409 or a 202 "no seasons") because the title is already requested or on its way, but not
+        // with the server, profile or root folder chosen: held for a person, never counted as this request's success.
+        private static RequestBackendResult CoveredElsewhere()
+            => BackendResults.Hold("seerr_options_changed", "Seerr already has this title requested or on its way, but not with the server, profile or root folder chosen; nothing new was sent.");
+
+        // A Seerr request carries the chosen server, profile and root folder.
+        private static bool SameOptions(JsonElement request, MutationInput input)
+            => RequestDestination.SeerrHas(input, Int(request, "serverId"), Int(request, "profileId"), Str(request, "rootFolder"));
+
         private async Task<(bool? Matched, string Reason, bool Theirs)> VerifyAsync(PluginConfiguration config, string url, RequestJob job, TitleKey key, int tmdb, int[] seasons, int? own, int? created, CancellationToken ct)
         {
             var details = await GetAsync(config, $"/api/v1/{(key.IsMovie ? "movie" : "tv")}/{tmdb.ToString(CultureInfo.InvariantCulture)}", ct, url).ConfigureAwait(false);
@@ -520,10 +779,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var edition = requests.Where(r => (r.TryGetProperty("is4k", out var k) && k.ValueKind == JsonValueKind.True) == is4k && Int(r, "status") is int status && status != Declined).ToList();
             var mine = own == null ? edition : edition.Where(r => r.TryGetProperty("requestedBy", out var by) && by.ValueKind == JsonValueKind.Object && Int(by, "id") == own
                 && (created == null || Int(r, "id") == created)).ToList();
+            // A request carrying Seerr options counts only with those options; the person's request with other options is
+            // not a match (and is never resent over).
+            if (own != null && job.Input.HasSeerrOptions)
+            {
+                // (For a series, only the person's requests naming a season asked for here.)
+                var relevant = key.IsMovie ? mine : mine.Where(r => SeasonsOf(r).Any(seasons.Contains)).ToList();
+                if (relevant.Count > 0 && !relevant.Any(r => SameOptions(r, job.Input))) return (false, OptionsMismatch, false);
+                mine = mine.Where(r => SameOptions(r, job.Input)).ToList();
+            }
+            // Seerr created nothing (409, 202): with Seerr options, only requests at the chosen server, profile and root
+            // folder count as covering it. Covered only by another request's options, or by the title already processing
+            // or available (no request shows where), it is not a match: OptionsMismatch.
+            var routed = own == null && job.Input.HasSeerrOptions;
+            if (routed) mine = edition.Where(r => SameOptions(r, job.Input)).ToList();
             var reason = mine.Any(r => Int(r, "status") == 1) && !mine.Any(r => Int(r, "status") is 2 or 5) ? "awaiting_approval" : "looking";
             if (key.IsMovie)
             {
                 if (own != null) return (mine.Count > 0, reason, mine.Count > 0);
+                if (routed)
+                    return mine.Count > 0 ? (true, reason, false)
+                        : edition.Count > 0 || Int(media, is4k ? "status4k" : "status") is >= 3 and <= 5 ? (false, OptionsMismatch, false) : (false, "looking", false);
                 if (edition.Count > 0) return (true, reason, false);
                 return (Int(media, is4k ? "status4k" : "status") is >= 3 and <= 5, "looking", false);
             }
@@ -536,8 +812,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
             }
             var all = seasons.Length > 0 && seasons.All(covered.Contains);
+            if (routed)
+            {
+                var atChoice = mine.SelectMany(SeasonsOf).ToHashSet();
+                return seasons.Length > 0 && seasons.All(atChoice.Contains) ? (true, reason, false) : all ? (false, OptionsMismatch, false) : (false, reason, false);
+            }
             if (own == null) return (all, reason, false);
             var theirs = created != null ? mine.Count > 0 : mine.Any(r => SeasonsOf(r).Any(seasons.Contains));
+            // With Seerr options every season asked for must be covered at the chosen destination (anyone's request with the
+            // chosen options). One covered only by a request elsewhere, or only processing or available (no request shows
+            // where), isn't: the person's part is written, so it is held after the write.
+            if (job.Input.HasSeerrOptions && all && theirs)
+            {
+                var atChoice = edition.Where(r => SameOptions(r, job.Input)).SelectMany(SeasonsOf).ToHashSet();
+                if (!seasons.All(atChoice.Contains)) return (false, PartlyElsewhere, true);
+            }
             return (all && theirs, reason, theirs);
         }
 

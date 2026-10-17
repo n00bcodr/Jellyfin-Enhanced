@@ -1,0 +1,646 @@
+using System.Reflection;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
+using Rig = JE.Tests.IntegrationSeerrRequestOptionsTests.Rig;
+
+namespace JE.Tests;
+
+/// <summary>
+/// Where a Seerr-mode request goes, applied the same way on every path (phase 4b, review round 3). A request only stands
+/// for, covers, dedups, suppresses or follows another one at the same destination: the same Seerr source, and for a
+/// request with administrator Seerr options the same server, quality profile, root folder and options stamp
+/// (RequestDestination). An approval may re-confirm a request only on its own Seerr with only a fresh stamp,
+/// and work already sent never moves. Table: path × difference (source, server, profile, root folder, stamp only, or none)
+/// × the other request's state (sent, not sent yet, held for an OK). Production policy, ledger, outbox and Seerr backend
+/// over a synthetic Seerr with two Sonarr servers.
+/// </summary>
+[Collection("Plugin singleton")]
+public class IntegrationSeerrDestinationTableTests
+{
+    private const string Show = "tv:tmdb:1731";
+
+    /// <summary>How the other request's destination differs from the ask's.</summary>
+    public enum Diff
+    {
+        /// <summary>The same destination (the control row).</summary>
+        Same,
+        /// <summary>Another Seerr (address or key changed), the same server, profile and folder ids.</summary>
+        Source,
+        /// <summary>Another Sonarr server in Seerr.</summary>
+        Server,
+        /// <summary>Another quality profile on the same server.</summary>
+        Profile,
+        /// <summary>Another root folder on the same server.</summary>
+        Root,
+        /// <summary>Only the options stamp: the server's facts changed between the two.</summary>
+        Stamp,
+    }
+
+    /// <summary>The other request's state.</summary>
+    public enum State
+    {
+        /// <summary>Sent to Seerr.</summary>
+        Sent,
+        /// <summary>Queued, not sent yet.</summary>
+        Unsent,
+        /// <summary>Waiting for an OK (nothing sent).</summary>
+        Held,
+    }
+
+    private sealed record Place(int Server, int Profile, string Root);
+
+    // The ask's destination, and the other request's for each difference (source and stamp: the same ids).
+    private static readonly Place X = new(0, 4, "/tv");
+
+    private static Place Y(Diff diff) => diff switch
+    {
+        Diff.Server => new(1, 4, "/tv"),
+        Diff.Profile => new(0, 7, "/tv"),
+        Diff.Root => new(0, 4, "/tv-anime"),
+        _ => X,
+    };
+
+    public static TheoryData<Diff, State> Every()
+    {
+        var rows = new TheoryData<Diff, State>();
+        foreach (var diff in Enum.GetValues<Diff>())
+            foreach (var state in Enum.GetValues<State>()) rows.Add(diff, state);
+        return rows;
+    }
+
+    // Seerr has two Sonarr servers: the default one (profiles 4 and 7, folders /tv and /tv-anime) and an anime one.
+    private static Rig NewRig()
+    {
+        var rig = new Rig();
+        static JsonObject Server(int id, string name, bool isDefault)
+            => new() { ["id"] = id, ["name"] = name, ["is4k"] = false, ["isDefault"] = isDefault, ["activeProfileId"] = 4, ["activeDirectory"] = "/tv", ["activeTags"] = new JsonArray() };
+        static JsonObject Details(JsonObject server, int[] profiles, params string[] roots)
+            => new()
+            {
+                ["server"] = server.DeepClone(),
+                ["profiles"] = new JsonArray(profiles.Select(p => (JsonNode)new JsonObject { ["id"] = p, ["name"] = "Profile " + p }).ToArray()),
+                ["rootFolders"] = new JsonArray(roots.Select((r, i) => (JsonNode)new JsonObject { ["id"] = i + 1, ["path"] = r, ["freeSpace"] = 1_000_000 }).ToArray()),
+                ["tags"] = new JsonArray(),
+            };
+        var main = Server(0, "Sonarr", true);
+        var anime = Server(1, "Sonarr Anime", false);
+        rig.Fake.Services["sonarr"] = new JsonArray(main.DeepClone(), anime.DeepClone());
+        rig.Fake.ServiceDetails["sonarr/0"] = Details(main, new[] { 4, 7 }, "/tv", "/tv-anime");
+        rig.Fake.ServiceDetails["sonarr/1"] = Details(anime, new[] { 4 }, "/tv");
+        static JsonObject Season(int n, string aired) => new() { ["seasonNumber"] = n, ["episodeCount"] = 8, ["airDate"] = aired };
+        rig.Fake.Shows[1731] = new JsonObject { ["id"] = 1731, ["seasons"] = new JsonArray(Season(1, "2020-01-01"), Season(2, "2021-01-01"), Season(3, "2027-03-01")) };
+        return rig;
+    }
+
+    // A second Jellyfin administrator with Seerr's admin permission (added before anything reads Seerr's users).
+    private static StatusViewer SecondAdmin(Rig rig)
+    {
+        var admin = rig.View.AddUser(true);
+        rig.Fake.Users.Add(new JsonObject { ["id"] = 12, ["jellyfinUserId"] = admin.UserId.ToString("N"), ["permissions"] = 2, ["displayName"] = "Admin 2" });
+        return admin;
+    }
+
+    // Between the other request and the ask: Seerr's main Sonarr gets another root folder (every stamp of it changes), or
+    // Jellyfin Enhanced points at another Seerr. Seerr's servers are read again either way.
+    private static void Apply(Rig rig, Diff diff)
+    {
+        if (diff == Diff.Stamp) ChangeFacts(rig);
+        if (diff == Diff.Source) rig.Config.JellyseerrUrls = "http://seerr-b.lan:5055";
+        rig.Lab.Now = rig.Lab.Now.AddMinutes(2);
+    }
+
+    private static void ChangeFacts(Rig rig)
+        => ((JsonArray)rig.Fake.ServiceDetails["sonarr/0"]["rootFolders"]!).Add(new JsonObject { ["id"] = 9, ["path"] = "/tv-kids", ["freeSpace"] = 1_000_000 });
+
+    // A season starts in Seerr (it has aired).
+    private static void Starts(Rig rig, int season)
+    {
+        rig.Fake.Shows[1731]["seasons"]!.AsArray()[season - 1]!["airDate"] = "2026-10-01";
+        rig.Lab.Now = rig.Lab.Now.AddMinutes(2);
+    }
+
+    private static async Task<MutationInput> At(Rig rig, Place place, string scope, params int[] seasons)
+        => new() { Key = Show, Scope = scope, Seasons = seasons, SeerrServerId = place.Server, SeerrProfileId = place.Profile, SeerrRootFolder = place.Root, SeerrOptions = await rig.Stamp(place.Server, movie: false) };
+
+    // The other request, in its state: sent, queued (no send pass yet), or waiting for an OK (ask mode).
+    private static async Task<string> Other(Rig rig, StatusViewer who, MutationInput input, State state)
+    {
+        var outcome = state == State.Held
+            ? await rig.Service.CreateAsync(who.UserId, new(Guid.NewGuid().ToString("N"), input), default, new RequestOrigin(RequestOrigin.InteractiveKind) { RequireApproval = true })
+            : await rig.Ask(who, input);
+        Assert.True(outcome.HttpStatus == 201, outcome.Reason + ": " + outcome.Message);
+        if (state == State.Sent) await rig.Outbox.TickAsync(default);
+        Assert.Equal(state switch { State.Sent => "sent", State.Unsent => "queued", _ => "pending" }, rig.Ledger.Find(outcome.RequestId!)!.Status);
+        return outcome.RequestId!;
+    }
+
+    private static FutureSeasonCharges Follower(Rig rig)
+        => new(rig.Lab.Arr.Store, rig.Ledger, rig.Policy, rig.Lab.Arr.Arr.Factory, new ArrChangeFeed(), null, null, () => rig.Lab.Now, rig.Seerr, rig.Lab.Model, new RequestOutboxSignal());
+
+    private static bool Goes(JsonObject post, Place place)
+        => (int?)post["serverId"] == place.Server && (int?)post["profileId"] == place.Profile && (string?)post["rootFolder"] == place.Root;
+
+    // ------------------------------------------------------------------ own-request dedup (B7, B5)
+
+    [Theory]
+    [MemberData(nameof(Every))]
+    public async Task OwnDedupAnswersWithARequestAtTheAsksDestinationAloneOrTogether(Diff diff, State state)
+    {
+        using var rig = NewRig();
+        // The administrator's own season 1 request elsewhere comes first.
+        var other = await Other(rig, rig.Admin, await At(rig, Y(diff), "seasons", 1), state);
+        Apply(rig, diff);
+        var one = await rig.Ask(rig.Admin, await At(rig, X, "seasons", 1));
+        var two = await rig.Ask(rig.Admin, await At(rig, X, "seasons", 2));
+        // Seasons 1 and 2 together are already recorded: by requests at that destination only.
+        var both = await rig.Ask(rig.Admin, await At(rig, X, "seasons", 1, 2));
+        Assert.Equal(200, both.HttpStatus);
+        if (diff == Diff.Same)
+        {
+            Assert.Equal(other, one.RequestId);
+            Assert.Contains(both.RequestId, new[] { other, two.RequestId });
+            return;
+        }
+        Assert.NotEqual(other, one.RequestId);
+        Assert.Contains(both.RequestId, new[] { one.RequestId, two.RequestId });
+    }
+
+    [Theory]
+    [MemberData(nameof(Every))]
+    public async Task AnOwnRequestElsewhereIsNeverTheAskAndTheAskGoesWhereItWasChosen(Diff diff, State state)
+    {
+        using var rig = NewRig();
+        var other = await Other(rig, rig.Admin, await At(rig, Y(diff), "seasons", 1, 2), state);
+        Apply(rig, diff);
+        var ask = await rig.Ask(rig.Admin, await At(rig, X, "seasons", 1, 2));
+        if (diff == Diff.Same)
+        {
+            Assert.Equal((other, 200), (ask.RequestId, ask.HttpStatus));
+            return;
+        }
+        Assert.True(ask.HttpStatus == 201, ask.Reason + ": " + ask.Message);
+        Assert.NotEqual(other, ask.RequestId);
+        var job = Assert.Single(rig.Ledger.ForWant(ask.RequestId!));
+        Assert.Equal((X.Server, X.Profile, X.Root, await rig.Stamp(0, movie: false)), (job.Input.SeerrServerId, job.Input.SeerrProfileId, job.Input.SeerrRootFolder, job.Input.SeerrOptions));
+    }
+
+    // ------------------------------------------------------------------ someone else's request (shared coverage, shared dispatch)
+
+    [Theory]
+    [MemberData(nameof(Every))]
+    public async Task SomeoneElsesRequestElsewhereNeverCoversTheAskOrSendsItWithIts(Diff diff, State state)
+    {
+        using var rig = NewRig();
+        var admin2 = SecondAdmin(rig);
+        await Other(rig, admin2, await At(rig, Y(diff), "seasons", 1), state);
+        Apply(rig, diff);
+        var ask = await rig.Ask(rig.Admin, await At(rig, X, "seasons", 1));
+        var want = rig.Ledger.Find(ask.RequestId!)!;
+        if (diff == Diff.Same && state != State.Held)
+        {
+            // At the same destination it follows the other request (no send of its own).
+            Assert.True(want.Follower);
+            Assert.Empty(rig.Ledger.ForWant(ask.RequestId!));
+            return;
+        }
+        Assert.True(ask.HttpStatus == 201 && ask.Outcome != "merged", ask.Outcome + ": " + ask.Message);
+        Assert.False(want.Follower);
+        Assert.Single(rig.Ledger.ForWant(ask.RequestId!));
+        // Its own send goes out with its own choice, as the administrator.
+        var before = rig.Fake.Posts.Count;
+        await rig.Outbox.TickAsync(default);
+        Assert.Contains(rig.Fake.Posts.Skip(before), p => p.ApiUser == "9" && Goes(p.Body, X));
+    }
+
+    // ------------------------------------------------------------------ keep-getting follows (B8)
+
+    public static TheoryData<Diff, State> FollowRows()
+    {
+        var rows = new TheoryData<Diff, State>();
+        foreach (var diff in Enum.GetValues<Diff>())
+            foreach (var state in Enum.GetValues<State>())
+            {
+                // A request queued at the Seerr Jellyfin Enhanced pointed at before can't stay queued across a send pass:
+                // the pass that sends the keep-getting request holds it (identity_changed), so it is the held row.
+                if (diff == Diff.Source && state == State.Unsent) continue;
+                rows.Add(diff, state);
+            }
+        return rows;
+    }
+
+    [Theory]
+    [MemberData(nameof(FollowRows))]
+    public async Task OnlyARequestAtTheSameDestinationKeepsAKeepGettingRequestFromFollowingANewSeason(Diff diff, State state)
+    {
+        using var rig = NewRig();
+        var admin2 = SecondAdmin(rig);
+        // The other request: season 3 (not started yet), by someone else. Before the keep-getting request at the other
+        // Seerr; after it otherwise (the other stamp is the newer one).
+        string keep;
+        if (diff == Diff.Source)
+        {
+            await Other(rig, admin2, await At(rig, Y(diff), "seasons", 3), state);
+            Apply(rig, diff);
+            keep = (await rig.Ask(rig.Admin, await At(rig, X, "future", 2))).RequestId!;
+            await rig.Outbox.TickAsync(default);
+        }
+        else
+        {
+            keep = (await rig.Ask(rig.Admin, await At(rig, X, "future", 2))).RequestId!;
+            await rig.Outbox.TickAsync(default);
+            Apply(rig, diff);
+            await Other(rig, admin2, await At(rig, Y(diff), "seasons", 3), state);
+        }
+        Assert.Equal("sent", rig.Ledger.Find(keep)!.Status);
+        Starts(rig, 3);
+        var queued = await Follower(rig).FollowSeerrAsync(default);
+        // Followed unless a request at the same destination has season 3, or Seerr already has it from anyone
+        // (Q-4BFIX2-3: a sent request, wherever it went).
+        Assert.Equal(diff == Diff.Same || state == State.Sent ? 0 : 1, queued);
+        if (queued == 1)
+        {
+            var season3 = Assert.Single(rig.Ledger.ForWant(keep), j => j.Input.Seasons.SequenceEqual(new[] { 3 }));
+            Assert.Equal((X.Server, X.Profile, X.Root), (season3.Input.SeerrServerId, season3.Input.SeerrProfileId, season3.Input.SeerrRootFolder));
+        }
+    }
+
+    [Theory]
+    [InlineData(Diff.Same)]
+    [InlineData(Diff.Server)]
+    [InlineData(Diff.Profile)]
+    [InlineData(Diff.Root)]
+    [InlineData(Diff.Stamp)]
+    public async Task TwoKeepGettingRequestsAtDifferentDestinationsEachFollowTheNewSeasonInOnePass(Diff diff)
+    {
+        using var rig = NewRig();
+        // Season 1 kept getting at one destination, season 2 at the other (each sent), then season 3 starts.
+        var first = (await rig.Ask(rig.Admin, await At(rig, X, "future", 1))).RequestId!;
+        await rig.Outbox.TickAsync(default);
+        Apply(rig, diff);
+        var second = await rig.Ask(rig.Admin, await At(rig, Y(diff), "future", 2));
+        Assert.True(second.HttpStatus == 201, second.Reason + ": " + second.Message);
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal(("sent", "sent"), (rig.Ledger.Find(first)!.Status, rig.Ledger.Find(second.RequestId!)!.Status));
+        Starts(rig, 3);
+        // The first one's new season, queued in the same pass, stands for the second one's only at the same destination.
+        Assert.Equal(diff == Diff.Same ? 1 : 2, await Follower(rig).FollowSeerrAsync(default));
+    }
+
+    // ------------------------------------------------------------------ approvals: one re-confirmation rule (security-r3-1, B9)
+
+    public static TheoryData<Diff, State, bool> ApprovalRows()
+    {
+        var rows = new TheoryData<Diff, State, bool>();
+        foreach (var state in Enum.GetValues<State>())
+        {
+            foreach (var diff in new[] { Diff.Source, Diff.Server, Diff.Profile, Diff.Root, Diff.Stamp }) rows.Add(diff, state, true);
+            // A plain approval after the Seerr or its facts changed.
+            rows.Add(Diff.Source, state, false);
+            rows.Add(Diff.Stamp, state, false);
+        }
+        return rows;
+    }
+
+    /// <summary>
+    /// The request at X, held for a change, then approved choosing the difference's destination (a fresh stamp where the
+    /// ids are the same) or as it is. Sent: a keep-getting request whose season 1 went out and whose new season is held.
+    /// Unsent: held before anything was sent. Held: held after Seerr stored it without the options (certainty unknown),
+    /// then put right in Seerr.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(ApprovalRows))]
+    public async Task AnApprovalReConfirmsOnlyOnTheSameSeerrWithAFreshStampAndNeverMovesWhatWentOut(Diff diff, State state, bool edited)
+    {
+        using var rig = NewRig();
+        string id;
+        if (state == State.Sent)
+        {
+            id = (await rig.Ask(rig.Admin, await At(rig, X, "future", 2))).RequestId!;
+            await rig.Outbox.TickAsync(default);
+            Assert.Equal("sent", rig.Ledger.Find(id)!.Status);
+            Starts(rig, 3);
+            Assert.Equal(1, await Follower(rig).FollowSeerrAsync(default));
+            Apply(rig, diff == Diff.Source ? Diff.Source : Diff.Stamp);
+            await rig.Outbox.TickAsync(default);
+        }
+        else
+        {
+            if (state == State.Held) rig.Fake.DropAdvanced = true;
+            id = (await rig.Ask(rig.Admin, await At(rig, X, "seasons", 1))).RequestId!;
+            if (state == State.Held)
+            {
+                await rig.Outbox.TickAsync(default);
+                Assert.True(Assert.Single(rig.Ledger.ForWant(id)).Uncertain);
+                // Someone puts it right in Seerr (the destination chosen).
+                var row = rig.Fake.Shows[1731]["mediaInfo"]!["requests"]!.AsArray().Last()!.AsObject();
+                (row["serverId"], row["profileId"], row["rootFolder"]) = (X.Server, X.Profile, X.Root);
+                rig.Fake.DropAdvanced = false;
+            }
+            Apply(rig, diff == Diff.Source ? Diff.Source : Diff.Stamp);
+            if (state == State.Unsent) await rig.Outbox.TickAsync(default);
+        }
+        var want = rig.Ledger.Find(id)!;
+        Assert.Equal("pending", want.Status);
+        var posts = rig.Fake.Posts.Count;
+        var target = Y(diff);
+        var choice = want.Input with { SeerrServerId = target.Server, SeerrProfileId = target.Profile, SeerrRootFolder = target.Root, SeerrOptions = await rig.Stamp(target.Server, movie: false) };
+        var outcome = await rig.Service.ApproveAsync(id, rig.Admin.UserId, edited ? new ApproveRequest(choice) : null, default);
+
+        string expected = (diff, state, edited) switch
+        {
+            // As it is: the stamp it was made with no longer fits Seerr's facts (another Seerr's stamps differ too).
+            (_, _, false) => "seerr_options_changed",
+            // The same destination with a fresh stamp, on the same Seerr: re-confirmed, whatever its state.
+            (Diff.Stamp, _, true) => "ok",
+            // Nothing went out: it may go to the other Seerr, or where the administrator chooses.
+            (_, State.Unsent, true) => "ok",
+            // Part of it was written: it resumes where it was, never elsewhere.
+            (_, State.Held, true) => "request_in_flight",
+            // What went out never moves to another Seerr or destination.
+            _ => "request_changed",
+        };
+        if (expected != "ok")
+        {
+            Assert.Equal((expected, 409), (outcome.Reason, outcome.HttpStatus));
+            await rig.Outbox.TickAsync(default);
+            Assert.Equal(posts, rig.Fake.Posts.Count);
+            Assert.Equal("pending", rig.Ledger.Find(id)!.Status);
+            return;
+        }
+        Assert.True(outcome.HttpStatus == 200, outcome.Reason + ": " + outcome.Message);
+        Assert.Equal(choice.SeerrOptions, rig.Ledger.Find(id)!.Input.SeerrOptions);
+        if (state == State.Held)
+        {
+            // Re-confirmed but still uncertain: read back first, never posted again.
+            var job = Assert.Single(rig.Ledger.ForWant(id));
+            Assert.Equal(("maybe_sent", true, choice.SeerrOptions), (job.State, job.Uncertain, job.Input.SeerrOptions));
+            await rig.Outbox.TickAsync(default);
+            Assert.Equal(posts, rig.Fake.Posts.Count);
+            Assert.Equal(("succeeded", "sent"), (rig.Ledger.Job(job.Id)!.State, rig.Ledger.Find(id)!.Status));
+            return;
+        }
+        await rig.Outbox.TickAsync(default);
+        // One new POST, at the destination chosen (on the Seerr asked), with only what hadn't gone out.
+        var post = Assert.Single(rig.Fake.Posts.Skip(posts));
+        Assert.True(Goes(post.Body, target), post.Body.ToJsonString());
+        Assert.Equal(diff == Diff.Source ? "seerr-b.lan" : "seerr.lan", post.Host);
+        Assert.Equal(state == State.Sent ? "3" : "1", string.Join(",", post.Body["seasons"]!.AsArray().Select(n => (int)n!)));
+        Assert.Equal("sent", rig.Ledger.Find(id)!.Status);
+    }
+
+    [Theory]
+    [InlineData(State.Sent)]
+    [InlineData(State.Unsent)]
+    public async Task APlainApprovalAfterTheSeerrChangedNeverSendsWhatWentOutToTheOtherSeerr(State state)
+    {
+        using var rig = NewRig();
+        // A request without options (Seerr picks where), held when Jellyfin Enhanced points at another Seerr.
+        string id;
+        if (state == State.Sent)
+        {
+            id = (await rig.Ask(rig.Admin, new MutationInput { Key = Show, Scope = "future", Seasons = new[] { 2 } })).RequestId!;
+            await rig.Outbox.TickAsync(default);
+            Starts(rig, 3);
+            Assert.Equal(1, await Follower(rig).FollowSeerrAsync(default));
+        }
+        else
+        {
+            id = (await rig.Ask(rig.Admin, new MutationInput { Key = Show, Scope = "seasons", Seasons = new[] { 1 } })).RequestId!;
+        }
+        Apply(rig, Diff.Source);
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal(("pending", "identity_changed"), (rig.Ledger.Find(id)!.Status, rig.Ledger.Find(id)!.Reason));
+        var posts = rig.Fake.Posts.Count;
+        var outcome = await rig.Service.ApproveAsync(id, rig.Admin.UserId, null, default);
+        await rig.Outbox.TickAsync(default);
+        if (state == State.Sent)
+        {
+            // Season 1 went out to the earlier Seerr: it isn't asked for again at this one.
+            Assert.Equal(("request_changed", 409), (outcome.Reason, outcome.HttpStatus));
+            Assert.Equal(posts, rig.Fake.Posts.Count);
+            return;
+        }
+        // Nothing went out: it goes to the Seerr Jellyfin Enhanced points at now.
+        Assert.True(outcome.HttpStatus == 200, outcome.Reason + ": " + outcome.Message);
+        Assert.Equal("seerr-b.lan", Assert.Single(rig.Fake.Posts.Skip(posts)).Host);
+    }
+
+    // ------------------------------------------------------------------ withdrawing a held request (found live)
+
+    [Theory]
+    [InlineData("options changed", "decline")]
+    [InlineData("options changed", "cancel")]
+    [InlineData("new season held", "decline")]
+    [InlineData("new season held", "cancel")]
+    [InlineData("Seerr changed", "decline")]
+    [InlineData("written, unconfirmed", "decline")]
+    public async Task ARequestHeldForItsSeerrChoiceCanBeDeclinedOrCancelledAndWhatWentOutStays(string held, string action)
+    {
+        using var rig = NewRig();
+        string id;
+        var follow = held is "new season held" or "Seerr changed";
+        if (follow)
+        {
+            // Season 2 went out; season 3 is held (Seerr's facts changed, or Jellyfin Enhanced points at another Seerr).
+            id = (await rig.Ask(rig.Admin, await At(rig, X, "future", 2))).RequestId!;
+            await rig.Outbox.TickAsync(default);
+            Starts(rig, 3);
+            Assert.Equal(1, await Follower(rig).FollowSeerrAsync(default));
+            Apply(rig, held == "Seerr changed" ? Diff.Source : Diff.Stamp);
+        }
+        else
+        {
+            if (held.StartsWith("written", StringComparison.Ordinal)) rig.Fake.DropAdvanced = true;
+            id = (await rig.Ask(rig.Admin, await At(rig, X, "seasons", 1))).RequestId!;
+            if (held == "options changed") Apply(rig, Diff.Stamp);
+        }
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal("pending", rig.Ledger.Find(id)!.Status);
+        var posts = rig.Fake.Posts.Count;
+        var outcome = action == "decline" ? await rig.Service.DeclineAsync(id, rig.Admin.UserId, "Not now.", default) : rig.Service.Close(id, rig.Admin.UserId, null);
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal(posts, rig.Fake.Posts.Count);
+        if (held.StartsWith("written", StringComparison.Ordinal))
+        {
+            // Seerr may have it: only a read-back (or an OK) settles it, never a withdrawal.
+            Assert.Equal(("request_in_flight", 409), (outcome.Reason, outcome.HttpStatus));
+            return;
+        }
+        Assert.True(outcome.HttpStatus == 200, outcome.Reason + ": " + outcome.Message);
+        var want = rig.Ledger.Find(id)!;
+        if (!follow)
+        {
+            Assert.Equal(action == "decline" ? "declined" : "cancelled", want.Status);
+            Assert.All(rig.Ledger.ForWant(id), j => Assert.Equal("cancelled", j.State));
+            return;
+        }
+        // What went out stays: the request is sent again, without the held season, which isn't followed again.
+        Assert.Equal(("sent", "looking"), (want.Status, want.Reason));
+        Assert.Equal("succeeded", Assert.Single(rig.Ledger.ForWant(id), j => j.Input.Seasons.SequenceEqual(new[] { 2 })).State);
+        Assert.Equal("cancelled", Assert.Single(rig.Ledger.ForWant(id), j => j.Input.Seasons.SequenceEqual(new[] { 3 })).State);
+        if (held == "new season held") Assert.Equal(0, await Follower(rig).FollowSeerrAsync(default));
+    }
+
+    // ------------------------------------------------------------------ the rule itself, over targets of both backends
+
+    [Theory]
+    // Jellyfin Enhanced handling: another connection (a new key) of the same arr is the same place; another arr isn't.
+    [InlineData("je", "sent", "new key", "none", null)]
+    [InlineData("je", "sent", "other arr", "none", "request_changed")]
+    [InlineData("je", "sent", "other arr", "scope", "request_changed")]
+    [InlineData("je", "sent", "same", "scope", null)]
+    [InlineData("je", "unsent", "other arr", "none", null)]
+    // Seerr handling: another Seerr is another place; a fresh stamp re-confirms only on the request's own Seerr.
+    [InlineData("seerr", "sent", "other seerr", "none", "request_changed")]
+    [InlineData("seerr", "sent", "other seerr", "stamp", "request_changed")]
+    [InlineData("seerr", "sent", "same", "stamp", "reconfirms")]
+    [InlineData("seerr", "sent", "same", "root", "request_changed")]
+    [InlineData("seerr", "held", "same", "stamp", "reconfirms")]
+    [InlineData("seerr", "held", "same", "none", null)]
+    [InlineData("seerr", "held", "same", "root", "request_in_flight")]
+    [InlineData("seerr", "held", "other seerr", "stamp", "request_in_flight")]
+    [InlineData("seerr", "held", "other seerr", "none", "request_in_flight")]
+    [InlineData("seerr", "unsent", "other seerr", "stamp", null)]
+    [InlineData("seerr", "unsent", "same", "root", null)]
+    [InlineData("seerr", "unsent", "same", "stamp", "reconfirms")]
+    public void TheReconfirmationRuleOverEveryTargetAndChange(string backend, string state, string target, string change, string? expected)
+    {
+        var plain = new MutationInput { Key = Show, Scope = "seasons", Seasons = new[] { 1 } };
+        var original = backend == "je" ? plain : plain with { SeerrServerId = 0, SeerrProfileId = 4, SeerrRootFolder = "/tv", SeerrOptions = "STAMP0" };
+        var approved = change switch
+        {
+            "stamp" => original with { SeerrOptions = "STAMP1" },
+            "root" => original with { SeerrRootFolder = "/tv-anime", SeerrOptions = "STAMP1" },
+            "scope" => original with { Seasons = new[] { 1, 2 } },
+            _ => original,
+        };
+        RequestAuthorization Auth(string instance, string generation, string? source)
+            => new(Guid.Empty, null, "request", "seasons", "standard", backend, instance, generation, "r", source);
+        var here = backend == "je" ? Auth("sonarr-a", "g1", null) : Auth(string.Empty, string.Empty, "seerr-a");
+        var there = (backend, target) switch
+        {
+            ("je", "new key") => Auth("sonarr-a", "g2", null),
+            ("je", "other arr") => Auth("sonarr-b", "g1", null),
+            (_, "other seerr") => Auth(string.Empty, string.Empty, "seerr-b"),
+            _ => here,
+        };
+        var job = new RequestJob("j", "w", original, here, state switch { "sent" => "succeeded", "held" => "parked", _ => "queued" }, 1, DateTimeOffset.UnixEpoch, "x", "k", original.Fingerprint, Uncertain: state == "held");
+        var verdict = RequestDestination.Approval(original, RequestLedger.TargetKey(here), approved, RequestLedger.TargetKey(there), change != "none", new[] { job }, resumeHeld: true);
+        Assert.Equal(expected == "reconfirms" ? (null, true) : (expected, false), (verdict.Refusal, verdict.Reconfirms));
+        // An approver's matching ask never resumes a written part.
+        if (state == "held") Assert.Equal("request_in_flight", RequestDestination.Approval(original, RequestLedger.TargetKey(here), approved, RequestLedger.TargetKey(there), change != "none", new[] { job }, resumeHeld: false).Refusal);
+    }
+
+    // ------------------------------------------------------------------ the source: no path compares requests by itself
+
+    // The ledger and charges files: every place where one request stands for another lives here.
+    private static readonly string[] RuleFiles = { "RequestLedger.cs", "RequestLedgerImport.cs", "RequestLedgerArrivals.cs", "FutureSeasonCharges.cs" };
+
+    // What compares or selects requests by where they go or what they ask for: targets, routing, Seerr options, scope.
+    private static readonly Regex[] Raw =
+    {
+        new(@"\b\w*[Tt]arget\w*\b(\([^()]*\))?(\[[^\]]*\])?\s*[!=]="),
+        new(@"[!=]=\s*[\w.]*[Tt]arget\w*"),
+        new(@"(Seerr(ServerId|ProfileId|RootFolder|Options)|InstanceId|ProfileId|RootFolder)\s*[!=]="),
+        new(@"[!=]=\s*[\w.]*(Seerr(ServerId|ProfileId|RootFolder|Options)|InstanceId|ProfileId|RootFolder)\b"),
+        new(@"\.Overlaps\("),
+        new(@"\.Covers\("),
+        new(@"(Seasons|Episodes|SeasonNumbers)\.(Contains|Intersect|Except|Any)\("),
+        new(@"SelectMany\([^)]*\.(Seasons|Episodes|SeasonNumbers)"),
+        new(@"SamePath\("),
+        new(@"SameSeerrDestination"),
+    };
+
+    // The lines that may do so without the rule, each with why, and (when it selects from a collection) the declaration
+    // that must have built that collection through the rule. An entry that no longer matches fails too.
+    private static readonly (string File, string Line, string Why, string? Requires)[] Allowed =
+    {
+        ("RequestLedger.cs", "var targetsForWant = candidates.Where(j => j.Input.Variant == want.Input.Variant && (want.Input.InstanceId == null || j.Authorization.InstanceId == want.Input.InstanceId)",
+            "the v2 migration works out which target a legacy request's own jobs went to; coverage after it uses Extra", null),
+        ("RequestLedger.cs", "if (Target(want) == false)", "whether a 4K copy can be taken at all, not a request", null),
+        ("RequestLedger.cs", ".SelectMany(w => w.Input.SeasonNumbers).Concat(input.SeasonNumbers).Distinct().Count() > Math.Clamp(threshold, 1, 200);",
+            "a Member's series threshold counts every season the person asked for, wherever it went (Members choose no destination)", null),
+        ("RequestLedger.cs", "var asked = own.Where(w => w.Input.Key == normalized.Key && w.Status is not (\"declined\" or \"cancelled\")).SelectMany(w => w.Input.SeasonNumbers).ToHashSet();",
+            "the series-threshold split: the same count", null),
+        ("RequestLedger.cs", "? ownSame.First(w => w.Input.Overlaps(normalized)) : null);",
+            "the dedup representative is chosen only among the person's requests that serve the ask", @"var ownSame = own\.Where\([^;]*RequestDestination\.Serves\("),
+        ("RequestLedger.cs", "!j.Input.Seasons.Intersect(want.Input.Seasons).Any()", "one request's own jobs (its followed new seasons)", null),
+        ("RequestLedger.cs", ".SelectMany(j => j.Input.Seasons).ToHashSet();", "one request's own jobs (its followed new seasons)", null),
+        ("RequestLedger.cs", "!j.Input.Seasons.Any(going.Contains)", "one request's own jobs (its followed new seasons)", null),
+        ("RequestLedger.cs", "want.Input.Seasons.Contains(season) || !policy.Configuration.ArrRequestChargeFutureSeasons", "the season asked about against the request's own scope", null),
+        ("RequestLedger.cs", "want.Status is not (\"sent\" or \"stale\") || want.Input.Seasons.Contains(season)) return false;", "the season asked about against the request's own scope", null),
+        ("RequestLedger.cs", "if (jobs.Any(j => j.Input.Scope == \"seasons\" && j.Input.Seasons.Contains(season))) return false;", "one request's own jobs: a new season once per request", null),
+    };
+
+    private static string RequestsFolder()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
+        // External output folders do not have the repository as an ancestor.
+        root ??= new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
+        Assert.NotNull(root);
+        return Path.Combine(root!.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services", "Acquire", "Requests");
+    }
+
+    // Code only: no comments, string literals emptied (SQL compares columns in the database, not requests here).
+    private static string Code(string line)
+    {
+        var trimmed = line.TrimStart();
+        if (trimmed.StartsWith("//", StringComparison.Ordinal)) return string.Empty;
+        var code = Regex.Replace(line, "\"(?:[^\"\\\\]|\\\\.)*\"", "\"\"");
+        var comment = code.IndexOf("//", StringComparison.Ordinal);
+        return comment < 0 ? code : code[..comment];
+    }
+
+    [Fact]
+    public void EveryLedgerAndChargesPathComparesOrSelectsRequestsThroughTheDestinationRule()
+    {
+        var folder = RequestsFolder();
+        // Every part of the ledger is scanned (a new partial file is too).
+        Assert.Equal(RuleFiles.Where(f => f.StartsWith("RequestLedger", StringComparison.Ordinal)).Order(StringComparer.Ordinal),
+            Directory.GetFiles(folder, "RequestLedger*.cs").Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        var used = new HashSet<(string, string)>();
+        var bare = new List<string>();
+        foreach (var name in RuleFiles)
+        {
+            var text = File.ReadAllText(Path.Combine(folder, name));
+            var lines = text.Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var code = Code(lines[i]);
+                if (!Raw.Any(r => r.IsMatch(code)) || code.Contains("RequestDestination.", StringComparison.Ordinal)) continue;
+                var allowed = Allowed.Where(a => a.File == name && lines[i].Contains(a.Line, StringComparison.Ordinal)).ToList();
+                if (allowed.Count == 0)
+                {
+                    bare.Add($"{name}:{i + 1}: {lines[i].Trim()}");
+                    continue;
+                }
+                foreach (var a in allowed)
+                {
+                    used.Add((a.File, a.Line));
+                    if (a.Requires != null && !Regex.IsMatch(text, a.Requires)) bare.Add($"{name}:{i + 1}: selects from a collection not built through RequestDestination ({a.Why}): {lines[i].Trim()}");
+                }
+            }
+        }
+        Assert.True(bare.Count == 0, "Requests compared or selected without RequestDestination:\n" + string.Join("\n", bare));
+        var stale = Allowed.Where(a => !used.Contains((a.File, a.Line))).Select(a => a.File + ": " + a.Line).ToList();
+        Assert.True(stale.Count == 0, "Allowed lines no longer found:\n" + string.Join("\n", stale));
+
+        // Coverage itself (MutationInput.Extra) asks the rule which inputs may stand for one, and nothing else does: the
+        // input type has no destination comparison of its own, and Seerr's own record is matched through the rule too.
+        var models = File.ReadAllText(Path.Combine(folder, "RequestModels.cs"));
+        var extra = models[models.IndexOf("internal MutationInput? Extra(", StringComparison.Ordinal)..];
+        extra = extra[..extra.IndexOf("\n        }", StringComparison.Ordinal)];
+        Assert.Contains("covered.Where(c => RequestDestination.Serves(this, c))", extra, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"Seerr(ServerId|ProfileId|RootFolder|Options)|InstanceId|SamePath", extra);
+        Assert.DoesNotContain(typeof(MutationInput).GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic),
+            m => m.Name.Contains("Destination", StringComparison.Ordinal) || m.Name.Contains("SameOptions", StringComparison.Ordinal));
+        var seerr = File.ReadAllText(Path.Combine(folder, "SeerrBackend.cs"));
+        Assert.Matches(@"private static bool SameOptions\(JsonElement request, MutationInput input\)\s*=> RequestDestination\.SeerrHas\(", seerr);
+    }
+}

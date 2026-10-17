@@ -2603,7 +2603,7 @@
                             <div class="checkboxContainer"><label><input id="arrRequest4kMoviesEnabled" is="emby-checkbox" type="checkbox"/><span>Allow 4K movie requests</span></label></div>
                             <div class="checkboxContainer"><label><input id="arrRequest4kSeriesEnabled" is="emby-checkbox" type="checkbox"/><span>Allow 4K series requests</span></label></div>
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestPreset">House rules</label><select id="arrRequestPreset" is="emby-select"><option value="ask_first">Ask first</option><option value="open_house">Open house</option><option value="approve_everything">Approve everything</option></select></div>
-                            <div class="inputContainer"><label class="inputLabel" for="arrRequestDefaultRole">Default role for new users</label><select id="arrRequestDefaultRole" is="emby-select"><option value="Watcher">Watcher (status only)</option><option value="Kid">Kid (always approval)</option><option value="Member">Member</option><option value="Manager">Manager</option></select></div>
+                            <div class="inputContainer"><label class="inputLabel" for="arrRequestDefaultRole">Default role for new users</label><select id="arrRequestDefaultRole" is="emby-select"><option value="Watcher">Watcher (status only)</option><option value="Kid">Kid (always approval)</option><option value="Member">Member</option><option value="Trusted">Trusted (needs household rules, phase 4)</option><option value="Manager">Manager</option></select></div>
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestRoles">Per-role quota and 4K defaults (JSON)</label><textarea id="arrRequestRoles" is="emby-textarea"></textarea></div>
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestUsers">Per-user roles, quotas and 4K instances (JSON)</label><textarea id="arrRequestUsers" is="emby-textarea"></textarea></div>
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestQuotaLimit">Rolling request limit (0: preset; -1: unlimited)</label><input id="arrRequestQuotaLimit" is="emby-input" type="number" step="any"/></div>
@@ -2652,6 +2652,16 @@
                                     <div id="arrAutomationStatus" class="je-arr-check-result" aria-live="polite"></div>
                                 </div>
                             </div>
+                            <!-- Requests & downloads, phase 4b: household rules (the Trusted role, fixed conditions per role), group quotas
+                                 (shared request pools) and administrators' Seerr request options. The rules and pools themselves are edited
+                                 on the Requests page's Household tab (server-owned settings, kept by a save here). -->
+                            <div class="checkboxContainer"><label><input id="arrPhase4HouseholdRulesEnabled" is="emby-checkbox" type="checkbox"/><span>Household rules: the Trusted role and fixed conditions per role</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrPhase4HouseholdRulesEnabled"><div class="fieldDescription je-field-desc-xl">Needs phase 4 and "Ask for it". Adds the <strong>Trusted</strong> role (asks without an OK and has no request limit, like a Manager, but approves nothing) and, with Jellyfin Enhanced handling requests, fixed conditions for Kids, Members and Trusted people: rating, genre, original language, size estimate and "already on a streaming service the household has". Each condition says what happens when a title matches it and when it doesn't: nothing, goes ahead, waits for an OK, or refused. Administrators edit them on the Requests page under <strong>Household</strong>. With Seerr handling requests, Seerr's own rules apply and the Household tab shows them read-only; Jellyfin Enhanced adds none. Off by default.</div></div>
+                            <div class="checkboxContainer"><label><input id="arrPhase4GroupQuotasEnabled" is="emby-checkbox" type="checkbox"/><span>Group quotas (shared request pools)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrPhase4GroupQuotasEnabled"><div class="fieldDescription">Needs household rules, with Jellyfin Enhanced handling requests. Shared allowances count requests together for the household, a role or named people, on top of each person's own limit; going over one waits for an OK. Set them up on the Requests page under <strong>Household</strong>. Off by default.</div></div>
+                            <div class="checkboxContainer"><label><input id="arrPhase4SeerrRequestOptionsEnabled" is="emby-checkbox" type="checkbox"/><span>Administrators pick Seerr's server, profile and folder</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrPhase4SeerrRequestOptionsEnabled"><div class="fieldDescription">Needs phase 4 and "Ask for it", with Seerr handling requests. Jellyfin administrators who also have Seerr's advanced request permission choose the Seerr server, quality profile and folder of their own requests; everyone else's requests use Seerr's defaults. Off by default.</div></div>
+                            <!-- /Requests & downloads, phase 4b -->
                             <!-- /Requests & downloads, phase 4 -->
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
@@ -6296,6 +6306,7 @@
             document.querySelector('#arrSmtpFrom').value = config.ArrSmtpFrom || '';
             document.querySelector('#arrSmtpFromName').value = config.ArrSmtpFromName || 'Jellyfin';
             jeLoadArrAutomationSettings(config);
+            jeLoadArrPhase4bSettings(config);
         }
 
         /**
@@ -6377,6 +6388,7 @@
             config.ArrSmtpFrom = (document.querySelector('#arrSmtpFrom').value || '').trim();
             config.ArrSmtpFromName = (document.querySelector('#arrSmtpFromName').value || '').trim().slice(0, 60);
             jeSaveArrAutomationSettings(config);
+            jeSaveArrPhase4bSettings(config);
         }
 
         /**
@@ -6845,6 +6857,39 @@
                 }
             }
         }
+
+        // ==================== Requests & downloads, phase 4b ====================
+        /** The phase-4b switches (household rules, group quotas, administrators' Seerr request options). */
+        var JE_ARR_PHASE4B_FLAGS = [['#arrPhase4HouseholdRulesEnabled', 'ArrPhase4HouseholdRulesEnabled'], ['#arrPhase4GroupQuotasEnabled', 'ArrPhase4GroupQuotasEnabled'], ['#arrPhase4SeerrRequestOptionsEnabled', 'ArrPhase4SeerrRequestOptionsEnabled']];
+
+        /** Settings only the Household tab edits (no control here): a page save keeps the server's value. */
+        var JE_ARR_PHASE4B_SERVER_OWNED = ['ArrHouseholdRules', 'ArrHouseholdStreamingCountry', 'ArrHouseholdStreamingServices', 'ArrGroupQuotaPools'];
+
+        /**
+         * Fills the phase-4b switches (all off unless saved on).
+         * @param {Object} config - Plugin configuration
+         * @returns {void}
+         */
+        function jeLoadArrPhase4bSettings(config) {
+            JE_ARR_PHASE4B_FLAGS.forEach(function(flag) { document.querySelector(flag[0]).checked = config[flag[1]] === true; });
+        }
+
+        /**
+         * Copies the phase-4b switches into the configuration being saved, and marks the household rules and pools
+         * as read (ArrServerOwnedSeen, from this fresh read) so a page save never puts back an older Household-tab edit.
+         * @param {Object} config - Plugin configuration (read from the server just now)
+         * @returns {void}
+         */
+        function jeSaveArrPhase4bSettings(config) {
+            JE_ARR_PHASE4B_FLAGS.forEach(function(flag) { config[flag[1]] = document.querySelector(flag[0]).checked; });
+            var seen = {};
+            try { seen = JSON.parse(config.ArrServerOwnedSeen || '{}') || {}; } catch (e) { seen = {}; }
+            JE_ARR_PHASE4B_SERVER_OWNED.forEach(function(field) {
+                if (config[field] !== undefined && config[field] !== null) seen[field] = String(config[field]);
+            });
+            config.ArrServerOwnedSeen = JSON.stringify(seen);
+        }
+        // ==================== /Requests & downloads, phase 4b ====================
 
         async function jeArrMigrationError(e) {
             try {
@@ -10451,8 +10496,9 @@
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
             { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled', 'arrPhase3Enabled', 'arrPhase4Enabled'] },
-            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrSeerrMigrationBtn', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch', 'arrPhase4AutomationEnabled'] },
-            { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4AutomationEnabled'] },
+            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrSeerrMigrationBtn', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch', 'arrPhase4AutomationEnabled', 'arrPhase4HouseholdRulesEnabled', 'arrPhase4GroupQuotasEnabled', 'arrPhase4SeerrRequestOptionsEnabled'] },
+            { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4AutomationEnabled', 'arrPhase4HouseholdRulesEnabled', 'arrPhase4GroupQuotasEnabled', 'arrPhase4SeerrRequestOptionsEnabled'] },
+            { parent: 'arrPhase4HouseholdRulesEnabled', label: 'Household rules', children: ['arrPhase4GroupQuotasEnabled'] },
             { parent: 'arrPhase4AutomationEnabled', label: 'Automation engine', children: ['arrAutomationRecipe_auto_season', 'arrAutomationRecipe_auto_movie', 'arrAutomationRecipe_keep_up', 'arrAutomationRecipe_list_acquire_ahead', 'arrAutomationRecipe_release_day', 'arrAutomationRecipe_list_sync', 'arrAutomationRecipe_list_sync_requests', 'arrAutomationKillAll', 'arrAutomationHouseholdAddsPerDay', 'arrAutomationSearchesPerHour', 'arrAutomationSearchesPerDay', 'arrAutomationSeerrPostsPerDay', 'arrAutomationSourceFetchesPerHour', 'arrAutomationDeltaWorkPerHour', 'arrAutomationFree'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },

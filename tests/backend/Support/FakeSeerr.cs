@@ -51,6 +51,22 @@ internal sealed class FakeSeerr : IDisposable
 
     private int _nextRequest = 900;
 
+    /// <summary><c>GET /api/v1/service/radarr|sonarr</c>: Seerr's servers of each kind (missing kind: none).</summary>
+    public Dictionary<string, JsonArray> Services { get; } = new();
+
+    /// <summary><c>GET /api/v1/service/{kind}/{id}</c> by <c>"{kind}/{id}"</c> (missing: 404).</summary>
+    public Dictionary<string, JsonObject> ServiceDetails { get; } = new();
+
+    /// <summary>
+    /// How Seerr reaches each of its servers (<c>hostname</c>, <c>port</c>, <c>useSsl</c>, <c>baseUrl</c>, <c>apiKey</c>) by
+    /// <c>"{kind}/{id}"</c>: only <c>GET /api/v1/settings/radarr|sonarr</c> (administrators) carries them, merged into the
+    /// server rows of <see cref="Services"/>; a server without one gets <c>{kind}{id}.lan</c> and a fixed key.
+    /// </summary>
+    public Dictionary<string, JsonObject> Connections { get; } = new();
+
+    /// <summary>True: a request POST is created without the server, profile and root folder it named (Seerr ignoring them).</summary>
+    public bool DropAdvanced { get; set; }
+
     /// <summary>Non-null: the body of <c>GET /api/v1/settings/main</c> (else 404).</summary>
     public JsonObject? MainSettings { get; set; }
 
@@ -119,6 +135,25 @@ internal sealed class FakeSeerr : IDisposable
                 return user == null ? IntegrationTransport.Response("{\"message\":\"User not found.\"}", 404) : IntegrationTransport.Response(user.ToJsonString());
             }
         }
+        if (path.StartsWith("/api/v1/service/", StringComparison.Ordinal))
+        {
+            var rest = path["/api/v1/service/".Length..];
+            if (!rest.Contains('/')) return IntegrationTransport.Response((Services.GetValueOrDefault(rest) ?? new JsonArray()).ToJsonString());
+            return ServiceDetails.TryGetValue(rest, out var detail) ? IntegrationTransport.Response(detail.ToJsonString()) : IntegrationTransport.Response("{\"message\":\"Not found\"}", 404);
+        }
+        if (path is "/api/v1/settings/radarr" or "/api/v1/settings/sonarr")
+        {
+            var kind = path["/api/v1/settings/".Length..];
+            var rows = (Services.GetValueOrDefault(kind) ?? new JsonArray()).Select(row =>
+            {
+                var full = row!.DeepClone().AsObject();
+                var id = (int)full["id"]!;
+                var connection = Connections.GetValueOrDefault(kind + "/" + id) ?? new JsonObject { ["hostname"] = kind + id + ".lan", ["port"] = kind == "radarr" ? 7878 : 8989, ["useSsl"] = false, ["baseUrl"] = "", ["apiKey"] = kind.ToUpperInvariant() + "-KEY-" + id };
+                foreach (var (name, value) in connection) full[name] = value?.DeepClone();
+                return (JsonNode)full;
+            }).ToArray();
+            return IntegrationTransport.Response(new JsonArray(rows).ToJsonString());
+        }
         if (path == "/api/v1/settings/main") return MainSettings == null ? IntegrationTransport.Response("{}", 404) : IntegrationTransport.Response(MainSettings.ToJsonString());
         if (path == "/api/v1/settings/jobs") return Jobs == null ? IntegrationTransport.Response("{}", 404) : IntegrationTransport.Response(Jobs.ToJsonString());
         if (path == "/api/v1/user")
@@ -164,8 +199,8 @@ internal sealed class FakeSeerr : IDisposable
     }
 
     // Like Seerr's POST /api/v1/request: a duplicate movie request is a 409 with a JSON message, a series
-    // request whose seasons are all requested already is a 202 "No seasons available to request", and
-    // otherwise only the seasons not yet requested go into the new request (lab spike, 2026-10-14).
+    // request whose seasons are all requested (or already processing or available) is a 202 "No seasons
+    // available to request", and otherwise only the other seasons go into the new request (lab spike, 2026-10-14).
     private HttpResponseMessage Post(HttpRequestMessage request)
     {
         var body = JsonNode.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult())!.AsObject();
@@ -183,7 +218,11 @@ internal sealed class FakeSeerr : IDisposable
         if (movie && existing.Count > 0) return IntegrationTransport.Response("{\"message\":\"Request for this media already exists.\"}", 409);
         if (!movie)
         {
-            var taken = existing.SelectMany(r => r!["seasons"]!.AsArray().Select(x => (int)x!["seasonNumber"]!)).ToHashSet();
+            // Like Seerr (MediaRequest.request): seasons of its open requests (not declined or completed), and seasons the
+            // media already knows (any status but unknown, 1, or deleted, 7), aren't requested again.
+            var taken = existing.Where(r => (int)r!["status"]! != 5).SelectMany(r => r!["seasons"]!.AsArray().Select(x => (int)x!["seasonNumber"]!)).ToHashSet();
+            foreach (var known in (media["seasons"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
+                if (known[is4k ? "status4k" : "status"] is { } status && (int)status! is not (1 or 7) && known["seasonNumber"] is { } number) taken.Add((int)number!);
             seasons = body["seasons"]!.AsArray().Select(x => (int)x!).Where(n => !taken.Contains(n)).ToArray();
             if (seasons.Length == 0) return IntegrationTransport.Response("{\"message\":\"No seasons available to request\"}", 202);
         }
@@ -194,6 +233,9 @@ internal sealed class FakeSeerr : IDisposable
             ["requestedBy"] = new JsonObject { ["id"] = int.TryParse(user, out var u) ? u : 1 },
             ["seasons"] = new JsonArray(seasons.Select(n => (JsonNode)new JsonObject { ["seasonNumber"] = n, ["status"] = 1 }).ToArray()),
         };
+        // Like Seerr: the request keeps the server, profile and root folder it was made with.
+        foreach (var field in new[] { "serverId", "profileId", "rootFolder" })
+            if (!DropAdvanced && body[field] is { } value) row[field] = value.DeepClone();
         media["requests"]!.AsArray().Add(row);
         AfterPost?.Invoke();
         return IntegrationTransport.Response(row.ToJsonString(), 201);

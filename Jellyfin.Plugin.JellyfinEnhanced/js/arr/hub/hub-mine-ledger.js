@@ -7,6 +7,7 @@
  * finished ones are left to the existing groups; one that arrived and was removed since ("Was here,
  * since removed") gets **Get it again** for people who may ask (or says "Paused: storage full").
  * Re-reads when the caller's request list changes on the feed, or after an ask or cancel on this page.
+ * Phase 4b: a row waiting because of the household rules or a used-up shared allowance says why in plain words.
  */
 (function (JE) {
     'use strict';
@@ -179,14 +180,18 @@
     }
 
     /**
-     * The ledger part of a row: the ids that can still be cancelled.
+     * The ledger part of a row: the ids that can still be cancelled, and (phase 4b) the household-rule reason and
+     * verdict of its request that waits for an OK (else of its first request the rules said something about).
      * @param {Object[]} own The title's ledger requests.
-     * @returns {{cancel: string[]}} Ledger part.
+     * @returns {{cancel: string[], reason: string|null, rules: Object|null}} Ledger part.
      */
     function ledgerOf(own) {
         // A row stands for every open request of one title edition: Cancel withdraws each of them not sent yet.
         const ids = own.flatMap(i => !i.canCancel ? [] : Array.isArray(i.cancelIds) ? i.cancelIds : [i.id]);
-        return { cancel: [...new Set(ids.filter(id => typeof id === 'string'))] };
+        const waiting = own.find(i => i.group === 'needsOk' && ['rule_review', 'group_quota', 'household_rule'].includes(i.reason));
+        // A go-ahead verdict says something only on a request that went ahead (one waiting for an OK wasn't decided by it).
+        const ruled = waiting || own.find(i => i.rules && typeof i.rules === 'object' && (i.group === 'onTheWay' || (i.group === 'needsOk' && i.rules.verdict !== 'approve')));
+        return { cancel: [...new Set(ids.filter(id => typeof id === 'string'))], reason: waiting ? waiting.reason : null, rules: ruled?.rules || null };
     }
 
     /**
@@ -199,6 +204,9 @@
      */
     function rowExtras(entry, buttons, body) {
         againButton(entry, buttons, body);
+        // Phase 4b: why it waits (household rules, shared allowance) and what the rules said.
+        const why = entry?.ledger && on() ? H.rules?.why?.(entry.ledger.rules, entry.ledger.reason) : null;
+        if (why && body) body.appendChild(why);
         const ids = entry?.ledger?.cancel;
         if (!Array.isArray(ids) || !ids.length || !on()) return;
         const busy = ids.some(id => state.busy.has(id));

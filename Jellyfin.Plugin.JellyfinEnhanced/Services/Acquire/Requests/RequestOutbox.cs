@@ -13,10 +13,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// Uncached backend identity/capability facts. Missing facts never grant a permission. <c>SeerrWholeSeries</c>:
     /// Seerr's partial-request setting is off (or not a real on/off), so Seerr takes a request for the whole series only.
     /// <c>SeerrUnlinked</c>: Seerr answered and no Seerr account is linked to the person (not "Seerr didn't answer").
+    /// <c>SeerrOptions</c> (an input carrying Seerr server/profile/root options, else null): <c>valid</c>,
+    /// <c>seerr_options_invalid</c>, <c>seerr_options_changed</c> or <c>unknown</c> (Seerr's servers aren't known lately);
+    /// <c>SeerrOptionsStamp</c> is the chosen server's current options stamp when known, so a change shows in the
+    /// authorization stamp.
     /// </summary>
     public sealed record RequestBackendBinding(string? Source = null, int? UserId = null, long Permissions = 0,
         bool FourKEnabled = false, bool Can4k = false, bool CanManage = false, QuotaProjection? Quota = null, int QuotaWindowDays = 7, bool CanRequest = false,
-        bool SeerrWholeSeries = false, bool SeerrUnlinked = false);
+        bool SeerrWholeSeries = false, bool SeerrUnlinked = false, string? SeerrOptions = null, string? SeerrOptionsStamp = null);
     /// <summary>Transport outcome with explicit retry and read-back certainty.</summary>
     /// <remarks><c>RetryAfter</c>: a retryable result's own wait before the next attempt (instead of the short backoff).</remarks>
     public sealed record RequestBackendResult(RequestOutcome Outcome, bool Confirmed = false, bool Retryable = false, bool Parked = false, bool VerifiedNotSent = false, TimeSpan? RetryAfter = null)
@@ -134,6 +138,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             : this(ledger, policy, backend, locks, feed, audit, () => DateTimeOffset.UtcNow, events, seerrWrites, signal, automation) { }
         internal RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, Func<DateTimeOffset> now, RequestOutboxEvents? events = null, SeerrRequestWriteFence? seerrWrites = null, RequestOutboxSignal? signal = null, AutomationSendGuard? automation = null)
         { _ledger = ledger; _policy = policy; _backend = backend; _locks = locks; _feed = feed; _audit = audit; _now = now; _events = events; _seerrWrites = seerrWrites; _signal = signal ?? new RequestOutboxSignal(); _automation = automation; }
+        /// <summary>
+        /// The send-time hold for a job's Seerr options from one person's current facts, or null: the switch is off, the
+        /// Seerr account lacks the advanced-request permission, Seerr isn't known now (retried), or the options no longer
+        /// fit Seerr's servers (<c>seerr_options_changed</c>, whether they changed or never fit).
+        /// </summary>
+        private static string? SeerrOptionsHold(RequestPolicyFacts facts) => facts.Refusal switch
+        {
+            "seerr_options_disabled" or "seerr_advanced_required" or "backend_unavailable" => facts.Refusal,
+            "seerr_options_invalid" or "seerr_options_changed" => "seerr_options_changed",
+            _ => null,
+        };
         /// <summary>Processes due work once; tests and diagnostics may drive this without a timer.</summary>
         public async Task TickAsync(CancellationToken ct)
         {
@@ -151,6 +166,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var generation = _ledger.Database.Generation;
                 if (!_ledger.Claim(job, generation, _now())) continue;
                 RequestBackendResult result;
+                // The household-rule verdict the guard held the job with (phase 4b): kept as the request's rationale.
+                HouseholdRuleVerdict? heldRules = null;
                 var transportStarted = false;
                 var settledByRead = false;
                 // Automatic work (recipes, list sync) and work only phase 4 creates: the write gate before any transport
@@ -200,8 +217,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             // now, after every check here has been made again with that account's permissions.
                             if (requester.SeerrSource != job.Authorization.SeerrSource || (job.Authorization.SeerrUser != null && requester.SeerrUser != null && requester.SeerrUser != job.Authorization.SeerrUser)) return "identity_changed";
                             if (_ledger.ExceedsGbCapAtSend(requester, _now())) return "quota_exceeded";
-                            if (RequestPolicy.Check(requester, approver, job.Input, approver != null) != null || _ledger.NeedsApprovalAtSend(job, requester, _policy, _now())) return "authorization_changed";
-                            if (job.Authorization.Edited && approver?.Role != "Admin" && (job.Input.ProfileId != null || job.Input.RootFolder != null || job.Input.InstanceId != null)) return "authorization_changed";
+                            // Seerr options: the switch, the Seerr permission of each person and the options themselves are checked
+                            // again here (typed holds), and someone on the job must still be a Jellyfin administrator.
+                            if (job.Input.HasSeerrOptions)
+                            {
+                                if ((SeerrOptionsHold(requester) ?? (approver == null ? null : SeerrOptionsHold(approver))) is { } seerrHold) return seerrHold;
+                                if (requester.Role != "Admin" && approver?.Role != "Admin") return "admin_required";
+                            }
+                            if (RequestPolicy.Check(requester, approver, job.Input, approver != null) != null) return "authorization_changed";
+                            // A Kid, the household's rules or a group pool (phase 4b), a Member's preset, quota or series threshold.
+                            if (_ledger.ApprovalNeededAtSend(job, requester, _policy, _now()) is { } needed)
+                            {
+                                if (needed is RequestLedger.RuleReview or RequestLedger.HouseholdRule) heldRules = requester.Rules;
+                                return needed;
+                            }
+                            if (job.Authorization.Edited && approver?.Role != "Admin" && RequestLedger.HasRouting(job.Input)) return "authorization_changed";
                             // Seerr answered that no Seerr account is linked to the person (not "Seerr didn't answer"): nothing can be
                             // sent as them, so the request is held with that reason and checked again now and then, not every pass.
                             if (requester.Backend == "seerr" && requester.SeerrUser == null && requester.SeerrUnlinked) return "seerr_user_unlinked";
@@ -219,7 +249,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         {
                             result = await _backend.ReadBackAsync(job, ct).ConfigureAwait(false);
                             settledByRead = true;
-                            if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes) result = RequestBackendResult.Uncertain(job.WantId);
+                            // A hold after the write (Seerr has the request, not as chosen) stays held for a person.
+                            if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked) result = RequestBackendResult.Uncertain(job.WantId);
                             else if (result.VerifiedNotSent && !result.Confirmed)
                                 result = result with { Retryable = true, Parked = false };
                         }
@@ -240,7 +271,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                                 // As stored now: the send may have bound what it went out with (Seerr's account and seasons).
                                 result = await _backend.ReadBackAsync(_ledger.Job(job.Id) ?? job, ct).ConfigureAwait(false);
                                 settledByRead = true;
-                                if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes) result = RequestBackendResult.Uncertain(job.WantId);
+                                if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked) result = RequestBackendResult.Uncertain(job.WantId);
                             }
                         }
                     }
@@ -250,13 +281,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     result = transportStarted || job.State == "maybe_sent" ? RequestBackendResult.Uncertain(job.WantId) :
                         new RequestBackendResult(RequestOutcome.Refused("backend_unavailable", 503, "unavailable"), Retryable: true, VerifiedNotSent: true);
                 }
-                if (job.State == "maybe_sent" && !result.Confirmed && !result.VerifiedNotSent && !result.Resumes)
+                if (job.State == "maybe_sent" && !result.Confirmed && !result.VerifiedNotSent && !result.Resumes && !result.Parked)
                     result = result with { Outcome = RequestBackendResult.Uncertain(job.WantId).Outcome with { Reason = result.Outcome.Reason }, Retryable = false };
                 // A job whose last outcome left upstream state unknown stays uncertain until a fresh read settles it: a
                 // later attempt that is refused or fails before writing proves nothing about what the earlier one wrote.
                 if (job.Uncertain && !settledByRead && !result.Confirmed && result.Outcome.Certainty != ArrActionStatus.Unknown)
                     result = result with { Outcome = result.Outcome with { Certainty = ArrActionStatus.Unknown }, VerifiedNotSent = false, Parked = result.Parked || !result.Retryable };
                 var completed = _ledger.Complete(job, generation, result, _now());
+                if (completed && heldRules != null && result.Outcome.Reason is RequestLedger.RuleReview or RequestLedger.HouseholdRule) _ledger.HeldByRules(job.WantId, heldRules);
                 if (completed) _automation?.Observe(job, want, result, transportStarted, settledByRead);
                 if (completed) _feed.Bump(new[] { job.Input.Key, ArrTitleKey.UserRequests(job.Authorization.Requester), ArrTitleKey.RequestsState });
                 if (completed && result.Confirmed) _events?.RaiseConfirmed(job);

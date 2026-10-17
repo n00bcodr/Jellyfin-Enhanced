@@ -307,6 +307,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`/hub/`**: The Requests page at `#/requests` (phase 1): `hub-page.js` (`JE.arrHub`: route, tabs, one read of `acquire/hub` per visit, re-read when the change feed reports a shown title or the user's own request list; for administrators the Downloads and Calendar pages rendered in tabs), `hub-render.js` (My requests groups, Coming soon agenda, Ready) and `hub-styles.js`.
     * **`/admin/`**: The administrator's phase-2 tabs of the Requests page: `admin-tabs.js` (Overview, Activity, System, Audit: loads each from its admin route, follows admin changes and polls once a minute (every 10 seconds without a feed subscription), retries failed refreshes, runs the fixes and queue actions, the remove dialog and the typed confirmation for removing with data), `admin-render.js` (instance cards, Needs attention, downloads, history, system, Jellyfin bridge and path doctor, audit) and `admin-styles.js`.
     * **`/hub/` phase-3 tabs**: `hub-extra-core.js` (shared helpers: capabilities, intent tokens, scope words), `hub-approvals.js` (Approvals: approve, approve with changes, decline with a reason, bulk approve), `hub-household.js` (Household: roles, quotas, preset), `hub-mine-ledger.js` (the caller's own requests from the ledger in My requests, with Cancel), `hub-chipbar.js` (the Managers' "needs your OK · stuck" chips on the home page), `hub-discover.js` (JE-mode Discover tab) and `hub-extra-styles.js`; they plug into `hub-page.js` through `H.extraTabs`.
+    * **`/household/household-rules.js`** (phase 4b): household rules on the Requests page. The administrators' request conditions editor the Household tab mounts below its house rules (conditions per role, streaming country and services, shared allowances), Seerr's own rules read-only in Seerr mode, and rule verdicts, rule reasons and shared-allowance use in plain words for Approvals, My requests and the request controls (`JE.internals.arrHub.rules`).
     * **`/manage/`**: The administrator's Manage drawer (phase 1, Overview only): `manage-drawer.js` (`JE.arrManage.open({itemId}|{key})`: explanation, Search now, Open in Sonarr/Radarr, versions across instances, timeline, Seerr's requests; the Manage button on details pages) and `manage-styles.js`.
     * **`/requests/`**: The requests page — requests, download queue, issues and import history from the *arrs and Seerr, available via the sidebar or a tab.
     * **`/ask/` (asking for titles, phase 3)**: `ask-core.js` (`JE.arrAsk`: the caller's capabilities from `acquire/requests/me`, asks and cancels with a retry-safe `clientRequestId`, honest family words for every request outcome, `onChange` for surfaces to refresh; `searchInstance`/`adminSearch` for an administrator's Search through the Manage drawer's audited search route), `ask-episodes.js` (season pages: Get it on missing episodes, Search on ones missing for a long while, rows drawn for missing episodes Jellyfin has no row for when the viewer shows missing episodes, Jellyfin's own missing rows decorated, the download ring on a thumbnail, Get them on the Missing line, the episode dialog; plugs into `status-episodes.js` through `extend()`), `ask-search.js` (JE-mode "Not in your library" search row, which replaces Seerr's search row in JE mode), `ask-seerr.js` (in JE mode Seerr's request buttons, its details window's request buttons and season picker, discovery rows and Home Screen Sections' discover cards open JE's request sheet) and `ask-styles.js` (styles and `JE.initializeArrAsk`, started by `JE.initializeArrStatus`).
@@ -429,6 +430,16 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   administrators' status and the request backend's admission contract. Routes in **`Controllers/ArrAdminAutomationController.cs`**;
   the Requests page card in **`js/arr/admin/admin-automation.js`**.
 
+* **`/Services/Acquire/Requests/` (phase 4b household rules)**: `HouseholdFlags.cs` the switches as every route and
+  worker reads them; `HouseholdRules.cs` the fixed conditions per role (rating, genre, original language, size estimate,
+  streaming service), their validation and the verdict with its precedence (deny, look, approve, preset); `RuleFacts.cs`
+  the title facts they read from TMDB through the shared cache (bounded memory cache, failed reads retried soon);
+  `GroupQuotaPolicy.cs` group pools and who draws on which; `HouseholdTrust.cs` the Trusted role behind the automation
+  engine's trust seam; `HouseholdRulesService.cs` the administrators' rules editor (and Seerr's own rules, read-only, in
+  Seerr mode). The ledger keeps each want's verdict (schema 4 `rule_detail`) and binds each reservation to its pool
+  (`pool_id`); `RequestLedger.PreviewBatch` previews a run of asks in one rolled-back transaction. Routes in
+  **`Controllers/AcquireRulesController.cs`** (rules editor, streaming services, batch preview).
+
 * **`/Services/Acquire/Requests/`**: Durable request server core. `RequestModels.cs` contains normalized scopes, outcomes
   and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility; `RequestLedger.cs`
   commits intent, reservations, approvals, events and outbox jobs in acquire.db (schema 3 adds each want's server-built
@@ -448,8 +459,14 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   marks it fulfilled (Ready, never stale).
   `FutureSeasonCharges.cs` charges the owner of a "Keep getting new episodes" request once per new season a Sonarr
   library read shows started; in Seerr mode it also asks Seerr for each new started season every few hours (Seerr
-  doesn't follow new seasons itself).
+  doesn't follow new seasons itself). `RequestDestination.cs` is the one rule for where a request goes (its target, and
+  an administrator's Seerr server, profile, root folder and options stamp): every ledger and charges path where one
+  request covers, dedups, follows or stands for another asks it, and so does every approval that re-confirms or edits
+  one (a fresh stamp re-confirms only on the request's own Seerr; what went out never moves).
   `AcquireRequestsController.cs` exposes the authenticated server API.
+  In Seerr mode `SeerrBackend.cs` also reads Seerr's Radarr/Sonarr servers (profiles, root folders, the options stamp)
+  for administrator Seerr request options, checks a chosen server, profile and folder again right before the POST and
+  sends them with it; **`Controllers/AcquireSeerrOptionsController.cs`** lists those options to administrators.
   `SeerrMigrationReader.cs` reads every Seerr request complete-or-nothing (with a digest and Seerr's requesting state) and
   `SeerrMigration.cs` runs the admin dry run, the import into `RequestLedgerImport.cs` (import batches, rollback by batch,
   the automation log) and the switch to JE request handling; `AcquireMigrationController.cs` exposes it to administrators.

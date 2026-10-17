@@ -29,6 +29,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public int? ProfileId { get; init; }
         /// <summary>Optional administrator-selected root folder.</summary>
         public string? RootFolder { get; init; }
+        /// <summary>
+        /// Seerr mode, administrators: the Seerr Radarr/Sonarr server to send the request to (Seerr's own server id,
+        /// which starts at 0). Set together with <see cref="SeerrProfileId"/>, <see cref="SeerrRootFolder"/> and
+        /// <see cref="SeerrOptions"/>, or not at all. Left out of the stored JSON when unset, so inputs without it keep
+        /// their fingerprint.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? SeerrServerId { get; init; }
+        /// <summary>Seerr mode, administrators: the quality profile on that Seerr server.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? SeerrProfileId { get; init; }
+        /// <summary>Seerr mode, administrators: the root folder on that Seerr server, as Seerr names it.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SeerrRootFolder { get; init; }
+        /// <summary>
+        /// Seerr mode, administrators: the options stamp the choice was made against (from the request-options route).
+        /// A request whose stamp no longer matches Seerr's current server facts is refused or held, never sent elsewhere.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SeerrOptions { get; init; }
+        /// <summary>True when the input names a Seerr server, profile, root folder or options stamp.</summary>
+        internal bool HasSeerrOptions => SeerrServerId != null || SeerrProfileId != null || SeerrRootFolder != null || SeerrOptions != null;
+        /// <summary>True when the input names an arr instance, profile or root folder (Jellyfin Enhanced mode routing).</summary>
+        internal bool HasArrRouting => InstanceId != null || ProfileId != null || RootFolder != null;
         /// <summary>Creates a stable canonical input, or null when invalid.</summary>
         public MutationInput? Normalize()
         {
@@ -37,12 +61,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Scope is not ("movie" or "seasons" or "episodes" or "future" or "next_season") ||
                 Seasons == null || Episodes == null || Seasons.Length > 200 || Episodes.Length > 1000 ||
                 Seasons.Any(s => s < 0 || s > 10000) || Episodes.Any(e => e == null || e.Season < 0 || e.Season > 10000 || e.Episode < 1 || e.Episode > 100000) ||
-                InstanceId?.Length > 80 || RootFolder?.Length > 1024 || ProfileId is <= 0) return null;
+                InstanceId?.Length > 80 || RootFolder?.Length > 1024 || ProfileId is <= 0 || !SeerrOptionsValid()) return null;
             if (key.IsMovie != (Scope == "movie") || (Scope == "movie" && (Seasons.Length != 0 || Episodes.Length != 0)) ||
                 (Scope == "episodes" && (Episodes.Length == 0 || Seasons.Length != 0)) ||
                 (Scope is "seasons" or "future" or "next_season" && (Seasons.Length == 0 || Episodes.Length != 0)) ||
                 (Scope is "future" or "next_season" && Seasons.Distinct().Count() != 1)) return null;
             return this with { Key = key.ToString(), Seasons = Seasons.Distinct().OrderBy(s => s).ToArray(), Episodes = Episodes.Distinct().OrderBy(e => e.Season).ThenBy(e => e.Episode).ToArray() };
+        }
+        /// <summary>
+        /// The Seerr options are all there or all absent, never mixed with Jellyfin Enhanced's arr routing: a server id
+        /// of 0 or more, a positive profile id, an absolute root folder of at most 1024 characters without relative
+        /// segments, and a stamp of at most 128 printable characters.
+        /// </summary>
+        private bool SeerrOptionsValid()
+        {
+            if (!HasSeerrOptions) return true;
+            if (SeerrServerId is not int server || SeerrProfileId is not int profile || SeerrRootFolder is not { } root || SeerrOptions is not { } stamp) return false;
+            if (HasArrRouting || server < 0 || profile <= 0) return false;
+            if (root.Length is 0 or > 1024 || string.IsNullOrWhiteSpace(root) || root.Any(char.IsControl) || !BridgePaths.Safe(root)) return false;
+            if (!(BridgePaths.Norm(root).StartsWith('/') || BridgePaths.IsWindows(root))) return false;
+            return stamp.Length is > 0 and <= 128 && !stamp.Any(ch => char.IsControl(ch) || char.IsWhiteSpace(ch));
         }
         /// <summary>Canonical JSON preserved in the job.</summary>
         [JsonIgnore] public string Canonical => JsonSerializer.Serialize(this);
@@ -65,9 +103,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (other.Scope == "episodes") return other.Episodes.Any(e => Seasons.Contains(e.Season));
             return Seasons.Intersect(other.Seasons).Any() || (Scope == "future" && other.Scope == "future");
         }
+        /// <summary>This input's request for one new season (a keep-getting follow): the same title, edition and routing.</summary>
+        internal MutationInput NewSeason(int season) => this with { Scope = "seasons", Seasons = new[] { season }, Episodes = Array.Empty<RequestEpisode>() };
+        /// <summary>
+        /// What of this input <paramref name="covered"/> doesn't ask for yet (null: nothing), counting only inputs that may
+        /// stand for it (<see cref="RequestDestination.Serves(MutationInput, MutationInput)"/>: an input carrying Seerr
+        /// options is covered only by inputs going to the same Seerr destination; one without them wherever the scope went).
+        /// </summary>
         internal MutationInput? Extra(IEnumerable<MutationInput> covered)
         {
-            var all = covered.Where(c => c.Key == Key && c.Variant == Variant && (InstanceId == null || c.InstanceId == null || c.InstanceId == InstanceId)).ToArray();
+            var all = covered.Where(c => RequestDestination.Serves(this, c)).ToArray();
             if (Scope == "movie") return all.Length == 0 ? this : null;
             if (Scope == "episodes")
             {
@@ -211,7 +256,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// </remarks>
     public sealed record RequestWant(string Id, string AcquisitionId, Guid UserId, string ClientRequestId, string Fingerprint,
         MutationInput Input, string Status, string Reason, int Cost, string ParentalSignature, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, bool Follower = false, MutationInput? OwnedInput = null, string TargetKey = "", string OriginKind = "interactive",
-        string? OriginSource = null, string? OriginDetail = null, string? OperationId = null);
+        string? OriginSource = null, string? OriginDetail = null, string? OperationId = null, string? RuleDetail = null)
+    {
+        /// <summary>The household-rule verdict the want was created with (phase 4b), or null.</summary>
+        public HouseholdRuleVerdict? Rules => HouseholdRuleVerdict.Read(RuleDetail);
+    }
     /// <summary>
     /// Authorization facts captured at approval, never returned to a browser. <c>SeerrSeasons</c> (and <c>SeerrUser</c>
     /// when approval didn't know it) are bound right before a Seerr request is sent: the exact seasons and account it
@@ -248,6 +297,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         [JsonPropertyName("heldRequestId"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? HeldRequestId { get; init; }
         /// <summary>Outcome <c>split</c>: the season numbers that wait for an OK.</summary>
         [JsonPropertyName("heldSeasons"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int[]? HeldSeasons { get; init; }
+        /// <summary>
+        /// Household rules (phase 4b): the verdict behind a refusal (<c>household_rule</c>) or a wait for an OK
+        /// (<c>rule_review</c>): the conditions and their family-safe facts. Null when the rules said nothing.
+        /// </summary>
+        [JsonPropertyName("rules"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public HouseholdRuleVerdict? Rules { get; init; }
         /// <summary>HTTP status of this outcome.</summary>
         [JsonIgnore] public int HttpStatus { get; init; } = 201;
         /// <summary>Constructs a success result.</summary>
@@ -266,7 +320,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// </summary>
     public sealed record RequestCapabilities
     {
-        /// <summary>The caller's household role: watcher, kid, member, manager or admin.</summary>
+        /// <summary>The caller's household role: watcher, kid, member, trusted, manager or admin.</summary>
         [JsonPropertyName("role")] public string Role { get; init; } = "watcher";
         /// <summary>The caller may ask for titles at all (role and request backend): movies, series or both.</summary>
         [JsonPropertyName("canRequest")] public bool CanRequest { get; init; }
