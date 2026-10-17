@@ -249,6 +249,36 @@ public class ApiSeerrTests
     }
 
     [Theory]
+    [InlineData(404, true)]
+    [InlineData(500, false)]
+    public async Task AMovieWithoutRatingsYetHasNoRatingsRatherThanAFailedRequest(int status, bool none)
+    {
+        using var f = new SeerrFixture();
+        // Seerr answers 404 for a movie neither Rotten Tomatoes nor IMDb rates yet (an unreleased one).
+        f.Reply = request => request.RequestUri!.AbsolutePath == "/api/v1/movie/1384758/ratingscombined"
+            ? IntegrationTransport.Response("{\"message\":\"Rating not found.\"}", status)
+            : IntegrationTransport.Response("{}");
+        var result = await f.Controller.GetMovieRatingsCombined(1384758);
+        if (none)
+        {
+            var content = Assert.IsType<ContentResult>(result);
+            Assert.Equal(("null", "application/json"), (content.Content, content.ContentType));
+        }
+        else
+        {
+            Assert.Equal(status, Assert.IsType<ObjectResult>(result).StatusCode);
+        }
+
+        f.Reply = _ => IntegrationTransport.Response("{\"rt\":{\"criticsScore\":92}}");
+        Assert.Contains("92", Assert.IsType<ContentResult>(await f.Controller.GetMovieRatingsCombined(693134)).Content, StringComparison.Ordinal);
+        // A viewer without a Seerr account keeps the proxy's own 404 ("unlinked"), not "no ratings".
+        f.SetUser(Guid.NewGuid());
+        var unlinked = Assert.IsAssignableFrom<ObjectResult>(await f.Controller.GetMovieRatingsCombined(1384758));
+        Assert.Equal(404, unlinked.StatusCode);
+        Assert.Equal("unlinked", Body(JsonSerializer.Serialize(unlinked.Value)).GetProperty("code").GetString());
+    }
+
+    [Theory]
     [InlineData(403)]
     [InlineData(409)]
     [InlineData(429)]

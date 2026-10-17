@@ -2493,7 +2493,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public Task<IActionResult> GetMovieRatingsCombined(int tmdbId)
         {
-            return ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}/ratingscombined", HttpMethod.Get);
+            // Seerr answers 404 for a movie nobody rates yet (an unreleased one): no ratings, as for series below.
+            return ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}/ratingscombined", HttpMethod.Get, upstreamNotFound: "null");
         }
 
         [HttpGet("jellyseerr/tv/{tmdbId}/similar")]
