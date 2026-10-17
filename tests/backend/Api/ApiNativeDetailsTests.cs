@@ -312,6 +312,9 @@ public class ApiNativeDetailsTests
             Feeds = new NativeDetailsFeeds(Source, Policy, _parental, Library.Object);
         }
 
+        /// <summary>The feeds over another source (the policy still admits titles from <see cref="Source"/>).</summary>
+        public NativeDetailsFeeds FeedsOver(INativeDetailsSource source) => new(source, Policy, _parental, Library.Object);
+
         /// <summary>The id Jellyfin derives for a genre or studio name (a stand-in: stable per kind and name).</summary>
         public static Guid NameId(string kind, string name)
             => new(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(kind + "|" + name.ToLowerInvariant())).AsSpan(0, 16));
@@ -2073,6 +2076,62 @@ public class ApiNativeDetailsTests
         Assert.Equal(400, Status(await For(Me(unlinked)).Title("person", 693134, CancellationToken.None)));
         Assert.Equal(404, Status(await For(Me(unlinked)).Title("movie", 77, CancellationToken.None)));
         Assert.Equal(403, Status(await For(new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity("Custom"))).Title("movie", 693134, CancellationToken.None)));
+    }
+
+    [Fact]
+    public async Task AnHtmlNotFoundFromAProxyInFrontOfSeerrIsAFailureNotNoRatings()
+    {
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        var config = rig.Plugin.Plugin.Configuration;
+        // What the transport answers: a reverse proxy's own 404 page (HTML), or Seerr's 404 for a series Rotten
+        // Tomatoes doesn't know (JSON). With two Seerr URLs only the first one answers that way.
+        var proxy = true;
+        using var seerr = new IntegrationTransport((req, _) =>
+        {
+            if (req.RequestUri!.Host == "seerr2.invalid") return Task.FromResult(IntegrationTransport.Response("""{"criticsScore":96}"""));
+            return Task.FromResult(proxy
+                ? IntegrationTransport.Response("<html><body><h1>404 Not Found</h1></body></html>", 404, "text/html")
+                : IntegrationTransport.Response("""{"message":"Rotten Tomatoes ratings not found."}""", 404));
+        });
+        using var tmdb = new TmdbResponseCache(seerr, TimeProvider.System);
+        // A new source each time: failures are cached for a moment.
+        NativeDetailsFeeds Feeds() => rig.FeedsOver(new SeerrNativeDetailsSource(seerr, tmdb, rig.Plugin.Core.Logger));
+
+        var proxied = await Feeds().RatingsAsync(viewer, false, 83867, CancellationToken.None);
+        Assert.Equal(FeedOutcome.Unavailable, proxied.Outcome);
+        Assert.Null(proxied.Json);
+        // The other source callers: the proxy's page is an outage there too, not "no such title".
+        Assert.Equal(FeedOutcome.Unavailable, (await Feeds().TitleAsync(viewer, true, 693134, CancellationToken.None)).Outcome);
+        var source = new SeerrNativeDetailsSource(seerr, tmdb, rig.Plugin.Core.Logger);
+        Assert.False((await source.MovieAsync(693134, viewer.Id, CancellationToken.None)).NotFound);
+        Assert.False((await source.SeriesAsync(83867, viewer.Id, CancellationToken.None)).NotFound);
+        Assert.False((await source.SeasonAsync(83867, 1, viewer.Id, CancellationToken.None)).NotFound);
+        Assert.False((await source.PersonCreditsAsync(3810, viewer.Id, CancellationToken.None)).NotFound);
+        Assert.False((await source.DiscoverAsync(true, "genre", 878, 1, null, viewer.Id, CancellationToken.None)).NotFound);
+
+        // The next Seerr URL is still asked after a proxy's page.
+        config.JellyseerrUrls = "http://seerr.invalid\nhttp://seerr2.invalid";
+        var next = await Feeds().RatingsAsync(viewer, false, 83867, CancellationToken.None);
+        Assert.Equal(FeedOutcome.Ok, next.Outcome);
+        Assert.Equal("""{"criticsScore":96}""", next.Json);
+        config.JellyseerrUrls = "http://seerr.invalid";
+
+        // Seerr's own 404 still means the series has no ratings, and a title Seerr doesn't know stays "no such title".
+        proxy = false;
+        var none = await Feeds().RatingsAsync(viewer, false, 83867, CancellationToken.None);
+        Assert.Equal(FeedOutcome.Ok, none.Outcome);
+        Assert.Equal("null", none.Json);
+        Assert.Equal(FeedOutcome.NotFound, (await Feeds().TitleAsync(viewer, true, 693134, CancellationToken.None)).Outcome);
+
+        // The route: the proxy's page is a 503, Seerr's own 404 a 200 null.
+        Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsFeedsController Route() => new(Feeds(), rig.Callers.Users.Object)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = Me(viewer) } },
+        };
+        Assert.Equal("null", Assert.IsType<ContentResult>(await Route().Ratings("tv", 83867, CancellationToken.None)).Content);
+        proxy = true;
+        Assert.Equal(503, Status(await Route().Ratings("tv", 83867, CancellationToken.None)));
     }
 
     [Fact]

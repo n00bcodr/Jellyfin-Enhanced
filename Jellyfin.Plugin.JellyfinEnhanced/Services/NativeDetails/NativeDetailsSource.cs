@@ -137,7 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
     /// now (answered 503).
     /// </summary>
     /// <param name="Data">The JSON, when there is some.</param>
-    /// <param name="NotFound">True when the source answered "no such title" (Seerr 404).</param>
+    /// <param name="NotFound">True when the source answered "no such title" (Seerr's own 404, not a proxy's HTML page).</param>
     /// <param name="Busy">True when the read wasn't started: try again shortly.</param>
     public readonly record struct SourceAnswer(JsonElement? Data, bool NotFound, bool Busy = false)
     {
@@ -672,7 +672,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, url, timeout.Token).ConfigureAwait(false);
                     if (error != null || json == null)
                     {
-                        if (error?.HttpStatus == 404) return SourceAnswer.Missing;
+                        // Only Seerr's own (JSON) 404: a proxy's HTML 404 page in front of it is an outage, so the next URL is asked.
+                        if (error is { Code: SeerrErrorCode.UpstreamError, HttpStatus: 404 }) return SourceAnswer.Missing;
                         continue;
                     }
 
