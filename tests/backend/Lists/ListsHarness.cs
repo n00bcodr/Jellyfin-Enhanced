@@ -270,6 +270,26 @@ internal sealed class FakeListStatusSource : IListStatusSource
         return Task.FromResult(result);
     }
 
+    /// <summary>Part reads (4K entries): the viewer and the part ids asked for.</summary>
+    public List<(Guid User, IReadOnlyList<string> Parts)> PartCalls { get; } = new();
+
+    // Part ids answered from ByKey too.
+    public Task<IReadOnlyDictionary<string, JsonElement>> PartStatusesAsync(Guid user, IReadOnlyList<ListStatusPart> parts, CancellationToken cancellationToken)
+    {
+        var ids = parts.Select(p => p.Id).ToList();
+        PartCalls.Add((user, ids));
+        if (Fail != null)
+        {
+            throw Fail;
+        }
+
+        IReadOnlyDictionary<string, JsonElement> result = ids
+            .Where(ByKey.ContainsKey)
+            .Distinct()
+            .ToDictionary(k => k, k => JsonDocument.Parse(ByKey[k]).RootElement.Clone(), StringComparer.Ordinal);
+        return Task.FromResult(result);
+    }
+
     // Season ids answered from ByKey too (an empty dictionary unless a test put a season id there).
     public Task<IReadOnlyDictionary<string, JsonElement>> SeasonStatusesAsync(Guid user, IReadOnlyList<(TitleKey Key, int TmdbId, int Season)> seasons, CancellationToken cancellationToken)
     {

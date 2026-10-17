@@ -320,6 +320,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         RequestFacts? ForSeason(TitleKey seriesKey, int season, StatusViewer viewer) => null;
 
         /// <summary>
+        /// What is known about the requests for one edition of a title, or for some of its seasons or episodes in that
+        /// edition (a list entry's scope): asks for the 4K copy when <paramref name="fourK"/>, else for the standard one;
+        /// with seasons or episodes named, the asks that cover any of them. As seen by the viewer; null when nothing.
+        /// </summary>
+        /// <param name="titleKey">Movie or series key.</param>
+        /// <param name="fourK">The 4K edition.</param>
+        /// <param name="seasons">Whole seasons (none with no episodes: the whole title).</param>
+        /// <param name="episodes">Single episodes.</param>
+        /// <param name="viewer">Viewer.</param>
+        /// <returns>Request facts, or null.</returns>
+        RequestFacts? ForPart(TitleKey titleKey, bool fourK, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, StatusViewer viewer) => null;
+
+        /// <summary>
         /// True when this user asked for the title (movie or series key) themselves. Such a title is
         /// theirs to follow even before it is in Jellyfin, whatever their content limits.
         /// </summary>

@@ -1,6 +1,7 @@
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
 using static JE.Tests.ListsHarness;
 
@@ -19,6 +20,36 @@ public class ListsEditionTests
 
     private static Placeholder Season(int tmdb, int season, bool fourK = false) =>
         Ph($"{{\"kind\":\"season\",\"tmdbId\":{tmdb},\"seasonNumber\":{season},\"title\":\"Show\"{(fourK ? ",\"edition\":\"4k\"" : string.Empty)}}}");
+
+    [Fact]
+    public async Task AFourKEntrysStatusIsItsOwnEditionsNeverTheStandardCopys()
+    {
+        using var h = new ListsHarness(status: true);
+        h.Plugin.Plugin.Configuration.ArrPhase4ListStatusEnabled = true;
+        var show = TitleKey.ForSeries(null, "7", null)!;
+        // The standard copies are here; nothing of the 4K ones is.
+        h.Status.ByKey["movie:tmdb:5"] = "{\"stage\":\"ready\"}";
+        h.Status.ByKey[ListStatusKeys.SeasonId(show, 2)] = "{\"stage\":\"ready\"}";
+        h.Status.ByKey["movie:tmdb:5@4k"] = "{\"stage\":\"notHere\"}";
+        h.Status.ByKey[ListStatusKeys.SeasonId(show, 2) + "@4k"] = "{\"stage\":\"downloading\"}";
+        var owner = h.NewUser("owner");
+        var playlist = h.Host.AddPlaylist(owner);
+        var access = h.AccessFor(playlist, owner);
+        Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(
+            access,
+            new[] { Movie(5, "2020-01-01"), Movie4k(5), Season(7, 2), Season(7, 2, fourK: true) },
+            null,
+            null,
+            null,
+            None));
+
+        var view = await h.Service.GetViewAsync(access, None);
+
+        Assert.Equal(new[] { "standard", "4k", "standard", "4k" }, view.Placeholders.Select(p => p.Edition));
+        Assert.Equal(
+            new[] { "ready", "notHere", "ready", "downloading" },
+            view.Placeholders.Select(p => p.Status is { } status ? status.GetProperty("stage").GetString() : null));
+    }
 
     [Theory]
     [InlineData(null, null)]

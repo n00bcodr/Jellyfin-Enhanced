@@ -1365,8 +1365,8 @@ follows Jellyfin's own rights and the household's request rules:
   If the server stops in the middle of putting an item in, the next start finishes or undoes it by what is actually in
   the list, so an item never goes in twice.
 - **Status** (*Show request status on list entries*). Each entry shows where its request stands, the same status as
-  everywhere else in Requests & downloads (a season or episodes entry shows that season's). Everyone can hide it for
-  themselves.
+  everywhere else in Requests & downloads (a season or episodes entry shows that season's; a 4K entry follows the 4K
+  copy and the 4K asks, so it isn't Ready while only the standard copy is in). Everyone can hide it for themselves.
 - **Privacy.** A person with parental limits sees only entries whose rating is verified to be within them (anything
   that can't be checked is hidden), and only the rows Jellyfin shows them; counts never include what they can't see.
 - **Deleted lists and people.** Deleting a playlist or collection removes its entries; deleting a person removes what

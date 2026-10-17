@@ -289,6 +289,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return Cache.Put(cacheKey, Serialize(status == null ? Array.Empty<TitleStatus>() : new[] { status }));
         }
 
+        /// <summary>
+        /// The status of part of a title in one edition, by key (a list entry): the 4K copies alone for the 4K edition,
+        /// and only the seasons or episodes named, composed like the Requests page's row for an ask of that part with the
+        /// asks that cover it (<see cref="IArrRequestFacts.ForPart"/>). So a 4K entry is never Ready because the standard
+        /// copy is in. Empty when the viewer may not ask about the title by key.
+        /// </summary>
+        /// <param name="viewer">Viewer.</param>
+        /// <param name="key">Movie or series key.</param>
+        /// <param name="seasons">Whole seasons (none: the whole title).</param>
+        /// <param name="episodes">Single episodes.</param>
+        /// <param name="fourK">The 4K edition.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        internal async Task<StatusBody> ForPartAsync(StatusViewer viewer, TitleKey key, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, bool fourK, CancellationToken cancellationToken)
+        {
+            var title = key.Title;
+            var gather = await GatherAsync(viewer, new[] { title }, loadEpisodes: title.IsMovie ? null : new[] { title }, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            var request = _requests.ForPart(title, fourK, seasons, episodes, viewer);
+            var scope = new RequestScope(seasons, fourK, request, Episodes: episodes);
+            var cacheKey = CacheKey(viewer, "part", title + "@" + scope + "|" + (request == null ? string.Empty : JsonSerializer.Serialize(request)), gather.Revision);
+            if (Cache.Get(cacheKey) is { } hit) return hit;
+            var composed = Compose(viewer, gather, title, detail: false, scope);
+            var status = composed == null ? null : Scoped(viewer, gather, composed, scope).Status;
+            return Cache.Put(cacheKey, Serialize(status == null ? Array.Empty<TitleStatus>() : new[] { status }));
+        }
+
         /// <summary>The whole seasons the viewer asked for themselves, for a series page (null when none).</summary>
         private static IReadOnlyList<int>? AskedSeasons(TitleFacts facts) => facts.Request?.ViewerSeasons is { Count: > 0 } asked ? asked : null;
 

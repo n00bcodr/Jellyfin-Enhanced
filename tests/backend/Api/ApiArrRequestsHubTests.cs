@@ -464,6 +464,39 @@ public class ApiArrRequestsHubTests
     }
 
     [Fact]
+    public async Task AFourKListEntryFollowsTheFourKCopyNotTheStandardOneJellyfinHas()
+    {
+        // Sintel is in Jellyfin (and the standard Radarr) in standard quality, from Emma's standard request; Radarr 4K
+        // doesn't have it and nobody asked for 4K.
+        using var rig = await Ready();
+        var lists = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ArrListStatusSource(rig.Service, rig.View);
+        var key = TitleKey.Parse("movie:tmdb:45745")!;
+        var fourK = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusPart(key, null, true);
+
+        var standard = await lists.StatusesAsync(rig.Emma.UserId, new[] { key }, default);
+        Assert.Equal("ready", standard[key.ToString()].GetProperty("stage").GetString());
+        var part = (await lists.PartStatusesAsync(rig.Emma.UserId, new[] { fourK }, default))[fourK.Id];
+        Assert.NotEqual(key.ToString(), fourK.Id);
+        Assert.NotEqual("ready", part.GetProperty("stage").GetString());
+        // Her fulfilled standard request says nothing about the 4K copy.
+        Assert.NotEqual("ready", part.GetProperty("reason").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task AFourKListEntryFollowsTheFourKAskOnly()
+    {
+        // Sam asks for Sintel in 4K: the 4K entry waits for its OK; the standard entry stays Ready.
+        using var rig = await Ready(r => r.Seerr.Requests.Add(FakeSeerr.Request(21, "movie", 45745, 1, r.Sam.UserId, Asked.AddHours(6), is4k: true)));
+        var lists = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ArrListStatusSource(rig.Service, rig.View);
+        var key = TitleKey.Parse("movie:tmdb:45745")!;
+        var fourK = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusPart(key, null, true);
+
+        var part = (await lists.PartStatusesAsync(rig.Sam.UserId, new[] { fourK }, default))[fourK.Id];
+        Assert.Equal("asked", part.GetProperty("stage").GetString());
+        Assert.Equal("ready", (await lists.StatusesAsync(rig.Sam.UserId, new[] { key }, default))[key.ToString()].GetProperty("stage").GetString());
+    }
+
+    [Fact]
     public async Task AFourKRequestAfterTheStandardCopyArrivedIsItsOwnEditionNotShownReadyByTheStandardCopy()
     {
         // Emma's standard Sintel is here (Ready); she then asks Seerr for the 4K copy, which Radarr 4K doesn't have.

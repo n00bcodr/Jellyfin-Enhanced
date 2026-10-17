@@ -139,6 +139,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return FactsOf(Wants(seriesKey).Where(w => w.Input.Seasons.Contains(season)), viewer.UserId, () => _ledger.Dispatches(Canonical(seriesKey)));
         }
 
+        /// <inheritdoc />
+        /// <remarks>The configured authority, as <see cref="For"/>: the asks for that edition covering the part.</remarks>
+        public RequestFacts? ForPart(TitleKey titleKey, bool fourK, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, StatusViewer viewer)
+        {
+            bool Covers(RequestWant w) => (w.Input.Variant == "4k") == fourK && ((seasons.Count == 0 && episodes.Count == 0)
+                || seasons.Any(n => w.Input.Seasons.Contains(n)) || episodes.Any(e => w.Input.Covers(new RequestEpisode(e.Season, e.Episode))));
+            if (!Direct) return Merge(_seerr.ForPart(titleKey, fourK, seasons, episodes, viewer), HeldFacts(titleKey, Held(titleKey).Where(Covers), viewer));
+            return FactsOf(Wants(titleKey).Where(Covers), viewer.UserId, () => _ledger.Dispatches(Canonical(titleKey)));
+        }
+
         private RequestFacts? HeldFacts(TitleKey key, IEnumerable<RequestWant> held, StatusViewer viewer)
         {
             var list = held as IReadOnlyCollection<RequestWant> ?? held.ToList();

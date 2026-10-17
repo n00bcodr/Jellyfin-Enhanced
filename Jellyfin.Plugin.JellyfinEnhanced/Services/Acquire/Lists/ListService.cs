@@ -287,24 +287,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return null;
             }
 
-            var keys = visible.Select(ListRules.TitleKeyOf).OfType<TitleKey>().Distinct().ToList();
-            if (keys.Count == 0)
+            var keyed = visible.Where(p => ListRules.TitleKeyOf(p) != null).ToList();
+            if (keyed.Count == 0)
             {
                 return null;
             }
 
             try
             {
-                var statuses = new Dictionary<string, JsonElement>(await _status.StatusesAsync(access.User.Id, keys, cancellationToken).ConfigureAwait(false), StringComparer.Ordinal);
-                // Seasons and episodes of one season: that season's status (a series card reads Ready once any season is in).
-                var seasons = visible
-                    .Where(p => p.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && p.SeasonNumber is int && p.TmdbId is > 0)
+                // Standard movies and series: the title's status.
+                var keys = keyed.Where(p => StatusPartOf(p) == null && p.Kind is not (PlaceholderKinds.Season or PlaceholderKinds.Episodes))
+                    .Select(ListRules.TitleKeyOf).OfType<TitleKey>().Distinct().ToList();
+                var statuses = new Dictionary<string, JsonElement>(
+                    keys.Count == 0 ? new Dictionary<string, JsonElement>() : await _status.StatusesAsync(access.User.Id, keys, cancellationToken).ConfigureAwait(false),
+                    StringComparer.Ordinal);
+                // Standard seasons and episodes of one season: that season's status (a series card reads Ready once any season is in).
+                var seasons = keyed
+                    .Where(p => StatusPartOf(p) == null && p.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && p.SeasonNumber is int && p.TmdbId is > 0)
                     .Select(p => (Key: ListRules.TitleKeyOf(p)!, TmdbId: p.TmdbId!.Value, Season: p.SeasonNumber!.Value))
                     .Distinct()
                     .ToList();
-                foreach (var pair in await _status.SeasonStatusesAsync(access.User.Id, seasons, cancellationToken).ConfigureAwait(false))
+                if (seasons.Count > 0)
                 {
-                    statuses[pair.Key] = pair.Value;
+                    foreach (var pair in await _status.SeasonStatusesAsync(access.User.Id, seasons, cancellationToken).ConfigureAwait(false))
+                    {
+                        statuses[pair.Key] = pair.Value;
+                    }
+                }
+
+                // 4K entries: their own edition's status, keyed apart from the standard one.
+                var parts = keyed.Select(StatusPartOf).OfType<ListStatusPart>().DistinctBy(p => p.Id).ToList();
+                if (parts.Count > 0)
+                {
+                    foreach (var pair in await _status.PartStatusesAsync(access.User.Id, parts, cancellationToken).ConfigureAwait(false))
+                    {
+                        statuses[pair.Key] = pair.Value;
+                    }
                 }
 
                 return statuses;
@@ -2077,12 +2095,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return null;
             }
 
+            if (StatusPartOf(placeholder) is { } part)
+            {
+                return statuses.TryGetValue(part.Id, out var own) ? own : null;
+            }
+
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes)
             {
                 return placeholder.SeasonNumber is int season && statuses.TryGetValue(ListStatusKeys.SeasonId(key, season), out var scoped) ? scoped : null;
             }
 
             return statuses.TryGetValue(key.ToString(), out var status) ? status : null;
+        }
+
+        // The scope of an entry whose status is its own rather than the title's or season's: a 4K entry (its edition's).
+        private static ListStatusPart? StatusPartOf(Placeholder placeholder)
+        {
+            if (ListRules.EditionOf(placeholder) != ListRules.FourK || ListRules.TitleKeyOf(placeholder) is not { } key)
+            {
+                return null;
+            }
+
+            return placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes
+                ? placeholder.SeasonNumber is int season ? new ListStatusPart(key, season, true) : null
+                : new ListStatusPart(key, null, true);
         }
 
         // Whether the caller's request capabilities allow asking for this kind of entry (the request policy decides the rest).

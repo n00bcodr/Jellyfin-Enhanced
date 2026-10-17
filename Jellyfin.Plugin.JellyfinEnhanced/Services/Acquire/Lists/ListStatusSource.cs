@@ -29,6 +29,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>Status JSON per <see cref="SeasonId"/>.</returns>
         Task<IReadOnlyDictionary<string, JsonElement>> SeasonStatusesAsync(Guid user, IReadOnlyList<(TitleKey Key, int TmdbId, int Season)> seasons, CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Statuses of entries the title or season status can't stand for, by <see cref="ListStatusPart.Id"/>: a 4K entry
+        /// follows the 4K copies alone (and the asks for them), never the standard copy Jellyfin may already have.
+        /// </summary>
+        /// <param name="user">The viewer.</param>
+        /// <param name="parts">The entries' scopes.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>Status JSON per part id.</returns>
+        Task<IReadOnlyDictionary<string, JsonElement>> PartStatusesAsync(Guid user, IReadOnlyList<ListStatusPart> parts, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyDictionary<string, JsonElement>>(new Dictionary<string, JsonElement>(StringComparer.Ordinal));
+    }
+
+    /// <summary>The scope of a list entry whose status is its own (see <see cref="IListStatusSource.PartStatusesAsync"/>).</summary>
+    /// <param name="Key">Movie or series key.</param>
+    /// <param name="Season">The season (season entries), or null for the whole title.</param>
+    /// <param name="FourK">The 4K edition.</param>
+    public sealed record ListStatusPart(TitleKey Key, int? Season, bool FourK)
+    {
+        /// <summary>The part's status id (<see cref="ListStatusKeys.PartId"/>).</summary>
+        public string Id => ListStatusKeys.PartId(this);
     }
 
     /// <summary>Keys of season-scoped statuses.</summary>
@@ -39,6 +60,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="season">Season.</param>
         /// <returns>The id.</returns>
         public static string SeasonId(TitleKey key, int season) => key.WithSeason(season).ToString();
+
+        /// <summary>The id of a part's status: the title or season id, then <c>@4k</c> for the 4K edition.</summary>
+        /// <param name="part">The part.</param>
+        /// <returns>The id.</returns>
+        public static string PartId(ListStatusPart part) =>
+            (part.Season is int season ? SeasonId(part.Key, season) : part.Key.ToString()) + (part.FourK ? "@" + ListRules.FourK : string.Empty);
     }
 
     /// <summary><see cref="IListStatusSource"/> over <see cref="ArrStatusService"/> (batches of its key limit).</summary>
@@ -142,6 +169,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 if (json.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array && items.GetArrayLength() > 0)
                 {
                     result[id] = items[0].Clone();
+                }
+            }
+
+            return result;
+        }
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyDictionary<string, JsonElement>> PartStatusesAsync(Guid user, IReadOnlyList<ListStatusPart> parts, CancellationToken cancellationToken)
+        {
+            var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            if (!_status.Enabled || parts.Count == 0)
+            {
+                return result;
+            }
+
+            var viewer = _view.Viewer(user);
+            if (viewer == null)
+            {
+                return result;
+            }
+
+            using var scope = _status.Store.BeginRequest("acquire/lists");
+            foreach (var part in parts.DistinctBy(p => p.Id).Take(MaxSeasons))
+            {
+                var seasons = part.Season is int season ? new[] { season } : Array.Empty<int>();
+                var body = await _status.ForPartAsync(viewer, part.Key, seasons, Array.Empty<(int Season, int Episode)>(), part.FourK, cancellationToken).ConfigureAwait(false);
+                using var json = JsonDocument.Parse(body.Json);
+                if (json.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array && items.GetArrayLength() > 0)
+                {
+                    result[part.Id] = items[0].Clone();
                 }
             }
 

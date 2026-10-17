@@ -422,6 +422,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public RequestFacts? ForSeason(TitleKey seriesKey, int season, StatusViewer viewer)
             => FactsOf(ForTitle(seriesKey).Where(r => !r.IsMovie && (r.Seasons.Count == 0 || r.Seasons.Contains(season))).ToList(), viewer.UserId);
 
+        /// <inheritdoc />
+        /// <remarks>Seerr asks for whole seasons: that edition's requests naming any of the part's seasons (or no season, the whole series).</remarks>
+        public RequestFacts? ForPart(TitleKey titleKey, bool fourK, IReadOnlyList<int> seasons, IReadOnlyList<(int Season, int Episode)> episodes, StatusViewer viewer)
+        {
+            var parts = seasons.Concat(episodes.Select(e => e.Season)).ToHashSet();
+            return FactsOf(ForTitle(titleKey).Where(r => r.Is4k == fourK && (r.IsMovie || parts.Count == 0 || r.Seasons.Count == 0 || r.Seasons.Any(parts.Contains))).ToList(), viewer.UserId);
+        }
+
         /// <summary>The request facts of some requests (one title's, or the part of it one person asked for), as <paramref name="userId"/> sees them; null when there are none.</summary>
         internal static RequestFacts? FactsOf(IReadOnlyList<SeerrRequestRecord> requests, Guid userId)
         {
