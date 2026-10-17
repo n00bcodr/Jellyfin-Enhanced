@@ -29,6 +29,7 @@
 
     const CSS = `
 .je-list-row { display: flex; align-items: center; gap: 0.25em; padding: 0.25em 0.25em 0.25em 0.5em; position: relative; content-visibility: auto; contain-intrinsic-block-size: auto 5.75em; }
+.je-list-handle-space { visibility: hidden; }
 .je-list-row-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 0.75em; padding: 0.25em 0; margin: 0; background: transparent; border: 0; color: inherit; font: inherit; text-align: start; }
 button.je-list-row-main { cursor: pointer; }
 .je-list-row-main:focus-visible, .layout-tv .je-list-row-main:focus { outline: 2px solid var(--jf-palette-primary-main, #00a4dc); outline-offset: -2px; border-radius: 0.3em; }
@@ -429,6 +430,11 @@ button.je-list-card-main { cursor: pointer; }
         node.dataset.jeListId = ph.id;
         node.dataset.jeListToken = `p:${ph.id}`;
         node.dataset.jeListKind = ph.kind;
+        if (ctx.handleSpace && !ctx.tv) {
+            const space = el('span', 'listItemIcon listItemIcon-transparent material-icons je-list-handle-space', 'drag_handle');
+            space.setAttribute('aria-hidden', 'true');
+            node.appendChild(space);
+        }
         const main = el(opensTitle(ph) ? 'button' : 'div', 'je-list-row-main');
         if (main.tagName === 'BUTTON') {
             /** @type {HTMLButtonElement} */ (main).type = 'button';
@@ -521,7 +527,7 @@ button.je-list-card-main { cursor: pointer; }
         }
         return [ph.title, ph.note, ph.posterPath, ph.releaseDate, ph.released, ph.filledCount, ph.expectedCount, ph.airedCount,
             ph.inLibraryItemId, (ph.actions || []).join(','), (ph.episodes || []).map(e => `${e?.e}:${e?.title || ''}`).join(','),
-            status, ctx?.guarded?.(ph) ? 'g' : '', ctx?.requests ? 'r' : '', ctx?.tv ? 't' : ''].join('|');
+            status, ctx?.guarded?.(ph) ? 'g' : '', ctx?.requests ? 'r' : '', ctx?.tv ? 't' : '', ctx?.handleSpace ? 'h' : ''].join('|');
     }
 
     // ------------------------------------------------------------------ Spoiler Guard
