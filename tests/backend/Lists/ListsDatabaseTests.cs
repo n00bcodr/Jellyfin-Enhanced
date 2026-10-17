@@ -6,7 +6,7 @@ using Microsoft.Data.Sqlite;
 namespace JE.Tests;
 
 // acquire.db schema 5 (4c1): durable list operations, list request links, verified swap-in events, and the migration
-// steps 4 (reserved, empty) and 5 (list tables, guarded with IF NOT EXISTS).
+// steps 4 (4b's household rules) and 5 (list tables, guarded with IF NOT EXISTS).
 public class ListsDatabaseTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 1, 12, 0, 0, TimeSpan.Zero);
@@ -64,12 +64,12 @@ public class ListsDatabaseTests
     // ── migrations ────────────────────────────────────────────────────
 
     [Fact]
-    public void AFreshDatabaseReachesSchemaFiveWithTheListTablesAndStepFourIsEmpty()
+    public void AFreshDatabaseReachesSchemaFiveWithTheListTablesAfterStepFour()
     {
         using var db = new Db();
         Assert.Equal(5, AcquireDatabase.Migrations.Count);
         Assert.Equal(5, db.Database.Version);
-        Assert.True(string.IsNullOrWhiteSpace(AcquireDatabase.Migrations[3]));
+        Assert.Contains("rule_detail", AcquireDatabase.Migrations[3], StringComparison.Ordinal);
         Assert.Contains("list_operations", AcquireDatabase.Migrations[4], StringComparison.Ordinal);
         Assert.Equal(ListTables, Tables(db.Database.FilePath));
     }
@@ -105,7 +105,7 @@ public class ListsDatabaseTests
         // A database at schema 4 where another phase-4 step had already created one of the list tables (with its rows).
         using var core = new CoreFixture();
         var path = Path.Combine(core.Root, "four.db");
-        Exec(path, AcquireDatabase.Migrations[0] + "\n" + AcquireDatabase.Migrations[1] + "\n" + AcquireDatabase.Migrations[2] + "\n" + AcquireDatabase.Migrations[4]
+        Exec(path, AcquireDatabase.Migrations[0] + "\n" + AcquireDatabase.Migrations[1] + "\n" + AcquireDatabase.Migrations[2] + "\n" + AcquireDatabase.Migrations[3] + "\n" + AcquireDatabase.Migrations[4]
             + "\nINSERT INTO list_links(list_id,placeholder_id,user_id,want_id,operation_id,title_key,scope,edition,created_at) VALUES('l','p','0123456789abcdef0123456789abcdef','w',NULL,'movie:tmdb:1','{}','standard',1);"
             + "\nDROP TABLE list_events; DROP TABLE list_operations; PRAGMA user_version=4;");
 

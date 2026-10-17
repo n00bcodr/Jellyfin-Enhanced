@@ -992,7 +992,7 @@ public class IntegrationHouseholdRulesTests
             using (var db = new AcquireDatabase(path))
             {
                 Assert.True(db.Available);
-                Assert.Equal(4, db.Version);
+                Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
                 Assert.Equal(2L, db.Read(c =>
                 {
                     using var cmd = c.CreateCommand();
@@ -1000,7 +1000,7 @@ public class IntegrationHouseholdRulesTests
                     return (long)cmd.ExecuteScalar()!;
                 }));
             }
-            using (var again = new AcquireDatabase(path)) Assert.Equal(4, again.Version);
+            using (var again = new AcquireDatabase(path)) Assert.Equal(AcquireDatabase.Migrations.Count, again.Version);
         }
         finally
         {
