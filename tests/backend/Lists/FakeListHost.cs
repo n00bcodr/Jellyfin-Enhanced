@@ -56,6 +56,15 @@ internal sealed class FakeListHost : IListHost
     public Action<Guid>? AfterCollectionAdd { get; set; }
     /// <summary>Throws from the next N MoveInPlaylistAsync calls (before moving).</summary>
     public int FailMoves { get; set; }
+    /// <summary>Throws from CreatePlaylistAsync / CreateCollectionAsync before anything is made (the attempt died first).</summary>
+    public Exception? FailCreates { get; set; }
+    /// <summary>
+    /// Runs at the start of every Jellyfin write (op, list, the user it runs as, items) before it changes anything: the
+    /// table tests check each write against the state at that moment.
+    /// </summary>
+    public Action<string, Guid, Guid, IReadOnlyList<Guid>>? OnWrite { get; set; }
+    /// <summary>Runs inside every Jellyfin write, before ("op:before") and after ("op:after") it changes the list.</summary>
+    public Action<string>? OnAwait { get; set; }
 
     public static User MakeUser(string name, bool admin = false, bool collections = false)
     {
@@ -194,9 +203,26 @@ internal sealed class FakeListHost : IListHost
     public Guid? FindMovieByTmdb(int tmdbId, IReadOnlyList<User> users) =>
         MoviesByTmdb.TryGetValue(tmdbId, out var id) && users.All(u => CanAccessItem(id, u)) ? id : null;
 
-    public async Task AddToPlaylistAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, int? rawPosition, Guid userId)
+    public async Task AddToPlaylistAsync(ListWrite write, IReadOnlyList<Guid> itemIds, int? rawPosition)
     {
+        write.Spend(write.ListId, ListWriteKind.Insert);
+        var playlistId = write.ListId;
+        var userId = write.ActAs;
         Calls.Add($"add:{string.Join(',', itemIds.Select(Short))}@{rawPosition?.ToString() ?? "end"}");
+        OnWrite?.Invoke("add", playlistId, userId, itemIds);
+        OnAwait?.Invoke("add:before");
+        try
+        {
+            await AddCoreAsync(playlistId, itemIds, rawPosition, userId).ConfigureAwait(false);
+        }
+        finally
+        {
+            OnAwait?.Invoke("add:after");
+        }
+    }
+
+    private async Task AddCoreAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, int? rawPosition, Guid userId)
+    {
         if (BeforeAdd != null)
         {
             await BeforeAdd(playlistId, itemIds, rawPosition).ConfigureAwait(false);
@@ -235,9 +261,26 @@ internal sealed class FakeListHost : IListHost
         }
     }
 
-    public Task MoveInPlaylistAsync(Guid playlistId, Guid itemId, int newIndex, Guid userId)
+    public Task MoveInPlaylistAsync(ListWrite write, Guid itemId, int newIndex)
     {
+        write.Spend(write.ListId, ListWriteKind.Move);
+        var playlistId = write.ListId;
+        var userId = write.ActAs;
         Calls.Add($"move:{Short(itemId)}->{newIndex}");
+        OnWrite?.Invoke("move", playlistId, userId, new[] { itemId });
+        OnAwait?.Invoke("move:before");
+        try
+        {
+            return MoveCore(playlistId, itemId, newIndex, userId);
+        }
+        finally
+        {
+            OnAwait?.Invoke("move:after");
+        }
+    }
+
+    private Task MoveCore(Guid playlistId, Guid itemId, int newIndex, Guid userId)
+    {
         if (FailMoves > 0)
         {
             FailMoves--;
@@ -277,9 +320,25 @@ internal sealed class FakeListHost : IListHost
         return Task.CompletedTask;
     }
 
-    public Task AddToCollectionAsync(Guid collectionId, IReadOnlyList<Guid> itemIds)
+    public Task AddToCollectionAsync(ListWrite write, IReadOnlyList<Guid> itemIds)
     {
+        write.Spend(write.ListId, ListWriteKind.CollectionAdd);
+        var collectionId = write.ListId;
         Calls.Add($"collection:{string.Join(',', itemIds.Select(Short))}");
+        OnWrite?.Invoke("collection", collectionId, Guid.Empty, itemIds);
+        OnAwait?.Invoke("collection:before");
+        try
+        {
+            return CollectionCore(collectionId, itemIds);
+        }
+        finally
+        {
+            OnAwait?.Invoke("collection:after");
+        }
+    }
+
+    private Task CollectionCore(Guid collectionId, IReadOnlyList<Guid> itemIds)
+    {
         if (FailAdds != null && !FailAfterMutating)
         {
             throw FailAdds;
@@ -290,22 +349,88 @@ internal sealed class FakeListHost : IListHost
         return FailAdds != null ? Task.FromException(FailAdds) : Task.CompletedTask;
     }
 
-    public Task<Guid> CreatePlaylistAsync(string name, Guid ownerId, bool isPublic)
+    public Task<Guid> CreatePlaylistAsync(ListWrite write, string name, bool isPublic, Guid marker)
     {
-        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, name, ownerId, isPublic, Array.Empty<ListShare>(), CreatedAt: DateTime.UtcNow) };
-        Lists[list.Info.Id] = list;
+        write.Spend(Guid.Empty, ListWriteKind.Create);
+        var ownerId = write.ActAs;
         Calls.Add($"create-playlist:{name}");
-        AfterCreate?.Invoke(list.Info.Id);
-        return Task.FromResult(list.Info.Id);
+        OnWrite?.Invoke("create-playlist", Guid.Empty, ownerId, Array.Empty<Guid>());
+        OnAwait?.Invoke("create:before");
+        if (FailCreates != null)
+        {
+            throw FailCreates;
+        }
+
+        // Jellyfin keeps the shares with the playlist in the same write.
+        var id = MakePlaylist(name, ownerId, isPublic, new[] { new ListShare(marker, false) });
+        OnAwait?.Invoke("create:after");
+        AfterCreate?.Invoke(id);
+        return Task.FromResult(id);
     }
 
-    public Task<Guid> CreateCollectionAsync(string name)
+    public Task<Guid> CreateCollectionAsync(ListWrite write, string name, Guid marker)
     {
-        var list = AddCollection(name);
-        list.Info = list.Info with { CreatedAt = DateTime.UtcNow };
+        write.Spend(Guid.Empty, ListWriteKind.Create);
         Calls.Add($"create-collection:{name}");
-        AfterCreate?.Invoke(list.Info.Id);
-        return Task.FromResult(list.Info.Id);
+        OnWrite?.Invoke("create-collection", Guid.Empty, write.ActAs, Array.Empty<Guid>());
+        OnAwait?.Invoke("create:before");
+        if (FailCreates != null)
+        {
+            throw FailCreates;
+        }
+
+        var id = MakeCollection(name, new Dictionary<string, string> { [JellyfinListHost.CreateMarkerKey] = marker.ToString("N") });
+        OnAwait?.Invoke("create:after");
+        AfterCreate?.Invoke(id);
+        return Task.FromResult(id);
+    }
+
+    public Task ClearCreateMarkerAsync(ListWrite write, Guid marker)
+    {
+        write.Spend(write.ListId, ListWriteKind.ClearMarker);
+        Calls.Add("clear-marker");
+        if (Lists.TryGetValue(write.ListId, out var list) && list.Info.Kind == ListKinds.Playlist)
+        {
+            list.Info = list.Info with { Shares = list.Info.Shares.Where(s => s.UserId != marker).ToList() };
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public ListInfo? FindCreated(string kind, Guid marker, Guid ownerId) => kind == ListKinds.Playlist
+        ? Lists.Values.Select(l => l.Info).FirstOrDefault(i => i.Kind == ListKinds.Playlist && i.OwnerId == ownerId && i.Shares.Any(s => s.UserId == marker))
+        : Lists.Values.Where(l => l.Info.Kind == ListKinds.Collection && CollectionProviderIds.TryGetValue(l.Info.Id, out var ids)
+            && ids.TryGetValue(JellyfinListHost.CreateMarkerKey, out var value) && value == marker.ToString("N")).Select(l => l.Info).FirstOrDefault();
+
+    public bool CollectionNameTaken(string name) =>
+        Lists.Values.Any(l => l.Info.Kind == ListKinds.Collection && string.Equals(l.Info.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>A playlist someone made in Jellyfin itself (no JE marker).</summary>
+    public Task<Guid> CreateHandMadePlaylistAsync(string name, Guid ownerId) => Task.FromResult(MakePlaylist(name, ownerId, false, Array.Empty<ListShare>()));
+
+    /// <summary>A collection someone made in Jellyfin itself (no JE marker), with Jellyfin's one-folder-per-name rule.</summary>
+    public Task<Guid> CreateHandMadeCollectionAsync(string name) => Task.FromResult(MakeCollection(name, null));
+
+    /// <summary>The provider ids of each collection (Jellyfin keeps them with the item).</summary>
+    public Dictionary<Guid, Dictionary<string, string>> CollectionProviderIds { get; } = new();
+
+    private Guid MakePlaylist(string name, Guid ownerId, bool isPublic, IReadOnlyList<ListShare> shares)
+    {
+        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, name, ownerId, isPublic, shares, CreatedAt: DateTime.UtcNow) };
+        Lists[list.Info.Id] = list;
+        return list.Info.Id;
+    }
+
+    // Jellyfin 10.11/12 CollectionManager.CreateCollectionAsync: the folder is "<valid name> [boxset]" and the item id is
+    // derived from that path, so a second collection of a name replaces the first item (its members are gone).
+    private Guid MakeCollection(string name, Dictionary<string, string>? providerIds)
+    {
+        var existing = Lists.Values.FirstOrDefault(l => l.Info.Kind == ListKinds.Collection && string.Equals(l.Info.Name, name, StringComparison.Ordinal));
+        var id = existing?.Info.Id ?? Guid.NewGuid();
+        var list = new FakeList { Info = new ListInfo(id, ListKinds.Collection, name, Guid.Empty, false, Array.Empty<ListShare>(), CreatedAt: DateTime.UtcNow) };
+        Lists[id] = list;
+        CollectionProviderIds[id] = new Dictionary<string, string>(providerIds ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
+        return id;
     }
 
     public IReadOnlyList<ListInfo> GetAllPlaylists() => Lists.Values.Select(l => l.Info).Where(i => i.Kind == ListKinds.Playlist).ToList();

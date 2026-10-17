@@ -1031,9 +1031,10 @@ public class ListsServiceTests
         Assert.Single(resumed.Result.Added);
     }
 
-    // Review round 1 (4c1-B4): the process dies after Jellyfin created the list but before the operation recorded it. The
-    // retry finds the list Jellyfin made for the operation (same kind, name and owner, created since the operation
-    // began, recorded by no other operation) and continues with it; with several such lists it refuses to guess.
+    // Review round 1 (4c1-B4), redone in round 2: the process dies after Jellyfin created the list but before the
+    // operation recorded it. The retry finds the list by the marker the operation left in Jellyfin's own create write and
+    // continues with it; same-named lists (the caller's earlier one, another person's) are never candidates. (A
+    // collection name Jellyfin already has is refused before anything is created: ListsCreateIdentityTests.)
     [Theory]
     [InlineData(ListKinds.Playlist)]
     [InlineData(ListKinds.Collection)]
@@ -1043,8 +1044,8 @@ public class ListsServiceTests
         var user = h.NewUser("user", admin: true);
         var item = h.Host.AddItem();
         var entries = new[] { new ApplyEntry(0, item, null) };
-        // A same-named list made earlier by hand, and another person's playlist of that name made meanwhile: not candidates.
-        var earlier = kind == ListKinds.Playlist ? h.Host.AddPlaylist(user) : h.Host.AddCollection("Watch next");
+        // A same-named playlist made earlier by hand, and another person's playlist of that name made meanwhile: not candidates.
+        var earlier = h.Host.AddPlaylist(user);
         earlier.Info = earlier.Info with { Name = "Watch next", CreatedAt = DateTime.UtcNow.AddHours(-1) };
         var other = h.Host.AddPlaylist(h.NewUser("other"));
         other.Info = other.Info with { Name = "Watch next", CreatedAt = DateTime.UtcNow };
@@ -1064,7 +1065,7 @@ public class ListsServiceTests
     }
 
     [Fact]
-    public async Task ARetryWhoseFirstAttemptCreatedNothingCreatesAndOneThatCantTellWhichListIsItsRefuses()
+    public async Task ARetryWhoseFirstAttemptCreatedNothingCreatesAndOneNextToANamesakeTakesItsOwnList()
     {
         using var h = new ListsHarness();
         var user = h.NewUser("user");
@@ -1082,13 +1083,15 @@ public class ListsServiceTests
         Assert.NotNull(h.Host.GetList(Guid.Parse(created.ListId)));
         Assert.Equal(2, h.Host.Calls.Count(c => c == "create-playlist:Fresh"));
 
-        // Two lists could be the first attempt's: the retry doesn't guess and creates nothing.
+        // A namesake made by hand next to the first attempt's list: the retry continues with the marked one only (round 2;
+        // round 1 refused with create_uncertain because it went by name and time).
         h.Host.AfterCreate = _ => throw new IOException("the server stopped");
         await Assert.ThrowsAsync<IOException>(() => h.Service.CreateListAsync(user, ListKinds.Playlist, "Twice", false, entries, K("create-twice"), None));
         h.Host.AfterCreate = null;
+        var first = Assert.Single(h.Host.Lists.Values, l => l.Info.Name == "Twice").Info.Id;
         var twin = h.Host.AddPlaylist(user);
         twin.Info = twin.Info with { Name = "Twice", CreatedAt = DateTime.UtcNow };
-        Error(await h.Service.CreateListAsync(user, ListKinds.Playlist, "Twice", false, entries, K("create-twice"), None), 409, "create_uncertain");
+        Assert.Equal(first.ToString("N"), Ok<CreateListResultDto>(await h.Service.CreateListAsync(user, ListKinds.Playlist, "Twice", false, entries, K("create-twice"), None)).ListId);
         Assert.Single(h.Host.Calls, c => c == "create-playlist:Twice");
     }
 

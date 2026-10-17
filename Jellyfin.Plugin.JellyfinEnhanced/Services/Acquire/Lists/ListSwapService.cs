@@ -119,6 +119,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly ConcurrentDictionary<string, DateTime> _appliedMetadataAt = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, byte> _ownerlessLogged = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _signal = new(0, int.MaxValue);
+        private readonly ListGate? _gate;
         private readonly object _workerGate = new();
         private CancellationTokenSource? _stopping;
         private Task? _worker;
@@ -155,6 +156,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             _events = events;
             _preferences = preferences;
             _access = access;
+            _gate = access?.Gate;
         }
 
         private bool MetadataAvailable => _metadata.Available;
@@ -193,17 +195,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return _access.Evaluate(list, consenter).Permissions.CanEdit;
         }
 
-        // Whether the pass may still insert: consent judged again on the list as Jellyfin has it now (a share removed or
-        // made read-only during an earlier insert of the same pass stops the rest).
-        private bool StillInserting(PassContext context)
+        // Whether the pass may still write these items: the gate judges the list's consent on the list as Jellyfin has it
+        // now, the owner the pass works for (still the owner, still there) and their access to the items, right before
+        // the write (a share removed or made read-only during an earlier insert of the same pass stops the rest).
+        private bool StillInserting(PassContext context, ListWriteKind kind, IReadOnlyCollection<Guid> items)
         {
-            if (context.Inserts && (_host.GetList(context.List.Id) is not { } current || !InsertsAllowed(current, context.Doc)))
+            if (context.Inserts && (_gate == null || !_gate.SwapAllowed(context.List.Id, context.Doc, context.Owner, kind, items, InsertsAllowed, context.OnBehalfOf)))
             {
                 context.Inserts = false;
             }
 
             return context.Inserts;
         }
+
+        // The gate's grant for one swap-in write, asked right before it (throws when it isn't allowed any more).
+        private ListWrite SwapWrite(PassContext context, ListWriteKind kind, IReadOnlyCollection<Guid> items) =>
+            _gate?.SwapWrite(context.List.Id, context.Doc, context.Owner, kind, items, InsertsAllowed, context.OnBehalfOf)
+                ?? throw new ListAccessLostException(null, "No list access gate.");
 
         /// <summary>Test seam: decides the consent check for a consenting user id (the switch and the list's consent still apply).</summary>
         internal Func<Guid, bool>? InsertsAllowedForTest { get; set; }
@@ -541,6 +549,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// doesn't know as aired a <see cref="MetadataMode.Force"/> pass (unless this was one).
         /// </param>
         /// <param name="cancellationToken">Cancellation.</param>
+        /// <param name="onBehalfOf">The person whose request started this swap-in (a link): they must also still be able to edit the list at every write.</param>
         /// <returns>The outcome.</returns>
         public async Task<SwapOutcome> SwapLockedAsync(
             ListInfo list,
@@ -550,12 +559,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             IReadOnlyDictionary<string, PlaceholderMetadata>? metadata,
             IReadOnlySet<string>? freshMetadata,
             MetadataMode passMode,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ListAccess? onBehalfOf = null)
         {
             // Consent is judged on the list as Jellyfin has it now (the caller's copy may predate a removed share), and
-            // judged again before every insert (each one waits for Jellyfin).
+            // judged again by the gate before every write (each one waits for Jellyfin).
             var current = _host.GetList(list.Id);
-            var context = new PassContext(current ?? list, owner, doc, UtcNow()) { Inserts = current != null && InsertsAllowed(current, doc) };
+            var context = new PassContext(current ?? list, owner, doc, UtcNow()) { Inserts = current != null && InsertsAllowed(current, doc), OnBehalfOf = onBehalfOf };
             var fresh = new HashSet<string>(freshMetadata ?? (IEnumerable<string>)Array.Empty<string>(), StringComparer.Ordinal);
             foreach (var pair in metadata ?? new Dictionary<string, PlaceholderMetadata>())
             {
@@ -609,7 +619,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     continue;
                 }
 
-                if (!StillInserting(context))
+                if (!StillInserting(context, ListWriteKind.Insert, Array.Empty<Guid>()))
                 {
                     break;
                 }
@@ -708,6 +718,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var index = PlaceholderIndex(context.Doc.Order, placeholderId);
+                if (!StillInserting(context, ListWriteKind.Insert, new[] { itemId }))
+                {
+                    return true;
+                }
+
                 var landed = await InsertRunAsync(context, placeholderId, new[] { itemId }, index).ConfigureAwait(false);
                 if (landed == null)
                 {
@@ -750,6 +765,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 placeholder = context.Doc.Items.First(p => p.Id == placeholderId);
                 var (index, run) = PlanRun(context.Doc.Order, placeholder, arriving);
+                // Each insertion run is its own Jellyfin write: the gate judges consent, owner and access before each one.
+                if (!StillInserting(context, ListWriteKind.Insert, run.Select(e => e.ItemId).ToList()))
+                {
+                    return true;
+                }
+
                 var landed = await InsertRunAsync(context, placeholderId, run.Select(e => e.ItemId).ToList(), index).ConfigureAwait(false);
                 if (landed == null)
                 {
@@ -879,7 +900,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             List<string>? placed = null;
             try
             {
-                placed = await ListPlaylistPlacement.PlaceAsync(_host, _logger, listId, context.ListIdN, context.Owner!, items, anchor, desired, inserted).ConfigureAwait(false);
+                placed = await ListPlaylistPlacement.PlaceAsync(_host, _logger, listId, context.ListIdN, context.Owner!, items, anchor, desired, inserted, (kind, written) => SwapWrite(context, kind, written)).ConfigureAwait(false);
+            }
+            catch (ListAccessLostException lost)
+            {
+                // The consent, the owner or their access changed during the run: nothing more goes in on this pass.
+                _logger.Info($"[Lists] Stopped swapping into list {context.ListIdN}: {lost.Message}");
+                context.Inserts = false;
             }
             catch (Exception ex)
             {
@@ -925,7 +952,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 try
                 {
-                    actual = await ListPlaylistPlacement.MoveAfterAnchorAsync(_host, _logger, context.List.Id, context.Owner, anchor, inserted).ConfigureAwait(false);
+                    actual = await ListPlaylistPlacement.MoveAfterAnchorAsync(_host, _logger, context.List.Id, context.Owner, anchor, inserted, (kind, written) => SwapWrite(context, kind, written)).ConfigureAwait(false);
+                }
+                catch (ListAccessLostException lost)
+                {
+                    _logger.Info($"[Lists] Stopped placing new entries of list {context.ListIdN}: {lost.Message}");
+                    context.Inserts = false;
+                    actual = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
                 }
                 catch (Exception ex)
                 {
@@ -979,6 +1012,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 .ToList();
             var added = new HashSet<Guid>();
             var rejected = new HashSet<Guid>();
+            if (toAdd.Count > 0 && !StillInserting(context, ListWriteKind.CollectionAdd, toAdd))
+            {
+                return true;
+            }
+
             if (toAdd.Count > 0)
             {
                 // F9: persisted before Jellyfin is mutated (it writes the members before its event subscribers run), so a
@@ -1027,7 +1065,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     try
                     {
-                        await _host.AddToCollectionAsync(context.List.Id, toAdd).ConfigureAwait(false);
+                        await _host.AddToCollectionAsync(_gate!.SwapWrite(context.List.Id, context.Doc, context.Owner, ListWriteKind.CollectionAdd, toAdd, InsertsAllowed, context.OnBehalfOf), toAdd).ConfigureAwait(false);
+                    }
+                    catch (ListAccessLostException lost)
+                    {
+                        _logger.Info($"[Lists] Stopped adding to collection {context.ListIdN}: {lost.Message}");
+                        context.Inserts = false;
+                        failed = true;
                     }
                     catch (Exception ex)
                     {
@@ -1857,6 +1901,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             // Whether this pass may put new items into the list (InsertsAllowed); recovery without it moves nothing.
             public bool Inserts { get; set; }
+
+            // The person whose request started the pass (a link), who must also still be able to edit the list.
+            public ListAccess? OnBehalfOf { get; init; }
         }
 
         // A library item matched to a placeholder, and when that was last confirmed (event, or a failed swap attempt).

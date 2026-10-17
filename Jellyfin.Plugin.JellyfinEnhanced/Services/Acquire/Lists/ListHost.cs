@@ -12,6 +12,7 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Playlists;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Playlists;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
@@ -128,39 +129,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The item id or null.</returns>
         Guid? FindMovieByTmdb(int tmdbId, IReadOnlyList<User> users);
 
-        /// <summary>Adds items to a playlist (jf12: at a raw position; jf10: appended, position ignored).</summary>
-        /// <param name="playlistId">Playlist.</param>
+        /// <summary>Adds items to a playlist (jf12: at a raw position; jf10: appended, position ignored), as the grant's user (the owner).</summary>
+        /// <param name="write">The gate's grant for this insert (<see cref="ListWriteKind.Insert"/>).</param>
         /// <param name="itemIds">Items in order.</param>
         /// <param name="rawPosition">Raw LinkedChildren position (null = append).</param>
-        /// <param name="userId">User Jellyfin expands/filters with (the owner).</param>
         /// <returns>A task.</returns>
-        Task AddToPlaylistAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, int? rawPosition, Guid userId);
+        Task AddToPlaylistAsync(ListWrite write, IReadOnlyList<Guid> itemIds, int? rawPosition);
 
-        /// <summary>Moves the FIRST copy of an item to a visible-row index (Jellyfin <c>MoveItemAsync</c>).</summary>
-        /// <param name="playlistId">Playlist.</param>
+        /// <summary>Moves the FIRST copy of an item to a visible-row index (Jellyfin <c>MoveItemAsync</c>), as the grant's user.</summary>
+        /// <param name="write">The gate's grant for this move (<see cref="ListWriteKind.Move"/> or <see cref="ListWriteKind.Place"/>).</param>
         /// <param name="itemId">Item.</param>
-        /// <param name="newIndex">Index among rows visible to <paramref name="userId"/>.</param>
-        /// <param name="userId">User the move runs as.</param>
+        /// <param name="newIndex">Index among rows visible to the grant's user.</param>
         /// <returns>A task.</returns>
-        Task MoveInPlaylistAsync(Guid playlistId, Guid itemId, int newIndex, Guid userId);
+        Task MoveInPlaylistAsync(ListWrite write, Guid itemId, int newIndex);
 
         /// <summary>Adds items to a collection (already de-duplicated by the caller).</summary>
-        /// <param name="collectionId">Collection.</param>
+        /// <param name="write">The gate's grant for this add (<see cref="ListWriteKind.CollectionAdd"/>).</param>
         /// <param name="itemIds">Items.</param>
         /// <returns>A task.</returns>
-        Task AddToCollectionAsync(Guid collectionId, IReadOnlyList<Guid> itemIds);
+        Task AddToCollectionAsync(ListWrite write, IReadOnlyList<Guid> itemIds);
 
-        /// <summary>Creates an empty video playlist.</summary>
+        /// <summary>
+        /// Creates an empty video playlist owned by the grant's user, carrying <paramref name="marker"/> in the same write
+        /// (a share for that id, which no person has), so a retry can tell the list its operation made.
+        /// </summary>
+        /// <param name="write">The gate's grant for this create.</param>
         /// <param name="name">Name.</param>
-        /// <param name="ownerId">Owner.</param>
         /// <param name="isPublic">Open access.</param>
+        /// <param name="marker">The create operation's marker.</param>
         /// <returns>The new id.</returns>
-        Task<Guid> CreatePlaylistAsync(string name, Guid ownerId, bool isPublic);
+        Task<Guid> CreatePlaylistAsync(ListWrite write, string name, bool isPublic, Guid marker);
 
-        /// <summary>Creates an empty collection.</summary>
+        /// <summary>
+        /// Creates an empty collection carrying <paramref name="marker"/> in the same write (a provider id), so a retry can
+        /// tell the list its operation made.
+        /// </summary>
+        /// <param name="write">The gate's grant for this create.</param>
         /// <param name="name">Name.</param>
+        /// <param name="marker">The create operation's marker.</param>
         /// <returns>The new id.</returns>
-        Task<Guid> CreateCollectionAsync(string name);
+        Task<Guid> CreateCollectionAsync(ListWrite write, string name, Guid marker);
+
+        /// <summary>Takes a playlist's create marker (its marker share) off once the operation recorded the list.</summary>
+        /// <param name="write">The gate's grant (<see cref="ListWriteKind.ClearMarker"/>).</param>
+        /// <param name="marker">The marker.</param>
+        /// <returns>A task.</returns>
+        Task ClearCreateMarkerAsync(ListWrite write, Guid marker);
+
+        /// <summary>The list a create with this marker made: the owner's playlist, or a collection; null when there is none.</summary>
+        /// <param name="kind">List kind.</param>
+        /// <param name="marker">The create operation's marker.</param>
+        /// <param name="ownerId">The person who created it (playlists must be theirs).</param>
+        /// <returns>The list, or null.</returns>
+        ListInfo? FindCreated(string kind, Guid marker, Guid ownerId);
+
+        /// <summary>
+        /// Whether creating a collection of this name would land on an existing collection: Jellyfin keeps one folder per
+        /// collection name and derives the item id from it, so its create would replace that collection.
+        /// </summary>
+        /// <param name="name">Name.</param>
+        /// <returns>Whether the name is taken.</returns>
+        bool CollectionNameTaken(string name);
 
         /// <summary>Every playlist on the server (unfiltered; callers apply access rules).</summary>
         /// <returns>Playlists.</returns>
@@ -216,19 +245,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <summary>The production <see cref="IListHost"/> over Jellyfin's library, playlist and collection managers.</summary>
     public sealed class JellyfinListHost : IListHost
     {
+        /// <summary>The provider id key a collection JE creates carries its create operation's marker under.</summary>
+        public const string CreateMarkerKey = "JellyfinEnhancedCreate";
+
         private readonly ILibraryManager _libraryManager;
         private readonly IPlaylistManager _playlistManager;
         private readonly ICollectionManager _collectionManager;
+        private readonly IFileSystem _fileSystem;
 
         /// <summary>Creates the host.</summary>
         /// <param name="libraryManager">Library manager.</param>
         /// <param name="playlistManager">Playlist manager.</param>
         /// <param name="collectionManager">Collection manager.</param>
-        public JellyfinListHost(ILibraryManager libraryManager, IPlaylistManager playlistManager, ICollectionManager collectionManager)
+        /// <param name="fileSystem">File system (Jellyfin's file-name rules for collection folders).</param>
+        public JellyfinListHost(ILibraryManager libraryManager, IPlaylistManager playlistManager, ICollectionManager collectionManager, IFileSystem fileSystem)
         {
             _libraryManager = libraryManager;
             _playlistManager = playlistManager;
             _collectionManager = collectionManager;
+            _fileSystem = fileSystem;
         }
 
         /// <inheritdoc />
@@ -325,50 +360,107 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         }
 
         /// <inheritdoc />
-        public Task AddToPlaylistAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, int? rawPosition, Guid userId)
+        public Task AddToPlaylistAsync(ListWrite write, IReadOnlyList<Guid> itemIds, int? rawPosition)
         {
+            write.Spend(write.ListId, ListWriteKind.Insert);
 #if JF12
-            return _playlistManager.AddItemToPlaylistAsync(playlistId, itemIds.ToArray(), rawPosition, userId);
+            return _playlistManager.AddItemToPlaylistAsync(write.ListId, itemIds.ToArray(), rawPosition, write.ActAs);
 #else
-            return _playlistManager.AddItemToPlaylistAsync(playlistId, itemIds.ToArray(), userId);
+            return _playlistManager.AddItemToPlaylistAsync(write.ListId, itemIds.ToArray(), write.ActAs);
 #endif
         }
 
         /// <inheritdoc />
-        public Task MoveInPlaylistAsync(Guid playlistId, Guid itemId, int newIndex, Guid userId) =>
-            _playlistManager.MoveItemAsync(
-                playlistId.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
+        public Task MoveInPlaylistAsync(ListWrite write, Guid itemId, int newIndex)
+        {
+            write.Spend(write.ListId, ListWriteKind.Move);
+            return _playlistManager.MoveItemAsync(
+                write.ListId.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
                 itemId.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
                 newIndex,
-                userId);
+                write.ActAs);
+        }
 
         /// <inheritdoc />
-        public Task AddToCollectionAsync(Guid collectionId, IReadOnlyList<Guid> itemIds) =>
-            _collectionManager.AddToCollectionAsync(collectionId, itemIds.Distinct().ToArray());
-
-        /// <inheritdoc />
-        public async Task<Guid> CreatePlaylistAsync(string name, Guid ownerId, bool isPublic)
+        public Task AddToCollectionAsync(ListWrite write, IReadOnlyList<Guid> itemIds)
         {
+            write.Spend(write.ListId, ListWriteKind.CollectionAdd);
+            return _collectionManager.AddToCollectionAsync(write.ListId, itemIds.Distinct().ToArray());
+        }
+
+        /// <inheritdoc />
+        public async Task<Guid> CreatePlaylistAsync(ListWrite write, string name, bool isPublic, Guid marker)
+        {
+            write.Spend(Guid.Empty, ListWriteKind.Create);
             var result = await _playlistManager.CreatePlaylist(new PlaylistCreationRequest
             {
                 Name = name,
-                UserId = ownerId,
+                UserId = write.ActAs,
                 // An empty playlist can't infer its media type and would default to Audio.
                 MediaType = MediaType.Video,
                 Public = isPublic,
+                // Saved with the playlist itself (one write): no person has this id, so it grants nothing.
+                Users = new[] { new PlaylistUserPermissions(marker, false) },
             }).ConfigureAwait(false);
             return Guid.Parse(result.Id);
         }
 
         /// <inheritdoc />
-        public async Task<Guid> CreateCollectionAsync(string name)
+        public async Task<Guid> CreateCollectionAsync(ListWrite write, string name, Guid marker)
         {
-            var boxSet = await _collectionManager.CreateCollectionAsync(new CollectionCreationOptions
+            write.Spend(Guid.Empty, ListWriteKind.Create);
+            var options = new CollectionCreationOptions
             {
                 Name = name,
                 IsLocked = false,
-            }).ConfigureAwait(false);
+            };
+            // Saved with the collection itself (one write).
+            options.ProviderIds[CreateMarkerKey] = marker.ToString("N", System.Globalization.CultureInfo.InvariantCulture);
+            var boxSet = await _collectionManager.CreateCollectionAsync(options).ConfigureAwait(false);
             return boxSet.Id;
+        }
+
+        /// <inheritdoc />
+        public async Task ClearCreateMarkerAsync(ListWrite write, Guid marker)
+        {
+            write.Spend(write.ListId, ListWriteKind.ClearMarker);
+            if (_libraryManager.GetItemById(write.ListId) is not Playlist playlist || playlist.Shares == null || !playlist.Shares.Any(s => s.UserId == marker))
+            {
+                return; // collections keep theirs (a provider id nobody reads); a playlist without one has nothing to clear
+            }
+
+            await _playlistManager.UpdatePlaylist(new PlaylistUpdateRequest
+            {
+                Id = playlist.Id,
+                UserId = playlist.OwnerUserId,
+                Users = playlist.Shares.Where(s => s.UserId != marker).ToArray(),
+            }).ConfigureAwait(false);
+        }
+
+        /// <inheritdoc />
+        public ListInfo? FindCreated(string kind, Guid marker, Guid ownerId)
+        {
+            if (kind == ListKinds.Playlist)
+            {
+                return GetAllPlaylists().FirstOrDefault(l => l.OwnerId == ownerId && l.Shares.Any(s => s.UserId == marker));
+            }
+
+            var value = marker.ToString("N", System.Globalization.CultureInfo.InvariantCulture);
+            return _libraryManager.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { BaseItemKind.BoxSet }, Recursive = true })
+                .Where(i => i.ProviderIds != null && i.ProviderIds.TryGetValue(CreateMarkerKey, out var id) && string.Equals(id, value, StringComparison.OrdinalIgnoreCase))
+                .Select(ToInfo)
+                .OfType<ListInfo>()
+                .FirstOrDefault();
+        }
+
+        /// <inheritdoc />
+        public bool CollectionNameTaken(string name)
+        {
+            // CollectionManager.CreateCollectionAsync: "<collections folder>/<valid file name> [boxset]". Compared without
+            // case, so a name that differs only in case is refused too (some file systems fold case).
+            var folder = _fileSystem.GetValidFilename(name) + " [boxset]";
+            return _libraryManager.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { BaseItemKind.BoxSet }, Recursive = true })
+                .Any(i => !string.IsNullOrEmpty(i.Path) && string.Equals(System.IO.Path.GetFileName(i.Path.TrimEnd('/', '\\')), folder, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <inheritdoc />

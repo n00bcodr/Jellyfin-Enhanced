@@ -80,7 +80,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
 
                 // Rights read again once the statuses are in (they can take a while): never a list the caller lost meanwhile.
-                var view = await _service.GetCurrentViewAsync(access!, cancellationToken).ConfigureAwait(false);
+                var view = await _service.ViewAsync(access!, cancellationToken).ConfigureAwait(false);
                 return view == null ? Refused(404, "not_found", "List not found.") : Revalidated(access!.User, view);
             });
 

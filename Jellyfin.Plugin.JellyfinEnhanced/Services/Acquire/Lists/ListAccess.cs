@@ -120,7 +120,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             _userManager = userManager;
             _parentalFilter = parentalFilter;
             _logger = logger;
+            Gate = new ListGate(host, userManager, this);
         }
+
+        /// <summary>The one list access gate (every list write to Jellyfin and every answer with list contents goes through it).</summary>
+        public ListGate Gate { get; }
 
         /// <summary>True for administrators.</summary>
         /// <param name="user">User.</param>
@@ -144,17 +148,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         }
 
         /// <summary>
-        /// The caller's access to the same list now: the person read again (a policy change counts) and the list as
-        /// Jellyfin has it now (shares removed, made private). Null when the person or the list is gone or they can no
-        /// longer see it. For work that waited (requests, lookups) since the access was checked.
+        /// The caller's access to the same list now (see <see cref="ListGate.Current"/>). Null when the person or the list
+        /// is gone or they can no longer see it.
         /// </summary>
         /// <param name="access">The access checked earlier.</param>
         /// <returns>The current access, or null.</returns>
-        public ListAccess? Current(ListAccess access)
+        public ListAccess? Current(ListAccess access) => Gate.Current(access);
+
+        /// <summary>
+        /// The parental limits a visibility was checked with, as text: equal stamps decide the same placeholders
+        /// (<see cref="PlaceholderVisibility.Matches"/>). "-" for a user nothing is hidden from.
+        /// </summary>
+        /// <param name="user">User.</param>
+        /// <returns>The stamp.</returns>
+        internal string ParentalStamp(User user)
         {
-            var user = _userManager.GetUserById(access.User.Id);
-            var current = user == null ? null : Resolve(access.List.Id, user);
-            return current is { Permissions.CanView: true } ? current : null;
+            if (!_parentalFilter.TryGetRestrictedPolicy(user.Id.ToString("N", System.Globalization.CultureInfo.InvariantCulture), out var policy))
+            {
+                return "-";
+            }
+
+            static string Tags(HashSet<string>? tags) => tags == null ? string.Empty : string.Join("\u001f", tags.OrderBy(t => t, StringComparer.OrdinalIgnoreCase));
+            return string.Join(
+                "|",
+                policy.MaxScore?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                policy.MaxSubScore?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                policy.BlockUnratedMovies ? "m" : string.Empty,
+                policy.BlockUnratedSeries ? "s" : string.Empty,
+                Tags(policy.BlockedTags),
+                Tags(policy.AllowedTags));
         }
 
         /// <summary>Evaluates the caller's permissions on an already resolved list.</summary>

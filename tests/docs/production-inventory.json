@@ -539,6 +539,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListGate.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListHost.cs",
       "category": "Services"
     },
@@ -10133,7 +10137,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 566,
+    "files": 567,
     "routes": 269,
     "configuration_properties": 605,
     "storage_references": 86,

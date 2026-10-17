@@ -292,6 +292,7 @@ internal sealed class FakeListStatusSource : IListStatusSource
     {
         var ids = parts.Select(p => p.Id).ToList();
         PartCalls.Add((user, ids));
+        During?.Invoke();
         if (Fail != null)
         {
             throw Fail;
@@ -309,6 +310,7 @@ internal sealed class FakeListStatusSource : IListStatusSource
     {
         var ids = seasons.Select(s => ListStatusKeys.SeasonId(s.Key, s.Season)).ToList();
         SeasonCalls.Add((user, ids));
+        During?.Invoke();
         if (Fail != null)
         {
             throw Fail;
@@ -320,4 +322,17 @@ internal sealed class FakeListStatusSource : IListStatusSource
             .ToDictionary(k => k, k => JsonDocument.Parse(ByKey[k]).RootElement.Clone(), StringComparer.Ordinal);
         return Task.FromResult(result);
     }
+}
+
+/// <summary>
+/// The older test spellings of a list view: the one view the service has is the gated <see cref="ListService.ViewAsync"/>
+/// (the raw projection is gone); a test that expects a view gets a failure when there is none.
+/// </summary>
+internal static class ListServiceViews
+{
+    public static async Task<ListViewDto> GetViewAsync(this ListService service, ListAccess access, CancellationToken cancellationToken = default) =>
+        await service.ViewAsync(access, cancellationToken).ConfigureAwait(false) ?? throw new Xunit.Sdk.XunitException("the caller got no view of the list");
+
+    public static Task<ListViewDto?> GetCurrentViewAsync(this ListService service, ListAccess access, CancellationToken cancellationToken = default) =>
+        service.ViewAsync(access, cancellationToken);
 }

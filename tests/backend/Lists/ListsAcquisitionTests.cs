@@ -348,6 +348,59 @@ public class ListsAcquisitionTests
         Assert.Equal(inputs.Count, r.Rows("request_inputs"));
     }
 
+    // Review round 2 (4c1-B1-r2): the confirmation stores each entry's normalised input, target and request id before
+    // anything is asked. Execution stops after the first ask; then the series entry's metadata grows (a second season is
+    // expected). The retry of the same confirmation resumes from what was stored: the movie is answered from its first
+    // ask, the series is asked with the scope that was confirmed, and nothing is asked twice.
+    [Fact]
+    public async Task AConfirmationRetriedAfterAnEntrysMetadataGrewResumesWithWhatWasConfirmed()
+    {
+        using var r = new Rig();
+        var member = r.Person("member");
+        var movie = Released(603);
+        var series = SeriesPh(1399, tvdb: 121361);
+        series.Expected = new List<PlaceholderEpisode> { new() { S = 1, E = 1, AirDate = Past }, new() { S = 1, E = 2, AirDate = Past } };
+        await r.Seed(movie, series);
+        using var stop = new CancellationTokenSource();
+        var asks = 0;
+        r.Policy.Before = (_, _) =>
+        {
+            // The process dies while the second ask is on its way (the first one is in).
+            if (++asks == 2)
+            {
+                stop.Cancel();
+                stop.Token.ThrowIfCancellationRequested();
+            }
+
+            return Task.CompletedTask;
+        };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => r.Acquisition.SubmitAsync(r.As(member), "confirm-grow", new[] { movie.Id, series.Id }, stop.Token));
+        r.Policy.Before = null;
+        Assert.Equal(1, r.Rows("wants"));
+        var firstWant = r.H.Database.Read(c =>
+        {
+            using var cmd = RequestLedger.Cmd(c, null, "SELECT id FROM wants");
+            return (string)cmd.ExecuteScalar()!;
+        });
+
+        // Seerr now knows a second season of the series.
+        using (await r.H.Store.LockAsync(r.ListIdN))
+        {
+            var doc = r.H.Store.LoadForUpdate(r.ListIdN, ListKinds.Playlist);
+            doc.Items.Single(p => p.Id == series.Id).Expected.Add(new PlaceholderEpisode { S = 2, E = 1, AirDate = Past });
+            r.H.Store.Save(doc);
+        }
+
+        var resumed = Ok<ListRequestSubmitDto>(await r.Acquisition.SubmitAsync(r.As(member), "confirm-grow", new[] { movie.Id, series.Id }, None));
+
+        Assert.True(resumed.Replayed);
+        Assert.Equal(firstWant, Result(resumed, movie).RequestId);
+        Assert.Equal(201, Result(resumed, series).HttpStatus);
+        Assert.Equal(2, r.Rows("wants"));
+        var scope = r.Ledger.ForTitle("tv:tvdb:121361").Single();
+        Assert.Equal(new[] { 1 }, scope.Input.Seasons);
+    }
+
     [Fact]
     public async Task AShareRevokedWhileAConfirmationAsksStopsTheAsksNotYetMade()
     {

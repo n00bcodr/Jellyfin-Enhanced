@@ -32,7 +32,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public const int MaxPreview = 300;
 
         private readonly ListStore _store;
-        private readonly ListAccessService _access;
+        private readonly ListGate _gate;
         private readonly RequestService _requests;
         private readonly RequestOperations _operations;
         private readonly ListLinks _links;
@@ -40,7 +40,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>Creates the service (DI).</summary>
         /// <param name="store">List store.</param>
-        /// <param name="access">List access (parental visibility of entries).</param>
+        /// <param name="access">List access (its gate: the caller's access and parental visibility of entries, read again before every ask and answer).</param>
         /// <param name="requests">The shared request service.</param>
         /// <param name="operations">Durable confirmation operations.</param>
         /// <param name="links">List request links.</param>
@@ -48,7 +48,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public ListAcquisition(ListStore store, ListAccessService access, RequestService requests, RequestOperations operations, ListLinks links, Logger logger)
         {
             _store = store;
-            _access = access;
+            _gate = access.Gate;
             _requests = requests;
             _operations = operations;
             _links = links;
@@ -66,13 +66,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The outcome (<see cref="ListRequestPreviewDto"/>).</returns>
         public async Task<ListOutcome> PreviewAsync(ListAccess access, IReadOnlyList<string>? placeholderIds, bool all, CancellationToken cancellationToken)
         {
-            var (error, entries) = await EntriesAsync(access, placeholderIds, all, MaxPreview, cancellationToken).ConfigureAwait(false);
+            var (error, entries, doc, visibility) = await EntriesAsync(access, placeholderIds, all, MaxPreview, cancellationToken).ConfigureAwait(false);
             if (error != null)
             {
                 return error;
             }
 
-            var dto = new ListRequestPreviewDto { MaxBatch = RequestOperations.MaxBatch };
+            var items = new List<(Placeholder Placeholder, ListRequestPreviewItemDto Item, bool Askable, int Cost)>();
             foreach (var (placeholder, input, skip) in entries!)
             {
                 var item = new ListRequestPreviewItemDto { PlaceholderId = placeholder.Id, Title = placeholder.Title };
@@ -80,12 +80,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     item.Outcome = "skip";
                     item.Reason = skip ?? "not_requestable";
-                    dto.Items.Add(item);
+                    items.Add((placeholder, item, false, 0));
                     continue;
                 }
 
                 var preview = await _requests.PreviewAsync(access.User.Id, new CreateRequest("list-preview:" + placeholder.Id, input), cancellationToken, Origin(access, placeholder, null)).ConfigureAwait(false);
                 var refused = preview.Outcome.Outcome != "accepted" && preview.Outcome.Outcome != "split" && preview.Outcome.HttpStatus >= 300;
+                var askable = false;
                 if (refused)
                 {
                     item.Outcome = "skip";
@@ -101,23 +102,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     item.Outcome = preview.Follower ? "follow" : preview.Status == "pending" ? "approval" : "request";
                     item.Reason = preview.Reason ?? preview.Outcome.Reason;
                     item.Cost = preview.Cost;
-                    dto.Askable++;
-                    dto.Cost += preview.Cost;
+                    askable = true;
                 }
 
-                dto.Items.Add(item);
+                items.Add((placeholder, item, askable, preview.Cost));
             }
 
-            // The previews took a while: a caller who can no longer see the list learns nothing of its entries.
-            if (_access.Current(access) == null)
+            // The previews took a while: the answer holds only what the caller may see when it is answered (the gate
+            // reads their access and limits again); a caller who can no longer see the list learns nothing of its entries.
+            var dto = await _gate.ProjectAsync(access, doc?.Items ?? new List<Placeholder>(), visibility, grant =>
             {
-                return ListOutcome.Error(404, "not_found", "List not found.");
-            }
-
-            return ListOutcome.Ok(dto);
+                var shown = items.Where(i => grant.Visibility.IsVisible(i.Placeholder)).ToList();
+                var answer = new ListRequestPreviewDto { MaxBatch = RequestOperations.MaxBatch, Askable = shown.Count(i => i.Askable), Cost = shown.Where(i => i.Askable).Sum(i => i.Cost) };
+                answer.Items.AddRange(shown.Select(i => i.Item));
+                return answer;
+            }, cancellationToken).ConfigureAwait(false);
+            return dto == null ? ListOutcome.Error(404, "not_found", "List not found.") : ListOutcome.Ok(dto);
         }
 
-        /// <summary>Asks for at most <see cref="RequestOperations.MaxBatch"/> entries as one confirmation.</summary>
+        /// <summary>
+        /// Asks for at most <see cref="RequestOperations.MaxBatch"/> entries as one confirmation. What is confirmed is the
+        /// list and its entries in order; each entry's normalised request input, its backend target and the request id it
+        /// asks with are stored with the confirmation before anything is asked, and a retry (or a restart) resumes from
+        /// them, so it asks for what was confirmed even after the entries' metadata changed, and nothing twice. Before
+        /// each ask the gate reads the caller's access and limits again: an entry they can no longer see is not asked for.
+        /// </summary>
         /// <param name="access">Authorised access (CanView).</param>
         /// <param name="clientId">The caller's confirmation id.</param>
         /// <param name="placeholderIds">Entries, in order.</param>
@@ -130,66 +139,76 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return ListOutcome.Error(400, "batch_too_large", $"Ask for 1-{RequestOperations.MaxBatch} entries at a time.");
             }
 
-            var (error, entries) = await EntriesAsync(access, placeholderIds, false, RequestOperations.MaxBatch, cancellationToken).ConfigureAwait(false);
-            if (error != null)
+            var fingerprint = MutationInput.Hash("list-confirmation|" + access.ListIdN + "|" + string.Join(";", placeholderIds))[..64];
+            var operation = _operations.Find(access.User.Id, RequestOperations.RequestBatch, clientId);
+            var replayed = operation != null;
+            PlaceholderVisibility? visibility = null;
+            if (operation != null)
             {
-                return error;
-            }
-
-            // The server's own normalized items are the confirmation's fingerprint (a retry asking for something else is refused).
-            var fingerprint = MutationInput.Hash(access.ListIdN + "|" + string.Join(";", entries!.Select(e => e.Placeholder.Id + "=" + (e.Input?.Canonical ?? "-"))))[..64];
-            // Each entry's backend target is recorded with the confirmation, before anything is asked: a retry after the
-            // backend, instance or connection changed derives the same request ids from it (the ledger answers them) and
-            // never asks twice. Where the ask is sent is still decided by the policy at sending time.
-            var targets = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var (placeholder, input, skip) in entries!)
-            {
-                if (skip == null && input != null)
+                if (operation.Fingerprint != fingerprint || operation.Subject != "list:" + access.ListIdN || ReadChildren(operation.Payload) == null)
                 {
-                    targets[placeholder.Id] = RequestLedger.TargetKey(_requests.Identity(access.User.Id, input.Scope == "movie"));
+                    return ListOutcome.Error(409, "idempotency_conflict", "This confirmation was already used for other entries.");
                 }
             }
-
-            var start = _operations.Begin(access.User.Id, RequestOperations.RequestBatch, clientId, fingerprint, "list:" + access.ListIdN, entries!.Count, Now(), JsonSerializer.Serialize(new ChildTargets { Targets = targets }));
-            if (start.Operation == null)
+            else
             {
-                return start.Refusal switch
+                var (error, entries, _, checkedVisibility) = await EntriesAsync(access, placeholderIds, false, RequestOperations.MaxBatch, cancellationToken).ConfigureAwait(false);
+                if (error != null)
                 {
-                    "idempotency_conflict" => ListOutcome.Error(409, "idempotency_conflict", "This confirmation was already used for other entries."),
-                    "batch_too_large" => ListOutcome.Error(400, "batch_too_large", $"Ask for 1-{RequestOperations.MaxBatch} entries at a time."),
-                    "database_unavailable" => ListOutcome.Error(503, "database_unavailable", "Couldn't ask right now. Try again later."),
-                    _ => ListOutcome.Error(400, "invalid_input", "Invalid confirmation."),
-                };
+                    return error;
+                }
+
+                visibility = checkedVisibility;
+                // Each entry's normalised input, the backend target it is confirmed against and the request id it asks
+                // with, stored with the confirmation in the same write that records it (before anything is asked). Where
+                // the ask is sent is still decided by the policy at sending time.
+                var start = _operations.Begin(access.User.Id, RequestOperations.RequestBatch, clientId, fingerprint, "list:" + access.ListIdN, entries!.Count, Now(), id => JsonSerializer.Serialize(new Children
+                {
+                    Items = entries.Select(e => e.Skip != null || e.Input == null
+                        ? new Child { PlaceholderId = e.Placeholder.Id, Skip = e.Skip ?? "not_requestable" }
+                        : ChildOf(id, access.User.Id, e.Placeholder.Id, e.Input)).ToList(),
+                }));
+                if (start.Operation == null)
+                {
+                    return start.Refusal switch
+                    {
+                        "idempotency_conflict" => ListOutcome.Error(409, "idempotency_conflict", "This confirmation was already used for other entries."),
+                        "batch_too_large" => ListOutcome.Error(400, "batch_too_large", $"Ask for 1-{RequestOperations.MaxBatch} entries at a time."),
+                        "database_unavailable" => ListOutcome.Error(503, "database_unavailable", "Couldn't ask right now. Try again later."),
+                        _ => ListOutcome.Error(400, "invalid_input", "Invalid confirmation."),
+                    };
+                }
+
+                operation = start.Operation;
+                replayed = start.Replayed;
             }
 
-            var operation = start.Operation;
-            // The targets recorded when the confirmation was first made (null for one recorded without them).
-            var recorded = RecordedTargets(operation.Payload);
-            var rev = _store.Load(access.ListIdN)?.Rev ?? 0;
-            var result = new ListRequestSubmitDto { OperationId = operation.Id, Replayed = start.Replayed };
-            foreach (var (placeholder, input, skip) in entries!)
+            var children = ReadChildren(operation.Payload) ?? new List<Child>();
+            var result = new ListRequestSubmitDto { OperationId = operation.Id, Replayed = replayed };
+            foreach (var child in children)
             {
-                if (skip != null || input == null)
+                if (child.Skip != null || child.Input == null || child.RequestId == null)
                 {
-                    result.Results.Add(new ListRequestResultDto { PlaceholderId = placeholder.Id, Result = RequestOutcome.Refused(skip ?? "not_requestable", 422) });
+                    result.Results.Add(new ListRequestResultDto { PlaceholderId = child.PlaceholderId, Result = RequestOutcome.Refused(child.Skip ?? "not_requestable", 422) });
                     continue;
                 }
 
-                // Each ask waits for the one before it: a caller who can no longer see the list asks for nothing more.
-                if (_access.Current(access) == null)
+                // The gate, right before each ask: the caller can still see the list, and this entry (still there, still the
+                // same title) under their limits as they are now. Each ask waits for the one before it.
+                var doc = _store.Load(access.ListIdN);
+                var grant = await _gate.GrantAsync(access, doc?.Items ?? new List<Placeholder>(), visibility, cancellationToken).ConfigureAwait(false);
+                var placeholder = doc?.Items.FirstOrDefault(p => p.Id == child.PlaceholderId);
+                if (grant == null || placeholder == null || !grant.Visibility.IsVisible(placeholder) || ListRules.TitleKeyOf(placeholder)?.ToString() != child.Input.Key)
                 {
-                    result.Results.Add(new ListRequestResultDto { PlaceholderId = placeholder.Id, Result = RequestOutcome.Refused("not_found", 404) });
+                    result.Results.Add(new ListRequestResultDto { PlaceholderId = child.PlaceholderId, Result = RequestOutcome.Refused("not_found", 404) });
                     continue;
                 }
 
-                var target = recorded != null && recorded.TryGetValue(placeholder.Id, out var original)
-                    ? original
-                    : RequestLedger.TargetKey(_requests.Identity(access.User.Id, input.Scope == "movie"));
-                var child = RequestOperations.ChildRequestId(operation.Id, access.User.Id, input, target) ?? ("op:" + operation.Id + ":" + placeholder.Id);
+                visibility = grant.Visibility;
                 RequestOutcome outcome;
                 try
                 {
-                    outcome = await _requests.CreateAsync(access.User.Id, new CreateRequest(child, input), cancellationToken, Origin(access, placeholder, operation.Id, rev)).ConfigureAwait(false);
+                    outcome = await _requests.CreateAsync(grant.Access.User.Id, new CreateRequest(child.RequestId, child.Input), cancellationToken, Origin(grant.Access, placeholder, operation.Id, doc?.Rev ?? 0)).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -201,7 +220,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     try
                     {
-                        _links.Add(new ListLink(access.ListIdN, placeholder.Id, access.User.Id, wantId, operation.Id, input.Key, input.Canonical, input.Variant), Now());
+                        _links.Add(new ListLink(access.ListIdN, placeholder.Id, access.User.Id, wantId, operation.Id, child.Input.Key, child.Input.Canonical, child.Input.Variant), Now());
                     }
                     catch (Exception ex)
                     {
@@ -209,21 +228,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
                 }
 
-                result.Results.Add(new ListRequestResultDto { PlaceholderId = placeholder.Id, Result = outcome });
+                result.Results.Add(new ListRequestResultDto { PlaceholderId = child.PlaceholderId, Result = outcome });
             }
 
             _operations.Finish(operation.Id, "completed", Now());
             return ListOutcome.Ok(result);
         }
 
-        // The entries a preview/submit looks at, in list order, each with its request input or why it can't be asked for.
-        private async Task<(ListOutcome? Error, List<(Placeholder Placeholder, MutationInput? Input, string? Skip)>? Entries)> EntriesAsync(
+        // One askable entry of a new confirmation: its normalised input, the target it is confirmed against and the request
+        // id it asks with (from the operation, the person, the input and that target).
+        private Child ChildOf(string operationId, Guid user, string placeholderId, MutationInput input)
+        {
+            var target = RequestLedger.TargetKey(_requests.Identity(user, input.Scope == "movie"));
+            return new Child
+            {
+                PlaceholderId = placeholderId,
+                Input = input,
+                Target = target,
+                RequestId = RequestOperations.ChildRequestId(operationId, user, input, target) ?? ("op:" + operationId + ":" + placeholderId),
+            };
+        }
+
+        // The entries a preview/submit looks at, in list order, each with its request input or why it can't be asked for;
+        // with the document and what the caller sees of it (checked against their limits now).
+        private async Task<(ListOutcome? Error, List<(Placeholder Placeholder, MutationInput? Input, string? Skip)>? Entries, ListDoc? Doc, PlaceholderVisibility? Visibility)> EntriesAsync(
             ListAccess access, IReadOnlyList<string>? placeholderIds, bool all, int max, CancellationToken cancellationToken)
         {
             var doc = _store.Load(access.ListIdN);
             var items = doc?.Items ?? new List<Placeholder>();
-            var hidden = await _access.GetHiddenPlaceholderIdsAsync(items, access.User, cancellationToken).ConfigureAwait(false);
-            var visible = items.Where(p => !hidden.Contains(p.Id)).ToList();
+            var visibility = await _gate.VisibilityAsync(items, access.User, cancellationToken).ConfigureAwait(false);
+            var visible = items.Where(visibility.IsVisible).ToList();
             List<Placeholder> chosen;
             if (all && (placeholderIds == null || placeholderIds.Count == 0))
             {
@@ -233,7 +267,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 if (placeholderIds == null || placeholderIds.Count == 0 || placeholderIds.Count > max || placeholderIds.Distinct(StringComparer.Ordinal).Count() != placeholderIds.Count)
                 {
-                    return (ListOutcome.Error(400, "invalid_body", $"Send 1-{max} different entries."), null);
+                    return (ListOutcome.Error(400, "invalid_body", $"Send 1-{max} different entries."), null, null, null);
                 }
 
                 var byId = visible.ToDictionary(p => p.Id, StringComparer.Ordinal);
@@ -243,7 +277,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     // An entry the caller can't see (or that is gone) answers like one that doesn't exist.
                     if (!byId.TryGetValue(id, out var placeholder))
                     {
-                        return (ListOutcome.Error(404, "not_found", "Entry not found."), null);
+                        return (ListOutcome.Error(404, "not_found", "Entry not found."), null, null, null);
                     }
 
                     chosen.Add(placeholder);
@@ -271,7 +305,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 result.Add((placeholder, input, input == null ? "scope_unknown" : null));
             }
 
-            return (null, result);
+            return (null, result, doc, visibility);
         }
 
         private static IEnumerable<Placeholder> InListOrder(ListDoc? doc, List<Placeholder> visible)
@@ -287,8 +321,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return ordered;
         }
 
-        // The per-entry targets of a confirmation's payload, or null when it has none (or it can't be read).
-        private static Dictionary<string, string>? RecordedTargets(string? payload)
+        // The entries a confirmation stored, or null when it has none (an older confirmation, or one that can't be read).
+        private static List<Child>? ReadChildren(string? payload)
         {
             if (string.IsNullOrEmpty(payload))
             {
@@ -297,7 +331,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             try
             {
-                return JsonSerializer.Deserialize<ChildTargets>(payload)?.Targets is { } targets ? new Dictionary<string, string>(targets, StringComparer.Ordinal) : null;
+                var children = JsonSerializer.Deserialize<Children>(payload)?.Items;
+                return children == null || children.Count == 0 || children.Any(c => c == null || string.IsNullOrEmpty(c.PlaceholderId) || (c.Skip == null && (c.Input?.Normalize() == null || c.RequestId == null)))
+                    ? null
+                    : children;
             }
             catch (JsonException)
             {
@@ -308,11 +345,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private static RequestOrigin Origin(ListAccess access, Placeholder placeholder, string? operationId, int? rev = null) =>
             RequestOrigin.List(access.ListIdN, new RequestProvenance(EntryId: placeholder.Id, ListRevision: rev, OperationId: operationId));
 
-        // A request confirmation's payload: the backend target each askable entry was confirmed against.
-        private sealed class ChildTargets
+        // A request confirmation's payload: every confirmed entry in order, each with what it asks with or why it isn't asked.
+        private sealed class Children
         {
-            [JsonPropertyName("targets")]
-            public Dictionary<string, string> Targets { get; set; } = new(StringComparer.Ordinal);
+            [JsonPropertyName("v")]
+            public int Version { get; set; } = 2;
+
+            [JsonPropertyName("entries")]
+            public List<Child> Items { get; set; } = new();
+        }
+
+        // One confirmed entry.
+        private sealed class Child
+        {
+            [JsonPropertyName("ph")]
+            public string PlaceholderId { get; set; } = string.Empty;
+
+            [JsonPropertyName("skip")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public string? Skip { get; set; }
+
+            [JsonPropertyName("input")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public MutationInput? Input { get; set; }
+
+            [JsonPropertyName("target")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public string? Target { get; set; }
+
+            [JsonPropertyName("request")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public string? RequestId { get; set; }
         }
     }
 }

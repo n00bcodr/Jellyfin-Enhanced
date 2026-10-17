@@ -103,6 +103,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public void SetList(string id, string listId, DateTimeOffset now)
             => _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE list_operations SET list_id=$l,updated_at=$at WHERE id=$id", ("$l", listId), ("$at", RequestLedger.Ms(now)), ("$id", id)));
 
+        /// <summary>
+        /// Records the list a create operation made, atomically: only when the operation has no list yet (or this one) and
+        /// no other operation recorded this list. False when it can't be claimed.
+        /// </summary>
+        /// <param name="id">Operation.</param>
+        /// <param name="listId">The list ("N").</param>
+        /// <param name="now">Now.</param>
+        /// <returns>Whether the operation now records this list.</returns>
+        public bool ClaimList(string id, string listId, DateTimeOffset now)
+            => _db.Write((c, t) => RequestLedger.Exec(c, t,
+                "UPDATE list_operations SET list_id=$l,updated_at=$at WHERE id=$id AND (list_id IS NULL OR list_id=$l) AND NOT EXISTS (SELECT 1 FROM list_operations o WHERE o.list_id=$l AND o.id<>$id)",
+                ("$l", listId), ("$at", RequestLedger.Ms(now)), ("$id", id)) == 1);
+
         /// <summary>Whether any operation recorded this list as the one it created.</summary>
         /// <param name="listId">List ("N").</param>
         /// <returns>True when one did.</returns>

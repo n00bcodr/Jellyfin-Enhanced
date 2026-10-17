@@ -833,7 +833,12 @@ carries `hub: true` (the admin tabs).
 exist. Views are `private, no-cache` with an `ETag` bound to the person; every change is `private, no-store`. Changes
 take a `requestId` (`[A-Za-z0-9_-]{1,64}`): the same id with the same body is answered from its durable record (also
 after a restart) with the list as the caller may see it now; the same id with another body is `409 idempotency_conflict`.
-Edits take the list's `rev`; a stale one is `409 rev_conflict` with the fresh view.
+Edits take the list's `rev`; a stale one is `409 rev_conflict` with the fresh view. The caller's rights, limits and the
+items they and the playlist's owner can open are read again right before every write to Jellyfin and before every
+answer: a change that loses the list on the way is `404 not_found` (`403 forbidden` without edit rights) and writes
+nothing more; one that already wrote to Jellyfin answers its results without the list (`view` left out, the caller's
+new entries skipped as `accessLost`); a placeholder their limits hide meanwhile is skipped as `blocked`; a library item
+someone lost meanwhile is `409 access_changed` with the fresh view.
 
 | Method and path | Who | Body / answer |
 |---|---|---|
@@ -845,9 +850,9 @@ Edits take the list's `rev`; a stale one is `409 rev_conflict` with the fresh vi
 | `PUT /acquire/lists/{listId}/order` | can edit (playlists) | `{requestId, rev, order, moved?}` (the caller's projection after a drag; `moved`: the real token that moved) → view, or `409` (`duplicate_copy`, `move_unsupported`, `real_order_changed`, …) with the fresh view. |
 | `PUT /acquire/lists/{listId}/swap-in` | can edit (swap-in on) | `{requestId, rev, enabled}`: the caller becomes the person whose agreement swap-in needs. |
 | `POST /acquire/lists/{listId}/requests/preview` | can see the list (list requests on; several entries: Request all missing on) | `{placeholderIds?, all?}` → `{items: [{placeholderId, title, outcome: request \| follow \| approval \| already \| skip, reason, cost}], askable, cost, maxBatch: 20}`. Writes nothing. |
-| `POST /acquire/lists/{listId}/requests` | as above | `{clientId, placeholderIds}` (1–20) → `{operationId, replayed, results: [{placeholderId, result}], view}`; each `result` is the usual request outcome, and `view` is the list as the caller may see it now (left out when they can no longer see it). The same `clientId` with the same entries asks with the same request ids. |
+| `POST /acquire/lists/{listId}/requests` | as above | `{clientId, placeholderIds}` (1–20) → `{operationId, replayed, results: [{placeholderId, result}], view}`; each `result` is the usual request outcome, and `view` is the list as the caller may see it now (left out when they can no longer see it). The confirmation stores each entry's request (scope and edition), backend target and request id before anything is asked; the same `clientId` with the same entries resumes from them (also after the entries' metadata changed or the backend moved), asks for nothing twice, and before each ask checks again that the caller can see the list and that entry (else `not_found` for it). |
 | `GET /acquire/lists/editable` | authoring on | `{playlists: [{id, name, isOwn, nativeCanEdit, ownerName?}], collections, canManageCollections}`. |
-| `POST /acquire/lists/playlists`, `POST /acquire/lists/collections` | authoring on (collections: administrators and collection managers) | `{requestId, name, isPublic?, entries?}` → `{listId, listKind, name, result}`. A retry with the same `requestId` continues with the list the first attempt created, even when the server stopped right after Jellyfin made it; `409 create_uncertain` when more than one list could be that one (nothing is created). |
+| `POST /acquire/lists/playlists`, `POST /acquire/lists/collections` | authoring on (collections: administrators and collection managers) | `{requestId, name, isPublic?, entries?}` → `{listId, listKind, name, result}`. A retry with the same `requestId` continues with the list the first attempt created, even when the server stopped right after Jellyfin made it: Jellyfin keeps the attempt's marker with the list (a share for an id no person has, taken off again once recorded; a provider id on a collection), and a list of the same name, anyone's, is never taken for it. A collection name Jellyfin already has a collection for is `409 name_taken` (Jellyfin would replace that collection). |
 | `GET` / `POST /arr/admin/lists/import` | administrators (lists on) | The experimental-list importer: dry run / import. Report: `documents`, `collageMarkers`, `imported`, `unchanged`, `skipped`, `quarantined` with reasons. |
 
 Bodies are capped at 16 KiB, except `items`, `apply`, `order` and list creation (1 MiB).

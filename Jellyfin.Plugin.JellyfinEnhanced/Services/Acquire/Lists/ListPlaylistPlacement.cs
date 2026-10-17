@@ -22,11 +22,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="logger">JE logger.</param>
         /// <param name="listId">Playlist.</param>
         /// <param name="listIdN">Playlist id ("N", for logs).</param>
-        /// <param name="owner">Playlist owner (Jellyfin adds/moves run as the owner).</param>
+        /// <param name="owner">Playlist owner (whose rows the moves are computed against).</param>
         /// <param name="items">New items, in order.</param>
         /// <param name="anchor">Real token the run goes after (null = start).</param>
         /// <param name="desired">The desired canonical order with the run's tokens inserted.</param>
         /// <param name="inserted">The tokens the new items carry in <paramref name="desired"/>.</param>
+        /// <param name="write">
+        /// The gate, asked right before each Jellyfin write (the insert, then every move that places it) for that write's
+        /// grant; it throws when the write isn't allowed any more, which stops the placement there.
+        /// </param>
         /// <returns>The canonical order after the insert (desired, or Jellyfin's actual order reconciled).</returns>
         public static async Task<List<string>> PlaceAsync(
             IListHost host,
@@ -37,7 +41,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             IReadOnlyList<Guid> items,
             string? anchor,
             List<string> desired,
-            IReadOnlyList<string> inserted)
+            IReadOnlyList<string> inserted,
+            Func<ListWriteKind, IReadOnlyList<Guid>, ListWrite> write)
         {
             var ownerVisible = new Dictionary<Guid, bool>();
             bool VisibleToOwner(Guid itemId)
@@ -63,11 +68,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             if (host.SupportsPositionalInsert)
             {
                 var position = ListOrder.RawInsertPosition(host.GetRawEntries(listId), anchor);
-                await host.AddToPlaylistAsync(listId, items, position, owner.Id).ConfigureAwait(false);
+                await host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, position).ConfigureAwait(false);
             }
             else
             {
-                await host.AddToPlaylistAsync(listId, items, null, owner.Id).ConfigureAwait(false);
+                await host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, null).ConfigureAwait(false);
                 var raw = host.GetRawEntries(listId);
                 var current = ListOrder.BuildRealTokens(raw);
                 var previous = anchor;
@@ -85,7 +90,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var moves = ListOrder.FindMoves(raw, itemId, target, VisibleToOwner) ?? Array.Empty<int>();
                     foreach (var newIndex in moves)
                     {
-                        await host.MoveInPlaylistAsync(listId, itemId, newIndex, owner.Id).ConfigureAwait(false);
+                        await host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex).ConfigureAwait(false);
                     }
 
                     if (moves.Count > 0)
@@ -111,7 +116,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var moves = ListOrder.FindMoves(actualRaw, items[0], target, VisibleToOwner) ?? Array.Empty<int>();
                 foreach (var newIndex in moves)
                 {
-                    await host.MoveInPlaylistAsync(listId, items[0], newIndex, owner.Id).ConfigureAwait(false);
+                    await host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { items[0] }), items[0], newIndex).ConfigureAwait(false);
                 }
 
                 if (moves.Count > 0)
@@ -147,9 +152,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="host">Jellyfin seam.</param>
         /// <param name="logger">JE logger.</param>
         /// <param name="listId">Playlist.</param>
-        /// <param name="owner">Playlist owner (moves run as the owner).</param>
+        /// <param name="owner">Playlist owner (whose rows the moves are computed against).</param>
         /// <param name="anchor">Real token the entries go after (null = start); must still exist.</param>
         /// <param name="tokens">The entries' real tokens, in order.</param>
+        /// <param name="write">The gate, asked right before each move for its grant (throws when it isn't allowed).</param>
         /// <returns>Jellyfin's real tokens afterwards.</returns>
         public static async Task<List<string>> MoveAfterAnchorAsync(
             IListHost host,
@@ -157,7 +163,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             Guid listId,
             User owner,
             string? anchor,
-            IReadOnlyList<string> tokens)
+            IReadOnlyList<string> tokens,
+            Func<ListWriteKind, IReadOnlyList<Guid>, ListWrite> write)
         {
             var raw = host.GetRawEntries(listId);
             var current = ListOrder.BuildRealTokens(raw);
@@ -202,7 +209,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var moves = ListOrder.FindMoves(raw, itemId, target, VisibleToOwner) ?? Array.Empty<int>();
                 foreach (var newIndex in moves)
                 {
-                    await host.MoveInPlaylistAsync(listId, itemId, newIndex, owner.Id).ConfigureAwait(false);
+                    await host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex).ConfigureAwait(false);
                 }
 
                 if (moves.Count > 0)
