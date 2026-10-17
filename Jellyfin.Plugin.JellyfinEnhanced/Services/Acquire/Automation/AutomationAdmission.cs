@@ -178,6 +178,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="job">The job.</param>
         public static string Target(RequestJob job) => job.Authorization.Backend == "seerr" ? AutomationFlags.SeerrTarget : job.Authorization.InstanceId;
 
+        /// <summary>
+        /// True when a kill switch stops automatic work of <paramref name="recipe"/> to <paramref name="target"/>: the global
+        /// one, the recipe's, or the target's. Kills act only with the engine on (callers check it).
+        /// </summary>
+        /// <param name="config">Configuration.</param>
+        /// <param name="recipe">Recipe id (null: none).</param>
+        /// <param name="target">Instance id or <c>seerr</c>.</param>
+        public static bool Killed(PluginConfiguration config, string? recipe, string? target)
+            => AutomationFlags.KilledAll(config) || (recipe != null && AutomationModes.Killed(config, recipe)) || AutomationFlags.KilledTarget(config, target);
+
+        /// <summary>The kill-switch target a request with these facts would go to: its instance, or <c>seerr</c>.</summary>
+        /// <param name="facts">The requester's current facts.</param>
+        public static string Target(RequestPolicyFacts facts) => facts.Backend == "seerr" ? AutomationFlags.SeerrTarget : facts.InstanceId;
+
         /// <summary>True when the guard applies to the want at all (an automatic or phase-4-only origin).</summary>
         /// <param name="want">The want.</param>
         public static bool Applies(RequestWant? want) => want != null && (RequestOrigin.IsAutomatic(want.OriginKind) || RequestOrigin.IsPhase4Only(want.OriginKind, want.OriginSource));
@@ -203,7 +217,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
             var recipe = RecipeOf(want);
             var target = Target(job);
-            if (AutomationFlags.KilledAll(config) || (recipe != null && AutomationModes.Killed(config, recipe)) || AutomationFlags.KilledTarget(config, target))
+            if (Killed(config, recipe, target))
                 return new(AutomationHolds.Killed, "A kill switch is on: automatic requests wait until it is off.", AutomationHolds.WaitFor(AutomationHolds.Killed));
             var mode = recipe == null ? AutomationMode.Shadow : AutomationModes.Mode(config, recipe);
             if (mode is AutomationMode.Off or AutomationMode.Shadow)

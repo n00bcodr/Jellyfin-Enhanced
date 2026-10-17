@@ -276,6 +276,43 @@ public class IntegrationAutomationTests
         Assert.False(AutomationConsent.Allows(e.Consent, e.R.Member, AutomationRecipes.KeepUp));
     }
 
+    [Theory]
+    [InlineData("je", "r1")]
+    [InlineData("seerr", "seerr")]
+    public async Task AKilledTargetCreatesNoRequestReservationOrJobAndShadowStillRecords(string backend, string target)
+    {
+        using var e = new Engine();
+        e.C.ArrRequestBackend = backend;
+        e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Auto);
+        e.C.ArrAutomationKilledInstances = "other, " + target;
+        var rows = e.Rows();
+        var killed = await e.Auto(e.R.Admin, Movie(670));
+        Assert.Equal((AutoRequestOutcomeKind.DefinitiveNoop, AutomationHolds.Killed), (killed.Kind, killed.Reason));
+        Assert.Equal(rows, e.Rows());
+        Assert.Equal(("killed", AutomationHolds.Killed), e.Store.Decisions().Single() is var d ? (d.Outcome, d.Reason) : default);
+
+        // Ask mode records no waiting request against a killed target either.
+        e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Ask);
+        Assert.Equal(AutomationHolds.Killed, (await e.Auto(e.R.Member, Movie(671))).Reason);
+        Assert.Equal(rows, e.Rows());
+
+        // Turned on while the ask was being prepared: nothing is recorded.
+        e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Auto);
+        e.C.ArrAutomationKilledInstances = "other";
+        e.R.Policy.Before = (_, _) => { e.C.ArrAutomationKilledInstances = target; return Task.CompletedTask; };
+        Assert.Equal(AutomationHolds.Killed, (await e.Auto(e.R.Admin, Movie(672))).Reason);
+        Assert.Equal(rows, e.Rows());
+        e.R.Policy.Before = null;
+
+        // Shadow still records what it would have done; another target's kill doesn't stop it; people's own asks go on.
+        e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Shadow);
+        Assert.StartsWith("shadow_", (await e.Auto(e.R.Admin, Movie(673))).Reason);
+        Assert.Equal(201, (await e.R.Create(e.R.Admin, Movie(674))).HttpStatus);
+        e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Auto);
+        e.C.ArrAutomationKilledInstances = "other";
+        Assert.Equal(AutoRequestOutcomeKind.WantRecorded, (await e.Auto(e.R.Admin, Movie(675))).Kind);
+    }
+
     [Fact]
     public async Task WithTheEngineOffTheExistingRecipesBehaveExactlyAsBefore()
     {

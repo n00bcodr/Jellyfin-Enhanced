@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
@@ -68,6 +69,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var pending in _ledger.ForTitle(input.Key).Where(w => w.Status == "pending" && w.Input.Variant == input.Variant))
                     await _policy.PrepareAsync(pending.UserId, pending.Input, ct).ConfigureAwait(false);
             }
+            // Automatic work under the engine: a kill switch on now (checked after the reads above, against the target the
+            // request would go to) records nothing, so killed work never piles up to go out when the switch is released.
+            var config = _policy.Configuration;
+            if (origin?.Automatic == true && AutomationFlags.Engine(config) && AutomationSendGuard.Killed(config, origin.Recipe, AutomationSendGuard.Target(_policy.Evaluate(user, input))))
+                return RequestOutcome.Refused(AutomationHolds.Killed, 409, "blocked");
             var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin);
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(user), ArrTitleKey.RequestsState });
             if (outcome.Reason == "queued_outage") Signal?.Pulse();

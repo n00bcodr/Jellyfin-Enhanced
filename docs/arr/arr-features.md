@@ -1308,8 +1308,9 @@ either is off, the automatic requests above behave exactly as described there. W
   Turning one off also holds that recipe's requests of theirs that haven't been sent yet, until they turn it back on (a
   send whose answer was lost is still read back).
 - **Kill switches.** A global switch, one per recipe and one per Sonarr/Radarr instance (and one for the requests
-  Jellyfin Enhanced sends to Seerr). A killed recipe asks for nothing new; automatic requests already waiting stay
-  waiting and go out once the switch is off. The switches are checked again right before every add, monitoring change
+  Jellyfin Enhanced sends to Seerr). A killed recipe asks for nothing new, and nothing new is recorded for an
+  instance (or Seerr) whose switch is on, though *Shadow* still records what it would have done; automatic requests
+  already waiting stay waiting and go out once the switch is off. The switches are checked again right before every add, monitoring change
   and search, so turning one on stops what hasn't been sent yet. A send whose answer was lost is still read back.
 - **Budgets.** With Jellyfin Enhanced handling requests: at most 20 titles added (or newly monitored) per 24 hours for
   the whole household, and 30 searches per hour and 300 per 24 hours on each instance (an add that makes Sonarr/Radarr

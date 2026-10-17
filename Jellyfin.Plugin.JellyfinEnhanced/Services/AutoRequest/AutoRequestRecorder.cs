@@ -120,6 +120,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
             {
                 AutoRequestOutcomeKind.WantRecorded => status == "pending" ? "asked" : "recorded",
                 AutoRequestOutcomeKind.PreparationFailed => "deferred",
+                _ when outcome.Reason == AutomationHolds.Killed => "killed",
                 _ => outcome.HttpStatus < 300 ? "already_recorded" : "blocked",
             };
             _store.Record(new AutomationDecision(decisionKey, recipe, user, key, control.Effective.Value, label, outcome.Reason, backend,
