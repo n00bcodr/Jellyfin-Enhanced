@@ -67,8 +67,8 @@ public class ListsDatabaseTests
     public void AFreshDatabaseReachesSchemaFiveWithTheListTablesAndStepFourIsEmpty()
     {
         using var db = new Db();
-        Assert.Equal(5, AcquireDatabase.Migrations.Count);
-        Assert.Equal(5, db.Database.Version);
+        Assert.True(AcquireDatabase.Migrations.Count >= 5);
+        Assert.Equal(AcquireDatabase.Migrations.Count, db.Database.Version);
         Assert.True(string.IsNullOrWhiteSpace(AcquireDatabase.Migrations[3]));
         Assert.Contains("list_operations", AcquireDatabase.Migrations[4], StringComparison.Ordinal);
         Assert.Equal(ListTables, Tables(db.Database.FilePath));
@@ -85,7 +85,7 @@ public class ListsDatabaseTests
         using (var db = new AcquireDatabase(path))
         {
             Assert.True(db.Available, db.UnavailableReason);
-            Assert.Equal(5, db.Version);
+            Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
             // The new tables work after the upgrade.
             var start = new ListOperations(db).Begin(Guid.NewGuid(), "0123456789abcdef0123456789abcdef", "c1", "add", "f", T0);
             Assert.NotNull(start.Operation);
@@ -95,7 +95,7 @@ public class ListsDatabaseTests
         Assert.Single(Directory.GetFiles(core.Root, "old.db.pre-v3.*"));
         // Reopening is a no-op.
         using var again = new AcquireDatabase(path);
-        Assert.Equal(5, again.Version);
+        Assert.Equal(AcquireDatabase.Migrations.Count, again.Version);
         Assert.Single(Directory.GetFiles(core.Root, "old.db.pre-v3.*"));
     }
 
@@ -111,7 +111,7 @@ public class ListsDatabaseTests
 
         using var db = new AcquireDatabase(path);
         Assert.True(db.Available, db.UnavailableReason);
-        Assert.Equal(5, db.Version);
+        Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
         Assert.Equal(ListTables, Tables(path));
         Assert.Single(new ListLinks(db).ForList("l"));
     }

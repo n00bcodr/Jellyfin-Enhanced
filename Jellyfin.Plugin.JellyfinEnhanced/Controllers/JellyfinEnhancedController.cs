@@ -4046,6 +4046,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ArrListRequestAllEnabled = Services.Acquire.Lists.ListFlags.RequestAll(config),
                 ArrListSwapInEnabled = Services.Acquire.Lists.ListFlags.SwapIn(config),
                 ArrListStatusEnabled = Services.Acquire.Lists.ListFlags.Status(config),
+                // Phase 4e: effective acquisition badge switches (parents included; per-person preferences are in user settings).
+                ArrAcquisitionBadgesEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.Badges(config),
+                ArrNativeStampsEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.NativeStamps(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
