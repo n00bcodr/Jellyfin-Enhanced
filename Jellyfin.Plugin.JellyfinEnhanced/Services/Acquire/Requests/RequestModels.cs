@@ -211,7 +211,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// </remarks>
     public sealed record RequestWant(string Id, string AcquisitionId, Guid UserId, string ClientRequestId, string Fingerprint,
         MutationInput Input, string Status, string Reason, int Cost, string ParentalSignature, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, bool Follower = false, MutationInput? OwnedInput = null, string TargetKey = "", string OriginKind = "interactive",
-        string? OriginSource = null, string? OriginDetail = null, string? OperationId = null);
+        string? OriginSource = null, string? OriginDetail = null, string? OperationId = null, string? RuleDetail = null)
+    {
+        /// <summary>The household-rule verdict the want was created with (phase 4b), or null.</summary>
+        public HouseholdRuleVerdict? Rules => HouseholdRuleVerdict.Read(RuleDetail);
+    }
     /// <summary>
     /// Authorization facts captured at approval, never returned to a browser. <c>SeerrSeasons</c> (and <c>SeerrUser</c>
     /// when approval didn't know it) are bound right before a Seerr request is sent: the exact seasons and account it
@@ -248,6 +252,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         [JsonPropertyName("heldRequestId"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? HeldRequestId { get; init; }
         /// <summary>Outcome <c>split</c>: the season numbers that wait for an OK.</summary>
         [JsonPropertyName("heldSeasons"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int[]? HeldSeasons { get; init; }
+        /// <summary>
+        /// Household rules (phase 4b): the verdict behind a refusal (<c>household_rule</c>) or a wait for an OK
+        /// (<c>rule_review</c>): the conditions and their family-safe facts. Null when the rules said nothing.
+        /// </summary>
+        [JsonPropertyName("rules"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public HouseholdRuleVerdict? Rules { get; init; }
         /// <summary>HTTP status of this outcome.</summary>
         [JsonIgnore] public int HttpStatus { get; init; } = 201;
         /// <summary>Constructs a success result.</summary>
@@ -266,7 +275,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// </summary>
     public sealed record RequestCapabilities
     {
-        /// <summary>The caller's household role: watcher, kid, member, manager or admin.</summary>
+        /// <summary>The caller's household role: watcher, kid, member, trusted, manager or admin.</summary>
         [JsonPropertyName("role")] public string Role { get; init; } = "watcher";
         /// <summary>The caller may ask for titles at all (role and request backend): movies, series or both.</summary>
         [JsonPropertyName("canRequest")] public bool CanRequest { get; init; }

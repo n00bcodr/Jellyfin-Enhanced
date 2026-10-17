@@ -15,7 +15,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>Per-user server-owned overrides. Missing fields retain preset behavior.</summary>
     public sealed record RequestUserSettings
     {
-        /// <summary>Watcher, Kid, Member, or Manager. Administrator comes from Jellyfin.</summary>
+        /// <summary>Watcher, Kid, Member, Trusted (household rules on) or Manager. Administrator comes from Jellyfin.</summary>
         public string? Role { get; init; }
         /// <summary>Grant 4K on the listed instance ids only.</summary>
         public string[]? FourKInstances { get; init; }
@@ -28,13 +28,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// Current policy facts, evaluated again after every asynchronous prerequisite. <c>SeerrWholeSeries</c> (Seerr mode):
     /// Seerr takes a request for the whole series only (its partial-request setting is off). <c>SeerrUnlinked</c> (Seerr
     /// mode): Seerr answered and no Seerr account is linked to the person. <c>Size</c>: the typical sizes on the instance a
-    /// request like this goes to (its GB estimate), when its library is in memory.
+    /// request like this goes to (its GB estimate), when its library is in memory. <c>Rules</c> (phase 4b, Jellyfin Enhanced
+    /// handling with household rules on): what the household's fixed conditions say about this request for this person
+    /// (null: they don't apply). <c>Pool</c> (group quotas on): the shared pool the person's requests draw on now.
     /// </summary>
     public sealed record RequestPolicyFacts(Guid UserId, string Role, bool CanCreate, bool CanApprove, bool Can4k,
         bool Visible, string Revision, string Backend, string InstanceId, string ConnectionGeneration,
         int? Limit, int WindowDays, double GbLimit, string ParentalSignature,
         string? Refusal = null, string? SeerrSource = null, int? SeerrUser = null, long SeerrPermissions = 0, QuotaProjection? BackendQuota = null,
-        RequestDiskFacts? Disk = null, bool SeerrWholeSeries = false, bool SeerrUnlinked = false, RequestSizeHint? Size = null);
+        RequestDiskFacts? Disk = null, bool SeerrWholeSeries = false, bool SeerrUnlinked = false, RequestSizeHint? Size = null,
+        HouseholdRuleVerdict? Rules = null, GroupPoolBinding? Pool = null);
     /// <summary>
     /// The drive a request would land on is below the low-disk threshold (refusal <c>low_disk</c>): which instance,
     /// the folder measured (the folder named, the title's own folder, or the default root folder), and the drive's
@@ -127,11 +130,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly ArrClientFactory _clients;
         private readonly IRequestBackend _backend;
         private readonly Func<PluginConfiguration> _config;
-        /// <summary>Creates policy over Jellyfin and the memory read models.</summary>
+        private readonly IHouseholdRuleFacts? _ruleFacts;
+        /// <summary>Creates policy over Jellyfin and the memory read models; <paramref name="ruleFacts"/> reads the title facts household rules need.</summary>
         public RequestPolicy(IArrJellyfinView view, ArrStateStore store, ArrInstanceLibraries libraries, TitleAliases aliases,
-            SeerrParentalFilter parental, ArrClientFactory clients, IRequestBackend backend)
+            SeerrParentalFilter parental, ArrClientFactory clients, IRequestBackend backend, IHouseholdRuleFacts? ruleFacts = null)
         {
-            _view = view; _store = store; _libraries = libraries; _aliases = aliases; _parental = parental; _clients = clients; _backend = backend;
+            _view = view; _store = store; _libraries = libraries; _aliases = aliases; _parental = parental; _clients = clients; _backend = backend; _ruleFacts = ruleFacts;
             _config = () => JellyfinEnhanced.Instance?.Configuration ?? new PluginConfiguration();
         }
         /// <inheritdoc />
@@ -144,6 +148,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             await PrepareVisibilityAsync(userId, input, ct).ConfigureAwait(false);
             await PrepareDiskAsync(input, ct).ConfigureAwait(false);
             await _backend.PrepareAsync(userId, input, ct).ConfigureAwait(false);
+            await PrepareRulesAsync(userId, input, ct).ConfigureAwait(false);
+        }
+        /// <summary>
+        /// Reads the title facts the person's household-rule conditions need (rating, genres, language, streaming), when
+        /// the rules apply to them and any condition needs facts. Bounded; a failure leaves them unknown (a look).
+        /// </summary>
+        private Task PrepareRulesAsync(Guid userId, MutationInput input, CancellationToken ct)
+        {
+            var config = Configuration;
+            if (_ruleFacts == null || !HouseholdFlags.RulesApply(config) || TitleKey.Parse(input.Key) is not { } key) return Task.CompletedTask;
+            var viewer = _view.Viewer(userId);
+            if (viewer == null || viewer.IsAdmin) return Task.CompletedTask;
+            var role = NormalizeRole(Settings(config, userId).Role ?? config.ArrRequestDefaultRole, true);
+            return HouseholdRules.Parse(config.ArrHouseholdRules).For(role) is { NeedsFacts: true } ? _ruleFacts.PrepareAsync(key, ct) : Task.CompletedTask;
         }
         /// <inheritdoc />
         public async Task PrepareVisibilityAsync(Guid userId, MutationInput input, CancellationToken ct)
@@ -230,7 +248,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var config = Configuration;
             var viewer = _view.Viewer(userId);
             var settings = Settings(config, userId);
-            var role = viewer?.IsAdmin == true ? "Admin" : NormalizeRole(settings.Role ?? config.ArrRequestDefaultRole);
+            var role = viewer?.IsAdmin == true ? "Admin" : NormalizeRole(settings.Role ?? config.ArrRequestDefaultRole, HouseholdFlags.Rules(config));
             var defaults = RoleSettings(config, role);
             var key = TitleKey.Parse(input.Key)!;
             // The default instance of the edition's role: 4K only ever goes to a 4K instance, standard to a
@@ -280,14 +298,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var configuredLimit = settings.QuotaLimit ?? defaults.QuotaLimit ?? config.ArrRequestQuotaLimit;
             // A Manager's or Admin's asks go ahead whatever they have used (only a Member's count can hold one for an OK),
             // so their allowance has no limit: no cost line ever shows them the household's limit as theirs.
-            int? limit = configuredLimit < 0 || config.ArrRequestPreset == "approve_everything" || role is "Manager" or "Admin" ? null : configuredLimit == 0 ? (config.ArrRequestPreset == "open_house" ? 15 : 7) : Math.Clamp(configuredLimit, 1, 10000);
+            int? limit = configuredLimit < 0 || config.ArrRequestPreset == "approve_everything" || role is "Manager" or "Admin" or "Trusted" ? null : configuredLimit == 0 ? (config.ArrRequestPreset == "open_house" ? 15 : 7) : Math.Clamp(configuredLimit, 1, 10000);
             if (config.ArrRequestBackend == "seerr") limit = binding.Quota?.Limit;
+            var size = instance is { Usable: true } ? SizeHint(_store.PeekLibrary(instance.Id), _aliases.Of(key).Prepend(key)) : null;
+            var windowDays = config.ArrRequestBackend == "seerr" ? Math.Clamp(binding.QuotaWindowDays, 1, 365) : Math.Clamp(config.ArrRequestQuotaWindowDays, 1, 365);
             return new(userId, role, role != "Watcher" && (config.ArrRequestBackend != "seerr" || binding.UserId == null || binding.CanRequest), canApprove, can4k, visible, revision, config.ArrRequestBackend,
                 seerrMode ? string.Empty : instanceId, seerrMode ? string.Empty : generation,
-                limit, config.ArrRequestBackend == "seerr" ? Math.Clamp(binding.QuotaWindowDays, 1, 365) : Math.Clamp(config.ArrRequestQuotaWindowDays, 1, 365),
+                limit, windowDays,
                 Math.Max(0, settings.QuotaGb ?? defaults.QuotaGb ?? config.ArrRequestQuotaGb), JsonSerializer.Serialize(signature),
                 refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota, disk, seerrMode && binding.SeerrWholeSeries, seerrMode && binding.SeerrUnlinked,
-                instance is { Usable: true } ? SizeHint(_store.PeekLibrary(instance.Id), _aliases.Of(key).Prepend(key)) : null);
+                size, Rules(config, role, key, input, size),
+                HouseholdFlags.Pools(config) ? GroupQuotaPolicy.For(GroupQuotaPolicy.Parse(config.ArrGroupQuotaPools), userId, role, windowDays) : null);
+        }
+        /// <summary>
+        /// What the household's fixed conditions say about this request for a person of <paramref name="role"/> (memory
+        /// only), or null when they don't apply (rules off, Seerr handling, an unruled role, no condition set).
+        /// </summary>
+        private HouseholdRuleVerdict? Rules(PluginConfiguration config, string role, TitleKey key, MutationInput input, RequestSizeHint? size)
+        {
+            if (!HouseholdFlags.RulesApply(config) || HouseholdRules.Parse(config.ArrHouseholdRules).For(role) is not { } rules) return null;
+            var facts = rules.NeedsFacts ? _ruleFacts?.Peek(key) : null;
+            return HouseholdRules.Evaluate(rules, HouseholdRules.Version(config.ArrHouseholdRules, config.ArrHouseholdStreamingCountry, config.ArrHouseholdStreamingServices),
+                facts, RequestSizeHint.Estimate(input, size), config.ArrHouseholdStreamingCountry, HouseholdRules.Services(config.ArrHouseholdStreamingServices),
+                (cert, country) => _ruleFacts?.Score(cert, country));
         }
         /// <summary>
         /// The low-disk pause of a request like <paramref name="input"/> on <paramref name="instance"/>, or null. JE mode
@@ -447,8 +480,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled
                 ? movie ? config.ArrRequest4kMoviesEnabled : config.ArrRequest4kSeriesEnabled
                 : movie ? config.JellyseerrEnable4KRequests : config.JellyseerrEnable4KTvRequests;
-        /// <summary>Validated server-owned role.</summary>
-        public static string NormalizeRole(string? role) => role is "Kid" or "Member" or "Manager" ? role : "Watcher";
+        /// <summary>
+        /// Validated server-owned role. Trusted counts only while household rules are on (<paramref name="trusted"/>);
+        /// otherwise a stored Trusted is a Member, as before the role existed.
+        /// </summary>
+        public static string NormalizeRole(string? role, bool trusted = false) => role is "Kid" or "Member" or "Manager" ? role : role == "Trusted" ? trusted ? "Trusted" : "Member" : "Watcher";
         internal static RequestUserSettings Settings(PluginConfiguration config, Guid user)
         {
             try

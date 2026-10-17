@@ -150,6 +150,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestOperations>();
             serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationStatusService>();
             serviceCollection.AddHostedService<Services.Acquire.Automation.AutomationStartup>();
+            // Phase 4b (inert while off): the title facts household rules read (TMDB through the shared cache), and the
+            // Trusted role behind the automation engine's trust seam (replaces 4a's "nobody is Trusted").
+            serviceCollection.AddSingleton<Services.Acquire.Requests.IHouseholdRuleFacts, Services.Acquire.Requests.HouseholdRuleFacts>();
+            serviceCollection.RemoveAll<Services.Acquire.Automation.IAutomationTrust>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.IAutomationTrust, Services.Acquire.Requests.HouseholdTrust>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.HouseholdRulesService>();
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             // "Keep getting new episodes": charges each new season once when a Sonarr library read shows it started.
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();

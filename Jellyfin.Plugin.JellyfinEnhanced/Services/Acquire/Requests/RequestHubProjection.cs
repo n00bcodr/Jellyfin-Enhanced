@@ -211,6 +211,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     createdAt = w.CreatedAt,
                     reason = w.Reason,
                     overQuota = w.Reason == "over_quota",
+                    // Household rules (phase 4b): the conditions behind the wait (now, when held at send by them; else as created).
+                    rules = RulesOf(w, requester),
                     stuck,
                     // Already OK'd (on its way, or held after its OK): nothing here waits for an OK any more.
                     okd = w.Status is not "pending",
@@ -224,6 +226,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         name = Person(w.UserId) is { Disabled: false } person && person.Name.Length > 0 ? person.Name : null,
                         role = requester.Role.ToLowerInvariant(),
                         quota = new { used = quota.Used, limit = quota.Limit, available = quota.Available },
+                        // The group pool their requests draw on (an aggregate; nobody else's accounting).
+                        pool = requester.Pool is { } pool ? PoolView(pool, now) : null,
                     },
                     // The title's rating against a limited requester's own limit; nothing when they have none.
                     rating = requesterViewer?.HasParentalLimit == true ? new { label = title.Rating, within = requester.Visible } : null,
@@ -241,6 +245,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }).ToArray();
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "approvals", certainty = "Succeeded", message = "Requests waiting for an OK", more, items }, Json);
             return Body(caller.UserId, viewer, "approvals", bytes);
+        }
+
+        /// <summary>
+        /// The household-rule verdict to show with a request (phase 4b): the current one while it is held by the rules at
+        /// send, else the one it was created with; null when the rules said nothing. Title facts and household limits
+        /// only, never anyone's accounting.
+        /// </summary>
+        private HouseholdRuleVerdict? RulesOf(RequestWant want, RequestPolicyFacts? requester, Guid? user = null)
+        {
+            if (want.Reason is RequestLedger.RuleReview or RequestLedger.HouseholdRule && want.Status == "pending")
+            {
+                var now = (requester ?? _service.Policy.Evaluate(user ?? want.UserId, want.Input)).Rules;
+                if (now is { Verdict: not HouseholdRules.None }) return now;
+            }
+            return want.Rules;
+        }
+
+        /// <summary>A group pool's use as shown to members and approvers: name, used, limit and the next free slot.</summary>
+        internal object PoolView(GroupPoolBinding pool, DateTimeOffset now)
+        {
+            var use = _service.Ledger.PoolQuota(pool, now);
+            return new { name = pool.Name, used = use.Used, limit = pool.Limit, remaining = use.Remaining, nextSlotAt = use.NextSlotAt };
         }
 
         /// <summary>
@@ -284,6 +310,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     // Every request the row stands for that Cancel withdraws (the row's own id may be a sent one).
                     cancelIds = cancel,
                     declineReason = w.Status == "declined" ? DeclineReason(w.Id) : null,
+                    rules = RulesOf(w, null, caller.UserId),
                     title = title.Title,
                     year = title.Year,
                     poster = title.Poster,

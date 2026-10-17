@@ -30,13 +30,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
         private static List<RequestWant> Wants(SqliteConnection c, SqliteTransaction? t, string where = "1=1", params (string, object?)[] args)
         {
-            using var cmd = Cmd(c, t, "SELECT id,acquisition_id,user_id,client_request_id,fingerprint,mutation_input,status,reason,cost,parental_signature,created_at,updated_at,is_follower,owned_input,target_key,origin_kind,origin_source_id,origin_detail,operation_id FROM wants WHERE " + where + " ORDER BY created_at,id", args);
+            using var cmd = Cmd(c, t, "SELECT id,acquisition_id,user_id,client_request_id,fingerprint,mutation_input,status,reason,cost,parental_signature,created_at,updated_at,is_follower,owned_input,target_key,origin_kind,origin_source_id,origin_detail,operation_id,rule_detail FROM wants WHERE " + where + " ORDER BY created_at,id", args);
             using var r = cmd.ExecuteReader();
             var list = new List<RequestWant>();
             while (r.Read()) list.Add(new(r.GetString(0), r.GetString(1), Guid.Parse(r.GetString(2)), r.GetString(3), r.GetString(4),
                 JsonSerializer.Deserialize<MutationInput>(r.GetString(5))!, r.GetString(6), r.GetString(7), r.GetInt32(8), r.GetString(9),
                 DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(10)), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(11)), r.GetBoolean(12), r.IsDBNull(13) ? null : JsonSerializer.Deserialize<MutationInput>(r.GetString(13)), r.GetString(14), r.GetString(15),
-                r.IsDBNull(16) ? null : r.GetString(16), r.IsDBNull(17) ? null : r.GetString(17), r.IsDBNull(18) ? null : r.GetString(18)));
+                r.IsDBNull(16) ? null : r.GetString(16), r.IsDBNull(17) ? null : r.GetString(17), r.IsDBNull(18) ? null : r.GetString(18), r.IsDBNull(19) ? null : r.GetString(19)));
             return list;
         }
         internal static void ExtendSchemaTwo(SqliteConnection c, SqliteTransaction t, bool targets, bool reservations, bool onlyEmptyTargets = false)
@@ -286,11 +286,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static double EstimateGb(MutationInput input, RequestPolicyFacts facts) => RequestSizeHint.Estimate(input, facts.Size);
         /// <summary>Re-evaluates approval requirements for an automatic job under the current household rules.</summary>
         public bool NeedsApprovalAtSend(RequestJob job, RequestPolicyFacts requester, IRequestPolicy policy, DateTimeOffset now)
+            => ApprovalNeededAtSend(job, requester, policy, now) != null;
+        /// <summary>
+        /// Why a job nobody approved needs an OK now (null: it doesn't), re-evaluated at send under the current household
+        /// settings: a Kid (<c>authorization_changed</c>); the household's rules now refusing it (<c>household_rule</c>) or
+        /// wanting a look (<c>rule_review</c>); the group pool its charge is bound to now over its limit
+        /// (<c>group_quota</c>); a Member's preset, quota or series threshold (<c>authorization_changed</c>).
+        /// </summary>
+        /// <param name="job">The job.</param>
+        /// <param name="requester">The requester's current facts.</param>
+        /// <param name="policy">Current policy.</param>
+        /// <param name="now">Now.</param>
+        public string? ApprovalNeededAtSend(RequestJob job, RequestPolicyFacts requester, IRequestPolicy policy, DateTimeOffset now)
         {
-            if (job.Authorization.Approver.HasValue) return false;
-            if (requester.Role == "Kid") return true;
-            if (requester.Role != "Member" || requester.Backend != "je") return false;
-            if (policy.Configuration.ArrRequestPreset == "approve_everything") return true;
+            if (job.Authorization.Approver.HasValue) return null;
+            if (requester.Role == "Kid") return "authorization_changed";
+            if (requester.Backend == "je")
+            {
+                if (requester.Rules?.Verdict == HouseholdRules.Deny) return HouseholdRule;
+                if (requester.Rules?.Verdict == HouseholdRules.Review) return RuleReview;
+                if (HouseholdFlags.Pools(policy.Configuration) && _db.Read(c =>
+                {
+                    var bound = Scalar(c, null, "SELECT COALESCE((SELECT pool_id FROM reservations WHERE job_id=$j LIMIT 1),(SELECT pool_id FROM reservations WHERE want_id=$w AND scope='initial' LIMIT 1))", ("$j", job.Id), ("$w", job.WantId));
+                    var pool = GroupQuotaPolicy.ById(GroupQuotaPolicy.Parse(policy.Configuration.ArrGroupQuotaPools), bound, policy.Configuration.ArrRequestQuotaWindowDays);
+                    return pool != null && PoolUsed(c, null, pool.Id, pool.WindowDays, now) > pool.Limit;
+                })) return GroupQuota;
+            }
+            if (requester.Role != "Member" || requester.Backend != "je") return null;
+            if (policy.Configuration.ArrRequestPreset == "approve_everything" && requester.Rules?.Verdict != HouseholdRules.Approve) return "authorization_changed";
             return _db.Read(c =>
             {
                 var want = Wants(c, null, "id=$id", ("$id", job.WantId)).SingleOrDefault();
@@ -298,7 +321,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var own = Wants(c, null, "user_id=$u", ("$u", Id(requester.UserId))).Where(w => w.Id != want.Id && w.CreatedAt <= want.CreatedAt && w.Status != "pending").ToArray();
                 return OverQuota(requester, Charges(c, null, requester.UserId), 0, 0, now) ||
                     OverSeries(requester, want.Input, own, policy.Configuration.ArrRequestSeriesThreshold);
-            });
+            }) ? "authorization_changed" : null;
         }
 
         /// <summary>Creates intent, quota reservation and (when approved) a job in one commit.</summary>
@@ -359,6 +382,63 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
             });
         }
+        /// <summary>Most asks one batch preview (and one "request all missing" batch) holds.</summary>
+        public const int MaxBatch = 20;
+        /// <summary>
+        /// The no-write preview of a batch of asks made one after another (phase 4b, "request all missing"): each is
+        /// worked out after the ones before it, inside one transaction that is always rolled back, so charges, the
+        /// person's allowance and group pools add up across the batch exactly as the real asks would. Null entries are
+        /// invalid asks. At most <see cref="MaxBatch"/>.
+        /// </summary>
+        /// <param name="user">The requester.</param>
+        /// <param name="requests">The asks, in order (normalized inputs).</param>
+        /// <param name="policy">Current policy.</param>
+        /// <param name="now">Now.</param>
+        /// <param name="origin">Where the asks would come from.</param>
+        public IReadOnlyList<RequestPreview> PreviewBatch(Guid user, IReadOnlyList<CreateRequest?> requests, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin = null)
+        {
+            if (requests.Count > MaxBatch) throw new ArgumentOutOfRangeException(nameof(requests));
+            if (!_db.Available) return requests.Select(_ => new RequestPreview(RequestOutcome.Refused("database_unavailable", 503, "unavailable"))).ToArray();
+            return _db.Write((c, t) =>
+            {
+                Exec(c, t, "SAVEPOINT request_preview_batch");
+                try
+                {
+                    var list = new List<RequestPreview>();
+                    foreach (var request in requests)
+                    {
+                        var normalized = request?.Input?.Normalize();
+                        if (request == null || normalized == null || string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128 || request.ClientRequestId.Any(char.IsControl))
+                        {
+                            list.Add(new RequestPreview(RequestOutcome.Refused("invalid_input", 400)));
+                            continue;
+                        }
+                        // Each ask on its own savepoint, like Create: a refusal leaves nothing of it for the next one.
+                        Exec(c, t, "SAVEPOINT request_preview_item");
+                        var before = Scalar(c, t, "SELECT COUNT(*) FROM wants");
+                        var outcome = CreateCore(c, t, user, request, normalized, policy, now, origin);
+                        if (outcome.HttpStatus >= 400) Exec(c, t, "ROLLBACK TO request_preview_item");
+                        Exec(c, t, "RELEASE request_preview_item");
+                        var created = Scalar(c, t, "SELECT COUNT(*) FROM wants") != before;
+                        var want = outcome.RequestId == null ? null : Wants(c, t, "id=$id", ("$id", outcome.RequestId)).SingleOrDefault();
+                        if (want == null)
+                        {
+                            list.Add(new RequestPreview(outcome, New: created));
+                            continue;
+                        }
+                        var jobs = Jobs(c, t, "want_id=$id", ("$id", want.Id));
+                        var gb = double.Parse(Scalar(c, t, "SELECT COALESCE(SUM(estimated_gb),0) FROM reservations WHERE want_id=$id", ("$id", want.Id)) ?? "0", CultureInfo.InvariantCulture);
+                        list.Add(new RequestPreview(outcome, want.Status, want.Reason, want.Cost, gb, want.Follower, jobs.Count > 0, created, want.OwnedInput, jobs.Select(j => j.Authorization.InstanceId).FirstOrDefault()));
+                    }
+                    return (IReadOnlyList<RequestPreview>)list;
+                }
+                finally
+                {
+                    Exec(c, t, "ROLLBACK TO request_preview_batch");
+                    Exec(c, t, "RELEASE request_preview_batch");
+                }
+            });
+        }
         private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin)
         {
             // Automatic origins (recipes, list sync) never self-approve a Member and never approve someone else's ask.
@@ -408,12 +488,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 normalized.Extra(new[] { w.Input }) == null && w.UpdatedAt > now.AddDays(-Math.Clamp(policy.Configuration.ArrRequestDeclineCooldownDays, 0, 365)))) return RequestOutcome.Refused("decline_cooldown", outcome: "blocked");
             var covered = Wants(c, t, "title_key=$key AND variant=$v", ("$key", normalized.Key), ("$v", normalized.Variant)).Where(Active).ToArray();
             var authorizedExtra = normalized.Extra(Coverage(c, t, covered, TargetKey(facts)));
-            var auto = !mustAsk && (facts.Role is "Manager" or "Admin") || (!mustAsk && facts.Role == "Member" && facts.Backend == "je" && !automation &&
-                policy.Configuration.ArrRequestPreset != "approve_everything" &&
-                !OverQuota(facts, Charges(c, t, user), authorizedExtra == null ? 0 : Cost(c, t, authorizedExtra, user, now, facts.WindowDays), authorizedExtra == null ? 0 : EstimateGb(authorizedExtra, facts), now) &&
+            // Household rules (phase 4b, null while they don't apply): a review waits for an OK whoever asks; an approve
+            // lifts only a Member's blanket-approval preset (never quota, the series threshold or a group pool).
+            var rules = facts.Rules;
+            var ruleReview = rules?.Verdict == HouseholdRules.Review;
+            var blanket = policy.Configuration.ArrRequestPreset == "approve_everything" && rules?.Verdict != HouseholdRules.Approve;
+            var authorizedCost = authorizedExtra == null ? 0 : Cost(c, t, authorizedExtra, user, now, facts.WindowDays);
+            // A group pool this ask would take over its limit (phase 4b; soft: an approval may grant it).
+            var poolHeld = PoolOver(c, t, facts.Pool, origin?.Free == true ? 0 : authorizedCost, now);
+            var auto = !mustAsk && !ruleReview && !poolHeld && (facts.Role is "Manager" or "Admin" or "Trusted") || (!mustAsk && !ruleReview && !poolHeld && facts.Role == "Member" && facts.Backend == "je" && !automation &&
+                !blanket &&
+                !OverQuota(facts, Charges(c, t, user), authorizedCost, authorizedExtra == null ? 0 : EstimateGb(authorizedExtra, facts), now) &&
                 !OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold));
             if (!auto && !automation && SplitAtThreshold(c, t, user, request, normalized, facts, own, policy, now, origin) is { } split) return split;
             var extra = normalized.Extra(Coverage(c, t, covered, TargetKey(facts), !auto));
+            // An explicit household-rule deny refuses anything new to get (following scope someone already asked for is free).
+            if (extra != null && rules?.Verdict == HouseholdRules.Deny)
+                return RequestOutcome.Refused(HouseholdRule, 403, "denied") with { Message = "The household's rules don't allow this request (" + rules.Text() + ").", Rules = rules };
             if (auto && (extra != null || covered.Any(w => w.Status == "pending")) && Scalar(c, t,
                 "SELECT j.id FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w.title_key=$key AND w.variant=$v AND json_extract(j.authorization_context,'$.Backend')=$backend AND json_extract(j.authorization_context,'$.InstanceId')=$instance AND json_extract(j.authorization_context,'$.ConnectionGeneration')=$generation AND json_extract(j.authorization_context,'$.SeerrSource') IS $source AND (j.state IN ('sending','maybe_sent') OR json_extract(j.outcome,'$.certainty')='Unknown') LIMIT 1",
                 ("$key", normalized.Key), ("$v", normalized.Variant), ("$backend", facts.Backend), ("$instance", facts.InstanceId), ("$generation", facts.ConnectionGeneration), ("$source", facts.SeerrSource)) != null) return RequestOutcome.Refused("request_in_flight", 409);
@@ -422,12 +513,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var gb = extra == null ? 0 : EstimateGb(extra, facts);
             if (OverGbCap(facts, Charges(c, t, user), gb, now)) return RequestOutcome.Refused("quota_exceeded", 429, "quota_exceeded");
             var over = OverQuota(facts, Charges(c, t, user, facts.Backend == "seerr"), cost, gb, now);
-            var needsApproval = extra != null && (mustAsk || facts.Role == "Kid" || (facts.Backend == "je" && facts.Role == "Member" && (automation || policy.Configuration.ArrRequestPreset == "approve_everything" || over || OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold))));
+            var poolOver = PoolOver(c, t, facts.Pool, cost, now);
+            var needsApproval = extra != null && (mustAsk || ruleReview || poolOver || facts.Role == "Kid" || (facts.Backend == "je" && facts.Role == "Member" && (automation || blanket || over || OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold))));
             if (over && facts.Backend == "seerr") return RequestOutcome.Refused("over_quota", 429, "quota_exceeded");
             var confirmedScope = extra == null && ConfirmedScope(c, t, normalized, covered, facts);
             var waitingScope = extra == null && normalized.Extra(Coverage(c, t, covered, TargetKey(facts))) != null;
             var status = confirmedScope ? "sent" : needsApproval || waitingScope ? "pending" : "queued";
-            var reason = confirmedScope ? "looking" : status == "pending" ? over ? "over_quota" : "awaiting_approval" : "queued_outage";
+            var reason = confirmedScope ? "looking" : status == "pending" ? ruleReview && extra != null ? RuleReview : over ? "over_quota" : poolOver ? GroupQuota : "awaiting_approval" : "queued_outage";
             var acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE title_key=$key AND variant=$v AND state='active'", ("$key", normalized.Key), ("$v", normalized.Variant));
             if (acquisition == null)
             {
@@ -442,9 +534,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (origin != null)
                 Exec(c, t, "UPDATE wants SET origin_kind=$kind,origin_source_id=$source,origin_detail=$detail,operation_id=$operation WHERE id=$id",
                     ("$kind", origin.Kind), ("$source", origin.Source), ("$detail", origin.Detail), ("$operation", origin.Provenance?.OperationId), ("$id", id));
+            // The verdict it was created with, as its rationale (phase 4b).
+            if (rules is { Verdict: not HouseholdRules.None } && extra != null)
+                Exec(c, t, "UPDATE wants SET rule_detail=$rules WHERE id=$id", ("$rules", rules.Json), ("$id", id));
             RememberInput(c, t, user, request.ClientRequestId, normalized.Fingerprint, id);
             Fault?.Invoke("want");
-            Reserve(c, t, id, user, cost, gb, status == "pending" ? "held" : "charged", now, "initial");
+            Reserve(c, t, id, user, cost, gb, status == "pending" ? "held" : "charged", now, "initial", facts.Pool?.Id);
             Fault?.Invoke("reservation");
             if (extra != null && status == "queued") AddJob(c, t, id, extra!, Authorize(facts, null, extra!, false), now);
             Fault?.Invoke("job");
@@ -453,8 +548,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Fault?.Invoke("notice");
             if (confirmedScope)
                 return RequestOutcome.Accepted(id, reason, 200) with { Outcome = "merged", Message = "Someone in your household already asked, we'll tell you both." };
-            return RequestOutcome.Accepted(id, reason);
+            return RequestOutcome.Accepted(id, reason) with { Rules = rules is { Verdict: not HouseholdRules.None } && extra != null ? rules : null };
         }
+        /// <summary>The reason of a request waiting for an OK because the household's rules want a look (phase 4b).</summary>
+        internal const string RuleReview = "rule_review";
+        /// <summary>The reason of a request waiting for an OK because its group pool is used up (phase 4b).</summary>
+        internal const string GroupQuota = "group_quota";
+        /// <summary>The reason of a request the household's rules refuse (phase 4b).</summary>
+        internal const string HouseholdRule = "household_rule";
         /// <summary>
         /// Seerr takes whole seasons only: single episodes are refused in Seerr mode before anything is recorded (the
         /// request controls ask for the episode's season instead, said before the person confirms), so a job that could
@@ -477,7 +578,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             RequestPolicyFacts facts, IReadOnlyList<RequestWant> own, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin)
         {
             var threshold = policy.Configuration.ArrRequestSeriesThreshold;
-            if (facts.Role != "Member" || facts.Backend != "je" || policy.Configuration.ArrRequestPreset == "approve_everything" ||
+            if (facts.Role != "Member" || facts.Backend != "je" || (policy.Configuration.ArrRequestPreset == "approve_everything" && facts.Rules?.Verdict != HouseholdRules.Approve) ||
                 normalized.Scope is not ("seasons" or "episodes") || !OverSeries(facts, normalized, own, threshold)) return null;
             var asked = own.Where(w => w.Input.Key == normalized.Key && w.Status is not ("declined" or "cancelled")).SelectMany(w => w.Input.SeasonNumbers).ToHashSet();
             var fresh = normalized.SeasonNumbers.Where(s => !asked.Contains(s)).Distinct().OrderBy(s => s).ToArray();
@@ -544,8 +645,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w LIMIT 1", ("$w", want.Id)) == null ? want.OwnedInput : null;
         private static void RememberInput(SqliteConnection c, SqliteTransaction t, Guid user, string client, string fingerprint, string wantId)
             => Exec(c, t, "INSERT INTO request_inputs VALUES($u,$client,$f,$w)", ("$u", Id(user)), ("$client", client), ("$f", fingerprint), ("$w", wantId));
-        private static void Reserve(SqliteConnection c, SqliteTransaction t, string id, Guid user, int cost, double gb, string state, DateTimeOffset now, string scope)
-            => Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count) VALUES($id,$w,$u,$cost,$gb,$state,$at,$scope,COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$w AND $scope='initial'),0))", ("$id", NewId()), ("$w", id), ("$u", Id(user)), ("$cost", cost), ("$gb", gb), ("$state", state), ("$at", Ms(now)), ("$scope", scope));
+        // pool: the group pool the initial reservation is bound to (phase 4b); every later charge of the want (an
+        // approval's extra scope, a future season) is bound to the same pool, so spend never moves between pools.
+        private static void Reserve(SqliteConnection c, SqliteTransaction t, string id, Guid user, int cost, double gb, string state, DateTimeOffset now, string scope, string? pool = null)
+            => Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count,pool_id) VALUES($id,$w,$u,$cost,$gb,$state,$at,$scope,COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$w AND $scope='initial'),0)," + PoolOf + ")", ("$id", NewId()), ("$w", id), ("$u", Id(user)), ("$cost", cost), ("$gb", gb), ("$state", state), ("$at", Ms(now)), ("$scope", scope), ("$pool", pool));
+        // The pool a new reservation of want $w is bound to: the one named ($pool, the initial reservation), else the
+        // pool of the want's initial reservation.
+        private const string PoolOf = "COALESCE($pool,(SELECT pool_id FROM reservations WHERE want_id=$w AND scope='initial' LIMIT 1))";
+        /// <summary>Requests charged to a group pool in its rolling window (charged reservations bound to it).</summary>
+        private static int PoolUsed(SqliteConnection c, SqliteTransaction? t, string pool, int days, DateTimeOffset now)
+            => int.Parse(Scalar(c, t, "SELECT COALESCE(SUM(cost),0) FROM reservations WHERE pool_id=$p AND state='charged' AND charged_at>$since AND charged_at<=$at",
+                ("$p", pool), ("$since", Ms(now.AddDays(-days))), ("$at", Ms(now)))!, CultureInfo.InvariantCulture);
+        /// <summary>True when <paramref name="cost"/> more would take the pool over its limit.</summary>
+        private static bool PoolOver(SqliteConnection c, SqliteTransaction? t, GroupPoolBinding? pool, int cost, DateTimeOffset now)
+            => pool != null && cost > 0 && PoolUsed(c, t, pool.Id, pool.WindowDays, now) + cost > pool.Limit;
+        /// <summary>
+        /// A group pool's use now (phase 4b): requests charged in its window, its limit and when the next one frees up.
+        /// An aggregate: whose requests they were is never part of it.
+        /// </summary>
+        /// <param name="pool">The pool.</param>
+        /// <param name="now">Now.</param>
+        public QuotaProjection PoolQuota(GroupPoolBinding pool, DateTimeOffset now) => _db.Read(c =>
+        {
+            var charges = new List<QuotaCharge>();
+            using (var cmd = Cmd(c, null, "SELECT cost,charged_at FROM reservations WHERE pool_id=$p AND state='charged' AND cost>0", ("$p", pool.Id)))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read()) charges.Add(new QuotaCharge(r.GetInt32(0), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(1))));
+            return QuotaProjector.Project(charges, pool.Limit, TimeSpan.FromDays(pool.WindowDays), now);
+        });
         // The request for a new season a keep-getting request follows; its charge (if any) goes with the latest one, so it
         // counts as unsent until that one is sent (Seerr's quota), and stays charged when it is replaced (see Supersede).
         private static void FollowJob(SqliteConnection c, SqliteTransaction t, string wantId, MutationInput season, RequestAuthorization auth, DateTimeOffset now)
@@ -660,7 +787,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (existingJobs.Count == 0)
                 Exec(c, t, "UPDATE reservations SET job_id=NULL,state='charged',cost=$cost,estimated_gb=$gb,charged_at=$at,episode_count=COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$id),0) WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", gb), ("$at", Ms(now)), ("$id", id));
             else if (extra != null)
-                Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count) VALUES($rid,$id,$u,$cost,$gb,'charged',$at,$scope,$episodes)",
+                Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count,pool_id) VALUES($rid,$id,$u,$cost,$gb,'charged',$at,$scope,$episodes,(SELECT pool_id FROM reservations WHERE want_id=$id AND scope='initial' LIMIT 1))",
                     ("$rid", NewId()), ("$id", id), ("$u", Id(want.UserId)), ("$cost", cost), ("$gb", gb), ("$at", Ms(now)), ("$scope", "approval:" + NewId()), ("$episodes", extra.Scope == "episodes" ? extra.Episodes.Length : 0));
             Fault?.Invoke("reservation");
             var auth = Authorize(requester, approver, extra ?? stored, edits != null);

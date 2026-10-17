@@ -92,6 +92,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             return _ledger.Preview(user, body with { Input = input }, _policy, _now(), origin);
         }
+        /// <summary>
+        /// What a batch of asks made one after another would do now (phase 4b, "request all missing"), nothing written:
+        /// normalization, the bounded preparation reads for each title, then <see cref="RequestLedger.PreviewBatch"/>.
+        /// Null or invalid entries answer <c>invalid_input</c>. At most <see cref="RequestLedger.MaxBatch"/> asks.
+        /// </summary>
+        /// <param name="user">The requester.</param>
+        /// <param name="bodies">The asks, in order.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <param name="origin">Where the asks would come from.</param>
+        public async Task<IReadOnlyList<RequestPreview>> PreviewBatchAsync(Guid user, IReadOnlyList<CreateRequest?> bodies, CancellationToken ct, RequestOrigin? origin = null)
+        {
+            if (bodies.Count > RequestLedger.MaxBatch) return bodies.Select(_ => new RequestPreview(RequestOutcome.Refused("batch_too_large", 400))).ToArray();
+            if (!Enabled) return bodies.Select(_ => new RequestPreview(RequestOutcome.Refused("feature_disabled"))).ToArray();
+            if (!_ledger.Database.Available) return bodies.Select(_ => new RequestPreview(RequestOutcome.Refused("database_unavailable", 503, "unavailable"))).ToArray();
+            var admin = _policy.IsAdmin(user);
+            var normalized = new List<CreateRequest?>(bodies.Count);
+            foreach (var body in bodies)
+            {
+                var input = Normalize(body?.Input);
+                // Routing (instance, profile, folder) is an administrator's choice, as on a single ask.
+                normalized.Add(body == null || input == null || (!admin && RequestLedger.HasRouting(input)) ? null : body with { Input = input });
+            }
+            foreach (var input in normalized.Where(b => b != null).Select(b => b!.Input).DistinctBy(i => i.Fingerprint))
+                await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
+            var previews = _ledger.PreviewBatch(user, normalized, _policy, _now(), origin);
+            // A routing choice by a non-administrator answers as a single ask would.
+            return previews.Select((p, i) => normalized[i] == null && bodies[i] != null && Normalize(bodies[i]!.Input) is { } routed && RequestLedger.HasRouting(routed)
+                ? new RequestPreview(RequestOutcome.Refused("admin_required")) : p).ToArray();
+        }
+        /// <summary>
+        /// The group pool the person's requests draw on now and its use (phase 4b; null without one): an aggregate, never
+        /// whose requests they were.
+        /// </summary>
+        /// <param name="user">The person.</param>
+        public (GroupPoolBinding Pool, QuotaProjection Use)? Pool(Guid user)
+        {
+            var facts = Identity(user);
+            return facts.Pool is { } pool && _ledger.Database.Available ? (pool, _ledger.PoolQuota(pool, _now())) : null;
+        }
         /// <summary>Approves with fresh requester and approver prerequisites.</summary>
         public async Task<RequestOutcome> ApproveAsync(string id, Guid actor, ApproveRequest? body, CancellationToken ct)
         {

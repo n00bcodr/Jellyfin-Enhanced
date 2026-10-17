@@ -200,7 +200,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             // now, after every check here has been made again with that account's permissions.
                             if (requester.SeerrSource != job.Authorization.SeerrSource || (job.Authorization.SeerrUser != null && requester.SeerrUser != null && requester.SeerrUser != job.Authorization.SeerrUser)) return "identity_changed";
                             if (_ledger.ExceedsGbCapAtSend(requester, _now())) return "quota_exceeded";
-                            if (RequestPolicy.Check(requester, approver, job.Input, approver != null) != null || _ledger.NeedsApprovalAtSend(job, requester, _policy, _now())) return "authorization_changed";
+                            if (RequestPolicy.Check(requester, approver, job.Input, approver != null) != null) return "authorization_changed";
+                            // A Kid, the household's rules or a group pool (phase 4b), a Member's preset, quota or series threshold.
+                            if (_ledger.ApprovalNeededAtSend(job, requester, _policy, _now()) is { } needed) return needed;
                             if (job.Authorization.Edited && approver?.Role != "Admin" && (job.Input.ProfileId != null || job.Input.RootFolder != null || job.Input.InstanceId != null)) return "authorization_changed";
                             // Seerr answered that no Seerr account is linked to the person (not "Seerr didn't answer"): nothing can be
                             // sent as them, so the request is held with that reason and checked again now and then, not every pass.
