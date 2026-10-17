@@ -636,6 +636,8 @@ Your saved personal language choice takes precedence over the admin default, eve
 
     JE reuses a valid versioned browser translation cache for up to 24 hours. When loading fresh data, it tries the bundled locale first and uses remote fallback through the server's local asset route when needed. Old-version browser entries are removed after a plugin update.
 
+    For any language other than base English, including `en-GB` and `en-US`, JE also loads English through the same cache and uses it underneath the chosen locale. Strings that are missing or empty in that locale show in English instead of as raw key names.
+
     The loader builds regional, base-language, and English candidates, but an individual candidate's internal English fallback can succeed before the outer loop reaches the base language. Do not assume every unsupported regional code resolves to its base translation.
 
 ### Contributing Translations

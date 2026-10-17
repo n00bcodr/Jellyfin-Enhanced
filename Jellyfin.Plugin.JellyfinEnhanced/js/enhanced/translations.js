@@ -180,6 +180,31 @@
         throw new Error('Failed to load English fallback translations');
     }
 
+    /**
+     * Layers a non-English locale over English so keys the locale is missing, or
+     * leaves empty, show the English string instead of the raw key. English goes
+     * through the same versioned cache as any locale.
+     * @param {Object<string, string>} translations - The resolved user locale.
+     * @param {string} pluginVersion - Plugin version used in the cache keys.
+     * @returns {Promise<Object<string, string>>} A new merged object, or the locale
+     *   unchanged when English cannot be loaded.
+     */
+    async function withEnglishFallback(translations, pluginVersion) {
+        let english = null;
+        try {
+            english = (await tryLoadSingleLanguage('en', pluginVersion))?.translations;
+        } catch (e) {
+            console.warn('🪼 Jellyfin Enhanced: Failed to load English fallback translations', e);
+        }
+        if (!english || typeof english !== 'object') return translations;
+
+        const merged = Object.assign({}, english);
+        for (const [key, value] of Object.entries(translations)) {
+            if (typeof value === 'string' && value !== '') merged[key] = value;
+        }
+        return merged;
+    }
+
     JE.loadTranslations = async function() {
         try {
             const pluginVersion = await getPluginVersion();
@@ -215,7 +240,8 @@
                 try {
                     const result = await tryLoadSingleLanguage(code, pluginVersion);
                     if (result && result.translations) {
-                        return result.translations;
+                        if (result.usedLang === 'en') return result.translations;
+                        return await withEnglishFallback(result.translations, pluginVersion);
                     }
                 } catch (e) {
                     console.warn(`🪼 Jellyfin Enhanced: Failed to load translations for ${code}`, e);

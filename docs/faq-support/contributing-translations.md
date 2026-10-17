@@ -21,7 +21,7 @@ Translate the visible wording while keeping the parts the interface needs to wor
 
 !!! note
 
-    Translate values, not JSON keys. Do not replace a missing translation with an empty string.
+    Translate values, not JSON keys. Do not replace a missing translation with an empty string. Untranslated strings fall back to English.
 
 ??? note "Details"
 
