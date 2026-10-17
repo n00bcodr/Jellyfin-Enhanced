@@ -1596,6 +1596,54 @@ public class ApiArrRequestsHubTests
     }
 
     [Fact]
+    public async Task AFamilySearchWhoseCallerWentAwayBeforeItRanLeavesItsEpisodesFreeForTheNextPress()
+    {
+        // Breaking Bad in Sonarr (not in Jellyfin yet): S1E1 and S1E2 monitored, out for years, nothing grabbed.
+        using var rig = await Ready(r =>
+        {
+            r.Sonarr.Series.Add(FakeArr.SeriesRow(2, 81189, "Breaking Bad"));
+            foreach (var e in new[] { 1, 2 })
+                r.Sonarr.Episodes.Add(new JsonObject { ["id"] = 300 + e, ["seriesId"] = 2, ["seasonNumber"] = 1, ["episodeNumber"] = e, ["airDateUtc"] = "2008-01-20T00:00:00Z", ["hasFile"] = false, ["monitored"] = true });
+        });
+        rig.Arr.Plugin.Plugin.Configuration.ArrPhase3Enabled = true;
+        rig.Arr.Plugin.Plugin.Configuration.ArrStatusLookingHours = 24;
+        rig.Sonarr.CommandStarted = rig.Arr.Now.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
+        var policy = new IntegrationRequestLedgerTests.Policy();
+        policy.People[rig.Emma.UserId] = new(rig.Emma.UserId, "Member", true, false, false, true, "r1", "je", "", "", 7, 7, 0, "null");
+        using var db = new AcquireDatabase(Path.Combine(rig.Arr.Plugin.Core.Root, "family-search-gone.db"));
+        var ledger = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestLedger(db);
+        var requests = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestService(ledger, policy, rig.View, rig.Feed, () => rig.Arr.Now);
+        var search = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestSearchService(requests, rig.Manage, () => rig.Arr.Now);
+        int Searches() => rig.Sonarr.Writes.Count(w => w.Path == "/api/v3/command" && w.Body.Contains("EpisodeSearch", StringComparison.Ordinal));
+        const string Series = "tv:tvdb:81189";
+        var input = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.MutationInput { Key = Series, Scope = "seasons", Seasons = new[] { 1 } };
+        Assert.Equal(201, (await requests.CreateAsync(rig.Emma.UserId, new("ask-bb-gone", input), default)).HttpStatus);
+        await new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestOutbox(ledger, policy, new IntegrationRequestLedgerTests.Backend(),
+            new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.RequestTitleLocks(), rig.Feed, rig.Audit, () => rig.Arr.Now).TickAsync(default);
+        Assert.Equal("sent", ledger.List(rig.Emma.UserId, false).Single().Status);
+
+        // Emma's page goes away while the search reads the series' episodes from Sonarr, after its episodes were
+        // claimed for this period and before the search command was sent: nothing reaches Sonarr.
+        using var gone = new CancellationTokenSource();
+        rig.Store.EpisodeSlotPicked = _ =>
+        {
+            if (Environment.StackTrace.Contains("SearchCoreAsync", StringComparison.Ordinal)) gone.Cancel();
+        };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => search.SearchAsync(rig.Emma, Series, "g1", gone.Token));
+        rig.Store.EpisodeSlotPicked = null;
+        Assert.True(gone.IsCancellationRequested);
+        Assert.Equal(0, Searches());
+
+        // Her next press searches those episodes: they weren't searched, so they aren't "searched a little while ago".
+        var again = await search.SearchAsync(rig.Emma, Series, "g2", default);
+        Assert.Equal(("accepted", "searched"), (again.Outcome.Outcome, again.Outcome.Reason));
+        Assert.Equal(1, Searches());
+        Assert.Equal(new[] { 301, 302 }, JsonNode.Parse(rig.Sonarr.Writes.Last(w => w.Path == "/api/v3/command").Body)!["episodeIds"]!.AsArray().Select(i => (int)i!).ToArray());
+        // Now they were: the press after is refused.
+        Assert.Equal("searched_recently", (await search.SearchAsync(rig.Emma, Series, "g3", default)).Outcome.Reason);
+    }
+
+    [Fact]
     public async Task TheRequestClockIsPhaseThreesOnlyAnOkInSeerrLeavesTheStatusAsBeforeWithItOff()
     {
         // A movie Radarr has listed for a month with nothing grabbed; Seerr OK'd a request for it an hour ago.

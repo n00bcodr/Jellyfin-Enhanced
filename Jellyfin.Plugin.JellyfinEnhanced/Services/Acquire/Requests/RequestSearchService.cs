@@ -131,12 +131,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (claimed.Count == 0)
                 return (RequestOutcome.Refused("searched_recently", 429, "blocked") with { Message = "Searched for it a little while ago. We'll keep looking." }, null);
 
-            var result = part != null
-                ? await _manage.SearchEpisodesCheckedAsync(viewer, null, instanceId, scope, claimed.Select(p => p.Id!.Value).ToArray(), "family-" + idempotencyKey, ct).ConfigureAwait(false)
-                : await _manage.SearchCheckedAsync(viewer, null, instanceId, scope, "family-" + idempotencyKey, ct).ConfigureAwait(false);
+            // A search that didn't run leaves its parts free for the next press: one that failed or was refused, and one
+            // whose caller went away before the arr's search started (the reads before it follow the caller; once
+            // started, the search runs to the end on its own).
+            void Release()
+            {
+                foreach (var p in claimed) _last.TryRemove(new KeyValuePair<string, DateTimeOffset>(p.Slot, now));
+            }
+            ManageSearchResult result;
+            try
+            {
+                result = part != null
+                    ? await _manage.SearchEpisodesCheckedAsync(viewer, null, instanceId, scope, claimed.Select(p => p.Id!.Value).ToArray(), "family-" + idempotencyKey, ct).ConfigureAwait(false)
+                    : await _manage.SearchCheckedAsync(viewer, null, instanceId, scope, "family-" + idempotencyKey, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                Release();
+                throw;
+            }
             if (result.Outcome.Status is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
                 return (new RequestOutcome { Reason = "searched", HttpStatus = 200, Message = result.Found == true ? "Found a copy. It's downloading." : "Searched for it." }, result.Found);
-            foreach (var p in claimed) _last.TryRemove(new KeyValuePair<string, DateTimeOffset>(p.Slot, now));
+            Release();
             return (RequestOutcome.Refused("search_failed", 502, "unavailable") with { Message = "Couldn't search right now. Try again later." }, null);
         }
 
