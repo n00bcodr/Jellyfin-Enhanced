@@ -24,6 +24,8 @@
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
     <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="8.3.1.1" />
     <PackageReference Include="coverlet.collector" Version="6.0.4" PrivateAssets="all" />
+    <!-- The write-gate source test walks the plugin's own code (syntax and symbols) from each gate to the HTTP send. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.11" Condition="'$(JellyfinTarget)' == 'jf12'" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.10" Condition="'$(JellyfinTarget)' == 'jf10'" />
     <!-- The plugin compiles against the host's Microsoft.Data.Sqlite; tests run without a host, so they bring it (with its native library). -->
