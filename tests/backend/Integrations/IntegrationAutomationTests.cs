@@ -714,6 +714,53 @@ public class IntegrationAutomationTests
         Assert.Equal(1, e.R.Backend.Sends);
     }
 
+    [Fact]
+    public async Task TheEngineTurnedOnWhileASendIsUnderWayStartsItAgainUnderTheBudgetsInsteadOfSendingUncounted()
+    {
+        using var e = new Engine(engine: false);
+        e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Auto);
+        e.C.ArrAutomationSearchesPerHour = 1;
+        // Queued by the existing recipe with the engine off: its send starts without a budget admission.
+        var want = await Queued(e, e.R.Admin, 655);
+        Assert.True(BudgetsOn(e.R.Db, e.C, () => e.R.Now).Admit(BudgetCategories.Search, "r1", "earlier").Admitted);
+
+        // The engine is turned on (Auto, the search budget used up) while the send's prerequisites are being read.
+        e.R.Policy.Before = (_, _) => { e.C.ArrPhase4Enabled = true; e.C.ArrPhase4AutomationEnabled = true; return Task.CompletedTask; };
+        await e.Outbox().TickAsync(default);
+        Assert.Equal(0, e.R.Backend.Sends);
+        var job = e.R.Ledger.ForWant(want.Id).Single();
+        Assert.Equal(("retry", AutomationHolds.EngineChanged), (job.State, job.Reason));
+
+        // The next attempt starts over under the engine: held by the full budget, sent once there is room.
+        e.R.Now = job.NextAttempt;
+        await e.Outbox().TickAsync(default);
+        Assert.Equal(0, e.R.Backend.Sends);
+        Assert.Equal(AutomationHolds.BudgetExhausted, e.R.Ledger.ForWant(want.Id).Single().Reason);
+        e.R.Now += TimeSpan.FromHours(1) + TimeSpan.FromSeconds(2);
+        await e.Outbox().TickAsync(default);
+        Assert.Equal(1, e.R.Backend.Sends);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TheEngineSwitchedBetweenTwoWritesStopsTheRestUntilTheAttemptStartsAgain(bool on)
+    {
+        using var e = new Engine(engine: !on);
+        e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Auto);
+        var want = await Queued(e, e.R.Admin, 656);
+        var backend = new TwoWrites { Between = () => { e.C.ArrPhase4Enabled = on; e.C.ArrPhase4AutomationEnabled = on; } };
+        await e.Outbox(backend).TickAsync(default);
+        Assert.Equal(1, backend.Writes);
+        var job = e.R.Ledger.ForWant(want.Id).Single();
+        Assert.Equal(("retry", AutomationHolds.EngineChanged, true), (job.State, job.Reason, job.Uncertain));
+        backend.Between = null;
+        e.R.Now = job.NextAttempt;
+        await e.Outbox(backend).TickAsync(default);
+        Assert.Equal(3, backend.Writes);
+        Assert.Equal("sent", e.R.Ledger.Find(want.Id)!.Status);
+    }
+
     private sealed class Failing : IRequestBackend
     {
         public int Sends { get; set; }

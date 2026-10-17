@@ -1315,7 +1315,9 @@ either is off, the automatic requests above behave exactly as described there. W
   rolling (the last hour, the last 24 hours, UTC). Only what is actually sent counts: a title the instance already
   had, or the same request sent again after a restart, doesn't count twice; a send whose answer was lost keeps counting
   until a fresh read shows whether it landed. When a budget is used up, automatic requests wait until it has room; the
-  status shows when. If the request database can't be used, nothing automatic is sent.
+  status shows when. If the request database can't be used, nothing automatic is sent. Turning the engine on or off
+  while an automatic request is being sent stops it before its next add or search; it starts again half a minute later
+  under the new rules, budgets included.
 - **Breakers and storage.** Five failed automatic sends in a row to one instance pause automatic sends to it for 15
   minutes (an administrator can retry at once from the status). An automatic request whose download would land on a
   drive below the low-disk threshold waits, measured at the folder it would actually land in; while that drive's free

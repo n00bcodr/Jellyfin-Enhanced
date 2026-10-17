@@ -103,6 +103,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <summary>The recipe needs Sonarr/Radarr handling and Seerr handles requests.</summary>
         public const string SeerrUnsupported = "seerr_unsupported";
 
+        /// <summary>
+        /// The automation engine was turned on or off after the send started: the attempt starts again under the current
+        /// rules (its budgets and checks) instead of sending with the ones it started with.
+        /// </summary>
+        public const string EngineChanged = "automation_changed";
+
         private static readonly Dictionary<string, TimeSpan> Waits = new(StringComparer.Ordinal)
         {
             [ShadowOverride] = TimeSpan.FromMinutes(15),
@@ -114,6 +120,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             [AccountingUnavailable] = TimeSpan.FromMinutes(5),
             [LowDisk] = TimeSpan.FromMinutes(30),
             [DiskUnknown] = TimeSpan.FromMinutes(2),
+            [EngineChanged] = TimeSpan.FromSeconds(30),
         };
 
         /// <summary>True for a hold that waits and is checked again by itself (not parked for a person).</summary>
@@ -227,10 +234,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="job">The job (its attempt count makes a resend's search a new search).</param>
         /// <param name="want">Its want.</param>
         public ISendAdmission? Admission(RequestJob job, RequestWant? want)
-        {
-            if (want == null || !RequestOrigin.IsAutomatic(want.OriginKind) || !AutomationFlags.Engine(_policy.Configuration)) return null;
-            return new JobAdmission(_budgets, job, RecipeOf(want), _now);
-        }
+            => Budgeted(want) ? new JobAdmission(_budgets, job, RecipeOf(want!), _now) : null;
+
+        /// <summary>
+        /// True when the want's writes are admitted against the budgets now: an automatic origin with the engine on. An
+        /// attempt that started the other way stops at its next write (see <see cref="AutomationHolds.EngineChanged"/>).
+        /// </summary>
+        /// <param name="want">The want.</param>
+        public bool Budgeted(RequestWant? want) => want != null && RequestOrigin.IsAutomatic(want.OriginKind) && AutomationFlags.Engine(_policy.Configuration);
 
         /// <summary>
         /// After a job's attempt: counts a transport failure toward the target's breaker or closes it on success, and

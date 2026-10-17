@@ -1697,6 +1697,7 @@
     "arr_auto_held_disk_unknown": "disk space unknown",
     "arr_auto_held_approval_required": "waiting for an OK",
     "arr_auto_held_seerr_unsupported": "not available with Seerr",
+    "arr_auto_held_automation_changed": "starting again after the automation switch changed",
     "arr_auto_seerr": "Seerr handles requests: automation counts only the requests Jellyfin Enhanced sends to Seerr, and its kill switches and storage check hold only those. Once Seerr accepts a request, Seerr (and its Sonarr/Radarr) decide everything after that, so per-instance limits and stopping work after hand-off aren't available. Release-day searches need Sonarr/Radarr handling.",
     "arr_auto_status_only": "Status only: no automatic request is made.",
     "arr_auto_accounting_unavailable": "Automation can't count its budgets right now (database unavailable): nothing automatic is sent.",

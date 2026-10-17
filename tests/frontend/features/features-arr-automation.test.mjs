@@ -68,7 +68,7 @@ test('every key the Automation card uses exists in en.json, with every recipe, m
     arr_auto_mode_: ['off', 'shadow', 'ask', 'auto'],
     arr_auto_reason_: ['shadow_override', 'engine_off', 'recipe_off', 'requests_off', 'seerr_unsupported', 'automation_killed'],
     arr_auto_budget_: ['household_add', 'instance_search', 'seerr_post', 'source_fetch', 'delta_work', 'backfill_search'],
-    arr_auto_held_: ['shadow_override', 'phase4_off', 'automation_killed', 'recipe_paused', 'breaker_open', 'budget_exhausted', 'accounting_unavailable', 'low_disk', 'disk_unknown', 'approval_required', 'seerr_unsupported']
+    arr_auto_held_: ['shadow_override', 'phase4_off', 'automation_killed', 'recipe_paused', 'breaker_open', 'budget_exhausted', 'accounting_unavailable', 'low_disk', 'disk_unknown', 'approval_required', 'seerr_unsupported', 'automation_changed']
   };
   for (const [prefix, values] of Object.entries(families)) for (const v of values) assert.ok(`${prefix}${v}` in en, `${prefix}${v}`);
 });

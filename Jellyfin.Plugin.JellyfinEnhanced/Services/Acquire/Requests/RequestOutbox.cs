@@ -207,6 +207,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                             if (requester.Backend == "seerr" && requester.SeerrUser == null && requester.SeerrUnlinked) return "seerr_user_unlinked";
                             if (requester.Backend == "seerr" && requester.BackendQuota?.Available != true && job.State != "maybe_sent") return "backend_unavailable";
                             if (requester.Backend == "seerr" && (requester.SeerrUser == null || requester.SeerrSource == null)) return "backend_unavailable";
+                            // The engine turned on or off since this attempt chose its budget admission: it starts again under
+                            // the current rules rather than writing uncounted (or counted by rules no longer in effect).
+                            if (_automation != null && _automation.Budgeted(want) != (admission != null)) return AutomationHolds.EngineChanged;
                             // A kill switch, mode change or the Shadow override between queueing and this write.
                             if (_automation?.Hold(job, want, preTransport: false) is { } late) return late.Reason;
                             // A changed revision is evaluated above; it is not itself a refusal.
