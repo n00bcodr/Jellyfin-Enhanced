@@ -170,4 +170,29 @@ public class ListsRecheckTests
         Error(await second, 403, "forbidden");
         Assert.DoesNotContain(h.Host.Calls, c => c == "create-collection:Second");
     }
+
+    [Fact]
+    public async Task AShareRemovedWhileAViewsStatusesLoadAnswersWithoutTheList()
+    {
+        using var h = new ListsHarness(status: true);
+        h.Plugin.Plugin.Configuration.ArrPhase4ListStatusEnabled = true;
+        h.Status.ByKey["movie:tmdb:920"] = "{\"stage\":\"asked\"}";
+        var owner = h.NewUser("owner");
+        var viewer = h.NewUser("viewer");
+        var playlist = h.Host.AddPlaylist(owner, false, new ListShare(viewer.Id, false));
+        Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(h.AccessFor(playlist, owner), new[] { Movie(920, "2020-01-01") }, null, null, null, None));
+        var access = h.AccessFor(playlist, viewer);
+        h.Status.During = () => playlist.Info = playlist.Info with { Shares = Array.Empty<ListShare>() };
+
+        // The view a request confirmation answers with, and the view the list route answers with.
+        Assert.Null(await h.Service.ViewAsync(access, None));
+        playlist.Info = playlist.Info with { Shares = new[] { new ListShare(viewer.Id, false) } };
+        Assert.Null(await h.Service.GetCurrentViewAsync(access, None));
+
+        // Still shared: the view as before.
+        h.Status.During = null;
+        playlist.Info = playlist.Info with { Shares = new[] { new ListShare(viewer.Id, false) } };
+        var view = await h.Service.GetCurrentViewAsync(access, None);
+        Assert.Equal("asked", Assert.Single(view!.Placeholders).Status!.Value.GetProperty("stage").GetString());
+    }
 }

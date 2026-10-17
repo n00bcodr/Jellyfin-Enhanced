@@ -254,9 +254,13 @@ internal sealed class FakeListStatusSource : IListStatusSource
 
     public Exception? Fail { get; set; }
 
+    /// <summary>Runs during each title status read (e.g. a share removed while the statuses load).</summary>
+    public Action? During { get; set; }
+
     public Task<IReadOnlyDictionary<string, JsonElement>> StatusesAsync(Guid user, IReadOnlyList<TitleKey> keys, CancellationToken cancellationToken)
     {
         Calls.Add((user, keys.Select(k => k.ToString()).ToList()));
+        During?.Invoke();
         if (Fail != null)
         {
             throw Fail;

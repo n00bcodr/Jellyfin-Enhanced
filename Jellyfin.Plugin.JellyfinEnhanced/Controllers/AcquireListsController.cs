@@ -79,8 +79,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return error;
                 }
 
-                var view = await _service.GetViewAsync(access!, cancellationToken).ConfigureAwait(false);
-                return Revalidated(access!.User, view);
+                // Rights read again once the statuses are in (they can take a while): never a list the caller lost meanwhile.
+                var view = await _service.GetCurrentViewAsync(access!, cancellationToken).ConfigureAwait(false);
+                return view == null ? Refused(404, "not_found", "List not found.") : Revalidated(access!.User, view);
             });
 
         /// <summary>Adds entries (titles already in the library go in as real items).</summary>

@@ -230,7 +230,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>The view.</returns>
         public async Task<ListViewDto> GetViewAsync(ListAccess access, CancellationToken cancellationToken)
+            => (await ProjectAsync(access, recheck: false, cancellationToken).ConfigureAwait(false))!;
+
+        /// <summary>
+        /// The caller's view of a list as they may see it when it is answered: their rights and limits are read again
+        /// (a fresh user) before the projection and again after the statuses (which can take a while with a slow
+        /// Sonarr/Radarr), so a share removed or a list made private meanwhile answers null, never the list's contents.
+        /// </summary>
+        /// <param name="access">The access checked earlier (CanView).</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>The view, or null when the caller can no longer see the list.</returns>
+        public Task<ListViewDto?> GetCurrentViewAsync(ListAccess access, CancellationToken cancellationToken)
+            => ProjectAsync(access, recheck: true, cancellationToken);
+
+        private async Task<ListViewDto?> ProjectAsync(ListAccess access, bool recheck, CancellationToken cancellationToken)
         {
+            if (recheck)
+            {
+                if (_access.Current(access) is not { } fresh)
+                {
+                    return null;
+                }
+
+                access = fresh;
+            }
+
             var doc = _store.Load(access.ListIdN);
             List<string>? canonical = null;
             if (access.List.Kind == ListKinds.Playlist)
@@ -264,6 +288,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             var visibility = await VisibilityAsync(doc, access.User, cancellationToken).ConfigureAwait(false);
             var statuses = await StatusesAsync(access, items.Where(visibility.IsVisible).ToList(), cancellationToken).ConfigureAwait(false);
+            if (recheck)
+            {
+                // The statuses took a while: the rights and limits the answer is built with are read again.
+                if (_access.Current(access) is not { } current)
+                {
+                    return null;
+                }
+
+                access = current;
+                visibility = await VisibilityAsync(doc, access.User, cancellationToken).ConfigureAwait(false);
+            }
+
             return BuildView(access, doc, canonical, visibility, statuses);
         }
 
@@ -275,12 +311,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="access">The access the confirmation was checked with.</param>
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>The view, or null when the caller can no longer see the list.</returns>
-        public async Task<ListViewDto?> ViewAsync(ListAccess access, CancellationToken cancellationToken)
-        {
-            var user = _userManager.GetUserById(access.User.Id);
-            var current = user == null ? null : _access.Resolve(access.List.Id, user);
-            return current == null || !current.Permissions.CanView ? null : await GetViewAsync(current, cancellationToken).ConfigureAwait(false);
-        }
+        public Task<ListViewDto?> ViewAsync(ListAccess access, CancellationToken cancellationToken) => GetCurrentViewAsync(access, cancellationToken);
 
         // The caller's shared request status per title key, when the admin switch and the caller's preference show it.
         private async Task<IReadOnlyDictionary<string, JsonElement>?> StatusesAsync(ListAccess access, IReadOnlyList<Placeholder> visible, CancellationToken cancellationToken)
