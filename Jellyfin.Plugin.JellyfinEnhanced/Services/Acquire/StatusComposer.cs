@@ -598,7 +598,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>A season page (or card): summary, and with <paramref name="detail"/> every episode.</summary>
-        public static TitleStatus Season(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null)
+        public static TitleStatus Season(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, RequestFacts? request = null)
         {
             var (visibleEpisodes, hidden) = SplitHidden(jfEpisodes, null);
             jfEpisodes = visibleEpisodes;
@@ -635,6 +635,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     AirDate = e.Arr?.AirDateUtc,
                 }).ToList();
             }
+            var headline = Overall(stage, summary);
+            if (request != null && stage == StatusStage.None)
+            {
+                // Nothing of the season monitored, queued or here, but an ask covers it (waiting for an OK, or OK'd and not
+                // handed over yet): the ask says where it is, as on the Requests page, not "not fetched".
+                var asked = ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored), request, c, facts);
+                if (asked.Stage != StatusStage.NotHere)
+                {
+                    stage = asked.Stage;
+                    headline = asked;
+                }
+            }
+
             var quiet = summary.Downloading == 0 && summary.AlmostReady == 0 && summary.Attention == 0 && summary.Missing == 0
                 && !(summary.NextAir is DateTime next && next - c.Now <= UpcomingShownWithin);
             AdminStatus? admin = null;
@@ -652,7 +665,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 ItemId = Id(item.ItemId),
                 Kind = "season",
                 Stage = stage,
-                Reason = Reason(Overall(stage, summary)),
+                Reason = Reason(headline),
                 Attention = summary.Attention > 0 || otherProblems,
                 Quiet = quiet && !otherProblems,
                 Progress = progress.Count == 1 ? progress[0] : null,
@@ -1309,6 +1322,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (s.Missing > 0 && s.LongMissing >= s.Missing) return StatusReasonCode.NoReleaseYet;
             if (s.Missing > 0) return StatusReasonCode.Looking;
             if (s.Aired == 0 && s.NextAir.HasValue) return StatusReasonCode.NotAired;
+            // Aired episodes, none here and none being looked for (all unmonitored): not "Ready" (the stage is None).
+            if (s.Aired > 0 && s.Ready == 0) return StatusReasonCode.Unmonitored;
             return StatusReasonCode.Ready;
         }
 

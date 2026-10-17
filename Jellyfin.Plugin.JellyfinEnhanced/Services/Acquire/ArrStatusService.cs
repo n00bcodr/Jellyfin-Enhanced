@@ -326,7 +326,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     // The season's episodes the library hides from the viewer (as the season rows leave them out).
                     rows.AddRange(page.HiddenEpisodes.Select(n => new JfEpisode { Season = page.Season ?? 0, Episode = n, Hidden = true }));
                     status = facts.Copies.Any(x => x.Series != null)
-                        ? StatusComposer.Season(facts, item, rows, c, detail: true)
+                        ? StatusComposer.Season(facts, item, rows, c, detail: true, request: episodeRequests)
                         : StatusComposer.AbsentSeason(facts, page, episodeRequests, c);
                     break;
                 default:
