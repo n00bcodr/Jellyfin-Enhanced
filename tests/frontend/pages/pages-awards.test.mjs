@@ -13,6 +13,11 @@ test('awards normalize nested server fields, escape upstream strings and replace
   const h=await setup(t);const banner=h.document.querySelector('.je-awards-section');assert.ok(banner);assert.match(banner.textContent,/Academy Award for <script>bad<\/script>/);assert.equal(banner.querySelector('script'),null);assert.equal(banner.querySelector('[src="x"]'),null);
   await h.navigate();assert.equal(h.document.querySelectorAll('.je-awards-section').length,1);assert.equal(h.document.querySelectorAll('#je-awards-styles').length,1);
 });
+test('awards body icons skip the Academy Awards, which have no free logo, and keep mapped bodies',async t=>{
+  const h=await setup(t,{data:{Found:true,Wins:1,Nominations:1,Awards:[{Name:'Academy Award for Best Picture',Result:'Won',Year:2025},{Name:'Golden Globe Award for Best Motion Picture',Result:'Nominated',Year:2025}]}});
+  const icons=[...h.document.querySelectorAll('.je-awards-row')].map(row=>[row.querySelector('.je-awards-row-name').textContent,row.querySelector('.je-awards-body-icon')?.getAttribute('src')??null]);
+  assert.deepEqual(icons,[['Academy Award for Best Picture',null],['Golden Globe Award for Best Motion Picture','https://cdn.test/golden-globe']]);
+});
 for(const [Type,expected,item] of [['Person','person',{ProviderIds:{Tmdb:8}}],['Episode','tv',{SeriesId:'series'}],['Series','tv',{ProviderIds:{Tmdb:9}}]]){
   test(`awards ${Type} uses correct provider namespace`,async t=>{const h=await setup(t,{item:{Type,...item}});assert.match(h.calls[0],new RegExp(`/awards/${expected}/`));assert.ok(h.document.querySelector('.je-awards-section'));});
 }

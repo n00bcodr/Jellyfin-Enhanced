@@ -289,7 +289,9 @@
         // license-verified free logo are listed here (see CdnAssetService.cs
         // "award-logos" source for exactly which file + license each maps to);
         // everything else falls back to the generic star icon in the summary
-        // bar rather than guessing at unverified imagery. Checked in order, so
+        // bar rather than guessing at unverified imagery. The Academy Awards
+        // have no entry: the Oscar statuette is copyrighted and Commons has no
+        // free version of it. Checked in order, so
         // more specific prefixes (BAFTA before a hypothetical bare "Award")
         // can be added above broader ones if that's ever needed.
         //
@@ -299,7 +301,6 @@
         // banner. Most of the others are already gold/multi-tone and render
         // fine as-is now that icons show in their real color.
         const AWARD_BODY_ICONS = [
-            ['Academy Award', 'oscar'],
             ['Golden Globe Award', 'golden-globe'],
             ['BAFTA Award', 'bafta'],
             ['Primetime Emmy Award', 'emmy'],

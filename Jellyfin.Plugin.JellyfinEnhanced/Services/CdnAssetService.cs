@@ -147,11 +147,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Jellyfin-Elsewhere region/provider reference lists (fetched as text)
             ["elsewhere-res"] = new("https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources", Types("text/plain")),
             // Award-body logos for the Awards feature (WikidataAwardsService), sourced from
-            // Wikimedia Commons via its Special:FilePath redirect.
+            // Wikimedia Commons via its Special:FilePath redirect. There is no Oscar entry:
+            // Commons deleted its statuette silhouette in 2026 because the statuette's
+            // design (silhouette included) is copyrighted, so there's no free file to use.
             ["award-logos"] = new("https://commons.wikimedia.org/wiki/Special:FilePath", Types("image/svg+xml", "image/png"),
                 FixedPaths: new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["oscar"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Oscar%20gold%20silhouette.svg",
                     ["golden-globe"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Golden_Globe_icon_(gold).svg",
                     ["bafta"] = "https://commons.wikimedia.org/wiki/Special:FilePath/BAFTA%20award%20icon%20gold%20silhouette.svg",
                     ["emmy"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Emmy%20gold%20silhouette.svg",
@@ -226,7 +227,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("icon-metadata", "public-icon.css"),
             ("elsewhere-res", "regions.txt"),
             ("elsewhere-res", "providers.txt"),
-            ("award-logos", "oscar"),
             ("award-logos", "golden-globe"),
             ("award-logos", "bafta"),
             ("award-logos", "emmy"),
