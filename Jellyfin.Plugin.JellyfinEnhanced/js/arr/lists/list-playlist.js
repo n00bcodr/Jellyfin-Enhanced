@@ -12,8 +12,11 @@
  *   them. Dragging a real row still works: Sortable's `newIndex` would count JE rows, so the drop index Jellyfin uses
  *   for its own Move is corrected to count real rows only, and the view is read again to re-anchor the entries.
  *   Dragging entries themselves (and Move up/down) is not part of this phase.
- * - Late or out-of-order answers are dropped (a newer read wins; a lower revision never replaces a higher one), and
- *   everything stops when the page is left, the person changes or the pages are switched off.
+ * - When the real items change between two views (an entry swapped in, a title removed or added elsewhere), Jellyfin's
+ *   own rows are refreshed first and the entries are placed once its new rows are in (they anchor to them).
+ * - Answers go through the one acceptance rule (lp.pages.ticket: session, page show, route, list) plus this
+ *   controller's newest read, after every await; a lower revision never replaces a higher one; everything stops when
+ *   the page is left, the person changes or the pages are switched off.
  */
 (function (JE) {
     'use strict';
@@ -31,6 +34,8 @@
     const CONTAINER_WAIT_TRIES = 40;
     /** Rows built per slice when many are new (a 699-entry list never blocks the page in one long task). */
     const BUILD_CHUNK = 150;
+    /** How long to wait for Jellyfin's own rows after asking it to refresh them (then the entries are placed anyway). */
+    const NATIVE_REFRESH_MS = 4000;
 
     /**
      * Whether jellyfin-web runs its TV layout.
@@ -113,6 +118,25 @@
     }
 
     /**
+     * The real items of a view, as a sorted list of occurrence tokens (`e:` tokens of its order).
+     * @param {Object|null} view View.
+     * @returns {string} Signature.
+     */
+    function realMembers(view) {
+        return (view?.order || []).filter(t => typeof t === 'string' && t.startsWith('e:')).sort().join(',');
+    }
+
+    /**
+     * Whether the real items changed between the view shown and a newer one (Jellyfin's rows need a refresh first).
+     * @param {Object|null} previous Shown view.
+     * @param {Object} view New view.
+     * @returns {boolean} Changed.
+     */
+    function membershipChanged(previous, view) {
+        return !!previous && Array.isArray(view?.order) && Array.isArray(previous.order) && realMembers(previous) !== realMembers(view);
+    }
+
+    /**
      * The controller of one playlist page's items container.
      * @param {HTMLElement} page The details page.
      * @param {HTMLElement} container `#childrenContent .itemsContainer`.
@@ -140,7 +164,10 @@
             disposed: false,
             focusOnRender: null,
             observer: null,
-            buildToken: 0
+            buildToken: 0,
+            awaitingNative: false,
+            nativeTimer: null,
+            header: lp.render.headerMark(page)
         };
 
         /** @returns {boolean} The page is still in the document. */
@@ -170,6 +197,7 @@
             statusShown: ctrl.view?.statusShown === true,
             statusContext: {},
             requests: JE.pluginConfig?.ArrListRequestsEnabled === true && (ctrl.view?.actions || []).includes('request'),
+            swapActive: ctrl.view?.swapIn === true && ctrl.view?.reconciling !== true,
             guarded: ctrl.guarded
         });
 
@@ -269,10 +297,37 @@
         ctrl.applyView = (view, options) => {
             if (!view || lp.render.normalizeId(view.listId) !== listId || !ctrl.isAlive() || ctrl.paused) return;
             if (isOlder(view, ctrl.view)) return;
+            const moved = membershipChanged(ctrl.view, view);
             ctrl.view = view;
-            ctrl.render();
+            ctrl.header.set((view.placeholders || []).length);
+            if (moved && typeof container.notifyRefreshNeeded === 'function') ctrl.refreshNative();
+            else ctrl.render();
             ctrl.follow();
             if (options?.fromChange) ctrl.scheduleRefetch(REFETCH_MS);
+        };
+
+        /**
+         * Asks Jellyfin to refresh its own rows (their set changed); the entries are placed when its rows are in (its
+         * afterRefresh), or after NATIVE_REFRESH_MS if it never re-renders.
+         */
+        ctrl.refreshNative = () => {
+            ctrl.awaitingNative = true;
+            clearTimeout(ctrl.nativeTimer);
+            ctrl.nativeTimer = setTimeout(() => {
+                ctrl.nativeTimer = null;
+                if (!ctrl.awaitingNative) return;
+                ctrl.awaitingNative = false;
+                if (!ctrl.disposed && !ctrl.paused) ctrl.render();
+            }, NATIVE_REFRESH_MS);
+            try {
+                container.notifyRefreshNeeded(true);
+            } catch (err) {
+                console.warn(`${logPrefix} the playlist's rows couldn't be refreshed`, err?.message || err);
+                ctrl.awaitingNative = false;
+                clearTimeout(ctrl.nativeTimer);
+                ctrl.nativeTimer = null;
+                ctrl.render();
+            }
         };
 
         /** Follows the shared status of the titles shown (one subscription per set of titles). */
@@ -298,33 +353,34 @@
             ctrl.abort?.abort();
             const abort = new AbortController();
             ctrl.abort = abort;
-            const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
-            const current = () => seq === ctrl.seq && !abort.signal.aborted && ctrl.isShown() && !ctrl.paused
-                && (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch;
+            // The one acceptance rule (session, page show, route, list), plus: this is still the newest read.
+            const rule = lp.pages.ticket(ctrl, () => seq === ctrl.seq && !abort.signal.aborted && ctrl.isShown() && !ctrl.paused);
             let answer;
             let since;
             let guarded;
             try {
                 since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : undefined;
+                if (!rule.current()) return;
                 [answer, guarded] = await Promise.all([
-                    JE.arrLists.getList(listId, { signal: abort.signal }),
+                    JE.arrLists.getList(listId, { signal: abort.signal, ticket: rule }),
                     lp.render.spoilerPolicy({ listKind: 'playlist', listId })
                 ]);
+                if (!rule.current()) return;
             } catch (err) {
                 if (!err?.stale && err?.name !== 'AbortError') console.warn(`${logPrefix} the playlist couldn't be read`, err?.message || err);
                 return;
             }
-            if (!current()) return;
             if (answer.status === 404 || answer.status === 403) {
                 // Gone or no longer this person's to see: nothing of it stays on the page.
                 ctrl.view = null;
                 ctrl.clear();
+                ctrl.header.clear();
                 ctrl.statusOff?.();
                 ctrl.statusOff = null;
                 ctrl.statusKeys = '';
                 return;
             }
-            if (answer.status !== 200 || !answer.body) return;
+            if (answer.status !== 200 || !answer.body || !rule.accepts(answer.body)) return;
             ctrl.since = since;
             ctrl.guarded = guarded;
             ctrl.applyView(answer.body);
@@ -392,7 +448,7 @@
             e.preventDefault();
             e.stopPropagation();
             if (request) {
-                if (!request.disabled) lp.request.open({ listId, onDone: () => ctrl.scheduleRefetch(500) }, ph, request);
+                if (!request.disabled) lp.request.open({ listId, ticket: () => lp.pages.ticket(ctrl), onDone: () => ctrl.scheduleRefetch(500) }, ph, request);
                 return;
             }
             lp.pages.openEntry(ctrl, ph);
@@ -405,13 +461,19 @@
             try {
                 if (typeof previousAfterRefresh === 'function') previousAfterRefresh.call(this, result);
             } finally {
-                if (!ctrl.disposed && !ctrl.paused) ctrl.render();
+                if (!ctrl.disposed && !ctrl.paused) {
+                    // Jellyfin's rows are in (after a refresh JE asked for, or its own): place the entries now.
+                    ctrl.awaitingNative = false;
+                    clearTimeout(ctrl.nativeTimer);
+                    ctrl.nativeTimer = null;
+                    ctrl.render();
+                }
             }
         };
 
         /** Puts the rows back if a re-render that bypassed afterRefresh dropped all of them. */
         ctrl.restoreIfLost = () => {
-            if (ctrl.disposed || ctrl.paused || !(ctrl.view?.placeholders || []).length) return;
+            if (ctrl.disposed || ctrl.paused || ctrl.awaitingNative || !(ctrl.view?.placeholders || []).length) return;
             if (container.querySelector(':scope > .je-list-row')) return;
             // The rows built before are put back as they are (no rebuild).
             ctrl.render();
@@ -440,7 +502,9 @@
             ctrl.abort = null;
             clearTimeout(ctrl.refetchTimer);
             clearTimeout(ctrl.waitTimer);
-            ctrl.refetchTimer = ctrl.waitTimer = null;
+            clearTimeout(ctrl.nativeTimer);
+            ctrl.refetchTimer = ctrl.waitTimer = ctrl.nativeTimer = null;
+            ctrl.awaitingNative = false;
             ctrl.statusOff?.();
             ctrl.statusOff = null;
             ctrl.statusKeys = '';
@@ -463,6 +527,7 @@
             container.removeEventListener('end', ctrl.onSortEnd);
             container.removeEventListener('click', ctrl.onClick);
             ctrl.clear();
+            ctrl.header.clear();
             ctrl.view = null;
             if (container.__jeListCtrl === ctrl) delete container.__jeListCtrl;
         };
@@ -493,5 +558,5 @@
         return ctrl;
     }
 
-    lp.playlist = { attach, createController, planPlacement, assignRealTokens, isOlder, isTv, REFETCH_PER_MINUTE };
+    lp.playlist = { attach, createController, planPlacement, assignRealTokens, isOlder, isTv, membershipChanged, REFETCH_PER_MINUTE };
 })(window.JellyfinEnhanced);

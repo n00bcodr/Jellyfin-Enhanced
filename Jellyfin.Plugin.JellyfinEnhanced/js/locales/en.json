@@ -1896,6 +1896,8 @@
     "arr_lists_fill_of": "{filled} of {total} episode in the list|{filled} of {total} episodes in the list",
     "arr_lists_not_in_library": "Not in your library",
     "arr_lists_adding": "Available, adding it…",
+    "arr_lists_in_library": "In your library",
+    "arr_lists_header_incomplete": "You've watched what's in your library · {count} title isn't in your library yet|You've watched what's in your library · {count} titles aren't in your library yet",
     "arr_lists_note_hidden": "Note hidden by Spoiler Guard",
     "arr_lists_request": "Request",
     "arr_lists_request_title": "Request {title}",

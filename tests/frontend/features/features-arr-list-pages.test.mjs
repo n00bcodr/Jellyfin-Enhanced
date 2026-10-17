@@ -54,7 +54,7 @@ function view(placeholders, order, extra = {}) {
  * A harness with the list pages loaded against fake routes.
  * @returns {Object} Harness pieces.
  */
-function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, items = {}, spoiler = null, getItems, html = '', me = MEMBER } = {}) {
+function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, items = {}, spoiler = null, getItems, html = '', me = MEMBER, route = null, realBody = false } = {}) {
   const calls = [];
   const toasts = [];
   const viewHooks = [];
@@ -71,6 +71,10 @@ function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, 
       const method = init.method || 'GET';
       const body = init.body ? JSON.parse(init.body) : null;
       calls.push({ method, path, body, headers: init.headers });
+      if (route) {
+        const answer = await route(method, path, body);
+        if (answer) return answer;
+      }
       let m;
       if (method === 'POST' && path === '/acquire/lists/summaries') return jsonResponse(...await summaries(body, calls));
       if (method === 'POST' && (m = /^\/acquire\/lists\/([0-9a-f]{32})\/requests\/preview$/.exec(path))) return jsonResponse(...await preview(m[1], body));
@@ -92,7 +96,16 @@ function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, 
       helpers: { getItemCached: async id => items[id] || null },
       core: {
         navigation: { onViewPage: (fn, opts) => { viewHooks.push(fn); if (opts?.immediate) fn('x', null, h.window.location.hash); return () => {}; } },
-        dom: { onBodyMutation: (id, fn) => { bodySubs.set(id, fn); return { unsubscribe() { bodySubs.delete(id); } }; }, removeBodySubscriber: id => bodySubs.delete(id) }
+        // realBody: the subscriber hears the document's real mutations (childList, subtree), as JE's shared observer does.
+        dom: {
+          onBodyMutation: (id, fn) => {
+            bodySubs.set(id, fn);
+            const mo = realBody ? new h.window.MutationObserver(records => { if (bodySubs.get(id) === fn) fn(records); }) : null;
+            mo?.observe(h.document.body, { childList: true, subtree: true });
+            return { unsubscribe() { mo?.disconnect(); bodySubs.delete(id); } };
+          },
+          removeBodySubscriber: id => bodySubs.delete(id)
+        }
       },
       session: { getEpoch: () => state.epoch, isCurrent: e => e === state.epoch, onUserChange: (name, fn) => userChange.push(fn) },
       spoilerBlur: spoiler || undefined
@@ -608,3 +621,303 @@ test('a list the person can no longer see (404) takes its rows away', async t =>
   await h.show(page);
   assert.equal(container.querySelectorAll('.je-list-row').length, 0);
 });
+
+// ------------------------------------------------------------------ review round 1
+
+const LIST_B = 'b'.repeat(32);
+
+/** A response whose body arrives when the test says so (the account can change while it is being read). */
+function slowBody(gate, status = 200) {
+  return { status, ok: status < 300, headers: { get: () => null }, text: () => gate.promise.then(v => JSON.stringify(v)), json: () => gate.promise };
+}
+
+test('r1 S1: a change answer still being read when the account switches is never cached, announced or drawn', async t => {
+  const body = deferred();
+  let reads = 0;
+  const h = setup(t, {
+    views: () => { reads += 1; return reads === 1 ? [view([ph(P(1))], ['p:' + P(1)])] : [view([ph(P(3))], ['p:' + P(3)], { rev: 2 })]; },
+    items: { [LIST]: PLAYLIST_ITEM },
+    route: (method, path) => (method === 'PATCH' && path.startsWith(`/acquire/lists/${LIST}/items/`) ? slowBody(body) : null)
+  });
+  const heard = [];
+  h.JE.arrLists.onChange((listId, v, origin) => heard.push({ listId, rev: v?.rev, origin }));
+  await h.start();
+  const { page, container } = h.playlistPage([]);
+  await h.show(page);
+  assert.deepEqual(h.order(container), ['p:01']);
+  const pending = h.JE.arrLists.patchItem(LIST, P(1), { requestId: 'x1', rev: 1, note: 'n' });
+  await h.settle();
+  // The previous viewer's answer is still being read when another person signs in on this page.
+  h.state.epoch = 2;
+  h.userChange.forEach(fn => fn());
+  await h.settle();
+  await h.show(page);
+  assert.deepEqual(h.order(container), ['p:03'], 'the new person sees their own view');
+  // The old answer (an entry only the previous viewer may see) finishes arriving.
+  body.resolve({ ...view([ph(P(1)), ph(P(8), { title: 'Adults only' })], ['p:' + P(1), 'p:' + P(8)], { rev: 9 }) });
+  await assert.rejects(pending, e => e?.stale === true);
+  await h.settle(60);
+  assert.deepEqual(h.order(container), ['p:03']);
+  assert.ok(!container.textContent.includes('Adults only'));
+  assert.equal(heard.length, 0, 'nothing was announced to the new person\'s pages');
+});
+
+test('r1 S1: a list change from another session is refused by the pages (the change carries its session)', async t => {
+  const h = setup(t, { views: () => [view([ph(P(1))], ['p:' + P(1)])], items: { [LIST]: PLAYLIST_ITEM } });
+  await h.start();
+  const { page, container } = h.playlistPage([]);
+  await h.show(page);
+  const onListChange = h.JE.internals.arrListPages.pages.onListChange;
+  onListChange(LIST, view([ph(P(8))], ['p:' + P(8)], { rev: 50 }), { epoch: 0 });
+  onListChange(LIST, view([ph(P(8))], ['p:' + P(8)], { rev: 50 }));
+  // A view of another list, announced under this list's id, is refused too.
+  onListChange(LIST, view([ph(P(7))], ['p:' + P(7)], { rev: 50, listId: LIST_B }), { epoch: 1 });
+  assert.deepEqual(h.order(container), ['p:01']);
+  onListChange(LIST, view([ph(P(9))], ['p:' + P(9)], { rev: 51 }), { epoch: 1 });
+  assert.deepEqual(h.order(container), ['p:09'], 'this session\'s own change is drawn');
+});
+
+test('r1 B1: a page element re-used for another list ignores the late identity lookup of the list shown before', async t => {
+  const lookupA = deferred();
+  const h = setup(t, {
+    views: id => [id === LIST ? view([ph(P(1))], ['p:' + P(1)]) : view([ph(P(2))], ['p:' + P(2)], { listId: LIST_B })],
+    items: { [LIST]: lookupA.promise, [LIST_B]: { Id: LIST_B, Type: 'Playlist' } }
+  });
+  await h.start();
+  const { page, container } = h.playlistPage([]);
+  // List A is shown; its identity lookup hangs.
+  h.window.location.hash = '#/details?id=' + LIST;
+  for (const fn of h.viewHooks) fn('x', page, h.window.location.hash);
+  await h.settle();
+  // jellyfin-web re-uses the same page element for list B.
+  await h.show(page, '#/details?id=' + LIST_B);
+  assert.deepEqual(h.order(container), ['p:02']);
+  lookupA.resolve(PLAYLIST_ITEM);
+  await h.settle(60);
+  assert.deepEqual(h.order(container), ['p:02'], 'B stays on B\'s page');
+  const ctrls = [...h.JE.internals.arrListPages.pages.controllers];
+  assert.deepEqual(ctrls.map(c => c.listId), [LIST_B]);
+  assert.equal(h.calls.filter(c => c.path === `/acquire/lists/${LIST}`).length, 0, 'A was never read');
+});
+
+test('r1 S1/B1: the one acceptance rule (session, view-show generation, route, list) and every await in the list modules goes through it', async t => {
+  const h = setup(t, { views: () => [view([ph(P(1))], ['p:' + P(1)])], items: { [LIST]: PLAYLIST_ITEM } });
+  await h.start();
+  const { page } = h.playlistPage([]);
+  await h.show(page);
+  // The transport's rule: session and list.
+  const ticket = h.JE.arrLists.ticket(LIST);
+  assert.equal(ticket.current(), true);
+  assert.equal(ticket.accepts(view([], [])), true);
+  assert.equal(ticket.accepts(view([], [], { listId: LIST_B })), false, 'another list\'s view');
+  // The pages' rule adds the view shown and its route.
+  const lp = h.JE.internals.arrListPages;
+  const ctrl = [...lp.pages.controllers][0];
+  const pageTicket = lp.pages.ticket(ctrl);
+  assert.equal(pageTicket.current(), true);
+  h.window.location.hash = '#/details?id=' + LIST_B;
+  assert.equal(pageTicket.current(), false, 'route changed');
+  h.window.location.hash = '#/details?id=' + LIST;
+  assert.equal(pageTicket.current(), true);
+  await h.show(page);
+  assert.equal(pageTicket.current(), false, 'a newer view show');
+  const second = lp.pages.ticket(ctrl);
+  h.state.epoch = 5;
+  assert.equal(second.current(), false, 'another session');
+  assert.equal(ticket.current(), false);
+  // Source: every await in the list modules is followed, before anything else runs, by the rule.
+  const files = ['list-api.js', 'list-pages.js', 'list-playlist.js', 'list-collection.js', 'list-grid.js', 'list-request.js'];
+  let awaits = 0;
+  for (const file of files) {
+    const lines = readFileSync(resolve(jsRoot, 'arr/lists', file), 'utf8').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const code = lines[i].replace(/\/\/.*$/, '');
+      if (!/\bawait\b/.test(code) || /^\s*(\*|\/\*)/.test(lines[i])) continue;
+      awaits += 1;
+      let end = i;
+      while (end < lines.length && !/;\s*$/.test(lines[end].replace(/\/\/.*$/, ''))) end += 1;
+      let next = end + 1;
+      while (next < lines.length && (!lines[next].trim() || /^\s*\/\//.test(lines[next]))) next += 1;
+      assert.match(lines[next] || '', /\.current\(\)/, `${file}:${i + 1} "${lines[i].trim()}" is not followed by the acceptance rule`);
+    }
+  }
+  assert.ok(awaits >= 12, `awaits found: ${awaits}`);
+});
+
+test('r1 S2: Spoiler Guard hides a guarded entry\'s air dates (rows, cards and labels) when air dates are hidden', async t => {
+  const sg = prefs => ({ whenLoaded: async () => {}, isLoadOk: () => true, isTmdbEnabled: (media, id) => media === 'tv' && Number(id) === 77, isCollectionEnabledFor: () => false, guardedIds: () => ({ series: [], movies: [] }), getUserPrefs: () => ({ ...prefs }) });
+  const entries = [
+    ph(P(1), { kind: 'episodes', mediaType: 'tv', tmdbId: 77, titleKey: 'tv:tvdb:7', seasonNumber: 3, episodes: [{ s: 3, e: 1 }], releaseDate: '2099-01-02', released: false }),
+    ph(P(2), { kind: 'season', mediaType: 'tv', tmdbId: 77, titleKey: 'tv:tvdb:7', seasonNumber: 4, releaseDate: '2098-03-04', released: true }),
+    ph(P(3), { kind: 'episodes', mediaType: 'tv', tmdbId: 88, titleKey: 'tv:tvdb:8', seasonNumber: 1, episodes: [{ s: 1, e: 2 }], releaseDate: '2099-01-02', released: false }),
+  ];
+  const rowsOf = async (config, prefs) => {
+    const h = setup(t, { config: { SpoilerBlurEnabled: true, ...config }, spoiler: sg(prefs), views: () => [view(entries, entries.map(e => e.token))], items: { [LIST]: PLAYLIST_ITEM } });
+    await h.start();
+    const { page, container } = h.playlistPage([]);
+    await h.show(page);
+    return [...container.querySelectorAll('.je-list-row')].map(r => r.textContent + ' | ' + r.querySelector('.je-list-row-main').getAttribute('aria-label'));
+  };
+  const hidden = await rowsOf({}, {});
+  assert.ok(!/2099|2098|Coming/.test(hidden[0]), hidden[0]);
+  assert.ok(!/2098/.test(hidden[1]), hidden[1]);
+  assert.match(hidden[2], /Coming/, 'an entry that isn\'t guarded keeps its date');
+  // The person shows air dates (their own Spoiler Guard setting), or the admin doesn't strip them: dates stay.
+  assert.match((await rowsOf({}, { HideAirDate: false }))[0], /Coming/);
+  assert.match((await rowsOf({ SpoilerStripPremiereDate: false }, {}))[0], /Coming/);
+  // The collection section the same (card text and its label).
+  const coll = { listId: COLL, listKind: 'collection', rev: 2, canEdit: false, actions: [], statusShown: false, placeholders: entries, order: null };
+  const c = setup(t, { config: { SpoilerBlurEnabled: true }, spoiler: sg({}), views: () => [coll], items: { [COLL]: { Id: COLL, Type: 'BoxSet' } } });
+  const page = c.document.createElement('div');
+  page.className = 'page itemDetailPage';
+  page.innerHTML = '<div class="detailSection"><div class="collectionItems"></div></div>';
+  c.document.body.appendChild(page);
+  await c.start();
+  await c.show(page, '#/details?id=' + COLL);
+  const cards = [...page.querySelectorAll('.je-list-card')];
+  assert.equal(cards.length, 3);
+  for (const card of cards.slice(0, 2)) {
+    const text = card.textContent + ' | ' + card.querySelector('.je-list-card-main').getAttribute('aria-label');
+    assert.ok(!/2099|2098|Coming/.test(text), text);
+  }
+  assert.match(cards[2].textContent, /Coming/);
+});
+
+test('r1 B2: Playlists grid cards that jellyfin-web replaces, re-uses for another list or gives a new played check keep the right mark', async t => {
+  const ids = Array.from({ length: 6 }, (_, i) => ITEM(0x2000 + i));
+  const missing = { [ids[0]]: 4, [ids[2]]: 2, [ids[4]]: 1 };
+  const asked = [];
+  const h = setup(t, {
+    realBody: true,
+    views: () => [null, 404],
+    summaries: body => { asked.push(...body.listIds); return [{ lists: body.listIds.filter(id => missing[id]).map(listId => ({ listId, listKind: 'playlist', missing: missing[listId] })), pending: [] }]; }
+  });
+  const cardHtml = id => `<div class="card squareCard card-withuserdata" data-id="${id}" data-type="Playlist"><div class="cardBox"><div class="cardScalable"><a class="cardImageContainer itemAction"><div class="cardIndicators"><div class="playedIndicator indicator"><span class="material-icons indicatorIcon check"></span></div></div></a></div></div></div>`;
+  const grid = h.document.createElement('div');
+  grid.className = 'page libraryPage';
+  grid.innerHTML = '<div class="itemsContainer vertical-wrap">' + ids.slice(0, 3).map(cardHtml).join('') + '</div>';
+  h.document.body.appendChild(grid);
+  h.window.location.hash = '#/list?parentId=x';
+  await h.start();
+  await h.settle(300);
+  const marked = () => [...grid.querySelectorAll('.card')].map(c => `${c.getAttribute('data-id').slice(-1)}:${c.classList.contains('je-list-incomplete') ? c.querySelector('.je-list-grid-count')?.textContent : '-'}`);
+  assert.deepEqual(marked(), ['0:4', '1:-', '2:2']);
+  // Sort / filter / next page: jellyfin-web replaces the container's cards with new ones.
+  grid.querySelector('.itemsContainer').innerHTML = [ids[4], ids[0], ids[3]].map(cardHtml).join('');
+  await h.settle(300);
+  assert.deepEqual(marked(), ['4:1', '0:4', '3:-']);
+  // The same card element re-used for another list (its data-id and contents change in place).
+  const first = grid.querySelector('.card');
+  first.setAttribute('data-id', ids[1]);
+  first.querySelector('.cardImageContainer').innerHTML = '<div class="cardIndicators"><div class="playedIndicator indicator"></div></div>';
+  await h.settle(300);
+  assert.deepEqual(marked(), ['1:-', '0:4', '3:-'], 'the re-used card follows its new list');
+  assert.equal(first.querySelector('.je-list-grid-indicator'), null);
+  first.setAttribute('data-id', ids[2]);
+  await h.settle(300);
+  assert.deepEqual(marked(), ['2:2', '0:4', '3:-']);
+  // jellyfin-web's user-data update rebuilds a card's indicators (played check back): the mark comes back with them.
+  const second = grid.querySelectorAll('.card')[1];
+  second.querySelector('.cardImageContainer').innerHTML = '<div class="cardIndicators"><div class="playedIndicator indicator"></div></div>';
+  await h.settle(300);
+  assert.ok(second.classList.contains('je-list-incomplete'));
+  assert.equal(second.querySelector('.je-list-grid-count')?.textContent, '4');
+  // A card re-used for something with the empty id is no list: never asked about (the server refuses a batch with it).
+  first.setAttribute('data-id', '0'.repeat(32));
+  await h.settle(300);
+  assert.equal(first.classList.contains('je-list-incomplete'), false);
+  assert.ok(!asked.includes('0'.repeat(32)), 'the empty id was sent');
+});
+
+test('r1 B3: an entry swapped into the playlist refreshes Jellyfin\'s rows first, then the entries are placed around the new row', async t => {
+  const [a, b] = [ITEM(0xa1), ITEM(0xb2)];
+  let reads = 0;
+  const h = setup(t, {
+    views: () => {
+      reads += 1;
+      return reads === 1
+        ? [view([ph(P(1)), ph(P(2)), ph(P(3))], ['p:' + P(1), `e:${a}:0`, 'p:' + P(2), 'p:' + P(3)])]
+        // P(2) became the library item b, in its place.
+        : [view([ph(P(1)), ph(P(3))], ['p:' + P(1), `e:${a}:0`, `e:${b}:0`, 'p:' + P(3)], { rev: 2 })];
+    },
+    items: { [LIST]: PLAYLIST_ITEM }
+  });
+  await h.start();
+  const { page, container } = h.playlistPage([a]);
+  const refreshes = [];
+  const realRow = id => `<div class="listItem" data-id="${id}" data-playlistitemid="${id}"></div>`;
+  container.notifyRefreshNeeded = () => {
+    refreshes.push(h.order(container).join(','));
+    setTimeout(() => { container.innerHTML = realRow(a) + realRow(b); container.afterRefresh(); }, 30);
+  };
+  await h.show(page);
+  assert.deepEqual(h.order(container), ['p:01', 'e:a1', 'p:02', 'p:03']);
+  assert.equal(refreshes.length, 0, 'the first view refreshes nothing');
+  h.JE.internals.arrListPages.pages.onLibraryChanged({ ItemsUpdated: [LIST] });
+  await sleep(1150);
+  await h.settle(120);
+  assert.equal(refreshes.length, 1, 'Jellyfin\'s rows were refreshed once');
+  assert.deepEqual(h.order(container), ['p:01', 'e:a1', 'e:b2', 'p:03']);
+});
+
+test('r1 B4: a library match reads "In your library" when nothing is being added, "adding it" only while swap-in runs', async t => {
+  const match = ITEM(0x77);
+  const entries = [ph(P(1), { inLibraryItemId: match, actions: ['request'] })];
+  const rowOf = async extra => {
+    const h = setup(t, { views: () => [view(entries, [entries[0].token], { actions: ['request'], ...extra })], items: { [LIST]: PLAYLIST_ITEM } });
+    await h.start();
+    const { page, container } = h.playlistPage([]);
+    await h.show(page);
+    return container.querySelector('.je-list-row');
+  };
+  const imported = await rowOf({ swapIn: false });
+  assert.ok(imported.textContent.includes(en.arr_lists_in_library), imported.textContent);
+  assert.ok(!imported.textContent.includes(en.arr_lists_adding));
+  assert.equal(imported.querySelector('a').getAttribute('href'), `#/details?id=${match}`);
+  assert.equal(imported.querySelector('.je-list-request'), null, 'nothing to request: it is in the library');
+  const reconciling = await rowOf({ swapIn: true, reconciling: true });
+  assert.ok(!reconciling.textContent.includes(en.arr_lists_adding), 'nothing is inserted while the list reconciles');
+  const swapping = await rowOf({ swapIn: true });
+  assert.ok(swapping.textContent.includes(en.arr_lists_adding));
+});
+
+test('r1: a list whose real items are all played but has entries missing does not show the header as played', async t => {
+  const button = '<div class="mainDetailButtons"><button is="emby-playstatebutton" type="button" class="button-flat btnPlaystate detailButton emby-button playstatebutton-played" title="Watched" data-played="true"><div class="detailButton-content"><span class="material-icons detailButton-icon check playstatebutton-icon-played" aria-hidden="true"></span></div></button></div>';
+  let entries = [ph(P(1)), ph(P(2))];
+  const h = setup(t, { views: () => [view(entries, entries.map(e => e.token), { rev: entries.length ? 1 : 2 })], items: { [LIST]: PLAYLIST_ITEM } });
+  await h.start();
+  const { page } = h.playlistPage([]);
+  page.insertAdjacentHTML('afterbegin', button);
+  const btn = page.querySelector('.btnPlaystate');
+  await h.show(page);
+  const label = tnEn('arr_lists_header_incomplete', 2);
+  assert.ok(page.classList.contains('je-list-incomplete-page'));
+  assert.equal(btn.title, label);
+  assert.ok(btn.classList.contains('playstatebutton-played'), 'Jellyfin\'s own state is left alone');
+  assert.equal(h.calls.filter(c => /PlayedItems|UserData/i.test(c.path)).length, 0, 'played state never written');
+  assert.ok(h.document.getElementById('je-arr-list-pages-styles').textContent.includes('.je-list-incomplete-page .btnPlaystate .playstatebutton-icon-played'));
+  // jellyfin-web sets its state again (user data changed): still not shown as played.
+  btn.title = 'Watched';
+  await h.settle();
+  assert.equal(btn.title, label);
+  // The person marks it unplayed: Jellyfin's words stay.
+  btn.classList.remove('playstatebutton-played');
+  btn.title = 'Mark played';
+  await h.settle();
+  assert.equal(btn.title, 'Mark played');
+  btn.classList.add('playstatebutton-played');
+  btn.title = 'Watched';
+  await h.settle();
+  assert.equal(btn.title, label);
+  // No entries left: Jellyfin's header is back as it was.
+  entries = [];
+  await h.show(page);
+  assert.ok(!page.classList.contains('je-list-incomplete-page'));
+  assert.equal(btn.title, 'Watched');
+});
+
+/** en.json's "one|many" string for a count, the way list-render's tn reads it. */
+function tnEn(key, count) {
+  const forms = translate(key, { count }).split('|');
+  return (count === 1 ? forms[0] : forms[forms.length - 1]).trim();
+}
