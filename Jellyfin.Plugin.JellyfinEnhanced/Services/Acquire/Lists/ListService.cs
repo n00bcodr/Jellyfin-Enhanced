@@ -305,10 +305,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     keys.Count == 0 ? new Dictionary<string, JsonElement>() : await _status.StatusesAsync(access.User.Id, keys, cancellationToken).ConfigureAwait(false),
                     StringComparer.Ordinal);
                 // Standard seasons: the season's status (a series card reads Ready once any season is in).
+                // With the episodes each entry knows of its season (its expected episode list), so a season no Sonarr
+                // holds reads out once one aired.
+                var today = Now().UtcDateTime;
                 var seasons = keyed
                     .Where(p => StatusPartOf(p) == null && p.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && p.SeasonNumber is int && p.TmdbId is > 0)
-                    .Select(p => (Key: ListRules.TitleKeyOf(p)!, TmdbId: p.TmdbId!.Value, Season: p.SeasonNumber!.Value))
-                    .Distinct()
+                    .GroupBy(p => (Key: ListRules.TitleKeyOf(p)!, TmdbId: p.TmdbId!.Value, Season: p.SeasonNumber!.Value))
+                    .Select(g => new ListStatusSeason(
+                        g.Key.Key,
+                        g.Key.TmdbId,
+                        g.Key.Season,
+                        g.SelectMany(p => p.Expected).Where(e => e != null && e.S == g.Key.Season)
+                            .Select(e => (e.E, e.AirDate != null && ListRules.TryParseDate(e.AirDate, out var aired) ? aired : (DateTime?)null))
+                            .ToList(),
+                        g.Any(p => ListRules.IsReleased(p, today))))
                     .ToList();
                 if (seasons.Count > 0)
                 {

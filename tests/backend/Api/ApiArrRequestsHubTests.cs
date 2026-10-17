@@ -514,6 +514,27 @@ public class ApiArrRequestsHubTests
     }
 
     [Fact]
+    public async Task AListSeasonEntryOfAShowNoSonarrHoldsIsOutOnceItsEpisodesAired()
+    {
+        // Game of Thrones is in no Sonarr and not in Jellyfin; its first season aired in 2011.
+        using var rig = await Ready();
+        var lists = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ArrListStatusSource(rig.Service, rig.View);
+        var key = TitleKey.Parse("tv:tvdb:121361")!;
+        var aired = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusSeason(key, 1399, 1, new (int, DateTime?)[] { (1, new DateTime(2011, 4, 17)), (2, new DateTime(2011, 4, 24)) }, Released: true);
+        var unknown = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusSeason(key, 1399, 2, Array.Empty<(int, DateTime?)>(), Released: true);
+        var future = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusSeason(key, 1399, 9, new (int, DateTime?)[] { (1, new DateTime(2099, 1, 1)) }, Released: false);
+
+        var statuses = await lists.SeasonStatusesAsync(rig.Admin.UserId, new[] { aired, unknown, future }, default);
+
+        var first = statuses[Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusKeys.SeasonId(key, 1)];
+        Assert.NotEqual("notOut", first.GetProperty("stage").GetString());
+        Assert.Equal(2, first.GetProperty("summary").GetProperty("aired").GetInt32());
+        // A season that premiered but whose episodes aren't known yet has no status rather than "not out yet".
+        Assert.False(statuses.ContainsKey(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusKeys.SeasonId(key, 2)));
+        Assert.Equal("notOut", statuses[Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusKeys.SeasonId(key, 9)].GetProperty("stage").GetString());
+    }
+
+    [Fact]
     public async Task AFourKRequestAfterTheStandardCopyArrivedIsItsOwnEditionNotShownReadyByTheStandardCopy()
     {
         // Emma's standard Sintel is here (Ready); she then asks Seerr for the 4K copy, which Radarr 4K doesn't have.

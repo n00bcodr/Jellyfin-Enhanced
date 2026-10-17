@@ -270,6 +270,16 @@ internal sealed class FakeListStatusSource : IListStatusSource
         return Task.FromResult(result);
     }
 
+    /// <summary>Season reads with what the list knows of each season (episodes and whether it premiered).</summary>
+    public List<ListStatusSeason> SeasonDetails { get; } = new();
+
+    // Recorded, then answered like the plain season reads.
+    public Task<IReadOnlyDictionary<string, JsonElement>> SeasonStatusesAsync(Guid user, IReadOnlyList<ListStatusSeason> seasons, CancellationToken cancellationToken)
+    {
+        SeasonDetails.AddRange(seasons);
+        return SeasonStatusesAsync(user, seasons.Select(s => (s.Key, s.TmdbId, s.Season)).ToList(), cancellationToken);
+    }
+
     /// <summary>Part reads (4K entries): the viewer and the part ids asked for.</summary>
     public List<(Guid User, IReadOnlyList<string> Parts)> PartCalls { get; } = new();
 

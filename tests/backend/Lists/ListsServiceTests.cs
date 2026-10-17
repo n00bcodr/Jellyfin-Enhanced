@@ -540,6 +540,30 @@ public class ListsServiceTests
     }
 
     [Fact]
+    public async Task ASeasonEntrysStatusIsReadWithTheEpisodesTheListKnowsOfItsSeason()
+    {
+        using var h = new ListsHarness(status: true);
+        h.Plugin.Plugin.Configuration.ArrPhase4ListStatusEnabled = true;
+        var owner = h.NewUser("owner");
+        var playlist = h.Host.AddPlaylist(owner);
+        var access = h.AccessFor(playlist, owner);
+        var season = Ph("{\"kind\":\"season\",\"tmdbId\":7,\"title\":\"S\",\"seasonNumber\":1,\"releaseDate\":\"2011-04-17\"}");
+        season.Expected = new List<PlaceholderEpisode> { new() { S = 1, E = 1, AirDate = "2011-04-17" }, new() { S = 1, E = 2 }, new() { S = 2, E = 1, AirDate = "2012-04-01" } };
+        var later = Ph("{\"kind\":\"season\",\"tmdbId\":7,\"title\":\"S\",\"seasonNumber\":3,\"releaseDate\":\"2099-01-01\"}");
+        Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(access, new[] { season, later }, null, null, null, None));
+
+        await h.Service.GetViewAsync(access, None);
+
+        var show = TitleKey.ForSeries(null, "7", null)!;
+        var first = Assert.Single(h.Status.SeasonDetails, s => s.Season == 1);
+        Assert.Equal((show.ToString(), 7, true), (first.Key.ToString(), first.TmdbId, first.Released));
+        Assert.Equal(new (int, DateTime?)[] { (1, new DateTime(2011, 4, 17)), (2, null) }, first.Episodes);
+        var third = Assert.Single(h.Status.SeasonDetails, s => s.Season == 3);
+        Assert.Empty(third.Episodes);
+        Assert.False(third.Released);
+    }
+
+    [Fact]
     public async Task ViewsCarryTheCallersRequestStatusPerTitleKey()
     {
         using var h = new ListsHarness(status: true);

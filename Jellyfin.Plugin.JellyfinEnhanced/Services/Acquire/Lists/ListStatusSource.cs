@@ -32,6 +32,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         Task<IReadOnlyDictionary<string, JsonElement>> SeasonStatusesAsync(Guid user, IReadOnlyList<(TitleKey Key, int TmdbId, int Season)> seasons, CancellationToken cancellationToken);
 
         /// <summary>
+        /// Season-scoped statuses with what the list knows of each season's episodes (numbers and air dates), so a season
+        /// no Sonarr holds is judged by its own episodes (out once one aired) rather than as not out yet.
+        /// </summary>
+        /// <param name="user">The viewer.</param>
+        /// <param name="seasons">The seasons.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>Status JSON per <see cref="ListStatusKeys.SeasonId"/>.</returns>
+        Task<IReadOnlyDictionary<string, JsonElement>> SeasonStatusesAsync(Guid user, IReadOnlyList<ListStatusSeason> seasons, CancellationToken cancellationToken)
+            => SeasonStatusesAsync(user, seasons.Select(s => (s.Key, s.TmdbId, s.Season)).ToList(), cancellationToken);
+
+        /// <summary>
         /// Statuses of entries the title or season status can't stand for, by <see cref="ListStatusPart.Id"/>: a 4K entry
         /// follows the 4K copies alone (and the asks for them), never the standard copy Jellyfin may already have; an
         /// entry for some episodes follows exactly those episodes, never the rest of their season.
@@ -43,6 +54,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         Task<IReadOnlyDictionary<string, JsonElement>> PartStatusesAsync(Guid user, IReadOnlyList<ListStatusPart> parts, CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyDictionary<string, JsonElement>>(new Dictionary<string, JsonElement>(StringComparer.Ordinal));
     }
+
+    /// <summary>A season entry's season, with the episodes the list knows of it.</summary>
+    /// <param name="Key">Series key.</param>
+    /// <param name="TmdbId">TMDB id of the series.</param>
+    /// <param name="Season">Season number.</param>
+    /// <param name="Episodes">Its known episodes (number, air date), from the entry's episode list; empty when unknown.</param>
+    /// <param name="Released">The season has premiered (by the entry's release date).</param>
+    public sealed record ListStatusSeason(TitleKey Key, int TmdbId, int Season, IReadOnlyList<(int Episode, DateTime? AirDate)> Episodes, bool Released);
 
     /// <summary>The scope of a list entry whose status is its own (see <see cref="IListStatusSource.PartStatusesAsync"/>).</summary>
     /// <param name="Key">Movie or series key.</param>
@@ -156,7 +175,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyDictionary<string, JsonElement>> SeasonStatusesAsync(Guid user, IReadOnlyList<(TitleKey Key, int TmdbId, int Season)> seasons, CancellationToken cancellationToken)
+        public Task<IReadOnlyDictionary<string, JsonElement>> SeasonStatusesAsync(Guid user, IReadOnlyList<(TitleKey Key, int TmdbId, int Season)> seasons, CancellationToken cancellationToken)
+            => SeasonStatusesAsync(user, seasons.Select(s => new ListStatusSeason(s.Key, s.TmdbId, s.Season, Array.Empty<(int, DateTime?)>(), false)).ToList(), cancellationToken);
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyDictionary<string, JsonElement>> SeasonStatusesAsync(Guid user, IReadOnlyList<ListStatusSeason> seasons, CancellationToken cancellationToken)
         {
             var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             if (!_status.Enabled || seasons.Count == 0)
@@ -171,16 +194,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             using var scope = _status.Store.BeginRequest("acquire/lists");
-            foreach (var (key, tmdbId, season) in seasons.Distinct().Take(MaxSeasons))
+            foreach (var entry in seasons.DistinctBy(s => ListStatusKeys.SeasonId(s.Key, s.Season)).Take(MaxSeasons))
             {
-                var id = ListStatusKeys.SeasonId(key, season);
-                // A virtual page for the season (its id never stands for a file), composed like a native season page.
-                var page = new AbsentTitle { PageId = PageId(id), Kind = "season", Title = key, TmdbId = tmdbId, Season = season };
+                var id = ListStatusKeys.SeasonId(entry.Key, entry.Season);
+                // A virtual page for the season (its id never stands for a file), composed like a native season page, with
+                // the episodes the list knows (a season no Sonarr holds is judged by them).
+                var episodes = entry.Episodes.DistinctBy(e => e.Episode).OrderBy(e => e.Episode)
+                    .Select(e => new AbsentEpisode(entry.Season, e.Episode, e.AirDate, PageId(id + ":e" + e.Episode.ToString(CultureInfo.InvariantCulture))))
+                    .ToList();
+                var page = new AbsentTitle { PageId = PageId(id), Kind = "season", Title = entry.Key, TmdbId = entry.TmdbId, Season = entry.Season, Episodes = episodes };
                 var body = await _status.ForAbsentAsync(viewer, page, cancellationToken).ConfigureAwait(false);
                 using var json = JsonDocument.Parse(body.Json);
                 if (json.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array && items.GetArrayLength() > 0)
                 {
-                    result[id] = items[0].Clone();
+                    var status = items[0];
+                    // Premiered, but none of its episodes known (and no Sonarr to say): unknown, never "not out yet".
+                    if (episodes.Count == 0 && entry.Released && status.TryGetProperty("stage", out var stage) && stage.GetString() == "notOut")
+                    {
+                        continue;
+                    }
+
+                    result[id] = status.Clone();
                 }
             }
 
