@@ -15,7 +15,13 @@ namespace JE.Tests;
 /// (Contains, IndexOf, Intersect, SequenceEqual, Equals…, a method group of one included), grouping or merging requests by
 /// it (GroupBy, SelectMany…), a lookup keyed by it, and a call into a plugin helper outside these files that does any of
 /// that with what it is given (followed through further helpers). Values are followed through locals, lambda parameters,
-/// loops and patterns. Two values from the same source (one request's own fields) are not "another request".
+/// loops and patterns. Two values from the same source (one request's own fields) are not "another request"; two requests
+/// taken from one collection (by index, or as its first, last… element) are two sources (review round 5, security-r5-2).
+/// <para>Defence in depth (D41's principle, review round 5): a static walk over arbitrary C# can't be complete, and this one
+/// doesn't try to be. The guarantee is <c>RequestDestination.Serves</c> on every path, proven by the runtime tables
+/// (IntegrationSeerrDestinationTableTests, IntegrationRequestWithdrawalTableTests, IntegrationRequestDestinationSightTableTests,
+/// IntegrationTitleIdentityTableTests). The walk catches the cheap, likely ways of going around it; a new bypass it misses is
+/// fixed here when it is cheap, and otherwise covered by a runtime row.</para>
 /// </summary>
 internal sealed class DestinationRuleWalk
 {
@@ -162,6 +168,15 @@ internal sealed class DestinationRuleWalk
     private static bool IsProtected(ISymbol? symbol)
         => symbol is IPropertySymbol or IFieldSymbol or IMethodSymbol && symbol.ContainingType != null &&
            Protected.TryGetValue(symbol.ContainingType.Name, out var members) && members.Contains(symbol.Name);
+
+    // Calls that pick one element of a collection.
+    private static readonly HashSet<string> Picks = new(StringComparer.Ordinal)
+    {
+        "First", "FirstOrDefault", "Last", "LastOrDefault", "Single", "SingleOrDefault", "ElementAt", "ElementAtOrDefault", "MinBy", "MaxBy", "Min", "Max",
+    };
+
+    // One request (not a collection of them).
+    private static bool IsOneRequest(ITypeSymbol? type) => type != null && type is not IArrayTypeSymbol && RequestTypes.Contains(type.Name);
 
     private static bool IsRequestType(ITypeSymbol? type)
     {
@@ -443,8 +458,15 @@ internal sealed class DestinationRuleWalk
     }
 
     /// <summary>
+    /// One request taken from a collection: by index (<c>pair[0]</c>), or as an element a call picks (<c>list.First()</c>):
+    /// the collection (its symbol, or the expression's text) and which element (the index, or the call and its arguments).
+    /// The same element twice is one source; two elements of one collection are two (security-r5-2).
+    /// </summary>
+    private sealed record ElementOrigin(object Collection, string Selector);
+
+    /// <summary>
     /// A small immutable set of where values came from: parameters, <c>this</c>, static members, each element of a loop or
-    /// lambda (its variable), and each call that fetches requests (the call itself).
+    /// lambda (its variable), each call that fetches requests (the call itself), and each element taken from a collection.
     /// </summary>
     private sealed class ImmutableSet
     {
@@ -453,7 +475,13 @@ internal sealed class DestinationRuleWalk
         private ImmutableSet(object[] items) => _items = items;
         public static ImmutableSet Of(object origin) => new(new[] { origin });
         public int Count => _items.Length;
-        private static bool Same(object a, object b) => a is ISymbol x && b is ISymbol y ? SymbolEqualityComparer.Default.Equals(x, y) : ReferenceEquals(a, b);
+        private static bool Same(object a, object b) => (a, b) switch
+        {
+            (ISymbol x, ISymbol y) => SymbolEqualityComparer.Default.Equals(x, y),
+            (string x, string y) => string.Equals(x, y, StringComparison.Ordinal),
+            (ElementOrigin x, ElementOrigin y) => Same(x.Collection, y.Collection) && string.Equals(x.Selector, y.Selector, StringComparison.Ordinal),
+            _ => ReferenceEquals(a, b),
+        };
         private static bool In(object item, object[] items) => items.Any(i => Same(i, item));
         public ImmutableSet Union(ImmutableSet other)
         {
@@ -636,6 +664,10 @@ internal sealed class DestinationRuleWalk
                     var answer = symbol is IMethodSymbol method && (IsRule(method) || (Comparing.Contains(method.Name) && method.ReturnType.SpecialType == SpecialType.System_Boolean));
                     // A database read (RequestLedger.Scalar) is a value of its own, whatever it was looked up by.
                     if (symbol is IMethodSymbol { Name: "Scalar", ContainingType.Name: "RequestLedger" }) return new Value(false, ImmutableSet.Of(call), false);
+                    // One request picked from a collection (its first, last, nth…) is a source of its own: another pick is another request.
+                    if (symbol is IMethodSymbol picked && Picks.Contains(picked.Name) && IsOneRequest(_model.GetTypeInfo(call).Type) &&
+                        call.Expression is MemberAccessExpressionSyntax from && _model.GetSymbolInfo(from.Expression).Symbol is not (ITypeSymbol or INamespaceSymbol))
+                        return new Value(false, ImmutableSet.Of(new ElementOrigin(Holder(from.Expression), picked.Name + "(" + string.Join(",", call.ArgumentList.Arguments.Select(a => Normal(a))) + ")")), false);
                     // Requests (fetched, filtered or derived) are requests, not a destination: their own members say that.
                     // Fetched ones (no receiver) are a source of their own; filtered or derived ones come from the receiver.
                     if (IsRequestType(_model.GetTypeInfo(call).Type) && !IsProtected(symbol))
@@ -644,6 +676,9 @@ internal sealed class DestinationRuleWalk
                 }
                 case BinaryExpressionSyntax binary when IsComparison(binary):
                     return new Value(false, Eval(binary.Left).Origins.Union(Eval(binary.Right).Origins), false);
+                // One request taken from a collection by index: a source of its own (pair[0] and pair[1] are two requests).
+                case ElementAccessExpressionSyntax element when IsOneRequest(_model.GetTypeInfo(element).Type):
+                    return new Value(Eval(element.Expression).Tainted, ImmutableSet.Of(new ElementOrigin(Holder(element.Expression), string.Join(",", element.ArgumentList.Arguments.Select(a => Index(a.Expression))))), false);
                 case LambdaExpressionSyntax lambda:
                     return lambda.ExpressionBody is { } body ? Eval(body)
                         : lambda.Block?.DescendantNodes().OfType<ReturnStatementSyntax>().Where(r => r.Expression != null).Aggregate(Value.None, (v, r) => v.With(Eval(r.Expression!))) ?? Value.None;
@@ -654,6 +689,22 @@ internal sealed class DestinationRuleWalk
             var value = Value.None;
             foreach (var child in Children(e)) value = value.With(Eval(child));
             return value;
+        }
+
+        // The collection an element is taken from: its symbol (a local, parameter, field or property), else its text.
+        private object Holder(ExpressionSyntax collection)
+            => _model.GetSymbolInfo(collection).Symbol is ILocalSymbol or IParameterSymbol or IFieldSymbol or IPropertySymbol or IRangeVariableSymbol ? _model.GetSymbolInfo(collection).Symbol! : Normal(collection);
+
+        // Which element an index names: a constant's value, a variable (by its declaration), else the index's text.
+        private string Index(ExpressionSyntax index)
+        {
+            if (_model.GetConstantValue(index) is { HasValue: true } constant) return "=" + constant.Value;
+            if (_model.GetSymbolInfo(index).Symbol is ILocalSymbol or IParameterSymbol or IRangeVariableSymbol)
+            {
+                var variable = _model.GetSymbolInfo(index).Symbol!;
+                return variable.Name + "@" + variable.Locations.FirstOrDefault()?.SourceSpan.Start;
+            }
+            return Normal(index);
         }
 
         // .b, [i] or a call after ?. : the bound value's member.

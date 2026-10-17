@@ -15,7 +15,8 @@ namespace JE.Tests;
 /// (RequestDestination). An approval may re-confirm a request only on its own Seerr with only a fresh stamp,
 /// and work already sent never moves. Table: path × difference (source, server, profile, root folder, stamp only, or none)
 /// × the other request's state (sent, not sent yet, held for an OK). Production policy, ledger, outbox and Seerr backend
-/// over a synthetic Seerr with two Sonarr servers.
+/// over a synthetic Seerr with two Sonarr servers. The source test and its mutations at the end are defence in depth (D41):
+/// the runtime rows are the guarantee.
 /// </summary>
 [Collection("Plugin singleton")]
 public class IntegrationSeerrDestinationTableTests
@@ -649,6 +650,12 @@ public class IntegrationSeerrDestinationTableTests
         return problems;
     }
 
+    /// <summary>
+    /// The source test over the walk (<see cref="DestinationRuleWalk"/>). Defence in depth (D41's principle): it catches the
+    /// cheap, likely ways around the rule, but a static walk over arbitrary C# can't be complete; the guarantee is
+    /// <c>RequestDestination.Serves</c> on every path, proven by the runtime rows of this table and the withdrawal, sight and
+    /// identity tables.
+    /// </summary>
     [Fact]
     public void EveryLedgerAndChargesPathComparesOrSelectsRequestsThroughTheDestinationRule()
     {
@@ -730,6 +737,10 @@ public class IntegrationSeerrDestinationTableTests
     [InlineData("shared coverage looked up by the key as given")]
     // Q-4BFIX3-2: keep-getting requests grouped by raw key.
     [InlineData("keep-getting requests grouped by raw key")]
+    // Review round 5 (security-r5-2): two requests held in one array, compared element by element.
+    [InlineData("two requests held in one array")]
+    // The same with the first and last of one list.
+    [InlineData("the first and last of one list")]
     public void BypassesThroughHelpersAndCollectionOperationsAreReported(string bypass)
     {
         var plugin = DestinationRuleWalk.Plugin;
@@ -751,6 +762,8 @@ public class IntegrationSeerrDestinationTableTests
             "the decline cooldown comparing raw keys" => plugin.With("Services/Acquire/Requests/RequestLedger.cs", text => text.Replace("w.Status == \"declined\" && RequestDestination.SameEdition(w.Input, normalized)", "w.Status == \"declined\" && w.Input.Key == normalized.Key && w.Input.Variant == normalized.Variant", StringComparison.Ordinal)),
             "shared coverage looked up by the key as given" => plugin.With("Services/Acquire/Requests/RequestLedger.cs", text => text.Replace("var covered = Wants(c, t, TitleIs + \" AND variant=$v\", (\"$key\", normalized.Key)", "var covered = Wants(c, t, \"title_key=$key AND variant=$v\", (\"$key\", normalized.Key)", StringComparison.Ordinal)),
             "keep-getting requests grouped by raw key" => Charges("GroupBy(w => RequestDestination.Edition(w.Input))", "GroupBy(w => (w.Input.Key, w.Input.Variant))"),
+            "two requests held in one array" => Charges(asked, "{ var pair = new[] { want.Input.NewSeason(season), asked.FirstOrDefault() }; return pair[0].Extra(asked) == null || pair[1] != null && pair[0].Seasons.Intersect(pair[1].Seasons).Any(); }"),
+            "the first and last of one list" => Charges(asked, "{ var list = asked.Prepend(want.Input.NewSeason(season)).ToList(); return list.First().Extra(asked) == null || list.Count > 1 && list.First().Seasons.Intersect(list.Last().Seasons).Any(); }"),
             _ => plugin.With("Services/Acquire/Requests/SeerrBackend.cs", text => text.Replace("=> RequestDestination.SeerrHas(", "=> SeerrHasByHand(", StringComparison.Ordinal)
                 .Replace("        // ---------------- transport ----------------", "        private static bool SeerrHasByHand(MutationInput input, int? server, int? profile, string? root) => server == input.SeerrServerId && profile == input.SeerrProfileId && root == input.SeerrRootFolder;\n\n        // ---------------- transport ----------------", StringComparison.Ordinal)),
         };
