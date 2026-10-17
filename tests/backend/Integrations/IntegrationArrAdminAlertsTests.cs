@@ -146,10 +146,17 @@ public class IntegrationArrAdminAlertsTests
 
         // A page reading the queue brings it back to the page's pace.
         var before = rig.Arr.CallCount("radarr.lan", "/api/v3/queue");
+        var radarr = rig.Arr.Instance("RadarrZ");
         for (var second = 10; second <= 5 * 60; second += 10)
         {
             rig.Arr.Now = rig.Arr.Now.AddSeconds(10);
-            if (second % 30 == 0) await rig.Store.GetQueueAsync(rig.Arr.Instance("RadarrZ"), default);
+            if (second % 30 == 0)
+            {
+                var held = rig.Store.PeekQueue(radarr.Id);
+                // A stale page read refreshes in the background: let it land before the next tick, however slow the
+                // machine (under load it was still running at the next read, which then started none).
+                if ((await rig.Store.GetQueueAsync(radarr, default)).Stale) await Until(() => !ReferenceEquals(rig.Store.PeekQueue(radarr.Id), held));
+            }
             await Task.WhenAll(rig.Store.Tick());
         }
         Assert.True(rig.Arr.CallCount("radarr.lan", "/api/v3/queue") - before >= 8);
