@@ -86,6 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly Func<DateTimeOffset> _now;
         private readonly RequestLedger? _ledger;
         private readonly Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? _titleMeta;
+        private readonly IRequestPolicy? _policy;
         private readonly ConcurrentDictionary<string, byte> _dirty = new(StringComparer.Ordinal);
         private readonly RecentArrivals _recentlyAdded;
         private readonly SemaphoreSlim _round = new(1, 1);
@@ -112,7 +113,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>The service (DI).</summary>
         public NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager library, Logger logger, ArrAdminHubService hub, JellyfinBridge bridge, RequestLedger ledger, RequestHubProjection projection)
-            : this(store, status, requests, view, feed, arr, users, dispatcher, library, logger, null, null, hub, bridge, ledger, projection.MetaAsync)
+            : this(store, status, requests, view, feed, arr, users, dispatcher, library, logger, null, null, hub, bridge, ledger, projection.MetaAsync, projection.Service.Policy)
         {
         }
 
@@ -122,12 +123,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// list (outages, low disk, manual imports, OK'd-but-not-in-an-arr, the stuck digest) are skipped;
         /// with <paramref name="bridge"/> a targeted refresh that finds an imported file looks at its title at once;
         /// with <paramref name="ledger"/> the request ledger's notices are delivered and, in Jellyfin Enhanced mode,
-        /// its requests are interests (<paramref name="titleMeta"/> names titles no arr holds yet).
+        /// its requests are interests (<paramref name="titleMeta"/> names titles no arr holds yet); with
+        /// <paramref name="policy"/> an ask waiting for an OK reaches only the administrators who can see its title.
         /// </summary>
-        internal NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager? library, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrAdminHubService? hub = null, JellyfinBridge? bridge = null, RequestLedger? ledger = null, Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? titleMeta = null)
+        internal NotificationService(NotifyStore store, ArrStatusService status, SeerrRequestReadModel requests, IArrJellyfinView view, ArrChangeFeed feed, ArrStateStore arr, INotifyUsers users, NotifyDispatcher dispatcher, ILibraryManager? library, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrAdminHubService? hub = null, JellyfinBridge? bridge = null, RequestLedger? ledger = null, Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? titleMeta = null, IRequestPolicy? policy = null)
         {
             _ledger = ledger;
             _titleMeta = titleMeta;
+            _policy = policy;
             _store = store;
             _status = status;
             _requests = requests;
@@ -350,6 +353,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     // Only a list that was actually compared counts as seen: one announced before it
                     // finished loading (or while Seerr can't be read) is compared once it has.
                     var revision = _requests.Revision;
+                    await PrepareAskVisibilityAsync(cancellationToken).ConfigureAwait(false);
                     if (ScanRequests(now)) Interlocked.Exchange(ref _seenRequests, revision);
                 }
                 cancellationToken.ThrowIfCancellationRequested();
@@ -654,21 +658,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 }
                 // A new ask that waits for an OK tells the administrators (not the asker), as a request waiting in
                 // Seerr does; not one held back at sending (Requests shows it as stuck) or one that moved on since.
+                // Only those who can see the title (as their Requests page shows its card), each told its name as
+                // they see it: an administrator with a parental limit or without its library is told nothing.
                 if (n.Kind == "create" && key != null && want.Status == "pending" && want.Reason is ("awaiting_approval" or "over_quota")
                     && now - n.At <= ArrivalFreshFor && _users.Admins().Where(a => a != want.UserId && _users.IsActive(a)).ToList() is { Count: > 0 } approvers)
                 {
-                    var ask = TitleParams(key.Title, null);
-                    if (_titleMeta != null && ActiveViewer(want.UserId) is { } asker
-                        && (await _titleMeta(new[] { key.ToString() }, asker, cancellationToken).ConfigureAwait(false)).GetValueOrDefault(key.ToString()) is { } askMeta)
+                    var drafts = new List<NotificationDraft>();
+                    foreach (var approver in approvers)
                     {
-                        if (!string.IsNullOrEmpty(askMeta.Title)) ask["title"] = askMeta.Title!.Length > 200 ? askMeta.Title[..200] : askMeta.Title;
-                        if (askMeta.Year is > 1800) ask["year"] = askMeta.Year.Value.ToString(CultureInfo.InvariantCulture);
-                        if (!string.IsNullOrEmpty(askMeta.Poster)) ask["poster"] = askMeta.Poster!;
+                        if (_policy != null)
+                        {
+                            await _policy.PrepareVisibilityAsync(approver, want.Input, cancellationToken).ConfigureAwait(false);
+                            if (!_policy.Evaluate(approver, want.Input).Visible) continue;
+                        }
+                        var ask = TitleParams(key.Title, null);
+                        if (_titleMeta != null && ActiveViewer(approver) is { } admin
+                            && (await _titleMeta(new[] { key.ToString() }, admin, cancellationToken).ConfigureAwait(false)).GetValueOrDefault(key.ToString()) is { } askMeta)
+                        {
+                            if (!string.IsNullOrEmpty(askMeta.Title)) ask["title"] = askMeta.Title!.Length > 200 ? askMeta.Title[..200] : askMeta.Title;
+                            if (askMeta.Year is > 1800) ask["year"] = askMeta.Year.Value.ToString(CultureInfo.InvariantCulture);
+                            if (!string.IsNullOrEmpty(askMeta.Poster)) ask["poster"] = askMeta.Poster!;
+                        }
+                        ask["user"] = _users.Name(want.UserId) ?? string.Empty;
+                        if (want.Input.Seasons.Length > 0) ask["seasons"] = string.Join(", ", want.Input.Seasons.Order());
+                        if (want.Input.Variant == "4k") ask["variant"] = "4k";
+                        drafts.Add(Draft(approver, NotifyKind.Approval, "approval|je|" + want.Id, key.Title.ToString(), null, ask, now, null));
                     }
-                    ask["user"] = _users.Name(want.UserId) ?? string.Empty;
-                    if (want.Input.Seasons.Length > 0) ask["seasons"] = string.Join(", ", want.Input.Seasons.Order());
-                    if (want.Input.Variant == "4k") ask["variant"] = "4k";
-                    var drafts = approvers.Select(a => Draft(a, NotifyKind.Approval, "approval|je|" + want.Id, key.Title.ToString(), null, ask, now, null)).ToList();
                     var created = _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) ? drafts.Where(d => d.Add(tx) != null).ToList() : new List<NotificationDraft>(), new List<NotificationDraft>()).Result;
                     foreach (var d in created) Announce(d);
                     told += created.Count;
@@ -702,6 +717,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             return told;
         }
+
+        /// <summary>
+        /// Whether an administrator may see the title an ask waiting for an OK names, by the rule the Requests page's
+        /// cards follow (library access, parental limits, the edition's library): the title and the seasons and
+        /// edition the notification names. Checked again when the inbox is read and before a phone or e-mail
+        /// alert held for quiet hours (or retried) goes out. True without a policy (tests) or a title.
+        /// </summary>
+        internal static bool MaySeeAsk(IRequestPolicy? policy, Guid user, string? titleKey, IReadOnlyDictionary<string, string> payload)
+        {
+            if (policy == null || TitleKey.Parse(titleKey) is not { } key) return true;
+            var seasons = payload.TryGetValue("seasons", out var list)
+                ? list.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(x => int.TryParse(x, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : -1).Where(n => n >= 0).ToArray()
+                : Array.Empty<int>();
+            return policy.Evaluate(user, AskInput(key, seasons, payload.TryGetValue("variant", out var variant) && variant == "4k")).Visible;
+        }
+
+        // The part of a title an ask waiting for an OK names, as the visibility check reads it.
+        private static MutationInput AskInput(TitleKey key, IEnumerable<int> seasons, bool fourK)
+        {
+            var input = key.IsMovie
+                ? new MutationInput { Key = key.Title.ToString() }
+                : new MutationInput { Key = key.Title.ToString(), Scope = "seasons", Seasons = seasons.ToArray() };
+            return fourK ? input with { Variant = "4k" } : input;
+        }
+
+        /// <summary>
+        /// Before Seerr's requests are compared: loads the rating facts each administrator's view of a new request
+        /// waiting for an OK needs (when a parental limit decides it), so an administrator who may see its title is
+        /// told, not left out because its rating wasn't known yet. Only requests not seen before, at most a round's worth.
+        /// </summary>
+        private async Task PrepareAskVisibilityAsync(CancellationToken cancellationToken)
+        {
+            if (_policy == null || !_requests.Active || !_requests.Loaded) return;
+            var (source, all, _) = _requests.Current;
+            if (source == null) return;
+            var seen = _store.SeerrSeen();
+            var asks = all.Where(r => r.Status == SeerrRequestStatus.Pending && r.Key != null && !seen.ContainsKey(r.Id)).Take(MaxPerRound).ToList();
+            if (asks.Count == 0) return;
+            var admins = _users.Admins();
+            foreach (var r in asks)
+            {
+                var input = AskInput(r.Key!.Title, r.IsMovie ? Array.Empty<int>() : r.Seasons, r.Is4k);
+                foreach (var admin in admins.Where(a => a != r.RequestedBy))
+                {
+                    await _policy.PrepareVisibilityAsync(admin, input, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+
+        /// <summary>The request policy the administrators' ask notifications are checked against (null in tests without one).</summary>
+        internal IRequestPolicy? Policy => _policy;
 
         /// <summary>The part of a series a request names, as notifications show it after the title ("S1", "S1–S3", "S1E4"); null for a movie or several episodes.</summary>
         internal static string? ScopeLabel(MutationInput input)
@@ -1336,6 +1402,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         p["user"] = r.RequestedByName ?? (r.RequestedBy is Guid u ? _users.Name(u) : null) ?? string.Empty;
                         if (!r.IsMovie && r.Seasons.Count > 0) p["seasons"] = string.Join(", ", r.Seasons.OrderBy(s => s));
                         if (r.Is4k) p["variant"] = "4k";
+                        // Not an administrator who can't see the title (a parental limit, no access to its library).
+                        if (!MaySeeAsk(_policy, admin, r.Key?.Title.ToString(), p)) continue;
                         Notify(admin, NotifyKind.Approval, "approval|" + server + "|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key?.Title.ToString(), null, p, now, null);
                     }
                 }

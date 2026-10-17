@@ -144,6 +144,25 @@ test('OK\'d requests read in family words (on its way when someone else asked), 
   await until(() => h.calls.some(c => c.method === 'PUT' && c.body.approved === false));
 });
 
+test('an ask or a reminder whose title is withheld from the administrator reads "a title", not "Something you follow"', async t => {
+  const h = setup(t);
+  h.state.inbox = {
+    unread: 3, more: false, items: [
+      item(9, 'approval', { type: 'movie', user: 'Robin' }),
+      item(8, 'remind', { type: 'movie', user: 'Robin' }),
+      item(7, 'ready', { type: 'movie' })
+    ]
+  };
+  h.JE.initializeArrNotify();
+  await until(() => h.document.getElementById('je-notify-bell'));
+  await h.JE.arrNotify.refresh();
+  h.document.getElementById('je-notify-bell').click();
+  const rows = [...h.document.querySelectorAll('.je-notify-panel .je-notify-item')].map(r => r.querySelector('.je-notify-text').textContent);
+  assert.match(rows[0], /^Robin asked for a title\./);
+  assert.match(rows[1], /^Robin .*a title/);
+  assert.match(rows[2], /^Something you follow/);
+});
+
 test('the bell shows the unread count and an inbox with titles as text, Play for what is ready, and Mark all read', async t => {
   const h = setup(t);
   h.state.inbox = {

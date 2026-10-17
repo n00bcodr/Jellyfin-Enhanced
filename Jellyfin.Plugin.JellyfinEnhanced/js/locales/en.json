@@ -1325,6 +1325,7 @@
     "arr_notify_hours_ago": "{n} h ago",
     "arr_notify_yesterday": "Yesterday",
     "arr_notify_untitled": "Something you follow",
+    "arr_notify_untitled_ask": "a title",
     "arr_notify_someone": "Someone in your household",
     "arr_notify_ready": "{title} is ready",
     "arr_notify_ready_4k": "{title} is ready in 4K",

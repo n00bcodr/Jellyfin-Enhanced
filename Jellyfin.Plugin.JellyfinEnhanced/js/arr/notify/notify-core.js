@@ -389,7 +389,8 @@
      */
     function buildText(item) {
         const p = Object.assign({}, item.params || {});
-        if (!p.title) p.title = tr('arr_notify_untitled');
+        // A title withheld from the recipient: an ask or a reminder names "a title" (as its phone and e-mail text does).
+        if (!p.title) p.title = tr(item.kind === 'approval' || item.kind === 'remind' ? 'arr_notify_untitled_ask' : 'arr_notify_untitled');
         if (!p.contact) p.contact = state.contact || tr('arr_contact_default');
         if (!p.user) p.user = tr('arr_notify_someone');
         // Episodes a download covers ("S02E05") follow the title after a space.

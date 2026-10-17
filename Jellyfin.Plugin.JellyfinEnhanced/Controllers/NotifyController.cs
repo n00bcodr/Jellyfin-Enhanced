@@ -194,12 +194,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 more = rows.Count > take,
                 items = rows.Take(take).Select(r =>
                 {
-                    // A Ready / new-episodes row for an item the caller can no longer open (library
-                    // access or parental limits changed since): kept, but without what names the title.
-                    var hidden = r.Kind is NotifyKind.Ready or NotifyKind.Episodes && Guid.TryParse(r.ItemId, out var item) && (viewer == null || view.Resolve(item, viewer) == null);
                     // Episode file ids are retained only for server-side delivery checks.
                     var parameters = NotifyDispatcher.Payload(r.Payload).Where(p => p.Key != "episodeItems")
                         .ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+                    // A Ready / new-episodes row for an item the caller can no longer open, or an ask waiting for
+                    // an OK whose title they can no longer see (library access or parental limits changed since):
+                    // kept, but without what names the title.
+                    var hidden = (r.Kind is NotifyKind.Ready or NotifyKind.Episodes && Guid.TryParse(r.ItemId, out var item) && (viewer == null || view.Resolve(item, viewer) == null))
+                        || (r.Kind == NotifyKind.Approval && !NotificationService.MaySeeAsk(_service.Policy, user, r.Key, parameters));
                     return new InboxItem
                     {
                         Id = r.Id,

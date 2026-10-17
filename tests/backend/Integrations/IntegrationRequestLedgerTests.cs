@@ -25,6 +25,9 @@ public class IntegrationRequestLedgerTests
         public bool? Has4kTarget(bool movie) => FourK?.Invoke(movie);
         public Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct) => Task.CompletedTask;
         public Task PrepareAsync(Guid user, MutationInput input, CancellationToken ct) => Before?.Invoke(user, input) ?? Task.CompletedTask;
+        /// <summary>Runs when the rating facts a person's visibility needs are loaded (tests make visibility depend on it).</summary>
+        public Func<Guid, MutationInput, Task>? Visibility { get; set; }
+        public Task PrepareVisibilityAsync(Guid user, MutationInput input, CancellationToken ct) => Visibility?.Invoke(user, input) ?? Task.CompletedTask;
         public bool IsAdmin(Guid user) => People.GetValueOrDefault(user)?.Role == "Admin";
         public string AuthorizationStamp(Guid user, MutationInput input) => JsonSerializer.Serialize(People.GetValueOrDefault(user)) + JsonSerializer.Serialize(Configuration);
         public RequestPolicyFacts Evaluate(Guid user, MutationInput input)

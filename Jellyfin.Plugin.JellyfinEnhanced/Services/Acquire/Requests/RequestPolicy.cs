@@ -60,6 +60,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         Task PrepareAsync(Guid userId, MutationInput input, CancellationToken ct);
         /// <summary>Refreshes backend identity and quota without looking up title ratings.</summary>
         Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct);
+        /// <summary>Loads only the rating facts <see cref="Evaluate"/> reads for whether the person may see the title.</summary>
+        Task PrepareVisibilityAsync(Guid userId, MutationInput input, CancellationToken ct) => Task.CompletedTask;
         /// <summary>Whether the human has Jellyfin administrator authority, independent of routing input.</summary>
         bool IsAdmin(Guid userId);
         /// <summary>Current identity, policy and configuration stamp without routing prerequisite reads.</summary>
@@ -132,15 +134,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         public async Task PrepareAsync(Guid userId, MutationInput input, CancellationToken ct)
         {
+            await PrepareVisibilityAsync(userId, input, ct).ConfigureAwait(false);
+            await PrepareDiskAsync(input, ct).ConfigureAwait(false);
+            await _backend.PrepareAsync(userId, input, ct).ConfigureAwait(false);
+        }
+        /// <inheritdoc />
+        public async Task PrepareVisibilityAsync(Guid userId, MutationInput input, CancellationToken ct)
+        {
             var viewer = _view.Viewer(userId);
-            var key = TitleKey.Parse(input.Key)!;
+            if (TitleKey.Parse(input.Key) is not { } key) return;
             if (viewer is { HasParentalLimit: true } && _view.Copies(key, viewer, _aliases.Of(key)).Count == 0)
             {
                 var tmdb = _aliases.Of(key).Append(key).FirstOrDefault(k => k.Provider == "tmdb")?.NumericId ?? 0;
                 await _parental.MaySeeAbsentAsync(key.IsMovie ? "movie" : "tv", tmdb, userId.ToString("N"), ct).ConfigureAwait(false);
             }
-            await PrepareDiskAsync(input, ct).ConfigureAwait(false);
-            await _backend.PrepareAsync(userId, input, ct).ConfigureAwait(false);
         }
         /// <inheritdoc />
         public Task PrepareDiskAsync(MutationInput input, CancellationToken ct) => PrepareDiskAsync(input, true, ct);

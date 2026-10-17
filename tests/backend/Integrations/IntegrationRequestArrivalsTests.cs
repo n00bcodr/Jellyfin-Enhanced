@@ -927,6 +927,94 @@ public class IntegrationRequestArrivalsTests
     }
 
     [Fact]
+    public async Task AnAskWaitingForAnOkNamesItsTitleOnlyToAdministratorsWhoCanSeeIt()
+    {
+        using var rig = await IntegrationNotificationsTests.Started();
+        var policy = new IntegrationRequestLedgerTests.Policy();
+        var (ledger, requests, plain) = JeMode(rig, policy);
+        plain.Dispose();
+        // Pat is an administrator too, with a parental limit Dune is over (or without the library it lands in).
+        var pat = rig.View.AddUser(admin: true, policy: "pat", parental: true);
+        rig.Users.AdminIds.Add(pat.UserId);
+        rig.Users.Names[pat.UserId] = "Pat";
+        policy.People[pat.UserId] = policy.People[rig.Admin.UserId] with { UserId = pat.UserId };
+        var cannotSee = new HashSet<Guid> { pat.UserId };
+        policy.Adjust = (user, input, facts) => cannotSee.Contains(user) ? facts with { Visible = false } : facts;
+        rig.Phones(rig.Admin, pat);
+        rig.Prefs(rig.Admin, p => { p.AdminAlerts = true; p.QuietHours = true; p.QuietFrom = "00:00"; p.QuietTo = "23:59"; p.UtcOffsetMinutes = 0; });
+        rig.Prefs(pat, p => p.AdminAlerts = true);
+        var asked = new List<Guid>();
+        using var dispatcher = new NotifyDispatcher(rig.NotifyStore, new NtfySender(rig.Ntfy), new EmailSender(rig.Mail), null, () => rig.Config, () => rig.Arr.Now, rig.Users, rig.View, rig.Status.Aliases, ledger, policy);
+        using var service = new NotificationService(rig.NotifyStore, rig.Status, rig.Requests, rig.View, rig.Feed, rig.Store, rig.Users, dispatcher, null, null, () => rig.Config, () => rig.Arr.Now, rig.Hub, rig.Bridge, ledger,
+            (keys, viewer, ct) =>
+            {
+                asked.Add(viewer.UserId);
+                return Task.FromResult(keys.ToDictionary(k => k, k => new HubTitleMeta { Title = "Dune: Part Two", Year = 2024, Poster = "/dune.jpg" }));
+            }, policy);
+
+        // The Kid's ask: the administrator who can see Dune is told its title and poster; Pat is told nothing.
+        Assert.Equal(201, (await requests.CreateAsync(rig.Kid.UserId, new("kid-dune", new MutationInput { Key = IntegrationNotificationsTestsDune }), default)).HttpStatus);
+        Assert.Equal(1, await service.DeliverRequestNoticesAsync(rig.Arr.Now, default));
+        var told = Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "approval");
+        Assert.Contains("\"title\":\"Dune: Part Two\"", told.Payload, StringComparison.Ordinal);
+        Assert.Empty(rig.Inbox(pat));
+        // Named as the administrator sees it, not as the asker does.
+        Assert.DoesNotContain(rig.Kid.UserId, asked);
+        await dispatcher.RunOnceAsync(default);
+        Assert.DoesNotContain(rig.Pushes, x => x.Url.Contains(pat.UserId.ToString("N")[..12], StringComparison.Ordinal));
+
+        // The administrator loses sight of Dune (a parental limit or library access changed): the inbox keeps the
+        // notification without its title, and the phone and e-mail held for quiet hours don't go out.
+        cannotSee.Add(rig.Admin.UserId);
+        var controller = new Jellyfin.Plugin.JellyfinEnhanced.Controllers.NotifyController(service, dispatcher, new NtfySender(rig.Ntfy), new EmailSender(rig.Mail), rig.Users)
+        {
+            ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() },
+            Config = () => rig.Config,
+            Now = () => rig.Arr.Now,
+        };
+        controller.HttpContext.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("Jellyfin-UserId", rig.Admin.UserId.ToString())], "test"));
+        var inbox = JsonSerializer.Serialize(((Microsoft.AspNetCore.Mvc.ObjectResult)controller.GetInbox(null, null)).Value);
+        Assert.Contains("\"approval\"", inbox, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dune", inbox, StringComparison.Ordinal);
+        Assert.DoesNotContain("dune.jpg", inbox, StringComparison.Ordinal);
+        Assert.DoesNotContain(IntegrationNotificationsTestsDune, inbox, StringComparison.Ordinal);
+        rig.Prefs(rig.Admin, p => p.QuietHours = false);
+        rig.Arr.Now = rig.Arr.Now.AddDays(1);
+        await dispatcher.RunOnceAsync(default);
+        Assert.Empty(rig.Pushes);
+        Assert.Empty(rig.Mail.Sent);
+        Assert.Equal(0, rig.NotifyStore.DeliveryStats(rig.Arr.Now).Pending);
+
+        // Seerr mode: a request waiting for an OK there reaches only the administrators who can see it, too.
+        cannotSee.Remove(rig.Admin.UserId);
+        rig.Config.ArrRequestBackend = "seerr";
+        rig.Seerr.Requests.Add(FakeSeerr.Request(9, "movie", 693134, 1, rig.Sam.UserId, rig.Arr.Now.UtcDateTime, userName: "Sam"));
+        await rig.Requests.RefreshAsync(default);
+        Assert.True(service.ScanRequests(rig.Arr.Now));
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(1);
+        rig.Seerr.Requests.Add(FakeSeerr.Request(10, "movie", 693134, 1, rig.Emma.UserId, rig.Arr.Now.UtcDateTime, userName: "Emma"));
+        await rig.Requests.RefreshAsync(default);
+        Assert.True(service.ScanRequests(rig.Arr.Now));
+        Assert.Contains(rig.Inbox(rig.Admin), n => n.Kind == "approval" && n.Payload.Contains("Emma", StringComparison.Ordinal));
+        Assert.Empty(rig.Inbox(pat));
+
+        // Pat may see a title once its rating is known (a parental limit it is within): the rating is looked up
+        // before Seerr's new requests are compared, so Pat is told too, not left out because nothing was cached yet.
+        var rated = new HashSet<(Guid, string)>();
+        policy.Visibility = (user, input) =>
+        {
+            rated.Add((user, input.Key));
+            return Task.CompletedTask;
+        };
+        policy.Adjust = (user, input, facts) => cannotSee.Contains(user) && !(user == pat.UserId && input.Key == IntegrationNotificationsTestsSeverance && rated.Contains((user, input.Key))) ? facts with { Visible = false } : facts;
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(1);
+        rig.Seerr.Requests.Add(FakeSeerr.Request(11, "tv", 95396, 1, rig.Emma.UserId, rig.Arr.Now.UtcDateTime, tvdb: 371980, seasons: new[] { 1 }, userName: "Emma"));
+        await rig.Requests.RefreshAsync(default);
+        await service.TickAsync(default);
+        Assert.Single(rig.Inbox(pat), n => n.Kind == "approval" && n.Key == IntegrationNotificationsTestsSeverance);
+    }
+
+    [Fact]
     public async Task ANoticeBatchReadBeforeARestoreLeavesTheRestoredNoticesForTheNextRound()
     {
         using var rig = await IntegrationNotificationsTests.Started();

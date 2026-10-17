@@ -42,6 +42,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly IArrJellyfinView? _view;
         private readonly TitleAliases? _aliases;
         private readonly Requests.RequestLedger? _ledger;
+        private readonly Requests.IRequestPolicy? _policy;
         private readonly Logger? _logger;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
@@ -51,18 +52,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private Task? _loopTask;
 
         /// <summary>The dispatcher (DI).</summary>
-        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger, Requests.RequestLedger ledger)
-            : this(store, ntfy, email, logger, null, null, users, view, aliases, ledger)
+        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger, Requests.RequestLedger ledger, Requests.IRequestPolicy policy)
+            : this(store, ntfy, email, logger, null, null, users, view, aliases, ledger, policy)
         {
         }
 
         /// <summary>
         /// A dispatcher with explicit configuration and clock (tests). With <paramref name="ledger"/>, an OK of a request
-        /// held (quiet hours, retries) isn't sent once the request was cancelled, declined or removed.
+        /// held (quiet hours, retries) isn't sent once the request was cancelled, declined or removed; with
+        /// <paramref name="policy"/>, an ask waiting for an OK isn't sent to an administrator who can no longer see its title.
         /// </summary>
-        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null, TitleAliases? aliases = null, Requests.RequestLedger? ledger = null)
+        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null, TitleAliases? aliases = null, Requests.RequestLedger? ledger = null, Requests.IRequestPolicy? policy = null)
         {
             _ledger = ledger;
+            _policy = policy;
             _view = view;
             _aliases = aliases;
             _store = store;
@@ -317,7 +320,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// Why the delivery must not go out any more, or null: the recipient switched this kind of
         /// alert off (Ready, new episodes, declined); the recipient is gone or disabled; an
         /// administrators' alert (paths, instance names, household requests) for someone who is no
-        /// longer an administrator or switched those alerts off; a Ready or new-episodes alert for a
+        /// longer an administrator or switched those alerts off; an ask waiting for an OK whose title
+        /// the administrator can no longer see; a Ready or new-episodes alert for a
         /// title the recipient can no longer open (library access or parental limits changed); an OK of a
         /// request that was cancelled, declined or removed since.
         /// </summary>
@@ -343,6 +347,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (NotifyKind.IsAdminKind(delivery.Kind))
             {
                 if (!_users.Admins().Contains(delivery.UserId)) return "The recipient is no longer an administrator.";
+                if (delivery.Kind == NotifyKind.Approval && !NotificationService.MaySeeAsk(_policy, delivery.UserId, delivery.TitleKey, payload))
+                    return "The recipient can no longer see this title.";
                 return prefs.AdminAlerts ? null : "The recipient switched administrators' alerts to phone and e-mail off.";
             }
             if (_view == null || delivery.Kind is not (NotifyKind.Ready or NotifyKind.Episodes)) return null;

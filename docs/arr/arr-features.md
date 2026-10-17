@@ -367,7 +367,9 @@ Settings: [*arr Settings](arr-settings.md#notifications-phase-2).
   device's time zone; the bell still fills), "hide titles on the lock screen" (no title in any phone or e-mail
   text, administrators' alerts included) and **Send me a test**. Every e-mail's
   unsubscribe link opens this section.
-- **Administrators** also hear about a new request waiting for an OK, and straight away about what the admin tools'
+- **Administrators** also hear about a new request waiting for an OK (only those who can see the title, as on the
+  Requests page: an administrator with a parental limit, or without the library it lands in, isn't told; one who
+  loses sight of it later finds the bell entry without its title, and its phone or e-mail alert doesn't go out), and straight away about what the admin tools'
   **Needs attention** list shows that needs someone: a download Sonarr/Radarr can't import without a manual import,
   a request Seerr OK'd that no Sonarr/Radarr has after the grace, an instance that stops answering for a while (and
   when it is back) and a root folder low on disk space (at the same threshold as the Overview, once a day per
