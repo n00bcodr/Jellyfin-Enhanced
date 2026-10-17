@@ -433,7 +433,7 @@ Changes save immediately. Only admin-enabled categories appear; **Advanced per-c
 
 ??? note "Preference storage and limits"
 
-    Users cannot enable a protection category the admin disabled. **Seek previews** is the only image policy with a per-user override; other image replacement follows admin policy. On a shared address where JE cannot tell which signed-in user fetched a preview, it stays protected unless every matching user unchecked **Seek previews**. If initial state loading fails, preference controls are disabled to avoid overwriting unknown state.
+    Users cannot enable a protection category the admin disabled. **Seek previews** is the only image policy with a per-user override; other image replacement follows admin policy. On a shared address where JE cannot tell which signed-in user fetched a preview, the opt-out applies only when every user whose protection covers the item unchecked **Seek previews**; played-state and saved-progress reveals still follow the first such user. If initial state loading fails, preference controls are disabled to avoid overwriting unknown state.
 
     Checking a category saves `null` (inherit); unchecking saves `false`. The inherited defaults are nullable. **Don't ask me to confirm when turning Spoiler Guard off** defaults to `false`. These preferences live in `UserSpoilerBlur.Prefs` within `spoilerblur.json`.
 

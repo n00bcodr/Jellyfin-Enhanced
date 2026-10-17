@@ -569,6 +569,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Abwähle zum Story-Tags wie „Tod vo ere Hauptfigur” z'gseh.",
     "panel_settings_spoiler_guard_override_reviews": "Rezensione",
     "panel_settings_spoiler_guard_override_reviews_desc": "Abwähle zum s'TMDB-/Benutzer-Rezensionsfeld uf de Serie-Detailsyte z'gseh.",
+    "panel_settings_spoiler_guard_override_trickplay": "Vorschaubilder bim Spuele",
+    "panel_settings_spoiler_guard_override_trickplay_desc": "Abwähle zum Trickplay-Vorschaubilder bim Spuele dur e ungluegti Episode oder en ungluegte Film z'gseh.",
     "panel_settings_spoiler_guard_override_advanced": "Erwyterti Kategorie-wysi Freigabe",
     "panel_settings_spoiler_guard_override_advanced_desc": "Abwähle zum wieder alles z'verschtecke (au de Titel vo dr nächschte Episode) statt de Kategorie-wysige Freigabe wo dis Admin aktiviert het.",
     "panel_settings_spoiler_guard_skip_confirm": "Nöd mit Bestätigung frage, wenn Spoiler-Schutz usgschalte wird",

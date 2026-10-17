@@ -534,6 +534,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Fjern markeringen for at se historietags som \"En hovedpersons død\".",
     "panel_settings_spoiler_guard_override_reviews": "Anmeldelser",
     "panel_settings_spoiler_guard_override_reviews_desc": "Fjern markeringen for at se panelet med TMDB- / brugeranmeldelser på seriens detaljesider.",
+    "panel_settings_spoiler_guard_override_trickplay": "Forhåndsvisninger ved spoling",
+    "panel_settings_spoiler_guard_override_trickplay_desc": "Fjern markeringen for at se trickplay-miniaturebilleder, når du spoler gennem en uset episode eller film.",
     "panel_settings_spoiler_guard_override_advanced": "Avancerede visninger pr. kategori",
     "panel_settings_spoiler_guard_override_advanced_desc": "Fjern markeringen for at skjule alt igen (inklusive titlen på næste afsnit) i stedet for de kategorivisninger, din administrator har aktiveret.",
     "panel_settings_spoiler_guard_skip_confirm": "Spørg mig ikke om bekræftelse, når spoilerbeskyttelse slås fra",
