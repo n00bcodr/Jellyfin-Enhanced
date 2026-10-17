@@ -1389,7 +1389,8 @@ follows Jellyfin's own rights and the household's request rules:
   really in Jellyfin before anything new goes in.
 
 Each person can, in the Jellyfin Enhanced panel (*Lists*): hide entries, hide their status, and agree that titles that
-arrive may take their place in lists they turned swap-in on for (off until they choose it).
+arrive may take their place in lists they turned swap-in on for (off until they choose it). That agreement is theirs
+alone: an administrator saving their settings, or resetting everyone's, leaves it as it is.
 
 **Lists from the experimental list feature.** Administrators can bring over the lists of the earlier experimental
 list feature (its `list-placeholders` folder) with `GET /JellyfinEnhanced/arr/admin/lists/import` (a dry run that
