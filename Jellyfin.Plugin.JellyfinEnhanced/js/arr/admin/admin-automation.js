@@ -56,7 +56,8 @@
         disk_unknown: 'arr_auto_held_disk_unknown',
         approval_required: 'arr_auto_held_approval_required',
         seerr_unsupported: 'arr_auto_held_seerr_unsupported',
-        automation_changed: 'arr_auto_held_automation_changed'
+        automation_changed: 'arr_auto_held_automation_changed',
+        user_opted_out: 'arr_auto_held_user_opted_out'
     };
 
     const state = {

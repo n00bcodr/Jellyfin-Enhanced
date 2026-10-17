@@ -109,6 +109,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// </summary>
         public const string EngineChanged = "automation_changed";
 
+        /// <summary>The person opted out of the recipe after its request was queued: it waits (a read-back still runs).</summary>
+        public const string UserOptedOut = "user_opted_out";
+
         private static readonly Dictionary<string, TimeSpan> Waits = new(StringComparer.Ordinal)
         {
             [ShadowOverride] = TimeSpan.FromMinutes(15),
@@ -121,6 +124,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             [LowDisk] = TimeSpan.FromMinutes(30),
             [DiskUnknown] = TimeSpan.FromMinutes(2),
             [EngineChanged] = TimeSpan.FromSeconds(30),
+            [UserOptedOut] = TimeSpan.FromMinutes(15),
         };
 
         /// <summary>True for a hold that waits and is checked again by itself (not parked for a person).</summary>
@@ -144,21 +148,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         private readonly AutomationBudgets _budgets;
         private readonly AutomationStore _store;
         private readonly AutomationEligibility _eligibility;
+        private readonly IAutomationConsents? _consents;
         private readonly Func<DateTimeOffset> _now;
 
         /// <summary>Creates the guard (DI).</summary>
-        public AutomationSendGuard(IRequestPolicy policy, AutomationBudgets budgets, AutomationStore store, AutomationEligibility eligibility)
-            : this(policy, budgets, store, eligibility, () => DateTimeOffset.UtcNow)
+        public AutomationSendGuard(IRequestPolicy policy, AutomationBudgets budgets, AutomationStore store, AutomationEligibility eligibility, IAutomationConsents consents)
+            : this(policy, budgets, store, eligibility, () => DateTimeOffset.UtcNow, consents)
         {
         }
 
         /// <summary>Creates the guard with an explicit clock (tests).</summary>
-        internal AutomationSendGuard(IRequestPolicy policy, AutomationBudgets budgets, AutomationStore store, AutomationEligibility eligibility, Func<DateTimeOffset> now)
+        internal AutomationSendGuard(IRequestPolicy policy, AutomationBudgets budgets, AutomationStore store, AutomationEligibility eligibility, Func<DateTimeOffset> now, IAutomationConsents? consents = null)
         {
             _policy = policy;
             _budgets = budgets;
             _store = store;
             _eligibility = eligibility;
+            _consents = consents;
             _now = now;
         }
 
@@ -202,6 +208,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             var mode = recipe == null ? AutomationMode.Shadow : AutomationModes.Mode(config, recipe);
             if (mode is AutomationMode.Off or AutomationMode.Shadow)
                 return new(AutomationHolds.RecipePaused, "The recipe is now " + AutomationModes.Name(mode) + ": its queued request waits.", AutomationHolds.WaitFor(AutomationHolds.RecipePaused));
+            // A recipe's ask: the person's consent as it is now (they may have opted out since it was queued). List sync
+            // asks run on the list link's own consent, not a recipe preference.
+            if (want.OriginKind == RequestOrigin.AutomationKind && recipe != null && !AutomationConsent.Allows(_consents, job.Authorization.Requester, recipe))
+                return new(AutomationHolds.UserOptedOut, "The person turned this automatic request off for themselves: it waits until they turn it back on.", AutomationHolds.WaitFor(AutomationHolds.UserOptedOut));
             if (job.Authorization.Backend == "seerr" && AutomationRecipes.RequiresDirect(recipe))
                 return new(AutomationHolds.SeerrUnsupported, "This recipe needs Sonarr/Radarr handling; Seerr handles requests now.", TimeSpan.Zero, Park: true);
             if (job.Authorization.Approver == null)

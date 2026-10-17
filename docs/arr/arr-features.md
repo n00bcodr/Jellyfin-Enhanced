@@ -1305,6 +1305,8 @@ either is off, the automatic requests above behave exactly as described there. W
   going ahead, and administrators see a one-time notice listing them (Requests page, Overview, and the configuration
   page's automation status). This happens once: later switches never redo it. Each person can turn the two recipes off
   for themselves in the Jellyfin Enhanced panel (*Automatic requests*); until they choose, the household setting applies.
+  Turning one off also holds that recipe's requests of theirs that haven't been sent yet, until they turn it back on (a
+  send whose answer was lost is still read back).
 - **Kill switches.** A global switch, one per recipe and one per Sonarr/Radarr instance (and one for the requests
   Jellyfin Enhanced sends to Seerr). A killed recipe asks for nothing new; automatic requests already waiting stay
   waiting and go out once the switch is off. The switches are checked again right before every add, monitoring change

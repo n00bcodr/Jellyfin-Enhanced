@@ -61,7 +61,7 @@ public class IntegrationAutomationTests
             Budgets = new(R.Db, () => C, () => R.Now);
             Eligibility = new(Store, Trusted);
             Decider = new(R.Service, Budgets, Eligibility);
-            Guard = new(R.Policy, Budgets, Store, Eligibility, () => R.Now);
+            Guard = new(R.Policy, Budgets, Store, Eligibility, () => R.Now, Consent);
             Recorder = new(R.Service, R.View, null, () => R.Now, Decider, Store, Consent);
         }
 
@@ -482,6 +482,57 @@ public class IntegrationAutomationTests
     }
 
     [Fact]
+    public async Task APersonWhoOptsOutAfterQueueingHasTheirUnsentAutomaticWorkHeldButAnUncertainSendIsStillReadBack()
+    {
+        using var e = new Engine();
+        e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Auto);
+        var held = await Queued(e, e.R.Admin, 626);
+        var own = await e.R.Create(e.R.Admin, Movie(627));
+        // Held by a full budget (or a breaker) at first, then the person opts out of the recipe.
+        e.Consent.Map[(e.R.Admin, AutomationRecipes.AutoMovie)] = false;
+        await e.Outbox().TickAsync(default);
+        Assert.Equal(1, e.R.Backend.Sends);   // their own ask only
+        var job = e.R.Ledger.ForWant(held.Id).Single();
+        Assert.Equal(("retry", AutomationHolds.UserOptedOut), (job.State, job.Reason));
+        Assert.Equal("sent", e.R.Ledger.Find(own.RequestId!)!.Status);
+
+        // Opted out between two writes: the rest waits.
+        e.Consent.Map.Remove((e.R.Admin, AutomationRecipes.AutoMovie));
+        var split = await Queued(e, e.R.Admin, 628);
+        var backend = new TwoWrites { Between = () => e.Consent.Map[(e.R.Admin, AutomationRecipes.AutoMovie)] = false };
+        e.R.Now += TimeSpan.FromMinutes(16);
+        e.Consent.Map[(e.R.Admin, AutomationRecipes.AutoMovie)] = false;
+        await e.Outbox(backend).TickAsync(default);
+        Assert.Equal(0, backend.Writes);
+        e.Consent.Map.Remove((e.R.Admin, AutomationRecipes.AutoMovie));
+        e.R.Now += TimeSpan.FromMinutes(16);
+        await e.Outbox(backend).TickAsync(default);
+        Assert.Equal(1, backend.Writes);   // the first write of one job, then the opt-out stopped the rest
+        Assert.Contains(new[] { held.Id, split.Id }.SelectMany(id => e.R.Ledger.ForWant(id)), j => j.Reason == AutomationHolds.UserOptedOut && j.Uncertain);
+
+        // A send whose answer was lost is still read back while the person is opted out.
+        e.Consent.Map.Remove((e.R.Admin, AutomationRecipes.AutoMovie));
+        var lost = await Queued(e, e.R.Admin, 629);
+        e.R.Backend.Unknown = true;
+        e.R.Now += TimeSpan.FromMinutes(16);
+        await e.Outbox().TickAsync(default);
+        Assert.Equal("maybe_sent", e.R.Ledger.ForWant(lost.Id).Single().State);
+        e.Consent.Map[(e.R.Admin, AutomationRecipes.AutoMovie)] = false;
+        e.R.Backend.Unknown = false;
+        var reads = e.R.Backend.Reads;
+        e.R.Now += TimeSpan.FromMinutes(10);
+        await e.Outbox().TickAsync(default);
+        Assert.True(e.R.Backend.Reads > reads);
+        Assert.Equal("succeeded", e.R.Ledger.ForWant(lost.Id).Single().State);
+
+        // Opted back in: the held request goes out.
+        e.Consent.Map.Remove((e.R.Admin, AutomationRecipes.AutoMovie));
+        e.R.Now += TimeSpan.FromMinutes(16);
+        await e.Outbox().TickAsync(default);
+        Assert.Equal("sent", e.R.Ledger.Find(held.Id)!.Status);
+    }
+
+    [Fact]
     public async Task AReadBackOfAnUncertainSendRunsEvenWhileKilledOrShadowed()
     {
         using var e = new Engine();
@@ -819,7 +870,7 @@ public class IntegrationAutomationTests
         var db = new AcquireDatabase(Path.Combine(root, "budget.db"));
         var budgets = new AutomationBudgets(db, () => policy.Configuration, () => DateTimeOffset.UtcNow);
         var store = new AutomationStore(db);
-        return (new AutomationSendGuard(policy, budgets, store, new AutomationEligibility(store, new NoAutomationTrust())), budgets, policy, db);
+        return (new AutomationSendGuard(policy, budgets, store, new AutomationEligibility(store, new NoAutomationTrust()), new Consents()), budgets, policy, db);
     }
 
     private static RequestWant AutomaticWant(RequestJob job) => new(job.WantId, "a", job.Authorization.Requester, "c", "f", job.Input, "queued", "queued_outage", 1, "null",
