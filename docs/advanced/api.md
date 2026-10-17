@@ -826,6 +826,32 @@ Sonarr/Radarr holds reads `approved_not_in_arr` (administrators after the grace 
 `admin.approvedNotInArrSince`; everyone else after the "still looking" hours), and the `acquire/hub` admin block
 carries `hub: true` (the admin tabs).
 
+#### Lists (phase 4)
+
+`/JellyfinEnhanced/acquire/lists/…`, signed-in people only (API keys and unknown or disabled users: `403 user_required`),
+`404 {"code":"disabled"}` while lists are off. A list someone can't see answers `404 not_found` like one that doesn't
+exist. Views are `private, no-cache` with an `ETag` bound to the person; every change is `private, no-store`. Changes
+take a `requestId` (`[A-Za-z0-9_-]{1,64}`): the same id with the same body is answered from its durable record (also
+after a restart) with the list as the caller may see it now; the same id with another body is `409 idempotency_conflict`.
+Edits take the list's `rev`; a stale one is `409 rev_conflict` with the fresh view.
+
+| Method and path | Who | Body / answer |
+|---|---|---|
+| `GET /acquire/lists/{listId}` | can see the list | The caller's view: `rev`, `canEdit`, `nativeCanEdit`, `actions` (`edit`, `reorder`, `request`, `requestAll`, `swapIn`), `statusShown`, `swapIn`, `reconciling`, `order` (playlists: real `e:{itemId}:{n}` and entry `p:{id}` tokens the caller may see) and `placeholders` (each with `titleKey`, `edition`, `status` from the shared status, `filledCount`/`expectedCount`/`airedCount`, `actions`). |
+| `POST /acquire/lists/{listId}/items` | can edit (authoring on) | `{requestId, rev?, placeholders: [{kind, mediaType?, tmdbId, tvdbId?, imdbId?, title, year?, releaseDate?, posterPath?, seasonNumber?, episodes?, note?, edition?}], position?: {afterToken \| atStart}}` (1–2000) → `{added, addedAsItems, skipped: [{index, reason, sameAs?}], view}`. |
+| `POST /acquire/lists/{listId}/apply` | can edit | `{requestId, rev?, entries: [{type: "item", itemId} \| {type: "placeholder", placeholder}], position?}` → as above. |
+| `PATCH /acquire/lists/{listId}/items/{id}` | can edit | `{requestId, rev, note?, link?}` (link: custom entries only) → view. |
+| `DELETE /acquire/lists/{listId}/items/{id}?rev=&requestId=` | can edit | → view. |
+| `PUT /acquire/lists/{listId}/order` | can edit (playlists) | `{requestId, rev, order, moved?}` (the caller's projection after a drag; `moved`: the real token that moved) → view, or `409` (`duplicate_copy`, `move_unsupported`, `real_order_changed`, …) with the fresh view. |
+| `PUT /acquire/lists/{listId}/swap-in` | can edit (swap-in on) | `{requestId, rev, enabled}`: the caller becomes the person whose agreement swap-in needs. |
+| `POST /acquire/lists/{listId}/requests/preview` | can see the list (list requests on; several entries: Request all missing on) | `{placeholderIds?, all?}` → `{items: [{placeholderId, title, outcome: request \| follow \| approval \| already \| skip, reason, cost}], askable, cost, maxBatch: 20}`. Writes nothing. |
+| `POST /acquire/lists/{listId}/requests` | as above | `{clientId, placeholderIds}` (1–20) → `{operationId, replayed, results: [{placeholderId, result}], view}`; each `result` is the usual request outcome. The same `clientId` with the same entries asks with the same request ids. |
+| `GET /acquire/lists/editable` | authoring on | `{playlists: [{id, name, isOwn, nativeCanEdit, ownerName?}], collections, canManageCollections}`. |
+| `POST /acquire/lists/playlists`, `POST /acquire/lists/collections` | authoring on (collections: administrators and collection managers) | `{requestId, name, isPublic?, entries?}` → `{listId, listKind, name, result}`. |
+| `GET` / `POST /arr/admin/lists/import` | administrators (lists on) | The experimental-list importer: dry run / import. Report: `documents`, `collageMarkers`, `imported`, `unchanged`, `skipped`, `quarantined` with reasons. |
+
+Bodies are capped at 16 KiB, except `items`, `apply`, `order` and list creation (1 MiB).
+
 ### Backup & restore
 
 Admin only. Jellyfin's own backups don't include plugin data.

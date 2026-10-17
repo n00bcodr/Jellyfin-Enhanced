@@ -520,6 +520,28 @@ budget window with what is used, what is waiting for a read-back and when it has
 per target (with *Try again now*), automatic requests waiting at send by reason, the request backend's boundary and the
 one-time setup with its notice (*Got it* hides it).
 
+#### Lists (phase 4)
+
+All off by default. Lists need phase 4 and *Ask for it*; each switch below also needs *Lists*. See
+[Lists](arr-features.md#lists-titles-not-in-the-library-on-playlists-and-collections-phase-4).
+
+| Setting | Default | What it does |
+|---|---|---|
+| Lists: titles not in the library on playlists and collections (`ArrPhase4ListPlaceholdersEnabled`) | off | Lists themselves. Off: nothing about lists is shown or done (deleted lists are still cleaned up). |
+| Adding and editing list entries (`ArrPhase4ListAuthoringEnabled`) | off | People who can edit a list may add, link, reorder and remove entries and create lists. |
+| Ask for list entries (`ArrPhase4ListRequestsEnabled`) | off | A Request action on entries, through the usual request rules. |
+| Request all missing (`ArrPhase4ListRequestAllEnabled`) | off | Asking for several entries at once, after a preview; at most 20 per confirmation. Needs *Ask for list entries*. |
+| Swap in titles that arrive (`ArrPhase4ListSwapInEnabled`) | off | Arrivals take their entry's place, on lists whose editor turned it on and agreed in their own settings. |
+| Daily list maintenance (`ArrPhase4ListMaintenanceEnabled`) | off | Daily refresh of release dates and episode lists, and arrivals nobody looked at. |
+| Show request status on list entries (`ArrPhase4ListStatusEnabled`) | off | The shared request status on entries. |
+
+Per person (Jellyfin Enhanced panel, *Lists*, shown while lists are on): *Show titles not in the library on lists* and
+*Show where each list title's request stands* follow the household (default) or are hidden; *Let titles that arrive take
+their place in lists I turned this on for* is *No* until the person chooses *Yes*.
+
+The scheduled task *Requests & downloads: list maintenance* (daily, 04:30) removes the data of deleted lists and old
+list records; with *Daily list maintenance* on it also refreshes entries and runs a full pass.
+
 #### Household tab
 
 Admins can edit `ArrRequestPreset`, `ArrRequestDefaultRole`, `ArrRequestQuotaLimit`, the per-role `QuotaLimit` in
