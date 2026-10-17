@@ -49,7 +49,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>Season numbers the viewer can open in the library, with the season item (a real one, not a placeholder).</summary>
         public IReadOnlyDictionary<int, Guid> VisibleSeasons { get; init; } = new Dictionary<int, Guid>();
 
-        /// <summary>Episode numbers (of the season asked for) the viewer can open in the library, with the episode item (a file, not a missing-episode placeholder).</summary>
+        /// <summary>
+        /// Episode numbers (of the season asked for) the viewer can open in the library, with the episode item (a file,
+        /// not a missing-episode placeholder): each number a multi-episode file holds maps to that file.
+        /// </summary>
         public IReadOnlyDictionary<int, Guid> VisibleEpisodes { get; init; } = new Dictionary<int, Guid>();
 
         /// <summary>True when the title, a season or an episode of a synthetic id is hidden from the viewer.</summary>
@@ -221,8 +224,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     if (Visible(e.Id, e.SeriesId))
                     {
                         visible.UnionWith(numbers);
-                        // A file the viewer can open stands for its episode in the asked season's list.
-                        if (season is int only && !e.IsVirtualItem && !visibleEpisodes.ContainsKey(first) && s == only) visibleEpisodes[first] = e.Id;
+                        // A file the viewer can open stands for its episodes in the asked season's list: every
+                        // number a multi-episode file (E01-E02) holds, so none of them is drawn as missing.
+                        if (season is int only && !e.IsVirtualItem && s == only)
+                        {
+                            foreach (var (_, n) in numbers) visibleEpisodes.TryAdd(n, e.Id);
+                        }
                     }
                     else
                     {

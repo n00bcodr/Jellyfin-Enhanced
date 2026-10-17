@@ -515,11 +515,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (seasonData.Data is not { } se) return empty;
             var logo = await _source.LogoPathAsync(false, series.Id.TmdbId, ct).ConfigureAwait(false);
             var options = Options(context);
-            // An episode the viewer can open in the library is listed as itself.
+            // An episode the viewer can open in the library is listed as itself; a file holding several episodes
+            // (E01-E02) once, at its first, with no stand-in for the others it holds.
+            var listed = new HashSet<Guid>();
             var all = NativeDetailsDtos.Episodes(se)
                 .Where(e => !physical.HiddenEpisodes.Contains(NativeDetailsDtos.Int(e, "episodeNumber") ?? 0))
-                .Select(e => Real(physical.VisibleEpisodes.TryGetValue(NativeDetailsDtos.Int(e, "episodeNumber") ?? 0, out var held) ? held : null, viewer, options)
-                    ?? dtos.Episode(SyntheticId.EpisodeOf(series.Id.TmdbId, number.Value, NativeDetailsDtos.Int(e, "episodeNumber") ?? 0), sd, se, e, logo))
+                .Select(e =>
+                {
+                    var episode = NativeDetailsDtos.Int(e, "episodeNumber") ?? 0;
+                    if (physical.VisibleEpisodes.TryGetValue(episode, out var held))
+                    {
+                        if (listed.Contains(held)) return null;
+                        if (Real(held, viewer, options) is { } real)
+                        {
+                            listed.Add(held);
+                            return real;
+                        }
+                    }
+                    return dtos.Episode(SyntheticId.EpisodeOf(series.Id.TmdbId, number.Value, episode), sd, se, e, logo);
+                })
+                .OfType<BaseItemDto>()
                 .ToArray();
             var start = Math.Max(0, Arg<int?>(context, "startIndex") ?? 0);
             var limit = Arg<int?>(context, "limit") is int l && l > 0 ? l : int.MaxValue;

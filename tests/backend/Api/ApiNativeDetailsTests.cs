@@ -1056,15 +1056,20 @@ public class ApiNativeDetailsTests
         }
     }
 
-    /// <summary>Andor in the library: the series, seasons 1 and 2, S1E1 and S1E2. Items in <c>hidden</c> are ones Jellyfin hides from the viewer.</summary>
+    /// <summary>
+    /// Andor in the library: the series, seasons 1 and 2, S1E1 and S1E2 (with <paramref name="combined"/>, one file
+    /// S1E1-E2 instead). Items in <c>hidden</c> are ones Jellyfin hides from the viewer.
+    /// </summary>
     private sealed record Shelf(Guid Series, Guid Season1, Guid Season2, Guid Episode1, Guid Episode2, HashSet<Guid> Hidden);
 
-    private static Shelf Library(Rig rig, params User[] viewers)
+    private static Shelf Library(Rig rig, params User[] viewers) => Library(rig, false, viewers);
+
+    private static Shelf Library(Rig rig, bool combined, params User[] viewers)
     {
         var series = new MediaBrowser.Controller.Entities.TV.Series { Id = Guid.NewGuid(), Name = "Andor" };
         var s1 = new MediaBrowser.Controller.Entities.TV.Season { Id = Guid.NewGuid(), IndexNumber = 1, SeriesId = series.Id };
         var s2 = new MediaBrowser.Controller.Entities.TV.Season { Id = Guid.NewGuid(), IndexNumber = 2, SeriesId = series.Id };
-        var e1 = new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), IndexNumber = 1, ParentIndexNumber = 1, SeriesId = series.Id };
+        var e1 = new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), IndexNumber = 1, IndexNumberEnd = combined ? 2 : null, ParentIndexNumber = 1, SeriesId = series.Id };
         var e2 = new MediaBrowser.Controller.Entities.TV.Episode { Id = Guid.NewGuid(), IndexNumber = 2, ParentIndexNumber = 1, SeriesId = series.Id };
         var hidden = new HashSet<Guid>();
         // Unscoped queries (no user): what the library holds, whoever may see it.
@@ -1073,7 +1078,7 @@ public class ApiNativeDetailsTests
         rig.Library.Setup(l => l.GetItemList(It.Is<MediaBrowser.Controller.Entities.InternalItemsQuery>(q => q.User == null && q.IncludeItemTypes.Contains(BaseItemKind.Season) && q.AncestorIds.Contains(series.Id))))
             .Returns(new List<MediaBrowser.Controller.Entities.BaseItem> { s1, s2 });
         rig.Library.Setup(l => l.GetItemList(It.Is<MediaBrowser.Controller.Entities.InternalItemsQuery>(q => q.User == null && q.IncludeItemTypes.Contains(BaseItemKind.Episode) && q.AncestorIds.Contains(s1.Id))))
-            .Returns(new List<MediaBrowser.Controller.Entities.BaseItem> { e1, e2 });
+            .Returns(combined ? new List<MediaBrowser.Controller.Entities.BaseItem> { e1 } : new List<MediaBrowser.Controller.Entities.BaseItem> { e1, e2 });
         foreach (var viewer in viewers)
         {
             foreach (var item in new MediaBrowser.Controller.Entities.BaseItem[] { series, s1, s2, e1, e2 })
@@ -1087,6 +1092,22 @@ public class ApiNativeDetailsTests
         rig.Dto.Setup(d => d.GetBaseItemDto(It.Is<MediaBrowser.Controller.Entities.BaseItem>(i => i.Id == series.Id || i.Id == s1.Id || i.Id == s2.Id || i.Id == e1.Id || i.Id == e2.Id), It.IsAny<MediaBrowser.Controller.Dto.DtoOptions>(), It.IsAny<User>(), null))
             .Returns((MediaBrowser.Controller.Entities.BaseItem i, MediaBrowser.Controller.Dto.DtoOptions _, User _, MediaBrowser.Controller.Entities.BaseItem? _) => new BaseItemDto { Id = i.Id, IndexNumber = i.IndexNumber, Name = "library " + i.Id.ToString("N") });
         return new Shelf(series.Id, s1.Id, s2.Id, e1.Id, e2.Id, hidden);
+    }
+
+    [Fact]
+    public async Task AFileHoldingSeveralEpisodesIsListedOnceAndNoneOfItsEpisodesAsMissing()
+    {
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        viewer.MaxParentalRatingScore = 18;
+        viewer.DisplayMissingEpisodes = true;
+        var me = Me(viewer);
+        // The library has S1E1-E2 as one file; public data lists E1, E2 and E3.
+        var shelf = Library(rig, true, viewer);
+        var episodes = Value<QueryResult<BaseItemDto>>((await Call(rig, "TvShows", "GetEpisodes", me, new() { ["seriesId"] = Id(SyntheticId.Series(83867)), ["seasonId"] = Id(SyntheticId.SeasonOf(83867, 1)) })).Result);
+        // The file once (as itself), then the episode it doesn't hold: no stand-in "missing" E2 next to the file.
+        Assert.Equal(new[] { shelf.Episode1, Id(SyntheticId.EpisodeOf(83867, 1, 3)) }, episodes.Items.Select(i => i.Id));
+        Assert.Equal(2, episodes.TotalRecordCount);
     }
 
     [Fact]

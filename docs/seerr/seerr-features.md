@@ -123,7 +123,8 @@ On a search card, Enter opens the page and Space still shows the overview with i
 - **Open**: when the title arrives in your library while the page is open, an *Open* button takes you to it. A link
   to such a page after that goes straight to the library copy, and so does going Back to it.
 - **What you already have**: a season page of a series Jellyfin has (a season it doesn't) lists the seasons and
-  episodes you can open as themselves, links to the library's series and season above it, and the *More like this*
+  episodes you can open as themselves (a file holding two episodes, E01-E02, once, with neither episode also shown as
+  missing), links to the library's series and season above it, and the *More like this*
   row shows your copy of a title even when Seerr doesn't know it's in the library.
 - Artwork links on these pages are made for your account and the page they were shown on, and last a day; a page
   open longer than that gets new ones when it's shown again. They keep working after a server restart.
