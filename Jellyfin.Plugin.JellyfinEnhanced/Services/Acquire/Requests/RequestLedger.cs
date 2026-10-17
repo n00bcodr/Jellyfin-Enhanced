@@ -973,7 +973,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// for it once (D16; an overdraft is allowed, as Sonarr would fetch it in Jellyfin Enhanced mode) unless charging
         /// future seasons is off or the season was charged already. Once per season and request, whatever became of the
         /// first (a held one is sent again when the request is approved): false when one exists, the request isn't a
-        /// sent keep-getting request on the Seerr the requester's asks go to now, or the season is the one asked for.
+        /// sent keep-getting request on the Seerr the requester's asks go to now, or the season is the one asked for. The
+        /// new season's request is the approved request's input for that season, with its Seerr options and stamp.
         /// </summary>
         /// <param name="wantId">The keep-getting request.</param>
         /// <param name="season">The new season.</param>
@@ -986,7 +987,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 var want = Wants(c, t, "id=$id", ("$id", wantId)).SingleOrDefault();
                 if (want == null || want.Input.Scope != "future" || want.Status is not ("sent" or "stale") || want.Input.Seasons.Contains(season)) return false;
-                var input = new MutationInput { Key = want.Input.Key, Scope = "seasons", Variant = want.Input.Variant, Seasons = new[] { season } }.Normalize();
+                // From the request as approved: the new season goes where it went (an administrator's Seerr server, profile,
+                // root folder and options stamp included), checked again at send like any request with them.
+                var input = (want.Input with { Scope = "seasons", Seasons = new[] { season }, Episodes = Array.Empty<RequestEpisode>() }).Normalize();
                 if (input == null) return false;
                 var requester = policy.Evaluate(want.UserId, input);
                 if (requester.Backend != "seerr" || TargetKey(requester) != want.TargetKey) return false;

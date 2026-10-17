@@ -487,6 +487,49 @@ public class IntegrationSeerrRequestOptionsTests
         }
     }
 
+    // Seerr's Sonarr gets a second root folder (an anime one), so a choice can differ from Seerr's default.
+    private static void AnimeRoot(FakeSeerr seerr, params string[] more)
+        => seerr.ServiceDetails["sonarr/0"]["rootFolders"] = new JsonArray(new[] { "/tv", "/tv-anime" }.Concat(more)
+            .Select((r, i) => (JsonNode)new JsonObject { ["id"] = i + 1, ["path"] = r, ["freeSpace"] = 1_000_000 }).ToArray());
+
+    [Fact]
+    public async Task AKeepGettingRequestsNextSeasonGoesWhereTheAdministratorChoseAndIsCheckedAgainWhenSent()
+    {
+        using var rig = new Rig();
+        AnimeRoot(rig.Fake);
+        static JsonObject Season(int n, string aired) => new() { ["seasonNumber"] = n, ["episodeCount"] = 8, ["airDate"] = aired };
+        rig.Fake.Shows[1731] = new JsonObject { ["id"] = 1731, ["seasons"] = new JsonArray(Season(1, "2020-01-01"), Season(2, "2022-01-01"), Season(3, "2027-03-01")) };
+        var stamp = await rig.Stamp(0, movie: false);
+        var keep = await rig.Ask(rig.Admin, new MutationInput { Key = "tv:tmdb:1731", Scope = "future", Seasons = new[] { 1 }, SeerrServerId = 0, SeerrProfileId = 4, SeerrRootFolder = "/tv-anime", SeerrOptions = stamp });
+        Assert.True(keep.HttpStatus == 201, keep.Reason + ": " + keep.Message);
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal("sent", rig.Ledger.Find(keep.RequestId!)!.Status);
+        Assert.Equal("/tv-anime", (string)Assert.Single(rig.Fake.Posts).Body["rootFolder"]!);
+
+        // Season 2 has started: it is asked for with the same server, profile, root folder and stamp, and goes there.
+        var follow = new FutureSeasonCharges(rig.Lab.Arr.Store, rig.Ledger, rig.Policy, rig.Lab.Arr.Arr.Factory, new ArrChangeFeed(), null, null, () => rig.Lab.Now, rig.Seerr, rig.Lab.Model, new RequestOutboxSignal());
+        Assert.Equal(1, await follow.FollowSeerrAsync(default));
+        var season2 = Assert.Single(rig.Ledger.ForWant(keep.RequestId!), j => j.State == "queued");
+        Assert.Equal(("2", 0, 4, "/tv-anime", stamp), (string.Join(",", season2.Input.Seasons), season2.Input.SeerrServerId, season2.Input.SeerrProfileId, season2.Input.SeerrRootFolder, season2.Input.SeerrOptions));
+        await rig.Outbox.TickAsync(default);
+        var post = rig.Fake.Posts.Last().Body;
+        Assert.Equal(("2", 0, 4, "/tv-anime"), (string.Join(",", post["seasons"]!.AsArray().Select(n => (int)n!)), (int)post["serverId"]!, (int)post["profileId"]!, (string)post["rootFolder"]!));
+        Assert.Equal("succeeded", rig.Ledger.Job(season2.Id)!.State);
+        Assert.Equal("sent", rig.Ledger.Find(keep.RequestId!)!.Status);
+
+        // Seerr's Sonarr changed before season 3 started (another root folder): the choice is checked again when season 3
+        // is sent, and it is held with the reason, never sent to Seerr's defaults.
+        AnimeRoot(rig.Fake, "/tv-kids");
+        rig.Lab.Now = rig.Lab.Now.AddMinutes(2);
+        rig.Fake.Shows[1731]["seasons"]!.AsArray()[2]!["airDate"] = "2026-10-01";
+        Assert.Equal(1, await follow.FollowSeerrAsync(default));
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal(2, rig.Fake.Posts.Count);
+        var season3 = Assert.Single(rig.Ledger.ForWant(keep.RequestId!), j => j.Input.Seasons.SequenceEqual(new[] { 3 }));
+        Assert.Equal(("parked", "seerr_options_changed", "/tv-anime"), (season3.State, season3.Reason, season3.Input.SeerrRootFolder));
+        Assert.Equal(("pending", "seerr_options_changed"), (rig.Ledger.Find(keep.RequestId!)!.Status, rig.Ledger.Find(keep.RequestId!)!.Reason));
+    }
+
     [Fact]
     public async Task ARequestSeerrStoredWithOtherOptionsIsNotAMatchAndIsNeverSentAgain()
     {
