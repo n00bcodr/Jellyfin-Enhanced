@@ -502,6 +502,65 @@ test('two looks at a fresh page that overlap (viewshow and the first look) draw 
   assert.equal(page.querySelectorAll('.je-spoiler-pending-detail').length, 1);
 });
 
+test('a page shown again whose action row was drawn anew gets its Request and Spoiler Guard back, still live', async t => {
+  const built = [];
+  const h = setup(t, {
+    html: ROW_PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`,
+    getItem: async () => ({ Id: MOVIE, Type: 'Movie', Name: 'Dune', ProviderIds: { Tmdb: '693134' } }),
+  });
+  h.JE.internals.spoilerGuard = { buildSeerrToggle: () => { built.push(1); return Object.assign(h.document.createElement('button'), { className: 'button-flat detailButton je-spoiler-pending-detail' }); } };
+  const nd = h.JE.internals.nativeDetails;
+  const page = h.document.getElementById('itemDetailPage');
+  const fresh = () => {
+    const row = h.document.createElement('div');
+    row.className = 'mainDetailButtons focuscontainer-x';
+    row.innerHTML = '<button class="btnPlay detailButton">Play</button><button class="jellyseerr-report-issue-icon detailButton">Report</button><button class="btnMoreCommands detailButton">More</button>';
+    return row;
+  };
+  const check = () => {
+    const row = page.querySelector('.mainDetailButtons');
+    const primary = row.firstElementChild;
+    assert.ok(primary.classList.contains('je-native-absent-primary'));
+    assert.equal(primary.querySelector('.je-native-absent-request').textContent, 'Request');
+    assert.equal(nd.current().primary, primary);
+    assert.equal(row.querySelectorAll('.je-native-absent-primary').length, 1);
+    assert.equal(row.querySelectorAll('.je-spoiler-pending-detail').length, 1);
+    // Where a library title has it: after Report issue, just before More….
+    const spoiler = row.querySelector('.je-spoiler-pending-detail');
+    assert.ok(spoiler.previousElementSibling.classList.contains('jellyseerr-report-issue-icon'));
+    assert.ok(spoiler.nextElementSibling.classList.contains('btnMoreCommands'));
+    return primary;
+  };
+  await nd.onView();
+  check();
+  // The row's contents drawn anew while the page (and the status under the title) stays.
+  const row = page.querySelector('.mainDetailButtons');
+  row.replaceChildren(...fresh().childNodes);
+  // Smart actions drawn while the row was without its controls (under the status) go back with them.
+  const box = askBox(h.document, [['add', 'Request', false]]);
+  page.querySelector('.je-native-absent-status').appendChild(box);
+  await nd.onView();
+  let primary = check();
+  assert.equal(box.parentElement, primary);
+  // Then the row element itself.
+  page.querySelector('.mainDetailButtons').replaceWith(fresh());
+  await nd.onView();
+  primary = check();
+  // The same controls: no second mount, Spoiler Guard built once, and they still follow the page.
+  assert.equal(h.mounts.length, 1);
+  assert.equal(h.mounts[0].destroyed, false);
+  assert.equal(built.length, 1);
+  const later = Object.assign(h.document.createElement('button'), { textContent: 'Search' });
+  primary.querySelector('.je-native-absent-request').appendChild(later);
+  await wait(5);
+  assert.ok(later.classList.contains('je-native-absent-lead'));
+  // Leaving the page still takes them away.
+  h.window.location.hash = '#/home';
+  await nd.onView();
+  assert.equal(page.querySelector('.je-native-absent-primary'), null);
+  assert.equal(page.querySelector('.je-spoiler-pending-detail'), null);
+});
+
 test('the navigator: native page, scoped pages, the modal as fallback, provider keys through the server', async t => {
   const h = setup(t, { resolve: path => (path.includes('movie%3Atmdb%3A45745') ? { itemId: '0123456789abcdef0123456789abcdef' } : path.includes('tv%3Atvdb%3A393189') ? { id: '4a45ad130001479b0001000092805890' } : null) });
   assert.equal(h.td.show(83867, 'tv', { season: 1, episode: 3 }), true);

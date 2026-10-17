@@ -689,6 +689,23 @@
     }
 
     /**
+     * A page shown again whose action row was drawn anew (its contents, or the row itself) while the
+     * page stayed: its request controls and Spoiler Guard button go back into the row where they
+     * stood. They are the same controls, still live and still observed, so nothing is mounted twice.
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function keepRow(state) {
+        const row = rowOf(state.page);
+        if (!row) return;
+        if (state.primary && row.firstElementChild !== state.primary) {
+            row.insertBefore(state.primary, row.firstElementChild);
+            adoptActions(state);
+        }
+        if (state.spoiler && !row.contains(state.spoiler)) JE.core.ui.placeDetailAction(row, state.spoiler);
+    }
+
+    /**
      * Stops what the previous synthetic page started.
      * @returns {void}
      */
@@ -1241,6 +1258,7 @@
         }
         checking(page, false);
         page.dataset.jeNativeShown = id;
+        keepRow(state);
         // Drawn once per page state: a look that overlapped the first one (viewshow and the first look
         // on a fresh load, the first giving way to it) still draws the page.
         if (state.drawn) return;
