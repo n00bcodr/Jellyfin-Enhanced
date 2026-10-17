@@ -876,20 +876,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Record(c, t, follower.Id, null, actor, "merged", "accepted", sent ? "looking" : "queued_outage", follower.Input.Key, now);
             }
         }
-        /// <summary>Cancel or decline; uncertain/in-flight writes cannot be refunded or deleted.</summary>
+        /// <summary>
+        /// Cancel or decline; uncertain/in-flight writes cannot be refunded or deleted. Whether a person may withdraw a
+        /// request never depends on where it was going (its arr or Seerr routing, which may have stopped fitting: that is
+        /// often why it waits). A request waiting for an OK whose sent part covers what it asked for (a new season it
+        /// followed, held) keeps what went out: only its unsent work is cancelled and refunded, and it is sent again.
+        /// </summary>
         public RequestOutcome Close(string id, Guid actor, string? declineReason, IRequestPolicy policy, DateTimeOffset now)
             => _db.Write((c, t) =>
             {
                 var want = Wants(c, t, "id=$id", ("$id", id)).SingleOrDefault();
                 if (want == null) return RequestOutcome.Refused("not_found", 404);
-                var facts = policy.Evaluate(actor, want.Input);
+                var facts = policy.Evaluate(actor, Unrouted(want.Input));
                 if (facts.Refusal != null) return RequestOutcome.Refused(facts.Refusal);
                 if (declineReason == null ? actor != want.UserId && facts.Role != "Admin" : !facts.CanApprove) return RequestOutcome.Refused("requests_approve_required");
                 if (declineReason != null && (string.IsNullOrWhiteSpace(declineReason) || declineReason.Length > 500 || declineReason.Any(ch => char.IsControl(ch) && ch != '\n'))) return RequestOutcome.Refused("invalid_reason", 400);
                 if (!Active(want) || (declineReason != null && want.Status != "pending")) return RequestOutcome.Refused("request_changed", 409);
-                if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$id", id)) != null ||
+                if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$id", id)) != null ||
                     LinkedScope(c, t, want) != null) return RequestOutcome.Refused("request_in_flight", 409);
                 var state = declineReason == null ? "cancelled" : "declined";
+                if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND state='succeeded' LIMIT 1", ("$id", id)) != null)
+                {
+                    if (want.Status != "pending" || want.Input.Extra(Jobs(c, t, "want_id=$id AND state='succeeded'", ("$id", id)).Select(j => j.Input)) != null)
+                        return RequestOutcome.Refused("request_in_flight", 409);
+                    Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$id AND state IN ('queued','retry','parked'))", ("$id", id));
+                    Exec(c, t, "UPDATE jobs SET state='cancelled',reason=$s WHERE want_id=$id AND state IN ('queued','retry','parked')", ("$s", state), ("$id", id));
+                    Exec(c, t, "UPDATE wants SET status='sent',reason='looking',cost=(SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=wants.id AND state='charged'),updated_at=$at WHERE id=$id", ("$at", Ms(now)), ("$id", id));
+                    Approval(c, t, want, actor, state, declineReason, null, Authorize(facts, facts, want.Input, false), now);
+                    Record(c, t, id, null, actor, state, "accepted", "looking", want.Input.Key, now);
+                    return RequestOutcome.Accepted(id, "looking", 200);
+                }
                 Exec(c, t, "UPDATE wants SET status=$s,reason=$s,updated_at=$at WHERE id=$id", ("$s", state), ("$at", Ms(now)), ("$id", id));
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE want_id=$id", ("$id", id));
                 Exec(c, t, "UPDATE jobs SET state='cancelled',reason=$s WHERE want_id=$id", ("$s", state), ("$id", id));
@@ -899,6 +915,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Record(c, t, id, null, actor, state, "accepted", state, want.Input.Key, now);
                 return RequestOutcome.Accepted(id, state, 200);
             });
+        // The input without its routing (arr instance, profile, folder; Seerr options): the person's own facts for it.
+        private static MutationInput Unrouted(MutationInput input) => input with
+        {
+            InstanceId = null, ProfileId = null, RootFolder = null, SeerrServerId = null, SeerrProfileId = null, SeerrRootFolder = null, SeerrOptions = null,
+        };
         private static void RestorePendingOwners(SqliteConnection c, SqliteTransaction t, string acquisition, IRequestPolicy policy, DateTimeOffset now)
         {
             var wants = Wants(c, t, "acquisition_id=$a", ("$a", acquisition));

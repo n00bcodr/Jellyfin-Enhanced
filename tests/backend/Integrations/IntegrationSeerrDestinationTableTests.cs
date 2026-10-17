@@ -429,6 +429,62 @@ public class IntegrationSeerrDestinationTableTests
         Assert.Equal("seerr-b.lan", Assert.Single(rig.Fake.Posts.Skip(posts)).Host);
     }
 
+    // ------------------------------------------------------------------ withdrawing a held request (found live)
+
+    [Theory]
+    [InlineData("options changed", "decline")]
+    [InlineData("options changed", "cancel")]
+    [InlineData("new season held", "decline")]
+    [InlineData("new season held", "cancel")]
+    [InlineData("Seerr changed", "decline")]
+    [InlineData("written, unconfirmed", "decline")]
+    public async Task ARequestHeldForItsSeerrChoiceCanBeDeclinedOrCancelledAndWhatWentOutStays(string held, string action)
+    {
+        using var rig = NewRig();
+        string id;
+        var follow = held is "new season held" or "Seerr changed";
+        if (follow)
+        {
+            // Season 2 went out; season 3 is held (Seerr's facts changed, or Jellyfin Enhanced points at another Seerr).
+            id = (await rig.Ask(rig.Admin, await At(rig, X, "future", 2))).RequestId!;
+            await rig.Outbox.TickAsync(default);
+            Starts(rig, 3);
+            Assert.Equal(1, await Follower(rig).FollowSeerrAsync(default));
+            Apply(rig, held == "Seerr changed" ? Diff.Source : Diff.Stamp);
+        }
+        else
+        {
+            if (held.StartsWith("written", StringComparison.Ordinal)) rig.Fake.DropAdvanced = true;
+            id = (await rig.Ask(rig.Admin, await At(rig, X, "seasons", 1))).RequestId!;
+            if (held == "options changed") Apply(rig, Diff.Stamp);
+        }
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal("pending", rig.Ledger.Find(id)!.Status);
+        var posts = rig.Fake.Posts.Count;
+        var outcome = action == "decline" ? await rig.Service.DeclineAsync(id, rig.Admin.UserId, "Not now.", default) : rig.Service.Close(id, rig.Admin.UserId, null);
+        await rig.Outbox.TickAsync(default);
+        Assert.Equal(posts, rig.Fake.Posts.Count);
+        if (held.StartsWith("written", StringComparison.Ordinal))
+        {
+            // Seerr may have it: only a read-back (or an OK) settles it, never a withdrawal.
+            Assert.Equal(("request_in_flight", 409), (outcome.Reason, outcome.HttpStatus));
+            return;
+        }
+        Assert.True(outcome.HttpStatus == 200, outcome.Reason + ": " + outcome.Message);
+        var want = rig.Ledger.Find(id)!;
+        if (!follow)
+        {
+            Assert.Equal(action == "decline" ? "declined" : "cancelled", want.Status);
+            Assert.All(rig.Ledger.ForWant(id), j => Assert.Equal("cancelled", j.State));
+            return;
+        }
+        // What went out stays: the request is sent again, without the held season, which isn't followed again.
+        Assert.Equal(("sent", "looking"), (want.Status, want.Reason));
+        Assert.Equal("succeeded", Assert.Single(rig.Ledger.ForWant(id), j => j.Input.Seasons.SequenceEqual(new[] { 2 })).State);
+        Assert.Equal("cancelled", Assert.Single(rig.Ledger.ForWant(id), j => j.Input.Seasons.SequenceEqual(new[] { 3 })).State);
+        if (held == "new season held") Assert.Equal(0, await Follower(rig).FollowSeerrAsync(default));
+    }
+
     // ------------------------------------------------------------------ the rule itself, over targets of both backends
 
     [Theory]
