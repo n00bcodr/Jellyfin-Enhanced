@@ -1967,9 +1967,9 @@
                                     </div>
                                     <div class="je-setting-description" data-desc-for="jellyseerrUrlMappings">
                                         <div class="fieldDescription">
-                                            Map your Jellyfin URLs to specific Seerr URLs for displaying links to users. Users will get the appropriate Seerr link when using "Link result titles to Seerr instead of TMDB", based on what link they use to access Jellyfin.<br/>
+                                            Map your Jellyfin URLs to browser-facing Seerr URLs for links and embedded Seerr iframes, including Custom Tabs. Existing iframe URLs matching the first Seerr URL above or any mapping destination automatically use the appropriate address, preserving deep links.<br/>
                                             Format: <code>JellyfinURL|SeerrURL</code>, one mapping per line.<br/>
-                                            If no mapping matches or this is empty, the first URL from above will be used.
+                                            If no mapping matches, the first URL from above will be used. With no mappings configured, links use that first URL and iframe sources are left unchanged.
                                         </div>
                                         <div class="je-info-banner-inline">
                                             <i class="material-icons je-info-icon-sm">info</i>

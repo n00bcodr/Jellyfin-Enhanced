@@ -69,6 +69,10 @@ Paths below are relative to `Jellyfin.Plugin.JellyfinEnhanced/`. Every configura
 | Localized styles/accessibility/visuals, all HTML/CSS pages | Desktop/mobile layouts, keyboard/focus, semantic roles, readable long text, baseline changes reviewed | Partial — `tests/browser/flows.spec.cjs`: 39 passing component-browser cases across Chromium desktop/mobile and Firefox, including keyboard focus/Escape, responsive modal and three reviewed visual baselines. Remaining: other JE pages and full accessibility audit; aesthetic approval remains Manual. |
 | Deployment extensions/native clients | Reverse proxy base path, supported host/browser combinations, disabled injection, alternate Jellyfin clients | Partial — both actual server lines pass 45 host scenarios; reverse-proxy base-path injection is covered at middleware level, and browser components run Chromium/mobile Chromium/Firefox. Real-host Chromium additionally passes admin/regular login and actual Enhanced panel persistence. Remaining: physical native-client behavior and host playback/image journeys. |
 
+### Embedded Seerr URL mappings
+
+`features-seerr-iframe-mapping.test.mjs` covers existing and lazy-mounted iframes, later `src` changes, public/local selection, resolver fallback and normalization, deep-link/query/fragment and base-path preservation, origin/port/path boundaries, unsafe or invalid URLs, `srcdoc`, idempotence, detached frames, identity reset and lifecycle cleanup. `tests/browser/seerr-iframe-mapping.spec.cjs` verifies existing and lazy-mounted Custom Tabs markup, panel replacement, real frame navigation and public URL retention using intercepted Seerr pages. Authentication-provider and third-party-cookie behavior remain outside these component tests.
+
 ## Scheduled task checklist
 
 All 13 task implementations must be assessed independently. Testing the worker helper does not prove scheduler registration or cancellation propagation.

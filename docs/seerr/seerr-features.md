@@ -752,13 +752,19 @@ Ordinary Seerr search uses Seerr's TMDB access. Automatic movie requests, studio
 
 ### URL Mappings
 
-Map the Jellyfin server address used by your client to a browser-accessible Seerr address. These mappings affect displayed links; proxy calls continue to use **Seerr URL(s) (One per line)**.
+Map the Jellyfin server address used by your client to a browser-accessible Seerr address. These mappings affect displayed links and embedded Seerr iframes, including manually configured Custom Tabs. Proxy calls continue to use **Seerr URL(s) (One per line)**.
 
 **How to use:**
 
 1. Open **Seerr** → **Seerr Connection Setup** → **Advanced URL Mappings**.
 2. Enter one `jellyfin_url|seerr_url` pair per line.
-3. Press **Validate Mappings**, then save.
+3. Press **Validate Mappings**, then save and reload the Jellyfin web client.
+
+Existing Seerr iframe URLs automatically switch to the resolved address when they match the first configured Seerr URL or a mapping destination. No Custom Tabs HTML change is required. Item paths, query strings, and fragments are preserved, including when Seerr uses a base path. Unrelated iframe origins and paths, and frames using `srcdoc`, are left unchanged. With no mappings configured, iframe sources are left unchanged.
+
+!!! note "Embedding restrictions still apply"
+
+    URL mappings choose the address; they do not bypass authentication, browser cookie restrictions, mixed-content rules, or frame-blocking headers. For local access, map to a local Seerr address rather than a public address protected by an interactive authentication proxy.
 
 Admin setting:
 
