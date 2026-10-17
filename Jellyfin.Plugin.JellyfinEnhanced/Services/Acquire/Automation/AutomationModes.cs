@@ -67,6 +67,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="recipe">Recipe id.</param>
         public static bool IsLegacy(string? recipe) => recipe is AutoSeason or AutoMovie;
 
+        /// <summary>
+        /// False while an old recipe's own enable switch (Auto Season Request / Auto Movie Request) is off: it then records
+        /// and sends nothing, whatever its mode. True for every other recipe.
+        /// </summary>
+        /// <param name="config">Configuration as it is now (null: off).</param>
+        /// <param name="recipe">Recipe id.</param>
+        public static bool SwitchedOn(PluginConfiguration? config, string? recipe) => recipe switch
+        {
+            AutoSeason => config?.AutoSeasonRequestEnabled == true,
+            AutoMovie => config?.AutoMovieRequestEnabled == true,
+            _ => true,
+        };
+
         /// <summary>True when the recipe can't run while Seerr handles requests.</summary>
         /// <param name="recipe">Recipe id.</param>
         public static bool RequiresDirect(string? recipe) => recipe != null && DirectOnly.Contains(recipe);

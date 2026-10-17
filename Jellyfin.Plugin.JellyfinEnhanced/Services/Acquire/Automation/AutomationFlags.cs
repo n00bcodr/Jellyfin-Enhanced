@@ -46,8 +46,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
         /// <summary>
         /// The recipe's mode as it applies now, and why when it doesn't act: the Shadow override makes everything Shadow;
-        /// without the engine the answer is null (the existing features behave as before); a recipe the backend can't run
-        /// is unavailable; status only refuses every request.
+        /// without the engine the answer is null (the existing features behave as before); an old recipe whose own switch
+        /// is off is Off; a recipe the backend can't run is unavailable; status only refuses every request.
         /// </summary>
         /// <param name="config">Configuration.</param>
         /// <param name="recipe">Recipe id.</param>
@@ -57,6 +57,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             if (!Engine(config)) return new(null, null, "engine_off", false);
             var stored = AutomationModes.Mode(config!, recipe);
             if (stored == AutomationMode.Off) return new(stored, AutomationMode.Off, "recipe_off", true);
+            // An old recipe whose own switch (Auto Season / Auto Movie Request) is off does nothing, whatever its mode.
+            if (!AutomationRecipes.SwitchedOn(config, recipe)) return new(stored, AutomationMode.Off, "recipe_off", true);
             if (config!.ArrRequestBackend is not ("je" or "seerr") && !AutomationRecipes.IsMembershipOnly(recipe)) return new(stored, AutomationMode.Off, "requests_off", true);
             if (config.ArrRequestBackend == "seerr" && AutomationRecipes.RequiresDirect(recipe)) return new(stored, AutomationMode.Off, "seerr_unsupported", true);
             if (stored == AutomationMode.Shadow) return new(stored, AutomationMode.Shadow, null, true);

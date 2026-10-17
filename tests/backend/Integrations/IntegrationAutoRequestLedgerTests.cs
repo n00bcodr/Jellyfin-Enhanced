@@ -41,6 +41,8 @@ public class IntegrationAutoRequestLedgerTests
             c.ArrIntegrationEnabled = true; c.ArrPhase1Enabled = true; c.ArrPhase3Enabled = true; c.ArrRequestBackend = "je";
             c.AutoMovieRequestEnabled = true; c.AutoSeasonRequestEnabled = true; c.TMDB_API_KEY = "test-tmdb"; c.AutoMovieRequestCheckReleaseDate = true;
             c.AutoSeasonRequestThresholdValue = 2;
+            // The request service reads its own configuration (the same live object in production).
+            R.Policy.Configuration.AutoMovieRequestEnabled = true; R.Policy.Configuration.AutoSeasonRequestEnabled = true;
             if (seerr) { c.JellyseerrEnabled = true; c.JellyseerrUrls = "http://seerr.test"; c.JellyseerrApiKey = "test-seerr"; }
             Recorder = new AutoRequestRecorder(R.Service, R.View, null, () => R.Now);
             Transport = new IntegrationTransport((request, _) =>
@@ -368,6 +370,67 @@ public class IntegrationAutoRequestLedgerTests
                 Assert.Empty(wants);
                 break;
         }
+    }
+
+    // 4a-B-r3-1 / 4a-security-r3-1: the old recipe's own enable switch turned off during its metadata lookups (TMDB's
+    // collection or the series details) is read again before anything is recorded: with phase 3 on, by the recorder
+    // (under the engine in Auto, or without it); with phase 3 off and the rollout Shadow override on, before the direct
+    // Seerr path would record its Shadow decision. Nothing is recorded (no want, job or decision) and nothing is POSTed.
+    [Theory]
+    [InlineData("movie", "engine")]
+    [InlineData("movie", "ledger")]
+    [InlineData("movie", "direct_override")]
+    [InlineData("season", "engine")]
+    [InlineData("season", "ledger")]
+    [InlineData("season", "direct_override")]
+    public async Task AnOldRecipeSwitchedOffDuringItsLookupsRecordsNothing(string recipe, string path)
+    {
+        var direct = path == "direct_override";
+        using var a = new Auto(seerr: direct);
+        if (path == "engine")
+        {
+            EngineOn(a.F.Plugin.Configuration, AutomationMode.Auto);
+            EngineOn(a.R.Policy.Configuration, AutomationMode.Auto);
+        }
+        if (direct)
+        {
+            a.F.Plugin.Configuration.ArrPhase3Enabled = false;
+            a.F.Plugin.Configuration.ArrAutomationShadowOverride = true;
+        }
+        var recorder = path == "ledger" ? a.Recorder : EngineRecorder(a);
+        var person = a.Person("Admin");
+        var saved = false;
+        a.Answer = r =>
+        {
+            var at = r.RequestUri!.AbsolutePath;
+            if (!saved && at is "/3/movie/123" or "/3/tv/42" or "/api/v1/tv/42")
+            {
+                saved = true;
+                Save(a.F, c => { c.AutoMovieRequestEnabled = false; c.AutoSeasonRequestEnabled = false; });
+                IntegrationAutomationTests.Switch(a.R.Policy.Configuration, recipe == "movie" ? AutomationRecipes.AutoMovie : AutomationRecipes.AutoSeason, false);
+            }
+            if (at == "/api/v1/user")
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new object[] { new { id = 5, jellyfinUserId = person.ToString("N") } } }));
+            if (at == "/api/v1/collection/9")
+                return IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new object[] { new { id = 123, title = "First", releaseDate = "2000-01-01" }, new { id = 124, title = "Second", releaseDate = "2001-01-01" } } }));
+            if (r.Method == HttpMethod.Post && at == "/api/v1/request") return IntegrationTransport.Response("{\"id\":1}", 201);
+            return recipe == "movie" ? Collection(r) : SeerrShow(r) ?? TmdbShow(r);
+        };
+        AutoRequestOutcome outcome;
+        if (recipe == "movie") outcome = await new AutoMovieRequestService(a.Transport, a.F.Core.Logger, a.Users.Object, null!, recorder).CheckMovieForCollectionRequestAsync(Watched(), person);
+        else
+        {
+            var (_, episode, library) = Show(9);
+            var previous = BaseItem.LibraryManager;
+            BaseItem.LibraryManager = library.Object;
+            try { outcome = await new AutoSeasonRequestService(a.Transport, a.F.Core.Logger, a.Users.Object, null!, library.Object, recorder).CheckEpisodeCompletionAsync(episode, person); }
+            finally { BaseItem.LibraryManager = previous; }
+        }
+        Assert.True(saved);
+        Assert.Equal((AutoRequestOutcomeKind.DefinitiveNoop, "disabled"), (outcome.Kind, outcome.Reason));
+        Assert.Empty(a.R.Ledger.ForTitle(recipe == "movie" ? "movie:tmdb:124" : "tv:tvdb:4242"));
+        Assert.Equal(0, a.Count("SELECT COUNT(*) FROM wants") + a.Count("SELECT COUNT(*) FROM jobs") + a.Count("SELECT COUNT(*) FROM automation_decisions"));
+        Assert.DoesNotContain(a.Urls, u => u == "POST /api/v1/request");
     }
 
     private static (Series Series, Episode Episode, Mock<ILibraryManager> Library) Show(int episode)

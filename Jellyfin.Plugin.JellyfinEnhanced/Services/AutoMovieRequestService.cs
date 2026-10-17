@@ -108,9 +108,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private string? DirectStop()
         {
             var live = JellyfinEnhanced.Instance?.Configuration;
+            // The recipe switched off comes first: nothing is sent or recorded, not even a Shadow decision.
+            if (live is not { AutoMovieRequestEnabled: true }) return "disabled";
             if (AutomationFlags.ShadowOverride(live)) return AutomationHolds.ShadowOverride;
             if (LedgerMode(live)) return AutomationHolds.EngineChanged;
-            return live is { AutoMovieRequestEnabled: true, JellyseerrEnabled: true } ? null : "disabled";
+            return live.JellyseerrEnabled ? null : "disabled";
         }
 
         // One check; null when the direct path stopped for phase 3 and the check has to start again.

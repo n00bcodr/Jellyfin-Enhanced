@@ -79,7 +79,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <summary>A kill switch is on (global, the recipe's or the target's).</summary>
         public const string Killed = "automation_killed";
 
-        /// <summary>The recipe is now Off or Shadow.</summary>
+        /// <summary>The recipe is now Off or Shadow, or an old recipe's own switch is off.</summary>
         public const string RecipePaused = "recipe_paused";
 
         /// <summary>The target's circuit breaker is open.</summary>
@@ -140,7 +140,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// The send-time guard for automatic work (recipes, list sync) and for work only phase 4 creates. Interactive asks
     /// are never touched. Asked by the outbox before any transport and again at every write (kills between writes),
     /// and it builds the per-write budget admission. With the engine off, the existing recipes' queued work goes out
-    /// as before; only the rollout Shadow override and phase-4-only origins hold then.
+    /// as before; only the rollout Shadow override, an old recipe's own switch turned off and phase-4-only origins hold
+    /// then.
     /// </summary>
     public sealed class AutomationSendGuard
     {
@@ -213,9 +214,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             var phase4Only = RequestOrigin.IsPhase4Only(want.OriginKind, want.OriginSource);
             if (phase4Only && !(automatic ? AutomationFlags.Engine(config) : AutomationFlags.Phase4WithRequests(config)))
                 return new(AutomationHolds.Phase4Off, "Phase 4 (or its automation engine) is off: work it created waits.", AutomationHolds.WaitFor(AutomationHolds.Phase4Off));
+            // An old recipe whose own switch (Auto Season / Auto Movie Request) was turned off after its request was
+            // queued: the request waits until it is on again, with the engine on or off, like an opt-out.
+            var recipe = RecipeOf(want);
+            if (want.OriginKind == RequestOrigin.AutomationKind && !AutomationRecipes.SwitchedOn(config, recipe))
+                return new(AutomationHolds.RecipePaused, "The recipe is switched off: its queued request waits until it is on again.", AutomationHolds.WaitFor(AutomationHolds.RecipePaused));
             if (!automatic || !AutomationFlags.Engine(config)) return null;
 
-            var recipe = RecipeOf(want);
             var target = Target(job);
             if (Killed(config, recipe, target))
                 return new(AutomationHolds.Killed, "A kill switch is on: automatic requests wait until it is off.", AutomationHolds.WaitFor(AutomationHolds.Killed));

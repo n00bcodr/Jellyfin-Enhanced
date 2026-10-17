@@ -1341,7 +1341,10 @@ either is off, the automatic requests above behave exactly as described there. W
   recipe in *Shadow* only records, *Ask* waits for an OK, and kill switches, opt-outs and budgets apply. If the recipe
   or Seerr has been turned off, nothing is sent. Under the engine, a mode change, the engine turned on or a person
   opting out while a request is being prepared is read again right before it is recorded, and it starts over under
-  the new rules.
+  the new rules. Turning Auto Season Request or Auto Movie Request off works the same way, with the engine on or off:
+  a request it is preparing is not recorded (not even what *Shadow* would have done), and its requests that haven't
+  been sent yet wait until it is on again, checked right before every add, search and Seerr request (a send whose
+  answer was lost is still read back).
 
 What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic

@@ -51,6 +51,9 @@ public class IntegrationAutomationTests
 
         public Engine(bool engine = true)
         {
+            // The old recipes' own switches are on, as they are whenever their trigger reaches the recorder.
+            C.AutoMovieRequestEnabled = true;
+            C.AutoSeasonRequestEnabled = true;
             if (engine) { C.ArrPhase4Enabled = true; C.ArrPhase4AutomationEnabled = true; }
             Build();
         }
@@ -128,7 +131,8 @@ public class IntegrationAutomationTests
     [Fact]
     public void ModesReadAsShadowUnlessStoredAndKillsAndTheBackendDecideWhatActs()
     {
-        var c = new PluginConfiguration { ArrIntegrationEnabled = true, ArrPhase1Enabled = true, ArrPhase3Enabled = true, ArrPhase4Enabled = true, ArrPhase4AutomationEnabled = true, ArrRequestBackend = "je" };
+        // auto_movie's own switch is on (see AnOldRecipeWhoseOwnSwitchIsOffIsOffUnderTheEngine).
+        var c = new PluginConfiguration { ArrIntegrationEnabled = true, ArrPhase1Enabled = true, ArrPhase3Enabled = true, ArrPhase4Enabled = true, ArrPhase4AutomationEnabled = true, ArrRequestBackend = "je", AutoMovieRequestEnabled = true };
         Assert.All(AutomationRecipes.All, r => Assert.Equal(AutomationMode.Shadow, AutomationModes.Mode(c, r)));
         c.ArrAutomationRecipes = "{\"auto_movie\":{\"mode\":\"AUTO\"},\"auto_season\":{\"mode\":\"nonsense\"},\"keep_up\":{\"mode\":\"ask\",\"killed\":true}}";
         Assert.Equal((AutomationMode.Auto, AutomationMode.Shadow, AutomationMode.Ask), (AutomationModes.Mode(c, "auto_movie"), AutomationModes.Mode(c, "auto_season"), AutomationModes.Mode(c, "keep_up")));
@@ -149,6 +153,28 @@ public class IntegrationAutomationTests
         Assert.Equal(AutomationMode.Auto, AutomationFlags.Control(c, AutomationRecipes.ListSync).Effective);   // membership only
         Assert.True(AutomationFlags.KilledTarget(new PluginConfiguration { ArrAutomationKilledInstances = " abc ,seerr" }, "SEERR"));
         Assert.False(AutomationFlags.KilledTarget(new PluginConfiguration { ArrAutomationKilledInstances = "abcd" }, "abc"));
+    }
+
+    // 4a-B-r3-1: under the engine an old recipe whose own switch is off is Off (the status says so), whatever its mode;
+    // the recipes that have no such switch aren't affected.
+    [Fact]
+    public void AnOldRecipeWhoseOwnSwitchIsOffIsOffUnderTheEngine()
+    {
+        var c = new PluginConfiguration { ArrIntegrationEnabled = true, ArrPhase1Enabled = true, ArrPhase3Enabled = true, ArrRequestBackend = "je", ArrPhase4Enabled = true, ArrPhase4AutomationEnabled = true, AutoSeasonRequestEnabled = true };
+        c.ArrAutomationRecipes = AutomationModes.Write(new Dictionary<string, AutomationRecipeSettings>
+        {
+            [AutomationRecipes.AutoMovie] = new() { Mode = "auto" },
+            [AutomationRecipes.AutoSeason] = new() { Mode = "auto" },
+            [AutomationRecipes.KeepUp] = new() { Mode = "auto" },
+        });
+        var movie = AutomationFlags.Control(c, AutomationRecipes.AutoMovie);
+        Assert.Equal((AutomationMode.Auto, AutomationMode.Off, "recipe_off"), (movie.Stored, movie.Effective, movie.Reason));
+        Assert.Equal(AutomationMode.Auto, AutomationFlags.Control(c, AutomationRecipes.AutoSeason).Effective);
+        Assert.Equal(AutomationMode.Auto, AutomationFlags.Control(c, AutomationRecipes.KeepUp).Effective);
+        c.AutoMovieRequestEnabled = true;
+        c.AutoSeasonRequestEnabled = false;
+        Assert.Equal(AutomationMode.Auto, AutomationFlags.Control(c, AutomationRecipes.AutoMovie).Effective);
+        Assert.Equal(("recipe_off", AutomationMode.Off), AutomationFlags.Control(c, AutomationRecipes.AutoSeason) is var season ? (season.Reason, season.Effective) : default);
     }
 
     [Fact]
@@ -369,6 +395,96 @@ public class IntegrationAutomationTests
             Assert.StartsWith("shadow_", outcome.Reason, StringComparison.Ordinal);
             Assert.Equal("shadow", e.Store.Decisions().Single().Mode);
         }
+    }
+
+    // An old recipe's own enable switch (Auto Movie Request / Auto Season Request), as an administrator saves it.
+    internal static void Switch(PluginConfiguration c, string recipe, bool on)
+    {
+        if (recipe == AutomationRecipes.AutoMovie) c.AutoMovieRequestEnabled = on;
+        else c.AutoSeasonRequestEnabled = on;
+    }
+
+    private static MutationInput For(string recipe, int id) => recipe == AutomationRecipes.AutoMovie ? Movie(id) : IntegrationRequestLedgerTests.Seasons(id);
+
+    private static string Other(string recipe) => recipe == AutomationRecipes.AutoMovie ? AutomationRecipes.AutoSeason : AutomationRecipes.AutoMovie;
+
+    // 4a-B-r3-1 / 4a-security-r3-1: an old recipe's own enable switch turned off while its ask is prepared (the request
+    // service's reads, or Shadow's preview reads) records nothing: no want, approval, reservation, job or decision, in
+    // every mode and with the engine off. Already off when the recorder is asked: refused before any read. The other
+    // recipe keeps asking, and switched back on it asks as usual.
+    [Theory]
+    [InlineData(AutomationRecipes.AutoMovie, "auto")]
+    [InlineData(AutomationRecipes.AutoMovie, "ask")]
+    [InlineData(AutomationRecipes.AutoMovie, "shadow")]
+    [InlineData(AutomationRecipes.AutoMovie, "engine_off")]
+    [InlineData(AutomationRecipes.AutoSeason, "auto")]
+    [InlineData(AutomationRecipes.AutoSeason, "ask")]
+    [InlineData(AutomationRecipes.AutoSeason, "shadow")]
+    [InlineData(AutomationRecipes.AutoSeason, "engine_off")]
+    public async Task AnOldRecipesSwitchTurnedOffWhileItsAskIsPreparedRecordsNothing(string recipe, string mode)
+    {
+        using var e = new Engine(engine: mode != "engine_off");
+        if (mode != "engine_off")
+        {
+            e.Mode(recipe, AutomationModes.Parse(mode));
+            e.Mode(Other(recipe), AutomationModes.Parse(mode));
+        }
+        var rows = e.Rows();
+        var reads = 0;
+        e.R.Policy.Before = (_, _) =>
+        {
+            if (reads++ == 0) Switch(e.C, recipe, false);
+            return Task.CompletedTask;
+        };
+        var outcome = await e.Auto(e.R.Admin, For(recipe, 2), recipe);
+        Assert.True(reads > 0);
+        Assert.Equal((AutoRequestOutcomeKind.DefinitiveNoop, "disabled"), (outcome.Kind, outcome.Reason));
+        Assert.Equal(rows, e.Rows());
+        Assert.Empty(e.Store.Decisions());
+
+        // Already off: refused before any read.
+        reads = 0;
+        Assert.Equal("disabled", (await e.Auto(e.R.Admin, For(recipe, 3), recipe)).Reason);
+        Assert.Equal(0, reads);
+        Assert.Equal(rows, e.Rows());
+        e.R.Policy.Before = null;
+
+        // The other recipe is unaffected; switched back on, this one asks as usual.
+        var other = await e.Auto(e.R.Admin, For(Other(recipe), 4), Other(recipe));
+        Switch(e.C, recipe, true);
+        var again = await e.Auto(e.R.Admin, For(recipe, 2), recipe);
+        foreach (var asked in new[] { other, again })
+        {
+            if (mode == "shadow") Assert.StartsWith("shadow_", asked.Reason, StringComparison.Ordinal);
+            else Assert.Equal((AutoRequestOutcomeKind.WantRecorded, mode == "ask" ? "pending" : "queued"), (asked.Kind, e.R.Ledger.Find(asked.WantId!)!.Status));
+        }
+    }
+
+    // The same sweep for the umbrella switches: phase 3 turned off, or request handling set to Status only, while an
+    // automatic ask is prepared records nothing (the ledger write evaluates the policy as it is then; production's
+    // RequestPolicy refuses Status only as feature_disabled, which the test policy mirrors here).
+    [Theory]
+    [InlineData("phase3_off", true)]
+    [InlineData("phase3_off", false)]
+    [InlineData("status_only", true)]
+    [InlineData("status_only", false)]
+    public async Task RequestsTurnedOffWhileAnAutomaticAskIsPreparedRecordNothing(string change, bool engine)
+    {
+        using var e = new Engine(engine);
+        if (engine) e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Auto);
+        e.R.Policy.Adjust = (_, _, facts) => e.C.ArrRequestBackend is "je" or "seerr" ? facts : facts with { Refusal = "feature_disabled" };
+        var rows = e.Rows();
+        e.R.Policy.Before = (_, _) =>
+        {
+            if (change == "phase3_off") e.C.ArrPhase3Enabled = false;
+            else e.C.ArrRequestBackend = "status_only";
+            return Task.CompletedTask;
+        };
+        var outcome = await e.Auto(e.R.Admin, Movie(695));
+        e.R.Policy.Before = null;
+        Assert.NotEqual(AutoRequestOutcomeKind.WantRecorded, outcome.Kind);
+        Assert.Null(outcome.WantId);
+        Assert.Equal(rows, e.Rows());
     }
 
     [Fact]
@@ -659,6 +775,76 @@ public class IntegrationAutomationTests
         e.R.Now += TimeSpan.FromMinutes(16);
         await e.Outbox().TickAsync(default);
         Assert.Equal("sent", e.R.Ledger.Find(held.Id)!.Status);
+    }
+
+    // 4a-B-r3-1 / 4a-security-r3-1: an old recipe's own enable switch turned off after its request was queued holds its
+    // unsent work, before any transport and between two writes, with the engine on or off, like an opt-out. People's own
+    // asks and the other recipe's work still go; a send whose answer was lost is still read back; switched back on, it
+    // goes out.
+    [Theory]
+    [InlineData(AutomationRecipes.AutoMovie, true)]
+    [InlineData(AutomationRecipes.AutoMovie, false)]
+    [InlineData(AutomationRecipes.AutoSeason, true)]
+    [InlineData(AutomationRecipes.AutoSeason, false)]
+    public async Task AnOldRecipesSwitchTurnedOffAfterQueueingHoldsItsUnsentWorkButAnUncertainSendIsStillReadBack(string recipe, bool engine)
+    {
+        using var e = new Engine(engine);
+        if (engine)
+        {
+            e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Auto);
+            e.Mode(AutomationRecipes.AutoSeason, AutomationMode.Auto);
+        }
+        var held = await Queued(e, e.R.Admin, 640, recipe);
+        var other = await Queued(e, e.R.Admin, 641, Other(recipe));
+        var own = await e.R.Create(e.R.Admin, Movie(642));
+        Switch(e.C, recipe, false);
+        await e.Outbox().TickAsync(default);
+        Assert.Equal(2, e.R.Backend.Sends);   // the other recipe's and the person's own ask
+        Assert.Equal("sent", e.R.Ledger.Find(other.Id)!.Status);
+        Assert.Equal("sent", e.R.Ledger.Find(own.RequestId!)!.Status);
+        var job = e.R.Ledger.ForWant(held.Id).Single();
+        Assert.Equal(("retry", AutomationHolds.RecipePaused), (job.State, job.Reason));
+        Assert.Equal(e.R.Now + TimeSpan.FromMinutes(15), job.NextAttempt);
+        e.R.Now += TimeSpan.FromMinutes(16);
+        await e.Outbox().TickAsync(default);
+        Assert.Equal(2, e.R.Backend.Sends);
+
+        // Switched back on: it goes out.
+        Switch(e.C, recipe, true);
+        e.R.Now += TimeSpan.FromMinutes(16);
+        await e.Outbox().TickAsync(default);
+        Assert.Equal(3, e.R.Backend.Sends);
+        Assert.Equal("sent", e.R.Ledger.Find(held.Id)!.Status);
+
+        // Switched off between two writes: the rest waits, the job stays uncertain, and it resumes once it is on.
+        var split = await Queued(e, e.R.Admin, 643, recipe);
+        var backend = new TwoWrites { Between = () => Switch(e.C, recipe, false) };
+        await e.Outbox(backend).TickAsync(default);
+        Assert.Equal(1, backend.Writes);
+        Assert.Equal(("retry", AutomationHolds.RecipePaused, true), e.R.Ledger.ForWant(split.Id).Single() is var stopped ? (stopped.State, stopped.Reason, stopped.Uncertain) : default);
+
+        // A send whose answer was lost is still read back while the switch is off.
+        Switch(e.C, recipe, true);
+        var lost = await Queued(e, e.R.Admin, 644, recipe);
+        e.R.Backend.Unknown = true;
+        await e.Outbox().TickAsync(default);
+        Assert.Equal("maybe_sent", e.R.Ledger.ForWant(lost.Id).Single().State);
+        Switch(e.C, recipe, false);
+        e.R.Backend.Unknown = false;
+        var reads = e.R.Backend.Reads;
+        var sends = e.R.Backend.Sends;
+        e.R.Now += TimeSpan.FromMinutes(10);
+        await e.Outbox().TickAsync(default);
+        Assert.True(e.R.Backend.Reads > reads);
+        Assert.Equal(sends, e.R.Backend.Sends);
+        Assert.Equal("succeeded", e.R.Ledger.ForWant(lost.Id).Single().State);
+
+        Switch(e.C, recipe, true);
+        backend.Between = null;
+        e.R.Now += TimeSpan.FromMinutes(16);
+        await e.Outbox(backend).TickAsync(default);
+        Assert.Equal(3, backend.Writes);
+        Assert.Equal("sent", e.R.Ledger.Find(split.Id)!.Status);
     }
 
     [Fact]
@@ -1177,6 +1363,7 @@ public class IntegrationAutomationTests
         Directory.CreateDirectory(folder);
         using var broken = new AcquireDatabase(folder);
         var store = new AutomationStore(broken);
+        e.C.AutoMovieRequestEnabled = false;   // only the season recipe was on
         e.C.AutoSeasonRequestEnabled = true;
         Assert.Null(AutomationMigration.Run(e.C, store, false, () => new[] { e.R.Manager }, e.R.Now, () => { }));
         Assert.Equal(string.Empty, e.C.ArrAutomationMigration);

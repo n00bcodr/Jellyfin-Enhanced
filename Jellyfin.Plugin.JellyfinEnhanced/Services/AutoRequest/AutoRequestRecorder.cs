@@ -74,9 +74,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
         /// <param name="ct">Cancellation.</param>
         public async Task<AutoRequestOutcome> RecordAsync(string recipe, Guid user, MutationInput input, CancellationToken ct)
         {
-            // The mode, kills and consent are read first and the request service's preparation reads come after. A change
-            // in between is read again right before the ledger write, and the ask starts over under the current rules
-            // instead of being recorded under the old ones. A switch flipped back and forth leaves it to the next trigger.
+            // The recipe's own switch, mode, kills and consent are read first and the request service's preparation reads
+            // come after. A change in between is read again right before the ledger write, and the ask starts over under the
+            // current rules instead of being recorded under the old ones (the recipe switched off: nothing is recorded). A
+            // switch flipped back and forth leaves it to the next trigger.
             for (var attempt = 0; attempt < 3; attempt++)
             {
                 if (await RecordOnceAsync(recipe, user, input, ct).ConfigureAwait(false) is { } outcome) return outcome;
@@ -89,13 +90,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
         {
             var key = input.Key;
             var config = _requests.Policy.Configuration;
+            // The old recipe's own switch, turned off since its trigger (or its lookups) began: no intent is recorded.
+            if (!AutomationRecipes.SwitchedOn(config, recipe)) return AutoRequestOutcome.Noop("disabled", key);
             if (config.ArrRequestBackend == "status_only") return AutoRequestOutcome.Noop("requests_off", key);
             if (!_requests.Ledger.Database.Available) return AutoRequestOutcome.Failed("database_unavailable", key);
             var client = ClientId(recipe, input);
             var control = AutomationFlags.Control(config, recipe);
             var consented = AutomationConsent.Allows(_consents, user, recipe);
-            string? Changed() => AutomationFlags.Control(_requests.Policy.Configuration, recipe) != control || AutomationConsent.Allows(_consents, user, recipe) != consented
-                ? AutomationHolds.EngineChanged : null;
+            string? Changed()
+            {
+                var live = _requests.Policy.Configuration;
+                return !AutomationRecipes.SwitchedOn(live, recipe) || AutomationFlags.Control(live, recipe) != control || AutomationConsent.Allows(_consents, user, recipe) != consented
+                    ? AutomationHolds.EngineChanged : null;
+            }
             if (control.Legacy || _decider == null || _store == null)
             {
                 // The same recipe asking for the same scope again replays its first ask instead of adding another.
@@ -123,6 +130,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
             {
                 // Decide and record only: no want, approval, reservation, job or upstream call.
                 var decision = await _decider.DecideAsync(decisionKey, recipe, user, client, input, origin, AutomationMode.Shadow, ct).ConfigureAwait(false);
+                // Its preview reads take a moment too: a change since is read again before the decision is recorded.
+                if (Changed() != null) return null;
                 if (control.Reason == AutomationHolds.ShadowOverride) decision = decision with { Detail = (decision.Detail ?? new AutomationDecisionDetail()) with { ShadowOverride = true } };
                 _store.Record(decision, _now());
                 return decision.Outcome == "deferred" ? AutoRequestOutcome.Failed(decision.Reason, key) : AutoRequestOutcome.Noop("shadow_" + decision.Outcome, key);
