@@ -57,10 +57,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private readonly Func<PluginConfiguration?> _config;
         private readonly ConcurrentDictionary<string, Pending> _pending = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, Counters> _counters = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Func<Task>? _gather;
 
         /// <summary>Creates the router.</summary>
         public ArrLiveRouter(ArrStateStore store, Logger logger)
-            : this(store, (Logger?)logger, null)
+            : this(store, (Logger?)logger, (TimeSpan?)null)
         {
         }
 
@@ -71,6 +72,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             _logger = logger;
             Delay = delay ?? CoalesceDelay;
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
+        }
+
+        /// <summary>
+        /// Creates the router with hints gathered until <paramref name="gather"/> completes, called once per flush (tests:
+        /// a burst is gathered until the test has sent all of it, however slow the machine).
+        /// </summary>
+        internal ArrLiveRouter(ArrStateStore store, Logger? logger, Func<Task> gather, Func<PluginConfiguration?>? config = null)
+            : this(store, logger, (TimeSpan?)null, config)
+        {
+            _gather = gather;
         }
 
         /// <summary>The coalescing delay in use.</summary>
@@ -124,7 +135,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         {
             try
             {
-                await Task.Delay(Delay).ConfigureAwait(false);
+                await (_gather?.Invoke() ?? Task.Delay(Delay)).ConfigureAwait(false);
                 ArrLiveKinds kinds;
                 List<int>? titles = null;
                 bool force;
