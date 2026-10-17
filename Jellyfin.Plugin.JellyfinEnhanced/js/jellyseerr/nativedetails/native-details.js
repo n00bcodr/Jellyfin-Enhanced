@@ -1160,7 +1160,7 @@
         const state = same ? current : {
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
             controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, extras: null,
-            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined
+            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false
         };
         if (!same) {
             dispose();
@@ -1241,7 +1241,10 @@
         }
         checking(page, false);
         page.dataset.jeNativeShown = id;
-        if (same) return;
+        // Drawn once per page state: a look that overlapped the first one (viewshow and the first look
+        // on a fresh load, the first giving way to it) still draws the page.
+        if (state.drawn) return;
+        state.drawn = true;
         if (!isTitle) {
             showKnownFor(state, item);
             return;

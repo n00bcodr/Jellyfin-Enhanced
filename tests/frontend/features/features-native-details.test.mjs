@@ -480,6 +480,28 @@ test('a status read before the Request mount exists is where the mount starts', 
   assert.deepEqual(h.mounts[0].updates.map(u => u?.stage), ['asked']);
 });
 
+test('two looks at a fresh page that overlap (viewshow and the first look) draw its Request and Spoiler Guard once', async t => {
+  const gates = [];
+  const built = [];
+  const h = setup(t, {
+    html: ROW_PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`,
+    getItem: () => new Promise(r => gates.push(() => r({ Id: MOVIE, Type: 'Movie', Name: 'Dune', ProviderIds: { Tmdb: '693134' } }))),
+  });
+  h.JE.internals.spoilerGuard = { buildSeerrToggle: () => { built.push(1); return Object.assign(h.document.createElement('button'), { className: 'button-flat detailButton je-spoiler-pending-detail' }); } };
+  const nd = h.JE.internals.nativeDetails;
+  const first = nd.onView();
+  await wait(5);
+  const second = nd.onView();
+  await wait(5);
+  gates.splice(0).forEach(open => open());
+  await Promise.all([first, second]);
+  const page = h.document.getElementById('itemDetailPage');
+  assert.equal(h.mounts.length, 1);
+  assert.equal(page.querySelector('.je-native-absent-request').textContent, 'Request');
+  assert.equal(built.length, 1);
+  assert.equal(page.querySelectorAll('.je-spoiler-pending-detail').length, 1);
+});
+
 test('the navigator: native page, scoped pages, the modal as fallback, provider keys through the server', async t => {
   const h = setup(t, { resolve: path => (path.includes('movie%3Atmdb%3A45745') ? { itemId: '0123456789abcdef0123456789abcdef' } : path.includes('tv%3Atvdb%3A393189') ? { id: '4a45ad130001479b0001000092805890' } : null) });
   assert.equal(h.td.show(83867, 'tv', { season: 1, episode: 3 }), true);
