@@ -223,5 +223,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         Rating,
         AgeRating,
         Flag,
+        Stamp,
     }
 }

@@ -24,9 +24,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         public const int MaxImageDimension = 4096;
 
         internal const string StarIconKey = "MaterialIcons:star";
+
+        // Phase 4e acquisition stamps: the web badge's tones (status-styles.js je-arr-tone-new/-upgraded/-fourK).
+        private static readonly SKColor StampBackground = new(0, 0, 0, CssColor.AlphaByte(0.72f));
+        private static readonly BoxShadow StampShadow = ChipShadowValue();
         internal const string UserReviewIconKey = "MaterialSymbolsRounded:person_heart";
 
         private const long DefaultTileCacheBytes = 32L * 1024 * 1024;
+
+        /// <summary>The icons.json key of an acquisition stamp's glyph, or null for none.</summary>
+        /// <param name="stamp">Stamp.</param>
+        /// <returns>The key.</returns>
+        internal static string? StampIconKey(Acquire.Stamps.AcquisitionStamp stamp) => stamp switch
+        {
+            Acquire.Stamps.AcquisitionStamp.NewForYou => "MaterialIcons:fiber_new",
+            Acquire.Stamps.AcquisitionStamp.Upgraded => "MaterialIcons:upgrade",
+            Acquire.Stamps.AcquisitionStamp.FourK => "MaterialIcons:4k",
+            _ => null,
+        };
+
+        /// <summary>A stamp's tone colour (the web badge's --je-arr-tone).</summary>
+        /// <param name="stamp">Stamp.</param>
+        /// <returns>The tone.</returns>
+        internal static SKColor StampTone(Acquire.Stamps.AcquisitionStamp stamp) => stamp switch
+        {
+            Acquire.Stamps.AcquisitionStamp.NewForYou => new SKColor(0x52, 0xB5, 0x4B),
+            Acquire.Stamps.AcquisitionStamp.Upgraded => new SKColor(0x22, 0xD3, 0xEE),
+            _ => new SKColor(0xE5, 0xA0, 0x0D),
+        };
+
+        private static BoxShadow ChipShadowValue() => new(2f, 4f, 0f, new SKColor(0, 0, 0, CssColor.AlphaByte(0.3f)));
 
         // Tag colours that are not in the generated tables (ratingtags.js, genretags.js, userreviewtags.js).
         private static readonly SKColor QualityBorder = new(255, 255, 255, CssColor.AlphaByte(0.15f));
@@ -500,6 +527,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     case PosterTagTileKind.Flag:
                         PaintFlag(canvas, item, local, border, space);
                         break;
+                    case PosterTagTileKind.Stamp:
+                        PaintStamp(canvas, plan, item, local, border, space);
+                        break;
                 }
 
                 canvas.Flush();
@@ -552,6 +582,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 float x = 1f + PosterTagCss.Lu((content - boxWidth) / 2f);
                 float y = 1f + PosterTagCss.Lu((content - boxHeight) / 2f);
                 DrawIcon(canvas, icon, x, y + icon.Metrics.BaselineOffset(size, boxHeight), size, glyph, space);
+            }
+
+            // .je-arr-badge-chip: dark pill, a border of the tone at 75 %, the glyph in the tone mixed 55 % with white.
+            private void PaintStamp(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
+            {
+                var stamp = ((AcquisitionStampTag)item.Tag).Stamp;
+                var tone = StampTone(stamp);
+                var edge = new SKColor(tone.Red, tone.Green, tone.Blue, CssColor.AlphaByte(0.75f));
+                var glyph = new SKColor(Mix(tone.Red), Mix(tone.Green), Mix(tone.Blue));
+                using var rrect = new SKRoundRect(local, local.Height / 2f, local.Height / 2f);
+                PaintBox(canvas, rrect, StampBackground, edge, border, StampShadow);
+
+                var icon = Assets.GetIcon(item.Text);
+                if (icon is null)
+                {
+                    return;
+                }
+
+                float size = PosterTagCss.StampGlyphSize(plan.Css);
+                float x = PosterTagCss.Lu((item.Width - item.IconWidth) / 2f);
+                float y = PosterTagCss.Lu((item.Height - item.IconHeight) / 2f);
+                DrawIcon(canvas, icon, x, y + icon.Metrics.BaselineOffset(size, item.IconHeight), size, glyph, space);
+
+                static byte Mix(byte channel) => (byte)Math.Round((0.55f * channel) + (0.45f * 255f));
             }
 
             private void PaintRating(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, TileSpace space)

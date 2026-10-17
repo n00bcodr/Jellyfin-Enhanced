@@ -126,7 +126,8 @@ FLAG_WIDTH, FLAG_HEIGHT = 160, 120
 # Icons outside genretags.js's map; the genre icons are read from the module itself.
 EXTRA_ICONS = {
     "MaterialSymbolsRounded": ["person_heart"],  # userreviewtags.js
-    "MaterialIcons": ["star"],                   # ratingtags.js (TMDB chip, jellyfin-web's Material Icons)
+    "MaterialIcons": ["star",                    # ratingtags.js (TMDB chip, jellyfin-web's Material Icons)
+                      "fiber_new", "upgrade", "4k"],  # acquisition stamps (Requests & downloads phase 4e; arr/status badges)
 }
 
 
@@ -491,7 +492,7 @@ for the native poster tag renderer (`Services/PosterTags/Rendering`).
 |---|---|---|
 | `fonts/NotoSans-Bold.ttf.br` | Noto Sans Bold, {PINS['noto-sans']['version']}: latin, latin-ext, cyrillic and greek subsets merged into one TTF, Brotli-compressed. Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic). | SIL Open Font License 1.1, full text below |
 | `icons.json` (genre icons, `person_heart`) | Glyph outlines of Material Symbols Outlined and Material Symbols Rounded, from the fonts JE already bundles (`js/fonts/materialsymbols*.woff2`). Copyright Google LLC. | Apache License 2.0, full text below |
-| `icons.json` (`star`) | Glyph outline of Material Icons, {PINS['material-icons']['version']}. Copyright Google LLC. | Apache License 2.0, full text below |
+| `icons.json` (`star`, `fiber_new`, `upgrade`, `4k`) | Glyph outlines of Material Icons, {PINS['material-icons']['version']}. Copyright Google LLC. | Apache License 2.0, full text below |
 | `flags/*.webp` | flag-icons 4x3 SVGs, {PINS['flag-icons']['version']}, rasterised at {FLAG_WIDTH}x{FLAG_HEIGHT} by headless Chromium. Copyright (c) 2013 Panayiotis Lipiridis. | MIT, full text below |
 | `flags/zxx.webp` | JE's own "no dialogue" artwork (`specialFlags.zxx` in `js/core/media-language.js`). | GPL-3.0 (this project) |
 | `vector-icons.json` | `fresh.svg` and `rotten.svg` from jellyfin-web v12.1 (`src/assets/img/`, commit `{JELLYFIN_WEB_COMMIT}`), converted to path data unchanged. jellyfin-web ships them for its critic rating indicator (`CriticRatingMediaInfo`); JE's web rating tags load the same files from jellyfin-web. | GPL-2.0-or-later (jellyfin-web). Rotten Tomatoes and the tomato and splat marks are trademarks of Fandango; they are used only to identify the source of a critic rating, as in jellyfin-web. |
