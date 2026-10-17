@@ -46,6 +46,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>Whether status is on.</returns>
         public static bool Status(PluginConfiguration? config) => Lists(config) && config!.ArrPhase4ListStatusEnabled;
 
+        /// <summary>Entries drawn on playlist pages and the incomplete mark on the Playlists page (admin switch; each person may hide them).</summary>
+        /// <param name="config">Configuration.</param>
+        /// <returns>Whether the playlist UI is on.</returns>
+        public static bool PlaylistUi(PluginConfiguration? config) => Lists(config) && config!.ArrPhase4ListPlaylistUiEnabled;
+
+        /// <summary>The "Not in your library" section on collection pages (admin switch; each person may hide it).</summary>
+        /// <param name="config">Configuration.</param>
+        /// <returns>Whether the collection UI is on.</returns>
+        public static bool CollectionUi(PluginConfiguration? config) => Lists(config) && config!.ArrPhase4ListCollectionUiEnabled;
+
         /// <summary>A display preference: null follows the administrator, false opts out.</summary>
         /// <param name="admin">The administrator's effective switch.</param>
         /// <param name="preference">The person's preference.</param>
@@ -68,8 +78,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         (bool? Placeholders, bool? Status, bool? SwapIn) For(Guid user);
     }
 
+    /// <summary>A person's list page preferences (read on the server, never from a request body).</summary>
+    public interface IListPagePreferences
+    {
+        /// <summary>The person's page preferences.</summary>
+        /// <param name="user">The person.</param>
+        /// <returns>(entries display, playlist pages display, collection pages display), each null when never chosen.</returns>
+        (bool? Placeholders, bool? PlaylistUi, bool? CollectionUi) PagesFor(Guid user);
+    }
+
     /// <summary>List preferences from each person's Jellyfin Enhanced settings (<c>settings.json</c>).</summary>
-    public sealed class UserSettingsListPreferences : IListPreferences
+    public sealed class UserSettingsListPreferences : IListPreferences, IListPagePreferences
     {
         private readonly UserConfigurationManager _users;
 
@@ -82,6 +101,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             var settings = _users.GetUserConfiguration<UserSettings>(user.ToString("N"), "settings.json");
             return (settings.ListPlaceholders, settings.ListStatus, settings.ListSwapIn);
+        }
+
+        /// <inheritdoc />
+        public (bool? Placeholders, bool? PlaylistUi, bool? CollectionUi) PagesFor(Guid user)
+        {
+            var settings = _users.GetUserConfiguration<UserSettings>(user.ToString("N"), "settings.json");
+            return (settings.ListPlaceholders, settings.ListPlaylistUi, settings.ListCollectionUi);
         }
     }
 }

@@ -43,6 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly ListService _service;
         private readonly ListAcquisition? _acquisition;
         private readonly ExperimentalListImporter? _importer;
+        private readonly ListSummaryService? _summaries;
         private readonly Logger _logger;
 
         /// <summary>Creates the controller.</summary>
@@ -52,7 +53,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <param name="logger">JE logger.</param>
         /// <param name="acquisition">List requests.</param>
         /// <param name="importer">The experimental-list importer (administrators).</param>
-        public AcquireListsController(IUserManager userManager, ListAccessService access, ListService service, Logger logger, ListAcquisition? acquisition = null, ExperimentalListImporter? importer = null)
+        /// <param name="summaries">Playlists page summaries (phase 4c3a).</param>
+        public AcquireListsController(IUserManager userManager, ListAccessService access, ListService service, Logger logger, ListAcquisition? acquisition = null, ExperimentalListImporter? importer = null, ListSummaryService? summaries = null)
         {
             _userManager = userManager;
             _access = access;
@@ -60,6 +62,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _logger = logger;
             _acquisition = acquisition;
             _importer = importer;
+            _summaries = summaries;
         }
 
         private static Configuration.PluginConfiguration? Config => JellyfinEnhanced.Instance?.Configuration;
@@ -400,6 +403,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [BodyLimit(LargeBody)]
         public Task<IActionResult> CreateCollection([FromBody] CreateListRequest request, CancellationToken cancellationToken) =>
             Guarded(() => CreateList(ListKinds.Collection, request, cancellationToken));
+
+        // ---- Phase 4c3a: list pages ----
+
+        /// <summary>
+        /// Which of the lists on screen (the Playlists page) have entries the caller can see that aren't in the library,
+        /// and how many: such a list is shown as incomplete rather than with Jellyfin's "played" check. Lists the caller
+        /// can't see, or with no entry they can see, are left out. Nothing is answered while the caller's playlist and
+        /// collection pages are both off (the administrator's switches, then their own preferences).
+        /// </summary>
+        /// <param name="request">Body: the list ids (at most <see cref="ListSummaryService.MaxIds"/>).</param>
+        /// <param name="cancellationToken">Request aborted.</param>
+        /// <returns><see cref="ListSummariesDto"/>.</returns>
+        [HttpPost("acquire/lists/summaries")]
+        [Authorize]
+        [BodyLimit]
+        public Task<IActionResult> Summaries([FromBody] ListSummariesRequest request, CancellationToken cancellationToken) =>
+            Guarded(async () =>
+            {
+                var user = CurrentUser(out var error);
+                if (error != null)
+                {
+                    return error;
+                }
+
+                if (_summaries == null)
+                {
+                    return Refused(404, "disabled", "Lists are off.");
+                }
+
+                var ids = new List<Guid>();
+                if (request?.ListIds == null || request.ListIds.Count == 0 || request.ListIds.Count > ListSummaryService.MaxIds)
+                {
+                    return Bad("invalid_body", $"Send 1-{ListSummaryService.MaxIds} list ids.");
+                }
+
+                foreach (var raw in request.ListIds)
+                {
+                    if (!Guid.TryParse(raw, out var id) || id == Guid.Empty)
+                    {
+                        return Bad("invalid_list_id", "Invalid list id.");
+                    }
+
+                    ids.Add(id);
+                }
+
+                return Private(Ok(await _summaries.SummariesAsync(user!, ids, cancellationToken).ConfigureAwait(false)));
+            });
+
+        // ---- end Phase 4c3a ----
 
         /// <summary>
         /// Administrators: dry run of the experimental-list importer (closed PR #936's schema-1 lists): what would be

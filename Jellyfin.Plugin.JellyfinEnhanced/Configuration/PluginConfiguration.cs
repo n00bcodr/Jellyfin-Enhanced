@@ -962,6 +962,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Lists: show where each entry's request stands (the shared request status). Off by default.</summary>
         public bool ArrPhase4ListStatusEnabled { get; set; }
 
+        // ---- Phase 4c3a: list pages (drawing the lists) ----
+
+        /// <summary>
+        /// Lists: draw the entries that aren't in the library on playlist pages, in list order between the real rows, and
+        /// mark playlists that have them as incomplete on the Playlists page instead of Jellyfin's "played" check (which
+        /// Jellyfin gives a playlist with nothing playable in it). Needs <see cref="ArrPhase4ListPlaceholdersEnabled"/>.
+        /// Everyone can hide it for themselves. Off by default.
+        /// </summary>
+        public bool ArrPhase4ListPlaylistUiEnabled { get; set; }
+
+        /// <summary>
+        /// Lists: a "Not in your library" section on collection pages with the collection's entries that aren't in the
+        /// library, by release date. Needs <see cref="ArrPhase4ListPlaceholdersEnabled"/>. Everyone can hide it for
+        /// themselves. Off by default.
+        /// </summary>
+        public bool ArrPhase4ListCollectionUiEnabled { get; set; }
+
         // ---- Requests & downloads, phase 1: status on pages and live updates ----
 
         /// <summary>
