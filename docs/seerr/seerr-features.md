@@ -267,11 +267,13 @@ Report problems with media directly to Seerr.
 
 !!! note
 
-    When Seerr can't be reached, the report icon is shown crossed out. Pressing it (or Enter/Space on it) says
-    why, and nothing else happens.
+    If Seerr stops answering while Jellyfin is open, the report icon is shown crossed out. Pressing it (or
+    Enter/Space on it) says why, and nothing else happens. Once Seerr answers again, the title's page has the
+    normal report icon the next time it is shown.
 
     The report icon isn't shown at all when:
 
+    * Seerr couldn't be reached when Jellyfin was opened (reload the page once Seerr is back)
     * The user has no linked Seerr account
     * The item has no TMDB match
 

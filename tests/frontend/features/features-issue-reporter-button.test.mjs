@@ -20,6 +20,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
  */
 function page(t, { active = true, html = ROW } = {}) {
   const reads = [];
+  const seerr = { active };
   const h = createHarness({
     url: 'http://jellyfin.test/web/index.html#!/details?id=a',
     html,
@@ -30,7 +31,7 @@ function page(t, { active = true, html = ROW } = {}) {
     },
     apiClient: {
       getItem: (_user, id) => { const d = deferred(); reads.push({ id, ...d }); return d.promise; },
-      ajax: async () => ({ active }),
+      ajax: async () => ({ active: seerr.active }),
       getUrl: path => path,
     },
   });
@@ -38,7 +39,7 @@ function page(t, { active = true, html = ROW } = {}) {
   h.load('core/ui-kit.js');
   h.load('jellyseerr/issue-reporter.js');
   const row = () => [...h.document.querySelector('.mainDetailButtons').children].map(n => n.className.split(' ').find(c => /^(btn|je-|jellyseerr-)/.test(c)));
-  return { ...h, reporter: h.JE.jellyseerrIssueReporter, reads, row };
+  return { ...h, reporter: h.JE.jellyseerrIssueReporter, reads, row, seerr };
 }
 
 const movie = id => ({ Id: id, Type: 'Movie', Name: `Movie ${id}`, ProviderIds: { Tmdb: id === 'a' ? '603' : '604' } });
@@ -174,10 +175,16 @@ for (const active of [true, false]) {
     icons[0].click();
     if (active) assert.deepEqual(opened.map(a => a[0]), ['603'], 'the icon opens the issue dialog');
     else assert.deepEqual(toasts, [['jellyseerr_report_unavailable_seerr_down', 4000]], 'the icon says why');
-    // A later look keeps the working icon.
-    assert.equal(await h.reporter.tryAddButton(), true);
+    // A later look keeps the icon. The working one is simply found; the unavailable one is checked
+    // again (Seerr may answer now) and, Seerr still down, stays as it is.
+    const later = h.reporter.tryAddButton();
+    if (!active) {
+      await tick();
+      for (const r of h.reads.splice(0)) r.resolve(movie(r.id));
+    }
+    assert.equal(await later, true);
     assert.equal(h.reads.length, 0);
-    assert.equal(h.document.querySelector(ICONS), icons[0]);
+    assert.deepEqual([...h.document.querySelectorAll(ICONS)], [icons[0]]);
   });
 }
 
@@ -331,4 +338,38 @@ test('the unavailable icon explains why when pressed and does nothing else', asy
   assert.equal(opened.length, 0, 'no issue dialog');
   icon.click();
   assert.equal(toasts.length, 2, 'every press explains');
+});
+
+test('a page showing the unavailable icon gets the working one at its next look once Seerr answers again', async t => {
+  const h = page(t, { active: false });
+  const opened = [];
+  h.reporter.showReportModal = (...args) => opened.push(args);
+  const first = h.reporter.tryAddButton();
+  await tick();
+  h.reads.shift().resolve(movie('a'));
+  assert.equal(await first, true);
+  const unavailable = h.document.querySelector('.jellyseerr-report-unavailable-icon');
+  assert.ok(unavailable);
+  // Still down: the next look keeps the one unavailable icon.
+  const again = h.reporter.tryAddButton();
+  await tick();
+  for (const r of h.reads.splice(0)) r.resolve(movie(r.id));
+  assert.equal(await again, true);
+  assert.deepEqual([...h.document.querySelectorAll(ICONS)], [unavailable]);
+  // Seerr answers again (Back to the same title: the same page element, a new look).
+  h.seerr.active = true;
+  const back = h.reporter.tryAddButton();
+  await tick();
+  for (const r of h.reads.splice(0)) r.resolve(movie(r.id));
+  assert.equal(await back, true);
+  const icons = h.document.querySelectorAll(ICONS);
+  assert.equal(icons.length, 1, 'one icon');
+  assert.ok(icons[0].classList.contains('jellyseerr-report-issue-icon'), 'the working icon');
+  assert.equal(unavailable.isConnected, false, 'the unavailable icon is gone');
+  assert.deepEqual(h.row(), ['btnPlay', 'jellyseerr-report-issue-icon', 'btnMoreCommands'], 'in the same place');
+  icons[0].click();
+  assert.deepEqual(opened.map(a => a[0]), ['603']);
+  // From then on a look finds it and reads nothing.
+  assert.equal(await h.reporter.tryAddButton(), true);
+  assert.equal(h.reads.length, 0);
 });

@@ -838,6 +838,12 @@
     }
 
     /**
+     * @param {Element} icon
+     * @returns {boolean} The icon is the unavailable one (Seerr couldn't be reached when it was drawn).
+     */
+    const isUnavailable = icon => icon.classList.contains('jellyseerr-report-unavailable-icon');
+
+    /**
      * Places a report icon for the item in the page's action row, unless the viewer has moved on
      * or another look placed one meanwhile.
      * @param {HTMLElement} row
@@ -852,7 +858,10 @@
             console.debug(`${logPrefix} Page moved on before the report button was ready`);
             return false;
         }
-        if (iconFor(page, itemId)) return true;
+        const existing = iconFor(page, itemId);
+        // An unavailable icon gives way to the working one once Seerr answers again.
+        if (existing && !(isUnavailable(existing) && !isUnavailable(button))) return true;
+        existing?.remove();
         button.setAttribute('data-je-item-id', itemId);
         placedIcons.set(button, itemId);
         JE.core.ui.placeDetailAction(row, button);
@@ -880,8 +889,9 @@
             return false;
         }
 
-        // Check if we already added the button (either active or unavailable)
-        if (iconFor(itemDetailPage, itemId)) {
+        // Check if we already added the button. An unavailable one is checked again: Seerr may answer now.
+        const existing = iconFor(itemDetailPage, itemId);
+        if (existing && !isUnavailable(existing)) {
             console.debug(`${logPrefix} Report button already exists`);
             return true;
         }
