@@ -299,6 +299,35 @@ test('JE mode: the collection picker says Paused for movies whose drive is full,
   assert.match(adminBody.querySelector('.je-ask-paused-text').textContent, /\/data\/full\/The Matrix Reloaded \(2003\)/);
 });
 
+test('JE mode: the collection picker shows a movie already asked for (on its way) as such and does not offer it again', async t => {
+  const h = setup(t);
+  // The status read (JE.arrStatus, through the plugin API): Reloaded is already asked for and looked for; Revolutions isn't.
+  const statuses = {
+    'movie:tmdb:604': { key: 'movie:tmdb:604', kind: 'movie', stage: 'looking', reason: { code: 'looking' }, attention: false, quiet: false, actions: [] },
+    'movie:tmdb:605': { key: 'movie:tmdb:605', kind: 'movie', stage: 'notHere', reason: { code: 'not_in_arr' }, attention: false, quiet: true, actions: [] }
+  };
+  const reads = [];
+  h.JE.core.api.plugin = async (path) => {
+    reads.push(path);
+    const keys = decodeURIComponent((/[?&]keys=([^&]*)/.exec(path) || [])[1] || '').split(',').filter(Boolean);
+    return path.startsWith('/acquire/status?') ? { contact: 'Dad', lookingHours: 24, items: keys.map(key => statuses[key]).filter(Boolean) } : null;
+  };
+  let options = null;
+  h.JE.jellyseerrModal.create = (o) => { options = o; return { show() {}, close() {} }; };
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {});
+  await settle();
+  const body = h.document.createElement('div');
+  body.innerHTML = options.bodyHtml;
+  const rows = [...body.querySelectorAll('.jellyseerr-collection-movie-row')];
+  assert.deepEqual(rows.map(r => { const b = r.querySelector('.jellyseerr-collection-checkbox'); return [b.dataset.tmdbId, b.disabled, b.checked]; }),
+    [['603', true, false], ['604', true, false], ['605', false, true]]);
+  assert.equal(rows[1].lastElementChild.textContent, translate('arr_status_looking'));
+  assert.deepEqual(reads, ['/acquire/status?keys=movie%3Atmdb%3A604,movie%3Atmdb%3A605'], 'one status read for the movies that could be asked for');
+  await options.onSave(body, h.document.createElement('button'), () => {});
+  await settle();
+  assert.deepEqual(h.posts.map(p => p.body.input.key), ['movie:tmdb:605']);
+});
+
 test('JE mode: a collection with 20 or fewer movies to ask for ticks them all and has no limit note', async t => {
   const h = setup(t);
   let options = null;
