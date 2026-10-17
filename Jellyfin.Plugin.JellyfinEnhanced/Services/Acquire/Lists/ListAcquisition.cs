@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
@@ -130,7 +132,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             // The server's own normalized items are the confirmation's fingerprint (a retry asking for something else is refused).
             var fingerprint = MutationInput.Hash(access.ListIdN + "|" + string.Join(";", entries!.Select(e => e.Placeholder.Id + "=" + (e.Input?.Canonical ?? "-"))))[..64];
-            var start = _operations.Begin(access.User.Id, RequestOperations.RequestBatch, clientId, fingerprint, "list:" + access.ListIdN, entries!.Count, Now());
+            // Each entry's backend target is recorded with the confirmation, before anything is asked: a retry after the
+            // backend, instance or connection changed derives the same request ids from it (the ledger answers them) and
+            // never asks twice. Where the ask is sent is still decided by the policy at sending time.
+            var targets = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var (placeholder, input, skip) in entries!)
+            {
+                if (skip == null && input != null)
+                {
+                    targets[placeholder.Id] = RequestLedger.TargetKey(_requests.Identity(access.User.Id, input.Scope == "movie"));
+                }
+            }
+
+            var start = _operations.Begin(access.User.Id, RequestOperations.RequestBatch, clientId, fingerprint, "list:" + access.ListIdN, entries!.Count, Now(), JsonSerializer.Serialize(new ChildTargets { Targets = targets }));
             if (start.Operation == null)
             {
                 return start.Refusal switch
@@ -143,6 +157,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             var operation = start.Operation;
+            // The targets recorded when the confirmation was first made (null for one recorded without them).
+            var recorded = RecordedTargets(operation.Payload);
             var rev = _store.Load(access.ListIdN)?.Rev ?? 0;
             var result = new ListRequestSubmitDto { OperationId = operation.Id, Replayed = start.Replayed };
             foreach (var (placeholder, input, skip) in entries!)
@@ -153,8 +169,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     continue;
                 }
 
-                var identity = _requests.Identity(access.User.Id, input.Scope == "movie");
-                var child = RequestOperations.ChildRequestId(operation.Id, access.User.Id, input, RequestLedger.TargetKey(identity)) ?? ("op:" + operation.Id + ":" + placeholder.Id);
+                var target = recorded != null && recorded.TryGetValue(placeholder.Id, out var original)
+                    ? original
+                    : RequestLedger.TargetKey(_requests.Identity(access.User.Id, input.Scope == "movie"));
+                var child = RequestOperations.ChildRequestId(operation.Id, access.User.Id, input, target) ?? ("op:" + operation.Id + ":" + placeholder.Id);
                 RequestOutcome outcome;
                 try
                 {
@@ -256,7 +274,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return ordered;
         }
 
+        // The per-entry targets of a confirmation's payload, or null when it has none (or it can't be read).
+        private static Dictionary<string, string>? RecordedTargets(string? payload)
+        {
+            if (string.IsNullOrEmpty(payload))
+            {
+                return null;
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<ChildTargets>(payload)?.Targets is { } targets ? new Dictionary<string, string>(targets, StringComparer.Ordinal) : null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
         private static RequestOrigin Origin(ListAccess access, Placeholder placeholder, string? operationId, int? rev = null) =>
             RequestOrigin.List(access.ListIdN, new RequestProvenance(EntryId: placeholder.Id, ListRevision: rev, OperationId: operationId));
+
+        // A request confirmation's payload: the backend target each askable entry was confirmed against.
+        private sealed class ChildTargets
+        {
+            [JsonPropertyName("targets")]
+            public Dictionary<string, string> Targets { get; set; } = new(StringComparer.Ordinal);
+        }
     }
 }

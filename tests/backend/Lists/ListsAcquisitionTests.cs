@@ -312,6 +312,43 @@ public class ListsAcquisitionTests
     }
 
     [Fact]
+    public async Task ReplayingAConfirmationAfterTheTargetChangedAsksWithTheOriginalIdsAndNothingTwice()
+    {
+        using var r = new Rig();
+        var member = r.Person("member");
+        var movie = Released(603);
+        var season = SeasonPh(1399, 1, tvdb: 121361);
+        await r.Seed(movie, season);
+
+        var first = Ok<ListRequestSubmitDto>(await r.Acquisition.SubmitAsync(r.As(member), "confirm-1", new[] { movie.Id, season.Id }, None));
+        var counts = r.Counts();
+        var inputs = r.H.Database.Read(c =>
+        {
+            using var cmd = RequestLedger.Cmd(c, null, "SELECT client_request_id FROM request_inputs ORDER BY client_request_id");
+            using var reader = cmd.ExecuteReader();
+            var ids = new List<string>();
+            while (reader.Read())
+            {
+                ids.Add(reader.GetString(0));
+            }
+
+            return ids;
+        });
+
+        // The backend target moves (another instance and connection generation) before the retry arrives.
+        r.Policy.People[member.Id] = r.Policy.People[member.Id] with { InstanceId = "r2", ConnectionGeneration = "g2" };
+        var again = Ok<ListRequestSubmitDto>(await r.Acquisition.SubmitAsync(r.As(member), "confirm-1", new[] { movie.Id, season.Id }, None));
+
+        Assert.True(again.Replayed);
+        Assert.Equal(first.OperationId, again.OperationId);
+        Assert.Equal(first.Results.Select(x => ((RequestOutcome)x.Result!).RequestId), again.Results.Select(x => ((RequestOutcome)x.Result!).RequestId));
+        Assert.All(again.Results, x => Assert.Equal(200, ((RequestOutcome)x.Result!).HttpStatus));
+        // No second want, job (send), input or link.
+        Assert.Equal(counts, r.Counts());
+        Assert.Equal(inputs.Count, r.Rows("request_inputs"));
+    }
+
+    [Fact]
     public async Task ANewConfirmationForTheSameEntryIsANewOperationThatTheLedgerMergesWithoutASecondSend()
     {
         using var r = new Rig();
