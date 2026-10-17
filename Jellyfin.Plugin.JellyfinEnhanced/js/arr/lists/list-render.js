@@ -55,6 +55,7 @@ button.je-list-row-main { cursor: pointer; }
 .je-list-section { margin-top: 1em; }
 .je-list-section .sectionTitle { display: flex; align-items: baseline; gap: 0.5em; }
 .je-list-section-count { font-size: 0.7em; opacity: 0.7; font-weight: normal; }
+.je-list-card { container-type: inline-size; }
 .je-list-card-box { display: flex; flex-direction: column; align-items: stretch; gap: 0.3em; }
 .je-list-card-main { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; padding: 0; margin: 0; border: 0; background: rgba(128, 128, 128, 0.18); border-radius: 0.3em; overflow: hidden; aspect-ratio: 2 / 3; color: inherit; font: inherit; }
 .je-list-card-main > .material-icons { font-size: 3em; opacity: 0.5; }
@@ -72,12 +73,17 @@ button.je-list-card-main { cursor: pointer; }
 .card.je-list-incomplete .cardIndicators .playedIndicator { display: none !important; }
 .je-list-grid-indicator { display: inline-flex !important; align-items: center; gap: 0.15em; width: auto !important; min-width: 1.6em; padding: 0 0.45em; border-radius: 999px !important; background: #e5a00d !important; color: #111 !important; font-weight: 700; }
 .je-list-grid-indicator .material-icons { font-size: 1.1em; }
+@container (max-width: 8.5em) {
+  .je-list-card .je-arr-pill-text, .je-list-card .je-arr-pill-caret { display: none; }
+  .je-list-card .je-arr-pill { padding: 0.25em 0.45em; }
+  .je-list-card .je-list-request > span:not(.material-icons) { display: none; }
+}
 @media all and (max-width: 50em) {
   .je-list-side .je-arr-pill-text { display: none; }
   .je-list-side .je-arr-pill-caret { display: none; }
   .je-list-side .je-arr-pill { padding: 0.25em 0.45em; }
   .je-list-request > span:not(.material-icons) { display: none; }
-  .je-list-request { padding: 0.4em; min-width: 2.75em; min-height: 2.75em; }
+  .je-list-request { padding: 0.4em; min-width: 44px; min-height: 44px; }
   .je-list-side { margin: 0 0.25em; gap: 0.35em; }
 }
 @media all and (max-width: 40em) {
@@ -350,6 +356,13 @@ button.je-list-card-main { cursor: pointer; }
         try {
             const block = JE.arrStatus.buildPill(status, ctx.statusContext || {});
             block.classList.add('je-list-status');
+            // Where the words are hidden for room (phones, narrow cards) the pill still says them.
+            const pill = block.querySelector('.je-arr-pill');
+            const words = pill?.querySelector('.je-arr-pill-text')?.textContent || '';
+            if (pill && words) {
+                pill.title = words;
+                if (!pill.hasAttribute('aria-label')) pill.setAttribute('aria-label', words);
+            }
             return block;
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Lists: status pill failed', err);
