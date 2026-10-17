@@ -159,6 +159,8 @@
      * says ("Looking for it") and isn't offered again. The button asks Jellyfin Enhanced for each ticked movie in turn
      * and says what happened, as a collection page's "Get the N missing" does. No Seerr servers, profiles or folders,
      * no Seerr write. Without an id (or the window) it says to ask one movie at a time.
+     * A viewer without a Seerr account gets the collection's public details from Jellyfin Enhanced instead (its
+     * movies judged for them on the server).
      * @param {number|string} [collectionId] TMDB collection id.
      * @param {string} [collectionName] Collection name.
      * @returns {Promise<void>}
@@ -178,7 +180,11 @@
         }
         let details = null;
         try {
-            details = await fetchDetails(id);
+            // A viewer Seerr won't answer for (no linked account, or Seerr turned off for them): the collection's
+            // public details from Jellyfin Enhanced, its movies judged for them on the server.
+            details = await JE.jellyseerrAPI?.accountRefusal?.().catch(() => null)
+                ? await JE.jellyseerrAPI.fetchPublic(`/collection/${id}`)
+                : await fetchDetails(id);
         } catch {
             details = null;
         }

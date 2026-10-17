@@ -538,3 +538,42 @@ test('Seerr mode: the more-info window keeps its Request and checks nothing with
   assert.ok(actions.querySelector('.jellyseerr-request-button'));
   assert.equal(h.checks.length, 0);
 });
+
+test('JE mode: a viewer without a Seerr account gets the collection picker from Jellyfin Enhanced\'s public collection, not their Seerr account', async t => {
+  const h = setup(t);
+  const publicReads = [];
+  h.JE.jellyseerrAPI.accountRefusal = async () => 'unlinked';
+  h.JE.jellyseerrAPI.fetchPublic = async (path) => {
+    publicReads.push(path);
+    return { id: 2344, name: 'The Matrix Collection', parts: [
+      { id: 603, mediaType: 'movie', title: 'The Matrix', releaseDate: '1999-03-31', mediaInfo: { status: 5, jellyfinMediaId: 'abc' } },
+      { id: 604, mediaType: 'movie', title: 'The Matrix Reloaded', releaseDate: '2003-05-15' }
+    ] };
+  };
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection');
+  await settle();
+  assert.deepEqual(publicReads, ['/collection/2344']);
+  assert.deepEqual(h.seerr.details, [], 'nothing read through the viewer\'s Seerr account');
+  const body = h.seerr.modals.at(-1).options.bodyHtml;
+  assert.match(body, /data-tmdb-id="603"[^>]*disabled/);
+  assert.match(body, /data-tmdb-id="604"[^>]*data-je-askable="1" checked/);
+  assert.equal(h.toasts.length, 0);
+
+  // With a Seerr account: Seerr's own collection, as before.
+  h.JE.jellyseerrAPI.accountRefusal = async () => null;
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection');
+  await settle();
+  assert.deepEqual([publicReads.length, h.seerr.details], [1, [2344]]);
+});
+
+test('JE mode: the more-info window with public details says in one line that Seerr\'s own request details need a Seerr account', async t => {
+  const h = setup(t);
+  const { internal } = moreInfoWindow(h);
+  const note = () => h.document.querySelector('[data-mount="je-requested-by"] .je-more-info-public-note');
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', jePublicDetails: true }, 'movie');
+  await settle();
+  assert.equal(note()?.textContent, translate('jellyseerr_modal_public_details'));
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', jePublicDetails: false, mediaInfo: { status: 1 } }, 'movie');
+  await settle();
+  assert.equal(note(), null, 'details read through the viewer\'s own account: no line');
+});

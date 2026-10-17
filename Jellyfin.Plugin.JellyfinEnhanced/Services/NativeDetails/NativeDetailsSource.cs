@@ -114,6 +114,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         Task<SourceAnswer> RatingsAsync(bool movie, int tmdb, Guid viewer, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
 
         /// <summary>
+        /// One page of Seerr's similar or recommended titles of a movie or series, or why there is none
+        /// (<see cref="SourceAnswer.Busy"/> as for <see cref="PersonCreditsAsync"/>).
+        /// </summary>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="tmdb">The title's TMDB id.</param>
+        /// <param name="relation">similar or recommendations.</param>
+        /// <param name="page">Page (1-500).</param>
+        /// <param name="viewer">The viewer whose read budget an upstream read comes out of.</param>
+        /// <param name="ct">Cancellation.</param>
+        Task<SourceAnswer> RelatedAsync(bool movie, int tmdb, string relation, int page, Guid viewer, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+
+        /// <summary>
+        /// Seerr's details of a TMDB movie collection (name, artwork, parts), or why there are none
+        /// (<see cref="SourceAnswer.Busy"/> as for <see cref="PersonCreditsAsync"/>).
+        /// </summary>
+        /// <param name="collection">TMDB collection id.</param>
+        /// <param name="viewer">The viewer whose read budget an upstream read comes out of.</param>
+        /// <param name="ct">Cancellation.</param>
+        Task<SourceAnswer> CollectionAsync(int collection, Guid viewer, CancellationToken ct) => Task.FromResult(SourceAnswer.Unavailable);
+
+        /// <summary>
         /// Seerr's TMDB keyword search (id, name), or why there is none (<see cref="SourceAnswer.Busy"/> as
         /// for <see cref="PersonCreditsAsync"/>).
         /// </summary>
@@ -330,6 +351,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var path = movie ? $"/api/v1/movie/{tmdb}/ratingscombined" : $"/api/v1/tv/{tmdb}/ratings";
             return FeedAsync(path, viewer, () => FetchAndStoreAsync(path), ct);
         }
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> RelatedAsync(bool movie, int tmdb, string relation, int page, Guid viewer, CancellationToken ct)
+        {
+            if (tmdb <= 0 || relation is not ("similar" or "recommendations") || page is < 1 or > 500) return Task.FromResult(SourceAnswer.Missing);
+            var path = $"/api/v1/{(movie ? "movie" : "tv")}/{tmdb}/{relation}?page={page}";
+            return FeedAsync(path, viewer, () => FetchAndStoreAsync(path), ct);
+        }
+
+        /// <inheritdoc />
+        public Task<SourceAnswer> CollectionAsync(int collection, Guid viewer, CancellationToken ct)
+            => collection <= 0 ? Task.FromResult(SourceAnswer.Missing) : Budgeted($"/api/v1/collection/{collection}", viewer, ct);
 
         /// <inheritdoc />
         public Task<SourceAnswer> KeywordsAsync(string query, Guid viewer, CancellationToken ct)

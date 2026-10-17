@@ -336,6 +336,20 @@ function renderRequestedBy(mount, mediaInfo) {
 }
 
 /**
+ * Public details (the viewer has no Seerr account Jellyfin Enhanced could read through): one plain line says
+ * that what only a Seerr account has (who asked, Seerr's downloads and quota) isn't shown.
+ * @param {HTMLElement|null} mount The requested-by mount.
+ * @returns {void}
+ */
+function renderPublicNote(mount) {
+    if (!mount) return;
+    const note = document.createElement('div');
+    note.className = 'je-requested-by-row je-more-info-public-note';
+    note.textContent = JE.t('jellyseerr_modal_public_details');
+    mount.appendChild(note);
+}
+
+/**
  * True when the 4K edition of the window's title can still be requested (Seerr's 4K status).
  * @param {Object} data Seerr details.
  * @returns {boolean} Requestable in 4K.
@@ -433,6 +447,7 @@ function drawActions(data, mediaType) {
 
     const myToken = ++_renderActionsToken;
     renderRequestedBy(requestedByMount, data.mediaInfo);
+    if (data.jePublicDetails === true) renderPublicNote(requestedByMount);
     JE.internals.spoilerGuard?.appendSeerrToggle?.(secondaryMount, data, mediaType);
 
     if (mediaType === 'movie') {

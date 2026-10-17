@@ -1295,3 +1295,22 @@ test('a discovery list page whose row is switched off says the page isn\'t avail
   await h.JE.internals.nativeDetails.onView();
   assert.equal(list.querySelector('.je-native-absent-list-off'), null);
 });
+
+test('Seerr mode: a viewer Seerr won\'t answer for goes to the window\'s message, not a native page that would refuse every title', t => {
+  const h = setup(t);
+  let refusal = 'unlinked';
+  let jeMode = false;
+  h.JE.jellyseerrAPI = { knownAccountRefusal: () => refusal };
+  h.JE.internals.arrAskSeerr = { jeMode: () => jeMode };
+  assert.equal(h.td.open(693134, 'movie'), false);
+  assert.equal(h.td.show(693134, 'movie'), true);
+  assert.deepEqual([h.shown, h.modal], [[], [[693134, 'movie']]]);
+  // JE mode: native pages open without a Seerr account.
+  jeMode = true;
+  assert.equal(h.td.open(693134, 'movie'), true);
+  // A linked viewer (or a status not loaded yet): the native page, as before.
+  jeMode = false;
+  refusal = null;
+  assert.equal(h.td.open(83867, 'tv'), true);
+  assert.equal(h.shown.length, 2);
+});

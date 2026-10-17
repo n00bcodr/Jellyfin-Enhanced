@@ -74,8 +74,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// A movie's or series' public details for the extras of its native page (information panel,
-        /// trailers, collection), without Seerr's per-account part, for any viewer the page opens for (no
-        /// Seerr account needed). 404 when refused or unknown, 503 when the source can't answer.
+        /// trailers, collection) and for Seerr's more-info window of a viewer without a Seerr account,
+        /// without Seerr's per-account part, for any viewer the page opens for (no Seerr account needed).
+        /// Answered while native pages are on or the request feature runs in Jellyfin Enhanced mode. 404
+        /// when refused or unknown, 503 when the source can't answer.
         /// </summary>
         /// <param name="type">movie or tv.</param>
         /// <param name="tmdbId">TMDB id.</param>
@@ -85,7 +87,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> Title([FromRoute] string type, [FromRoute] int tmdbId, CancellationToken ct)
         {
-            if (Caller(out var refusal) is not { } viewer) return refusal!;
+            if (Caller(out var refusal, details: true) is not { } viewer) return refusal!;
             if (type is not ("movie" or "tv")) return BadRequest(new { code = "invalid_feed" });
             return Answer(await _feeds.TitleAsync(viewer, type == "movie", tmdbId, ct).ConfigureAwait(false));
         }
@@ -99,9 +101,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> Ratings([FromRoute] string type, [FromRoute] int tmdbId, CancellationToken ct)
         {
-            if (Caller(out var refusal) is not { } viewer) return refusal!;
+            if (Caller(out var refusal, details: true) is not { } viewer) return refusal!;
             if (type is not ("movie" or "tv")) return BadRequest(new { code = "invalid_feed" });
             return Answer(await _feeds.RatingsAsync(viewer, type == "movie", tmdbId, ct).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// One page of a title's similar or recommended titles as the caller may see them (<c>{ page,
+        /// totalPages, results }</c>, see <see cref="NativeDetailsFeeds.RelatedAsync"/>), for the rows under a
+        /// title's page when the caller has no Seerr account; answered like <see cref="Title"/>, 429 and 504
+        /// like <see cref="Filmography"/>.
+        /// </summary>
+        /// <param name="type">movie or tv.</param>
+        /// <param name="tmdbId">The title's TMDB id.</param>
+        /// <param name="relation">similar or recommendations.</param>
+        /// <param name="page">Page (1-500).</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The page.</returns>
+        [HttpGet("native-details/title/{type}/{tmdbId}/related/{relation}")]
+        [Authorize]
+        public async Task<IActionResult> Related([FromRoute] string type, [FromRoute] int tmdbId, [FromRoute] string relation, [FromQuery] int page = 1, CancellationToken ct = default)
+        {
+            if (Caller(out var refusal, details: true) is not { } viewer) return refusal!;
+            if (type is not ("movie" or "tv")) return BadRequest(new { code = "invalid_feed" });
+            return Answer(await _feeds.RelatedAsync(viewer, type == "movie", tmdbId, relation, page, ct).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// A movie collection's public details and its movies as the caller may see them (<c>{ id, name,
+        /// overview, posterPath, backdropPath, parts }</c>, see <see cref="NativeDetailsFeeds.CollectionAsync"/>),
+        /// for the collection request of a viewer without a Seerr account; answered like <see cref="Title"/>.
+        /// </summary>
+        /// <param name="collectionId">TMDB collection id.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The collection.</returns>
+        [HttpGet("native-details/collection/{collectionId}")]
+        [Authorize]
+        public async Task<IActionResult> Collection([FromRoute] int collectionId, CancellationToken ct)
+        {
+            if (Caller(out var refusal, details: true) is not { } viewer) return refusal!;
+            return Answer(await _feeds.CollectionAsync(viewer, collectionId, ct).ConfigureAwait(false));
         }
 
         /// <summary>The TMDB keywords matching a tag (<c>{ results: [{ id, name }] }</c>), admitted like <see cref="Filmography"/>.</summary>
@@ -129,12 +168,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Answer(await _feeds.GenresAsync(viewer, type == "movie", ct).ConfigureAwait(false));
         }
 
-        /// <summary>The caller (a real, enabled user; never an API key), or the refusal when the feature is off or there is none.</summary>
-        private Jellyfin.Database.Implementations.Entities.User? Caller(out IActionResult? refusal)
+        /// <summary>
+        /// The caller (a real, enabled user; never an API key), or the refusal when the feature is off or there
+        /// is none. A title's public details (<paramref name="details"/>) are on while <see
+        /// cref="NativeDetailsPolicy.PublicDetailsEnabled"/> holds; everything else needs native pages.
+        /// </summary>
+        private Jellyfin.Database.Implementations.Entities.User? Caller(out IActionResult? refusal, bool details = false)
         {
             Response.Headers["Cache-Control"] = "private, no-store";
             refusal = null;
-            if (!NativeDetailsPolicy.FeatureEnabled(JellyfinEnhanced.Instance?.Configuration))
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (!(details ? NativeDetailsPolicy.PublicDetailsEnabled(config) : NativeDetailsPolicy.FeatureEnabled(config)))
             {
                 refusal = StatusCode(403, new { code = "feature_disabled" });
                 return null;

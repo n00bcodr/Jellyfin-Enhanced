@@ -1240,7 +1240,20 @@
             if (signal.aborted) return;
             if (!tmdbId || type !== 'tv') return;
 
-            const tvDetails = await JE.jellyseerrAPI.fetchTvShowDetails(tmdbId);
+            // As the More Info window reads them: public details for a viewer without a Seerr account while
+            // Jellyfin Enhanced handles requests; Seerr refusing them otherwise (said by the window) ends it here.
+            const moreInfo = JE.internals?.moreInfoModal;
+            let tvDetails = null;
+            if (typeof moreInfo?.fetchMediaDetails === 'function') {
+                try {
+                    tvDetails = await moreInfo.fetchMediaDetails(tmdbId, 'tv');
+                } catch {
+                    // Said or logged where it happened (fetchMediaDetails): no button.
+                    tvDetails = null;
+                }
+            } else {
+                tvDetails = await JE.jellyseerrAPI.fetchTvShowDetails(tmdbId);
+            }
             if (signal.aborted) return;
             if (!tvDetails) return;
 

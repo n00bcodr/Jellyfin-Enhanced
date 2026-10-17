@@ -4246,6 +4246,24 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/native-details/title/{type}/{tmdbId}/related/{relation}",
+      "method": "Related",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/native-details/collection/{collectionId}",
+      "method": "Collection",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/native-details/keywords",
       "method": "Keywords",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
@@ -9572,7 +9590,7 @@
   "counts": {
     "build_targets": 2,
     "files": 529,
-    "routes": 251,
+    "routes": 253,
     "configuration_properties": 578,
     "storage_references": 82,
     "scheduled_tasks": 14,

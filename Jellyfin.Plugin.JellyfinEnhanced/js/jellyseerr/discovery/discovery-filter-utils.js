@@ -1118,13 +1118,15 @@
     /**
      * True when a library page's discovery row should read the server's native feeds (filtered there
      * for the viewer, read with Jellyfin Enhanced's own Seerr key) instead of Seerr as the viewer: the
-     * viewer has no Seerr account (Jellyfin Enhanced request mode lets them in) and native details
-     * pages are on. Viewers with an account keep Seerr's own answers.
+     * viewer has no Seerr account, Jellyfin Enhanced request mode lets them in (Seerr mode: the server
+     * refuses them these feeds) and native details pages are on. Viewers with an account keep Seerr's
+     * own answers.
      * @param {any} status The viewer's Seerr status (JE.jellyseerrAPI.checkUserStatus()).
      * @returns {boolean}
      */
     function useNativeFeeds(status) {
-        return !!status?.active && status.userFound === false && !!JE.titleDetails?.available?.();
+        return !!status?.active && status.userFound === false && JE.internals?.arrAskSeerr?.jeMode?.() === true
+            && !!JE.titleDetails?.available?.();
     }
 
     // Inject styles on load

@@ -946,7 +946,9 @@ facade and never touch the library):
 | GET | `native-details/resolve?key=…[&season=&episode=]` or `?id={pageId}` | Where a title opens for the caller: `{itemId}` (a library item they can open, the season or episode when named) or `{id}` (the native page). 404 when the title has no TMDB id; 403 for API keys or with the setting off |
 | GET | `native-details/person/{tmdbId}/filmography` | The filmography on a person's own page, filtered for the caller on the server: a library copy they can open carries its Jellyfin id, a title the library hides from them is left out, a title not in the library is listed only when its page would open for them. No Seerr account needed in Jellyfin Enhanced request mode. 404 when refused or unknown, 503 when Seerr can't answer, 504 while parental checks still run, 429 (`Retry-After`) when the list isn't cached and the caller has started too many new reads or already has 8 running or waiting (or the server has too many queued); 403 for API keys or with the setting off |
 | GET | `native-details/discover/{movie\|tv}/{genre\|studio\|network\|company\|keyword}/{id}?page=&sortBy=` | One page of a genre, studio, network or tag (TMDB keyword) discovery feed (`company`: a studio's own series, from TMDB), filtered and limited for the caller like the filmography; `totalPages` is the upstream count, so a page with every title left out isn't the end. Library pages' discovery rows use these for callers without a Seerr account |
-| GET | `native-details/title/{movie\|tv}/{tmdbId}[/ratings]` | A not-in-library title's public details (without Seerr's per-account `mediaInfo`) or its ratings (`null` when it has none), for its native page's extras, under that page's own rule (no Seerr account needed in Jellyfin Enhanced request mode); ratings are limited like the feeds |
+| GET | `native-details/title/{movie\|tv}/{tmdbId}[/ratings]` | A title's public details (Seerr's per-account `mediaInfo` replaced by the caller's own: `{status: 5, jellyfinMediaId}` for a library copy they can open, else Seerr's public state of an absent title) or its ratings (`null` when it has none), for its native page's extras and for Seerr's details window of a caller without a Seerr account, under that page's own rule (no Seerr account needed in Jellyfin Enhanced request mode). Also answered with native pages off while requests run in Jellyfin Enhanced mode; ratings are limited like the feeds |
+| GET | `native-details/title/{movie\|tv}/{tmdbId}/related/{similar\|recommendations}?page=` | One page of a title's similar or recommended titles, under the title's rule above and filtered and limited like the discovery feeds, for the rows on a title's page of a caller without a Seerr account |
+| GET | `native-details/collection/{collectionId}` | A movie collection's public details and its movies, each judged for the caller like a filmography's titles (`mediaInfo.status` 5 and `jellyfinMediaId` for a copy they can open), for a collection's **Request** of a caller without a Seerr account; answered like the title route |
 | GET | `native-details/genres/{movie\|tv}`, `native-details/keywords?query=` | TMDB's genres (`[{id, name}]`) and the keywords matching a tag (`{results: [{id, name}]}`), so library genre and tag rows find their TMDB ids without a Seerr account |
 
 The native page's own reads (its title, seasons, episodes and parents, a person, studio or network page) come out of
@@ -987,6 +989,17 @@ tooltip then reads just "Seerr is active" instead of offering it. In Seerr mode
 every Seerr control behaves as before. With Seerr's experimental native details page on, the card itself (title,
 poster, Enter) opens the title's [details page](#titles-that-arent-in-the-library-native-details) instead of Seerr's
 window; only its **Request** button opens the sheet.
+
+**People without a Seerr account (JE mode).** Asking for a title in JE mode needs no Seerr account, and neither does
+looking at one: Seerr's details window, a collection's **Request** and the *Recommended* and *Similar* rows on a
+title's page show the title's public details for someone whose Jellyfin account isn't linked to Seerr (or whom
+Seerr is turned off for), with or without the experimental native details page. Jellyfin Enhanced reads them with
+its own Seerr key and filters them for that person on the server, as it does for native pages: what the library hides
+from them is left out, their parental limit applies, and a copy they can open is shown as *Available*. What only a
+Seerr account has (who asked, Seerr's downloads and quota) isn't shown; one line in the window says so. Their own
+requests show as usual in Jellyfin Enhanced's status line. In Seerr mode such a person can't use Seerr's window: it
+says once that their Seerr account isn't linked yet instead of opening empty, and the rows aren't asked for. (On
+Jellyfin 10.11 the public details aren't available, so the window says the same in JE mode.)
 
 Each card shows the poster, title and year, a state chip (**In your library**, **Asked!**, **Waiting for OK** or
 **Someone asked**, always with an icon and words) and a **Request** button. People whose asks wait for an OK

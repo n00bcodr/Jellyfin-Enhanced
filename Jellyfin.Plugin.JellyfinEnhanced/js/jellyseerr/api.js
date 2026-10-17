@@ -219,6 +219,54 @@
         }
     };
 
+    // The user-status reasons (and the proxy's error codes) that say Seerr won't answer through the viewer's own
+    // account: no Seerr account linked, or Seerr turned off for them by the administrator.
+    const ACCOUNT_REFUSALS = new Set(['unlinked', 'blocked']);
+
+    /**
+     * Why Seerr won't answer through the signed-in viewer's own account, from their user status:
+     * 'unlinked' (no Seerr account linked) or 'blocked' (the administrator turned Seerr off for them).
+     * Null when it does, or when that isn't known (an outage is not a refusal).
+     * @returns {Promise<'unlinked'|'blocked'|null>}
+     */
+    api.accountRefusal = async function() {
+        const status = await api.checkUserStatus();
+        return status && status.userFound === false && ACCOUNT_REFUSALS.has(status.reason) ? status.reason : null;
+    };
+
+    /**
+     * {@link api.accountRefusal} from the user status already loaded (no request; null until it has loaded).
+     * @returns {'unlinked'|'blocked'|null}
+     */
+    api.knownAccountRefusal = function() {
+        const status = cachedUserStatus;
+        return status && status.userFound === false && ACCOUNT_REFUSALS.has(status.reason) ? status.reason : null;
+    };
+
+    /**
+     * The account refusal a failed proxy read carries ('unlinked' or 'blocked' in its JSON body), or null.
+     * @param {any} error The core client's error.
+     * @returns {'unlinked'|'blocked'|null}
+     */
+    api.accountRefusalOf = function(error) {
+        const code = error?.responseJSON?.code;
+        return ACCOUNT_REFUSALS.has(code) ? code : null;
+    };
+
+    /**
+     * Reads a title's public details from Jellyfin Enhanced's own routes instead of the viewer's Seerr account
+     * (read with Jellyfin Enhanced's Seerr key, filtered for the viewer on the server, without Seerr's
+     * per-account part), for a viewer Seerr won't answer while Jellyfin Enhanced handles requests.
+     * Rejects like the core client (status, responseJSON).
+     * @param {string} path '/title/{movie|tv}/{id}', '/title/{movie|tv}/{id}/ratings',
+     *   '/title/{movie|tv}/{id}/related/{similar|recommendations}?page=' or '/collection/{id}'.
+     * @param {{signal?: AbortSignal}} [options] Cancellation.
+     * @returns {Promise<any>} The answer.
+     */
+    api.fetchPublic = function(path, options = {}) {
+        return JE.core.api.plugin(`/native-details${path}`, { skipCache: true, signal: options.signal });
+    };
+
     /**
      * Surfaces a one-time banner toast describing why Seerr discovery is not
      * available. Skipped on success and on the "disabled" reason (no Seerr
@@ -228,6 +276,9 @@
         try {
             if (!status || (status.active && status.userFound)) return;
             if (status.reason === 'disabled') return;
+            // Jellyfin Enhanced handles requests (Requests & downloads, JE mode): asking for a title and seeing its
+            // details need no Seerr account, so "sign in to Seerr to enable requests" would be wrong.
+            if (ACCOUNT_REFUSALS.has(status.reason) && JE.internals?.arrAskSeerr?.jeMode?.() === true) return;
             // Don't double-surface within a single session.
             if (window.__JE_userStatusBannerShown === status.reason) return;
             window.__JE_userStatusBannerShown = status.reason;
@@ -402,12 +453,14 @@
     /**
      * Fetches detailed information for a specific TV show from Seerr.
      * @param {number} tmdbId - The TMDB ID of the TV show.
+     * @param {{throwOnError?: boolean}} [options] - throwOnError: reject with the error instead of logging it and answering null.
      * @returns {Promise<object|null>}
      */
-    api.fetchTvShowDetails = async function(tmdbId) {
+    api.fetchTvShowDetails = async function(tmdbId, options = {}) {
         try {
             return await get(`/tv/${tmdbId}`);
         } catch (error) {
+            if (options.throwOnError) throw error;
             console.error(`${logPrefix} Failed to fetch TV show details for TMDB ID ${tmdbId}:`, error);
             return null;
         }
@@ -826,6 +879,8 @@
         if (window.JellyfinEnhanced?.pluginConfig?.JellyseerrShowQuotaInfo === false) {
             return null;
         }
+        // No Seerr account to have a quota (known from the user status): nothing to ask Seerr for.
+        if (api.knownAccountRefusal()) return null;
         try {
             return await get('/quota', options);
         } catch (error) {
@@ -961,6 +1016,20 @@
         const page = typeof pageOrOptions === 'number' ? pageOrOptions : (pageOrOptions.page || 1);
         const options = typeof pageOrOptions === 'object' ? pageOrOptions : {};
         try {
+            // A viewer Seerr won't answer for (known from their user status): while Jellyfin Enhanced handles
+            // requests, the rows from its public route (judged for them on the server); otherwise none.
+            if (api.knownAccountRefusal()) {
+                const none = { results: [], page: 1, totalPages: 0, totalResults: 0 };
+                if (JE.internals?.arrAskSeerr?.jeMode?.() !== true) return none;
+                try {
+                    return await api.fetchPublic(`/title/${mediaType === 'movie' ? 'movie' : 'tv'}/${tmdbId}/related/${relation}?page=${page}`, options);
+                } catch (error) {
+                    // A server without the route (Jellyfin 10.11: a bare 404): no rows, nothing to report.
+                    if (error?.status !== 404 || error.responseJSON?.code) throw error;
+                    console.debug(`${logPrefix} No public ${relation} rows on this server`);
+                    return none;
+                }
+            }
             return await get(`/${mediaType}/${tmdbId}/${relation}?page=${page}`, options);
         } catch (error) {
             if (error.name === 'AbortError') throw error;
@@ -977,12 +1046,14 @@
     /**
      * Fetches detailed information for a specific movie from Seerr.
      * @param {number} tmdbId - The TMDB ID of the movie.
+     * @param {{throwOnError?: boolean}} [options] - throwOnError: reject with the error instead of logging it and answering null.
      * @returns {Promise<object|null>}
      */
-    api.fetchMovieDetails = async function(tmdbId) {
+    api.fetchMovieDetails = async function(tmdbId, options = {}) {
         try {
             return await get(`/movie/${tmdbId}`);
         } catch (error) {
+            if (options.throwOnError) throw error;
             console.error(`${logPrefix} Failed to fetch movie details for TMDB ID ${tmdbId}:`, error);
             return null;
         }

@@ -94,6 +94,11 @@ View Seerr recommendations and similar items on detail pages.
 2. Optional: Enable **"Exclude already in library items"**
 3. Optional: Enable **"Exclude rejected items"**
 
+Someone whose Jellyfin account isn't linked to Seerr gets no Seerr rows and, from the More Info window, a message
+that their Seerr account isn't linked yet. With Requests & downloads handling requests itself (Jellyfin Enhanced
+mode) they get both anyway, from public details filtered for them (see
+[People without a Seerr account](../arr/arr-features.md#discover-and-search-je-mode)).
+
 ### Titles that aren't in the library: Jellyfin's own details page (experimental)
 
 With **Open titles that aren't in the library on Jellyfin's own details page** on (Seerr settings, *Discovery & UI

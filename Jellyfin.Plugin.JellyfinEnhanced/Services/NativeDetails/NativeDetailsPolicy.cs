@@ -111,6 +111,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public static bool JeMode(PluginConfiguration config)
             => config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend == "je";
 
+        /// <summary>
+        /// True when a title's public details (details, ratings, a movie collection's parts) are answered:
+        /// native pages are on, or the request feature runs in Jellyfin Enhanced mode, where Seerr's
+        /// more-info window reads them for a viewer without a Seerr account (native pages or not).
+        /// </summary>
+        public static bool PublicDetailsEnabled(PluginConfiguration? config) => FeatureEnabled(config) || (config != null && JeMode(config));
+
         /// <summary>Whether the viewer may see this title's page (and its children).</summary>
         /// <param name="viewer">The effective viewer.</param>
         /// <param name="title">Any synthetic id of the title (season/episode ids are judged by their series).</param>
@@ -128,10 +135,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="title">Any synthetic id of the title.</param>
         /// <param name="ct">Cancellation.</param>
         /// <returns>The access.</returns>
-        public async Task<Access> SeeAsync(User viewer, SyntheticId title, CancellationToken ct)
+        public Task<Access> SeeAsync(User viewer, SyntheticId title, CancellationToken ct) => SeeAsync(viewer, title, false, ct);
+
+        /// <summary>
+        /// <see cref="SeeAsync(User, SyntheticId, CancellationToken)"/> for a title's public details only (no page,
+        /// row or artwork): the same rule, admitted while <see cref="PublicDetailsEnabled"/> holds.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="title">Any synthetic id of the title.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The access.</returns>
+        public Task<Access> SeeDetailsAsync(User viewer, SyntheticId title, CancellationToken ct) => SeeAsync(viewer, title, true, ct);
+
+        private async Task<Access> SeeAsync(User viewer, SyntheticId title, bool details, CancellationToken ct)
         {
             if (!title.IsTitle) return Access.Refused;
-            var access = await ViewerAccessAsync(viewer, ct).ConfigureAwait(false);
+            var access = await ViewerAccessAsync(viewer, details, ct).ConfigureAwait(false);
             if (access != Access.Allowed) return access;
             var mediaType = title.IsMovie ? "movie" : "tv";
             // Fails closed for restricted users when the rating can't be verified (same rule as asking).
@@ -214,10 +233,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="viewer">The effective viewer.</param>
         /// <param name="ct">Cancellation.</param>
         /// <returns>The access.</returns>
-        public async Task<Access> ViewerAccessAsync(User viewer, CancellationToken ct)
+        public Task<Access> ViewerAccessAsync(User viewer, CancellationToken ct) => ViewerAccessAsync(viewer, false, ct);
+
+        /// <summary>
+        /// <see cref="ViewerAccessAsync(User, CancellationToken)"/> for a title's public details only, admitted
+        /// while <see cref="PublicDetailsEnabled"/> holds (so in Jellyfin Enhanced mode with native pages off).
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The access.</returns>
+        public Task<Access> DetailsAccessAsync(User viewer, CancellationToken ct) => ViewerAccessAsync(viewer, true, ct);
+
+        private async Task<Access> ViewerAccessAsync(User viewer, bool details, CancellationToken ct)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (!FeatureEnabled(config) || viewer.HasPermission(PermissionKind.IsDisabled)) return Access.Refused;
+            if (!(details ? PublicDetailsEnabled(config) : FeatureEnabled(config)) || viewer.HasPermission(PermissionKind.IsDisabled)) return Access.Refused;
             if (!SeerrConfigured(config!)) return Access.Refused;
             if (JeMode(config!)) return Access.Allowed;
             if (ImportBlocked(config!, viewer)) return Access.Refused;

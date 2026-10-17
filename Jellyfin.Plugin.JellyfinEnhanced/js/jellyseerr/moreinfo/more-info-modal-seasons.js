@@ -42,7 +42,8 @@ async function backfillSeasonMetadata(tmdbId, data) {
             ? api.fetchTmdbTvDetails(tmdbId).catch(() => null)
             : Promise.resolve(null);
 
-        const episodePromises = (api?.fetchTvSeasonDetails)
+        // Public details (the viewer has no Seerr account): Seerr's season reads would be refused; TMDB's answer does.
+        const episodePromises = (api?.fetchTvSeasonDetails && data.jePublicDetails !== true)
             ? seasonsMissingData.map(s =>
                 api.fetchTvSeasonDetails(tmdbId, s.seasonNumber)
                     .then(detail => ({ seasonNumber: s.seasonNumber, firstEpDate: detail?.episodes?.[0]?.airDate || '' }))
@@ -271,7 +272,12 @@ async function checkForUnrequestedSeasons(data, signal) {
         // Query the request endpoint to get ALL requests for this show. Through
         // the core client (single attempt, like ApiClient.ajax) so the caller's
         // signal really cancels the request instead of only its result.
-        const response = await JE.core.api.plugin('/jellyseerr/request?take=500&skip=0&filter=all', { skipRetry: true, signal });
+        // Public details (the viewer has no Seerr account): Seerr's request list
+        // isn't theirs to read; the library decides below.
+        const publicDetails = data.jePublicDetails === true;
+        const response = publicDetails
+            ? { results: [] }
+            : await JE.core.api.plugin('/jellyseerr/request?take=500&skip=0&filter=all', { skipRetry: true, signal });
 
         // Collect all season statuses from all requests for this TMDB ID
         const statusMap = {};
@@ -331,6 +337,10 @@ async function checkForUnrequestedSeasons(data, signal) {
                     }
                 }
             } catch (_) {}
+        }
+        // Public details: the library is the only record, so a season Jellyfin has is available.
+        if (publicDetails && jellyfinSeasonPresenceMap) {
+            for (const seasonNum of Object.keys(jellyfinSeasonPresenceMap)) statusMap[seasonNum] = JE.seerrStatus.MEDIA.AVAILABLE;
         }
 
         for (const tmdbSeason of tmdbSeasons) {

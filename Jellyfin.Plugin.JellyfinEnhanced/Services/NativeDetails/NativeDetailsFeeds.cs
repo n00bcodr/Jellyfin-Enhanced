@@ -189,8 +189,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 : "/api/v1/discover/" + (movie ? "movies" : "tv") + "?page=" + pageText + "&" + (source == "keyword" ? "keywords" : source) + "=" + number;
             var (outcome, filtered) = await ParentalAsync(data, path, viewer, ct).ConfigureAwait(false);
             if (outcome != FeedOutcome.Ok) return new FeedAnswer(outcome, null);
+            return new FeedAnswer(FeedOutcome.Ok, PageOfCards(viewer, filtered!, movie, page));
+        }
 
-            using var doc = JsonDocument.Parse(filtered!);
+        /// <summary>
+        /// One page of a title's similar or recommended titles (<c>{ page, totalPages, results }</c>), for the
+        /// rows under a title's page when the viewer has no Seerr account (Jellyfin Enhanced mode): under the
+        /// title's public-details rule (<see cref="TitleAsync"/>), then filtered and judged for the viewer like
+        /// a discovery feed's titles.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="tmdb">The title's TMDB id.</param>
+        /// <param name="relation">similar or recommendations.</param>
+        /// <param name="page">Page (1-500).</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The answer.</returns>
+        public async Task<FeedAnswer> RelatedAsync(User viewer, bool movie, int tmdb, string? relation, int page, CancellationToken ct)
+        {
+            if (tmdb <= 0 || relation is not ("similar" or "recommendations") || page is < 1 or > 500) return new FeedAnswer(FeedOutcome.Invalid, null);
+            var access = await ViewerAsync(_policy.SeeDetailsAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
+            if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
+            var answer = await _source.RelatedAsync(movie, tmdb, relation, page, viewer.Id, ct).ConfigureAwait(false);
+            if (answer.Data is not { } data) return Failed(answer);
+            // The path the parental filter knows these lists by (the Seerr-proxied rows' own; it checks the title too).
+            var path = "/api/v1/" + (movie ? "movie/" : "tv/") + tmdb.ToString(CultureInfo.InvariantCulture) + "/" + relation + "?page=" + page.ToString(CultureInfo.InvariantCulture);
+            var (outcome, filtered) = await ParentalAsync(data, path, viewer, ct).ConfigureAwait(false);
+            if (outcome != FeedOutcome.Ok) return new FeedAnswer(outcome, null);
+            return new FeedAnswer(FeedOutcome.Ok, PageOfCards(viewer, filtered!, movie, page));
+        }
+
+        /// <summary>
+        /// A filtered list page (<c>{ page, results, totalPages }</c>) as the viewer gets it: only titles of
+        /// the list's own kind, once each, each judged by <see cref="Card"/>. A page whose every title is left
+        /// out is an empty page, not the end of the list: <c>totalPages</c> is the upstream count.
+        /// </summary>
+        private string PageOfCards(User viewer, string filtered, bool movie, int page)
+        {
+            using var doc = JsonDocument.Parse(filtered);
             var root = doc.RootElement;
             var results = new JsonArray();
             if (root.TryGetProperty("results", out var rows) && rows.ValueKind == JsonValueKind.Array)
@@ -205,20 +241,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             var total = Math.Clamp(NativeDetailsDtos.Int(root, "totalPages") ?? 1, 1, 500);
-            return new FeedAnswer(FeedOutcome.Ok, new JsonObject
+            return new JsonObject
             {
                 ["page"] = NativeDetailsDtos.Int(root, "page") ?? page,
                 ["totalPages"] = total,
                 ["results"] = results,
-            }.ToJsonString());
+            }.ToJsonString();
         }
 
         /// <summary>
         /// A movie's or series' public details for its native page's extras (the information panel,
-        /// trailers, collection, Spoiler Guard's switch), under that page's own rule (<see
-        /// cref="NativeDetailsPolicy.SeeAsync"/>): read with Jellyfin Enhanced's Seerr key, so a viewer
+        /// trailers, collection, Spoiler Guard's switch) and for Seerr's more-info window when the viewer
+        /// has no Seerr account (Jellyfin Enhanced mode), under that page's own rule (<see
+        /// cref="NativeDetailsPolicy.SeeDetailsAsync"/>): read with Jellyfin Enhanced's Seerr key, so a viewer
         /// without a Seerr account gets them too. Seerr's per-account part (<c>mediaInfo</c>: requests,
-        /// library links, downloads) is left out.
+        /// library links, downloads) is left out; in its place, the viewer's own part as a list card has it
+        /// (the library copy they can open, with status 5, or 4 when Seerr says partly available; else
+        /// Seerr's public state of an absent title).
         /// </summary>
         /// <param name="viewer">The effective viewer.</param>
         /// <param name="movie">Movie (else series).</param>
@@ -228,12 +267,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public async Task<FeedAnswer> TitleAsync(User viewer, bool movie, int tmdb, CancellationToken ct)
         {
             if (tmdb <= 0) return new FeedAnswer(FeedOutcome.Invalid, null);
-            var access = await ViewerAsync(_policy.SeeAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
+            var access = await ViewerAsync(_policy.SeeDetailsAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
             var answer = movie ? await _source.MovieAsync(tmdb, viewer.Id, ct).ConfigureAwait(false) : await _source.SeriesAsync(tmdb, viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is not { } data) return Failed(answer);
             if (JsonNode.Parse(data.GetRawText()) is not JsonObject body) return new FeedAnswer(FeedOutcome.Unavailable, null);
             body.Remove("mediaInfo");
+            var media = NativeDetailsDtos.Obj(data, "mediaInfo");
+            var listed = Listed(viewer, media, movie, tmdb);
+            if (listed.Shown && MediaInfoFor(listed, media) is { } info) body["mediaInfo"] = info;
             return new FeedAnswer(FeedOutcome.Ok, body.ToJsonString());
         }
 
@@ -249,13 +291,66 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public async Task<FeedAnswer> RatingsAsync(User viewer, bool movie, int tmdb, CancellationToken ct)
         {
             if (tmdb <= 0) return new FeedAnswer(FeedOutcome.Invalid, null);
-            var access = await ViewerAsync(_policy.SeeAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
+            var access = await ViewerAsync(_policy.SeeDetailsAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
             var answer = await _source.RatingsAsync(movie, tmdb, viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is { } data) return new FeedAnswer(FeedOutcome.Ok, data.GetRawText());
             // The title itself was admitted above: the source's "not found" here means it has no ratings
             // (Seerr answers 404 when Rotten Tomatoes doesn't know a series), which is an answer, not an error.
             return answer.NotFound && !answer.Busy ? new FeedAnswer(FeedOutcome.Ok, "null") : Failed(answer);
+        }
+
+        /// <summary>
+        /// A movie collection's public details (<c>{ id, name, overview, posterPath, backdropPath, parts }</c>),
+        /// for the collection request of a viewer without a Seerr account (Jellyfin Enhanced mode: the
+        /// more-info window and the native page): read with Jellyfin Enhanced's Seerr key, the viewer's
+        /// parental limit applied, then each movie judged like a filmography's (a copy the viewer can open
+        /// is shown as that copy with status 5; one the library hides from them is left out; an absent
+        /// movie is listed when its own page would open for them). The viewer-level rule for public
+        /// details applies (<see cref="NativeDetailsPolicy.DetailsAccessAsync"/>).
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="collection">TMDB collection id.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The answer.</returns>
+        public async Task<FeedAnswer> CollectionAsync(User viewer, int collection, CancellationToken ct)
+        {
+            if (collection <= 0) return new FeedAnswer(FeedOutcome.Invalid, null);
+            var access = await ViewerAsync(_policy.DetailsAccessAsync(viewer, ct)).ConfigureAwait(false);
+            if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
+            var answer = await _source.CollectionAsync(collection, viewer.Id, ct).ConfigureAwait(false);
+            if (answer.Data is not { } data) return Failed(answer);
+            var path = "/api/v1/collection/" + collection.ToString(CultureInfo.InvariantCulture);
+            var (outcome, filtered) = await ParentalAsync(data, path, viewer, ct).ConfigureAwait(false);
+            if (outcome != FeedOutcome.Ok) return new FeedAnswer(outcome, null);
+
+            using var doc = JsonDocument.Parse(filtered!);
+            var root = doc.RootElement;
+            var body = new JsonObject { ["id"] = collection };
+            foreach (var name in new[] { "name", "overview" })
+            {
+                if (NativeDetailsDtos.Str(root, name) is { } value) body[name] = value;
+            }
+
+            foreach (var name in new[] { "posterPath", "backdropPath" })
+            {
+                if (NativeDetailsDtos.Str(root, name) is { } art && NativeDetailsArtwork.IsSafeTmdbPath(art)) body[name] = art;
+            }
+
+            var parts = new JsonArray();
+            if (root.TryGetProperty("parts", out var rows) && rows.ValueKind == JsonValueKind.Array)
+            {
+                var seen = new HashSet<int>();
+                foreach (var row in rows.EnumerateArray())
+                {
+                    // A collection's parts are movies (Seerr's rows may not say so).
+                    if (!TitleOf(row, true, out var movie, out var tmdb) || !movie || !seen.Add(tmdb)) continue;
+                    if (Card(viewer, row, true, tmdb) is { } card) parts.Add(card);
+                }
+            }
+
+            body["parts"] = parts;
+            return new FeedAnswer(FeedOutcome.Ok, body.ToJsonString());
         }
 
         /// <summary>
@@ -424,22 +519,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 card["genreIds"] = ids;
             }
 
+            if (MediaInfoFor(listed, media) is { } info) card["mediaInfo"] = info;
+            return card;
+        }
+
+        /// <summary>
+        /// The viewer's part of a shown title's Seerr media state: the library copy they can open (it opens
+        /// that copy; status 5, or 4 when Seerr says partly available), else Seerr's public state of an
+        /// absent title (pending, processing, blocklisted, deleted), else nothing. Never requests,
+        /// requesters, downloads or another copy.
+        /// </summary>
+        private static JsonObject? MediaInfoFor(NativeDetailsPolicy.ListedTitle listed, JsonElement media)
+        {
             var state = NativeDetailsDtos.Int(media, "status");
             if (listed.LibraryCopy is { } copy)
             {
-                // A library card: it opens the copy the viewer can open.
-                card["mediaInfo"] = new JsonObject
+                return new JsonObject
                 {
                     ["status"] = state == 4 ? 4 : 5,
                     ["jellyfinMediaId"] = copy.ToString("N", CultureInfo.InvariantCulture),
                 };
             }
-            else if (state is int s && AbsentStates.Contains(s))
-            {
-                card["mediaInfo"] = new JsonObject { ["status"] = s };
-            }
 
-            return card;
+            return state is int s && AbsentStates.Contains(s) ? new JsonObject { ["status"] = s } : null;
         }
     }
 }

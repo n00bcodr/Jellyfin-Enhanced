@@ -394,9 +394,10 @@ test('library genre, studio and tag rows read the native feeds for a viewer with
   }
 });
 
-test('the native-feeds choice: no Seerr account, Seerr reachable, native details on', t => {
+test('the native-feeds choice: no Seerr account, Seerr reachable, Jellyfin Enhanced request mode, native details on', t => {
+  let jeMode = true;
   const h = createHarness({
-    JE: { pluginConfig: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1 } }, t: key => key },
+    JE: { pluginConfig: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1 } }, t: key => key, internals: { arrAskSeerr: { jeMode: () => jeMode } } },
     apiClient: { serverId: () => SERVER },
   });
   t.after(() => h.close());
@@ -407,6 +408,10 @@ test('the native-feeds choice: no Seerr account, Seerr reachable, native details
   assert.equal(use(UNLINKED), true);
   assert.equal(use(LINKED), false);
   assert.equal(use({ active: false, userFound: false }), false);   // Seerr unreachable: not a reason to switch
+  // Seerr handles requests: the server refuses its feeds to a viewer without a Seerr account (no rows, no 404s).
+  jeMode = false;
+  assert.equal(use(UNLINKED), false);
+  jeMode = true;
   h.JE.pluginConfig.NativeAbsentDetails.Enabled = false;
   assert.equal(use(UNLINKED), false);
 });

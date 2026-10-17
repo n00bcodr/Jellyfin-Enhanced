@@ -716,3 +716,17 @@ test('an item the server refuses (an HTTP answer) gets no rows and logs no error
  const broken=setup(t,{item:()=>{throw new Error('boom');}});broken.expectConsoleError(/Seerr Item Details: Error getting TMDB ID/);
  await broken.start();await broken.render();assert.equal(broken.marker(),null);assert.deepEqual(broken.after(),[]);
 });
+
+test('a series page\'s Request More reads its details the way the More Info window does: public for a viewer without a Seerr account, nothing logged when Seerr refuses them',async t=>{
+ const SERIES={Type:'Series',Name:'Futurama',ProviderIds:{Tmdb:'615'}};
+ for(const outcome of ['public','refused']){
+  const details=[],proxied=[];
+  const h=setup(t,{item:()=>SERIES,config:{JellyseerrEnabled:true,JellyseerrShowSimilar:false,JellyseerrShowRecommended:false},je:{
+   internals:{moreInfoModal:{fetchMediaDetails:async(id,type)=>{details.push([id,type]);if(outcome==='refused')throw Object.assign(new Error('refused'),{seerrAccount:'unlinked'});return {id,name:'Futurama',seasons:[],jePublicDetails:true};},
+    isExplained:error=>!!error?.seerrAccount}},
+   jellyseerrMoreInfo:{checkForUnrequestedSeasons:async()=>false}}});
+  h.JE.jellyseerrAPI.fetchTvShowDetails=async id=>{proxied.push(id);return null;};
+  h.frame();await h.flush();
+  assert.deepEqual([details,proxied],[[[615,'tv']],[]],outcome);
+ }
+});

@@ -203,6 +203,25 @@ public class ApiNativeDetailsTests
             return Task.FromResult(Answer(true, """{"page":1,"results":[{"id":161919,"name":"adult animation","extra":"x"},{"id":0,"name":"bad"},{"id":5,"name":null}]}"""));
         }
 
+        /// <summary>Similar/recommended pages by "movie|tv:id:relation:page" (others are unknown).</summary>
+        public Dictionary<string, string> Related { get; } = new();
+        public Task<SourceAnswer> RelatedAsync(bool movie, int tmdb, string relation, int page, Guid viewer, CancellationToken ct)
+        {
+            Calls++;
+            var key = $"{(movie ? "movie" : "tv")}:{tmdb}:{relation}:{page}";
+            if (Busy) return Task.FromResult(SourceAnswer.Throttled);
+            return Task.FromResult(Answer(Related.ContainsKey(key), Related.GetValueOrDefault(key) ?? "{}"));
+        }
+
+        /// <summary>Movie collections the source knows, by TMDB collection id (others are unknown).</summary>
+        public Dictionary<int, string> Collections { get; } = new();
+        public Task<SourceAnswer> CollectionAsync(int collection, Guid viewer, CancellationToken ct)
+        {
+            Calls++;
+            if (Busy) return Task.FromResult(SourceAnswer.Throttled);
+            return Task.FromResult(Answer(Collections.ContainsKey(collection), Collections.GetValueOrDefault(collection) ?? "{}"));
+        }
+
         /// <summary>Seerr can't tell who is linked (unreachable, no earlier answer).</summary>
         public bool LinkUnknown { get; set; }
         public Task<bool?> IsSeerrLinkedAsync(Guid userId, CancellationToken ct) => Task.FromResult<bool?>(LinkUnknown ? null : Linked.Contains(userId));
@@ -2076,6 +2095,208 @@ public class ApiNativeDetailsTests
         Assert.Equal(400, Status(await For(Me(unlinked)).Title("person", 693134, CancellationToken.None)));
         Assert.Equal(404, Status(await For(Me(unlinked)).Title("movie", 77, CancellationToken.None)));
         Assert.Equal(403, Status(await For(new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity("Custom"))).Title("movie", 693134, CancellationToken.None)));
+    }
+
+    /// <summary>Turns the request feature on in Jellyfin Enhanced mode (no Seerr account needed).</summary>
+    private static void JellyfinEnhancedMode(Rig rig)
+    {
+        var config = rig.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = true;
+        config.ArrPhase1Enabled = true;
+        config.ArrPhase3Enabled = true;
+        config.ArrRequestBackend = "je";
+    }
+
+    private static Jellyfin.Plugin.JellyfinEnhanced.Controllers.NativeDetailsFeedsController FeedsFor(Rig rig, System.Security.Claims.ClaimsPrincipal user) => new(rig.Feeds, rig.Callers.Users.Object)
+    {
+        ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = user } },
+    };
+
+    private const string CollectionJson = """
+    {"id":726871,"name":"Dune Collection","overview":"The saga.","posterPath":"/dc.jpg","backdropPath":"javascript:x","parts":[
+     {"id":438631,"mediaType":"movie","title":"Dune","releaseDate":"2021-09-15","posterPath":"/d1.jpg","mediaInfo":{"status":2,"requests":[{"requestedBy":{"displayName":"someone else"}}],"externalServiceId":77}},
+     {"id":693134,"title":"Dune: Part Two","releaseDate":"2024-02-27","posterPath":"/d2.jpg"},
+     {"id":1170608,"mediaType":"movie","title":"Dune: Part Three","releaseDate":"2026-12-16"},
+     {"id":12,"mediaType":"movie","title":"Adults copy","releaseDate":"2020-01-01"},
+     {"id":5,"mediaType":"person","name":"Not a movie"}]}
+    """;
+
+    [Fact]
+    public async Task WithNativePagesOffATitlesPublicDetailsStillAnswerInJellyfinEnhancedModeForTheMoreInfoWindow()
+    {
+        using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.NativeAbsentDetailsEnabled = false;
+        rig.Source.Collections[726871] = CollectionJson;
+        var unlinked = rig.Person(linked: false);
+        var linked = rig.Person();
+        var ct = CancellationToken.None;
+
+        // Seerr mode with native pages off: nothing here answers (the window reads Seerr with the viewer's own account).
+        var calls = rig.Source.Calls;
+        Assert.Equal(403, Status(await FeedsFor(rig, Me(linked)).Title("movie", 693134, ct)));
+        Assert.Equal(403, Status(await FeedsFor(rig, Me(unlinked)).Ratings("movie", 693134, ct)));
+        Assert.Equal(403, Status(await FeedsFor(rig, Me(unlinked)).Collection(726871, ct)));
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.TitleAsync(linked, true, 693134, ct)).Outcome);
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.CollectionAsync(linked, 726871, ct)).Outcome);
+        Assert.Equal(calls, rig.Source.Calls);
+
+        // Jellyfin Enhanced mode: a viewer without a Seerr account gets the title's public details, ratings and
+        // collection, read with Jellyfin Enhanced's key; Seerr's per-account part stays behind.
+        JellyfinEnhancedMode(rig);
+        var title = Assert.IsType<ContentResult>(await FeedsFor(rig, Me(unlinked)).Title("movie", 693134, ct));
+        Assert.Contains("Dune: Part Two", title.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("mediaInfo", title.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("someone else", title.Content, StringComparison.Ordinal);
+        Assert.Equal("Andor", Body(await rig.Feeds.TitleAsync(unlinked, false, 83867, ct)).GetProperty("name").GetString());
+        Assert.Equal(200, Status(await FeedsFor(rig, Me(unlinked)).Ratings("tv", 83867, ct)));
+        Assert.Equal(200, Status(await FeedsFor(rig, Me(unlinked)).Collection(726871, ct)));
+        Assert.Equal(200, Status(await FeedsFor(rig, Me(linked)).Title("tv", 83867, ct)));
+
+        // Only a title's public details: native pages' own lists and the facade stay off.
+        calls = rig.Source.Calls;
+        Assert.Equal(403, Status(await FeedsFor(rig, Me(unlinked)).Filmography(3810, ct)));
+        Assert.Equal(403, Status(await FeedsFor(rig, Me(unlinked)).Discover("movie", "genre", 878)));
+        Assert.Equal(403, Status(await FeedsFor(rig, Me(unlinked)).Keywords("desert", ct)));
+        Assert.Equal(403, Status(await FeedsFor(rig, Me(unlinked)).Genres("movie", ct)));
+        Assert.Equal(calls, rig.Source.Calls);
+        Assert.NotEqual(200, Status((await Call(rig, "UserLibrary", "GetItem", Me(unlinked), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result));
+
+        // The title page's own rule still applies: a parental limit, a library the viewer can't open, a disabled
+        // account, an API key.
+        var kid = rig.Person(linked: false);
+        kid.MaxParentalRatingScore = 10;
+        Assert.Equal(404, Status(await FeedsFor(rig, Me(kid)).Title("movie", 693134, ct)));
+        Assert.Equal(404, Status(await FeedsFor(rig, Me(kid)).Ratings("movie", 693134, ct)));
+        Assert.Equal(404, Status(await FeedsFor(rig, Me(MoviesOnly(rig, linked: false))).Title("tv", 83867, ct)));
+        var disabled = rig.Person(linked: false);
+        disabled.SetPermission(PermissionKind.IsDisabled, true);
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.TitleAsync(disabled, true, 693134, ct)).Outcome);
+        Assert.Equal(403, Status(await FeedsFor(rig, new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity("Custom"))).Collection(726871, ct)));
+
+        // Seerr not set up: nothing to read.
+        rig.Plugin.Plugin.Configuration.JellyseerrUrls = string.Empty;
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.TitleAsync(unlinked, true, 693134, ct)).Outcome);
+    }
+
+    [Fact]
+    public async Task APublicTitleCarriesTheViewersOwnLibraryCopyAndSeerrsPublicStateNeverItsRequests()
+    {
+        using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.NativeAbsentDetailsEnabled = false;
+        JellyfinEnhancedMode(rig);
+        var viewer = rig.Person(linked: false);
+        var ct = CancellationToken.None;
+        // Absent, and Seerr says it's being processed: that public state, without Seerr's requests or arr ids.
+        rig.Source.Series = SeriesJson.Replace("\"networks\"", "\"mediaInfo\":{\"status\":3,\"requests\":[{\"requestedBy\":{\"displayName\":\"someone else\"}}],\"externalServiceId\":9,\"downloadStatus\":[{\"title\":\"dl\"}]},\"networks\"", StringComparison.Ordinal);
+        var pending = await rig.Feeds.TitleAsync(viewer, false, 83867, ct);
+        Assert.Equal("{\"status\":3}", Body(pending).GetProperty("mediaInfo").GetRawText());
+        foreach (var leak in new[] { "someone else", "externalServiceId", "downloadStatus" }) Assert.DoesNotContain(leak, pending.Json!, StringComparison.Ordinal);
+
+        // A library copy the viewer can open: available, and it opens that copy (the window's Play and season links).
+        var copy = Copy(rig, false, 83867, "Andor", new[] { viewer });
+        var have = Body(await rig.Feeds.TitleAsync(viewer, false, 83867, ct)).GetProperty("mediaInfo");
+        Assert.Equal((5, copy.Id.ToString("N")), (have.GetProperty("status").GetInt32(), have.GetProperty("jellyfinMediaId").GetString()));
+    }
+
+    [Fact]
+    public async Task ATitlesSimilarAndRecommendedRowsAreJudgedForAViewerWithoutASeerrAccount()
+    {
+        using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.NativeAbsentDetailsEnabled = false;
+        JellyfinEnhancedMode(rig);
+        var viewer = rig.Person(linked: false);
+        var admin = rig.Person(admin: true);
+        var ct = CancellationToken.None;
+        var mine = Copy(rig, true, 11, "Kids copy", new[] { viewer, admin });
+        var theirs = Copy(rig, true, 12, "Adults copy", new[] { admin }, viewer);
+        rig.Source.Related["movie:693134:similar:1"] = """
+        {"page":1,"totalPages":3,"results":[
+          {"id":438631,"mediaType":"movie","title":"Dune","posterPath":"/d1.jpg","mediaInfo":{"status":3,"requests":[{"requestedBy":{"displayName":"someone else"}}]}},
+          {"id":11,"mediaType":"movie","title":"Kids copy"},
+          {"id":12,"mediaType":"movie","title":"Adults copy"},
+          {"id":1399,"mediaType":"tv","name":"Not a movie"},
+          {"id":438631,"mediaType":"movie","title":"Dune again"}]}
+        """;
+        rig.Source.Related["movie:693134:recommendations:2"] = """{"page":2,"totalPages":2,"results":[{"id":335984,"title":"Blade Runner 2049"}]}""";
+
+        var answer = await rig.Feeds.RelatedAsync(viewer, true, 693134, "similar", 1, ct);
+        var body = Body(answer);
+        // The list's own kind, once each; the viewer's copy as that copy, the copy hidden from them left out.
+        Assert.Equal(new[] { "438631", $"11={mine.Id:N}" }, Titles(body));
+        Assert.Equal((1, 3), (body.GetProperty("page").GetInt32(), body.GetProperty("totalPages").GetInt32()));
+        Assert.Equal(3, body.GetProperty("results")[0].GetProperty("mediaInfo").GetProperty("status").GetInt32());
+        foreach (var leak in new[] { "Adults copy", theirs.Id.ToString("N"), "someone else", "requests", "Not a movie" }) Assert.DoesNotContain(leak, answer.Json!, StringComparison.Ordinal);
+        Assert.Equal(new[] { "335984" }, Titles(Body(await rig.Feeds.RelatedAsync(viewer, true, 693134, "recommendations", 2, ct))));
+        Assert.Equal(3, Titles(Body(await rig.Feeds.RelatedAsync(admin, true, 693134, "similar", 1, ct))).Length);
+
+        // Bad relation or page: invalid before anything is read; an unknown title's rows: not found.
+        var calls = rig.Source.Calls;
+        Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.RelatedAsync(viewer, true, 693134, "keywords", 1, ct)).Outcome);
+        Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.RelatedAsync(viewer, true, 693134, "similar", 0, ct)).Outcome);
+        Assert.Equal(calls, rig.Source.Calls);
+        Assert.Equal(404, Status(await FeedsFor(rig, Me(viewer)).Related("movie", 77, "similar", 1, ct)));
+        Assert.Equal(400, Status(await FeedsFor(rig, Me(viewer)).Related("person", 693134, "similar", 1, ct)));
+        Assert.Equal(200, Status(await FeedsFor(rig, Me(viewer)).Related("movie", 693134, "similar", 1, ct)));
+
+        // The title's own rule: a parental limit refuses the rows of a title the viewer may not see.
+        var kid = rig.Person(linked: false);
+        kid.MaxParentalRatingScore = 10;
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.RelatedAsync(kid, true, 693134, "similar", 1, ct)).Outcome);
+        // Seerr mode: the viewer's own account reads them (the proxy), so none here.
+        rig.Plugin.Plugin.Configuration.ArrRequestBackend = "seerr";
+        Assert.Equal(403, Status(await FeedsFor(rig, Me(viewer)).Related("movie", 693134, "similar", 1, ct)));
+    }
+
+    [Fact]
+    public async Task ACollectionsMoviesAreJudgedForTheViewerBeforeTheyLeaveTheServer()
+    {
+        using var rig = new Rig();
+        JellyfinEnhancedMode(rig);
+        rig.Source.Collections[726871] = CollectionJson;
+        var viewer = rig.Person(linked: false);
+        var admin = rig.Person(admin: true);
+        var ct = CancellationToken.None;
+        // Part Two: a copy the viewer can open; "Adults copy": one only the administrator can.
+        var mine = Copy(rig, true, 693134, "Dune: Part Two", new[] { viewer, admin });
+        var theirs = Copy(rig, true, 12, "Adults copy", new[] { admin }, viewer);
+
+        var answer = await rig.Feeds.CollectionAsync(viewer, 726871, ct);
+        var body = Body(answer);
+        Assert.Equal(("Dune Collection", "The saga.", "/dc.jpg"), (body.GetProperty("name").GetString(), body.GetProperty("overview").GetString(), body.GetProperty("posterPath").GetString()));
+        Assert.False(body.TryGetProperty("backdropPath", out _));
+        var parts = body.GetProperty("parts");
+        // Movies only, each judged like a filmography's: the viewer's copy as that copy (available), absent ones
+        // with their public state, the copy hidden from them left out.
+        Assert.Equal(new[] { "438631", "693134", "1170608" }, parts.EnumerateArray().Select(p => p.GetProperty("id").GetInt32().ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray());
+        Assert.Equal(2, parts[0].GetProperty("mediaInfo").GetProperty("status").GetInt32());
+        Assert.Equal(("2021-09-15", "/d1.jpg"), (parts[0].GetProperty("releaseDate").GetString(), parts[0].GetProperty("posterPath").GetString()));
+        Assert.Equal(5, parts[1].GetProperty("mediaInfo").GetProperty("status").GetInt32());
+        Assert.Equal(mine.Id.ToString("N"), parts[1].GetProperty("mediaInfo").GetProperty("jellyfinMediaId").GetString());
+        Assert.False(parts[2].TryGetProperty("mediaInfo", out _));
+        foreach (var leak in new[] { "Adults copy", theirs.Id.ToString("N"), "someone else", "requests", "externalServiceId", "Not a movie", "javascript" })
+        {
+            Assert.DoesNotContain(leak, answer.Json!, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // The administrator gets every movie; a viewer with a parental limit below the movies' rating gets none.
+        Assert.Equal(4, Body(await rig.Feeds.CollectionAsync(admin, 726871, ct)).GetProperty("parts").GetArrayLength());
+        var kid = rig.Person(linked: false);
+        kid.MaxParentalRatingScore = 10;
+        Assert.Equal(0, Body(await rig.Feeds.CollectionAsync(kid, 726871, ct)).GetProperty("parts").GetArrayLength());
+
+        // Unknown, invalid, busy and down answer like the other feeds; Seerr mode needs the viewer's own account.
+        Assert.Equal(FeedOutcome.NotFound, (await rig.Feeds.CollectionAsync(viewer, 1, ct)).Outcome);
+        Assert.Equal(FeedOutcome.Invalid, (await rig.Feeds.CollectionAsync(viewer, 0, ct)).Outcome);
+        Assert.Equal(404, Status(await FeedsFor(rig, Me(viewer)).Collection(1, ct)));
+        rig.Source.Busy = true;
+        Assert.Equal(429, Status(await FeedsFor(rig, Me(viewer)).Collection(726871, ct)));
+        rig.Source.Busy = false;
+        rig.Source.Down = true;
+        Assert.Equal(503, Status(await FeedsFor(rig, Me(viewer)).Collection(726871, ct)));
+        rig.Source.Down = false;
+        rig.Plugin.Plugin.Configuration.ArrRequestBackend = "seerr";
+        Assert.Equal(FeedOutcome.Refused, (await rig.Feeds.CollectionAsync(viewer, 726871, ct)).Outcome);
+        Assert.Equal(FeedOutcome.Ok, (await rig.Feeds.CollectionAsync(rig.Person(), 726871, ct)).Outcome);
     }
 
     [Fact]

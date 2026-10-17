@@ -232,6 +232,16 @@
     }
 
     /**
+     * True when the viewer's user status (already loaded) says Seerr won't answer for them (no linked account, or
+     * Seerr turned off for them) while Seerr handles requests: the server refuses them every native page, so the
+     * caller's own destination (the More Info window, which says why) is the one to use.
+     * @returns {boolean} Seerr refuses the viewer.
+     */
+    function seerrRefusesViewer() {
+        return !!JE.jellyseerrAPI?.knownAccountRefusal?.() && JE.internals?.arrAskSeerr?.jeMode?.() !== true;
+    }
+
+    /**
      * Opens a title that isn't in the library on Jellyfin's own details page.
      * @param {number|string} tmdbId TMDB id.
      * @param {string} mediaType "movie" or "tv".
@@ -239,7 +249,7 @@
      * @returns {boolean} True when it navigated; false means the caller keeps its own destination.
      */
     function open(tmdbId, mediaType, scope) {
-        if (!available()) return false;
+        if (!available() || seerrRefusesViewer()) return false;
         const id = idOf(tmdbId, mediaType, scope);
         if (!id) return false;
         go(id);
