@@ -5374,6 +5374,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 // Diff against the existing config so the log shows what actually changed
                 var existing = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
+                // Phase 4c1: the list swap-in consent is the person's own. An administrator saving someone else's settings
+                // (this save replaces the whole file) keeps it as it is.
+                if (UserHelper.GetCurrentUserId(User)?.ToString("N") != authorizedUserId)
+                {
+                    userConfiguration.ListSwapIn = existing?.ListSwapIn;
+                }
+
                 var changes = new System.Collections.Generic.List<string>();
                 var isIdentical = false;
                 if (existing != null)
@@ -8301,6 +8308,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 try
                 {
+                    // Phase 4c1: a reset never sets or clears a person's own list swap-in consent.
+                    defaultUserSettings.ListSwapIn = _userConfigurationManager.UserConfigurationExists(userId, "settings.json")
+                        ? _userConfigurationManager.GetUserConfiguration<UserSettings>(userId, "settings.json").ListSwapIn
+                        : null;
                     _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
                     userCount++;
                 }
