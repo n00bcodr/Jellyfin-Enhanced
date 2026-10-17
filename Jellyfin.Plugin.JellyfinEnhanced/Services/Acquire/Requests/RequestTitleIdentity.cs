@@ -90,6 +90,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
         }
 
+        /// <summary>
+        /// The key the ledger holds <paramref name="key"/>'s title under now (no write): the ledger's own aliases first
+        /// (they outlive what the arr libraries say), then what the in-memory aliases make of it, resolved by the ledger again.
+        /// </summary>
+        /// <param name="ledger">The ledger.</param>
+        /// <param name="aliases">The alias resolver, if any.</param>
+        /// <param name="key">A title key (any of its ids).</param>
+        internal static TitleKey Held(RequestLedger ledger, TitleAliases? aliases, TitleKey key)
+        {
+            var given = key.Title.ToString();
+            var held = ledger.CanonicalKey(given);
+            if (held != given) return TitleKey.Parse(held) ?? key.Title;
+            var known = aliases?.Canonical(key.Title) ?? key.Title;
+            return TitleKey.Parse(ledger.CanonicalKey(known.ToString())) ?? known;
+        }
+
+        /// <summary>
+        /// The one canonicalisation point at every way into the ledger (review round 5, 4b-B14: an ask, a preview, a batch,
+        /// an approval, an automatic decision, a family Search; the Seerr import resolves its plan through <see cref="Held"/>): the input normalized and, after the title's other
+        /// ids are learned (<paramref name="learn"/>), its key resolved to the key the ledger holds the title under. Everything
+        /// downstream (the facts prepared for it, the policy, household rules, dedup and charges) works with that one key.
+        /// Null when the input is invalid.
+        /// </summary>
+        /// <param name="ledger">The ledger.</param>
+        /// <param name="policy">Current policy.</param>
+        /// <param name="aliases">The alias resolver, if any.</param>
+        /// <param name="feed">The change feed, if any.</param>
+        /// <param name="input">The input as given.</param>
+        /// <param name="now">Now.</param>
+        /// <param name="learn">Learn the title's other ids first (an entry that may write; a read-only check doesn't).</param>
+        internal static MutationInput? Entry(RequestLedger ledger, IRequestPolicy policy, TitleAliases? aliases, ArrChangeFeed? feed, MutationInput? input, DateTimeOffset now, bool learn = true)
+        {
+            var normalized = input?.Normalize();
+            if (normalized == null || TitleKey.Parse(normalized.Key) is not { } key) return null;
+            if (learn) Learn(ledger, policy, aliases, feed, normalized.Key, now);
+            var held = Held(ledger, aliases, key).ToString();
+            return held == normalized.Key ? normalized : normalized with { Key = held };
+        }
+
         /// <summary>One pass over every title the ledger holds; returns how many were merged or moved.</summary>
         internal int Reconcile()
         {

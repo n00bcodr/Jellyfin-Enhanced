@@ -40,19 +40,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public bool Enabled => _policy.Configuration is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true };
         /// <summary>Identity facts used for list/quota capability checks.</summary>
         public RequestPolicyFacts Identity(Guid user, bool movie = true) => _policy.Evaluate(user, movie ? new MutationInput { Key = "movie:tmdb:1" } : new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 } });
-        private MutationInput? Normalize(MutationInput? input)
-        {
-            var normalized = input?.Normalize();
-            if (normalized == null) return null;
-            return normalized with { Key = _aliases?.Canonical(TitleKey.Parse(normalized.Key)!).ToString() ?? normalized.Key };
-        }
-        /// <summary>An input as the ledger keys it (normalized, the title under its canonical key); null when invalid.</summary>
+        // The one canonicalisation point (RequestTitleIdentity.Entry): the title's other ids learned, then the key the
+        // ledger holds it under, before anything is prepared or decided. learn: false for a read-only check.
+        private MutationInput? Normalize(MutationInput? input, bool learn = true)
+            => RequestTitleIdentity.Entry(_ledger, _policy, _aliases, _feed, input, _now(), learn && Enabled);
+        /// <summary>An input as the ledger keys it (normalized, the title under the key the ledger holds it by); null when invalid.</summary>
         internal MutationInput? NormalizeInput(MutationInput? input) => Normalize(input);
-        /// <summary>A title under the canonical key the ledger keys it by (whichever id the caller used).</summary>
-        internal TitleKey CanonicalTitle(TitleKey title) => _aliases?.Canonical(title) ?? title;
-
-        // Before the ledger works with a title, it learns the title's other ids (one identity: RequestTitleIdentity).
-        private void Learn(string key) => RequestTitleIdentity.Learn(_ledger, _policy, _aliases, _feed, key, _now());
+        /// <summary>A title under the key the ledger holds it by (whichever id the caller used).</summary>
+        internal TitleKey CanonicalTitle(TitleKey title) => RequestTitleIdentity.Held(_ledger, _aliases, title);
         /// <summary>Creates one durable request after bounded prerequisite preparation.</summary>
         /// <param name="user">The requester.</param>
         /// <param name="body">Client id and input.</param>
@@ -65,7 +60,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (!Enabled) return RequestOutcome.Refused("feature_disabled");
             if (!_ledger.Database.Available) return RequestOutcome.Refused("database_unavailable", 503, "unavailable");
             if (!_policy.IsAdmin(user) && RequestLedger.HasRouting(input)) return RequestOutcome.Refused("admin_required");
-            Learn(input.Key);
             await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             if (_policy.Evaluate(user, input).CanCreate)
             {
@@ -93,7 +87,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (!Enabled) return new RequestPreview(RequestOutcome.Refused("feature_disabled"));
             if (!_ledger.Database.Available) return new RequestPreview(RequestOutcome.Refused("database_unavailable", 503, "unavailable"));
             if (!_policy.IsAdmin(user) && RequestLedger.HasRouting(input)) return new RequestPreview(RequestOutcome.Refused("admin_required"));
-            Learn(input.Key);
             await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             return _ledger.Preview(user, body with { Input = input }, _policy, _now(), origin);
         }
@@ -119,12 +112,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // Routing (instance, profile, folder) is an administrator's choice, as on a single ask.
                 normalized.Add(body == null || input == null || (!admin && RequestLedger.HasRouting(input)) ? null : body with { Input = input });
             }
-            foreach (var key in normalized.Where(b => b != null).Select(b => b!.Input.Key).Distinct(StringComparer.Ordinal)) Learn(key);
             foreach (var input in normalized.Where(b => b != null).Select(b => b!.Input).DistinctBy(i => i.Fingerprint))
                 await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             var previews = _ledger.PreviewBatch(user, normalized, _policy, _now(), origin);
             // A routing choice by a non-administrator answers as a single ask would.
-            return previews.Select((p, i) => normalized[i] == null && bodies[i] != null && Normalize(bodies[i]!.Input) is { } routed && RequestLedger.HasRouting(routed)
+            return previews.Select((p, i) => normalized[i] == null && bodies[i] != null && Normalize(bodies[i]!.Input, learn: false) is { } routed && RequestLedger.HasRouting(routed)
                 ? new RequestPreview(RequestOutcome.Refused("admin_required")) : p).ToArray();
         }
         /// <summary>
@@ -141,14 +133,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public async Task<RequestOutcome> ApproveAsync(string id, Guid actor, ApproveRequest? body, CancellationToken ct)
         {
             if (!_ledger.Database.Available) return RequestOutcome.Refused("database_unavailable", 503, "unavailable");
-            var want = _ledger.Find(id);
-            if (want == null) return RequestOutcome.Refused("not_found", 404);
+            if (_ledger.Find(id) is not { } stored) return RequestOutcome.Refused("not_found", 404);
+            // The request's title is learned first (once a series reaches Sonarr its canonical key becomes its TVDB id, and the
+            // request asked by its TMDB id moves with it), then read again as the ledger holds it now; an edit may name the title
+            // by any of its ids and is resolved to that key too, before anything is prepared.
+            RequestTitleIdentity.Learn(_ledger, _policy, _aliases, _feed, stored.Input.Key, _now());
+            if (_ledger.Find(id) is not { } want) return RequestOutcome.Refused("not_found", 404);
             var input = body?.Input == null ? want.Input : Normalize(body.Input);
             if (input == null) return RequestOutcome.Refused("invalid_input", 400);
-            // An edit may name the request's title by any of its ids: the ledger holds the title under one key, learned here
-            // (once a series reaches Sonarr its canonical key becomes its TVDB id; the request asked by its TMDB id moves too).
-            Learn(want.Input.Key);
-            Learn(input.Key);
             if (!_policy.IsAdmin(actor) && RequestLedger.RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
             await _policy.PrepareAsync(want.UserId, input, ct).ConfigureAwait(false);
             await _policy.PrepareAsync(actor, input, ct).ConfigureAwait(false);
@@ -273,9 +265,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             if (TitleKey.Parse(key) is not { } parsed) return null;
             var season = Math.Max(parsed.Season ?? 1, 0);
-            return Normalize(parsed.IsMovie
+            // Not a way into the ledger (nothing is asked for): the in-memory aliases are enough, and a list of titles reads no database.
+            var input = (parsed.IsMovie
                 ? new MutationInput { Key = parsed.Title.ToString(), Scope = "movie", Variant = edition }
-                : new MutationInput { Key = parsed.Title.ToString(), Scope = "seasons", Seasons = new[] { season }, Variant = edition });
+                : new MutationInput { Key = parsed.Title.ToString(), Scope = "seasons", Seasons = new[] { season }, Variant = edition }).Normalize();
+            return input == null ? null : input with { Key = (_aliases?.Canonical(TitleKey.Parse(input.Key)!) ?? TitleKey.Parse(input.Key)!).ToString() };
         }
         /// <summary>
         /// The titles of a list (Discover and search cards, a collection's missing movies) the caller can't ask for

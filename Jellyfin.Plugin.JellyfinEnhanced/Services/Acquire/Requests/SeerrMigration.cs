@@ -207,7 +207,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         private SeerrMigrationPlan PlanFor(SeerrMigrationRead read)
-            => Plan(read, user => _view.Viewer(user) != null, key => _aliases?.Canonical(key) ?? key, _ledger.ImportedRequestIds(_ledger.FindOriginSource(read.AddressFingerprint)));
+            => Plan(read, user => _view.Viewer(user) != null, key => RequestTitleIdentity.Held(_ledger, _aliases, key), _ledger.ImportedRequestIds(_ledger.FindOriginSource(read.AddressFingerprint)));
 
         private static SeerrMigrationReply Describe(SeerrMigrationRead read, SeerrMigrationPlan? plan, string backend, string reason, string message) => new()
         {
@@ -268,7 +268,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (read.Requesting.State != "disabled" && !confirmRequestsDisabled)
                     return Describe(read, PlanFor(read), config.ArrRequestBackend, "seerr_requests_unknown", "Seerr's permissions could not be checked. Confirm that requesting is off in Seerr.") with { Outcome = "denied", HttpStatus = 409 };
                 var sourceId = _ledger.OriginSource(read.AddressFingerprint);
-                var plan = Plan(read, user => _view.Viewer(user) != null, key => _aliases?.Canonical(key) ?? key, _ledger.ImportedRequestIds(sourceId));
+                var plan = Plan(read, user => _view.Viewer(user) != null, key => RequestTitleIdentity.Held(_ledger, _aliases, key), _ledger.ImportedRequestIds(sourceId));
                 var targets = new Dictionary<(bool, string), string>();
                 string Target(MutationInput input)
                 {

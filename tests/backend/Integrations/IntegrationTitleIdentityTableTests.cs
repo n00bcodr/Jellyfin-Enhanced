@@ -400,6 +400,109 @@ public class IntegrationTitleIdentityTableTests
         Assert.Single(mine);
     }
 
+    // ------------------------------------------------------------------ one key from the entry on (review round 5, 4b-B14)
+
+    /// <summary>How the title's other id is known when it is asked for by its IMDb id.</summary>
+    public enum Known
+    {
+        /// <summary>The control: asked for by its TMDB id.</summary>
+        Tmdb,
+        /// <summary>Only the ledger remembers that the IMDb id is the TMDB id (Radarr doesn't hold the movie any more).</summary>
+        Durable,
+        /// <summary>Radarr holds the movie by both ids (the in-memory aliases know it too).</summary>
+        Memory,
+    }
+
+    public static TheoryData<string, Known> Entries()
+    {
+        var rows = new TheoryData<string, Known>();
+        foreach (var entry in new[] { "create", "preview", "batch", "approve", "decision" })
+            foreach (var known in Enum.GetValues<Known>()) rows.Add(entry, known);
+        return rows;
+    }
+
+    /// <summary>
+    /// Every way into the ledger (an ask, a preview, a batch preview, an approval naming the title by another id, an
+    /// automatic decision) resolves the title to the key the ledger holds it under BEFORE anything is prepared or decided:
+    /// the household-rule facts read for it, the policy and the rules all see the key the ledger evaluates. A Member's
+    /// household rule lets English titles through (else they wait); asked for by the IMDb id the ledger remembers as the
+    /// TMDB id, it goes ahead exactly as when asked for by the TMDB id.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Entries))]
+    public async Task EveryEntryResolvesTheTitleBeforePreparingOrDecidingWithHouseholdRulesOn(string entry, Known known)
+    {
+        using var r = new IntegrationHouseholdRulesTests.Rules();
+        r.Tmdb.Movie(Movie, "en", new[] { 28 }, new Dictionary<string, string> { ["US"] = "PG-13" });
+        r.Set(new { roles = new { member = new { language = new { codes = new[] { "en" }, match = "approve", otherwise = "review" } } } });
+        var aliases = new TitleAliases(r.Lab.Store, null);
+        // The service as it runs (with the in-memory aliases).
+        var service = new RequestService(r.Rig.Ledger, r.Policy, r.View, r.Rig.Feed, () => r.Now, aliases);
+        if (known == Known.Memory)
+        {
+            r.Lab.Radarr.Movies.Add(new JsonObject { ["id"] = 33, ["tmdbId"] = Movie, ["imdbId"] = Imdb, ["title"] = "The Matrix", ["monitored"] = true, ["hasFile"] = false, ["path"] = "/data/movies/The Matrix" });
+            Assert.True((await r.Lab.Store.RefreshLibraryNowAsync(r.Lab.Instance("Radarr"), default)).Ok);
+        }
+        // Learned earlier (a Seerr request named both); the ledger remembers it.
+        Assert.NotNull(r.Rig.Ledger.Unify(new[] { MovieImdb, MovieTmdb }, r.Policy, r.Now));
+        var asked = new MutationInput { Key = known == Known.Tmdb ? MovieTmdb : MovieImdb };
+        var tmdb = TitleKey.Parse(MovieTmdb)!;
+        string result;
+        switch (entry)
+        {
+            case "create":
+            {
+                var outcome = await service.CreateAsync(r.Member.UserId, new CreateRequest("b14", asked), default);
+                result = $"{outcome.HttpStatus}/{outcome.Reason} key={r.Rig.Ledger.Find(outcome.RequestId!)!.Input.Key}";
+                break;
+            }
+            case "preview":
+            {
+                var preview = await service.PreviewAsync(r.Member.UserId, new CreateRequest("b14", asked), default);
+                result = $"{preview.Outcome.HttpStatus}/{preview.Status}/{preview.Reason} send={preview.WouldSend}";
+                break;
+            }
+            case "batch":
+            {
+                var previews = await service.PreviewBatchAsync(r.Member.UserId, new CreateRequest?[] { new("b14-1", asked), new("b14-2", asked with { }) }, default);
+                result = string.Join(" ", previews.Select(p => $"{p.Outcome.HttpStatus}/{p.Status}/{p.Reason}"));
+                break;
+            }
+            case "approve":
+            {
+                // The Member's ask waits for an OK; TMDB couldn't be read then.
+                r.Tmdb.Down = true;
+                var waiting = await service.CreateAsync(r.Member.UserId, new CreateRequest("b14", new MutationInput { Key = MovieTmdb }), default, new RequestOrigin(RequestOrigin.InteractiveKind) { RequireApproval = true });
+                Assert.Equal("pending", r.Rig.Ledger.Find(waiting.RequestId!)!.Status);
+                Assert.True(r.Facts.Peek(tmdb)!.Failed);
+                r.Tmdb.Down = false;
+                r.Now = r.Now.AddMinutes(5);
+                // A Manager approves it, naming the title by the id they have.
+                var approved = await service.ApproveAsync(waiting.RequestId!, r.Manager.UserId, new ApproveRequest(asked), default);
+                result = $"{approved.HttpStatus}/{approved.Reason}";
+                break;
+            }
+            default:
+            {
+                // An automatic decision previews the ask the recipe would make (the no-write seam automation decides through).
+                var preview = await service.PreviewAsync(r.Member.UserId, new CreateRequest("b14-auto", asked), default, RequestOrigin.Automation("b14"));
+                result = $"{preview.Outcome.HttpStatus}/{preview.Status}/{preview.Reason}";
+                break;
+            }
+        }
+        // The facts the rules read are the title's, under the key the ledger evaluates.
+        Assert.True(r.Facts.Peek(tmdb) is { Failed: false }, entry + " " + known + ": the title's facts weren't read under " + MovieTmdb + " (" + result + ")");
+        var expected = entry switch
+        {
+            "create" => "201/queued_outage key=" + MovieTmdb,
+            "preview" => "201/queued/queued_outage send=True",
+            "batch" => "201/queued/queued_outage 200/queued/queued_outage",
+            "approve" => "200/queued_outage",
+            _ => "201/pending/awaiting_approval",
+        };
+        Assert.Equal(expected, result);
+    }
+
     /// <summary>A schema-4 database from before the identity work gets its alias table once, in the same extension.</summary>
     [Fact]
     public void ASchemaFourDatabaseWithoutTheAliasTableGetsItOnce()

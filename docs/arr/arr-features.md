@@ -774,8 +774,10 @@ allowance and a group pool alike), in the order they were made, even within the 
 later never holds a request that was within the allowance.
 A title is one title whichever of its ids it was asked by: a series asked for before it reached Sonarr (known by its
 TMDB id) and asked for again once Sonarr has it (its TVDB id), or a movie asked for by its IMDb id before Radarr had
-it, is held as one title under one key. Dedup, coverage, following, the decline cooldown, approvals, imports and
-My requests all see it once. Requests a former version held apart for one title are merged soon after start: everyone's
+it, is held as one title under one key, from the moment it comes in (an ask, a preview, a batch, an approval, an automatic
+decision): the title's facts for household rules, the rules and every check use that key, so a rule such as "English titles
+go ahead" answers the same whichever id the title was asked by. Dedup, coverage, following, the decline cooldown, approvals,
+imports and My requests all see it once. Requests a former version held apart for one title are merged soon after start: everyone's
 request is kept with its history; one that another request of the title already covers follows it and gets its charge
 back; nothing that went out is sent again.
 Overlapping asks charge only additional scope. An existing user's covered scope reuses
