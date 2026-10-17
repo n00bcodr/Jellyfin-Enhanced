@@ -603,6 +603,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestDestination.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestFulfilment.cs",
       "category": "Services"
     },
@@ -9934,7 +9938,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 551,
+    "files": 552,
     "routes": 260,
     "configuration_properties": 602,
     "storage_references": 83,

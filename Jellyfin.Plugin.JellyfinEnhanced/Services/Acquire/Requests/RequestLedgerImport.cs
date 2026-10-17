@@ -113,7 +113,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     // queued anywhere: approval moves it onto the JE target).
                     var target = targetKey(input);
                     var own = Wants(c, t, "user_id=$u AND title_key=$key AND variant=$v", ("$u", Id(item.UserId)), ("$key", input.Key), ("$v", input.Variant)).Where(Active)
-                        .Where(w => item.Pending ? w.TargetKey == target || w.Status is "pending" or "queued" : w.TargetKey == target && w.Status is "sent" or "stale")
+                        .Where(w => item.Pending ? RequestDestination.SameTarget(w.TargetKey, target) || w.Status is "pending" or "queued" : RequestDestination.SameTarget(w.TargetKey, target) && w.Status is "sent" or "stale")
                         .Select(w => w.Input).ToArray();
                     if (own.Length > 0 && input.Extra(own) == null) { Skip("already_in_je"); continue; }
                     var acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE title_key=$key AND variant=$v AND state='active'", ("$key", input.Key), ("$v", input.Variant));

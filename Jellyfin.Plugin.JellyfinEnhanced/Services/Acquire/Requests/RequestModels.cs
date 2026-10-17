@@ -103,23 +103,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (other.Scope == "episodes") return other.Episodes.Any(e => Seasons.Contains(e.Season));
             return Seasons.Intersect(other.Seasons).Any() || (Scope == "future" && other.Scope == "future");
         }
+        /// <summary>This input's request for one new season (a keep-getting follow): the same title, edition and routing.</summary>
+        internal MutationInput NewSeason(int season) => this with { Scope = "seasons", Seasons = new[] { season }, Episodes = Array.Empty<RequestEpisode>() };
         /// <summary>
-        /// True when <paramref name="other"/> goes where this input's administrator Seerr options say: the same Seerr server,
-        /// quality profile and root folder, chosen against the same options stamp (the server's facts and where Seerr
-        /// reaches it). An input without Seerr options goes wherever Seerr picks, so it never satisfies a choice.
-        /// </summary>
-        internal bool SameSeerrDestination(MutationInput other)
-            => other.SeerrServerId == SeerrServerId && other.SeerrProfileId == SeerrProfileId && other.SeerrRootFolder != null && SeerrRootFolder != null
-               && BridgePaths.SamePath(other.SeerrRootFolder, SeerrRootFolder) && string.Equals(other.SeerrOptions, SeerrOptions, StringComparison.OrdinalIgnoreCase);
-        /// <summary>
-        /// What of this input <paramref name="covered"/> doesn't ask for yet (null: nothing). An input carrying Seerr options
-        /// is covered only by inputs going to the same Seerr destination (<see cref="SameSeerrDestination"/>); one without
-        /// them is covered wherever the scope went.
+        /// What of this input <paramref name="covered"/> doesn't ask for yet (null: nothing), counting only inputs that may
+        /// stand for it (<see cref="RequestDestination.Serves(MutationInput, MutationInput)"/>: an input carrying Seerr
+        /// options is covered only by inputs going to the same Seerr destination; one without them wherever the scope went).
         /// </summary>
         internal MutationInput? Extra(IEnumerable<MutationInput> covered)
         {
-            var all = covered.Where(c => c.Key == Key && c.Variant == Variant && (InstanceId == null || c.InstanceId == null || c.InstanceId == InstanceId) &&
-                (!HasSeerrOptions || SameSeerrDestination(c))).ToArray();
+            var all = covered.Where(c => RequestDestination.Serves(this, c)).ToArray();
             if (Scope == "movie") return all.Length == 0 ? this : null;
             if (Scope == "episodes")
             {

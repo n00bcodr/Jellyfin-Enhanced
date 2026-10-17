@@ -759,8 +759,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         // A Seerr request carries the chosen server, profile and root folder.
         private static bool SameOptions(JsonElement request, MutationInput input)
-            => Int(request, "serverId") == input.SeerrServerId && Int(request, "profileId") == input.SeerrProfileId
-               && Str(request, "rootFolder") is { } root && input.SeerrRootFolder != null && BridgePaths.SamePath(root, input.SeerrRootFolder);
+            => RequestDestination.SeerrHas(input, Int(request, "serverId"), Int(request, "profileId"), Str(request, "rootFolder"));
 
         private async Task<(bool? Matched, string Reason, bool Theirs)> VerifyAsync(PluginConfiguration config, string url, RequestJob job, TitleKey key, int tmdb, int[] seasons, int? own, int? created, CancellationToken ct)
         {

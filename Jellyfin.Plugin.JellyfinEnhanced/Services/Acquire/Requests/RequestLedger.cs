@@ -58,7 +58,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     {
                         Exec(c, t, "UPDATE wants SET target_key=$target WHERE id=$id", ("$target", targetsForWant[0]), ("$id", want.Id));
                         var coveredScope = Jobs(c, t, "want_id IN (SELECT id FROM wants WHERE acquisition_id=$a AND status IN ('pending','queued','sent','stale')) AND " + LiveJobs, ("$a", want.AcquisitionId))
-                            .Where(j => TargetKey(j.Authorization) == targetsForWant[0] && (want.Status is not ("sent" or "stale") || j.State == "succeeded")).Select(j => j.Input);
+                            .Where(j => RequestDestination.SameTarget(TargetKey(j.Authorization), targetsForWant[0]) && (want.Status is not ("sent" or "stale") || j.State == "succeeded")).Select(j => j.Input);
                         if (want.Status is "queued" or "sent" or "stale" && want.Input.Extra(coveredScope) != null)
                             Exec(c, t, "UPDATE wants SET status='pending',reason='instance_changed' WHERE id=$id", ("$id", want.Id));
                     }
@@ -167,23 +167,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var covered = Wants(c, null, "title_key=$key AND variant=$v", ("$key", input.Key), ("$v", input.Variant)).Where(Active).ToArray();
             // Any connection of the same instance (or Seerr) counts: a Search runs only for parts the instance already
             // monitors, so an address or key change since the send doesn't make them "never asked for".
-            var destination = Destination(TargetKey(facts));
-            return covered.Length > 0 && input.Extra(Confirmed(c, null, covered, target => Destination(target) == destination)) == null;
+            var here = TargetKey(facts);
+            return covered.Length > 0 && input.Extra(Confirmed(c, null, covered, target => RequestDestination.SamePlace(target, here))) == null;
         });
-        // A target key without its connection generation: the backend, the instance and the Seerr source.
-        private static string Destination(string target)
-        {
-            try
-            {
-                var parts = JsonSerializer.Deserialize<string?[]>(target);
-                if (parts is { Length: 4 }) return JsonSerializer.Serialize(new[] { parts[0], parts[1], parts[3] });
-            }
-            catch (JsonException)
-            {
-                // Not a target key: compared as it is.
-            }
-            return target;
-        }
         /// <summary>
         /// What actually went out for a title, per target: each succeeded job's scope at the time its send was
         /// confirmed, and each request that was already processing in Seerr when it moved (a job-less link) at the
@@ -217,10 +203,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>The input names Seerr options (server, profile, root folder, stamp).</summary>
         internal static bool HasSeerrOptions(MutationInput input) => input.HasSeerrOptions;
         /// <summary>Any routing choice differs between the two inputs (arr or Seerr).</summary>
-        internal static bool RoutingChanged(MutationInput input, MutationInput original)
-            => input.InstanceId != original.InstanceId || input.ProfileId != original.ProfileId || input.RootFolder != original.RootFolder ||
-               input.SeerrServerId != original.SeerrServerId || input.SeerrProfileId != original.SeerrProfileId ||
-               input.SeerrRootFolder != original.SeerrRootFolder || input.SeerrOptions != original.SeerrOptions;
+        internal static bool RoutingChanged(MutationInput input, MutationInput original) => RequestDestination.RoutingChanged(input, original);
         internal static string TargetKey(RequestAuthorization auth)
             => JsonSerializer.Serialize(new[] { auth.Backend, auth.InstanceId, auth.ConnectionGeneration, auth.SeerrSource });
         /// <summary>
@@ -498,17 +481,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (!automation && !normalized.HasSeerrOptions && facts.CanApprove && facts.Role is "Manager" or "Admin")
             {
                 foreach (var pending in Wants(c, t, "title_key=$key AND variant=$v AND status='pending'", ("$key", normalized.Key), ("$v", normalized.Variant))
-                    .Where(w => !w.Follower && w.TargetKey == TargetKey(facts) && w.Input.Extra(new[] { normalized }) == null))
+                    .Where(w => !w.Follower && RequestDestination.SameTarget(w.TargetKey, TargetKey(facts)) && w.Input.Extra(new[] { normalized }) == null))
                 {
                     var approved = ApproveCore(c, t, pending.Id, user, null, policy, now);
                     if (approved.HttpStatus != 200) continue;
                 }
             }
             var own = Wants(c, t, "user_id=$u", ("$u", Id(user)));
-            var ownSame = own.Where(w => Active(w) && w.TargetKey == TargetKey(facts) && w.Input.Key == normalized.Key && w.Input.Variant == normalized.Variant).ToArray();
-            // One of the person's own asks covers it, or several together do (an ask split at the series threshold). An ask
-            // choosing a Seerr destination is covered only by asks going there (MutationInput.Extra); else it is a request of
-            // its own, whose destination is checked when it is sent. The same holds for someone else's scope below.
+            // The person's own asks that may stand for it: at its target, and (an ask choosing a Seerr destination) going there.
+            var ownSame = own.Where(w => Active(w) && RequestDestination.Serves(normalized, TargetKey(facts), w.Input, w.TargetKey)).ToArray();
+            // One of them covers it, or several together do (an ask split at the series threshold); the answer is one of those,
+            // never an ask elsewhere. Else it is a request of its own, whose destination is checked when it is sent. The same
+            // holds for someone else's scope below.
             var sameOwn = ownSame.FirstOrDefault(w => normalized.Extra(new[] { w.Input }) == null)
                 ?? (ownSame.Length > 1 && normalized.Extra(ownSame.Select(w => w.Input)) == null ? ownSame.First(w => w.Input.Overlaps(normalized)) : null);
             if (sameOwn != null)
@@ -647,10 +631,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => queued with { Outcome = "split", HeldRequestId = heldId, HeldSeasons = heldSeasons, Message = "Asked! The rest waits for an OK." };
         private static IEnumerable<MutationInput> Coverage(SqliteConnection c, SqliteTransaction t, IEnumerable<RequestWant> wants, string target, bool includePending = false)
         {
-            foreach (var want in wants.Where(w => Active(w) && w.TargetKey == target))
+            foreach (var want in wants.Where(w => Active(w) && RequestDestination.SameTarget(w.TargetKey, target)))
             {
                 var jobs = Jobs(c, t, "want_id=$id AND (state IN ('queued','retry','sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown')", ("$id", want.Id));
-                foreach (var job in jobs.Where(j => TargetKey(j.Authorization) == target)) yield return job.Input;
+                foreach (var job in jobs.Where(j => RequestDestination.SameTarget(TargetKey(j.Authorization), target))) yield return job.Input;
                 if (includePending && want.Status == "pending" && jobs.Count == 0 && want.OwnedInput != null) yield return want.OwnedInput;
                 if (LinkedScope(c, t, want) is { } linked) yield return linked;
             }
@@ -658,7 +642,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // Scope already sent to the target: succeeded jobs, and requests that were already processing in Seerr
         // when they moved (Seerr sent them; JE never sends them again).
         private static IEnumerable<MutationInput> Confirmed(SqliteConnection c, SqliteTransaction? t, IEnumerable<RequestWant> wants, string target)
-            => Confirmed(c, t, wants, key => key == target);
+            => Confirmed(c, t, wants, key => RequestDestination.SameTarget(key, target));
         private static IEnumerable<MutationInput> Confirmed(SqliteConnection c, SqliteTransaction? t, IEnumerable<RequestWant> wants, Func<string, bool> target)
         {
             foreach (var want in wants)
@@ -765,23 +749,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (want.Status != "pending") return RequestOutcome.Refused("request_changed", 409);
             // A job held after part of it was written (parked, certainty unknown) isn't in flight: approving resumes it.
             if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent') OR (state<>'parked' AND json_extract(outcome,'$.certainty')='Unknown')) LIMIT 1", ("$id", id)) != null) return RequestOutcome.Refused("request_in_flight", 409);
-            var held = Jobs(c, t, "want_id=$id AND state='parked' AND json_extract(outcome,'$.certainty')='Unknown'", ("$id", id));
-            var targetChanged = TargetKey(requester) != want.TargetKey;
-            // The same Seerr server, profile and root folder chosen again against Seerr's current facts (only the options
-            // stamp differs): the same request, re-confirmed rather than edited.
-            var restamp = edits != null && want.Input.HasSeerrOptions && input.SeerrOptions != want.Input.SeerrOptions
-                && (input with { SeerrOptions = want.Input.SeerrOptions }).Fingerprint == want.Input.Fingerprint;
-            // The written part stays where it went: such a request resumes as it was, never edited or moved elsewhere.
-            if (held.Count > 0 && (!resumeHeld || targetChanged || held.Any(j => TargetKey(j.Authorization) != TargetKey(requester)) || (edits != null && input.Fingerprint != want.Input.Fingerprint)))
-                return RequestOutcome.Refused("request_in_flight", 409);
+            var jobs = Jobs(c, t, "want_id=$id", ("$id", id));
+            var held = jobs.Where(j => j.State == "parked" && j.Uncertain).ToList();
+            var targetChanged = !RequestDestination.SameTarget(TargetKey(requester), want.TargetKey);
+            // The one re-confirmation rule: only a fresh stamp for the same destination on the request's own Seerr
+            // re-confirms it (a written part keeps its uncertainty and is read back first); a written part resumes only
+            // where it was; and what went out never moves, whatever the approval is.
+            var verdict = RequestDestination.Approval(want.Input, want.TargetKey, input, TargetKey(requester), edits != null, jobs, resumeHeld);
+            if (verdict.Refusal != null) return RequestOutcome.Refused(verdict.Refusal, 409);
+            var restamp = verdict.Reconfirms;
             if (targetChanged)
-                foreach (var old in Jobs(c, t, "want_id=$id AND state IN ('queued','retry') AND " + KnownUnsent, ("$id", id)).Where(j => TargetKey(j.Authorization) != TargetKey(requester)))
+                foreach (var old in Jobs(c, t, "want_id=$id AND state IN ('queued','retry') AND " + KnownUnsent, ("$id", id)).Where(j => !RequestDestination.SameTarget(TargetKey(j.Authorization), TargetKey(requester))))
                     Supersede(c, t, old.Id, "instance_changed");
             if (restamp)
             {
                 // Its jobs at that destination carry the new stamp (Seerr is only ever sent the server, profile and root
                 // folder): what went out stays covered, and held new seasons and queued work go out with the new stamp.
-                foreach (var job in Jobs(c, t, "want_id=$id", ("$id", id)).Where(j => j.Input.HasSeerrOptions && j.Input.SameSeerrDestination(want.Input)))
+                foreach (var job in jobs.Where(j => RequestDestination.SameOptions(j.Input, want.Input)))
                 {
                     var moved = job.Input with { SeerrOptions = input.SeerrOptions };
                     Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$j", ("$input", moved.Canonical), ("$f", moved.Fingerprint), ("$j", job.Id));
@@ -789,9 +773,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             else if (edits != null && input.Fingerprint != want.Input.Fingerprint)
             {
-                var succeeded = Jobs(c, t, "want_id=$id AND state='succeeded'", ("$id", id));
-                if (succeeded.Any(j => TargetKey(j.Authorization) != TargetKey(requester) || RoutingChanged(input, want.Input) || j.Input.Extra(new[] { input }) != null))
-                    return RequestOutcome.Refused("request_changed", 409);
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$id AND state IN ('queued','retry'))", ("$id", id));
                 Exec(c, t, "UPDATE jobs SET state='cancelled',reason='request_changed' WHERE want_id=$id AND state IN ('queued','retry')", ("$id", id));
             }
@@ -814,7 +795,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var covered = Wants(c, t, "title_key=$key AND variant=$v AND id<>$id", ("$key", input.Key), ("$v", input.Variant), ("$id", id)).Where(w => Active(w) && w.Status != "pending").ToArray();
             // (maybe_sent here: only the held jobs resumed above.)
             var existingJobs = Jobs(c, t, "want_id=$id AND state IN ('queued','retry','succeeded','maybe_sent')", ("$id", id));
-            var extra = input.Extra(Coverage(c, t, covered, TargetKey(requester)).Concat(existingJobs.Where(j => TargetKey(j.Authorization) == TargetKey(requester)).Select(j => j.Input)));
+            var extra = input.Extra(Coverage(c, t, covered, TargetKey(requester)).Concat(existingJobs.Where(j => RequestDestination.SameTarget(TargetKey(j.Authorization), TargetKey(requester))).Select(j => j.Input)));
             var cost = extra == null ? 0 : Cost(c, t, extra, want.UserId, now, requester.WindowDays, existingJobs.Count == 0 ? id : null);
             var gb = extra == null ? 0 : EstimateGb(extra, requester);
             if (OverGbCap(requester, Charges(c, t, want.UserId).Where(charge => existingJobs.Count > 0 || charge.WantId != id).ToArray(), gb, now)) return RequestOutcome.Refused("quota_exceeded", 429, "quota_exceeded");
@@ -857,11 +838,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var oldWants = Wants(c, t, "acquisition_id=$a", ("$a", oldAcquisition));
             var oldCoverage = Coverage(c, t, oldWants, oldTarget).ToArray();
             var newCoverage = Coverage(c, t, Wants(c, t, "acquisition_id=$a", ("$a", acquisition)), target).ToArray();
-            foreach (var follower in oldWants.Where(w => w.Follower && w.TargetKey == oldTarget && w.Status is "queued" or "pending" && w.Input.Extra(oldCoverage) != null))
+            foreach (var follower in oldWants.Where(w => w.Follower && RequestDestination.SameTarget(w.TargetKey, oldTarget) && w.Status is "queued" or "pending" && w.Input.Extra(oldCoverage) != null))
             {
                 if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w LIMIT 1", ("$w", follower.Id)) != null) continue;
                 var facts = policy.Evaluate(follower.UserId, follower.Input);
-                var migrate = TargetKey(facts) == target && RequestPolicy.Check(facts, policy.Evaluate(actor, follower.Input), follower.Input, true) == null;
+                var migrate = RequestDestination.SameTarget(TargetKey(facts), target) && RequestPolicy.Check(facts, policy.Evaluate(actor, follower.Input), follower.Input, true) == null;
                 var queued = migrate && follower.Input.Extra(newCoverage) == null;
                 var confirmed = queued && ConfirmedScope(c, t, follower.Input, Wants(c, t, "acquisition_id=$a", ("$a", acquisition)).ToArray(), facts);
                 var reason = confirmed ? "looking" : queued ? "queued_outage" : "instance_changed";
@@ -873,7 +854,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static void DemoteUncoveredFollowers(SqliteConnection c, SqliteTransaction t, string acquisition, string target, string reason, DateTimeOffset now)
         {
             var wants = Wants(c, t, "acquisition_id=$a", ("$a", acquisition));
-            foreach (var want in wants.Where(w => w.TargetKey == target && w.Status == "queued" && w.Input.Extra(Coverage(c, t, wants, w.TargetKey)) != null))
+            foreach (var want in wants.Where(w => RequestDestination.SameTarget(w.TargetKey, target) && w.Status == "queued" && w.Input.Extra(Coverage(c, t, wants, w.TargetKey)) != null))
             {
                 Exec(c, t, "UPDATE wants SET status='pending',reason=$r,updated_at=$at WHERE id=$w", ("$r", reason), ("$at", Ms(now)), ("$w", want.Id));
                 Record(c, t, want.Id, null, null, "scope_held", "accepted", reason, want.Input.Key, now);
@@ -924,7 +905,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var coverage = wants.Where(w => Active(w) && w.OwnedInput != null).ToList();
             foreach (var follower in wants.Where(w => w.Follower && w.Status == "pending"))
             {
-                var extra = follower.Input.Extra(coverage.Where(w => w.TargetKey == follower.TargetKey).Select(w => w.OwnedInput!));
+                var extra = follower.Input.Extra(coverage.Where(w => RequestDestination.SameTarget(w.TargetKey, follower.TargetKey)).Select(w => w.OwnedInput!));
                 if (extra == null) continue;
                 var facts = policy.Evaluate(follower.UserId, extra);
                 var cost = Cost(c, t, extra, follower.UserId, now, facts.WindowDays);
@@ -975,7 +956,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (want == null || want.Input.Scope != "future" || want.Cost == 0 || want.Status is not ("sent" or "stale") || want.Input.Seasons.Contains(season) || !policy.Configuration.ArrRequestChargeFutureSeasons) return false;
                 var scope = "s" + season.ToString(CultureInfo.InvariantCulture);
                 if (Scalar(c, t, "SELECT id FROM reservations WHERE want_id=$id AND scope=$s", ("$id", wantId), ("$s", scope)) != null) return false;
-                var newSeason = want.Input with { Scope = "seasons", Seasons = new[] { season }, Episodes = Array.Empty<RequestEpisode>() };
+                var newSeason = want.Input.NewSeason(season);
                 Reserve(c, t, wantId, want.UserId, 1, EstimateGb(newSeason, policy.Evaluate(want.UserId, newSeason)), "charged", now, scope);
                 Record(c, t, wantId, null, want.UserId, "future_season", "accepted", "looking", want.Input.Key, now);
                 return true;
@@ -1003,10 +984,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (want == null || want.Input.Scope != "future" || want.Status is not ("sent" or "stale") || want.Input.Seasons.Contains(season)) return false;
                 // From the request as approved: the new season goes where it went (an administrator's Seerr server, profile,
                 // root folder and options stamp included), checked again at send like any request with them.
-                var input = (want.Input with { Scope = "seasons", Seasons = new[] { season }, Episodes = Array.Empty<RequestEpisode>() }).Normalize();
+                var input = want.Input.NewSeason(season).Normalize();
                 if (input == null) return false;
                 var requester = policy.Evaluate(want.UserId, input);
-                if (requester.Backend != "seerr" || TargetKey(requester) != want.TargetKey) return false;
+                if (requester.Backend != "seerr" || !RequestDestination.SameTarget(TargetKey(requester), want.TargetKey)) return false;
                 var jobs = Jobs(c, t, "want_id=$id", ("$id", wantId));
                 if (jobs.Any(j => j.Input.Scope == "seasons" && j.Input.Seasons.Contains(season))) return false;
                 // The approval the request went out with covers what it follows (a Kid's OK'd keep-getting needs no new OK).
@@ -1077,7 +1058,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     var confirmed = Confirmed(c, t, shared, TargetKey(job.Authorization)).ToArray();
                     // A mixed intent is sent only after every part, including shared scope, is confirmed.
                     var activeCoverage = Coverage(c, t, shared, TargetKey(job.Authorization)).ToArray();
-                    shared = shared.Where(w => w.TargetKey == TargetKey(job.Authorization)).ToList();
+                    shared = shared.Where(w => RequestDestination.SameTarget(w.TargetKey, TargetKey(job.Authorization))).ToList();
                     foreach (var incomplete in shared.Where(w => Active(w) && (w.Id == job.WantId || w.Status == "queued" || w.Reason == "removed") && w.Input.Extra(confirmed) != null))
                         Exec(c, t, "UPDATE wants SET status=$s,reason=$r WHERE id=$id", ("$s", incomplete.Input.Extra(activeCoverage) == null ? "queued" : "pending"),
                             ("$r", incomplete.Input.Extra(activeCoverage) == null ? "queued_outage" : "removed"), ("$id", incomplete.Id));
@@ -1147,7 +1128,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var retained = Wants(c, t, "user_id=$u", ("$u", id)).Where(w =>
                 Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$w", w.Id)) != null ||
                 LinkedScope(c, t, w) != null ||
-                Wants(c, t, "acquisition_id=$a AND id<>$w", ("$a", w.AcquisitionId), ("$w", w.Id)).Any(f => Active(f) && f.TargetKey == w.TargetKey && f.Input.Extra(new[] { w.Input })?.Fingerprint != f.Input.Fingerprint)).ToArray();
+                Wants(c, t, "acquisition_id=$a AND id<>$w", ("$a", w.AcquisitionId), ("$w", w.Id)).Any(f => Active(f) && RequestDestination.SameTarget(f.TargetKey, w.TargetKey) && f.Input.Extra(new[] { w.Input })?.Fingerprint != f.Input.Fingerprint)).ToArray();
             foreach (var want in retained)
             {
                 var linked = LinkedScope(c, t, want) != null;
