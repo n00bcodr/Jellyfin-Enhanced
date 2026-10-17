@@ -377,7 +377,8 @@ Settings: [*arr Settings](arr-settings.md#notifications-phase-2).
   or switched back on, stay on the Overview only, so turning them on doesn't send one alert per old row; a row
   that started while Jellyfin was restarting is still told). A daily list gathers the downloads Needs attention has
   shown for hours. And **reminders**: family members get **Remind Dad** next to a status that is taking longer than usual
-  (at most once a day per title, whichever episode or season page it is sent from). These alerts stay with
+  (at most once a day per title, whichever episode or season page it is sent from); like a request waiting for an OK,
+  a reminder reaches only the administrators who can see the title. These alerts stay with
   administrators: someone who is no longer one, or who switched administrators' alerts off, doesn't get them on
   the phone (and someone who is no longer one doesn't see them in the bell).
 

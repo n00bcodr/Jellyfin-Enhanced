@@ -659,6 +659,54 @@ public class IntegrationNotificationsTests
     }
 
     [Fact]
+    public async Task ARemindNamesItsTitleOnlyToAdministratorsWhoCanSeeIt()
+    {
+        using var rig = await Started(r => r.Request(1, 693134, r.Emma));
+        rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(2, 693134, "Dune Part Two", state: "importBlocked", status: "warning"));
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("RadarrZ").Id, ArrSnapshotKind.Queue, force: true);
+        // Pat is an administrator too, with a parental limit Dune is over (or without the library it is in).
+        var policy = new IntegrationRequestLedgerTests.Policy();
+        var pat = rig.View.AddUser(admin: true, policy: "pat", parental: true);
+        rig.Users.AdminIds.Add(pat.UserId);
+        rig.Users.Names[pat.UserId] = "Pat";
+        var cannotSee = new HashSet<Guid> { pat.UserId };
+        policy.Adjust = (user, input, facts) => facts with { Visible = !cannotSee.Contains(user) };
+        rig.Phones(rig.Admin, pat);
+        rig.Prefs(rig.Admin, p => { p.AdminAlerts = true; p.QuietHours = true; p.QuietFrom = "00:00"; p.QuietTo = "23:59"; p.UtcOffsetMinutes = 0; });
+        rig.Prefs(pat, p => p.AdminAlerts = true);
+        using var dispatcher = new NotifyDispatcher(rig.NotifyStore, new NtfySender(rig.Ntfy), new EmailSender(rig.Mail), null, () => rig.Config, () => rig.Arr.Now, rig.Users, rig.View, rig.Status.Aliases, null, policy);
+        using var service = new NotificationService(rig.NotifyStore, rig.Status, rig.Requests, rig.View, rig.Feed, rig.Store, rig.Users, dispatcher, null, null, () => rig.Config, () => rig.Arr.Now, rig.Hub, rig.Bridge, null, null, policy);
+
+        // Emma reminds about Dune: the administrator who can see it is told; Pat is told nothing, on no channel.
+        Assert.Equal("ok", (await service.RemindAsync(rig.Emma, TitleKey.Parse(Dune)!, null, default)).Code);
+        Assert.Contains("Dune Part Two", Assert.Single(rig.Inbox(rig.Admin), n => n.Kind == "remind").Payload, StringComparison.Ordinal);
+        Assert.Empty(rig.Inbox(pat));
+        await dispatcher.RunOnceAsync(default);
+        Assert.Empty(rig.Pushes);
+
+        // The administrator loses sight of Dune: the inbox keeps the reminder without its title, and the phone and
+        // e-mail held for quiet hours don't go out.
+        cannotSee.Add(rig.Admin.UserId);
+        var controller = new Jellyfin.Plugin.JellyfinEnhanced.Controllers.NotifyController(service, dispatcher, new NtfySender(rig.Ntfy), new EmailSender(rig.Mail), rig.Users)
+        {
+            ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() },
+            Config = () => rig.Config,
+            Now = () => rig.Arr.Now,
+        };
+        controller.HttpContext.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("Jellyfin-UserId", rig.Admin.UserId.ToString())], "test"));
+        var inbox = JsonSerializer.Serialize(((Microsoft.AspNetCore.Mvc.ObjectResult)controller.GetInbox(null, null)).Value);
+        Assert.Contains("\"remind\"", inbox, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dune", inbox, StringComparison.Ordinal);
+        Assert.DoesNotContain(Dune, inbox, StringComparison.Ordinal);
+        rig.Prefs(rig.Admin, p => p.QuietHours = false);
+        rig.Arr.Now = rig.Arr.Now.AddDays(1);
+        await dispatcher.RunOnceAsync(default);
+        Assert.Empty(rig.Pushes);
+        Assert.Empty(rig.Mail.Sent);
+        Assert.Equal(0, rig.NotifyStore.DeliveryStats(rig.Arr.Now).Pending);
+    }
+
+    [Fact]
     public async Task AdminsHearAboutAnOutageOnceItLastsAndWhenItEnds()
     {
         using var rig = await Started();

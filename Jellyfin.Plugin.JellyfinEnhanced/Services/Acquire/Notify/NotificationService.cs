@@ -719,15 +719,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         /// <summary>
-        /// Whether an administrator may see the title an ask waiting for an OK names, by the rule the Requests page's
-        /// cards follow (library access, parental limits, the edition's library): the title and the seasons and
-        /// edition the notification names. Checked again when the inbox is read and before a phone or e-mail
-        /// alert held for quiet hours (or retried) goes out. True without a policy (tests) or a title.
+        /// Whether an administrator may see the title an ask waiting for an OK (or a reminder about a title) names, by
+        /// the rule the Requests page's cards follow (library access, parental limits, the edition's library): the title
+        /// and the seasons (or season) and edition the notification names. Checked again when the inbox is read and
+        /// before a phone or e-mail alert held for quiet hours (or retried) goes out. True without a policy (tests) or a title.
         /// </summary>
         internal static bool MaySeeAsk(IRequestPolicy? policy, Guid user, string? titleKey, IReadOnlyDictionary<string, string> payload)
         {
             if (policy == null || TitleKey.Parse(titleKey) is not { } key) return true;
-            var seasons = payload.TryGetValue("seasons", out var list)
+            var seasons = (payload.TryGetValue("seasons", out var list) || payload.TryGetValue("season", out list))
                 ? list.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(x => int.TryParse(x, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : -1).Where(n => n >= 0).ToArray()
                 : Array.Empty<int>();
             return policy.Evaluate(user, AskInput(key, seasons, payload.TryGetValue("variant", out var variant) && variant == "4k")).Visible;
@@ -1592,7 +1592,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (statusKey.Season is int s) p["season"] = s.ToString(CultureInfo.InvariantCulture);
             if (statusKey.Episode is int e) p["episode"] = e.ToString(CultureInfo.InvariantCulture);
             var eventKey = "remind|" + NotifyValues.Id(viewer.UserId) + "|" + title + "|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
-            var drafts = _users.Admins().Select(admin => Draft(admin, NotifyKind.Remind, eventKey, statusKey.ToString(), itemId, p, now, null)).ToList();
+            // Only the administrators who can see the title (as their Requests page shows its card), as for an ask
+            // waiting for an OK: one with a parental limit or without its library is told nothing.
+            var admins = new List<Guid>();
+            foreach (var admin in _users.Admins())
+            {
+                if (_policy != null)
+                {
+                    var input = AskInput(statusKey.Title, statusKey.Season is int season ? new[] { season } : Array.Empty<int>(), false);
+                    await _policy.PrepareVisibilityAsync(admin, input, cancellationToken).ConfigureAwait(false);
+                    if (!_policy.Evaluate(admin, input).Visible) continue;
+                }
+                admins.Add(admin);
+            }
+            var drafts = admins.Select(admin => Draft(admin, NotifyKind.Remind, eventKey, statusKey.ToString(), itemId, p, now, null)).ToList();
             var created = _store.InTransaction(tx =>
             {
                 if (!tx.ClaimMark(viewer.UserId, mark, now, RemindEvery)) return null;

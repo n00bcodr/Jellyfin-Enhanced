@@ -320,8 +320,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// Why the delivery must not go out any more, or null: the recipient switched this kind of
         /// alert off (Ready, new episodes, declined); the recipient is gone or disabled; an
         /// administrators' alert (paths, instance names, household requests) for someone who is no
-        /// longer an administrator or switched those alerts off; an ask waiting for an OK whose title
-        /// the administrator can no longer see; a Ready or new-episodes alert for a
+        /// longer an administrator or switched those alerts off; an ask waiting for an OK (or a reminder)
+        /// whose title the administrator can no longer see; a Ready or new-episodes alert for a
         /// title the recipient can no longer open (library access or parental limits changed); an OK of a
         /// request that was cancelled, declined or removed since.
         /// </summary>
@@ -347,7 +347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (NotifyKind.IsAdminKind(delivery.Kind))
             {
                 if (!_users.Admins().Contains(delivery.UserId)) return "The recipient is no longer an administrator.";
-                if (delivery.Kind == NotifyKind.Approval && !NotificationService.MaySeeAsk(_policy, delivery.UserId, delivery.TitleKey, payload))
+                if (delivery.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_policy, delivery.UserId, delivery.TitleKey, payload))
                     return "The recipient can no longer see this title.";
                 return prefs.AdminAlerts ? null : "The recipient switched administrators' alerts to phone and e-mail off.";
             }
