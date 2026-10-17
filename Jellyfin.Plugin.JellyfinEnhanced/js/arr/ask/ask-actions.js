@@ -130,6 +130,17 @@
     }
 
     /**
+     * True when something of a season is here, on its way or being looked for (ready, downloading, almost ready, or
+     * monitored and missing).
+     * @param {Object} summary Season summary.
+     * @returns {boolean} Partly here.
+     */
+    function partlyHere(summary) {
+        const m = summary || {};
+        return (m.ready || 0) + (m.downloading || 0) + (m.almostReady || 0) + (m.missing || 0) > 0;
+    }
+
+    /**
      * True when a season with nothing of it here has something to get: aired episodes nobody is fetching. Episodes
      * missing for a long while get Search instead (a request may already have sent them), and a season the arr is
      * looking for right now has nothing.
@@ -158,7 +169,9 @@
                 && !asked.has(s.season) && seasonOfferable(m);
         });
         // Seasons partly here with episodes nobody is fetching (missing for a long while: Search; looked for now: nothing).
-        const partial = seasons.filter(s => s !== whole && !asked.has(s.season) && s.itemId && notFetchedOf(s.summary) > 0);
+        // Partly here: something of it ready, on its way or looked for. A season with nothing of it is a whole season to
+        // get (on a title that isn't in the library every season has a page id, so the id alone doesn't say it's here).
+        const partial = seasons.filter(s => s !== whole && !asked.has(s.season) && s.itemId && partlyHere(s.summary) && notFetchedOf(s.summary) > 0);
         // Seasons with episodes missing for a long while: Search (never Get: a request may already have sent them),
         // asked-for seasons included.
         const searchable = seasons.filter(s => longMissingOf(s.summary) > 0);

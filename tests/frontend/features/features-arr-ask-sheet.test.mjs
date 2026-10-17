@@ -689,7 +689,9 @@ test('a series or season that isn\'t in the library (native details): Get Season
   const page = h.document.getElementById('itemDetailPage');
   const absent = {
     key: 'tv:tvdb:393189', itemId: SERIES_PAGE, kind: 'series', stage: 'notHere', reason: { code: 'not_in_arr' },
-    seasons: [{ season: 1, itemId: SEASON_PAGE, stage: 'notHere', summary: { aired: 12, ready: 0 } }, { season: 2, stage: 'notHere', summary: { aired: 12, ready: 0 } }]
+    seasons: [{ season: 1, itemId: SEASON_PAGE, stage: 'notHere', summary: { aired: 12, ready: 0 } }, { season: 2, stage: 'notHere', summary: { aired: 12, ready: 0 } },
+      // Every season of a title that isn't here has a page id: none of them is "partly here".
+      { season: 3, itemId: '4a45ad130001479b00030000aaaaaaaa', stage: 'notHere', summary: { aired: 10, ready: 0 } }]
   };
   h.JE.internals.arrAskActions.attachDetails(page, absent, { contact: 'Dad' });
   await settle();
