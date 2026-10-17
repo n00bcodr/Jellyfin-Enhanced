@@ -191,3 +191,68 @@ test('injected icon stylesheet keeps public full fonts distinct from JE subsets 
   assert.equal(h.window.getComputedStyle(h.document.getElementById('foreign')).fontFamily, 'ThemeIcons');
   assert.equal(h.window.getComputedStyle(h.document.getElementById('own')).fontFamily, '"JE Material Symbols Rounded"');
 });
+
+// Model a MUI row whose native/custom actions leave less room than More needs.
+function crowdedMuiHeader(t, width = 330) {
+  const h = muiHeader(t, '<div class="MuiBox-root" id="native"><button title="SyncPlay">SyncPlay</button><button title="Cast">Cast</button><a href="#extra-b" title="Extra B">B</a><a href="#search" title="Search">Search</a><a href="#" title="Appearance" aria-haspopup="dialog">Appearance</a><a href="#extra-a" title="Extra A">A</a></div><div><button aria-controls="app-user-menu"></button></div>');
+  Object.defineProperty(h.window.HTMLElement.prototype, 'clientWidth', { configurable: true, get() { return this === h.toolbar ? width : 40; } });
+  h.window.HTMLElement.prototype.getClientRects = function() { return [this.getBoundingClientRect()]; };
+  h.window.HTMLElement.prototype.getBoundingClientRect = function() {
+    const size = this === h.toolbar ? width : this.id === 'native' ? width - 80 : 40;
+    return { left: 0, right: size, top: 0, bottom: 40, width: size, height: 40 };
+  };
+  for (const id of ['randomItemButton', 'calendar', 'requests', 'bookmarks']) {
+    const button = h.document.createElement('button'); button.id = id; button.className = 'headerButton'; button.title = id;
+    h.tray.appendChild(button);
+  }
+  return { ...h, resize(next) { width = next; h.window.dispatchEvent(new h.window.Event('resize')); } };
+}
+
+test('crowded MUI header shares More with native actions while preserving their originals and handlers', async t => {
+  const h = crowdedMuiHeader(t);
+  const original = h.document.querySelector('[href="#extra-a"]');
+  let clicks = 0; original.addEventListener('click', event => { event.preventDefault(); clicks++; });
+  await until(() => original.classList.contains('je-header-overflowed'));
+  const mirror = [...h.document.querySelectorAll('.je-launcher-action')].find(button => button.querySelector('.je-launcher-label').textContent === 'Extra A');
+  assert.ok(mirror);
+  mirror.click();
+  assert.equal(clicks, 1);
+  assert.equal(original.parentElement.id, 'native');
+  assert.equal(original.getAttribute('aria-hidden'), 'true');
+  assert.equal(h.document.querySelector('[title="Appearance"]').classList.contains('je-header-overflowed'), false);
+  assert.equal(h.document.querySelector('[aria-label="Open Menu"]').hasAttribute('aria-hidden'), false);
+  assert.equal(h.document.querySelector('[aria-controls="app-user-menu"]').hasAttribute('aria-hidden'), false);
+});
+
+test('crowded MUI header restores native actions on expansion and can overflow them again', async t => {
+  const h = crowdedMuiHeader(t);
+  const original = h.document.querySelector('[href="#extra-a"]');
+  await until(() => original.classList.contains('je-header-overflowed'));
+  h.resize(1000);
+  await until(() => !original.classList.contains('je-header-overflowed'));
+  assert.equal(original.hasAttribute('aria-hidden'), false);
+  assert.equal(h.document.querySelectorAll('.je-launcher-action').length, 0);
+  h.resize(330);
+  await until(() => original.classList.contains('je-header-overflowed'));
+  assert.equal(h.document.querySelector('[href="#extra-a"]'), original);
+  assert.equal(h.document.querySelectorAll('#je-header-buttons-group').length, 1);
+});
+
+test('user switch restores native actions borrowed by the previous header overflow', async t => {
+  const h = crowdedMuiHeader(t);
+  const original = h.document.querySelector('[href="#extra-a"]');
+  await until(() => original.classList.contains('je-header-overflowed'));
+  h.switchUser();
+  assert.equal(original.classList.contains('je-header-overflowed'), false);
+  assert.equal(original.hasAttribute('aria-hidden'), false);
+  assert.equal(original.parentElement.id, 'native');
+});
+
+test('crowded MUI header includes native spacing when allocating inline actions', async t => {
+  const h = crowdedMuiHeader(t);
+  h.document.getElementById('native').style.columnGap = '8px';
+  const original = h.document.querySelector('[href="#extra-a"]');
+  await until(() => original.classList.contains('je-header-overflowed'));
+  assert.equal(h.document.querySelector('[title="Appearance"]').classList.contains('je-header-overflowed'), false);
+  assert.equal(h.document.querySelector('[href="#search"]').classList.contains('je-header-overflowed'), true);
+});
