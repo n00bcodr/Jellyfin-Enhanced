@@ -34,6 +34,9 @@
 .je-ask-paused-body { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; }
 .je-ask-paused-text { opacity: 0.95; overflow-wrap: anywhere; }
 .je-ask-banner-action .je-ask-paused-note { margin: 0; }
+/* The JE-mode collection picker's longer state words wrap in their column (phones keep room for the title). */
+.jellyseerr-collection-movie-row .je-arr-collection-paused, .jellyseerr-collection-movie-row .je-arr-collection-known { white-space: normal; max-width: 9em; }
+.jellyseerr-collection-movie-row .je-arr-collection-paused { color: #f5b041; border-color: rgba(245,158,11,0.6); background: rgba(245,158,11,0.12); }
 .je-ask-dim .listItemImage { filter: grayscale(0.85) brightness(0.55); }
 .je-ask-dim .listItemImageButton { display: none; }
 .je-ask-native-label-off .missingIndicator, .je-ask-native-label-off .unairedIndicator { display: none; }
