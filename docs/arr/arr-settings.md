@@ -542,6 +542,21 @@ their place in lists I turned this on for* is *No* until the person chooses *Yes
 The scheduled task *Requests & downloads: list maintenance* (daily, 04:30) removes the data of deleted lists and old
 list records; with *Daily list maintenance* on it also refreshes entries and runs a full pass.
 
+#### Acquisition badges (phase 4)
+
+All off by default; they need phase 4 (not *Ask for it*). See
+[Acquisition badges](arr-features.md#acquisition-badges-new-for-you-upgraded-4k-phase-4).
+
+| Setting | Default | What it does |
+|---|---|---|
+| Poster badges: New for you, Upgraded, 4K (`ArrPhase4AcquisitionBadgesEnabled`) | off | One badge per poster card in the web client, after the download ring. Off: nothing about these badges is shown or recorded. |
+| Draw the badges into posters for TV and phone apps (`ArrPhase4NativeStampsEnabled`) | off | The same badge in each person's poster images. Also needs Native Poster Tags. Off: poster addresses and images are exactly as without it. |
+| Days a title stays "New for you" (`ArrAcquisitionNewDays`) | 7 | 1–30. A badge also goes as soon as the person watches the title. |
+| Days a title stays "Upgraded" (`ArrAcquisitionUpgradedDays`) | 7 | 1–30. |
+
+Per person (Jellyfin Enhanced panel, *Poster badges*, shown while the badges are on): *Badges on poster cards* and
+*Badges drawn into posters on TV and phone apps* follow the household (default) or are hidden / off.
+
 #### Household tab
 
 Admins can edit `ArrRequestPreset`, `ArrRequestDefaultRole`, `ArrRequestQuotaLimit`, the per-role `QuotaLimit` in
