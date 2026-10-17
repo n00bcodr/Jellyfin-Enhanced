@@ -126,4 +126,23 @@ internal sealed class FakeLibraryAccess : IJellyfinLibraryAccess
     {
         lock (Reported) Reported.Add(path);
     }
+
+    /// <summary>Files whose missing (virtual) twins the bridge asked to remove, in order.</summary>
+    public List<string> TwinRemovals { get; } = new();
+
+    /// <summary>How many missing twins each file has (a removal takes them away).</summary>
+    public Dictionary<string, int> MissingTwins { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Files whose episode Jellyfin hasn't numbered yet: the next removal answers -1 (and numbers it).</summary>
+    public HashSet<string> NumberedLater { get; } = new(StringComparer.Ordinal);
+
+    public int RemoveMissingTwins(string filePath)
+    {
+        lock (TwinRemovals)
+        {
+            TwinRemovals.Add(filePath);
+            if (NumberedLater.Remove(filePath)) return -1;
+            return MissingTwins.Remove(filePath, out var n) ? n : 0;
+        }
+    }
 }

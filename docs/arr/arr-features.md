@@ -180,6 +180,10 @@ it runs are gathered into the next refresh of that folder, and a file whose refr
 is carried the rest of the way once that refresh has run (unless the setting was switched off meanwhile).
 Imports of the last 30 minutes are looked at again when Jellyfin starts, so one made while it was restarting
 still shows up. On Windows, folders that differ only in upper/lower case are the same folder.
+When Jellyfin shows missing episodes, it keeps listing the missing (virtual) episode of a slot next to the one
+the file brought until its next refresh of the series; Jellyfin Enhanced removes it as soon as Jellyfin has
+numbered the new episode (same series, season and episode number, as Jellyfin's own series refresh does; no file
+is touched), so the season lists the episode once, ready to play.
 
 **OK'd in Seerr, but nothing happens.** When Seerr has OK'd a request and, after 15 minutes, no Sonarr/Radarr
 has the title, administrators see "OK'd in Seerr 20 min ago, but none of the Sonarr/Radarr Jellyfin Enhanced
