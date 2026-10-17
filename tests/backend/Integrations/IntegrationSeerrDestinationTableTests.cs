@@ -564,22 +564,31 @@ public class IntegrationSeerrDestinationTableTests
         ("RequestLedger.cs", "RequestLedger.FollowFutureSeason", "j.Input.Seasons.Contains(season)", "one request's own jobs: a new season once per request", null),
         ("FutureSeasonCharges.cs", "FutureSeasonCharges.Charge", "s.SeasonNumber > current", "Sonarr's seasons after the request's own current one", null),
         ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsync", "n > current", "Seerr's seasons after the request's own current one", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.Charge", ".Bump(new[] { want.Input.Key,", "tells the title's watchers (the change feed is keyed by title), not another request", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.FollowSeerrAsync", ".Bump(new[] { want.Input.Key,", "tells the title's watchers (the change feed is keyed by title), not another request", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.Find", "library.SeriesByTvdb(id)", "finds the series in Sonarr's library by the title's ids, not another request", null),
+        ("FutureSeasonCharges.cs", "FutureSeasonCharges.Find", "library.SeriesByTmdb(id)", "finds the series in Sonarr's library by the title's ids, not another request", null),
+        ("RequestLedgerTitles.cs", "RequestLedger.Canonical", "key == input.Key", "the identity resolver itself: whether resolving the key changed it", null),
     };
 
     // Every path where one request stands for, covers, dedups, suppresses, merges with, follows or represents another, and
     // the calls to the rule it makes (at least these: taking one out fails, adding one doesn't).
     private static readonly Dictionary<string, (string[] Calls, string Path)> Paths = new()
     {
-        ["RequestLedger.ExtendSchemaTwo"] = (new[] { "Extra", "SameTarget" }, "the v2 target migration's coverage"),
+        ["RequestLedger.ExtendSchemaTwo"] = (new[] { "Extra", "SameEdition", "SameTarget" }, "the v2 target migration's coverage"),
+        ["RequestLedger.OverSeries"] = (new[] { "SameTitle" }, "a Member's seasons of the title"),
+        ["RequestLedger.SplitAtThreshold"] = (new[] { "SameTitle" }, "the series-threshold split: the person's seasons of the title"),
+        ["RequestLedger.FollowWithin"] = (new[] { "Extra", "Extra", "Extra" }, "a merged title: who already covers whom"),
+        ["FutureSeasonCharges.FollowSeerrAsync"] = (new[] { "Edition" }, "keep-getting requests grouped by title and edition"),
         ["RequestLedger.HoldWithout4k"] = (new[] { "Extra", "Extra" }, "a 4K request released: sent or queued by what covers it"),
         ["RequestLedger.SentCovers"] = (new[] { "Extra", "SamePlace" }, "family Search: what went out covers the ask"),
         ["RequestLedger.RoutingChanged"] = (new[] { "RoutingChanged" }, "an approval changes routing (administrators only)"),
-        ["RequestLedger.CreateCore"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "SameTarget", "Serves" },
+        ["RequestLedger.CreateCore"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "SameEdition", "SameTarget", "Serves" },
             "own dedup and its representative, implicit approval, decline cooldown, shared coverage, confirmed scope"),
         ["RequestLedger.Coverage"] = (new[] { "SameTarget", "SameTarget" }, "shared coverage at a target"),
         ["RequestLedger.Confirmed"] = (new[] { "SameTarget" }, "what went out to a target"),
         ["RequestLedger.ConfirmedScope"] = (new[] { "Extra" }, "an ask already sent"),
-        ["RequestLedger.ApproveCore"] = (new[] { "Approval", "Extra", "SameOptions", "SameTarget", "SameTarget", "SameTarget" }, "the re-confirmation rule, re-stamped jobs, approved coverage"),
+        ["RequestLedger.ApproveCore"] = (new[] { "Approval", "Extra", "SameEdition", "SameOptions", "SameTarget", "SameTarget", "SameTarget", "SameTitle" }, "the re-confirmation rule, re-stamped jobs, approved coverage, an edit naming its own title"),
         ["RequestLedger.RehomeFollowers"] = (new[] { "Extra", "Extra", "SameTarget", "SameTarget" }, "followers moved with a request's target"),
         ["RequestLedger.DemoteUncoveredFollowers"] = (new[] { "Extra", "SameTarget" }, "followers left without coverage wait"),
         ["RequestLedger.ReleasePendingFollowers"] = (new[] { "Extra", "Extra" }, "waiting followers released by coverage"),
@@ -594,10 +603,14 @@ public class IntegrationSeerrDestinationTableTests
         ["FutureSeasonCharges.AskedFor"] = (new[] { "Extra" }, "a new season already asked for at the destination"),
     };
 
+    // Where the title identity itself is worked out: these look titles up by each alias on purpose.
+    private static readonly HashSet<string> IdentityMembers = new(StringComparer.Ordinal) { "RequestLedger.Needed", "RequestLedger.UnifyCore" };
+
     // The rule file a listed path is in.
     private static string FileOf(string member) => member switch
     {
         "RequestLedger.ImportSeerr" => "RequestLedgerImport.cs",
+        "RequestLedger.FollowWithin" or "RequestLedger.UnifyCore" or "RequestLedger.Needed" => "RequestLedgerTitles.cs",
         _ when member.StartsWith("FutureSeasonCharges.", StringComparison.Ordinal) => "FutureSeasonCharges.cs",
         _ => "RequestLedger.cs",
     };
@@ -626,6 +639,10 @@ public class IntegrationSeerrDestinationTableTests
             foreach (var call in actual) missing.Remove(call);
             if (missing.Count > 0) problems.Add($"{listed} ({path}) no longer calls RequestDestination/Extra: missing {string.Join(", ", missing)} (has {string.Join(", ", actual)})");
         }
+        // Every lookup of a title by key resolves its aliases (RequestLedger.TitleIs), except where the identity itself is
+        // worked out.
+        foreach (var lookup in walk.RawTitleLookups(files).Where(l => (member == null || l.Member == member) && !IdentityMembers.Contains(l.Member)))
+            problems.Add($"looks a title up by a key as given (not RequestLedger.TitleIs): {lookup.File} {lookup.Member}: {lookup.Sql}");
         if (walk.ExtraProblem() is { } extra) problems.Add("MutationInput.Extra: " + extra);
         if (!walk.SeerrRecordThroughTheRule()) problems.Add("SeerrBackend.SameOptions doesn't delegate to RequestDestination.SeerrHas");
         return problems;
@@ -706,6 +723,12 @@ public class IntegrationSeerrDestinationTableTests
     [InlineData("Extra without RequestDestination.Serves")]
     // Seerr's record matched by hand.
     [InlineData("Seerr's record matched by hand")]
+    // Q-4BFIX3-2: the decline cooldown comparing raw keys.
+    [InlineData("the decline cooldown comparing raw keys")]
+    // Q-4BFIX3-2: shared coverage looked up by the key as given.
+    [InlineData("shared coverage looked up by the key as given")]
+    // Q-4BFIX3-2: keep-getting requests grouped by raw key.
+    [InlineData("keep-getting requests grouped by raw key")]
     public void BypassesThroughHelpersAndCollectionOperationsAreReported(string bypass)
     {
         var plugin = DestinationRuleWalk.Plugin;
@@ -724,6 +747,9 @@ public class IntegrationSeerrDestinationTableTests
             "requests grouped by their target" => Charges(explicitFilter, "others.GroupBy(o => o.TargetKey).Count() == 1"),
             "a target compared through a local" => Charges(explicitFilter, "string.Equals(w.TargetKey, want.TargetKey, StringComparison.Ordinal)"),
             "Extra without RequestDestination.Serves" => plugin.With("Services/Acquire/Requests/RequestModels.cs", text => text.Replace("covered.Where(c => RequestDestination.Serves(this, c)).ToArray()", "covered.ToArray()", StringComparison.Ordinal)),
+            "the decline cooldown comparing raw keys" => plugin.With("Services/Acquire/Requests/RequestLedger.cs", text => text.Replace("w.Status == \"declined\" && RequestDestination.SameEdition(w.Input, normalized)", "w.Status == \"declined\" && w.Input.Key == normalized.Key && w.Input.Variant == normalized.Variant", StringComparison.Ordinal)),
+            "shared coverage looked up by the key as given" => plugin.With("Services/Acquire/Requests/RequestLedger.cs", text => text.Replace("var covered = Wants(c, t, TitleIs + \" AND variant=$v\", (\"$key\", normalized.Key)", "var covered = Wants(c, t, \"title_key=$key AND variant=$v\", (\"$key\", normalized.Key)", StringComparison.Ordinal)),
+            "keep-getting requests grouped by raw key" => Charges("GroupBy(w => RequestDestination.Edition(w.Input))", "GroupBy(w => (w.Input.Key, w.Input.Variant))"),
             _ => plugin.With("Services/Acquire/Requests/SeerrBackend.cs", text => text.Replace("=> RequestDestination.SeerrHas(", "=> SeerrHasByHand(", StringComparison.Ordinal)
                 .Replace("        // ---------------- transport ----------------", "        private static bool SeerrHasByHand(MutationInput input, int? server, int? profile, string? root) => server == input.SeerrServerId && profile == input.SeerrProfileId && root == input.SeerrRootFolder;\n\n        // ---------------- transport ----------------", StringComparison.Ordinal)),
         };
@@ -731,7 +757,9 @@ public class IntegrationSeerrDestinationTableTests
         var problems = Problems(mutant);
         Assert.NotEmpty(problems);
         // The bypass in the charges file is found as a raw comparison there, not only as a path that lost its call.
-        if (bypass is not ("Extra without RequestDestination.Serves" or "Seerr's record matched by hand"))
+        if (bypass is not ("Extra without RequestDestination.Serves" or "Seerr's record matched by hand" or "the decline cooldown comparing raw keys" or "shared coverage looked up by the key as given"))
             Assert.Contains(problems, p => p.StartsWith("not through RequestDestination: FutureSeasonCharges.cs", StringComparison.Ordinal));
+        if (bypass == "the decline cooldown comparing raw keys") Assert.Contains(problems, p => p.StartsWith("not through RequestDestination: RequestLedger.cs", StringComparison.Ordinal) && p.Contains("CreateCore", StringComparison.Ordinal));
+        if (bypass == "shared coverage looked up by the key as given") Assert.Contains(problems, p => p.StartsWith("looks a title up by a key as given", StringComparison.Ordinal) && p.Contains("CreateCore", StringComparison.Ordinal));
     }
 }

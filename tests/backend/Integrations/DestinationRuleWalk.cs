@@ -20,17 +20,24 @@ namespace JE.Tests;
 internal sealed class DestinationRuleWalk
 {
     /// <summary>The files where one request may stand for another: every part of the ledger, and the charges.</summary>
-    internal static readonly string[] RuleFiles = { "RequestLedger.cs", "RequestLedgerImport.cs", "RequestLedgerArrivals.cs", "FutureSeasonCharges.cs" };
+    internal static readonly string[] RuleFiles = { "RequestLedger.cs", "RequestLedgerImport.cs", "RequestLedgerArrivals.cs", "RequestLedgerTitles.cs", "FutureSeasonCharges.cs" };
 
     /// <summary>What says where a request goes or what it asks for: type name → members.</summary>
     internal static readonly Dictionary<string, string[]> Protected = new(StringComparer.Ordinal)
     {
-        ["MutationInput"] = new[] { "Seasons", "Episodes", "SeasonNumbers", "InstanceId", "ProfileId", "RootFolder", "SeerrServerId", "SeerrProfileId", "SeerrRootFolder", "SeerrOptions" },
+        // The title and edition (Q-4BFIX3-2: one identity, compared through RequestDestination.SameTitle/SameEdition/Edition).
+        ["MutationInput"] = new[] { "Key", "Variant", "Seasons", "Episodes", "SeasonNumbers", "InstanceId", "ProfileId", "RootFolder", "SeerrServerId", "SeerrProfileId", "SeerrRootFolder", "SeerrOptions" },
         ["RequestEpisode"] = new[] { "Season", "Episode" },
         ["RequestWant"] = new[] { "TargetKey" },
         ["RequestAuthorization"] = new[] { "InstanceId", "ConnectionGeneration", "SeerrSource" },
         ["RequestPolicyFacts"] = new[] { "InstanceId", "ConnectionGeneration", "SeerrSource" },
         ["RequestLedger"] = new[] { "TargetKey", "SeerrTargetKey" },
+    };
+
+    // What a protected value says that isn't where or what: whether a title is a movie or a series.
+    private static readonly Dictionary<string, string[]> Unprotected = new(StringComparer.Ordinal)
+    {
+        ["TitleKey"] = new[] { "IsMovie", "Kind" },
     };
 
     // The request types: a call into a plugin helper that is given one of these is followed.
@@ -323,6 +330,9 @@ internal sealed class DestinationRuleWalk
                     "SameOptions" => ("true", $"{args[0]}.SeerrRootFolder == {args[1]}.SeerrRootFolder"),
                     "RoutingChanged" => ("false", $"{args[0]}.InstanceId != {args[1]}.InstanceId"),
                     "SeerrHas" => ("true", $"{args[0]}.SeerrServerId == {args[1]}"),
+                    "SameTitle" => ("true", $"{args[0]}.Key == {args[1]}.Key"),
+                    "SameEdition" => ("true", $"{args[0]}.Key == {args[1]}.Key && {args[0]}.Variant == {args[1]}.Variant"),
+                    "Edition" => ("(Key: \"\", Variant: \"\")", $"(Key: {args[0]}.Key, Variant: {args[0]}.Variant)"),
                     _ => ("default", (string?)null),
                 };
                 sites.Add(new RuleSite(file, MemberOf(call), method.Name, call.GetLocation().GetLineSpan().StartLinePosition.Line + 1, call.Span, call.ToString(), "(" + without + ")", raw == null ? null : "(" + raw + ")"));
@@ -370,6 +380,25 @@ internal sealed class DestinationRuleWalk
         return tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
             .Where(d => d.Identifier.Text == local && MemberOf(d) == member && d.Initializer != null)
             .Any(d => d.Initializer!.DescendantNodes().OfType<InvocationExpressionSyntax>().Any(i => model.GetSymbolInfo(i).Symbol is IMethodSymbol m && IsRule(m) && m.Name == rule));
+    }
+
+    // A SQL lookup by title key ("title_key=$key", "w.title_key IN (…)"), not an assignment ("SET title_key=…").
+    private static readonly System.Text.RegularExpressions.Regex TitleLookup = new(@"(?<!SET\s)\b(?:\w+\.)?title_key\s*(?:=\s*\$|IN\s*\()", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// SQL in the rule files that looks a title up by a key as given (not through <c>RequestLedger.TitleIs</c>, which resolves
+    /// the title's aliases first): (member, the literal).
+    /// </summary>
+    internal List<(string File, string Member, string Sql)> RawTitleLookups(params string[] files)
+    {
+        var found = new List<(string, string, string)>();
+        foreach (var file in files.Length == 0 ? RuleFiles : files)
+        {
+            var root = Tree(Requests(file)).GetRoot();
+            foreach (var token in root.DescendantTokens().Where(t => t.IsKind(SyntaxKind.StringLiteralToken) || t.IsKind(SyntaxKind.InterpolatedStringTextToken)))
+                if (TitleLookup.IsMatch(token.ValueText)) found.Add((file, MemberOf(token.Parent!), token.ValueText));
+        }
+        return found;
     }
 
     /// <summary>True when Seerr's own record of a request is matched through the rule (<c>RequestDestination.SeerrHas</c>).</summary>
@@ -593,6 +622,7 @@ internal sealed class DestinationRuleWalk
                 {
                     if (symbol is IMethodSymbol) return Eval(access.Expression);
                     var left = _model.GetSymbolInfo(access.Expression).Symbol is ITypeSymbol or INamespaceSymbol ? new Value(false, symbol == null ? ImmutableSet.Empty : ImmutableSet.Of(symbol), false) : Eval(access.Expression);
+                    if (symbol?.ContainingType != null && Unprotected.TryGetValue(symbol.ContainingType.Name, out var plain) && plain.Contains(symbol.Name)) return left with { Tainted = false };
                     return new Value(left.Tainted || IsProtected(symbol), left.Origins, false);
                 }
                 case ConditionalAccessExpressionSyntax conditional:
@@ -604,6 +634,8 @@ internal sealed class DestinationRuleWalk
                     foreach (var argument in call.ArgumentList.Arguments) parts = parts.With(Eval(argument.Expression));
                     // The rule's answer, and a comparison's, are not themselves a destination.
                     var answer = symbol is IMethodSymbol method && (IsRule(method) || (Comparing.Contains(method.Name) && method.ReturnType.SpecialType == SpecialType.System_Boolean));
+                    // A database read (RequestLedger.Scalar) is a value of its own, whatever it was looked up by.
+                    if (symbol is IMethodSymbol { Name: "Scalar", ContainingType.Name: "RequestLedger" }) return new Value(false, ImmutableSet.Of(call), false);
                     // Requests (fetched, filtered or derived) are requests, not a destination: their own members say that.
                     // Fetched ones (no receiver) are a source of their own; filtered or derived ones come from the receiver.
                     if (IsRequestType(_model.GetTypeInfo(call).Type) && !IsProtected(symbol))

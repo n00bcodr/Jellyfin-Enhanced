@@ -213,7 +213,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 var target = RequestLedger.SeerrTargetKey(source);
                 var queued = 0;
-                foreach (var title in _ledger.FutureWants(target).Where(w => w.Input.Seasons.Length > 0).GroupBy(w => (w.Input.Key, w.Input.Variant)))
+                foreach (var title in _ledger.FutureWants(target).Where(w => w.Input.Seasons.Length > 0).GroupBy(w => RequestDestination.Edition(w.Input)))
                 {
                     ct.ThrowIfCancellationRequested();
                     if (await _seerr.SeasonFactsAsync(title.Key.Key, title.Key.Variant, ct).ConfigureAwait(false) is not { } seasons) continue;

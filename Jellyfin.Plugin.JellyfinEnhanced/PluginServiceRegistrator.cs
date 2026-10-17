@@ -161,6 +161,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();
             // Marks requests fulfilled when what they asked for is in Jellyfin (Ready; never stale).
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestFulfilment>();
+            // Phase 4b: every title the ledger holds under one identity across its ids (TMDB/TVDB/IMDb), split ones merged.
+            serviceCollection.AddHostedService<Services.Acquire.Requests.RequestTitleIdentity>();
             serviceCollection.AddSingleton<Services.Acquire.AcquireDatabase>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.NotifyStore>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.INotifyUsers, Services.Acquire.Notify.JellyfinNotifyUsers>();

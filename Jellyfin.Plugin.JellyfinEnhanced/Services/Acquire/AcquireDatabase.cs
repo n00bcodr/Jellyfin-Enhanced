@@ -226,6 +226,14 @@ UPDATE reservations SET charge_seq=(SELECT n FROM (SELECT id, ROW_NUMBER() OVER 
 CREATE INDEX reservations_order ON reservations(charge_seq);
 ";
 
+        // Schema 4 extension (phase 4b, Q-4BFIX3-2): one title identity across its ids. Each alias the ledger has learned for a
+        // title (a TMDB or IMDb id of a series held under its TVDB id, an IMDb id of a movie held under its TMDB id) maps to
+        // the key the title's requests are held under.
+        internal const string SchemaFourTitleAliases = @"
+CREATE TABLE title_aliases (alias TEXT PRIMARY KEY, canonical TEXT NOT NULL, learned_at INTEGER NOT NULL);
+CREATE INDEX title_aliases_canonical ON title_aliases(canonical);
+";
+
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
         // Part of the unreleased schema 2; an existing schema-2 database gets them idempotently at start-up.
         private const string Phase3dTables = @"
@@ -618,6 +626,20 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;
                         extend.CommandText = SchemaFourChargeOrder;
+                        extend.ExecuteNonQuery();
+                        transaction.Commit();
+                    }
+                }
+                using (var tables = connection.CreateCommand())
+                {
+                    tables.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='title_aliases'";
+                    if (UserVersion(connection) >= 4 && Convert.ToInt32(tables.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+                    {
+                        // Additive only (a new empty table), so no pre-migration copy is needed.
+                        using var transaction = connection.BeginTransaction(deferred: false);
+                        using var extend = connection.CreateCommand();
+                        extend.Transaction = transaction;
+                        extend.CommandText = SchemaFourTitleAliases;
                         extend.ExecuteNonQuery();
                         transaction.Commit();
                     }

@@ -52,7 +52,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         candidates = Jobs(c, t, "id=(SELECT id FROM jobs WHERE want_id=$id ORDER BY created_at DESC,rowid DESC LIMIT 1)", ("$id", want.Id));
                     else if (own.Count == 0)
                         candidates = Jobs(c, t, "want_id IN (SELECT id FROM wants WHERE acquisition_id=$a) AND " + LiveJobs, ("$a", want.AcquisitionId));
-                    var targetsForWant = candidates.Where(j => j.Input.Variant == want.Input.Variant && (want.Input.InstanceId == null || j.Authorization.InstanceId == want.Input.InstanceId))
+                    var targetsForWant = candidates.Where(j => RequestDestination.SameEdition(j.Input, want.Input) && (want.Input.InstanceId == null || j.Authorization.InstanceId == want.Input.InstanceId))
                         .Select(j => TargetKey(j.Authorization)).Distinct(StringComparer.Ordinal).ToArray();
                     if (targetsForWant.Length == 1)
                     {
@@ -156,7 +156,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             });
         }
         /// <summary>Title intent for read models, with canonical provider identity.</summary>
-        public IReadOnlyList<RequestWant> ForTitle(string key) => _db.Read(c => Wants(c, null, "title_key=$key", ("$key", key)));
+        /// <remarks>Any of the title's ids finds it (the ledger's aliases).</remarks>
+        public IReadOnlyList<RequestWant> ForTitle(string key) => _db.Read(c => Wants(c, null, TitleIs, ("$key", key)));
         /// <summary>
         /// True when requests already sent to the caller's request target cover all of <paramref name="input"/>
         /// (succeeded jobs, or a request that was already processing in Seerr when it moved): nothing is left to
@@ -164,7 +165,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         public bool SentCovers(MutationInput input, RequestPolicyFacts facts) => _db.Available && _db.Read(c =>
         {
-            var covered = Wants(c, null, "title_key=$key AND variant=$v", ("$key", input.Key), ("$v", input.Variant)).Where(Active).ToArray();
+            input = Canonical(c, null, input);
+            var covered = Wants(c, null, TitleIs + " AND variant=$v", ("$key", input.Key), ("$v", input.Variant)).Where(Active).ToArray();
             // Any connection of the same instance (or Seerr) counts: a Search runs only for parts the instance already
             // monitors, so an address or key change since the send doesn't make them "never asked for".
             var here = TargetKey(facts);
@@ -180,13 +182,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public IReadOnlyList<RequestDispatch> Dispatches(string titleKey) => !_db.Available ? Array.Empty<RequestDispatch>() : _db.Read(c =>
         {
             var list = new List<RequestDispatch>();
-            using (var cmd = Cmd(c, null, "SELECT j.mutation_input,j.authorization_context,j.updated_at FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w.title_key=$key AND j.state='succeeded'", ("$key", titleKey)))
+            using (var cmd = Cmd(c, null, "SELECT j.mutation_input,j.authorization_context,j.updated_at FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w." + TitleIs + " AND j.state='succeeded'", ("$key", titleKey)))
             using (var r = cmd.ExecuteReader())
             {
                 while (r.Read())
                     list.Add(new(TargetKey(JsonSerializer.Deserialize<RequestAuthorization>(r.GetString(1))!), JsonSerializer.Deserialize<MutationInput>(r.GetString(0))!, DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(2))));
             }
-            foreach (var want in Wants(c, null, "title_key=$key AND origin_kind=$kind", ("$key", titleKey), ("$kind", RequestOrigin.SeerrImportKind)))
+            foreach (var want in Wants(c, null, TitleIs + " AND origin_kind=$kind", ("$key", titleKey), ("$kind", RequestOrigin.SeerrImportKind)))
             {
                 if (LinkedScope(c, null, want) is { } linked) list.Add(new(want.TargetKey, linked, want.CreatedAt));
             }
@@ -259,7 +261,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         public int EpisodesCharged(Guid user, int days, DateTimeOffset now) => _db.Read(c => EpisodesCharged(c, null, user, now, days));
         private static bool OverSeries(RequestPolicyFacts facts, MutationInput input, IEnumerable<RequestWant> own, int threshold)
-            => facts.Role == "Member" && !TitleKey.Parse(input.Key)!.IsMovie && own.Where(w => w.Input.Key == input.Key && w.Status is not ("declined" or "cancelled"))
+            => facts.Role == "Member" && !TitleKey.Parse(input.Key)!.IsMovie && own.Where(w => RequestDestination.SameTitle(w.Input, input) && w.Status is not ("declined" or "cancelled"))
                 .SelectMany(w => w.Input.SeasonNumbers).Concat(input.SeasonNumbers).Distinct().Count() > Math.Clamp(threshold, 1, 200);
         private static bool OverQuota(RequestPolicyFacts facts, IReadOnlyList<QuotaCharge> charges, int cost, double gb, DateTimeOffset now)
         {
@@ -474,7 +476,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var mustAsk = origin?.RequireApproval == true;
             if (Deleted(c, t, user)) return RequestOutcome.Refused("user_required");
             var priorHash = Scalar(c, t, "SELECT fingerprint FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId));
-            if (priorHash != null && priorHash != normalized.Fingerprint) return RequestOutcome.Refused("idempotency_conflict", 409);
+            // A retry of the same ask names the title by any of its ids.
+            if (priorHash != null && !Fingerprints(c, t, normalized).Contains(priorHash)) return RequestOutcome.Refused("idempotency_conflict", 409);
             if (priorHash != null)
             {
                 var existingId = Scalar(c, t, "SELECT want_id FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId))!;
@@ -485,6 +488,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return RequestOutcome.Accepted(existing.Id, existing.Reason, 200);
             }
             if (!policy.IsAdmin(user) && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
+            // The title as the ledger holds it (any of its ids resolved).
+            normalized = Canonical(c, t, normalized);
             var facts = policy.Evaluate(user, normalized);
             if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : refusal == "backend_unavailable" ? "unavailable" : "denied");
             if (SeerrEpisodes(facts, normalized) is { } seerrOnly) return seerrOnly;
@@ -495,7 +500,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // send the shared scope to Seerr's defaults and leave the chosen destination unused).
             if (!automation && !normalized.HasSeerrOptions && facts.CanApprove && facts.Role is "Manager" or "Admin")
             {
-                foreach (var pending in Wants(c, t, "title_key=$key AND variant=$v AND status='pending'", ("$key", normalized.Key), ("$v", normalized.Variant))
+                foreach (var pending in Wants(c, t, TitleIs + " AND variant=$v AND status='pending'", ("$key", normalized.Key), ("$v", normalized.Variant))
                     .Where(w => !w.Follower && RequestDestination.SameTarget(w.TargetKey, TargetKey(facts)) && w.Input.Extra(new[] { normalized }) == null))
                 {
                     var approved = ApproveCore(c, t, pending.Id, user, null, policy, now);
@@ -520,9 +525,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (facts.Rules is { Verdict: HouseholdRules.Deny } denied)
                 return RequestOutcome.Refused(HouseholdRule, 403, "denied") with { Message = "The household's rules don't allow this request (" + denied.Text() + ").", Rules = denied };
             if (own.Count(w => w.Status == "pending") >= Math.Clamp(policy.Configuration.ArrRequestPendingLimit, 1, 100)) return RequestOutcome.Refused("pending_limit", 429, "quota_exceeded");
-            if (own.Any(w => w.Status == "declined" && w.Input.Key == normalized.Key && w.Input.Variant == normalized.Variant &&
+            if (own.Any(w => w.Status == "declined" && RequestDestination.SameEdition(w.Input, normalized) &&
                 normalized.Extra(new[] { w.Input }) == null && w.UpdatedAt > now.AddDays(-Math.Clamp(policy.Configuration.ArrRequestDeclineCooldownDays, 0, 365)))) return RequestOutcome.Refused("decline_cooldown", outcome: "blocked");
-            var covered = Wants(c, t, "title_key=$key AND variant=$v", ("$key", normalized.Key), ("$v", normalized.Variant)).Where(Active).ToArray();
+            var covered = Wants(c, t, TitleIs + " AND variant=$v", ("$key", normalized.Key), ("$v", normalized.Variant)).Where(Active).ToArray();
             var authorizedExtra = normalized.Extra(Coverage(c, t, covered, TargetKey(facts)));
             // Household rules (phase 4b, null while they don't apply): a review waits for an OK whoever asks; an approve
             // lifts only a Member's blanket-approval preset (never quota, the series threshold or a group pool).
@@ -539,7 +544,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (!auto && !automation && SplitAtThreshold(c, t, user, request, normalized, facts, own, policy, now, origin) is { } split) return split;
             var extra = normalized.Extra(Coverage(c, t, covered, TargetKey(facts), !auto));
             if (auto && (extra != null || covered.Any(w => w.Status == "pending")) && Scalar(c, t,
-                "SELECT j.id FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w.title_key=$key AND w.variant=$v AND json_extract(j.authorization_context,'$.Backend')=$backend AND json_extract(j.authorization_context,'$.InstanceId')=$instance AND json_extract(j.authorization_context,'$.ConnectionGeneration')=$generation AND json_extract(j.authorization_context,'$.SeerrSource') IS $source AND (j.state IN ('sending','maybe_sent') OR json_extract(j.outcome,'$.certainty')='Unknown') LIMIT 1",
+                "SELECT j.id FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w." + TitleIs + " AND w.variant=$v AND json_extract(j.authorization_context,'$.Backend')=$backend AND json_extract(j.authorization_context,'$.InstanceId')=$instance AND json_extract(j.authorization_context,'$.ConnectionGeneration')=$generation AND json_extract(j.authorization_context,'$.SeerrSource') IS $source AND (j.state IN ('sending','maybe_sent') OR json_extract(j.outcome,'$.certainty')='Unknown') LIMIT 1",
                 ("$key", normalized.Key), ("$v", normalized.Variant), ("$backend", facts.Backend), ("$instance", facts.InstanceId), ("$generation", facts.ConnectionGeneration), ("$source", facts.SeerrSource)) != null) return RequestOutcome.Refused("request_in_flight", 409);
             // Free automation costs nobody's allowance; the estimated GB still counts against a hard GB cap.
             var cost = extra == null || origin?.Free == true ? 0 : Cost(c, t, extra, user, now, facts.WindowDays);
@@ -553,7 +558,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var waitingScope = extra == null && normalized.Extra(Coverage(c, t, covered, TargetKey(facts))) != null;
             var status = confirmedScope ? "sent" : needsApproval || waitingScope ? "pending" : "queued";
             var reason = confirmedScope ? "looking" : status == "pending" ? ruleReview && extra != null ? RuleReview : over ? "over_quota" : poolOver ? GroupQuota : "awaiting_approval" : "queued_outage";
-            var acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE title_key=$key AND variant=$v AND state='active'", ("$key", normalized.Key), ("$v", normalized.Variant));
+            var acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE " + TitleIs + " AND variant=$v AND state='active'", ("$key", normalized.Key), ("$v", normalized.Variant));
             if (acquisition == null)
             {
                 acquisition = NewId();
@@ -613,7 +618,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var threshold = policy.Configuration.ArrRequestSeriesThreshold;
             if (facts.Role != "Member" || facts.Backend != "je" || (policy.Configuration.ArrRequestPreset == "approve_everything" && facts.Rules?.Verdict != HouseholdRules.Approve) ||
                 normalized.Scope is not ("seasons" or "episodes") || !OverSeries(facts, normalized, own, threshold)) return null;
-            var asked = own.Where(w => w.Input.Key == normalized.Key && w.Status is not ("declined" or "cancelled")).SelectMany(w => w.Input.SeasonNumbers).ToHashSet();
+            var asked = own.Where(w => RequestDestination.SameTitle(w.Input, normalized) && w.Status is not ("declined" or "cancelled")).SelectMany(w => w.Input.SeasonNumbers).ToHashSet();
             var fresh = normalized.SeasonNumbers.Where(s => !asked.Contains(s)).Distinct().OrderBy(s => s).ToArray();
             var room = Math.Clamp(threshold, 1, 200) - asked.Count;
             if (room <= 0 || room >= fresh.Length) return null;
@@ -753,8 +758,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var want = Wants(c, t, "id=$id", ("$id", id)).SingleOrDefault();
             if (want == null) return RequestOutcome.Refused("not_found", 404);
             if (Deleted(c, t, actor) || Deleted(c, t, want.UserId)) return RequestOutcome.Refused("user_required");
-            var input = edits?.Normalize() ?? want.Input;
-            if (edits != null && (edits.Normalize() == null || input.Key != want.Input.Key)) return RequestOutcome.Refused("invalid_input", 400);
+            // An edit names the request's own title, by any of its ids.
+            var input = edits?.Normalize() is { } edited ? Canonical(c, t, edited) : want.Input;
+            if (edits != null && (edits.Normalize() == null || !RequestDestination.SameTitle(input, want.Input))) return RequestOutcome.Refused("invalid_input", 400);
             if (!policy.IsAdmin(actor) && RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
             var requester = policy.Evaluate(want.UserId, input);
             var approver = policy.Evaluate(actor, input);
@@ -807,7 +813,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at,authorization_context=$auth,updated_at=$at WHERE id=$j",
                     ("$auth", JsonSerializer.Serialize(Authorize(requester, approver, resume.Input, edits != null) with { SeerrUser = resume.Authorization.SeerrUser ?? requester.SeerrUser, SeerrSeasons = resume.Authorization.SeerrSeasons })), ("$at", Ms(now)), ("$j", resume.Id));
             var own = Wants(c, t, "user_id=$u AND id<>$id", ("$u", Id(want.UserId)), ("$id", id));
-            var covered = Wants(c, t, "title_key=$key AND variant=$v AND id<>$id", ("$key", input.Key), ("$v", input.Variant), ("$id", id)).Where(w => Active(w) && w.Status != "pending").ToArray();
+            var covered = Wants(c, t, TitleIs + " AND variant=$v AND id<>$id", ("$key", input.Key), ("$v", input.Variant), ("$id", id)).Where(w => Active(w) && w.Status != "pending").ToArray();
             // (maybe_sent here: only the held jobs resumed above.)
             var existingJobs = Jobs(c, t, "want_id=$id AND state IN ('queued','retry','succeeded','maybe_sent')", ("$id", id));
             var extra = input.Extra(Coverage(c, t, covered, TargetKey(requester)).Concat(existingJobs.Where(j => RequestDestination.SameTarget(TargetKey(j.Authorization), TargetKey(requester))).Select(j => j.Input)));
@@ -820,9 +826,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var stored = input;
             var priorCost = existingJobs.Count == 0 ? 0 : int.Parse(Scalar(c, t, "SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=$id AND state='charged'", ("$id", id))!, CultureInfo.InvariantCulture);
             var acquisition = want.AcquisitionId;
-            if (input.Variant != want.Input.Variant)
+            if (!RequestDestination.SameEdition(input, want.Input))
             {
-                acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE title_key=$key AND variant=$v AND state='active'", ("$key", input.Key), ("$v", input.Variant)) ?? NewId();
+                acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE " + TitleIs + " AND variant=$v AND state='active'", ("$key", input.Key), ("$v", input.Variant)) ?? NewId();
                 Exec(c, t, "INSERT OR IGNORE INTO acquisitions VALUES($id,$key,$v,'active',$at)", ("$id", acquisition), ("$key", input.Key), ("$v", input.Variant), ("$at", Ms(now)));
             }
             Exec(c, t, "UPDATE wants SET acquisition_id=$a,mutation_input=$input,owned_input=$owned,variant=$v,status=$state,reason=$reason,cost=$cost,is_follower=$follower,parental_signature=$p,updated_at=$at WHERE id=$id",
@@ -875,14 +881,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Record(c, t, want.Id, null, null, "scope_held", "accepted", reason, want.Input.Key, now);
             }
         }
-        private static void ReleasePendingFollowers(SqliteConnection c, SqliteTransaction t, string acquisition, Guid actor, IRequestPolicy policy, DateTimeOffset now, bool approving = true)
+        // actor: who released them (an approver, or the asker whose ask covers them); null for the ledger itself (a merge).
+        private static void ReleasePendingFollowers(SqliteConnection c, SqliteTransaction t, string acquisition, Guid? actor, IRequestPolicy policy, DateTimeOffset now, bool approving = true)
         {
             var wants = Wants(c, t, "acquisition_id=$a", ("$a", acquisition));
             foreach (var follower in wants.Where(w => w.Status == "pending"))
             {
                 if (follower.Input.Extra(Coverage(c, t, wants, follower.TargetKey)) != null) continue;
                 if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id LIMIT 1", ("$id", follower.Id)) != null) continue;
-                if (RequestPolicy.Check(policy.Evaluate(follower.UserId, follower.Input), approving ? policy.Evaluate(actor, follower.Input) : null, follower.Input, approving) != null) continue;
+                if (RequestPolicy.Check(policy.Evaluate(follower.UserId, follower.Input), approving && actor is Guid approver ? policy.Evaluate(approver, follower.Input) : null, follower.Input, approving) != null) continue;
                 // Scope that is already sent has no job left to complete, so the follower is sent now too.
                 var sent = follower.Input.Extra(Confirmed(c, t, wants, follower.TargetKey)) == null;
                 Exec(c, t, "UPDATE wants SET status=$s,reason=$r,owned_input=NULL,is_follower=1,cost=0,updated_at=$at WHERE id=$id",
@@ -1251,7 +1258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Changed(c, t);
             Exec(c, t, "DELETE FROM request_audit WHERE want_id=$id OR job_id IN (SELECT id FROM jobs WHERE want_id=$id) OR (want_id IS NULL AND job_id IS NULL AND action LIKE 'request.%' AND id IN (SELECT id FROM jobs WHERE want_id=$id))", ("$id", id));
             var removed = Exec(c, t, "DELETE FROM wants WHERE id=$id", ("$id", id));
-            Exec(c, t, "DELETE FROM request_events WHERE title_key=$key AND NOT EXISTS(SELECT 1 FROM wants WHERE title_key=$key)", ("$key", key));
+            Exec(c, t, "DELETE FROM request_events WHERE " + TitleIs + " AND NOT EXISTS(SELECT 1 FROM wants WHERE " + TitleIs + ")", ("$key", key));
             Exec(c, t, "DELETE FROM acquisitions WHERE id NOT IN (SELECT acquisition_id FROM wants)");
             return removed == 1;
         });

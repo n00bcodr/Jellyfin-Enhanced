@@ -50,6 +50,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal MutationInput? NormalizeInput(MutationInput? input) => Normalize(input);
         /// <summary>A title under the canonical key the ledger keys it by (whichever id the caller used).</summary>
         internal TitleKey CanonicalTitle(TitleKey title) => _aliases?.Canonical(title) ?? title;
+
+        // Before the ledger works with a title, it learns the title's other ids (one identity: RequestTitleIdentity).
+        private void Learn(string key) => RequestTitleIdentity.Learn(_ledger, _policy, _aliases, _feed, key, _now());
         /// <summary>Creates one durable request after bounded prerequisite preparation.</summary>
         /// <param name="user">The requester.</param>
         /// <param name="body">Client id and input.</param>
@@ -62,6 +65,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (!Enabled) return RequestOutcome.Refused("feature_disabled");
             if (!_ledger.Database.Available) return RequestOutcome.Refused("database_unavailable", 503, "unavailable");
             if (!_policy.IsAdmin(user) && RequestLedger.HasRouting(input)) return RequestOutcome.Refused("admin_required");
+            Learn(input.Key);
             await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             if (_policy.Evaluate(user, input).CanCreate)
             {
@@ -89,6 +93,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (!Enabled) return new RequestPreview(RequestOutcome.Refused("feature_disabled"));
             if (!_ledger.Database.Available) return new RequestPreview(RequestOutcome.Refused("database_unavailable", 503, "unavailable"));
             if (!_policy.IsAdmin(user) && RequestLedger.HasRouting(input)) return new RequestPreview(RequestOutcome.Refused("admin_required"));
+            Learn(input.Key);
             await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             return _ledger.Preview(user, body with { Input = input }, _policy, _now(), origin);
         }
@@ -114,6 +119,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // Routing (instance, profile, folder) is an administrator's choice, as on a single ask.
                 normalized.Add(body == null || input == null || (!admin && RequestLedger.HasRouting(input)) ? null : body with { Input = input });
             }
+            foreach (var key in normalized.Where(b => b != null).Select(b => b!.Input.Key).Distinct(StringComparer.Ordinal)) Learn(key);
             foreach (var input in normalized.Where(b => b != null).Select(b => b!.Input).DistinctBy(i => i.Fingerprint))
                 await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             var previews = _ledger.PreviewBatch(user, normalized, _policy, _now(), origin);
@@ -139,10 +145,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (want == null) return RequestOutcome.Refused("not_found", 404);
             var input = body?.Input == null ? want.Input : Normalize(body.Input);
             if (input == null) return RequestOutcome.Refused("invalid_input", 400);
-            // An edit names the request's own title by any of its ids: it keeps the key the request was made with (once a
-            // series reaches Sonarr its canonical key can change to its TVDB id while the stored request keeps its TMDB key).
-            if (body?.Input != null && input.Key != want.Input.Key && TitleKey.Parse(want.Input.Key) is { } stored && CanonicalTitle(stored).ToString() == input.Key)
-                input = input with { Key = want.Input.Key };
+            // An edit may name the request's title by any of its ids: the ledger holds the title under one key, learned here
+            // (once a series reaches Sonarr its canonical key becomes its TVDB id; the request asked by its TMDB id moves too).
+            Learn(want.Input.Key);
+            Learn(input.Key);
             if (!_policy.IsAdmin(actor) && RequestLedger.RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
             await _policy.PrepareAsync(want.UserId, input, ct).ConfigureAwait(false);
             await _policy.PrepareAsync(actor, input, ct).ConfigureAwait(false);

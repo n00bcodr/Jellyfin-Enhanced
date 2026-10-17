@@ -627,6 +627,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestLedgerTitles.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestModels.cs",
       "category": "Services"
     },
@@ -656,6 +660,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestTitleIdentity.cs",
       "category": "Services"
     },
     {
@@ -9938,7 +9946,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 552,
+    "files": 554,
     "routes": 260,
     "configuration_properties": 602,
     "storage_references": 83,
