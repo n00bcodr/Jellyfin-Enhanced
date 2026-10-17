@@ -124,7 +124,17 @@
      * @returns {boolean} Visible.
      */
     function visible(status) {
-        return !!status && !!(status.shadowOverride || status.engine?.effective || status.migration?.notice === 'pending');
+        return !!status && !!(status.shadowOverride || status.engine?.effective || notice(status));
+    }
+
+    /**
+     * True when the one-time migration notice is due: it is pending and phase 4 is in effect (with phase 4 off nothing
+     * the migration recorded acts, so administrators see nothing new).
+     * @param {Object|null} status Status body.
+     * @returns {boolean} Show the notice.
+     */
+    function notice(status) {
+        return !!status?.phase4?.effective && status.migration?.notice === 'pending';
     }
 
     /**
@@ -380,7 +390,7 @@
         heldLines(box, s);
         if (s.backend === 'seerr') line(box, tr('arr_auto_seerr'), 'je-ops-item-sub');
         else if (s.backend === 'status_only') line(box, tr('arr_auto_status_only'), 'je-ops-item-sub');
-        if (s.migration?.notice === 'pending') migrationNotice(box, s.migration);
+        if (notice(s)) migrationNotice(box, s.migration);
         return box;
     }
 

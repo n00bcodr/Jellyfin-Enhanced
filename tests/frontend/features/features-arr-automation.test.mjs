@@ -91,6 +91,20 @@ test('the card is null before any status and when nothing applies (engine off, n
   assert.equal(changes, 1);
 });
 
+test('with phase 4 off a pending migration notice shows nothing (nothing it recorded acts yet); the rollout guard still shows', async t => {
+  const pending = { kind: 'upgrade', at: iso(-60), autoSeason: true, autoMovie: true, notice: 'pending', grants: [{ userId: 'u1', name: 'Dad', source: 'legacy', at: iso(-60) }] };
+  let body = status({ phase4: { enabled: false, effective: false }, engine: { enabled: true, effective: false }, migration: pending });
+  const h = unit(t, () => body);
+  await h.A.refreshAutomation(() => {});
+  assert.equal(h.A.automationCard(), null);
+  body = status({ phase4: { enabled: false, effective: false }, engine: { enabled: false, effective: false }, shadowOverride: true, migration: pending });
+  await h.A.refreshAutomation(() => {});
+  const card = h.A.automationCard();
+  assert.ok(card);
+  assert.doesNotMatch(card.textContent, /Dad/);
+  assert.equal(card.querySelectorAll('button').length, 0);
+});
+
 test('rollout guard, engine, kill switches and the recipes\' effective modes with their reasons', async t => {
   const body = status({
     shadowOverride: true, engine: { enabled: true, effective: false }, killAll: true,

@@ -751,9 +751,10 @@ public class IntegrationAutomationTests
         await e.Outbox(backend).TickAsync(default);
         Assert.Equal(AutomationStore.BreakerThreshold + 1, backend.Sends);
 
+        // "Try again now" closes the breaker and checks the held request again at once (no wait for its old retry time).
         Assert.True(e.Store.Reset("r1", e.R.Now));
+        Assert.Equal(e.R.Now, e.R.Ledger.ForWant(want.Id).Single().NextAttempt);
         backend.Fail = false;
-        e.R.Now += TimeSpan.FromMinutes(20);
         await e.Outbox(backend).TickAsync(default);
         Assert.Equal("sent", e.R.Ledger.Find(want.Id)!.Status);
         Assert.Equal(0, e.Store.Breaker("r1").Failures);

@@ -238,10 +238,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             }
         }
 
-        /// <summary>An administrator closes a target's breaker. True when one was open or counting.</summary>
+        /// <summary>
+        /// An administrator closes a target's breaker; the automatic requests it held are checked again at once (the
+        /// same jobs, so nothing is sent twice). True when one was open or counting.
+        /// </summary>
         /// <param name="target">Instance id or <c>seerr</c>.</param>
         /// <param name="now">Now.</param>
         public bool Reset(string target, DateTimeOffset now)
-            => _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_breakers SET failures=0,opened_until=NULL,last_reason='reset',updated_at=$at WHERE target=$t", ("$t", target), ("$at", RequestLedger.Ms(now)))) == 1;
+            => _db.Write((c, t) =>
+            {
+                var reset = RequestLedger.Exec(c, t, "UPDATE automation_breakers SET failures=0,opened_until=NULL,last_reason='reset',updated_at=$at WHERE target=$t", ("$t", target), ("$at", RequestLedger.Ms(now)));
+                RequestLedger.Exec(c, t, "UPDATE jobs SET next_attempt=$at WHERE state='retry' AND reason=$r AND next_attempt>$at AND " +
+                    "(CASE WHEN $t='" + AutomationFlags.SeerrTarget + "' THEN json_extract(authorization_context,'$.Backend')='seerr' ELSE json_extract(authorization_context,'$.InstanceId')=$t END)",
+                    ("$t", target), ("$r", AutomationHolds.BreakerOpen), ("$at", RequestLedger.Ms(now)));
+                return reset;
+            }) == 1;
     }
 }
