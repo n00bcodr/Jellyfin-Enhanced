@@ -477,6 +477,22 @@ test('a stuck card says why in plain words; the reason code is only in an admini
   assert.equal(m.page().querySelector('details.je-approval-admin'), null, 'no Details for managers');
 });
 
+test('phase 4b holds of administrator Seerr choices say why to an administrator (rule and allowance holds have their own chips)', async t => {
+  const reasons = {
+    seerr_options_changed: "Stuck · Seerr's servers changed since the choice",
+    seerr_options_disabled: 'Stuck · Seerr server choices are switched off',
+    seerr_advanced_required: "Stuck · their Seerr account can't choose servers any more",
+    admin_required: "Stuck · an administrator's choice needs an administrator"
+  };
+  const items = Object.keys(reasons).map((r, i) => card(i + 1, { stuck: true, reason: r, admin: { reason: r, jobs: [] } }));
+  const h = setupHub(t, { hash: '#/requests?tab=approvals', me: { role: 'admin' }, routes: (m, path) => (path === '/acquire/requests/approvals' ? approvals(items) : null) });
+  h.JE.initializeArrStatus();
+  await until(() => h.page().querySelectorAll('.je-approval').length === items.length);
+  [...h.page().querySelectorAll('.je-approval')].forEach((node, i) => {
+    assert.equal(node.querySelector('.je-approval-chip-stuck')?.textContent.replace(/^[a-z_]+/, ''), Object.values(reasons)[i]);
+  });
+});
+
 test('a request held because its asker has no Seerr account, or nothing can take its 4K copy, says so to an administrator, neutrally to a manager', async t => {
   const items = [card(1, { stuck: true, reason: 'seerr_user_unlinked', admin: { reason: 'seerr_user_unlinked', jobs: [] } }),
     card(2, { stuck: true, reason: 'no_4k_instance', variant: '4k', admin: { reason: 'no_4k_instance', jobs: [] } })];

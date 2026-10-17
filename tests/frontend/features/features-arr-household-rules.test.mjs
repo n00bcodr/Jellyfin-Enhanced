@@ -364,12 +364,12 @@ test('the request controls: a rule refusal and a rule or shared-allowance wait s
   const caps = { contact: 'Dad' };
   const refused = A.interpret(403, { outcome: 'denied', reason: 'household_rule', rules: { verdict: 'deny', hits: [{ condition: 'rating', action: 'deny', matched: false, value: 'R', limit: 'PG-13' }] } });
   assert.equal(refused.state, 'ruled');
-  assert.equal(A.describe(refused, caps).text, "The household's rules don't allow this one (rated R (limit PG-13)).");
+  assert.equal(A.describe(refused, caps).text, "The household's rules don't allow this one: rated R (limit PG-13).");
   assert.equal(A.describe(refused, caps).chip, '');
   assert.equal(A.describe(A.interpret(403, { outcome: 'denied', reason: 'household_rule' }), caps).text, "The household's rules don't allow this one.");
   const review = A.interpret(201, { outcome: 'accepted', reason: 'rule_review', rules: { verdict: 'review', hits: [{ condition: 'rating', action: 'review', matched: null }] } });
   assert.equal(review.state, 'waiting');
-  assert.equal(A.describe(review, caps).text, "Sent to Dad for an OK: the household's rules want a look (rating not known).");
+  assert.equal(A.describe(review, caps).text, "Sent to Dad for an OK. The household's rules want a look: rating not known.");
   assert.equal(A.describe(review, caps).chip, 'Waiting for OK');
   const pool = A.interpret(201, { outcome: 'accepted', reason: 'group_quota' });
   assert.equal(pool.state, 'waiting');
@@ -378,7 +378,7 @@ test('the request controls: a rule refusal and a rule or shared-allowance wait s
   // A real ask through the client: the refusal and its verdict come back together.
   const result = await A.ask(A.movieInput('movie:tmdb:9'));
   assert.equal(result.state, 'ruled');
-  assert.equal(A.describe(result, caps).text, "The household's rules don't allow this one (genre Horror).");
+  assert.equal(A.describe(result, caps).text, "The household's rules don't allow this one: genre Horror.");
 });
 
 test('TV layout: the conditions editor is real focusable controls with 48 px targets; phones get 44 px and full-width fields', async t => {

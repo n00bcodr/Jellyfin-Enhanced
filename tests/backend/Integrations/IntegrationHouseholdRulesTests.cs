@@ -840,6 +840,13 @@ public class IntegrationHouseholdRulesTests
         var row = mine["items"]![0]!;
         Assert.Equal("genre", (string)row["rules"]!["hits"]![0]!["condition"]!);
         Assert.DoesNotContain("quota", row.ToJsonString());
+        // After a restart nothing has read the title's facts yet: the card keeps the verdict the request was made with
+        // (never "not known" for facts the household knew).
+        var fresh = new HouseholdRuleFacts((t, _) => Task.FromResult(t.NumericId), (_, _) => Task.FromResult<string?>(null), Score, () => r.Now);
+        var restarted = new RequestService(r.Rig.Ledger, new RequestPolicy(r.View, r.Lab.Store, new ArrInstanceLibraries(r.Lab.Store, new FakeLibraryAccess()), new TitleAliases(r.Lab.Store, null), null!, r.Lab.Arr.Factory, new UnavailableRequestBackend(), fresh), r.View, r.Rig.Feed, () => r.Now);
+        var again = new RequestHubProjection(restarted, directory, null, (_, _, _) => Task.FromResult<HubTitleMeta?>(null), () => r.Now);
+        var hit = JsonNode.Parse((await again.ApprovalsAsync(r.View.Viewer(r.Admin.UserId)!, default)).Json)!["items"]![0]!["rules"]!["hits"]![0]!;
+        Assert.True((bool)hit["matched"]!);
         _ = ask;
     }
 

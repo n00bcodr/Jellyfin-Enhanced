@@ -257,7 +257,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (want.Reason is RequestLedger.RuleReview or RequestLedger.HouseholdRule && want.Status == "pending")
             {
                 var now = (requester ?? _service.Policy.Evaluate(user ?? want.UserId, want.Input)).Rules;
-                if (now is { Verdict: not HouseholdRules.None }) return now;
+                // Facts not in memory (after a restart nothing has read them yet) aren't "unknown" to the household: the
+                // verdict it was created or held with stands until they are read again.
+                if (now is { Verdict: not HouseholdRules.None } && (want.Rules == null || now.Hits.All(h => h.Matched != null))) return now;
             }
             return want.Rules;
         }

@@ -1838,11 +1838,18 @@
     "arr_rules_chip_refused": "Rules now refuse it",
     "arr_rules_pool_line": "{name}: {used} of {limit} used (shared)",
     "arr_rules_pool_line_next": "{name}: {used} of {limit} used (shared) · next frees up {day}",
-    "arr_rules_toast_review": "Sent to {contact} for an OK: the household's rules want a look ({why}).",
+    "arr_rules_toast_review": "Sent to {contact} for an OK. The household's rules want a look: {why}.",
     "arr_rules_toast_review_plain": "Sent to {contact} for an OK: the household's rules want a look.",
     "arr_rules_toast_pool": "Sent to {contact} for an OK: the shared allowance is used up.",
-    "arr_rules_toast_refused": "The household's rules don't allow this one ({why}).",
+    "arr_rules_toast_refused": "The household's rules don't allow this one: {why}.",
     "arr_rules_toast_refused_plain": "The household's rules don't allow this one.",
     "arr_rules_sheet_pool": "Shared allowance {name}: {used} of {limit} used",
-    "arr_rules_collection_refused": "{n} not allowed by the household's rules"
+    "arr_rules_collection_refused": "{n} not allowed by the household's rules",
+    "arr_rules_stuck_household_rule": "Stuck · the household's rules now refuse it",
+    "arr_rules_stuck_rule_review": "Stuck · the household's rules now want a look",
+    "arr_rules_stuck_group_quota": "Stuck · its shared allowance is used up",
+    "arr_rules_stuck_seerr_options_changed": "Stuck · Seerr's servers changed since the choice",
+    "arr_rules_stuck_seerr_options_disabled": "Stuck · Seerr server choices are switched off",
+    "arr_rules_stuck_seerr_advanced_required": "Stuck · their Seerr account can't choose servers any more",
+    "arr_rules_stuck_admin_required": "Stuck · an administrator's choice needs an administrator"
 }

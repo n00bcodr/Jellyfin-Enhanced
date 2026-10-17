@@ -255,13 +255,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var main = await Get("/api/v1/settings/main").ConfigureAwait(false);
             var rules = await Get("/api/v1/overrideRule").ConfigureAwait(false);
             bool? auto = null;
-            // Seerr's default quota for new users of a kind (null: none set, or not readable).
+            // Seerr's default quota for new users of a kind: a limit (null: none set), or null when not readable.
             object? Quota(string kind)
             {
                 if (main is not { } m || !m.TryGetProperty("defaultQuotas", out var q) || q.ValueKind != JsonValueKind.Object || !q.TryGetProperty(kind, out var part) || part.ValueKind != JsonValueKind.Object) return null;
                 int? limit = part.TryGetProperty("quotaLimit", out var l) && l.TryGetInt32(out var li) && li > 0 ? li : null;
                 int? days = part.TryGetProperty("quotaDays", out var d) && d.TryGetInt32(out var di) && di > 0 ? di : null;
-                return limit == null ? null : new { limit, days };
+                return new { limit, days };
             }
             if (main is { } settings && settings.TryGetProperty("defaultPermissions", out var bits) && bits.TryGetInt64(out var value))
                 auto = (value & (long)(JellyseerrPermission.ADMIN | JellyseerrPermission.AUTO_APPROVE)) != 0;
