@@ -432,7 +432,7 @@ test('the search row starts itself on the first navigation once the request cont
   assert.equal(h.fetches.length, 0);
   h.navigation[0]();
   typeInto(h, 'dune');
-  await until(() => h.document.querySelector('.je-ask-search-section'), 1500);
+  await until(() => h.document.querySelector('.je-ask-search-section .je-discover-note'));
   assert.equal(h.document.querySelector('.je-ask-search-section .je-discover-note').textContent, 'Couldn\'t search for titles that aren\'t in your library right now.');
   // A user switch drops the row.
   h.switchUser();
