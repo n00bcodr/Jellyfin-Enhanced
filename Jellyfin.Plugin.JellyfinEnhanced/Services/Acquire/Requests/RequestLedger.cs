@@ -640,7 +640,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // (maybe_sent here: only the held jobs resumed above.)
             var existingJobs = Jobs(c, t, "want_id=$id AND state IN ('queued','retry','succeeded','maybe_sent')", ("$id", id));
             var extra = input.Extra(Coverage(c, t, covered, TargetKey(requester)).Concat(existingJobs.Where(j => TargetKey(j.Authorization) == TargetKey(requester)).Select(j => j.Input)));
-            var cost = extra == null ? 0 : Cost(c, t, extra, want.UserId, now, requester.WindowDays, existingJobs.Count == 0 ? id : null);
+            var cost = extra == null || Free(want) ? 0 : Cost(c, t, extra, want.UserId, now, requester.WindowDays, existingJobs.Count == 0 ? id : null);
             var gb = extra == null ? 0 : EstimateGb(extra, requester);
             if (OverGbCap(requester, Charges(c, t, want.UserId).Where(charge => existingJobs.Count > 0 || charge.WantId != id).ToArray(), gb, now)) return RequestOutcome.Refused("quota_exceeded", 429, "quota_exceeded");
             // Explicit approval grants soft quota/series excess, while hard limits and visibility remain enforced.
@@ -677,6 +677,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             ReleasePendingFollowers(c, t, acquisition, actor, policy, now);
             return RequestOutcome.Accepted(id, confirmedScope ? "looking" : "queued_outage", 200);
         }
+        // Free automation (persisted with the want) costs nobody's allowance whenever its cost is worked out again; its
+        // estimated GB still counts against a hard GB cap.
+        private static bool Free(RequestWant want) => RequestOriginDetail.Read(want.OriginDetail)?.Free == true;
         private static void RehomeFollowers(SqliteConnection c, SqliteTransaction t, string oldAcquisition, string acquisition, string oldTarget, string target, Guid actor, IRequestPolicy policy, DateTimeOffset now)
         {
             var oldWants = Wants(c, t, "acquisition_id=$a", ("$a", oldAcquisition));
@@ -752,7 +755,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var extra = follower.Input.Extra(coverage.Where(w => w.TargetKey == follower.TargetKey).Select(w => w.OwnedInput!));
                 if (extra == null) continue;
                 var facts = policy.Evaluate(follower.UserId, extra);
-                var cost = Cost(c, t, extra, follower.UserId, now, facts.WindowDays);
+                var cost = Free(follower) ? 0 : Cost(c, t, extra, follower.UserId, now, facts.WindowDays);
                 Exec(c, t, "UPDATE wants SET owned_input=$input,is_follower=0,cost=$cost,updated_at=$at WHERE id=$id", ("$input", extra.Canonical), ("$cost", cost), ("$at", Ms(now)), ("$id", follower.Id));
                 Exec(c, t, "UPDATE reservations SET cost=$cost,estimated_gb=$gb WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", EstimateGb(extra, facts)), ("$id", follower.Id));
                 Record(c, t, follower.Id, null, null, "scope_restored", "accepted", follower.Reason, follower.Input.Key, now);

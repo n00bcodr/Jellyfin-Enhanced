@@ -304,6 +304,40 @@ public class IntegrationAutomationTests
         Assert.True(RequestOriginDetail.Read(e.R.Ledger.Find(outcome.WantId!)!.OriginDetail)!.Free);
     }
 
+    [Fact]
+    public async Task FreeAutomationStaysFreeWhenItIsApprovedOrTakesOverAScopeAndItsGbStillCounts()
+    {
+        using var e = new Engine();
+        e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Ask);
+        e.C.ArrAutomationFree = true;
+        var asked = await e.Auto(e.R.Admin, Movie(660));
+        Assert.Equal("pending", e.R.Ledger.Find(asked.WantId!)!.Status);
+        Assert.Equal(200, (await e.R.Service.ApproveAsync(asked.WantId!, e.R.Admin, null, default)).HttpStatus);
+        var approved = e.R.Ledger.Find(asked.WantId!)!;
+        Assert.Equal(("queued", 0), (approved.Status, approved.Cost));
+        Assert.Equal(0, e.Count("SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id='" + approved.Id + "'"));
+
+        // Following a Kid's waiting ask, then owning the scope once that ask is declined: still free.
+        e.Mode(AutomationRecipes.AutoMovie, AutomationMode.Auto);
+        var kid = await e.R.Create(e.R.Kid, Movie(661));
+        var follower = await e.Auto(e.R.Member, Movie(661));
+        Assert.Equal("pending", e.R.Ledger.Find(follower.WantId!)!.Status);
+        Assert.Equal(200, e.R.Service.Close(kid.RequestId!, e.R.Admin, "Not this one").HttpStatus);
+        var owner = e.R.Ledger.Find(follower.WantId!)!;
+        Assert.NotNull(owner.OwnedInput);
+        Assert.Equal(0, owner.Cost);
+        Assert.Equal(0, e.Count("SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id='" + owner.Id + "'"));
+        Assert.Equal(200, (await e.R.Service.ApproveAsync(owner.Id, e.R.Admin, null, default)).HttpStatus);
+        Assert.Equal(0, e.R.Ledger.Find(owner.Id)!.Cost);
+
+        // A person's own ask is still charged as before.
+        var own = await e.R.Create(e.R.Kid, Movie(662));
+        Assert.Equal(200, (await e.R.Service.ApproveAsync(own.RequestId!, e.R.Admin, null, default)).HttpStatus);
+        Assert.Equal(1, e.R.Ledger.Find(own.RequestId!)!.Cost);
+        string Gb(string id) => e.R.Db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT COALESCE(SUM(estimated_gb),0) FROM reservations WHERE want_id='" + id + "'"; return Convert.ToString(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)!; });
+        Assert.Equal(Gb(own.RequestId!), Gb(approved.Id));
+    }
+
     // ------------------------------------------------------------------ the no-write seam and origins
 
     [Fact]
