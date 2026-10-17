@@ -40,6 +40,28 @@ public class ListsLifecycleTests
         }
     }
 
+    // A collage marker the importer copied, left behind by a list deleted before markers went with their list (no
+    // document any more): the sweep removes it once the list stays missing, so it can't stand for a list made again under
+    // that id. A marker of a list that exists stays.
+    [Fact]
+    public async Task TheSweepRemovesACollageMarkerLeftBehindByADeletedList()
+    {
+        using var f = new Fixture();
+        var owner = FakeListHost.MakeUser("owner");
+        var kept = f.Host.AddPlaylist(owner);
+        var keptId = kept.Info.Id.ToString("N");
+        var goneId = Guid.NewGuid().ToString("N");
+        var markers = Path.Combine(f.Store.DirectoryPath, ListStore.LegacyCollagesFolder);
+        Directory.CreateDirectory(markers);
+        File.WriteAllText(Path.Combine(markers, keptId + ".json"), "{}");
+        File.WriteAllText(Path.Combine(markers, goneId + ".json"), "{}");
+
+        await f.Lifecycle.CollectOrphansAsync(TimeSpan.Zero, CancellationToken.None);
+
+        Assert.True(File.Exists(Path.Combine(markers, keptId + ".json")));
+        Assert.False(File.Exists(Path.Combine(markers, goneId + ".json")));
+    }
+
     [Fact]
     public async Task TheSweepRemovesOnlyDocumentsOfListsThatStayMissing()
     {
