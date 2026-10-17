@@ -29,7 +29,7 @@
   }
 
   if (useNativeTab) {
-    window.JellyfinEnhanced.nativeTabs.register('requests', 'Requests', function (panel) {
+    window.JellyfinEnhanced.nativeTabs.register('requests', window.JellyfinEnhanced.t('requests_requests') || 'Requests', function (panel) {
       var marker = document.createElement('div');
       marker.className = 'jellyfinenhanced requests';
       panel.appendChild(marker);

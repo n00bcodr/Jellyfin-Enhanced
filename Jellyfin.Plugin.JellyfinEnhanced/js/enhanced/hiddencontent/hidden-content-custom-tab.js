@@ -27,7 +27,7 @@
   }
 
   if (useNativeTab) {
-    window.JellyfinEnhanced.nativeTabs.register('hidden-content', 'Hidden Content', function (panel) {
+    window.JellyfinEnhanced.nativeTabs.register('hidden-content', window.JellyfinEnhanced.t('hidden_content_manage_title') || 'Hidden Content', function (panel) {
       var marker = document.createElement('div');
       marker.className = 'jellyfinenhanced hidden-content';
       panel.appendChild(marker);
