@@ -555,8 +555,19 @@ it to Seerr's defaults. Turning the switch off holds waiting requests that carry
 (`seerr_options_disabled`); a lost Seerr permission holds them with `seerr_advanced_required`. A request Seerr stored
 without the chosen options doesn't count as sent: it is held for an administrator to check in Seerr. When Seerr answers
 that the title is already requested (or has no seasons left to request), that counts only if the request already there
-has the chosen server, profile and folder; covered anywhere else, it is held with `seerr_options_changed`. While Jellyfin
+has the chosen server, profile and folder; covered anywhere else, it is held with `seerr_options_changed`. For a series,
+every season asked for must end up at the chosen server, profile and folder: when Seerr makes the request for some
+seasons while another is already requested elsewhere (or already on its way or available, with no request showing
+where), the request is held with `seerr_options_changed` for an administrator to check in Seerr. While Jellyfin
 Enhanced handles requests, a Seerr choice is refused (`invalid_defaults`).
+
+A choice is never answered by another request somewhere else: asking for a title at one server, profile and folder
+while your own or someone else's request went to another (or to Seerr's defaults) makes a request of its own, checked
+when it is sent, instead of "already recorded" or "someone already asked". Asking again with the same choice, or
+without one, answers with the request already there. The new seasons a "Keep getting new episodes" request asks Seerr
+for go to the same server, profile and folder, checked again when each is sent. When one is held because Seerr's
+servers changed, approving the request with the same server, profile and folder chosen again (read fresh) sends it;
+choosing another destination for a request that already went out is refused (`request_changed`).
 
 While the switch is on, the older Seerr pages follow the same boundary: for anyone who isn't a Jellyfin administrator,
 the server, profile, root folder, language profile and tags are removed from requests (even with Seerr's advanced
