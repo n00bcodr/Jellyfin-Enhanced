@@ -412,9 +412,23 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`/ScheduledTasks/AudioLanguageTagsSyncTask.cs`**: "Sync Audio Language Tags to Jellyfin" (no default triggers). Writes the tags for every movie and series.
     * **`/Services/TagCacheService.cs`**: Applies the same tags to a movie or series when its cache entry is rebuilt after a library event.
 
+* **`/Services/Acquire/Automation/`**: The phase-4 automation engine (Requests & downloads). `AutomationFlags.cs` is the
+  switch hierarchy and each recipe's mode as it applies (with the rollout Shadow guard), `AutomationModes.cs` the recipes
+  and their stored modes and kill switches, `AutomationDecision.cs` the no-write decision seam (a rolled-back ledger
+  preview) and who is eligible to go ahead without an OK, `AutomationBudgets.cs` durable atomic budget admission in
+  acquire.db (rolling UTC windows, unique actions, uncertain sends counted until read back, fail closed),
+  `AutomationAdmission.cs` the send guard the outbox and both backends apply to automatic work (kills, modes, breakers,
+  storage, budgets right before each write), `AutomationStore.cs` decisions, recorded grants, breakers and the
+  migration record, `AutomationMigration.cs` the one-time start-up migration, `AutomationConsents.cs` each person's
+  recipe preference, `AutomationRisk.cs` which risk classes may ever be automatic, and `AutomationStatus.cs` the
+  administrators' status and the request backend's admission contract. Routes in **`Controllers/ArrAdminAutomationController.cs`**;
+  the Requests page card in **`js/arr/admin/admin-automation.js`**.
+
 * **`/Services/Acquire/Requests/`**: Durable request server core. `RequestModels.cs` contains normalized scopes, outcomes
   and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility; `RequestLedger.cs`
-  commits intent, reservations, approvals, events and outbox jobs in acquire.db schema 2. `RequestService.cs` orchestrates
+  commits intent, reservations, approvals, events and outbox jobs in acquire.db (schema 3 adds each want's server-built
+  origin and provenance and its operation); `RequestOperations.cs` keeps durable batch/confirmation operations and derives
+  each title's request id from the operation (a retry or restart reuses it, a new confirmation gets new ones). `RequestService.cs` orchestrates
   policy preparation and private list projections. `RequestOutbox.cs` provides local title locks, restart recovery,
   final-send authorization and a network-free fallback transport. `RequestBackends.cs` sends each job through the
   backend it was authorised for: `DirectArrBackend.cs` (Jellyfin Enhanced mode: Sonarr/Radarr adds and field-scoped
