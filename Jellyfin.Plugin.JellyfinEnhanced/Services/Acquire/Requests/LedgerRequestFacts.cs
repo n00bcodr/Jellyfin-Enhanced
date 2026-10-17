@@ -87,6 +87,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 AskedAt = fresh ? held.AskedAt : Min(seerr.AskedAt, held.AskedAt),
                 AskedByViewer = seerr.AskedByViewer || held.AskedByViewer,
                 Pending = seerr.Pending || held.Pending,
+                // Held back at sending only while nothing Seerr holds is simply waiting for an OK.
+                HeldReason = seerr.Pending ? null : held.HeldReason,
                 ApprovedAt = Min(seerr.ApprovedAt, held.ApprovedAt),
                 ApprovedStandardAt = Min(seerr.ApprovedStandardAt, held.ApprovedStandardAt),
                 Approved4kAt = Min(seerr.Approved4kAt, held.Approved4kAt),

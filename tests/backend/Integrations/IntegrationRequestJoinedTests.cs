@@ -253,6 +253,12 @@ public class IntegrationRequestJoinedTests
         var both = LedgerRequestFacts.Merge(seerr, queued)!;
         Assert.Equal((at.UtcDateTime.AddDays(-2), at.UtcDateTime.AddDays(-1), (DateTime?)at.UtcDateTime, false), (both.AskedAt, both.ApprovedAt, both.Approved4kAt, both.Pending));
         Assert.Equal(2, both.Sent.Count);
+        // An ask held back at sending (no Seerr account linked yet...) stays held next to Seerr's own requests for the
+        // title, unless one of those is simply waiting for an OK.
+        var parked = new RequestFacts { AskedAt = at.UtcDateTime, Pending = true, HeldReason = "seerr_user_unlinked" };
+        Assert.Equal("seerr_user_unlinked", LedgerRequestFacts.Merge(declined, parked)!.HeldReason);
+        Assert.Equal("seerr_user_unlinked", LedgerRequestFacts.Merge(seerr, parked)!.HeldReason);
+        Assert.Null(LedgerRequestFacts.Merge(new RequestFacts { AskedAt = at.UtcDateTime.AddDays(-1), Pending = true }, parked)!.HeldReason);
         Assert.Same(seerr, LedgerRequestFacts.Merge(seerr, null));
         Assert.Same(queued, LedgerRequestFacts.Merge(null, queued));
     }
