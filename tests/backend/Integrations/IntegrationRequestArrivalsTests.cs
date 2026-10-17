@@ -1107,6 +1107,32 @@ public class IntegrationRequestArrivalsTests
     }
 
     [Fact]
+    public async Task ASeasonThatArrivedAndWasRemovedAgainIsOfferedToItsAskerAgain()
+    {
+        using var lab = new Lab();
+        await lab.Warm();
+        // Emma asks for season 2, it goes out and arrives: her ask is fulfilled.
+        var s2 = await lab.Ask(lab.Emma, new MutationInput { Key = Firefly, Scope = "seasons", Seasons = new[] { 2 } });
+        await lab.Outbox.TickAsync(default);
+        foreach (var e in lab.Sonarr.Episodes.Where(e => (int)e["seasonNumber"]! == 2)) e["monitored"] = true;
+        lab.View.AddItem(new JfItemRef { ItemId = lab.SeriesItem, Kind = "series", Key = TitleKey.Parse(Firefly) });
+        lab.View.AddEpisode(lab.SeriesItem, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 1, DateCreated = lab.Arr.Now.UtcDateTime });
+        lab.View.AddEpisode(lab.SeriesItem, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 2, DateCreated = lab.Arr.Now.UtcDateTime });
+        lab.View.Rev++;
+        Assert.Equal(1, await lab.Fulfilment.CheckAsync(new[] { Firefly }, default));
+        Assert.Equal("fulfilled", lab.Ledger.Find(s2)!.Status);
+        // Later season 2 is deleted from disk and from Sonarr: the fulfilled ask is history, so her series page
+        // doesn't name season 2 as asked for (Get Season 2 is offered again), and neither does the ledger's view of it.
+        lab.View.EpisodesBySeries[lab.SeriesItem].RemoveAll(x => x.Episode.Season == 2);
+        foreach (var e in lab.Sonarr.Episodes.Where(e => (int)e["seasonNumber"]! == 2)) e["monitored"] = false;
+        lab.View.Rev++;
+        lab.Arr.Now = lab.Arr.Now.AddMinutes(10);
+        using var doc = JsonDocument.Parse((await lab.Status.ForItemAsync(lab.Emma, lab.SeriesItem, default)).Json);
+        Assert.False(doc.RootElement.GetProperty("items")[0].TryGetProperty("askedSeasons", out var asked), asked.ToString());
+        Assert.Empty(LedgerRequestFacts.FactsOf(new[] { lab.Ledger.Find(s2)! }, lab.Emma.UserId, () => Array.Empty<RequestDispatch>())!.ViewerSeasons);
+    }
+
+    [Fact]
     public async Task AnAbsentSeriesPageNeverOffersASeasonAlreadyAskedForInEitherMode()
     {
         using var lab = new Lab();

@@ -163,7 +163,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // instance...); held only when nothing pending is simply waiting for an OK.
             var pending = wants.Where(w => w.Status == "pending").ToArray();
             var held = pending.Length > 0 && pending.All(w => w.Reason is not ("awaiting_approval" or "over_quota") && !string.IsNullOrEmpty(w.Reason)) ? pending[0].Reason : null;
-            var viewerSeasons = wants.Where(w => w.UserId == viewer && w.Status != "declined" && w.Input.Variant == "standard" && w.Input.Scope is ("seasons" or "next_season"))
+            // The viewer's own whole seasons still asked for: not a fulfilled ask (what arrived is the library's to
+            // show, and a season removed again since is offered again), not a declined one.
+            var viewerSeasons = wants.Where(w => w.UserId == viewer && w.Status is not ("declined" or "fulfilled") && w.Input.Variant == "standard" && w.Input.Scope is ("seasons" or "next_season"))
                 .SelectMany(w => w.Input.Seasons).Distinct().Order().ToArray();
             return new RequestFacts { AskedAt = wants.Min(w => w.CreatedAt).UtcDateTime, AskedByViewer = wants.Any(w => w.UserId == viewer), ViewerSeasons = viewerSeasons,
                 Pending = pending.Length > 0, HeldReason = held, ApprovedAt = At(null), ApprovedStandardAt = At("standard"), Approved4kAt = At("4k"),

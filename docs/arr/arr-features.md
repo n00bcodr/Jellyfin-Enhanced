@@ -885,7 +885,8 @@ profiles, folders or tags.
   episodes missing for a long while) and **More…** (the sheet), with the cost of the first one. After an ask the button
   shows where it stands: *Waiting for OK* or *Asked!*. Seasons you asked for yourself (with Jellyfin Enhanced handling
   requests) aren't offered again there or in the sheet, also once Sonarr has them and the page reads *Looking for it*
-  (Search still offers them once their episodes are missing for a long while).
+  (Search still offers them once their episodes are missing for a long while). Once one has arrived your ask is done:
+  if that season is deleted again later, it is offered again.
 - **Movies in the library** get **Get 4K** for people who may ask for 4K, when no 4K copy is there yet.
 - **Collection pages** say "You have 4 of 6." and offer **Get the 2 missing** with a cost preview ("Uses 2 of your 5
   this week; 1 need {contact}'s OK"). Movies that aren't out yet are listed but not asked for; movies someone has
