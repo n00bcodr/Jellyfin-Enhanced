@@ -213,6 +213,52 @@ public class ListsImporterTests
         AssertSame(originals, Snapshot(r.Source));
     }
 
+    // Review round 1 (4c1-B5): every episode record is checked (present, coordinates in range, an episodes entry's in its
+    // season, air dates readable), in a dry run and an import alike; a document with a bad one is quarantined whole.
+    [Fact]
+    public async Task DocumentsWithAMissingOrMalformedEpisodeRecordAreQuarantinedInADryRunAndAnImport()
+    {
+        using var r = new Rig();
+        const string Expected = "\"expected\": [ { \"s\": 1, \"e\": 1 }, { \"s\": 1, \"e\": 2 } ]";
+        var cases = new Dictionary<string, Func<string, string>>
+        {
+            ["nullExpected"] = json => json.Replace(Expected, "\"expected\": [ null ]", StringComparison.Ordinal),
+            ["nullEpisode"] = json => json.Replace("\"kind\": \"season\"", "\"kind\": \"episodes\"", StringComparison.Ordinal)
+                .Replace(Expected, "\"episodes\": [ { \"s\": 1, \"e\": 1 }, null ]", StringComparison.Ordinal),
+            ["otherSeason"] = json => json.Replace("\"kind\": \"season\"", "\"kind\": \"episodes\"", StringComparison.Ordinal)
+                .Replace(Expected, "\"episodes\": [ { \"s\": 2, \"e\": 1 } ]", StringComparison.Ordinal),
+            ["badCoords"] = json => json.Replace(Expected, "\"expected\": [ { \"s\": -1, \"e\": 1 } ]", StringComparison.Ordinal),
+            ["badAirDate"] = json => json.Replace(Expected, "\"expected\": [ { \"s\": 1, \"e\": 1, \"airDate\": \"soon\" } ]", StringComparison.Ordinal),
+            ["badFilled"] = json => json.Replace("\"s\": 1, \"e\": 1 } ],", "\"s\": 1, \"e\": -3 } ],", StringComparison.Ordinal),
+        };
+        var files = new Dictionary<string, string>();
+        foreach (var (name, change) in cases)
+        {
+            var list = r.H.Host.AddPlaylist(r.Owner);
+            var ids = NewIds(list.Info.Id, r.Owner);
+            var json = change(SchemaOne(ids));
+            Assert.NotEqual(SchemaOne(ids), json);
+            r.Write(ids.List + ".json", json);
+            files[ids.List + ".json"] = name;
+        }
+
+        // A good document next to them still imports.
+        var good = NewIds(r.H.Host.AddPlaylist(r.Owner).Info.Id, r.Owner);
+        r.Write(good.List + ".json", SchemaOne(good));
+
+        var dry = await r.Importer.RunAsync(apply: false, None);
+        Assert.Equal(files.Keys.OrderBy(f => f, StringComparer.Ordinal), dry.Quarantined.Select(q => q.File).OrderBy(f => f, StringComparer.Ordinal));
+        Assert.All(dry.Quarantined, q => Assert.Equal("bad_entry", q.Reason));
+        Assert.Equal(good.List, Assert.Single(dry.Imported).ListId);
+
+        var applied = await r.Importer.RunAsync(apply: true, None);
+        Assert.Equal(files.Count, applied.Quarantined.Count);
+        Assert.Equal(new[] { good.List }, r.H.Store.EnumerateListIds());
+        // The imported list's view builds.
+        var access = r.H.AccessFor(r.H.Host.Lists[Guid.ParseExact(good.List, "N")], r.Owner);
+        Assert.Equal(2, (await r.H.Service.GetViewAsync(access, None)).Placeholders.Count);
+    }
+
     [Fact]
     public async Task MissingListsTheOtherKindAndDifferentExistingDocumentsAreSkippedAndASecondRunIsUnchanged()
     {

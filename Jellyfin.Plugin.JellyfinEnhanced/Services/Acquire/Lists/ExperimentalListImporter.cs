@@ -430,9 +430,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return false;
             }
 
+            // Every episode record is there and readable (progress and views count them): coordinates in range, an episodes
+            // entry's episodes in its season, air dates as the list writes them.
             return item.Episodes.Count <= ListRules.MaxEpisodes && item.Expected.Count <= PlaceholderProgress.MaxExpected
-                && item.Filled.All(f => f != null && IsId(f.ItemId));
+                && item.Episodes.All(e => ValidEpisode(e) && (item.Kind != PlaceholderKinds.Episodes || e.S == item.SeasonNumber))
+                && item.Expected.All(ValidEpisode)
+                && item.Filled.All(f => f != null && IsId(f.ItemId) && ValidCoordinates(f.S, f.E) && (f.Via == null || IsId(f.Via)));
         }
+
+        private static bool ValidEpisode(PlaceholderEpisode? episode) =>
+            episode != null && ValidCoordinates(episode.S, episode.E)
+            && (string.IsNullOrWhiteSpace(episode.AirDate) || ListRules.TryParseDate(episode.AirDate.Trim(), out _));
+
+        // Wide bounds: daily shows can number seasons by year and episodes into the thousands.
+        private static bool ValidCoordinates(int season, int episode) => season is >= 0 and <= 99999 && episode is >= 0 and <= 99999;
 
         private static bool IsId(string? id) => id != null && id.Length == 32 && Guid.TryParseExact(id, "N", out _);
 
