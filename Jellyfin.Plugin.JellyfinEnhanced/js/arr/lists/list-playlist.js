@@ -29,6 +29,8 @@
     /** How long to wait for jellyfin-web to set up the items container of a page being drawn. */
     const CONTAINER_WAIT_MS = 250;
     const CONTAINER_WAIT_TRIES = 40;
+    /** Rows built per slice when many are new (a 699-entry list never blocks the page in one long task). */
+    const BUILD_CHUNK = 150;
 
     /**
      * Whether jellyfin-web runs its TV layout.
@@ -137,7 +139,8 @@
             paused: false,
             disposed: false,
             focusOnRender: null,
-            observer: null
+            observer: null,
+            buildToken: 0
         };
 
         /** @returns {boolean} The page is still in the document. */
@@ -187,6 +190,15 @@
             lp.render.ensureStyles();
             const placeholders = view.placeholders || [];
             const context = ctrl.context();
+            const stale = placeholders.filter((ph) => {
+                const known = ctrl.nodes.get(ph.id);
+                return !known || known.sig !== lp.render.signature(ph, context);
+            });
+            if (stale.length > BUILD_CHUNK) {
+                // Many new rows: built in slices first (the rows shown stay meanwhile), then placed in one go.
+                ctrl.buildInSlices(stale, context);
+                return;
+            }
             const keep = new Map();
             for (const ph of placeholders) {
                 const sig = lp.render.signature(ph, context);
@@ -215,6 +227,27 @@
                 ctrl.focusOnRender = null;
                 if (target && typeof target.focus === 'function') target.focus();
             }
+        };
+
+        /**
+         * Builds rows in slices of BUILD_CHUNK (one per task), then draws.
+         * @param {Object[]} list Entries whose rows are missing or out of date.
+         * @param {Object} context Drawing context.
+         */
+        ctrl.buildInSlices = (list, context) => {
+            const token = ++ctrl.buildToken;
+            let index = 0;
+            const step = () => {
+                if (token !== ctrl.buildToken || ctrl.disposed || ctrl.paused) return;
+                const end = Math.min(index + BUILD_CHUNK, list.length);
+                for (; index < end; index++) {
+                    const ph = list[index];
+                    ctrl.nodes.set(ph.id, { node: lp.render.row(ph, context), sig: lp.render.signature(ph, context) });
+                }
+                if (index < list.length) setTimeout(step, 0);
+                else ctrl.render();
+            };
+            step();
         };
 
         /** Waits (bounded) for jellyfin-web to set up the items container of the page it is drawing. */
@@ -380,7 +413,7 @@
         ctrl.restoreIfLost = () => {
             if (ctrl.disposed || ctrl.paused || !(ctrl.view?.placeholders || []).length) return;
             if (container.querySelector(':scope > .je-list-row')) return;
-            ctrl.nodes.clear();
+            // The rows built before are put back as they are (no rebuild).
             ctrl.render();
         };
 
@@ -402,6 +435,7 @@
         ctrl.pause = () => {
             ctrl.paused = true;
             ctrl.seq++;
+            ctrl.buildToken++;
             ctrl.abort?.abort();
             ctrl.abort = null;
             clearTimeout(ctrl.refetchTimer);

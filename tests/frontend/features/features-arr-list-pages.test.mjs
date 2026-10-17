@@ -213,6 +213,37 @@ test('Jellyfin re-rendering its rows (afterRefresh), a cloned row and a second v
   assert.deepEqual(h.order(container), ['p:01', 'e:a1', 'p:02']);
 });
 
+test('a 699-entry list (Arrowverse) draws every row in list order, built in slices so no single task builds them all', async t => {
+  const a = ITEM(0xa1);
+  const entries = Array.from({ length: 699 }, (_, i) => ph('e' + String(i).padStart(31, '0'), { title: `E${i}` }));
+  const projected = entries.slice(0, 300).map(e => e.token).concat([`e:${a}:0`], entries.slice(300).map(e => e.token));
+  const h = setup(t, { views: () => [view(entries, projected)], items: { [LIST]: PLAYLIST_ITEM } });
+  await h.start();
+  const { page, container } = h.playlistPage([a]);
+  const built = [];
+  const original = h.JE.internals.arrListPages.render.row;
+  let inTask = 0;
+  h.JE.internals.arrListPages.render.row = (...args) => { inTask += 1; return original(...args); };
+  const tick = setInterval(() => { if (inTask) built.push(inTask); inTask = 0; }, 0);
+  await h.show(page);
+  await h.settle(120);
+  clearInterval(tick);
+  if (inTask) built.push(inTask);
+  const rows = [...container.children];
+  assert.equal(rows.filter(n => n.classList.contains('je-list-row')).length, 699);
+  assert.equal(rows[300].classList.contains('listItem'), true, 'the real row sits after the 300th entry');
+  assert.equal(rows[0].querySelector('.je-list-title').textContent, 'E0');
+  assert.equal(rows[699].querySelector('.je-list-title').textContent, 'E698');
+  assert.ok(Math.max(...built) <= 150, `rows built per task: ${built.join(',')}`);
+  // Jellyfin replacing its rows: the rows come back without being built again.
+  let rebuilt = 0;
+  h.JE.internals.arrListPages.render.row = (...args) => { rebuilt += 1; return original(...args); };
+  container.innerHTML = `<div class="listItem" data-id="${a}" data-playlistitemid="${a}"></div>`;
+  container.afterRefresh();
+  assert.equal(container.querySelectorAll('.je-list-row').length, 699);
+  assert.equal(rebuilt, 0);
+});
+
 test('late and reversed answers: the newest read wins and a lower revision never replaces a higher one', async t => {
   const first = deferred();
   const second = deferred();
