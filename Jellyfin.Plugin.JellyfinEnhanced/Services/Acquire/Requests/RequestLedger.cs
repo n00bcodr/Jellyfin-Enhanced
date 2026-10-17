@@ -209,9 +209,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Persistent policy/cache invalidation stamp, fenced by restore generation.</summary>
         public long Revision => !_db.Available ? 0 : _db.Read(c => long.Parse(Scalar(c, null, "SELECT COALESCE((SELECT value FROM meta WHERE key='request_revision'),'0')")!, CultureInfo.InvariantCulture)) + _db.Generation * 1000000000;
         private static void Changed(SqliteConnection c, SqliteTransaction t) => Exec(c, t, "INSERT INTO meta VALUES('request_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1");
-        internal static bool HasRouting(MutationInput input) => input.InstanceId != null || input.ProfileId != null || input.RootFolder != null;
+        /// <summary>
+        /// The input chooses where the request goes: an arr instance, profile or root folder (Jellyfin Enhanced mode), or a
+        /// Seerr server, profile, root folder and options stamp (Seerr mode). Administrators only.
+        /// </summary>
+        internal static bool HasRouting(MutationInput input) => input.HasArrRouting || input.HasSeerrOptions;
+        /// <summary>The input names Seerr options (server, profile, root folder, stamp).</summary>
+        internal static bool HasSeerrOptions(MutationInput input) => input.HasSeerrOptions;
+        /// <summary>Any routing choice differs between the two inputs (arr or Seerr).</summary>
         internal static bool RoutingChanged(MutationInput input, MutationInput original)
-            => input.InstanceId != original.InstanceId || input.ProfileId != original.ProfileId || input.RootFolder != original.RootFolder;
+            => input.InstanceId != original.InstanceId || input.ProfileId != original.ProfileId || input.RootFolder != original.RootFolder ||
+               input.SeerrServerId != original.SeerrServerId || input.SeerrProfileId != original.SeerrProfileId ||
+               input.SeerrRootFolder != original.SeerrRootFolder || input.SeerrOptions != original.SeerrOptions;
         internal static string TargetKey(RequestAuthorization auth)
             => JsonSerializer.Serialize(new[] { auth.Backend, auth.InstanceId, auth.ConnectionGeneration, auth.SeerrSource });
         /// <summary>
@@ -463,12 +472,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             if (!policy.IsAdmin(user) && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
             var facts = policy.Evaluate(user, normalized);
-            if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : "denied");
+            if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : refusal == "backend_unavailable" ? "unavailable" : "denied");
             if (SeerrEpisodes(facts, normalized) is { } seerrOnly) return seerrOnly;
-            if (facts.Role != "Admin" && (normalized.InstanceId != null || normalized.ProfileId != null || normalized.RootFolder != null)) return RequestOutcome.Refused("admin_required");
+            if (facts.Role != "Admin" && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
             // An approver's matching ask authorises the shared pending scope, without moving its charge.
             // Automation never approves someone else's pending ask on a person's behalf.
-            if (!automation && facts.CanApprove && facts.Role is "Manager" or "Admin")
+            // An ask that chooses a Seerr destination doesn't approve someone else's pending ask without it (that would
+            // send the shared scope to Seerr's defaults and leave the chosen destination unused).
+            if (!automation && !normalized.HasSeerrOptions && facts.CanApprove && facts.Role is "Manager" or "Admin")
             {
                 foreach (var pending in Wants(c, t, "title_key=$key AND variant=$v AND status='pending'", ("$key", normalized.Key), ("$v", normalized.Variant))
                     .Where(w => !w.Follower && w.TargetKey == TargetKey(facts) && w.Input.Extra(new[] { normalized }) == null))
@@ -730,9 +741,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (!policy.IsAdmin(actor) && RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
             var requester = policy.Evaluate(want.UserId, input);
             var approver = policy.Evaluate(actor, input);
-            if (RequestPolicy.Check(requester, approver, input, true) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: "blocked");
+            if (RequestPolicy.Check(requester, approver, input, true) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal == "backend_unavailable" ? "unavailable" : "blocked");
             if (SeerrEpisodes(requester, input) is { } seerrOnly) return seerrOnly;
-            if (approver.Role != "Admin" && (input.InstanceId != want.Input.InstanceId || input.ProfileId != want.Input.ProfileId || input.RootFolder != want.Input.RootFolder)) return RequestOutcome.Refused("admin_required");
+            if (approver.Role != "Admin" && RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
             if (want.Status != "pending") return RequestOutcome.Refused("request_changed", 409);
             // A job held after part of it was written (parked, certainty unknown) isn't in flight: approving resumes it.
             if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent') OR (state<>'parked' AND json_extract(outcome,'$.certainty')='Unknown')) LIMIT 1", ("$id", id)) != null) return RequestOutcome.Refused("request_in_flight", 409);

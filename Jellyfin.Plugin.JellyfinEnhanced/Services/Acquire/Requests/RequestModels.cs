@@ -29,6 +29,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public int? ProfileId { get; init; }
         /// <summary>Optional administrator-selected root folder.</summary>
         public string? RootFolder { get; init; }
+        /// <summary>
+        /// Seerr mode, administrators: the Seerr Radarr/Sonarr server to send the request to (Seerr's own server id,
+        /// which starts at 0). Set together with <see cref="SeerrProfileId"/>, <see cref="SeerrRootFolder"/> and
+        /// <see cref="SeerrOptions"/>, or not at all. Left out of the stored JSON when unset, so inputs without it keep
+        /// their fingerprint.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? SeerrServerId { get; init; }
+        /// <summary>Seerr mode, administrators: the quality profile on that Seerr server.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? SeerrProfileId { get; init; }
+        /// <summary>Seerr mode, administrators: the root folder on that Seerr server, as Seerr names it.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SeerrRootFolder { get; init; }
+        /// <summary>
+        /// Seerr mode, administrators: the options stamp the choice was made against (from the request-options route).
+        /// A request whose stamp no longer matches Seerr's current server facts is refused or held, never sent elsewhere.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SeerrOptions { get; init; }
+        /// <summary>True when the input names a Seerr server, profile, root folder or options stamp.</summary>
+        internal bool HasSeerrOptions => SeerrServerId != null || SeerrProfileId != null || SeerrRootFolder != null || SeerrOptions != null;
+        /// <summary>True when the input names an arr instance, profile or root folder (Jellyfin Enhanced mode routing).</summary>
+        internal bool HasArrRouting => InstanceId != null || ProfileId != null || RootFolder != null;
         /// <summary>Creates a stable canonical input, or null when invalid.</summary>
         public MutationInput? Normalize()
         {
@@ -37,12 +61,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Scope is not ("movie" or "seasons" or "episodes" or "future" or "next_season") ||
                 Seasons == null || Episodes == null || Seasons.Length > 200 || Episodes.Length > 1000 ||
                 Seasons.Any(s => s < 0 || s > 10000) || Episodes.Any(e => e == null || e.Season < 0 || e.Season > 10000 || e.Episode < 1 || e.Episode > 100000) ||
-                InstanceId?.Length > 80 || RootFolder?.Length > 1024 || ProfileId is <= 0) return null;
+                InstanceId?.Length > 80 || RootFolder?.Length > 1024 || ProfileId is <= 0 || !SeerrOptionsValid()) return null;
             if (key.IsMovie != (Scope == "movie") || (Scope == "movie" && (Seasons.Length != 0 || Episodes.Length != 0)) ||
                 (Scope == "episodes" && (Episodes.Length == 0 || Seasons.Length != 0)) ||
                 (Scope is "seasons" or "future" or "next_season" && (Seasons.Length == 0 || Episodes.Length != 0)) ||
                 (Scope is "future" or "next_season" && Seasons.Distinct().Count() != 1)) return null;
             return this with { Key = key.ToString(), Seasons = Seasons.Distinct().OrderBy(s => s).ToArray(), Episodes = Episodes.Distinct().OrderBy(e => e.Season).ThenBy(e => e.Episode).ToArray() };
+        }
+        /// <summary>
+        /// The Seerr options are all there or all absent, never mixed with Jellyfin Enhanced's arr routing: a server id
+        /// of 0 or more, a positive profile id, an absolute root folder of at most 1024 characters without relative
+        /// segments, and a stamp of at most 128 printable characters.
+        /// </summary>
+        private bool SeerrOptionsValid()
+        {
+            if (!HasSeerrOptions) return true;
+            if (SeerrServerId is not int server || SeerrProfileId is not int profile || SeerrRootFolder is not { } root || SeerrOptions is not { } stamp) return false;
+            if (HasArrRouting || server < 0 || profile <= 0) return false;
+            if (root.Length is 0 or > 1024 || string.IsNullOrWhiteSpace(root) || root.Any(char.IsControl) || !BridgePaths.Safe(root)) return false;
+            if (!(BridgePaths.Norm(root).StartsWith('/') || BridgePaths.IsWindows(root))) return false;
+            return stamp.Length is > 0 and <= 128 && !stamp.Any(ch => char.IsControl(ch) || char.IsWhiteSpace(ch));
         }
         /// <summary>Canonical JSON preserved in the job.</summary>
         [JsonIgnore] public string Canonical => JsonSerializer.Serialize(this);

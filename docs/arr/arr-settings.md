@@ -520,6 +520,34 @@ budget window with what is used, what is waiting for a read-back and when it has
 per target (with *Try again now*), automatic requests waiting at send by reason, the request backend's boundary and the
 one-time setup with its notice (*Got it* hides it).
 
+#### Administrator Seerr request options
+
+`ArrPhase4SeerrRequestOptionsEnabled` (off) needs phase 4 and phase 3 and only matters while Seerr handles requests.
+With it on, a Jellyfin administrator may choose which of Seerr's Radarr/Sonarr servers a request goes to, its quality
+profile and root folder (and standard or 4K through the edition, which must match the server). The choice is sent to
+Seerr as Seerr's `serverId`, `profileId` and `rootFolder`, as the person who asked. It is allowed only when:
+
+- the person choosing is a Jellyfin administrator (everyone else gets `admin_required`, whatever their Seerr
+  permissions), and
+- the Seerr account the request goes out as holds Seerr's *Admin*, *Advanced Requests* or *Manage Requests* permission
+  (`seerr_advanced_required`). When an administrator chooses while approving someone else's ask, that person's Seerr
+  account needs the permission too, because Seerr applies the choice to the account the request is made as.
+
+A choice is checked against Seerr's servers (read from Seerr, cached for about a minute) when the request is made,
+when it is approved and again, read fresh, right before it is sent. A server, profile or folder that no longer exists,
+a renamed server, or a server whose 4K setting changed holds the request with `seerr_options_changed` instead of
+sending it to Seerr's defaults. Turning the switch off holds waiting requests that carry a choice
+(`seerr_options_disabled`); a lost Seerr permission holds them with `seerr_advanced_required`. A request Seerr stored
+without the chosen options doesn't count as sent: it is held for an administrator to check in Seerr. While Jellyfin
+Enhanced handles requests, a Seerr choice is refused (`invalid_defaults`).
+
+While the switch is on, the older Seerr pages follow the same boundary: for anyone who isn't a Jellyfin administrator,
+the server, profile, root folder, language profile and tags are removed from requests (even with Seerr's advanced
+permissions), and Seerr's server list and server details (`jellyseerr/sonarr`, `jellyseerr/radarr`,
+`jellyseerr/{type}/{serverId}`) answer 403 `admin_required`. The Sonarr title lookup some series requests need stays
+open. With the switch off they behave as before. Family members' request lists and the Requests page never show a
+chosen server, profile or folder.
+
 #### Household tab
 
 Admins can edit `ArrRequestPreset`, `ArrRequestDefaultRole`, `ArrRequestQuotaLimit`, the per-role `QuotaLimit` in

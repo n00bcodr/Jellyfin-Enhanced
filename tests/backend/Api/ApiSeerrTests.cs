@@ -91,6 +91,67 @@ public class ApiSeerrTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WithSeerrRequestOptionsOnOnlyJellyfinAdministratorsChooseSeerrDestinationsOrReadSeerrsServers(bool switchOn)
+    {
+        // Seerr permissions that let a person choose destinations in Seerr itself, and a Jellyfin administrator.
+        foreach (var (permissions, jellyfinAdmin) in new[]
+        {
+            (JellyseerrPermission.REQUEST | JellyseerrPermission.REQUEST_ADVANCED, false),
+            (JellyseerrPermission.REQUEST | JellyseerrPermission.MANAGE_REQUESTS, false),
+            (JellyseerrPermission.ADMIN, false),
+            (JellyseerrPermission.REQUEST, true),
+        })
+        {
+            using var f = new SeerrFixture { Permissions = permissions };
+            var config = f.Plugin.Plugin.Configuration;
+            config.ArrRequestBackend = "seerr";
+            if (switchOn)
+            {
+                config.ArrIntegrationEnabled = true;
+                config.ArrPhase1Enabled = true;
+                config.ArrPhase3Enabled = true;
+                config.ArrPhase4Enabled = true;
+                config.ArrPhase4SeerrRequestOptionsEnabled = true;
+            }
+            f.SetUser(f.UserId, jellyfinAdmin);
+            var label = $"{permissions} admin={jellyfinAdmin} switch={switchOn}";
+            Assert.IsType<ContentResult>(await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":101,\"is4k\":false,\"serverId\":1,\"profileId\":6,\"rootFolder\":\"/kids\",\"languageProfileId\":7,\"tags\":[6]}")));
+            using (var request = JsonDocument.Parse(Assert.Single(f.Calls, c => c.Method == "POST").Body!))
+            {
+                // Switch off: as before (Seerr's advanced permissions keep the choices). On: Jellyfin administrators only.
+                var kept = !switchOn || jellyfinAdmin;
+                foreach (var field in new[] { "serverId", "profileId", "rootFolder", "languageProfileId", "tags" })
+                    Assert.True(kept == request.RootElement.TryGetProperty(field, out _), label + " " + field);
+                Assert.Equal(101, request.RootElement.GetProperty("mediaId").GetInt32());
+            }
+            var servers = await f.Controller.GetSonarrInstances();
+            var details = await f.Controller.GetServiceDetails("radarr", 0);
+            var lookup = await f.Controller.GetSonarrLookup(101);
+            if (switchOn && !jellyfinAdmin)
+            {
+                foreach (var refused in new[] { servers, details })
+                {
+                    var reply = Assert.IsType<ObjectResult>(refused);
+                    Assert.Equal(403, reply.StatusCode);
+                    Assert.Contains("admin_required", JsonSerializer.Serialize(reply.Value));
+                }
+                Assert.DoesNotContain(f.Calls, c => c.Path is "/api/v1/service/sonarr" or "/api/v1/service/radarr/0");
+            }
+            else
+            {
+                Assert.IsType<ContentResult>(servers);
+                Assert.IsType<ContentResult>(details);
+                Assert.Contains(f.Calls, c => c.Path == "/api/v1/service/radarr/0");
+            }
+            // The title lookup some series requests need names no server, profile or folder: it stays open.
+            Assert.IsType<ContentResult>(lookup);
+            Assert.Contains(f.Calls, c => c.Path == "/api/v1/service/sonarr/lookup/101");
+        }
+    }
+
+    [Theory]
     [InlineData(true, true, true, true)]
     [InlineData(true, false, true, false)]
     [InlineData(true, true, false, false)]

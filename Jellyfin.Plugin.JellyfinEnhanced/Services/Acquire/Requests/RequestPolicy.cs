@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
@@ -289,6 +290,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (system == null || (input.ProfileId.HasValue && !system.QualityProfiles.Any(p => p.Id == input.ProfileId)) ||
                     (input.RootFolder != null && (!BridgePaths.Safe(input.RootFolder) || !system.RootFolders.Any(r => r.Path != null && BridgePaths.SamePath(r.Path, input.RootFolder))))) refusal = "invalid_defaults";
             }
+            // Seerr options (administrators, Seerr mode): checked against Seerr's servers as last read, never guessed.
+            if (refusal == null && input.HasSeerrOptions) refusal = SeerrOptionsRefusal(config, binding);
             var disk = refusal == null && instance != null ? LowDisk(config, instance, input, key) : null;
             if (disk != null) refusal = "low_disk";
             var revision = MutationInput.Hash(JsonSerializer.Serialize(config) + "|" + viewer?.PolicyRevision + "|" + _view.Revision + "|" + _libraries.Revision + "|" + role + "|" + binding);
@@ -502,7 +505,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }
             catch (JsonException) { return new(); }
         }
-        internal static int RefusalStatus(string reason) => reason is "invalid_defaults" or "invalid_instance" ? 400 : reason == "instance_changed" ? 409 : 403;
+        internal static int RefusalStatus(string reason) => reason switch
+        {
+            "invalid_defaults" or "invalid_instance" or "seerr_options_invalid" => 400,
+            "instance_changed" or "seerr_options_changed" => 409,
+            "backend_unavailable" => 503,
+            _ => 403,
+        };
+        /// <summary>Seerr permissions that allow choosing a server, quality profile and root folder (ADMIN implies all).</summary>
+        internal const long SeerrAdvancedPermissions = (long)(JellyseerrPermission.ADMIN | JellyseerrPermission.REQUEST_ADVANCED | JellyseerrPermission.MANAGE_REQUESTS);
+        /// <summary>True when Seerr permission bits allow advanced request options.</summary>
+        /// <param name="permissions">Seerr permission bits.</param>
+        internal static bool SeerrAdvanced(long permissions) => (permissions & SeerrAdvancedPermissions) != 0;
+        /// <summary>
+        /// Why an input carrying Seerr options can't be asked for by this person now (null: it can): Jellyfin Enhanced
+        /// handles requests (<c>invalid_defaults</c>), the switch is off (<c>seerr_options_disabled</c>), the person's Seerr
+        /// account isn't known (<c>backend_unavailable</c>) or lacks Seerr's advanced-request permission
+        /// (<c>seerr_advanced_required</c>), or the options don't fit Seerr's current servers (<c>seerr_options_invalid</c>,
+        /// <c>seerr_options_changed</c>, or <c>backend_unavailable</c> while they aren't known). Being a Jellyfin
+        /// administrator is checked by the callers (routing is administrators' only).
+        /// </summary>
+        internal static string? SeerrOptionsRefusal(PluginConfiguration config, RequestBackendBinding binding)
+        {
+            if (config.ArrRequestBackend != "seerr") return "invalid_defaults";
+            if (!HouseholdFlags.SeerrOptions(config)) return "seerr_options_disabled";
+            if (binding.UserId == null) return binding.SeerrUnlinked ? "seerr_advanced_required" : "backend_unavailable";
+            if (!SeerrAdvanced(binding.Permissions)) return "seerr_advanced_required";
+            return binding.SeerrOptions switch
+            {
+                SeerrBackend.OptionsValid => null,
+                "seerr_options_invalid" or "seerr_options_changed" => binding.SeerrOptions,
+                _ => "backend_unavailable",
+            };
+        }
         internal static string? Check(RequestPolicyFacts requester, RequestPolicyFacts? approver, MutationInput input, bool approval)
         {
             if (requester.Refusal != null) return requester.Refusal;

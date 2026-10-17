@@ -100,6 +100,8 @@ public class ApiArrRouteMatrixTests
         public ArrLiveService Live { get; }
         public JeBackupService Backup { get; }
         private readonly string _backupRoot;
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrRequestReadModel _seerrModel;
+        private readonly Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.SeerrBackend _seerrOptions;
 
         public Rig(IntegrationNotificationsTests.Rig n)
         {
@@ -124,6 +126,10 @@ public class ApiArrRouteMatrixTests
             Directory.CreateDirectory(_backupRoot);
             File.WriteAllText(Path.Combine(_backupRoot, "config.xml"), "<PluginConfiguration />");
             Backup = new JeBackupService(_backupRoot, Path.Combine(_backupRoot, "config.xml"), () => n.Arr.Plugin.Plugin.Secrets, n.Arr.Plugin.Core.Logger);
+            // Seerr reads go to an address that never answers; no route here may reach it for a non-admin.
+            var seerr = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404)));
+            _seerrModel = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrRequestReadModel(seerr, null, null, () => n.Config, () => n.Arr.Now);
+            _seerrOptions = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.SeerrBackend(seerr, _seerrModel, null, () => n.Config, () => n.Arr.Now);
         }
 
         /// <summary>A fresh controller of every "Requests &amp; downloads" kind for one caller.</summary>
@@ -154,6 +160,7 @@ public class ApiArrRouteMatrixTests
                     new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationStore(N.Db),
                     new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationBudgets(N.Db, () => N.Config, () => N.Arr.Now),
                     N.Store, new IntegrationRequestHouseholdTests.FakeDirectory(), () => N.Config, () => N.Arr.Now), N.View),
+                new AcquireSeerrOptionsController(_seerrOptions, new ServicesForRequests(N).Service.Policy, N.View),
             };
             foreach (var controller in all)
             {
@@ -191,6 +198,7 @@ public class ApiArrRouteMatrixTests
 
         public void Dispose()
         {
+            _seerrModel.Dispose();
             N.Dispose();
         }
     }

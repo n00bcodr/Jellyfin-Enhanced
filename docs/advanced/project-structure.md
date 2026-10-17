@@ -455,6 +455,9 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   library read shows started; in Seerr mode it also asks Seerr for each new started season every few hours (Seerr
   doesn't follow new seasons itself).
   `AcquireRequestsController.cs` exposes the authenticated server API.
+  In Seerr mode `SeerrBackend.cs` also reads Seerr's Radarr/Sonarr servers (profiles, root folders, the options stamp)
+  for administrator Seerr request options, checks a chosen server, profile and folder again right before the POST and
+  sends them with it; **`Controllers/AcquireSeerrOptionsController.cs`** lists those options to administrators.
   `SeerrMigrationReader.cs` reads every Seerr request complete-or-nothing (with a digest and Seerr's requesting state) and
   `SeerrMigration.cs` runs the admin dry run, the import into `RequestLedgerImport.cs` (import batches, rollback by batch,
   the automation log) and the switch to JE request handling; `AcquireMigrationController.cs` exposes it to administrators.

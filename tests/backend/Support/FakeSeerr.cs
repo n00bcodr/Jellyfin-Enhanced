@@ -51,6 +51,15 @@ internal sealed class FakeSeerr : IDisposable
 
     private int _nextRequest = 900;
 
+    /// <summary><c>GET /api/v1/service/radarr|sonarr</c>: Seerr's servers of each kind (missing kind: none).</summary>
+    public Dictionary<string, JsonArray> Services { get; } = new();
+
+    /// <summary><c>GET /api/v1/service/{kind}/{id}</c> by <c>"{kind}/{id}"</c> (missing: 404).</summary>
+    public Dictionary<string, JsonObject> ServiceDetails { get; } = new();
+
+    /// <summary>True: a request POST is created without the server, profile and root folder it named (Seerr ignoring them).</summary>
+    public bool DropAdvanced { get; set; }
+
     /// <summary>Non-null: the body of <c>GET /api/v1/settings/main</c> (else 404).</summary>
     public JsonObject? MainSettings { get; set; }
 
@@ -118,6 +127,12 @@ internal sealed class FakeSeerr : IDisposable
                 var user = Users.FirstOrDefault(u => (int?)u["id"] == userId);
                 return user == null ? IntegrationTransport.Response("{\"message\":\"User not found.\"}", 404) : IntegrationTransport.Response(user.ToJsonString());
             }
+        }
+        if (path.StartsWith("/api/v1/service/", StringComparison.Ordinal))
+        {
+            var rest = path["/api/v1/service/".Length..];
+            if (!rest.Contains('/')) return IntegrationTransport.Response((Services.GetValueOrDefault(rest) ?? new JsonArray()).ToJsonString());
+            return ServiceDetails.TryGetValue(rest, out var detail) ? IntegrationTransport.Response(detail.ToJsonString()) : IntegrationTransport.Response("{\"message\":\"Not found\"}", 404);
         }
         if (path == "/api/v1/settings/main") return MainSettings == null ? IntegrationTransport.Response("{}", 404) : IntegrationTransport.Response(MainSettings.ToJsonString());
         if (path == "/api/v1/settings/jobs") return Jobs == null ? IntegrationTransport.Response("{}", 404) : IntegrationTransport.Response(Jobs.ToJsonString());
@@ -194,6 +209,9 @@ internal sealed class FakeSeerr : IDisposable
             ["requestedBy"] = new JsonObject { ["id"] = int.TryParse(user, out var u) ? u : 1 },
             ["seasons"] = new JsonArray(seasons.Select(n => (JsonNode)new JsonObject { ["seasonNumber"] = n, ["status"] = 1 }).ToArray()),
         };
+        // Like Seerr: the request keeps the server, profile and root folder it was made with.
+        foreach (var field in new[] { "serverId", "profileId", "rootFolder" })
+            if (!DropAdvanced && body[field] is { } value) row[field] = value.DeepClone();
         media["requests"]!.AsArray().Add(row);
         AfterPost?.Invoke();
         return IntegrationTransport.Response(row.ToJsonString(), 201);
