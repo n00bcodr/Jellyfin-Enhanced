@@ -349,6 +349,44 @@ public class ListsAcquisitionTests
     }
 
     [Fact]
+    public async Task AShareRevokedWhileAConfirmationAsksStopsTheAsksNotYetMade()
+    {
+        using var r = new Rig();
+        var member = r.Person("member");
+        var first = Released(603);
+        var second = Released(604);
+        await r.Seed(first, second);
+        // The playlist is public when the confirmation is checked and private from the first ask on.
+        r.Policy.Before = (_, _) =>
+        {
+            r.Playlist.Info = r.Playlist.Info with { OpenAccess = false };
+            return Task.CompletedTask;
+        };
+
+        var submit = Ok<ListRequestSubmitDto>(await r.Acquisition.SubmitAsync(r.As(member), "confirm-revoked", new[] { first.Id, second.Id }, None));
+
+        Assert.Equal(201, Result(submit, first).HttpStatus);
+        Assert.Equal(("not_found", 404), (Result(submit, second).Reason, Result(submit, second).HttpStatus));
+        Assert.Equal(1, r.Rows("wants"));
+    }
+
+    [Fact]
+    public async Task AShareRevokedWhileAPreviewRanAnswersNotFound()
+    {
+        using var r = new Rig();
+        var member = r.Person("member");
+        var movie = Released(603);
+        await r.Seed(movie);
+        r.Policy.Before = (_, _) =>
+        {
+            r.Playlist.Info = r.Playlist.Info with { OpenAccess = false };
+            return Task.CompletedTask;
+        };
+
+        Error(await r.Acquisition.PreviewAsync(r.As(member), new[] { movie.Id }, false, None), 404, "not_found");
+    }
+
+    [Fact]
     public async Task ANewConfirmationForTheSameEntryIsANewOperationThatTheLedgerMergesWithoutASecondSend()
     {
         using var r = new Rig();

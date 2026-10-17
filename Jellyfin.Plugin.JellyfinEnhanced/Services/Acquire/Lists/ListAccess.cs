@@ -143,6 +143,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return list == null ? null : Evaluate(list, user);
         }
 
+        /// <summary>
+        /// The caller's access to the same list now: the person read again (a policy change counts) and the list as
+        /// Jellyfin has it now (shares removed, made private). Null when the person or the list is gone or they can no
+        /// longer see it. For work that waited (requests, lookups) since the access was checked.
+        /// </summary>
+        /// <param name="access">The access checked earlier.</param>
+        /// <returns>The current access, or null.</returns>
+        public ListAccess? Current(ListAccess access)
+        {
+            var user = _userManager.GetUserById(access.User.Id);
+            var current = user == null ? null : Resolve(access.List.Id, user);
+            return current is { Permissions.CanView: true } ? current : null;
+        }
+
         /// <summary>Evaluates the caller's permissions on an already resolved list.</summary>
         /// <param name="list">List.</param>
         /// <param name="user">Caller.</param>

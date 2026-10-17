@@ -108,6 +108,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 dto.Items.Add(item);
             }
 
+            // The previews took a while: a caller who can no longer see the list learns nothing of its entries.
+            if (_access.Current(access) == null)
+            {
+                return ListOutcome.Error(404, "not_found", "List not found.");
+            }
+
             return ListOutcome.Ok(dto);
         }
 
@@ -166,6 +172,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 if (skip != null || input == null)
                 {
                     result.Results.Add(new ListRequestResultDto { PlaceholderId = placeholder.Id, Result = RequestOutcome.Refused(skip ?? "not_requestable", 422) });
+                    continue;
+                }
+
+                // Each ask waits for the one before it: a caller who can no longer see the list asks for nothing more.
+                if (_access.Current(access) == null)
+                {
+                    result.Results.Add(new ListRequestResultDto { PlaceholderId = placeholder.Id, Result = RequestOutcome.Refused("not_found", 404) });
                     continue;
                 }
 
