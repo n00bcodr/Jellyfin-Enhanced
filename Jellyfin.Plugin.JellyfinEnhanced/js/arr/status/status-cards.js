@@ -108,9 +108,45 @@
             return;
         }
         for (const part of badgeCorner().split(' ')) badge.classList.add(`je-arr-badge-${part}`);
-        if (old && old.outerHTML === badge.outerHTML) return;
+        const raised = badge.classList.contains('je-arr-badge-raised');
+        if (raised && old?.style.bottom) badge.style.bottom = old.style.bottom;
+        if (old && old.outerHTML === badge.outerHTML) {
+            if (raised) raise(card, host, old);
+            return;
+        }
         if (old) old.remove();
         host.appendChild(badge);
+        if (!raised) return;
+        raise(card, host, badge);
+        // The tags may draw after the badge (their data still loading): measure once more.
+        setTimeout(() => { if (badge.isConnected) raise(card, host, badge); }, 1500);
+    }
+
+    /** JE's poster tag groups. */
+    const TAG_GROUPS = '.quality-overlay-container, .genre-overlay-container, .language-overlay-container, .rating-overlay-container, .age-rating-overlay-container';
+
+    /**
+     * With every corner taken, the badge sits above the bottom-left tag group. The group's real
+     * height is measured: two or three language flags are taller than the stylesheet's fixed raise.
+     * A group is in the bottom-left corner when it is nearer the card's bottom and left edges than
+     * the opposite ones (each tag group is anchored to its corner).
+     * @param {Element} card Card element.
+     * @param {Element} host The badge's positioned host.
+     * @param {HTMLElement} badge Badge.
+     * @returns {void}
+     */
+    function raise(card, host, badge) {
+        const box = host.getBoundingClientRect();
+        let top = Infinity;
+        card.querySelectorAll(TAG_GROUPS).forEach(group => {
+            if (!group.offsetHeight) return;
+            const r = group.getBoundingClientRect();
+            if (box.bottom - r.bottom >= r.top - box.top || r.left - box.left >= box.right - r.right) return;
+            top = Math.min(top, r.top);
+        });
+        const lift = Number.isFinite(top) ? Math.ceil(box.bottom - top) + 4 : 0;
+        const bottom = lift > 34 ? `${lift}px` : '';
+        if (badge.style.bottom !== bottom) badge.style.bottom = bottom;
     }
 
     /**

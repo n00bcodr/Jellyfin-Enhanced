@@ -592,6 +592,44 @@ test('poster badges take a corner no JE poster tag uses', async t => {
   for (const c of ['bottom-right', 'top-left', 'top-right', 'raised']) assert.match(css, new RegExp(`\\.je-arr-badge-${c} `));
 });
 
+test('with every corner taken the badge sits above the bottom-left tag group, however tall it is', async t => {
+  const h = setup(t, { html: cardsHtml(1) });
+  h.JE.currentSettings = { languageTagsEnabled: true, ratingTagsEnabled: true, qualityTagsEnabled: true, genreTagsEnabled: true };
+  const status = { itemId: '00000000000000000000000000000000', key: 'movie:tmdb:1', kind: 'movie', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 10 } };
+  const card = h.document.querySelector('.card');
+  const host = card.querySelector('.cardScalable');
+  const box = (el, rect, height) => {
+    el.getBoundingClientRect = () => ({ ...rect, width: rect.right - rect.left, height: rect.bottom - rect.top });
+    Object.defineProperty(el, 'offsetHeight', { configurable: true, get: () => height });
+  };
+  box(host, { top: 0, bottom: 300, left: 0, right: 200 }, 300);
+  // Two language flags bottom-left (taller than the stylesheet's fixed 34 px raise); ratings bottom-right and a
+  // tall quality group top-left don't count.
+  const group = (cls, rect) => {
+    const el = h.document.createElement('div');
+    el.className = cls;
+    box(el, rect, rect.bottom - rect.top);
+    card.querySelector('.cardImageContainer').append(el);
+    return el;
+  };
+  const flags = group('language-overlay-container', { top: 230, bottom: 294, left: 6, right: 46 });
+  group('rating-overlay-container', { top: 150, bottom: 294, left: 140, right: 194 });
+  group('quality-overlay-container', { top: 6, bottom: 140, left: 6, right: 80 });
+
+  h.JE.internals.arrStatusCards.paint(card, status);
+  const badge = card.querySelector('.je-arr-badge');
+  assert.ok(badge.classList.contains('je-arr-badge-raised'));
+  assert.equal(badge.style.bottom, '74px', 'above the flags (300 - 230 + 4), not the bottom-right ratings');
+  // Painted again with the same answer: kept, still above the flags.
+  h.JE.internals.arrStatusCards.paint(card, status);
+  assert.equal(card.querySelectorAll('.je-arr-badge').length, 1);
+  assert.equal(card.querySelector('.je-arr-badge').style.bottom, '74px');
+  // One flag (shorter than the fixed raise): the stylesheet's raise is enough.
+  box(flags, { top: 270, bottom: 294, left: 6, right: 46 }, 24);
+  h.JE.internals.arrStatusCards.paint(card, { ...status, progress: { percent: 20 } });
+  assert.equal(card.querySelector('.je-arr-badge').style.bottom, '');
+});
+
 test('poster badges keep answers only for cards on the page; a card that comes back is asked for again and followed', async t => {
   let stage = 'downloading';
   const answer = id => ({ itemId: id, key: `movie:tmdb:${parseInt(id, 16) + 1}`, kind: 'movie', stage, reason: { code: stage === 'downloading' ? 'downloading' : 'importing' }, progress: stage === 'downloading' ? { percent: 40 } : null });
