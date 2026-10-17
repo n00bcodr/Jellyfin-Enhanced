@@ -3,7 +3,8 @@
  * pages, the summary line on series and season pages (season pages also get episode chips and the
  * "Not in the library yet" banner from status-episodes.js), and the admin explanation lines. One
  * request per page view; re-rendered in place when the change feed (or JE.arrStatus.refresh)
- * reports a change for the page's title.
+ * reports a change for the page's title. Each read is handed to status-arrival.js, which turns the
+ * page into the playable one once its title arrives.
  */
 (function (JE) {
     'use strict';
@@ -142,6 +143,16 @@
         const release = () => { if (typeof kept === 'function') kept(); };
         const status = data?.items?.[0];
         if (!status) {
+            // The item the page showed is gone (Jellyfin deleted a missing episode or season once its file
+            // was there): when its successor opens in the page's place, the page stays as it is until then.
+            const arrival = JE.internals?.arrStatusArrival;
+            if (arrival?.vanished) {
+                // Still following while the successor is looked up (a newer read takes the subscription over).
+                state.unsubscribe = kept;
+                const moving = await arrival.vanished(page, itemId);
+                if (current !== state || moving) return;
+                state.unsubscribe = null;
+            }
             // Nothing to show (a person, collection or album page, an item without provider ids, or a
             // failed first request): don't ask again for this page view, and drop what was shown.
             state.quiet = true;
@@ -167,6 +178,8 @@
         JE.internals?.arrAskActions?.attachDetails?.(livePage, status, data);
         // Native details of an absent title: Open once a copy arrives, and the blocks in its slot.
         JE.internals?.nativeDetails?.statusShown?.(livePage, status);
+        // The title (or the item Jellyfin replaced it with) became available: the page turns into it.
+        JE.internals?.arrStatusArrival?.seen?.(livePage, itemId, status);
         // The title's own key and, for a title Jellyfin knows by another id, the key the feed announces it under.
         const keys = [status.key, status.liveKey].filter(Boolean);
         state.unsubscribe = JE.arrStatus.subscribe(keys, () => update(true), { since: data.since ?? null });

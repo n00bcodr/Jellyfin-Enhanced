@@ -98,6 +98,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Send(body);
         }
 
+        /// <summary>
+        /// Where a details page goes once its title arrives: Jellyfin can replace or delete the item the
+        /// page showed (a missing episode or season gets a new id when its file is there). For the page's
+        /// scope <paramref name="key"/> (a movie, series, season or episode key) and the id it showed, the
+        /// item of that scope the caller can open: <c>{"itemId": "…"}</c>, or <c>{"itemId": null}</c>
+        /// when there is none (also for titles the caller can't see). Never calls an arr.
+        /// </summary>
+        [HttpGet("acquire/status/arrival")]
+        [Authorize]
+        public IActionResult GetArrival([FromQuery] string? key, [FromQuery] string? itemId)
+        {
+            if (!_service.Enabled) return StatusCode(403, new { code = "feature_disabled" });
+            if (Viewer() is not { } viewer) return StatusCode(403, new { code = "user_required" });
+            if (TitleKey.Parse(key ?? string.Empty) is not { } title) return BadRequest(new { code = "invalid_key" });
+            Guid? shown = null;
+            if (!string.IsNullOrEmpty(itemId))
+            {
+                if (!Guid.TryParse(itemId, out var id)) return BadRequest(new { code = "invalid_id" });
+                shown = id;
+            }
+
+            using var scope = _service.Store.BeginRequest("acquire/status/arrival");
+            var arrived = _service.ArrivedItem(viewer, title, shown);
+            Response.Headers["Cache-Control"] = "private, no-cache";
+            return Ok(new { itemId = arrived?.ToString("N", CultureInfo.InvariantCulture) });
+        }
+
         // A person only (never an API key or an unknown user).
         private StatusViewer? Viewer() => ArrCaller.Human(User, _service.View);
 

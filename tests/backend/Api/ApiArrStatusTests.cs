@@ -978,4 +978,108 @@ public class ApiArrStatusTests
         Assert.Equal(403, (await Resolve(rig.Member, "movie:tmdb:45745")).Status);
     }
 #endif
+
+    private static Task<Reply> Arrival(Rig rig, StatusViewer? viewer, string? key, Guid? itemId = null)
+        => Call(rig, viewer, c => Task.FromResult(c.GetArrival(key, itemId?.ToString("N"))));
+
+    private static string? ArrivedId(Reply reply)
+    {
+        Assert.Equal(200, reply.Status);
+        var id = JsonDocument.Parse(reply.Body).RootElement.GetProperty("itemId");
+        return id.ValueKind == JsonValueKind.Null ? null : id.GetString();
+    }
+
+    [Fact]
+    public async Task AMissingEpisodeWhoseFileArrivedReadsAsTheEpisodeJellyfinAddedForItAndNamesIt()
+    {
+        using var rig = new Rig();
+        // Before: the virtual S1E3 shows where Sonarr has got to; nothing to open.
+        var before = Items(await Item(rig, rig.Member, rig.Episode3))[0];
+        Assert.NotEqual("ready", before.GetProperty("stage").GetString());
+        Assert.False(before.TryGetProperty("openItemId", out _));
+
+        // Jellyfin adds the file's episode under a new id and keeps the virtual one until its next
+        // series refresh (seen live on 12.2 when the season folder already existed).
+        var arrived = Guid.NewGuid();
+        var key = TitleKey.Parse("tv:tvdb:78874:s1:e3")!;
+        rig.View.AddItem(new JfItemRef { ItemId = arrived, Kind = "episode", Key = key, SeriesId = rig.Firefly, Season = 1, Episode = 3, DateCreated = rig.Arr.Now.UtcDateTime });
+        rig.View.AddEpisode(rig.Firefly, new JfEpisode { ItemId = arrived, Season = 1, Episode = 3, DateCreated = rig.Arr.Now.UtcDateTime });
+        rig.View.Rev++;
+        var after = Items(await Item(rig, rig.Member, rig.Episode3))[0];
+        Assert.Equal("ready", after.GetProperty("stage").GetString());
+        Assert.Equal(arrived.ToString("N"), after.GetProperty("openItemId").GetString());
+        Assert.Equal(key.ToString(), after.GetProperty("key").GetString());
+        // The physical episode's own page names nothing to move to.
+        Assert.False(Items(await Item(rig, rig.Member, arrived))[0].TryGetProperty("openItemId", out _));
+    }
+
+    [Fact]
+    public async Task AMissingEpisodesNewFileTheViewerMayNotOpenIsNotNamed()
+    {
+        using var rig = new Rig();
+        var arrived = Guid.NewGuid();
+        var key = TitleKey.Parse("tv:tvdb:78874:s1:e3")!;
+        rig.View.AddItem(new JfItemRef { ItemId = arrived, Kind = "episode", Key = key, SeriesId = rig.Firefly, Season = 1, Episode = 3 }, rig.Admin.UserId);
+        rig.View.AddEpisode(rig.Firefly, new JfEpisode { ItemId = arrived, Season = 1, Episode = 3 }, rig.Admin.UserId);
+        rig.View.Rev++;
+        var member = Items(await Item(rig, rig.Member, rig.Episode3))[0];
+        Assert.NotEqual("ready", member.GetProperty("stage").GetString());
+        Assert.False(member.TryGetProperty("openItemId", out _));
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, key.ToString())));
+        Assert.Equal(arrived.ToString("N"), Items(await Item(rig, rig.Admin, rig.Episode3))[0].GetProperty("openItemId").GetString());
+    }
+
+    [Fact]
+    public async Task TheArrivalRouteNamesTheItemAViewerCanOpenForAPagesScope()
+    {
+        using var rig = new Rig();
+        var c = rig.Arr.Plugin.Plugin.Configuration;
+        // Movie and series: their copy. Season: its season item once Jellyfin lists it.
+        Assert.Equal(rig.Sintel.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "movie:tmdb:45745")));
+        Assert.Equal(rig.Firefly.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874")));
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s1")));
+        rig.View.AddSeason(rig.Firefly, new JfSeason { ItemId = rig.Season1, Season = 1 });
+        rig.View.Rev++;
+        Assert.Equal(rig.Season1.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s1")));
+
+        // An episode: only one with a file. The virtual S1E3 is listed first and is no arrival.
+        var key = "tv:tvdb:78874:s1:e3";
+        Assert.Equal(rig.Episode1.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s1:e1")));
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, key, rig.Episode3)));
+        var arrived = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = arrived, Kind = "episode", Key = TitleKey.Parse(key), SeriesId = rig.Firefly, Season = 1, Episode = 3 });
+        rig.View.AddEpisode(rig.Firefly, new JfEpisode { ItemId = arrived, Season = 1, Episode = 3 });
+        rig.View.Rev++;
+        Assert.Equal(arrived.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key, rig.Episode3)));
+        // Jellyfin deleted the virtual episode the page showed: the same answer by key alone.
+        rig.View.Items.Remove(rig.Episode3);
+        rig.View.EpisodesBySeries[rig.Firefly].RemoveAll(e => e.Episode.ItemId == rig.Episode3);
+        rig.View.Rev++;
+        Assert.Equal(arrived.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key, rig.Episode3)));
+
+        // A multi-episode file covers the episode asked for.
+        var double45 = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = double45, Kind = "episode", Key = TitleKey.Parse("tv:tvdb:78874:s1:e4"), SeriesId = rig.Firefly, Season = 1, Episode = 4, EpisodeEnd = 5 });
+        rig.View.AddEpisode(rig.Firefly, new JfEpisode { ItemId = double45, Season = 1, Episode = 4, EpisodeEnd = 5 });
+        rig.View.Rev++;
+        Assert.Equal(double45.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s1:e5")));
+
+        // A movie in two libraries: the copy the page shows stays the one named while the viewer can open it.
+        var other = Guid.NewGuid();
+        rig.View.AddCopy(TitleKey.Parse("movie:tmdb:45745")!, new JfCopy { ItemId = other, Path = "/media/movies4k/Sintel (2010)/Sintel.mkv", LibraryName = "Movies 4K" });
+        Assert.Equal(other.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "movie:tmdb:45745", other)));
+        Assert.Equal(rig.Sintel.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "movie:tmdb:45745", Guid.NewGuid())));
+
+        // Nothing the viewer can't open, and nothing about a title they can't see.
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, "movie:tmdb:693134")));
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, "movie:tmdb:999")));
+
+        // Validation, a person only, both switches.
+        Assert.Equal(400, (await Arrival(rig, rig.Member, null)).Status);
+        Assert.Equal(400, (await Arrival(rig, rig.Member, "nonsense")).Status);
+        Assert.Equal(400, (await Call(rig, rig.Member, ctl => Task.FromResult(ctl.GetArrival("movie:tmdb:45745", "x")))).Status);
+        Assert.Equal(403, (await Arrival(rig, null, "movie:tmdb:45745")).Status);
+        c.ArrPhase1Enabled = false;
+        Assert.Equal(403, (await Arrival(rig, rig.Member, "movie:tmdb:45745")).Status);
+    }
 }

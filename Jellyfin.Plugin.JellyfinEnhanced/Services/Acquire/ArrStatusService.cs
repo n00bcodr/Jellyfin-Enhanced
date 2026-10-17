@@ -170,6 +170,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var cacheKey = CacheKey(viewer, "item", item.ItemId.ToString("N", CultureInfo.InvariantCulture), gather.Revision);
             if (Cache.Get(cacheKey) is { } hit) return hit;
 
+            // A missing (virtual) episode or season whose file has arrived: Jellyfin adds the file's item
+            // under a new id and drops the virtual one at its next series refresh. Until then the page of
+            // the virtual item reads as the arrived one and names it, so the page can move there.
+            if (item.Virtual && item.Kind is "episode" or "season" && ScopeItem(viewer, item.Key) is { Virtual: false } arrived && arrived.ItemId != item.ItemId)
+            {
+                var status = ComposeItem(viewer, arrived, gather);
+                status.OpenItemId = arrived.ItemId.ToString("N", CultureInfo.InvariantCulture);
+                return Cache.Put(cacheKey, Serialize(new[] { status }));
+            }
+
             return Cache.Put(cacheKey, Serialize(new[] { ComposeItem(viewer, item, gather) }));
         }
 
@@ -364,11 +374,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             if (key.IsMovie || key.Season is not int season) return null;
             if (CopiesOf(key.Title, viewer).FirstOrDefault(x => x.Visible) is not { } series) return null;
-            Guid? id = key.Episode is int e
+            var ids = key.Episode is int e
                 ? _view.Episodes(series.ItemId, season, viewer, includeVirtual: true)
-                    .FirstOrDefault(x => !x.Hidden && x.Season == season && new EpisodeRange(x.Episode, x.EpisodeEnd).Contains(e))?.ItemId
-                : _view.Seasons(series.ItemId, viewer).FirstOrDefault(x => !x.Hidden && x.Season == season)?.ItemId;
-            return id is Guid found ? _view.Resolve(found, viewer) : null;
+                    .Where(x => !x.Hidden && x.Season == season && new EpisodeRange(x.Episode, x.EpisodeEnd).Contains(e)).Select(x => x.ItemId)
+                : _view.Seasons(series.ItemId, viewer).Where(x => !x.Hidden && x.Season == season).Select(x => x.ItemId);
+            // Jellyfin can list a missing (virtual) item and the one its file brought for the same slot
+            // until its next series refresh: the one with the file is the scope's item.
+            JfItemRef? first = null;
+            foreach (var id in ids)
+            {
+                if (_view.Resolve(id, viewer) is not { } item) continue;
+                if (!item.Virtual) return item;
+                first ??= item;
+            }
+            return first;
+        }
+
+        /// <summary>
+        /// The item a details page of <paramref name="key"/>'s scope should show now (the arrival route):
+        /// the movie's copy (<paramref name="shown"/> while the viewer can open it), the series, the
+        /// season, or the episode with a file (a multi-episode file covering it included; a missing
+        /// one is no arrival). Null when the viewer can open none. Never calls an arr.
+        /// </summary>
+        internal Guid? ArrivedItem(StatusViewer viewer, TitleKey key, Guid? shown)
+        {
+            if (key.Season == null)
+            {
+                var visible = CopiesOf(key.Title, viewer).Where(x => x.Visible).Select(x => x.ItemId).ToList();
+                if (visible.Count == 0) return null;
+                return shown is Guid id && visible.Contains(id) ? id : visible[0];
+            }
+            var scope = ScopeItem(viewer, key);
+            return scope == null || (key.Episode != null && scope.Virtual) ? null : scope.ItemId;
         }
 
         /// <summary>

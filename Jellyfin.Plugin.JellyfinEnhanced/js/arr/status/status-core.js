@@ -135,6 +135,20 @@
     }
 
     /**
+     * The item a details page of a scope should show now (its title arrived; Jellyfin may have
+     * replaced or deleted the item the page showed): the item of that scope the viewer can open.
+     * @param {string} key The page's scope key (movie, series, season or episode).
+     * @param {string} [itemId] The item the page showed.
+     * @param {AbortSignal} [signal] Abort signal.
+     * @returns {Promise<{itemId: string|null}|null>} The answer, or null when it couldn't be read.
+     */
+    function fetchArrival(key, itemId, signal) {
+        const q = [`key=${encodeURIComponent(key)}`];
+        if (itemId) q.push(`itemId=${encodeURIComponent(itemId)}`);
+        return read(`/acquire/status/arrival?${q.join('&')}`, { signal });
+    }
+
+    /**
      * Statuses of many items/keys at once (poster cards), low priority.
      * @param {string[]} ids Jellyfin item ids (≤ 100).
      * @param {string[]} [keys] Title keys (≤ 50).
@@ -851,6 +865,7 @@
     JE.arrStatus = Object.freeze({
         enabled,
         fetchItem,
+        fetchArrival,
         fetchBatch,
         fetchKey,
         feedPosition,

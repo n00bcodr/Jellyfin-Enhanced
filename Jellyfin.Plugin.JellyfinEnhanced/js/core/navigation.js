@@ -222,6 +222,15 @@
     }
 
     /**
+     * Runs the view handlers again for the view shown now, as its show would: a page the host drew
+     * again in place (status-arrival.js has Jellyfin reload a details page whose title arrived).
+     * @param {HTMLElement|null} [element] - The view element.
+     */
+    function replayViewShow(element) {
+        notifyViewHandlers(getCurrentView() || undefined, element || document.querySelector('.libraryPage:not(.hide)'), window.location.hash, null);
+    }
+
+    /**
      * Get current view name.
      * @returns {string|null}
      */
@@ -306,6 +315,7 @@
         onNavigate,
         offNavigate,
         onViewPage,
+        replayViewShow,
         getCurrentView,
         /** @returns {number} Number of registered onViewPage handlers. */
         getViewHandlerCount: () => viewHandlers.length,
