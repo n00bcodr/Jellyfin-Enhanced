@@ -199,6 +199,9 @@
      */
     function clear(root) {
         (root || document).querySelectorAll(`.je-ask-actions[data-je-ask-surface="${SURFACE}"]`).forEach(n => n.remove());
+        // The page of a title that isn't in the library is told too: it may hold a box out of the page
+        // while its action row is drawn anew.
+        if (root) JE.internals?.nativeDetails?.placeActions?.(root, null, null);
     }
 
     /**

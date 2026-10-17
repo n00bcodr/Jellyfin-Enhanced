@@ -502,7 +502,7 @@ test('two looks at a fresh page that overlap (viewshow and the first look) draw 
   assert.equal(page.querySelectorAll('.je-spoiler-pending-detail').length, 1);
 });
 
-test('a page shown again whose action row was drawn anew gets its Request and Spoiler Guard back, still live', async t => {
+test('a page shown again whose action row was drawn anew gets its Request and Spoiler Guard back, still live, with one current smart-actions box', async t => {
   const built = [];
   const h = setup(t, {
     html: ROW_PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`,
@@ -531,21 +531,64 @@ test('a page shown again whose action row was drawn anew gets its Request and Sp
     assert.ok(spoiler.nextElementSibling.classList.contains('btnMoreCommands'));
     return primary;
   };
+  // What ask-actions' place does with each status read: the page's box (found in the page only) is
+  // replaced; the native hook takes it into the row, or else it goes under the status.
+  const draw = (box) => {
+    const old = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+    const native = nd.placeActions(page, box, old);
+    if (!box) {
+      if (old && !native) old.remove();
+      return;
+    }
+    if (!native && old) old.replaceWith(box);
+    else if (!native) page.querySelector('.je-native-absent-status').appendChild(box);
+  };
+  const notes = () => page.querySelector('.je-native-absent-notes').textContent;
   await nd.onView();
   check();
+  // Smart actions in the row before it is drawn anew.
+  const first = askBox(h.document, [['add', 'Request', false]], ['Old cost']);
+  draw(first);
+  assert.equal(first.parentElement, nd.current().primary);
+  assert.equal(notes(), 'Old cost');
   // The row's contents drawn anew while the page (and the status under the title) stays.
   const row = page.querySelector('.mainDetailButtons');
   row.replaceChildren(...fresh().childNodes);
-  // Smart actions drawn while the row was without its controls (under the status) go back with them.
-  const box = askBox(h.document, [['add', 'Request', false]]);
-  page.querySelector('.je-native-absent-status').appendChild(box);
+  // Smart actions drawn anew while the row was without its controls (under the status) replace the
+  // row's earlier box when they go back with them, and only their cost line shows.
+  const box = askBox(h.document, [['search', 'Search', false]], ['New cost']);
+  draw(box);
   await nd.onView();
   let primary = check();
   assert.equal(box.parentElement, primary);
-  // Then the row element itself.
+  assert.equal(page.querySelectorAll('.je-ask-actions').length, 1, primary.textContent);
+  assert.equal(first.isConnected, false);
+  assert.equal(notes(), 'New cost');
+  await wait(5);
+  assert.equal(notes(), 'New cost');
+  // Then the row element itself, with no smart actions drawn meanwhile: the earlier box doesn't come back.
   page.querySelector('.mainDetailButtons').replaceWith(fresh());
+  draw(null);
   await nd.onView();
   primary = check();
+  assert.equal(page.querySelectorAll('.je-ask-actions').length, 0);
+  assert.equal(notes(), '');
+  // A row drawn anew from a copy of its old self (copies of the request controls, their smart actions
+  // and Spoiler Guard in it), and a box that reached the status by another way meanwhile: the live
+  // controls go back, the dead copies go, and that box replaces the one the controls held.
+  const third = askBox(h.document, [['add', 'Request', false]], ['Third cost']);
+  draw(third);
+  assert.equal(third.parentElement, primary);
+  const copy = page.querySelector('.mainDetailButtons').cloneNode(true);
+  page.querySelector('.mainDetailButtons').replaceWith(copy);
+  const fourth = askBox(h.document, [['search', 'Search', false]], ['Fourth cost']);
+  page.querySelector('.je-native-absent-status').appendChild(fourth);
+  await nd.onView();
+  assert.equal(check(), primary);
+  assert.equal(copy.querySelector('.je-spoiler-pending-detail'), nd.current().spoiler);
+  assert.equal(page.querySelectorAll('.je-ask-actions').length, 1, primary.textContent);
+  assert.equal(fourth.parentElement, primary);
+  assert.equal(notes(), 'Fourth cost');
   // The same controls: no second mount, Spoiler Guard built once, and they still follow the page.
   assert.equal(h.mounts.length, 1);
   assert.equal(h.mounts[0].destroyed, false);

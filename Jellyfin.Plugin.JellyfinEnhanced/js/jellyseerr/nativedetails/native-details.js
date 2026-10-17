@@ -609,7 +609,13 @@
      */
     function placeActions(page, box, old) {
         const state = current;
-        if (!state || state.aborted || state.page !== page || !state.primary || !page.contains(state.primary)) return false;
+        if (!state || state.aborted || state.page !== page || !state.primary) return false;
+        if (!page.contains(state.primary)) {
+            // The row was drawn anew and the request controls wait for keepRow: the new box goes under
+            // the status meanwhile (keepRow brings it back), and the one they kept is out of date.
+            dropActions(state);
+            return false;
+        }
         if (old && old !== box) old.remove();
         const notes = state.container?.querySelector('.je-native-absent-notes');
         notes?.replaceChildren();
@@ -618,6 +624,16 @@
         if (notes) box.querySelectorAll('.je-ask-action-cost').forEach(n => notes.appendChild(n));
         markRow(state.primary);
         return true;
+    }
+
+    /**
+     * Takes the smart actions out of the row's request controls, with their cost lines.
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function dropActions(state) {
+        state.primary?.querySelectorAll('.je-ask-actions').forEach(n => n.remove());
+        state.container?.querySelector('.je-native-absent-notes')?.replaceChildren();
     }
 
     /**
@@ -691,13 +707,17 @@
     /**
      * A page shown again whose action row was drawn anew (its contents, or the row itself) while the
      * page stayed: its request controls and Spoiler Guard button go back into the row where they
-     * stood. They are the same controls, still live and still observed, so nothing is mounted twice.
+     * stood. They are the same controls, still live and still observed, so nothing is mounted twice;
+     * copies of them a row drawn from its old self holds are dead and go.
      * @param {Object} state Page state.
      * @returns {void}
      */
     function keepRow(state) {
         const row = rowOf(state.page);
         if (!row) return;
+        row.querySelectorAll(`.${PRIMARY_CLASS}, .je-spoiler-pending-detail`).forEach((n) => {
+            if (n !== state.primary && n !== state.spoiler) n.remove();
+        });
         if (state.primary && row.firstElementChild !== state.primary) {
             row.insertBefore(state.primary, row.firstElementChild);
             adoptActions(state);
@@ -970,7 +990,8 @@
         const boxes = state.page.querySelectorAll('.je-ask-actions[data-je-ask-surface="details"]');
         boxes.forEach((n) => {
             if (state.primary) {
-                if (!state.primary.contains(n)) placeActions(state.page, n, null);
+                // Drawn after the box the controls hold (while they were out of the row): it replaces it.
+                if (!state.primary.contains(n)) placeActions(state.page, n, state.primary.querySelector('.je-ask-actions'));
             } else {
                 const slot = state.container?.querySelector('.je-native-absent-status');
                 if (slot && !slot.contains(n)) slot.appendChild(n);

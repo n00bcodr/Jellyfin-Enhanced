@@ -755,6 +755,15 @@ test('the page of a title that isn\'t in the library places the smart actions it
   await settle();
   assert.deepEqual(calls.at(-1), [null, true]);
   assert.equal(page.querySelector('.je-ask-actions[data-je-ask-surface="details"]'), null);
+  // Taken away for good (no status, or the viewer can't ask): the page is told too, so a box it holds out of
+  // the page while its row is drawn anew doesn't come back with the row.
+  h.JE.internals.arrAskActions.attachDetails(page, absent, { contact: 'Dad' });
+  await settle();
+  const told = calls.length;
+  h.JE.internals.arrAskActions.attachDetails(page, null);
+  await settle();
+  assert.deepEqual(calls.slice(told), [[null, false]]);
+  assert.equal(page.querySelector('.je-ask-actions[data-je-ask-surface="details"]'), null);
   // A page that doesn't place them (a library title) keeps them under the status as before.
   h.JE.internals.nativeDetails.placeActions = () => false;
   h.JE.internals.arrAskActions.attachDetails(page, absent, { contact: 'Dad' });
