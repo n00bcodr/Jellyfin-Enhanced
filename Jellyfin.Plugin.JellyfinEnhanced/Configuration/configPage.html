@@ -2616,6 +2616,43 @@
                             <div class="checkboxContainer"><label><input id="arrRequestChargeFutureSeasons" is="emby-checkbox" type="checkbox"/><span>Charge future seasons when they start</span></label></div>
                             <div class="checkboxContainer"><label><input id="arrKidsHideSearch" is="emby-checkbox" type="checkbox"/><span>Hide free-text search from Kids</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrKidsHideSearch"><div class="fieldDescription">With Jellyfin Enhanced handling requests, the search page gets a "Not in your library" row and the Requests page a Discover tab. On: Kids don't get the search row (Discover stays, limited to titles within their parental limits).</div></div>
+                            <!-- Requests & downloads, phase 4: everywhere and gentle automation (4a foundation: automation engine,
+                                 recipe modes, budgets, kill switches, the rollout Shadow guard) -->
+                            <div class="checkboxContainer"><label><input id="arrPhase4Enabled" is="emby-checkbox" type="checkbox"/><span>Everywhere and gentle automation (phase 4)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrPhase4Enabled"><div class="fieldDescription">Needs "Show where things have got to". Each phase-4 feature has its own switch under this one, all off by default. While this is off, "Ask for it" and the existing automatic requests (next season, next movie in a collection) work exactly as before, and nothing that only phase 4 creates is ever sent.</div></div>
+                            <div id="arrAutomationSettings" class="je-arr-automation-settings">
+                                <div class="checkboxContainer je-arr-automation-override"><label><input id="arrAutomationShadowOverride" is="emby-checkbox" type="checkbox"/><span>Rollout guard: Shadow only (automatic requests are recorded, never sent)</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrAutomationShadowOverride"><div class="fieldDescription">A safety switch for trying phase 4 out. On: every automatic request only records what it would have done, whatever the switches and modes below say. This covers the existing next-season and next-movie requests (with or without phase 4, through Seerr or Jellyfin Enhanced) and automatic requests that were already waiting to be sent: they wait, and go out as usual once this is off. It stays on through every other switch and upgrade until you turn it off. People's own requests are never affected.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4AutomationEnabled" is="emby-checkbox" type="checkbox"/><span>Automation engine (recipe modes, budgets, kill switches)</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4AutomationEnabled"><div class="fieldDescription je-field-desc-xl">Needs phase 4 and "Ask for it". Each recipe (an automatic request feature) gets a mode: <strong>Off</strong> does nothing; <strong>Shadow</strong> decides and records what it would have done (no request, no approval, no allowance used, nothing sent); <strong>Ask</strong> always waits for an OK; <strong>Auto</strong> asks under the usual household rules, and only administrators and people with a recorded permission (see the status below) go ahead without an OK; Kids always wait and Watchers never ask. New installs start every recipe in Shadow. On an upgrade, next season and next movie start in Auto if they were on and Off if they were off; Managers who had them on keep their automatic requests going ahead (a one-time notice lists them). Before every automatic send the budgets, kill switches, breakers and storage are checked again, also for requests that waited.</div></div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel">Recipes</label>
+                                    <div id="arrAutomationRecipesTable" class="je-arr-automation-recipes"></div>
+                                    <div class="fieldDescription">Each recipe's mode, and its own kill switch (stops it: nothing new is asked for or sent; Shadow still records). Recipes added by later parts of phase 4 do nothing until they arrive. Release-day searches need Sonarr/Radarr handling ("Jellyfin Enhanced" request handling).</div>
+                                </div>
+                                <div class="checkboxContainer"><label><input id="arrAutomationKillAll" is="emby-checkbox" type="checkbox"/><span>Kill switch: stop every automatic request</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrAutomationKillAll"><div class="fieldDescription">Nothing automatic is asked for or sent while this is on; automatic requests already waiting stay waiting and go out once it is off. A send whose answer was lost is still read back (it may already be there).</div></div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel">Kill switches per Sonarr/Radarr (and Seerr)</label>
+                                    <div id="arrAutomationKilledTargets" class="je-arr-automation-targets"></div>
+                                    <div class="fieldDescription">Stops automatic sends to that one instance. For Seerr it stops only the requests Jellyfin Enhanced sends to Seerr: once Seerr has accepted a request, Seerr and its Sonarr/Radarr decide what happens next.</div>
+                                </div>
+                                <div class="inputContainer"><label class="inputLabel" for="arrAutomationHouseholdAddsPerDay">Titles automatic requests may add per 24 hours (household, Sonarr/Radarr handling)</label><input id="arrAutomationHouseholdAddsPerDay" is="emby-input" type="number" min="0" max="100000"/></div>
+                                <div class="inputContainer"><label class="inputLabel" for="arrAutomationSearchesPerHour">Automatic searches per hour (each Sonarr/Radarr)</label><input id="arrAutomationSearchesPerHour" is="emby-input" type="number" min="0" max="100000"/></div>
+                                <div class="inputContainer"><label class="inputLabel" for="arrAutomationSearchesPerDay">Automatic searches per 24 hours (each Sonarr/Radarr)</label><input id="arrAutomationSearchesPerDay" is="emby-input" type="number" min="0" max="100000"/></div>
+                                <div class="inputContainer"><label class="inputLabel" for="arrAutomationSeerrPostsPerDay">Automatic requests sent to Seerr per 24 hours (Seerr handling)</label><input id="arrAutomationSeerrPostsPerDay" is="emby-input" type="number" min="0" max="100000"/></div>
+                                <div class="inputContainer"><label class="inputLabel" for="arrAutomationSourceFetchesPerHour">Linked-list source reads per hour</label><input id="arrAutomationSourceFetchesPerHour" is="emby-input" type="number" min="0" max="100000"/></div>
+                                <div class="inputContainer"><label class="inputLabel" for="arrAutomationDeltaWorkPerHour">Linked-list changes applied per hour</label><input id="arrAutomationDeltaWorkPerHour" is="emby-input" type="number" min="0" max="100000"/></div>
+                                <div class="je-setting-description" data-desc-for="arrAutomationDeltaWorkPerHour"><div class="fieldDescription">Rolling windows in UTC (the last hour, the last 24 hours), counted when something is actually sent: an add Sonarr/Radarr already had, or the same request sent again after a restart, doesn't count twice. An add whose answer was lost keeps counting until a fresh read settles it. When a budget is used up, automatic requests wait until it has room (the status below shows when). 0 allows none. If Jellyfin Enhanced can't count (its database is unavailable), nothing automatic is sent.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrAutomationFree" is="emby-checkbox" type="checkbox"/><span>Automatic requests are free (they cost nobody's allowance)</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrAutomationFree"><div class="fieldDescription">Off (the default): an automatic request counts against the allowance of the person it is made for, like their own request. A hard GB limit still applies either way.</div></div>
+                                <div class="inputContainer je-arr-automation-status-box">
+                                    <button is="emby-button" type="button" id="arrAutomationStatusBtn" class="raised emby-button">Show automation status</button>
+                                    <div class="fieldDescription">Uses the saved settings: save first.</div>
+                                    <div id="arrAutomationStatus" class="je-arr-check-result" aria-live="polite"></div>
+                                </div>
+                            </div>
+                            <!-- /Requests & downloads, phase 4 -->
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
                                 <div class="fieldDescription je-field-desc-xl">The second stage: people get told when what they asked for (or follow) is ready, and administrators get alerts and day-to-day tools. Administrators get <strong>Overview</strong>, <strong>Activity</strong>, <strong>System</strong> and <strong>Audit</strong> tabs on the Requests page: every Sonarr/Radarr with its live state, queue, health and disk space; a <strong>Needs attention</strong> list built from what the apps themselves report (import blocked, download warnings and failures, low disk, health checks, imports Jellyfin hasn't picked up, requests Seerr OK'd that no Sonarr/Radarr has) with a fix next to each; the queue with remove (keeping the download's data, optionally blocklisting it and searching again), search again and retry import; removing a download <em>with</em> its data needs a typed confirmation. Every action is recorded in the audit log and in Jellyfin's activity log. Needs "Show where things have got to". Notifications have their own switch below.</div>
@@ -6210,6 +6247,7 @@
         document.querySelector('#arrIntegrationCheckBtn').addEventListener('click', jeCheckArrConnections);
         document.querySelector('#arrLiveCheckBtn').addEventListener('click', function() { jeArrLiveStatus(); });
         document.querySelector('#arrSeerrMigrationBtn').addEventListener('click', function() { jeArrMigrationCheck(); });
+        document.querySelector('#arrAutomationStatusBtn').addEventListener('click', function() { jeArrAutomationStatus(); });
         document.querySelector('#arrNotifyStatusBtn').addEventListener('click', function() { jeArrNotifyStatus(); });
         document.querySelector('#arrNtfyTestBtn').addEventListener('click', function() { jeArrNotifyTest('ntfy'); });
         document.querySelector('#arrEmailTestBtn').addEventListener('click', function() { jeArrNotifyTest('email'); });
@@ -6257,6 +6295,7 @@
             jeSecretInit(document.querySelector('#arrSmtpPassword'), config.ArrSmtpPassword || '');
             document.querySelector('#arrSmtpFrom').value = config.ArrSmtpFrom || '';
             document.querySelector('#arrSmtpFromName').value = config.ArrSmtpFromName || 'Jellyfin';
+            jeLoadArrAutomationSettings(config);
         }
 
         /**
@@ -6337,6 +6376,7 @@
             config.ArrSmtpPassword = jeSecretRead(document.querySelector('#arrSmtpPassword'));
             config.ArrSmtpFrom = (document.querySelector('#arrSmtpFrom').value || '').trim();
             config.ArrSmtpFromName = (document.querySelector('#arrSmtpFromName').value || '').trim().slice(0, 60);
+            jeSaveArrAutomationSettings(config);
         }
 
         /**
@@ -6571,6 +6611,241 @@
          * @param {*} e - the rejected ajax call
          * @returns {Promise<string>}
          */
+        /** The automation recipes the page lists, in order (ids match the server's). */
+        var JE_AUTOMATION_RECIPES = [
+            { id: 'auto_season', label: 'Next season keeper (next season of a show being watched)' },
+            { id: 'auto_movie', label: 'Collection completer (next movie in a collection being watched)' },
+            { id: 'keep_up', label: 'Keep up with airing shows (later in phase 4)' },
+            { id: 'list_acquire_ahead', label: 'List acquire-ahead while a list plays (later in phase 4)' },
+            { id: 'release_day', label: 'Release-day search, 6 hours after release (later in phase 4; Sonarr/Radarr handling only)' },
+            { id: 'list_sync', label: 'Scheduled linked-list sync (list changes only, later in phase 4)' },
+            { id: 'list_sync_requests', label: 'Requests for titles a linked list adds (later in phase 4)' },
+        ];
+        var JE_AUTOMATION_MODES = [['off', 'Off'], ['shadow', 'Shadow'], ['ask', 'Ask'], ['auto', 'Auto']];
+        var JE_AUTOMATION_REASONS = {
+            shadow_override: 'rollout guard on', engine_off: 'engine off', recipe_off: 'off', requests_off: 'request handling is "Status only"',
+            seerr_unsupported: 'needs Sonarr/Radarr handling', automation_killed: 'kill switch on',
+        };
+        var JE_AUTOMATION_HELD = {
+            shadow_override: 'rollout guard', phase4_off: 'phase 4 off', automation_killed: 'kill switch', recipe_paused: 'recipe now Off or Shadow',
+            breaker_open: 'paused after repeated failures', budget_exhausted: 'budget used up', accounting_unavailable: 'budgets can\'t be counted',
+            low_disk: 'storage low', disk_unknown: 'storage not known yet', approval_required: 'waiting for an OK', seerr_unsupported: 'needs Sonarr/Radarr handling',
+        };
+        var JE_AUTOMATION_BUDGETS = {
+            household_add: 'Titles added (household)', instance_search: 'Searches', seerr_post: 'Requests sent to Seerr',
+            source_fetch: 'List source reads', delta_work: 'List changes', backfill_search: 'Backfill (reserved)',
+        };
+
+        /**
+         * Reads a JSON object string, or {} when empty or unreadable.
+         * @param {string} text - stored JSON
+         * @returns {Object}
+         */
+        function jeArrAutomationJson(text) {
+            try {
+                var value = JSON.parse(text || '{}');
+                return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+            } catch (ignored) { return {}; }
+        }
+
+        /**
+         * The Sonarr/Radarr instances saved in the configuration (id and name), then Seerr.
+         * @param {Object} config - Plugin configuration
+         * @returns {Array<{id: string, name: string}>}
+         */
+        function jeArrAutomationTargets(config) {
+            var list = [];
+            [['RadarrInstances', 'Radarr'], ['SonarrInstances', 'Sonarr']].forEach(function(pair) {
+                var rows;
+                try { rows = JSON.parse(config[pair[0]] || '[]'); } catch (ignored) { rows = []; }
+                (Array.isArray(rows) ? rows : []).forEach(function(row) {
+                    var id = row && (row.Id || row.id);
+                    if (id) list.push({ id: String(id), name: (row.Name || row.name || pair[1]) + ' (' + pair[1] + ')' });
+                });
+            });
+            list.push({ id: 'seerr', name: 'Seerr (Jellyfin Enhanced\'s requests to it)' });
+            return list;
+        }
+
+        /**
+         * Fills the phase-4 automation settings: switches, budgets, the recipe table and the kill-switch targets.
+         * @param {Object} config - Plugin configuration
+         * @returns {void}
+         */
+        function jeLoadArrAutomationSettings(config) {
+            var num = function(v, d) { return (v !== undefined && v !== null) ? v : d; };
+            document.querySelector('#arrPhase4Enabled').checked = config.ArrPhase4Enabled === true;
+            document.querySelector('#arrPhase4AutomationEnabled').checked = config.ArrPhase4AutomationEnabled === true;
+            document.querySelector('#arrAutomationShadowOverride').checked = config.ArrAutomationShadowOverride === true;
+            document.querySelector('#arrAutomationKillAll').checked = config.ArrAutomationKillAll === true;
+            document.querySelector('#arrAutomationFree').checked = config.ArrAutomationFree === true;
+            document.querySelector('#arrAutomationHouseholdAddsPerDay').value = num(config.ArrAutomationHouseholdAddsPerDay, 20);
+            document.querySelector('#arrAutomationSearchesPerHour').value = num(config.ArrAutomationSearchesPerHour, 30);
+            document.querySelector('#arrAutomationSearchesPerDay').value = num(config.ArrAutomationSearchesPerDay, 300);
+            document.querySelector('#arrAutomationSeerrPostsPerDay').value = num(config.ArrAutomationSeerrPostsPerDay, 20);
+            document.querySelector('#arrAutomationSourceFetchesPerHour').value = num(config.ArrAutomationSourceFetchesPerHour, 60);
+            document.querySelector('#arrAutomationDeltaWorkPerHour').value = num(config.ArrAutomationDeltaWorkPerHour, 500);
+
+            var stored = jeArrAutomationJson(config.ArrAutomationRecipes);
+            var table = document.getElementById('arrAutomationRecipesTable');
+            table.textContent = '';
+            JE_AUTOMATION_RECIPES.forEach(function(recipe) {
+                var found = stored[recipe.id] || {};
+                var mode = String(found.mode || 'shadow').toLowerCase();
+                if (!JE_AUTOMATION_MODES.some(function(m) { return m[0] === mode; })) mode = 'shadow';
+                var row = createEl('div', { className: 'je-arr-automation-recipe' });
+                var select = createEl('select', { id: 'arrAutomationRecipe_' + recipe.id, className: 'emby-select-withcolor emby-select' });
+                select.setAttribute('aria-label', recipe.label);
+                JE_AUTOMATION_MODES.forEach(function(m) {
+                    var option = createEl('option', { value: m[0], textContent: m[1] });
+                    if (m[0] === mode) option.selected = true;
+                    select.appendChild(option);
+                });
+                var kill = createEl('input', { type: 'checkbox', id: 'arrAutomationKill_' + recipe.id });
+                kill.checked = found.killed === true;
+                var killLabel = createEl('label', { className: 'je-arr-automation-kill' });
+                killLabel.appendChild(kill);
+                killLabel.appendChild(document.createTextNode(' Kill'));
+                row.appendChild(createEl('span', { className: 'je-arr-automation-recipe-name', textContent: recipe.label }));
+                row.appendChild(select);
+                row.appendChild(killLabel);
+                table.appendChild(row);
+            });
+
+            var killed = String(config.ArrAutomationKilledInstances || '').split(/[,;\s]+/).filter(Boolean);
+            var box = document.getElementById('arrAutomationKilledTargets');
+            box.textContent = '';
+            var targets = jeArrAutomationTargets(config);
+            targets.forEach(function(target, i) {
+                var label = createEl('label', { className: 'je-arr-automation-target' });
+                var input = createEl('input', { type: 'checkbox', id: 'arrAutomationKillTarget_' + i });
+                input.dataset.target = target.id;
+                input.checked = killed.some(function(k) { return k.toLowerCase() === target.id.toLowerCase(); });
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(' ' + target.name));
+                box.appendChild(label);
+            });
+            // Kill switches for instances not listed here any more are kept as they are.
+            box.dataset.jeOther = killed.filter(function(k) { return !targets.some(function(t) { return t.id.toLowerCase() === k.toLowerCase(); }); }).join(',');
+        }
+
+        /**
+         * Copies the phase-4 automation settings into the configuration being saved (numbers clamped 0-100000).
+         * @param {Object} config - Plugin configuration
+         * @returns {void}
+         */
+        function jeSaveArrAutomationSettings(config) {
+            var clamp = function(id, d) { var n = parseInt(document.querySelector(id).value, 10); return isNaN(n) ? d : Math.min(100000, Math.max(0, n)); };
+            config.ArrPhase4Enabled = document.querySelector('#arrPhase4Enabled').checked;
+            config.ArrPhase4AutomationEnabled = document.querySelector('#arrPhase4AutomationEnabled').checked;
+            config.ArrAutomationShadowOverride = document.querySelector('#arrAutomationShadowOverride').checked;
+            config.ArrAutomationKillAll = document.querySelector('#arrAutomationKillAll').checked;
+            config.ArrAutomationFree = document.querySelector('#arrAutomationFree').checked;
+            config.ArrAutomationHouseholdAddsPerDay = clamp('#arrAutomationHouseholdAddsPerDay', 20);
+            config.ArrAutomationSearchesPerHour = clamp('#arrAutomationSearchesPerHour', 30);
+            config.ArrAutomationSearchesPerDay = clamp('#arrAutomationSearchesPerDay', 300);
+            config.ArrAutomationSeerrPostsPerDay = clamp('#arrAutomationSeerrPostsPerDay', 20);
+            config.ArrAutomationSourceFetchesPerHour = clamp('#arrAutomationSourceFetchesPerHour', 60);
+            config.ArrAutomationDeltaWorkPerHour = clamp('#arrAutomationDeltaWorkPerHour', 500);
+            var recipes = {};
+            JE_AUTOMATION_RECIPES.forEach(function(recipe) {
+                var select = document.getElementById('arrAutomationRecipe_' + recipe.id);
+                var kill = document.getElementById('arrAutomationKill_' + recipe.id);
+                if (!select) return;
+                recipes[recipe.id] = { mode: select.value, killed: !!(kill && kill.checked) };
+            });
+            config.ArrAutomationRecipes = JSON.stringify(recipes);
+            var box = document.getElementById('arrAutomationKilledTargets');
+            var killed = (box.dataset.jeOther || '').split(',').filter(Boolean);
+            box.querySelectorAll('input[type="checkbox"]').forEach(function(input) { if (input.checked) killed.push(input.dataset.target); });
+            config.ArrAutomationKilledInstances = killed.join(',');
+        }
+
+        /**
+         * One line of the automation status panel.
+         * @param {Element} out - the panel
+         * @param {string} text - plain text
+         * @param {string} [cls] - je-arr-check-ok / je-arr-check-bad
+         * @returns {Element}
+         */
+        function jeArrAutomationLine(out, text, cls) {
+            var line = createEl('div', { className: 'fieldDescription' + (cls ? ' ' + cls : ''), textContent: text });
+            out.appendChild(line);
+            return line;
+        }
+
+        /**
+         * "Show automation status": the engine's state as the server applies it (modes in effect, budgets with when
+         * they have room again, breakers, held automatic requests, the request backend's boundary and the one-time
+         * migration notice).
+         * @returns {Promise<void>}
+         */
+        async function jeArrAutomationStatus() {
+            var out = document.getElementById('arrAutomationStatus');
+            if (!out) return;
+            out.textContent = 'Reading...';
+            var status;
+            try {
+                status = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/automation/status'), dataType: 'json' });
+            } catch (e) {
+                out.textContent = '';
+                jeArrAutomationLine(out, '✗ ' + (e && e.status === 403 ? 'Only administrators can read this, with "Requests & downloads (new)" and "Show where things have got to" on and saved.' : 'The status could not be read (error ' + (e && e.status ? e.status : '?') + ').'), 'je-arr-check-bad');
+                return;
+            }
+            out.textContent = '';
+            var time = function(iso) { return iso ? new Date(iso).toLocaleString() : ''; };
+            if (status.shadowOverride) jeArrAutomationLine(out, 'Rollout guard on: every automatic request is only recorded (Shadow); nothing automatic is sent.', 'je-arr-check-bad');
+            jeArrAutomationLine(out, 'Phase 4: ' + (status.phase4.effective ? 'on' : status.phase4.enabled ? 'on, but a switch it needs is off' : 'off') +
+                '. Automation engine: ' + (status.engine.effective ? 'on' : status.engine.enabled ? 'on, but a switch it needs is off' : 'off') + '.');
+            if (status.accountingUnavailable) jeArrAutomationLine(out, '✗ Budgets can\'t be counted (the database is unavailable): nothing automatic is sent.', 'je-arr-check-bad');
+            if (status.killAll) jeArrAutomationLine(out, 'Kill switch on: no automatic request is asked for or sent.', 'je-arr-check-bad');
+            (status.recipes || []).forEach(function(r) {
+                var known = JE_AUTOMATION_RECIPES.filter(function(x) { return x.id === r.id; })[0];
+                var text = (known ? known.label : r.id) + ': ' + r.mode + (r.killed ? ', killed' : '') +
+                    (r.effective && r.effective !== r.mode ? ' (in effect: ' + r.effective + ')' : '') + (r.reason ? ' (' + (JE_AUTOMATION_REASONS[r.reason] || r.reason) + ')' : '');
+                jeArrAutomationLine(out, text);
+            });
+            (status.budgets || []).filter(function(b) { return !b.reserved; }).forEach(function(b) {
+                var text = (JE_AUTOMATION_BUDGETS[b.category] || b.category) + ', ' + b.scopeName + ', last ' + b.window + ': ' + b.used + ' of ' + b.limit +
+                    (b.uncertain ? ' (' + b.uncertain + ' waiting for a read-back)' : '') +
+                    (b.nextSlotAt ? '; room again ' + time(b.nextSlotAt) : b.resetAt ? '; oldest leaves the window ' + time(b.resetAt) : '');
+                jeArrAutomationLine(out, text, b.used >= b.limit ? 'je-arr-check-bad' : null);
+            });
+            (status.targets || []).forEach(function(t) {
+                if (!t.breakerOpenUntil) return;
+                var row = createEl('div', { className: 'je-arr-check-row' });
+                row.appendChild(createEl('div', { className: 'fieldDescription je-arr-check-bad', textContent: t.name + ': automatic sends paused after ' + t.breakerFailures + ' failures in a row, until ' + time(t.breakerOpenUntil) + '.' }));
+                var retry = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Try again now' });
+                retry.addEventListener('click', async function() {
+                    retry.disabled = true;
+                    try { await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/automation/breakers/reset'), data: JSON.stringify({ target: t.id }), contentType: 'application/json', dataType: 'json' }); } catch (ignored) { /* shown on the next read */ }
+                    jeArrAutomationStatus();
+                });
+                row.appendChild(retry);
+                out.appendChild(row);
+            });
+            Object.keys(status.held || {}).forEach(function(reason) {
+                if (status.held[reason] > 0) jeArrAutomationLine(out, status.held[reason] + ' automatic request(s) waiting: ' + (JE_AUTOMATION_HELD[reason] || reason) + '.');
+            });
+            if (status.backend === 'seerr') jeArrAutomationLine(out, 'Seerr handles requests: automation counts only the requests Jellyfin Enhanced sends to Seerr, and its kill switches and storage check hold only those. Once Seerr accepts a request, Seerr and its Sonarr/Radarr decide everything after that (its approval, folder and searches), so per-instance limits and stopping work after hand-off aren\'t available, and release-day searches need Sonarr/Radarr handling.');
+            else if (status.backend === 'status_only') jeArrAutomationLine(out, 'Request handling is "Status only": no automatic request is made.');
+            var m = status.migration;
+            if (m) {
+                var mode = function(on) { return m.kind === 'fresh' ? 'Shadow' : on ? 'Auto' : 'Off'; };
+                jeArrAutomationLine(out, 'One-time setup (' + (m.kind === 'fresh' ? 'new install' : 'upgrade') + ', ' + time(m.at) + '): next season ' + mode(m.autoSeason) + ', next movie ' + mode(m.autoMovie) + '.');
+                if ((m.grants || []).length) jeArrAutomationLine(out, 'These Managers keep their automatic requests going ahead without an OK (they had them before): ' + m.grants.map(function(g) { return g.name || g.userId; }).join(', ') + '.');
+                if (m.notice === 'pending') {
+                    var got = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Got it (hide this notice in the Requests page)' });
+                    got.addEventListener('click', async function() {
+                        got.disabled = true;
+                        try { await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/automation/notice/dismiss'), data: '{}', contentType: 'application/json', dataType: 'json' }); } catch (ignored) { /* shown on the next read */ }
+                        jeArrAutomationStatus();
+                    });
+                    out.appendChild(got);
+                }
+            }
+        }
+
         async function jeArrMigrationError(e) {
             try {
                 if (e && typeof e.json === 'function') {
@@ -10175,8 +10450,10 @@
             { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
-            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled', 'arrPhase3Enabled'] },
-            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrSeerrMigrationBtn', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch'] },
+            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled', 'arrPhase3Enabled', 'arrPhase4Enabled'] },
+            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrSeerrMigrationBtn', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch', 'arrPhase4AutomationEnabled'] },
+            { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4AutomationEnabled'] },
+            { parent: 'arrPhase4AutomationEnabled', label: 'Automation engine', children: ['arrAutomationRecipe_auto_season', 'arrAutomationRecipe_auto_movie', 'arrAutomationRecipe_keep_up', 'arrAutomationRecipe_list_acquire_ahead', 'arrAutomationRecipe_release_day', 'arrAutomationRecipe_list_sync', 'arrAutomationRecipe_list_sync_requests', 'arrAutomationKillAll', 'arrAutomationHouseholdAddsPerDay', 'arrAutomationSearchesPerHour', 'arrAutomationSearchesPerDay', 'arrAutomationSeerrPostsPerDay', 'arrAutomationSourceFetchesPerHour', 'arrAutomationDeltaWorkPerHour', 'arrAutomationFree'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },

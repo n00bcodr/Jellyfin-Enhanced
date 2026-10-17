@@ -46,8 +46,10 @@ test('durable request settings round trip through actual config-page wiring with
     const phase1 = h.window.requestParents.find(p => p.parent === 'arrPhase1Enabled');
     const phase3 = h.window.requestParents.find(p => p.parent === 'arrPhase3Enabled');
     assert.ok(phase1.children.includes('arrPhase3Enabled'));
-    // Every setting except the phase switch itself, plus the "Move requests from Seerr" button.
-    assert.equal(phase3.children.length, Object.keys(config).length);
+    // Every setting except the phase switch itself, plus the "Move requests from Seerr" button and the phase-4
+    // automation engine (it needs phase 3 as well as phase 4).
+    assert.equal(phase3.children.length, Object.keys(config).length + 1);
+    assert.ok(phase3.children.includes('arrPhase4AutomationEnabled'));
     assert.ok(phase3.children.includes('arrSeerrMigrationBtn'));
     assert.ok(h.document.getElementById('arrSeerrMigrationBtn'));
     assert.ok(h.document.getElementById('arrSeerrMigrationResult'));
