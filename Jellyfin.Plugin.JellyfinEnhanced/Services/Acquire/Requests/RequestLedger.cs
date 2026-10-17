@@ -318,7 +318,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     var bound = Scalar(c, null, "SELECT COALESCE((SELECT pool_id FROM reservations WHERE job_id=$j LIMIT 1),(SELECT pool_id FROM reservations WHERE want_id=$w AND scope='initial' LIMIT 1))", ("$j", job.Id), ("$w", job.WantId));
                     var pool = GroupQuotaPolicy.ById(GroupQuotaPolicy.Parse(policy.Configuration.ArrGroupQuotaPools), bound, policy.Configuration.ArrRequestQuotaWindowDays);
-                    return pool != null && PoolUsed(c, null, pool.Id, pool.WindowDays, now) > pool.Limit;
+                    // Like the personal allowance below: only pool charges made up to this job's own, so a later excess an
+                    // approver let into the pool never holds a request that was within it (the current limit and window apply).
+                    return pool != null && PoolUsed(c, null, pool.Id, pool.WindowDays, now, ChargedUpTo(c, job, job.WantId, now)) > pool.Limit;
                 })) return GroupQuota;
             }
             if (requester.Role != "Member" || requester.Backend != "je") return null;
@@ -330,12 +332,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var own = Wants(c, null, "user_id=$u", ("$u", Id(requester.UserId))).Where(w => w.Id != want.Id && w.CreatedAt <= want.CreatedAt && w.Status != "pending").ToArray();
                 // Only charges made up to this job's own: a later ask an approver let past the limit (soft excess) never
                 // holds a request that was within the allowance when it was made.
-                var charged = Scalar(c, null, "SELECT MAX(charged_at) FROM reservations WHERE (job_id=$j OR (want_id=$w AND scope='initial')) AND state='charged'", ("$j", job.Id), ("$w", want.Id));
-                var cutoff = charged == null ? now : DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(charged, CultureInfo.InvariantCulture));
+                var cutoff = ChargedUpTo(c, job, want.Id, now);
                 return OverQuota(requester, Charges(c, null, requester.UserId).Where(ch => ch.At <= cutoff).ToArray(), 0, 0, now) ||
                     OverSeries(requester, want.Input, own, policy.Configuration.ArrRequestSeriesThreshold);
             }) ? "authorization_changed" : null;
         }
+
+        // When the job's own charge was made (now when it has none): the send-time allowance and pool checks count only
+        // charges made up to it.
+        private static DateTimeOffset ChargedUpTo(SqliteConnection c, RequestJob job, string wantId, DateTimeOffset now)
+            => Scalar(c, null, "SELECT MAX(charged_at) FROM reservations WHERE (job_id=$j OR (want_id=$w AND scope='initial')) AND state='charged'", ("$j", job.Id), ("$w", wantId)) is { } charged
+                ? DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(charged, CultureInfo.InvariantCulture)) : now;
 
         /// <summary>Creates intent, quota reservation and (when approved) a job in one commit.</summary>
         /// <param name="user">The requester.</param>
@@ -668,10 +675,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // The pool a new reservation of want $w is bound to: the one named ($pool, the initial reservation), else the
         // pool of the want's initial reservation.
         private const string PoolOf = "COALESCE($pool,(SELECT pool_id FROM reservations WHERE want_id=$w AND scope='initial' LIMIT 1))";
-        /// <summary>Requests charged to a group pool in its rolling window (charged reservations bound to it).</summary>
-        private static int PoolUsed(SqliteConnection c, SqliteTransaction? t, string pool, int days, DateTimeOffset now)
+        /// <summary>Requests charged to a group pool in its rolling window (charged reservations bound to it), up to <paramref name="upTo"/> when given.</summary>
+        private static int PoolUsed(SqliteConnection c, SqliteTransaction? t, string pool, int days, DateTimeOffset now, DateTimeOffset? upTo = null)
             => int.Parse(Scalar(c, t, "SELECT COALESCE(SUM(cost),0) FROM reservations WHERE pool_id=$p AND state='charged' AND charged_at>$since AND charged_at<=$at",
-                ("$p", pool), ("$since", Ms(now.AddDays(-days))), ("$at", Ms(now)))!, CultureInfo.InvariantCulture);
+                ("$p", pool), ("$since", Ms(now.AddDays(-days))), ("$at", Ms(upTo is { } u && u < now ? u : now)))!, CultureInfo.InvariantCulture);
         /// <summary>True when <paramref name="cost"/> more would take the pool over its limit.</summary>
         private static bool PoolOver(SqliteConnection c, SqliteTransaction? t, GroupPoolBinding? pool, int cost, DateTimeOffset now)
             => pool != null && cost > 0 && PoolUsed(c, t, pool.Id, pool.WindowDays, now) + cost > pool.Limit;

@@ -651,6 +651,45 @@ public class IntegrationHouseholdRulesTests
         _ = (a, b);
     }
 
+    [Fact]
+    public async Task ALaterApprovedPoolExcessNeverHoldsEarlierAsksThatWereWithinThePool()
+    {
+        using var r = new Rules();
+        Pools(r, new { id = "fam", name = "Family", limit = 2, roles = new[] { "Member", "Trusted" }, users = Array.Empty<string>() });
+        var first = await r.Ask(r.Member, 1);
+        r.Now = r.Now.AddMinutes(1);
+        var second = await r.Ask(r.Trusted, 2);
+        r.Now = r.Now.AddMinutes(1);
+        var third = await r.Ask(r.Member, 3);
+        Assert.Equal(("queued", "queued", "pending", "group_quota"), (r.Want(first).Status, r.Want(second).Status, r.Want(third).Status, r.Want(third).Reason));
+        r.Now = r.Now.AddMinutes(1);
+        Assert.Equal(200, (await r.Service.ApproveAsync(third.RequestId!, r.Admin.UserId, null, default)).HttpStatus);
+        Assert.Equal(3, r.Service.Pool(r.Member.UserId)!.Value.Use.Used);
+        foreach (var (id, who) in new[] { (first.RequestId!, r.Member), (second.RequestId!, r.Trusted), (third.RequestId!, r.Member) })
+        {
+            var job = r.Rig.Ledger.ForWant(id).Single();
+            Assert.Null(r.Rig.Ledger.ApprovalNeededAtSend(job, r.Policy.Evaluate(who.UserId, job.Input), r.Policy, r.Now));
+        }
+        await r.Runner().TickAsync(default);
+        Assert.Equal(3, r.Rig.Backend.Sends);
+        // The pool's current limit and window still count, in reservation order: raised to 5, two more go in; lowered
+        // to 4 before they are sent, the fourth (4 used up to it) still goes and the fifth waits.
+        Pools(r, new { id = "fam", name = "Family", limit = 5, roles = new[] { "Member", "Trusted" }, users = Array.Empty<string>() });
+        r.Now = r.Now.AddMinutes(1);
+        var fourth = await r.Ask(r.Member, 4);
+        r.Now = r.Now.AddMinutes(1);
+        var fifth = await r.Ask(r.Trusted, 5);
+        Assert.Equal(("queued", "queued"), (r.Want(fourth).Status, r.Want(fifth).Status));
+        Pools(r, new { id = "fam", name = "Family", limit = 4, roles = new[] { "Member", "Trusted" }, users = Array.Empty<string>() });
+        var fourthJob = r.Rig.Ledger.ForWant(fourth.RequestId!).Single();
+        var fifthJob = r.Rig.Ledger.ForWant(fifth.RequestId!).Single();
+        Assert.Null(r.Rig.Ledger.ApprovalNeededAtSend(fourthJob, r.Policy.Evaluate(r.Member.UserId, fourthJob.Input), r.Policy, r.Now));
+        Assert.Equal("group_quota", r.Rig.Ledger.ApprovalNeededAtSend(fifthJob, r.Policy.Evaluate(r.Trusted.UserId, fifthJob.Input), r.Policy, r.Now));
+        // Once the first three age out of the window, the fifth fits again.
+        r.Now = r.Now.AddDays(r.Config.ArrRequestQuotaWindowDays).AddSeconds(-90);
+        Assert.Null(r.Rig.Ledger.ApprovalNeededAtSend(fifthJob, r.Policy.Evaluate(r.Trusted.UserId, fifthJob.Input), r.Policy, r.Now));
+    }
+
     // ------------------------------------------------------------------ batch preview (S03 seam)
 
     [Fact]
