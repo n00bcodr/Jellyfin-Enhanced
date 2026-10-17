@@ -921,6 +921,8 @@ library page: the status pill and journey (or the season's pill), *Notify me*, *
   a downloading episode gets its ring;
 - **episodes**: **Get it** or *Search*.
 
+The first of them sits in Jellyfin's button row where *Play* is on a library title; the others follow it there as icon
+buttons, and the status pill (with the request's cost under it) heads the details, as on a library page.
 These are the page's only request controls, and they ask through Jellyfin Enhanced in both request modes: in JE mode
 the request goes straight to Sonarr or Radarr (asks that need an OK wait for it), in Seerr mode Jellyfin Enhanced
 passes it on to Seerr as the person who asked. In JE mode the cards of the *Not in your library* search row and of the
@@ -944,7 +946,7 @@ facade and never touch the library):
 | GET | `native-details/resolve?key=…[&season=&episode=]` or `?id={pageId}` | Where a title opens for the caller: `{itemId}` (a library item they can open, the season or episode when named) or `{id}` (the native page). 404 when the title has no TMDB id; 403 for API keys or with the setting off |
 | GET | `native-details/person/{tmdbId}/filmography` | The filmography on a person's own page, filtered for the caller on the server: a library copy they can open carries its Jellyfin id, a title the library hides from them is left out, a title not in the library is listed only when its page would open for them. No Seerr account needed in Jellyfin Enhanced request mode. 404 when refused or unknown, 503 when Seerr can't answer, 504 while parental checks still run, 429 (`Retry-After`) when the list isn't cached and the caller has started too many new reads or already has 8 running or waiting (or the server has too many queued); 403 for API keys or with the setting off |
 | GET | `native-details/discover/{movie\|tv}/{genre\|studio\|network\|company\|keyword}/{id}?page=&sortBy=` | One page of a genre, studio, network or tag (TMDB keyword) discovery feed (`company`: a studio's own series, from TMDB), filtered and limited for the caller like the filmography; `totalPages` is the upstream count, so a page with every title left out isn't the end. Library pages' discovery rows use these for callers without a Seerr account |
-| GET | `native-details/title/{movie\|tv}/{tmdbId}[/ratings]` | A not-in-library title's public details (without Seerr's per-account `mediaInfo`) or its ratings, for its native page's extras, under that page's own rule (no Seerr account needed in Jellyfin Enhanced request mode); ratings are limited like the feeds |
+| GET | `native-details/title/{movie\|tv}/{tmdbId}[/ratings]` | A not-in-library title's public details (without Seerr's per-account `mediaInfo`) or its ratings (`null` when it has none), for its native page's extras, under that page's own rule (no Seerr account needed in Jellyfin Enhanced request mode); ratings are limited like the feeds |
 | GET | `native-details/genres/{movie\|tv}`, `native-details/keywords?query=` | TMDB's genres (`[{id, name}]`) and the keywords matching a tag (`{results: [{id, name}]}`), so library genre and tag rows find their TMDB ids without a Seerr account |
 
 The native page's own reads (its title, seasons, episodes and parents, a person, studio or network page) come out of

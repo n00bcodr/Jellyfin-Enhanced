@@ -62,3 +62,41 @@ test('spoiler refresh updates responsive image width and density candidates and 
   assert.equal(h.document.querySelector('#width').getAttribute('src'), '/branding/logo.png');
   assert.match(h.document.querySelector('#background').getAttribute('style'), /tag=keep&_sbcb=100000000/);
 });
+
+test('the pending Spoiler Guard switch drawn for a native action row looks like the library\'s row button and keeps its label as its name', async t => {
+  const h = setup(t);
+  h.JE.pluginConfig = { SpoilerBlurEnabled: true };
+  h.JE.t = key => ({ spoiler_blur_pending_button_off: 'Enable Spoiler Guard', spoiler_blur_pending_button_on: 'Spoiler Guard (pending)' })[key] || key;
+  const toasts = [];
+  h.JE.toast = text => toasts.push(text);
+  h.load('enhanced/spoilerguard/seerr-toggle.js');
+  const api = h.JE.internals.spoilerGuard;
+  let on = false;
+  const enabled = [];
+  Object.assign(api, {
+    isTmdbEnabled: () => on,
+    whenLoaded: () => Promise.resolve(),
+    enableForTmdb: async (type, id, name) => { enabled.push([type, id, name]); on = true; },
+    disableForTmdb: async () => { on = false; },
+    confirmDisableSpoiler: async () => true,
+  });
+  const button = api.buildSeerrToggle({ id: 1849, name: 'Benson', mediaInfo: null }, 'tv', { detail: true });
+  assert.deepEqual([...button.classList], ['button-flat', 'detailButton', 'emby-button', 'je-spoiler-pending-detail']);
+  assert.equal(button.getAttribute('is'), 'emby-button');
+  const icon = button.querySelector(':scope > .detailButton-content > .material-icons.detailButton-icon');
+  assert.equal(icon.textContent, 'blur_off');
+  assert.equal(button.getAttribute('aria-label'), 'Enable Spoiler Guard');
+  assert.equal(button.title, 'Enable Spoiler Guard');
+  assert.equal(button.textContent, 'blur_off', 'icon only, like the row\'s own buttons');
+  button.click();
+  await new Promise(r => setTimeout(r, 0));
+  assert.deepEqual(enabled, [['tv', 1849, 'Benson']]);
+  assert.equal(icon.textContent, 'blur_on');
+  assert.equal(button.getAttribute('aria-pressed'), 'true');
+  assert.equal(button.getAttribute('aria-label'), 'Spoiler Guard (pending)');
+  assert.ok(button.classList.contains('je-spoiler-pending-on'));
+  // The modal's pill is unchanged.
+  const pill = api.buildSeerrToggle({ id: 1849, name: 'Benson' }, 'tv');
+  assert.equal(pill.className, 'je-spoiler-pending-btn je-spoiler-pending-on');
+  assert.equal(pill.textContent, 'blur_onSpoiler Guard (pending)');
+});

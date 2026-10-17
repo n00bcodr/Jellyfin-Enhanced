@@ -109,17 +109,27 @@ Hidden Content, and notifications about a title. A title (or the season or episo
 open in Jellyfin goes to your library copy instead; Seerr's own "it's in the library" link is checked for you first.
 On a search card, Enter opens the page and Space still shows the overview with its Request button.
 
-**What the page shows.** On top of Jellyfin's layout:
+**What the page shows.** It is laid out like Jellyfin's own page for a library title of the same kind. The request
+action sits first in Jellyfin's button row, where *Play* is on a library title (*Request*, **Get Season N**, **Get it**,
+*Search*, or what stands in their way, such as *Paused: storage full*); the title's other request actions follow it as
+icon buttons like the row's own (their name shows on hover), then *Report issue*, Spoiler Guard, *Manage* and *Notify
+me* in their usual places. The status pill heads the details below, with the request's cost under it. On top of
+Jellyfin's layout:
+
+![A series that isn't in the library: Get Season 1 where Play would be, then Request, Report issue, Spoiler Guard and Manage](../images/native-details-series.png)
 
 - **Request**: with [Requests & downloads](../arr/arr-features.md#titles-that-arent-in-the-library-native-details)
   on, the status pill and journey, *Request* (the request sheet), *Notify me* and, for administrators, *Manage*.
   Series pages get **Get Season N**; season pages list every episode as a row with **Get it** (or *Search* for one
   missing for a long while) when you show missing episodes, or the *Missing: E1, E2…* banner when you don't; episode
   pages get **Get it**. Without Requests & downloads, *Request* opens the request window over the page.
-- The ratings row (Rotten Tomatoes, IMDb, TMDB), the trailers and teasers, and an *Information* panel: production
-  status, release or air dates, revenue, budget, original language, production countries, studios, streaming
-  services and links (Seerr, TMDB, IMDb, TVDB, Rotten Tomatoes, Trakt, Letterboxd, SIMKL), plus the movie's
-  collection with *View* and Spoiler Guard's switch for the title. *Elsewhere* works as on any details page.
+- The ratings row (Rotten Tomatoes, IMDb, TMDB) above the external links, where the MDBList ratings sit on a library
+  title; the trailers and teasers, and an *Information* panel: production status, release or air dates, revenue,
+  budget, original language, production countries, studios, streaming services and links (Seerr, TMDB, IMDb, TVDB,
+  Rotten Tomatoes, Trakt, Letterboxd, SIMKL), plus the movie's collection with *View*. *Elsewhere* works as on any
+  details page.
+- **Spoiler Guard** (movies and series): its button in the row, where a library title has it. Turned on, Spoiler Guard
+  is waiting for the title and protects it once it's in your library.
 - **Open**: when the title arrives in your library while the page is open, an *Open* button takes you to it. A link
   to such a page after that goes straight to the library copy, and so does going Back to it.
 - **What you already have**: a season page of a series Jellyfin has (a season it doesn't) lists the seasons and
@@ -129,8 +139,9 @@ On a search card, Enter opens the page and Space still shows the overview with i
 - Artwork links on these pages are made for your account and the page they were shown on, and last a day; a page
   open longer than that gets new ones when it's shown again. They keep working after a server restart.
 
-Play, Shuffle, Played, Favourite, the More menu, Download, Hide and Spoiler Guard's item buttons are hidden: there is
-nothing to play, and no rule or mark is ever stored for a title you don't have.
+Play, Shuffle, Played, Favourite, the More menu, Download, Hide and Spoiler Guard's library-item button are hidden:
+there is nothing to play, and no rule or mark is ever stored for the page itself (Spoiler Guard's button above keeps
+its rule by the title's TMDB id).
 
 **Where the names lead.** The cast and crew, genres, studios or networks and tags on the page are links, as on a
 library title:

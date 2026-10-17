@@ -115,12 +115,207 @@ test('a synthetic movie page hides native actions and holds the request controls
   assert.deepEqual(h.fetched, []);
   const actions = page.querySelector('.je-native-absent-actions');
   assert.ok(actions && actions.parentElement.classList.contains('detailSection') && actions === actions.parentElement.firstElementChild);
-  assert.deepEqual([...actions.children].map(n => n.className), ['je-native-absent-status', 'je-native-absent-row je-native-absent-request', 'je-native-absent-ratings']);
+  // The status heads the details section (the request's cost lines under it); Request itself leads the
+  // native action row, in Play's place, as on a library title.
+  assert.deepEqual([...actions.children].map(n => n.className), ['je-native-absent-status', 'je-native-absent-notes', 'je-native-absent-ratings']);
+  const row = page.querySelector('.mainDetailButtons');
+  assert.ok(row.firstElementChild.classList.contains('je-native-absent-primary'));
+  assert.equal(row.firstElementChild.querySelector('.je-native-absent-request').textContent, 'Request');
   // Leaving the page disposes the mount.
   h.window.location.hash = '#/home';
   await h.JE.internals.nativeDetails.onView();
   assert.equal(h.mounts[0].destroyed, true);
   assert.equal(page.querySelector('.je-native-absent-actions'), null);
+  assert.equal(row.querySelector('.je-native-absent-primary'), null);
+});
+
+const ROW_PAGE = `<div id="itemDetailPage" class="page libraryPage itemDetailPage"><div class="detailPageContent"><div class="detailPagePrimaryContainer">
+  <div class="mainDetailButtons focuscontainer-x"><button class="btnPlay detailButton">Play</button><button class="btnPlayTrailer detailButton">Trailer</button>
+  <button class="jellyseerr-report-issue-icon detailButton">Report</button><button class="btnMoreCommands detailButton">More</button><button class="btnManage detailButton">Manage</button></div></div>
+  <div class="detailPagePrimaryContent"><div class="detailSection"><div class="overview">Overview</div><div class="itemExternalLinks">IMDb TMDB</div></div></div></div></div>`;
+
+/**
+ * A smart-actions box as ask-actions draws it.
+ * @param {Document} document Document.
+ * @param {Array<[string, string, boolean]>} buttons [icon, text, secondary].
+ * @param {string[]} [costs] Cost lines.
+ * @returns {HTMLElement} Box.
+ */
+function askBox(document, buttons, costs = []) {
+  const box = document.createElement('div');
+  box.className = 'je-ask-actions';
+  box.dataset.jeAskSurface = 'details';
+  for (const [icon, text, secondary] of buttons) {
+    const b = document.createElement('button');
+    b.className = `je-ask-action${secondary ? ' je-ask-action-secondary' : ''}`;
+    b.innerHTML = `<span class="material-icons je-ask-action-icon">${icon}</span><span class="je-ask-action-text">${text}</span>`;
+    box.appendChild(b);
+  }
+  for (const text of costs) box.appendChild(Object.assign(document.createElement('span'), { className: 'je-ask-action-cost', textContent: text }));
+  return box;
+}
+
+test('a series page: Get Season N leads the native action row where Play sits, Request follows as an icon button, the cost line goes under the status', async t => {
+  const h0 = setup(t);
+  const id = h0.td.syntheticId('series', 1849);
+  const h = setup(t, { html: ROW_PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${id}&serverId=${SERVER}`, getItem: async () => ({ Id: id, Type: 'Series', Name: 'Benson', ProviderIds: { Tmdb: '1849' } }) });
+  const nd = h.JE.internals.nativeDetails;
+  await nd.onView();
+  const page = h.document.getElementById('itemDetailPage');
+  const row = page.querySelector('.mainDetailButtons');
+  const primary = row.firstElementChild;
+  assert.ok(primary.classList.contains('je-native-absent-primary'));
+  // Nothing to show yet: no gap in the row.
+  assert.ok(primary.classList.contains('je-native-absent-primary-empty'));
+  const box = askBox(h.document, [['download', 'Get Season 1'], ['add', 'Request', true]], ['Uses 1 of your 5 requests']);
+  assert.equal(nd.placeActions(page, box, null), true);
+  assert.equal(box.parentElement, primary);
+  assert.equal(primary.classList.contains('je-native-absent-primary-empty'), false);
+  const [lead, more] = box.querySelectorAll('button');
+  assert.ok(lead.classList.contains('je-native-absent-lead'));
+  assert.equal(lead.classList.contains('je-native-absent-icon'), false);
+  // The secondary one is an icon button like the row's own; its label stays its name and tooltip.
+  assert.ok(more.classList.contains('je-native-absent-icon') && more.classList.contains('detailButton'));
+  assert.equal(more.title, 'Request');
+  assert.equal(more.querySelector('.je-ask-action-text').textContent, 'Request');
+  assert.equal(box.querySelector('.je-ask-action-cost'), null);
+  assert.equal(page.querySelector('.je-native-absent-status + .je-native-absent-notes').textContent, 'Uses 1 of your 5 requests');
+  // A redraw replaces the box and its cost lines; none at all leaves the row as it was.
+  const next = askBox(h.document, [['add', 'Request', true]]);
+  assert.equal(nd.placeActions(page, next, box), true);
+  assert.equal(box.isConnected, false);
+  assert.equal(page.querySelector('.je-native-absent-notes').textContent, '');
+  // Alone, the secondary action leads with its label.
+  assert.ok(next.querySelector('button').classList.contains('je-native-absent-lead'));
+  assert.equal(nd.placeActions(page, null, next), true);
+  assert.equal(next.isConnected, false);
+  await wait(0);
+  assert.ok(primary.classList.contains('je-native-absent-primary-empty'));
+  // Taken away by another path (ask-actions' clear): its cost lines go with it.
+  const again = askBox(h.document, [['download', 'Get Season 1']], ['Uses 1 of your 5 requests']);
+  nd.placeActions(page, again, null);
+  again.remove();
+  await wait(0);
+  assert.equal(page.querySelector('.je-native-absent-notes').textContent, '');
+  // A library page is ask-actions' own.
+  h.window.location.hash = '#/details?id=0123456789abcdef0123456789abcdef';
+  await nd.onView();
+  assert.equal(row.querySelector('.je-native-absent-primary'), null);
+  assert.equal(nd.placeActions(page, askBox(h.document, [['add', 'More…']]), null), false);
+});
+
+test('smart actions drawn under the status before the page\'s controls existed move into the action row', async t => {
+  const h0 = setup(t);
+  const id = h0.td.syntheticId('season', 1849, 1);
+  const h = setup(t, { html: ROW_PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${id}&serverId=${SERVER}`, getItem: async () => ({ Id: id, Type: 'Season', Name: 'Season 1' }) });
+  const page = h.document.getElementById('itemDetailPage');
+  const early = askBox(h.document, [['download', 'Get Season 1']], ['Uses 1 of your 5 requests']);
+  page.querySelector('.detailSection').prepend(early);
+  await h.JE.internals.nativeDetails.onView();
+  const primary = page.querySelector('.mainDetailButtons > .je-native-absent-primary');
+  assert.equal(early.parentElement, primary);
+  assert.ok(early.querySelector('button').classList.contains('je-native-absent-lead'));
+  assert.equal(page.querySelector('.je-native-absent-notes').textContent, 'Uses 1 of your 5 requests');
+  // One the details surface put next to its status block afterwards is moved there too.
+  const late = askBox(h.document, [['search', 'Search']]);
+  early.remove();
+  page.querySelector('.je-native-absent-status').appendChild(late);
+  h.JE.internals.nativeDetails.statusShown(page, { stage: 'notHere' });
+  assert.equal(late.parentElement, primary);
+});
+
+test('controls the request mount draws later get the row look too: the first leads, the rest are icon buttons', async t => {
+  const h = setup(t, { html: ROW_PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`, getItem: async () => ({ Id: MOVIE, Type: 'Movie', Name: 'Dune' }) });
+  await h.JE.internals.nativeDetails.onView();
+  const slot = h.document.querySelector('.mainDetailButtons > .je-native-absent-primary .je-native-absent-request');
+  const request = Object.assign(h.document.createElement('button'), { className: 'je-ask-action je-ask-mount-request', innerHTML: '<span class="material-icons">add</span><span>Request</span>' });
+  const fourK = Object.assign(h.document.createElement('button'), { className: 'je-ask-action', innerHTML: '<span class="material-icons">4k</span><span>Get 4K</span>' });
+  slot.append(request, fourK);
+  await wait(0);
+  assert.ok(request.classList.contains('je-native-absent-lead'));
+  assert.ok(fourK.classList.contains('je-native-absent-icon'));
+  assert.equal(fourK.title, 'Get 4K');
+  // Open (a copy arrived) takes the lead.
+  h.JE.internals.nativeDetails.statusShown(h.document.getElementById('itemDetailPage'), { stage: 'ready', openItemId: '0123456789abcdef0123456789abcdef' });
+  await wait(0);
+  const open = slot.querySelector('.je-native-absent-open');
+  assert.equal(slot.firstElementChild, open);
+  assert.ok(open.classList.contains('je-native-absent-lead'));
+  assert.ok(request.classList.contains('je-native-absent-icon'));
+});
+
+test('TV layout: the request action takes the page\'s first focus where Play would have it, unless the remote moved on first', async t => {
+  for (const pressed of [false, true]) {
+    const h = setup(t, { html: ROW_PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`, getItem: async () => ({ Id: MOVIE, Type: 'Movie', Name: 'Dune' }) });
+    h.document.documentElement.classList.add('layout-tv');
+    await h.JE.internals.nativeDetails.onView();
+    // Jellyfin focused the first button it shows (Trailer: Play is hidden here).
+    const trailer = h.document.querySelector('.btnPlayTrailer');
+    trailer.focus();
+    if (pressed) h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    const request = Object.assign(h.document.createElement('button'), { className: 'je-ask-action je-ask-mount-request', textContent: 'Request' });
+    h.document.querySelector('.je-native-absent-primary .je-native-absent-request').appendChild(request);
+    await wait(0);
+    assert.equal(h.document.activeElement, pressed ? trailer : request, pressed ? 'moved on' : 'first focus');
+  }
+});
+
+test('Spoiler Guard is an icon button in the native action row before More…, where a library title has it, not a pill under the page', async t => {
+  const built = [];
+  const details = { id: 693134, status: 'Released', relatedVideos: [] };
+  const h = setup(t, {
+    html: ROW_PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`,
+    getItem: async () => ({ Id: MOVIE, Type: 'Movie', Name: 'Dune: Part Two', ProviderIds: { Tmdb: '693134' } }),
+    modalData: {}, resolve: path => (path === '/native-details/title/movie/693134' ? details : path.endsWith('/ratings') ? { rt: { criticsScore: 92 } } : null),
+  });
+  h.JE.internals.spoilerGuard.buildSeerrToggle = (data, type, options) => {
+    built.push([data.id, data.name, type, options]);
+    return Object.assign(h.document.createElement('button'), { className: 'button-flat detailButton je-spoiler-pending-detail' });
+  };
+  await h.JE.internals.nativeDetails.onView();
+  await wait(20);
+  const page = h.document.getElementById('itemDetailPage');
+  const button = page.querySelector('.je-spoiler-pending-detail');
+  assert.ok(button);
+  assert.equal(button.parentElement, page.querySelector('.mainDetailButtons'));
+  assert.ok(button.nextElementSibling.classList.contains('btnMoreCommands'));
+  assert.deepEqual(JSON.parse(JSON.stringify(built)), [[693134, 'Dune: Part Two', 'movie', { detail: true }]]);
+  // Not a second switch under the page.
+  assert.equal(page.querySelector('.je-native-absent-spoiler'), null);
+  assert.deepEqual(h.toggles, []);
+  // The ratings sit where JE's MDBList ratings sit on a library title: just above the external links.
+  const ratings = page.querySelector('.je-native-absent-ratings');
+  assert.ok(ratings.querySelector('.je-rating'));
+  assert.ok(ratings.nextElementSibling.classList.contains('itemExternalLinks'));
+  h.window.location.hash = '#/home';
+  await h.JE.internals.nativeDetails.onView();
+  assert.equal(page.querySelector('.je-spoiler-pending-detail'), null);
+  assert.equal(page.querySelector('.je-native-absent-ratings'), null);
+});
+
+test('season and episode pages have no Spoiler Guard button, as their library pages have none', async t => {
+  const h0 = setup(t);
+  for (const id of [h0.td.syntheticId('season', 1849, 1), h0.td.syntheticId('episode', 1849, 1, 1)]) {
+    const built = [];
+    const h = setup(t, { html: ROW_PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${id}&serverId=${SERVER}`, getItem: async () => ({ Id: id, Type: 'Season', Name: 'Season 1' }), modalData: {} });
+    h.JE.internals.spoilerGuard.buildSeerrToggle = (...args) => { built.push(args); return h.document.createElement('button'); };
+    await h.JE.internals.nativeDetails.onView();
+    assert.deepEqual(built, []);
+  }
+});
+
+test('a page without a native action row keeps its request controls and Spoiler Guard on the page', async t => {
+  const details = { id: 693134, status: 'Released', relatedVideos: [] };
+  const h = setup(t, {
+    html: PAGE.replace(/<div class="mainDetailButtons">.*?<\/div>/, ''), url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`,
+    getItem: async () => ({ Id: MOVIE, Type: 'Movie', Name: 'Dune' }), modalData: {}, resolve: path => (path === '/native-details/title/movie/693134' ? details : null),
+  });
+  h.JE.internals.spoilerGuard.buildSeerrToggle = () => h.document.createElement('button');
+  await h.JE.internals.nativeDetails.onView();
+  await wait(20);
+  const actions = h.document.querySelector('.je-native-absent-actions');
+  assert.equal(actions.querySelector('.je-native-absent-request').textContent, 'Request');
+  assert.ok(h.document.querySelector('.je-native-absent-extras .je-native-absent-spoiler'));
 });
 
 test('without the details surface the mount reads and follows the status itself, with its Notify me', async t => {

@@ -729,6 +729,39 @@ test('a series or season that isn\'t in the library (native details): Get Season
   assert.equal(page.querySelector('.je-ask-actions[data-je-ask-surface="details"]'), null);
 });
 
+test('the page of a title that isn\'t in the library places the smart actions itself (in its native action row), and is told when they go', async t => {
+  const SERIES_PAGE = '4a45ad120001479b00000000c8f267bc';
+  const h = setup(t, { html: PAGE.replace('</h3>', '</h3><div class="mainDetailButtons"></div>'), hash: `#/details?id=${SERIES_PAGE}`, item: { Id: SERIES_PAGE, Name: 'Andor' } });
+  h.JE.titleDetails = { isSynthetic: id => String(id || '').startsWith('4a45ad1') };
+  const page = h.document.getElementById('itemDetailPage');
+  const calls = [];
+  h.JE.internals.nativeDetails = {
+    placeActions: (p, box, old) => {
+      calls.push([box ? [...box.querySelectorAll('.je-ask-action-text')].map(n => n.textContent) : null, !!old]);
+      if (old && old !== box) old.remove();
+      if (box) p.querySelector('.mainDetailButtons').appendChild(box);
+      return true;
+    }
+  };
+  const absent = { key: 'tv:tvdb:393189', itemId: SERIES_PAGE, kind: 'series', stage: 'notHere', reason: { code: 'not_in_arr' }, seasons: [{ season: 1, itemId: '4a45ad130001479b0001000092805890', stage: 'notHere', summary: { aired: 12, ready: 0 } }] };
+  h.JE.internals.arrAskActions.attachDetails(page, absent, { contact: 'Dad' });
+  await settle();
+  const box = page.querySelector('.je-ask-actions[data-je-ask-surface="details"]');
+  assert.equal(box.parentElement, page.querySelector('.mainDetailButtons'));
+  assert.deepEqual(calls, [[['Get Season 1', 'Request'], false]]);
+  // Nothing to offer (a movie for someone who can't ask for 4K): no actions, and the page is told so (its cost
+  // lines go too).
+  h.JE.internals.arrAskActions.attachDetails(page, { key: 'movie:tmdb:1', itemId: '4a45ad11000a938e00000000f9c67720', kind: 'movie', stage: 'notHere' }, { contact: 'Dad' });
+  await settle();
+  assert.deepEqual(calls.at(-1), [null, true]);
+  assert.equal(page.querySelector('.je-ask-actions[data-je-ask-surface="details"]'), null);
+  // A page that doesn't place them (a library title) keeps them under the status as before.
+  h.JE.internals.nativeDetails.placeActions = () => false;
+  h.JE.internals.arrAskActions.attachDetails(page, absent, { contact: 'Dad' });
+  await settle();
+  assert.equal(page.querySelector('.je-ask-actions[data-je-ask-surface="details"]').parentElement, page.querySelector('.detailSection'));
+});
+
 test('series page for a kid: "Ask Dad for Season 2"; Watchers and the feature off show nothing', async t => {
   const h = setup(t, { me: KID, html: PAGE, hash: '#/details?id=series1' });
   const page = h.document.getElementById('itemDetailPage');

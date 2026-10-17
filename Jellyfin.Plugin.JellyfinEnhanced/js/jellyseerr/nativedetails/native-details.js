@@ -20,9 +20,13 @@
 //     Season N / Get it and the missing-episode rows come from the details surface (status-details,
 //     ask-actions, ask-episodes), which read status by this page's id; this module adds Request (the
 //     request sheet) for movies, and "Request" through the modal when the request feature is off;
-//   - adds what the modal shows that the native layout has no place for: the ratings row, the
-//     information panel (status, dates, money, language, countries, studios, streaming, links), the
-//     trailers and the collection card;
+//   - lays them out as Jellyfin lays out a library title of the same type: the request action (or
+//     Open) leads the native action row where Play sits, the other request actions follow it as
+//     icon buttons, Spoiler Guard is an icon button in the row where the library's is, and the
+//     status pill (with the request's cost lines under it) heads the details section;
+//   - adds what the modal shows that the native layout has no place for: the ratings row (where
+//     JE's MDBList ratings sit on a library title), the information panel (status, dates, money,
+//     language, countries, studios, streaming, links), the trailers and the collection card;
 //   - offers Open once a copy the viewer can open arrives (a deep link to a title that is already
 //     here goes straight to it);
 //   - re-checks the page on every view (Back, restore) and shows a neutral refusal when the server
@@ -56,6 +60,8 @@
     /** A restored page whose access is being checked again: nothing of its earlier content shows until it passes. */
     const CHECKING_CLASS = 'je-native-absent-checking';
     const STYLE_ID = 'je-native-absent-style';
+    /** The page's request controls in the native action row, in Play's place (first in the row). */
+    const PRIMARY_CLASS = 'je-native-absent-primary';
     const HIDDEN_ACTIONS = [
         '.btnPlay', '.btnResume', '.btnReplay', '.btnShuffle', '.btnInstantMix', '.btnPlaystate', '.btnUserRating',
         '.btnDownload', '.btnMoreCommands', '.btnSplitVersions', '.btnCancelSeriesTimer', '.btnCancelTimer',
@@ -324,10 +330,30 @@
         style.textContent = HIDDEN_ACTIONS.map(s => `.${PAGE_CLASS} ${s}`).join(',\n') + ' { display: none !important; }\n'
             + `.je-native-absent-actions { margin: 0.8em 0 0.4em; display: flex; flex-direction: column; gap: 0.6em; }\n`
             + `.je-native-absent-actions:empty, .je-native-absent-row:empty { display: none; }\n`
+            // The request controls in the native action row: the first one leads with its label (where
+            // Play sits on a library title), the rest are icon buttons like the row's own.
+            + `.${PRIMARY_CLASS}, .${PRIMARY_CLASS} .je-native-absent-request, .${PRIMARY_CLASS} .je-ask-actions, .${PRIMARY_CLASS} .je-ask-mount, .${PRIMARY_CLASS} .je-ask-mount-row { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 0.4em; margin: 0; }\n`
+            + `.${PRIMARY_CLASS} .je-native-absent-lead, .${PRIMARY_CLASS} .je-native-absent-lead * { white-space: nowrap; }\n`
+
+            + `.${PRIMARY_CLASS} { margin-right: 0.4em; }\n`
+            + `.${PRIMARY_CLASS}.je-native-absent-primary-empty, .${PRIMARY_CLASS}:empty, .${PRIMARY_CLASS} .je-native-absent-request:empty, .${PRIMARY_CLASS} .je-ask-mount:empty, .${PRIMARY_CLASS} .je-ask-mount-row:empty { display: none; }\n`
+            + `.${PRIMARY_CLASS} .je-native-absent-lead { flex: 0 0 auto; margin: 0; min-height: 2.6em; }\n`
+            + `.${PRIMARY_CLASS} .je-ask-paused-note { flex: 0 1 auto; margin: 0; padding: 0 0.9em; min-height: 2.6em; box-sizing: border-box; align-items: center; border-radius: 999px; font-size: 0.95em; }\n`
+            + `.${PRIMARY_CLASS} .je-ask-paused-icon { font-size: 1.2em; }\n`
+            + `.${PRIMARY_CLASS} .je-ask-paused-body { gap: 0; }\n`
+            + `.${PRIMARY_CLASS} .je-ask-paused-text, .${PRIMARY_CLASS} .je-native-absent-icon > span:not(.material-icons) { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }\n`
+            + `.${PRIMARY_CLASS} button.je-native-absent-icon { flex: 0 0 auto; background: transparent; border-color: transparent; color: inherit; min-width: 0; min-height: 0; border-radius: 50%; font-weight: inherit; }\n`
+            + `.${PRIMARY_CLASS} button.je-native-absent-icon:hover { background: rgba(127,127,127,0.18); }\n`
+            + `.${PRIMARY_CLASS} .je-native-absent-icon .material-icons { font-size: 1.6em; }\n`
+            // Phones: the row fits the width (a library title's own row is icon buttons only).
+            + `@media (max-width: 600px) { .${PRIMARY_CLASS} { gap: 0.2em; margin-right: 0.2em; } .${PRIMARY_CLASS} .je-native-absent-lead { padding-left: 0.7em; padding-right: 0.7em; font-size: 0.85em; } .${PRIMARY_CLASS} .je-native-absent-icon { padding-left: 0.6em !important; padding-right: 0.6em !important; } }\n`
+            + `.je-native-absent-notes { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3em 0.9em; }\n`
+            + `.je-native-absent-notes:empty { display: none; }\n`
             + `.je-native-absent-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; }\n`
             + `.je-native-absent-status:empty { display: none; }\n`
             + `.je-native-absent-btn { display: inline-flex; align-items: center; gap: 0.4em; min-height: 44px; padding: 0 1.1em; border-radius: 6px; margin: 0; }\n`
             + `.je-native-absent-btn .material-icons { font-size: 1.25em; }\n`
+            + `.je-native-absent-ratings { margin: 0.4em 0; }\n`
             + `.je-native-absent-ratings .je-more-info-ratings-row { justify-content: flex-start; padding-bottom: 0; gap: 0.5rem; }\n`
             + `.je-native-absent-ratings .je-more-info-rating-badge-item { padding: 0.35rem 0.5rem 0.35rem 0; color: inherit; }\n`
             + `.je-native-absent-ratings:empty { display: none; }\n`
@@ -486,14 +512,72 @@
     }
 
     /**
-     * The container of this module's controls at the top of the primary detail section (under the
-     * title ribbon, outside the native button row). The details surface puts its status block and
-     * actions into its status slot (status-details anchorOf), so the order is always: status, the
-     * smart actions, Request / Open, ratings.
+     * The page's native action row (Play, Trailer, Favourite, More… on a library title).
      * @param {HTMLElement} page Details page.
+     * @returns {HTMLElement|null} Row.
+     */
+    function rowOf(page) {
+        return page.querySelector('.mainDetailButtons') || page.querySelector('.detailButtons');
+    }
+
+    /**
+     * The request controls' place in the native action row: first, where Play sits on a library
+     * title. It holds the request slot (Open, the movie's Request mount, the modal's Request) and
+     * then the smart actions; its first control leads with its label, the rest are icon buttons.
+     * @param {HTMLElement} page Details page.
+     * @returns {HTMLElement|null} Slot, or null when the page has no action row.
+     */
+    function primaryOf(page) {
+        const row = rowOf(page);
+        if (!row) return null;
+        let slot = row.querySelector(`.${PRIMARY_CLASS}`);
+        if (!slot) {
+            slot = el('div', PRIMARY_CLASS);
+            slot.setAttribute('role', 'group');
+            slot.setAttribute('aria-label', JE.t('arr_actions_label'));
+            slot.appendChild(el('div', 'je-native-absent-request'));
+        }
+        if (row.firstElementChild !== slot) row.insertBefore(slot, row.firstElementChild);
+        return slot;
+    }
+
+    /**
+     * Gives the row's request controls their native look: the first (button, state chip or paused
+     * line) leads with its label; the buttons after it are icon buttons like the row's own, their
+     * label kept as the tooltip and accessible name.
+     * @param {HTMLElement} slot Request controls in the row.
+     * @returns {void}
+     */
+    function markRow(slot) {
+        const items = [...slot.querySelectorAll('button, .je-arr-chip, .je-ask-paused-note')];
+        // Nothing to show yet (or any more): the row has no gap where it would be.
+        slot.classList.toggle('je-native-absent-primary-empty', !items.length);
+        items.forEach((n, i) => {
+            const lead = i === 0;
+            const icon = !lead && n.tagName === 'BUTTON';
+            n.classList.toggle('je-native-absent-lead', lead);
+            n.classList.toggle('je-native-absent-icon', icon);
+            n.classList.toggle('detailButton', icon);
+            n.classList.toggle('button-flat', icon);
+            const text = (n.querySelector('.je-ask-action-text, .je-ask-paused-title, span:not(.material-icons)')?.textContent || '').trim();
+            if (icon && text && !n.title) n.title = text;
+            if (n.classList.contains('je-ask-paused-note')) {
+                const detail = n.querySelector('.je-ask-paused-text')?.textContent?.trim();
+                if (detail) n.title = detail;
+            }
+        });
+    }
+
+    /**
+     * The container of this module's controls at the top of the primary detail section (under the
+     * title ribbon): the status slot (status-details anchorOf puts the status block there), the cost
+     * lines of the request actions in the row, and the ratings until they find their place. A page
+     * without an action row keeps the request slot here too.
+     * @param {HTMLElement} page Details page.
+     * @param {HTMLElement|null} primary Request controls in the row.
      * @returns {HTMLElement|null} Container.
      */
-    function actionsOf(page) {
+    function actionsOf(page, primary) {
         let box = page.querySelector('.je-native-absent-actions');
         if (box) return box;
         const anchor = page.querySelector('.detailPagePrimaryContent .detailSection')
@@ -503,14 +587,105 @@
         box = el('div', 'je-native-absent-actions');
         const status = el('div', 'je-native-absent-status');
         box.appendChild(status);
-        box.appendChild(el('div', 'je-native-absent-row je-native-absent-request'));
+        box.appendChild(el('div', 'je-native-absent-notes'));
+        if (!primary) box.appendChild(el('div', 'je-native-absent-row je-native-absent-request'));
         box.appendChild(el('div', 'je-native-absent-ratings'));
         anchor.insertBefore(box, anchor.firstChild);
         // The details surface may have answered before this page's controls existed.
-        page.querySelectorAll('.je-arr-status[data-je-arr-surface="details"], .je-ask-actions[data-je-ask-surface="details"]').forEach(n => {
+        page.querySelectorAll('.je-arr-status[data-je-arr-surface="details"]').forEach(n => {
             if (!box.contains(n)) status.appendChild(n);
         });
         return box;
+    }
+
+    /**
+     * Puts the smart actions (ask-actions) of this page into the row's request controls, their cost
+     * lines under the status, replacing the previous box. ask-actions calls this before placing a
+     * box itself.
+     * @param {HTMLElement} page Page.
+     * @param {HTMLElement|null} box Actions, or null for none.
+     * @param {HTMLElement|null} [old] The box shown until now.
+     * @returns {boolean} True when the page is a native page that placed (or removed) it.
+     */
+    function placeActions(page, box, old) {
+        const state = current;
+        if (!state || state.aborted || state.page !== page || !state.primary || !page.contains(state.primary)) return false;
+        if (old && old !== box) old.remove();
+        const notes = state.container?.querySelector('.je-native-absent-notes');
+        notes?.replaceChildren();
+        if (!box) return true;
+        if (box.parentNode !== state.primary) state.primary.appendChild(box);
+        if (notes) box.querySelectorAll('.je-ask-action-cost').forEach(n => notes.appendChild(n));
+        markRow(state.primary);
+        return true;
+    }
+
+    /**
+     * After the row's request controls changed: the native look again, and no cost lines left under
+     * the status once the smart actions are gone.
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function syncRow(state) {
+        if (!state.primary) return;
+        markRow(state.primary);
+        if (!state.primary.querySelector('.je-ask-actions')) state.container?.querySelector('.je-native-absent-notes')?.replaceChildren();
+        focusLead(state);
+    }
+
+    /**
+     * TV layout: the page's first focus is on Play on a library title. Here the request action
+     * takes it when it arrives (after Jellyfin focused the row), once per page view, unless the
+     * viewer has pressed a key since the page was shown.
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function focusLead(state) {
+        if (state.leadFocused || state.keyed || !document.documentElement.classList.contains('layout-tv')) return;
+        const lead = state.primary?.querySelector('button.je-native-absent-lead:not([disabled])');
+        if (!lead) return;
+        state.leadFocused = true;
+        const active = document.activeElement;
+        const row = rowOf(state.page);
+        if (!active || active === document.body || (row?.contains(active) && !state.primary.contains(active))) {
+            lead.focus({ preventScroll: true });
+        }
+    }
+
+    /**
+     * The request slot of a page: in the row, or in the container on a page without one.
+     * @param {Object} state Page state.
+     * @returns {HTMLElement|null} Slot.
+     */
+    function requestSlot(state) {
+        return state.primary?.querySelector('.je-native-absent-request')
+            || state.container?.querySelector('.je-native-absent-request') || null;
+    }
+
+    /**
+     * Spoiler Guard's per-title switch for a movie or series, as an icon button in the native action
+     * row where the library's own Spoiler Guard button sits (before More…). The rule is kept by TMDB id
+     * (pending until the title arrives), never by the page's id.
+     * @param {Object} state Page state.
+     * @param {Object} item Item DTO.
+     * @returns {void}
+     */
+    function mountSpoiler(state, item) {
+        const { parts, page } = state;
+        if (parts.kind !== 'movie' && parts.kind !== 'series') return;
+        const row = rowOf(page);
+        const build = JE.internals?.spoilerGuard?.buildSeerrToggle;
+        if (!row || typeof build !== 'function') return;
+        let button = null;
+        try {
+            button = build({ id: parts.tmdbId, title: item?.Name || '', name: item?.Name || '', mediaInfo: null }, state.mediaType, { detail: true });
+        } catch {
+            button = null;
+        }
+        if (!button) return;
+        const more = row.querySelector('.btnMoreCommands');
+        row.insertBefore(button, more && more.parentNode === row ? more : null);
+        state.spoiler = button;
     }
 
     /**
@@ -521,7 +696,12 @@
         if (!current) return;
         current.aborted = true;
         try { current.controls?.destroy?.(); } catch { /* already gone */ }
+        current.observer?.disconnect();
+        if (current.onKey) document.removeEventListener('keydown', current.onKey, true);
         current.container?.remove();
+        current.primary?.remove();
+        current.spoiler?.remove();
+        current.ratings?.remove();
         current.extras?.remove();
         current = null;
     }
@@ -539,7 +719,7 @@
         if (pendingModal && window.location.hash !== pendingModal.from) cancelPendingModal();
         window.Dashboard?.hideLoadingMsg?.();
         page.querySelector('.je-native-absent-refusal')?.remove();
-        page.querySelectorAll('.je-native-absent-actions, .je-native-absent-extras').forEach(n => n.remove());
+        page.querySelectorAll(`.je-native-absent-actions, .je-native-absent-extras, .${PRIMARY_CLASS}, .je-spoiler-pending-detail, .je-native-absent-ratings`).forEach(n => n.remove());
         const box = el('div', 'je-native-absent-refusal');
         box.setAttribute('role', 'status');
         box.textContent = JE.t(messageKey);
@@ -681,7 +861,7 @@
      * @returns {void}
      */
     function mountRequest(state, item) {
-        const slot = state.container?.querySelector('.je-native-absent-request');
+        const slot = requestSlot(state);
         if (!slot) return;
         const { parts } = state;
         if (requestsOn()) {
@@ -718,7 +898,7 @@
      * @returns {void}
      */
     function showOpen(state, itemId) {
-        const slot = state.container?.querySelector('.je-native-absent-request');
+        const slot = requestSlot(state);
         if (!slot) return;
         const existing = slot.querySelector('.je-native-absent-open');
         const valid = !!itemId && /^[0-9a-f-]{32,36}$/i.test(itemId) && !isSynthetic(itemId);
@@ -753,13 +933,32 @@
         showOpen(state, status?.openItemId || null);
         // The movie's Request mount follows the same status (asked, on its way, Search…).
         state.controls?.update?.(status || null);
-        // Keep the status block and smart actions in this page's status slot.
+        // Keep the status block in this page's status slot, and the smart actions in the row.
         const slot = state.container?.querySelector('.je-native-absent-status');
         if (slot) {
-            page.querySelectorAll('.je-arr-status[data-je-arr-surface="details"], .je-ask-actions[data-je-ask-surface="details"]').forEach(n => {
+            page.querySelectorAll('.je-arr-status[data-je-arr-surface="details"]').forEach(n => {
                 if (!slot.contains(n)) slot.appendChild(n);
             });
         }
+        adoptActions(state);
+    }
+
+    /**
+     * Smart actions a page shows outside the row (drawn before this page's controls existed) move
+     * into the row's request controls (or, on a page without a row, into the status slot).
+     * @param {Object} state Page state.
+     * @returns {void}
+     */
+    function adoptActions(state) {
+        const boxes = state.page.querySelectorAll('.je-ask-actions[data-je-ask-surface="details"]');
+        boxes.forEach((n) => {
+            if (state.primary) {
+                if (!state.primary.contains(n)) placeActions(state.page, n, null);
+            } else {
+                const slot = state.container?.querySelector('.je-native-absent-status');
+                if (slot && !slot.contains(n)) slot.appendChild(n);
+            }
+        });
     }
 
     /**
@@ -832,9 +1031,12 @@
             return;
         }
         extras.innerHTML = html;
-        const spoiler = el('div', 'je-native-absent-spoiler');
-        JE.internals?.spoilerGuard?.appendSeerrToggle?.(spoiler, data, mediaType);
-        if (spoiler.childNodes.length) extras.prepend(spoiler);
+        // Spoiler Guard is in the action row (mountSpoiler); a page without a row keeps it here.
+        if (!state.spoiler) {
+            const spoiler = el('div', 'je-native-absent-spoiler');
+            JE.internals?.spoilerGuard?.appendSeerrToggle?.(spoiler, data, mediaType);
+            if (spoiler.childNodes.length) extras.prepend(spoiler);
+        }
         extras.querySelector('.je-collection-card-button')?.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -857,6 +1059,12 @@
             if (mount && ratings) {
                 data.ratings = ratings;
                 mount.innerHTML = internal.buildRatingLogos(ratings, data, mediaType, parts.tmdbId) || '';
+                // Where JE's MDBList ratings sit on a library title: just above the external links.
+                const links = page.querySelector('.detailPagePrimaryContent .itemExternalLinks');
+                if (mount.innerHTML && links?.parentNode) {
+                    links.insertAdjacentElement('beforebegin', mount);
+                    state.ratings = mount;
+                }
             }
         }
     }
@@ -951,12 +1159,28 @@
         const same = current && current.id === id && current.page === page && document.contains(current.container || page);
         const state = same ? current : {
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
-            controls: null, container: null, extras: null, aborted: false, generation: 0, status: undefined
+            controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, extras: null,
+            onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined
         };
         if (!same) {
             dispose();
             current = state;
-            state.container = actionsOf(page);
+            // Titles get their request controls in the native action row; a person page has none.
+            state.primary = isTitle ? primaryOf(page) : null;
+            state.container = actionsOf(page, state.primary);
+            if (state.primary && typeof MutationObserver === 'function') {
+                // The controls redraw themselves (status changes, asks): each drawing gets the native look,
+                // and smart actions taken away by any path take their cost lines with them.
+                state.observer = new MutationObserver(() => syncRow(state));
+                state.observer.observe(state.primary, { childList: true, subtree: true });
+            }
+            if (state.primary) {
+                // A key pressed on the page (the remote moved the focus) keeps the focus where it went.
+                state.onKey = () => { state.keyed = true; };
+                document.addEventListener('keydown', state.onKey, true);
+                markRow(state.primary);
+            }
+            adoptActions(state);
         }
         const generation = ++state.generation;
         let item = null;
@@ -1024,6 +1248,7 @@
         }
         state.key = keyOf(item, parts);
         mountRequest(state, item);
+        mountSpoiler(state, item);
         // A status the details surface read before the mount existed: the mount starts from it.
         if (state.status !== undefined) state.controls?.update?.(state.status);
         if (!requestsOn() && (parts.kind === 'movie' || parts.kind === 'series')) {
@@ -1076,6 +1301,6 @@
 
     JE.titleDetails = Object.freeze({ available, open, show, openKey, openModal, syntheticId, parse, isSynthetic });
     JE.internals = JE.internals || {};
-    JE.internals.nativeDetails = { start, onView, dispose, guard, statusShown, resolve, adaptListPage, current: () => current };
+    JE.internals.nativeDetails = { start, onView, dispose, guard, statusShown, placeActions, resolve, adaptListPage, current: () => current };
     start();
 })(window.JellyfinEnhanced);

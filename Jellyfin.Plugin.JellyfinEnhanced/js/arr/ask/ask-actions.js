@@ -279,8 +279,9 @@
     }
 
     /**
-     * Puts the actions box under the status block (or at the top of the details section), replacing
-     * the previous one; keeps the focus on the same action when it is redrawn.
+     * Puts the actions box under the status block (or at the top of the details section; on the page of
+     * a title that isn't in the library, in the native action row), replacing the previous one; keeps
+     * the focus on the same action when it is redrawn.
      * @param {HTMLElement} page Page.
      * @param {HTMLElement|null} box Actions, or null for none.
      * @returns {void}
@@ -288,14 +289,16 @@
     function place(page, box) {
         const old = page.querySelector(`.je-ask-actions[data-je-ask-surface="${SURFACE}"]`);
         const focused = old && old.contains(document.activeElement) ? document.activeElement.dataset?.jeFocus : null;
+        if (box && old && old.dataset.sig === box.dataset.sig) return;
+        // The page of a title that isn't in the library puts them in its native action row, in Play's place.
+        const native = JE.internals?.nativeDetails?.placeActions?.(page, box, old) === true;
         if (!box) {
-            if (old) old.remove();
+            if (old && !native) old.remove();
             return;
         }
-        if (old && old.dataset.sig === box.dataset.sig) return;
-        if (old) {
+        if (!native && old) {
             old.replaceWith(box);
-        } else {
+        } else if (!native) {
             const block = page.querySelector('.je-arr-status[data-je-arr-surface="details"]');
             const anchor = JE.internals?.arrStatusDetails?.anchorOf?.(page) || page.querySelector('.detailPagePrimaryContent');
             if (block && block.parentNode) block.insertAdjacentElement('afterend', box);
