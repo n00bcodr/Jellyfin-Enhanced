@@ -129,7 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 open[person.Id] = LedgerRequestFacts.PerTitle(wants).Select(r => r.Row).ToList();
                 // The rows shown are built from the requests the caller can see, so a merged row never carries the
                 // seasons, status or progress of a member hidden from them.
-                var visible = LedgerRequestFacts.PerTitle(wants.Where(w => Service.Policy.Evaluate(caller.UserId, w.Input).Visible)).Take(MaxRequestsPerPerson).ToList();
+                var visible = LedgerRequestFacts.PerTitle(wants.Where(w => Service.Policy.Evaluate(caller.UserId, w.Input, w.TargetKey).Visible)).Take(MaxRequestsPerPerson).ToList();
                 shown[person.Id] = visible.Select(r => r.Row).ToList();
                 rows.AddRange(visible);
             }

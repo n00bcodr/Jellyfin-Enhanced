@@ -59,8 +59,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// setting. Null when the backend doesn't say or it isn't known lately (nothing is concluded then).
         /// </summary>
         bool? FourKServer(bool movie) => null;
-        /// <summary>Whether a chosen Seerr server's recently read connection matches this arr URL and key. Memory only; unknown is false.</summary>
-        bool RepresentsSeerrServer(MutationInput input, string url, string apiKey) => false;
+        /// <summary>Whether the specified Seerr source's chosen server's recently read connection matches this arr URL and key. Memory only; unknown is false.</summary>
+        bool RepresentsSeerrServer(string? source, MutationInput input, string url, string apiKey) => false;
     }
     /// <summary>Safe production placeholder until request executors are installed. It performs no network I/O.</summary>
     public sealed class UnavailableRequestBackend : IRequestBackend

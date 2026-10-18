@@ -363,10 +363,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         /// <inheritdoc />
-        public bool RepresentsSeerrServer(MutationInput input, string url, string apiKey)
+        public bool RepresentsSeerrServer(string? source, MutationInput input, string url, string apiKey)
         {
-            var config = _config();
-            var source = config == null ? null : _model.SourceOf(config);
             if (source == null || TitleKey.Parse(input.Key) is not { } key || input.SeerrServerId is not int id
                 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(apiKey)) return false;
             var kind = key.IsMovie ? "radarr" : "sonarr";

@@ -85,6 +85,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return input;
         }
 
+        /// <summary>The Seerr source the stored target names, or null for an unknown or other target.</summary>
+        internal static string? SeerrSource(string target)
+        {
+            try
+            {
+                var parts = JsonSerializer.Deserialize<string?[]>(target);
+                return parts is { Length: 4 } && parts[0] == "seerr" && !string.IsNullOrEmpty(parts[3]) ? parts[3] : null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
         /// <summary>The same place (<see cref="Place"/>): another connection of the same arr instance or Seerr counts.</summary>
         /// <param name="a">A target key.</param>
         /// <param name="b">Another target key.</param>

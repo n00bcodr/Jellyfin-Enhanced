@@ -159,7 +159,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var shown = new List<(RequestWant Want, RequestPolicyFacts Facts)>();
             foreach (var want in all)
             {
-                var facts = _service.Policy.Evaluate(caller.UserId, want.Input);
+                var facts = _service.Policy.Evaluate(caller.UserId, want.Input, want.TargetKey);
                 if (facts.Visible) shown.Add((want, facts));
             }
             var more = shown.Count > MaxItems;
@@ -176,7 +176,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 foreach (var (want, _) in shown)
                 {
-                    var instance = _service.Policy.Evaluate(want.UserId, want.Input).InstanceId;
+                    var instance = _service.Policy.Evaluate(want.UserId, want.Input, want.TargetKey).InstanceId;
                     var placeKey = instance + "|" + want.Input.RootFolder + "|" + want.Input.Key;
                     if (!places.ContainsKey(placeKey)) places[placeKey] = await _places.PlaceAsync(instance, want.Input.RootFolder, want.Input.Key, ct).ConfigureAwait(false);
                 }
@@ -184,7 +184,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var items = shown.Select(s =>
             {
                 var w = s.Want;
-                var requester = _service.Policy.Evaluate(w.UserId, w.Input);
+                var requester = _service.Policy.Evaluate(w.UserId, w.Input, w.TargetKey);
                 var requesterViewer = _service.View.Viewer(w.UserId);
                 var quota = _service.Ledger.Quota(requester, now);
                 var title = meta.GetValueOrDefault(w.Input.Key) ?? new HubTitleMeta();
@@ -256,7 +256,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             if (want.Reason is RequestLedger.RuleReview or RequestLedger.HouseholdRule && want.Status == "pending")
             {
-                var now = (requester ?? _service.Policy.Evaluate(user ?? want.UserId, want.Input)).Rules;
+                var now = (requester ?? _service.Policy.Evaluate(user ?? want.UserId, want.Input, want.TargetKey)).Rules;
                 // Facts not in memory (after a restart nothing has read them yet) aren't "unknown" to the household: the
                 // verdict it was created or held with stands until they are read again.
                 if (now is { Verdict: not HouseholdRules.None } && (want.Rules == null || now.Hits.All(h => h.Matched != null))) return now;
@@ -284,7 +284,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // One row per title edition: an ask and the Seerr request it was linked to when requests moved are one title.
             var own = LedgerRequestFacts.PerTitle(_service.Ledger.List(caller.UserId, false)
                 .Where(w => w.Status is "pending" or "queued" or "sent" or "stale" || now - w.UpdatedAt <= KeepClosedFor)
-                .Where(w => _service.Policy.Evaluate(caller.UserId, w.Input).Visible)
+                .Where(w => _service.Policy.Evaluate(caller.UserId, w.Input, w.TargetKey).Visible)
                 .OrderByDescending(w => w.CreatedAt)).ToList();
             var more = own.Count > MaxItems;
             own = own.Take(MaxItems).ToList();
@@ -342,7 +342,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             int needOk = 0, stuck = 0;
             foreach (var want in _service.Ledger.List(caller, true).Take(1000))
             {
-                var facts = _service.Policy.Evaluate(caller, want.Input);
+                var facts = _service.Policy.Evaluate(caller, want.Input, want.TargetKey);
                 if (!facts.Visible) continue;
                 if (StuckReasons.Contains(want.Reason) || parked.Contains(want.Id)) stuck++;
                 else if (viewer.CanApprove && facts.CanApprove && (want.Input.Variant != "4k" || facts.Can4k)) needOk++;

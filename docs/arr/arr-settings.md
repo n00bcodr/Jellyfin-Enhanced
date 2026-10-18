@@ -547,6 +547,9 @@ Seerr as Seerr's `serverId`, `profileId` and `rootFolder`, as the person who ask
   (`seerr_advanced_required`). When an administrator chooses while approving someone else's ask, that person's Seerr
   account needs the permission too, because Seerr applies the choice to the account the request is made as.
 
+Visibility stays tied to the request’s saved Seerr source and destination when Seerr settings change. An unresolved
+destination requires access to every library, with an administrator exception; parental checks still apply.
+
 A choice is checked against Seerr's servers (read from Seerr, cached for about a minute) when the request is made,
 when it is approved and again, read fresh, right before it is sent. A server, profile or folder that no longer exists,
 a renamed server, a server whose 4K setting changed, or a server Seerr now reaches at another address or with another

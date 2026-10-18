@@ -285,17 +285,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// A user's inbox, newest first (<paramref name="beforeId"/> pages back); without
         /// <paramref name="adminKinds"/>, administrators' kinds are left out (a user who is no longer one).
         /// </summary>
-        public IReadOnlyList<(long Id, string Kind, string? Key, string? ItemId, string Payload, DateTimeOffset At, bool Read)> Inbox(Guid userId, long? beforeId, int limit, bool adminKinds = true) => _db.Read(c =>
+        public IReadOnlyList<(long Id, string Kind, string? Key, string? ItemId, string Payload, DateTimeOffset At, bool Read, string EventKey)> Inbox(Guid userId, long? beforeId, int limit, bool adminKinds = true) => _db.Read(c =>
         {
-            var result = new List<(long, string, string?, string?, string, DateTimeOffset, bool)>();
-            using var cmd = Command(c, null, "SELECT id,kind,title_key,item_id,payload,created_at,read_at FROM notifications WHERE user_id=$u AND id<$b" + (adminKinds ? string.Empty : " AND kind NOT IN (" + AdminKinds + ")") + " ORDER BY id DESC LIMIT $l",
+            var result = new List<(long, string, string?, string?, string, DateTimeOffset, bool, string)>();
+            using var cmd = Command(c, null, "SELECT id,kind,title_key,item_id,payload,created_at,read_at,event_key FROM notifications WHERE user_id=$u AND id<$b" + (adminKinds ? string.Empty : " AND kind NOT IN (" + AdminKinds + ")") + " ORDER BY id DESC LIMIT $l",
                 ("$u", Id(userId)), ("$b", beforeId ?? long.MaxValue), ("$l", limit));
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
-                result.Add((r.GetInt64(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetString(4), At(r.GetInt64(5)), !r.IsDBNull(6)));
+                result.Add((r.GetInt64(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetString(4), At(r.GetInt64(5)), !r.IsDBNull(6), r.GetString(7)));
             }
-            return (IReadOnlyList<(long, string, string?, string?, string, DateTimeOffset, bool)>)result;
+            return (IReadOnlyList<(long, string, string?, string?, string, DateTimeOffset, bool, string)>)result;
         });
 
         /// <summary>Unread notifications of a user (administrators' kinds only with <paramref name="adminKinds"/>).</summary>

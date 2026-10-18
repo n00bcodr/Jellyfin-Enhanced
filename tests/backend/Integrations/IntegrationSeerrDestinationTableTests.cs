@@ -542,6 +542,8 @@ public class IntegrationSeerrDestinationTableTests
     // no longer matches fails too. File, member (Type.Member), code (whitespace normalised, contained), why, requires.
     private static readonly (string File, string Member, string Code, string Why, (string Local, string Rule)? Requires)[] Allowed =
     {
+        ("RequestLedger.cs", "RequestLedger.Withdraw", "RoutingRefusals.Contains(facts.Refusal)",
+            "the policy refusal code alone decides whether stale routing permits withdrawal; no destinations or requests are compared", null),
         ("RequestLedger.cs", "RequestLedger.ExtendSchemaTwo", "j.Authorization.InstanceId == want.Input.InstanceId",
             "the v2 migration works out which target a legacy request's own jobs went to; coverage after it uses Extra", null),
         ("RequestLedger.cs", "RequestLedger.ExtendSchemaTwo", "== row.Episodes",
@@ -593,7 +595,7 @@ public class IntegrationSeerrDestinationTableTests
         ["RequestLedger.RehomeFollowers"] = (new[] { "Extra", "Extra", "SameTarget", "SameTarget" }, "followers moved with a request's target"),
         ["RequestLedger.DemoteUncoveredFollowers"] = (new[] { "Extra", "SameTarget" }, "followers left without coverage wait"),
         ["RequestLedger.ReleasePendingFollowers"] = (new[] { "Extra", "Extra" }, "waiting followers released by coverage"),
-        ["RequestLedger.Withdraw"] = (new[] { "Extra", "Of" }, "withdrawal: who sees it where it goes; what went out covers it"),
+        ["RequestLedger.Withdraw"] = (new[] { "Extra" }, "withdrawal: who sees it where it goes; what went out covers it"),
         ["RequestLedger.RestorePendingOwners"] = (new[] { "Extra" }, "a decline's followers own what nothing covers"),
         ["RequestLedger.WithdrawFollowers"] = (new[] { "Extra", "Extra" }, "a cancel's followers withdrawn"),
         ["RequestLedger.FollowFutureSeason"] = (new[] { "SameTarget" }, "a new season followed on the request's own Seerr"),

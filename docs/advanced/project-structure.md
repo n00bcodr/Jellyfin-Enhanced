@@ -436,7 +436,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   **`Controllers/AcquireRulesController.cs`** (rules editor, streaming services, batch preview).
 
 * **`/Services/Acquire/Requests/`**: Durable request server core. `RequestModels.cs` contains normalized scopes, outcomes
-  and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility; `RequestLedger.cs`
+  and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility (stored requests carry their persisted target;
+  Seerr connection proof is scoped to that source, including approval notices); `RequestLedger.cs`
   commits intent, reservations, approvals, events and outbox jobs in acquire.db (schema 3 adds each want's server-built
   origin and provenance and its operation; schema 4 the household-rule verdict, each reservation's group pool and the
   order charges were made in); `RequestOperations.cs` keeps durable batch/confirmation operations and derives

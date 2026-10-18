@@ -762,6 +762,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var input = edits?.Normalize() is { } edited ? Canonical(c, t, edited) : want.Input;
             if (edits != null && (edits.Normalize() == null || !RequestDestination.SameTitle(input, want.Input))) return RequestOutcome.Refused("invalid_input", 400);
             if (!policy.IsAdmin(actor) && RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
+            if (!policy.Evaluate(actor, want.Input, want.TargetKey).Visible) return RequestOutcome.Refused("not_visible_to_user");
             var requester = policy.Evaluate(want.UserId, input);
             var approver = policy.Evaluate(actor, input);
             if (RequestPolicy.Check(requester, approver, input, true) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal == "backend_unavailable" ? "unavailable" : "blocked");
@@ -932,7 +933,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (want == null) return RequestOutcome.Refused("not_found", 404);
             var decline = declineReason != null;
             // 1. Who may, seeing it where it goes.
-            var facts = policy.Evaluate(actor, RequestDestination.Of(want.Input, want.TargetKey));
+            var facts = policy.Evaluate(actor, want.Input, want.TargetKey);
             if (!facts.Visible || (facts.Refusal != null && !RoutingRefusals.Contains(facts.Refusal))) return RequestOutcome.Refused(facts.Refusal ?? "not_visible_to_user");
             if (decline ? !facts.CanApprove : actor != want.UserId && facts.Role != "Admin") return RequestOutcome.Refused("requests_approve_required");
             if (decline && (string.IsNullOrWhiteSpace(declineReason) || declineReason!.Length > 500 || declineReason.Any(ch => char.IsControl(ch) && ch != '\n'))) return RequestOutcome.Refused("invalid_reason", 400);

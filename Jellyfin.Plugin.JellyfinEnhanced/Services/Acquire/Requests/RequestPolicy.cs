@@ -72,6 +72,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         string AuthorizationStamp(Guid userId, MutationInput input);
         /// <summary>Reads current facts without network I/O.</summary>
         RequestPolicyFacts Evaluate(Guid userId, MutationInput input);
+        /// <summary>Evaluates visibility at a stored request's persisted target, retaining current capability checks.</summary>
+        RequestPolicyFacts Evaluate(Guid userId, MutationInput input, string targetKey) => Evaluate(userId, RequestDestination.Of(input, targetKey));
         /// <summary>
         /// The Sonarr/Radarr instance and connection a Jellyfin Enhanced-mode request like <paramref name="input"/>
         /// goes to, whatever handles requests right now (a move from Seerr records its links on that target before
@@ -215,13 +217,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct)
             => _backend.PrepareAsync(userId, movie ? new MutationInput { Key = "movie:tmdb:1" } : new MutationInput { Key = "tv:tvdb:1", Scope = "seasons", Seasons = new[] { 1 } }, ct);
         /// <inheritdoc />
-        public RequestPolicyFacts Evaluate(Guid userId, MutationInput input)
+        public RequestPolicyFacts Evaluate(Guid userId, MutationInput input) => EvaluateCore(userId, input, null);
+        /// <inheritdoc />
+        public RequestPolicyFacts Evaluate(Guid userId, MutationInput input, string targetKey)
+            => EvaluateCore(userId, RequestDestination.Of(input, targetKey), targetKey);
+        private RequestPolicyFacts EvaluateCore(Guid userId, MutationInput input, string? targetKey)
         {
             RequestPolicyFacts? facts = null;
             for (var attempt = 0; attempt < 3; attempt++)
             {
                 var before = AuthorizationStamp(userId, input);
-                facts = EvaluateOnce(userId, input);
+                facts = EvaluateOnce(userId, input, targetKey);
                 if (before == AuthorizationStamp(userId, input)) return facts;
             }
             return facts! with { Refusal = "authorization_changed", CanCreate = false, CanApprove = false, Can4k = false, Visible = false };
@@ -244,7 +250,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ? !episodes.Any(e => input.Episodes.Any(ask => ask.Season == e.Season && ask.Episode >= e.Episode && ask.Episode <= Math.Max(e.Episode, e.EpisodeEnd ?? e.Episode)))
                 : !episodes.Any(e => seasons.Contains(e.Season));
         }
-        private RequestPolicyFacts EvaluateOnce(Guid userId, MutationInput input)
+        private RequestPolicyFacts EvaluateOnce(Guid userId, MutationInput input, string? targetKey)
         {
             var config = Configuration;
             var viewer = _view.Viewer(userId);
@@ -261,14 +267,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (viewer != null)
             {
                 var copies = _view.Copies(key, viewer, _aliases.Of(key));
-                var target = Landing(input, key, instance);
+                var source = targetKey == null ? binding.Source : RequestDestination.SeerrSource(targetKey);
+                var target = Landing(input, key, instance, source);
+                // Administrators may handle an unknown destination. Resolved libraries and parental visibility
+                // remain mandatory, including for an administrator with restricted access.
+                var destinationVisible = !target.Resolved && viewer.IsAdmin
+                    || viewer.Handle is User account && ArrInstanceLibraries.CanOpen(account, target, _libraries.Libraries());
                 if (copies.Count > 0)
                 {
-                    visible = copies.Any(c => c.Visible && NativeScopeAllowed(input, c, viewer)) && viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, target, _libraries.Libraries());
+                    visible = copies.Any(c => c.Visible && NativeScopeAllowed(input, c, viewer)) && destinationVisible;
                 }
                 else
                 {
-                    visible = viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, target, _libraries.Libraries());
+                    visible = destinationVisible;
                     if (viewer.HasParentalLimit)
                     {
                         var tmdb = _aliases.Of(key).Append(key).FirstOrDefault(k => k.Provider == "tmdb")?.NumericId ?? 0;
@@ -327,7 +338,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="input">The request.</param>
         /// <param name="key">Its title key.</param>
         /// <param name="instance">The instance its kind and edition go to.</param>
-        private ArrLibraryTarget Landing(MutationInput input, TitleKey key, ArrConnection? instance)
+        /// <param name="source">The persisted Seerr source for stored requests; current source for a new ask.</param>
+        private ArrLibraryTarget Landing(MutationInput input, TitleKey key, ArrConnection? instance, string? source)
         {
             if (input.HasSeerrOptions && input.SeerrRootFolder is { } seerrFolder)
             {
@@ -335,7 +347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var linked = _store.Registry.All().Where(i => i.Kind == kind && input.SeerrServerId is int server && i.SeerrServerId == server).ToList();
                 // A root path is local to its server. Neither the default instance nor an arbitrary matching link proves
                 // where this server's folder lands; an unresolved target makes CanOpen require every library.
-                return linked.Count != 1 || !linked[0].Usable || !_backend.RepresentsSeerrServer(input, linked[0].Url, _store.Registry.ResolveApiKey(linked[0]))
+                return linked.Count != 1 || !linked[0].Usable || !_backend.RepresentsSeerrServer(source, input, linked[0].Url, _store.Registry.ResolveApiKey(linked[0]))
                     ? new ArrLibraryTarget(null, null, ArrLibraryProblem.NoInstance)
                     : _libraries.Resolve(linked[0], seerrFolder);
             }

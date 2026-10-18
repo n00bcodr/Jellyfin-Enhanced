@@ -179,13 +179,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public StatusBody List(Guid user, bool pending)
         {
             var viewer = Identity(user);
-            var visible = _ledger.List(user, pending).Where(w => _policy.Evaluate(user, w.Input).Visible);
+            var visible = _ledger.List(user, pending).Where(w => _policy.Evaluate(user, w.Input, w.TargetKey).Visible);
             var rows = pending ? visible.Select(w => new TitleRequests(w, new[] { w })).ToList() : LedgerRequestFacts.PerTitle(visible);
             object[]? Jobs(RequestWant w) => viewer.Role == "Admin" ? _ledger.ForWant(w.Id).Select(j => (object)new { j.Id, j.State, j.Attempts, j.Reason }).ToArray() : null;
             var items = rows.Select(r =>
             {
                 var w = r.Row;
-                var facts = _policy.Evaluate(user, r.Members[0].Input);
+                var facts = _policy.Evaluate(user, r.Members[0].Input, r.Members[0].TargetKey);
                 return new
                 {
                     id = w.Id, key = w.Input.Key, scope = w.Input.Scope, variant = w.Input.Variant, seasons = w.Input.Seasons, episodes = w.Input.Episodes,

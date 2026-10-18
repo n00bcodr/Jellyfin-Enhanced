@@ -201,7 +201,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // an OK (or a reminder) whose title they can no longer see (library access or parental limits
                     // changed since): kept, but without what names the title.
                     var hidden = (r.Kind is NotifyKind.Ready or NotifyKind.Episodes && Guid.TryParse(r.ItemId, out var item) && (viewer == null || view.Resolve(item, viewer) == null))
-                        || (r.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_service.Policy, user, r.Key, parameters));
+                        || (r.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_service.Policy, user, r.Key, parameters, _service.Ledger, r.EventKey));
                     return new InboxItem
                     {
                         Id = r.Id,

@@ -34,6 +34,10 @@ public class IntegrationRequestDestinationSightTableTests
         SeerrAmbiguous,
         /// <summary>A stale imported id points to a different connection now.</summary>
         SeerrRepointed,
+        /// <summary>Seerr A is replaced by B with the same server id and root, linked to an accessible destination.</summary>
+        SeerrReplaced,
+        /// <summary>As SeerrReplaced, with a changed Seerr URL instead of a changed key.</summary>
+        SeerrReplacedUrl,
         /// <summary>Seerr's server 1, folder /kids, on the instance linked to that Seerr server (its own mapping: /kids is /media/kids).</summary>
         SeerrLinked,
         /// <summary>As <see cref="SeerrDefault"/>, and Seerr's servers changed since (the choice's stamp is stale).</summary>
@@ -51,6 +55,10 @@ public class IntegrationRequestDestinationSightTableTests
         Sighted,
         /// <summary>A Manager given only the ordinary and the hidden library.</summary>
         Entitled,
+        /// <summary>An administrator blocked from an unrelated library.</summary>
+        RestrictedAdmin,
+        /// <summary>An administrator blocked from the resolved destination itself.</summary>
+        DestinationBlockedAdmin,
     }
 
     public static TheoryData<Where, Sight, string> Every()
@@ -58,7 +66,7 @@ public class IntegrationRequestDestinationSightTableTests
         var rows = new TheoryData<Where, Sight, string>();
         foreach (var where in Enum.GetValues<Where>())
             foreach (var sight in Enum.GetValues<Sight>())
-                foreach (var act in new[] { "decline", "approve", "list" }) rows.Add(where, sight, act);
+                foreach (var act in new[] { "decline", "approve", "list", "close", "hub", "notice" }) rows.Add(where, sight, act);
         return rows;
     }
 
@@ -77,7 +85,7 @@ public class IntegrationRequestDestinationSightTableTests
             var seerrId = 20;
             foreach (var sight in Enum.GetValues<Sight>())
             {
-                var person = rig.View.AddUser(false);
+                var person = rig.View.AddUser(sight is Sight.RestrictedAdmin or Sight.DestinationBlockedAdmin);
                 People[sight] = person;
                 roles[person.UserId.ToString("N")] = new JsonObject { ["Role"] = "Manager" };
                 rig.Fake.Users.Add(new JsonObject { ["id"] = seerrId++, ["jellyfinUserId"] = person.UserId.ToString("N"), ["permissions"] = 32 | 16 | 8192, ["displayName"] = sight.ToString() });
@@ -87,7 +95,9 @@ public class IntegrationRequestDestinationSightTableTests
             // Jellyfin's libraries: the ordinary movies and the hidden one (where Seerr's /kids lands).
             var movies = rig.Access.AddLibrary("Movies", "movies", "/data/movies");
             var hidden = rig.Access.AddLibrary("Hidden", "movies", where is Where.SeerrLinked or Where.SeerrUnlinked or Where.SeerrAmbiguous or Where.SeerrRepointed ? "/media/kids" : "/kids");
-            rig.Access.AddLibrary("Other", "movies", "/other");
+            var other = rig.Access.AddLibrary("Other", "movies", "/other");
+            ((User)People[Sight.RestrictedAdmin].Handle!).SetPreference(PreferenceKind.BlockedMediaFolders, new[] { other.Id });
+            ((User)People[Sight.DestinationBlockedAdmin].Handle!).SetPreference(PreferenceKind.BlockedMediaFolders, new[] { hidden.Id });
             var blind = (User)People[Sight.Blind].Handle!;
             blind.SetPreference(PreferenceKind.BlockedMediaFolders, new[] { hidden.Id });
             var entitled = (User)People[Sight.Entitled].Handle!;
@@ -103,7 +113,7 @@ public class IntegrationRequestDestinationSightTableTests
             arr.Edit("Radarr", row =>
             {
                 row["PathMappings"] = mappings;
-                if (where is Where.SeerrDefault or Where.SeerrStale or Where.SeerrAmbiguous or Where.SeerrRepointed) row["SeerrServerId"] = 1;
+                if (where is Where.SeerrDefault or Where.SeerrStale or Where.SeerrAmbiguous or Where.SeerrRepointed or Where.SeerrReplaced or Where.SeerrReplacedUrl) row["SeerrServerId"] = 1;
                 if (where is Where.SeerrUnlinked or Where.SeerrRepointed)
                 {
                     row["SeerrServerId"] = where == Where.SeerrRepointed ? 1 : 0;
@@ -138,6 +148,24 @@ public class IntegrationRequestDestinationSightTableTests
             Assert.True(asked.HttpStatus == 201, asked.Reason + ": " + asked.Message);
             Id = asked.RequestId!;
             Assert.Equal("pending", rig.Ledger.Find(Id)!.Status);
+            if (where is Where.SeerrReplaced or Where.SeerrReplacedUrl)
+            {
+                var oldSource = rig.Lab.Source;
+                if (where == Where.SeerrReplaced) rig.Config.JellyseerrApiKey = "replacement-seerr-key";
+                else rig.Config.JellyseerrUrls = "http://replacement-seerr.lan:5055";
+                Assert.NotEqual(oldSource, rig.Lab.Source);
+                arr.Edit("Radarr", row => row["SeerrServerId"] = null);
+                arr.Edit("Radarr 4K", row =>
+                {
+                    row["SeerrServerId"] = 1;
+                    row["PathMappings"] = new JsonArray(new JsonObject { ["ArrPath"] = "/kids", ["JellyfinPath"] = "/data/movies" });
+                });
+                var replacement = arr.Instance("Radarr 4K");
+                var uri = new Uri(replacement.Url);
+                rig.Fake.Connections["radarr/1"] = new JsonObject { ["hostname"] = uri.Host, ["port"] = uri.Port,
+                    ["useSsl"] = false, ["baseUrl"] = uri.AbsolutePath.TrimEnd('/'), ["apiKey"] = arr.Arr.Registry.ResolveApiKey(replacement) };
+                await rig.Stamp(1);
+            }
             if (where == Where.SeerrStale)
             {
                 // Seerr's server 1 gets another root folder: the choice's stamp no longer fits (that never blocks a withdrawal).
@@ -159,14 +187,17 @@ public class IntegrationRequestDestinationSightTableTests
         var who = s.People[sight].UserId;
         // A synchronous list starts no reads. Once the connection facts expire, only every-library callers see it
         // until async preparation refreshes them; a stale options stamp alone still never blocks a withdrawal.
-        var unknown = where is Where.SeerrUnlinked or Where.SeerrAmbiguous or Where.SeerrRepointed || where == Where.SeerrStale && act == "list";
-        var sees = sight != Sight.Blind && (sight == Sight.Sighted || !unknown);
+        var unknown = where is Where.SeerrUnlinked or Where.SeerrAmbiguous or Where.SeerrRepointed or Where.SeerrReplaced or Where.SeerrReplacedUrl || where == Where.SeerrStale && act is "list" or "hub" or "notice";
+        var admin = sight is Sight.RestrictedAdmin or Sight.DestinationBlockedAdmin;
+        var sees = unknown ? sight == Sight.Sighted || admin : sight is not (Sight.Blind or Sight.DestinationBlockedAdmin);
         var rig = s.Rig;
         switch (act)
         {
+            case "close":
             case "decline":
             {
-                var outcome = await rig.Service.DeclineAsync(s.Id, who, "Not now.", default);
+                if (act == "close") await rig.Policy.PrepareAsync(who, rig.Ledger.Find(s.Id)!.Input, default);
+                var outcome = act == "close" ? rig.Service.Close(s.Id, who, "Not now.") : await rig.Service.DeclineAsync(s.Id, who, "Not now.", default);
                 if (sees)
                 {
                     // A stale choice is often why it waits: it never stops a decline.
@@ -183,7 +214,7 @@ public class IntegrationRequestDestinationSightTableTests
             case "approve":
             {
                 var outcome = await rig.Service.ApproveAsync(s.Id, who, null, default);
-                if (where == Where.SeerrStale)
+                if (sees && where is Where.SeerrStale or Where.SeerrReplaced or Where.SeerrReplacedUrl)
                 {
                     // A stale choice needs an administrator's fresh one, whoever approves.
                     Assert.Equal("seerr_options_changed", outcome.Reason);
@@ -199,6 +230,23 @@ public class IntegrationRequestDestinationSightTableTests
                     Assert.Equal(("not_visible_to_user", 403), (outcome.Reason, outcome.HttpStatus));
                     Assert.Equal("pending", rig.Ledger.Find(s.Id)!.Status);
                 }
+                break;
+            }
+            case "notice":
+            {
+                Assert.Equal(sees, Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify.NotificationService.MaySeeAsk(
+                    rig.Policy, who, Title, new Dictionary<string, string>(), rig.Ledger, "approval|je|" + s.Id));
+                break;
+            }
+            case "hub":
+            {
+                await rig.Policy.PrepareIdentityAsync(who, true, default);
+                var directory = new IntegrationRequestHouseholdTests.FakeDirectory();
+                var hub = new RequestHubProjection(rig.Service, directory, null, (_, _, _) => Task.FromResult<HubTitleMeta?>(null), () => rig.Lab.Now);
+                var body = await hub.ApprovalsAsync(s.People[sight], default);
+                var items = JsonNode.Parse(body.Json)!["items"]!.AsArray();
+                Assert.Equal(sees, items.Any(i => (string?)i!["id"] == s.Id));
+                Assert.Equal(sees ? 1 : 0, hub.Counts(who, rig.Service.Identity(who)).NeedOk);
                 break;
             }
             default:

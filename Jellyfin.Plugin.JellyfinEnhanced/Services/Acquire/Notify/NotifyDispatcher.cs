@@ -347,7 +347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (NotifyKind.IsAdminKind(delivery.Kind))
             {
                 if (!_users.Admins().Contains(delivery.UserId)) return "The recipient is no longer an administrator.";
-                if (delivery.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_policy, delivery.UserId, delivery.TitleKey, payload))
+                if (delivery.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_policy, delivery.UserId, delivery.TitleKey, payload, _ledger, delivery.EventKey))
                     return "The recipient can no longer see this title.";
                 return prefs.AdminAlerts ? null : "The recipient switched administrators' alerts to phone and e-mail off.";
             }
