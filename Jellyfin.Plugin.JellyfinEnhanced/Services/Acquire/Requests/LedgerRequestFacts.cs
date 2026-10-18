@@ -206,22 +206,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return new ArrStatusService.RequestScope(seasons, asked.All(w => w.Input.Variant == "4k"), FactsOf(asked, viewer, dispatches), Episodes: episodes);
         }
 
-        /// <summary>
-        /// The requests (one person's, for one title) that one status follows: one edition at a time, as each edition is
-        /// its own copy. The edition still waited for (the standard copy first when both are), else the one that arrived
-        /// last; cancelled and declined requests only when nothing else is left. So a 4K ask after the standard copy
-        /// arrived is judged by the 4K copy, not shown Ready by the standard one.
-        /// </summary>
-        /// <param name="wants">Requests for one title.</param>
-        internal static IReadOnlyList<RequestWant> EditionOf(IReadOnlyList<RequestWant> wants)
-        {
-            var asked = wants.Where(w => w.Status is not ("cancelled" or "declined")).ToList();
-            if (asked.Count == 0) return wants;
-            var open = asked.Where(w => w.Status is "pending" or "queued" or "sent" or "stale").ToList();
-            var fourK = open.Count > 0 ? open.All(w => w.Input.Variant == "4k") : asked.MaxBy(w => w.UpdatedAt)!.Input.Variant == "4k";
-            return asked.Where(w => (w.Input.Variant == "4k") == fourK).ToList();
-        }
-
         private static readonly string[] OpenStates = { "pending", "queued", "sent", "stale" };
 
         /// <summary>

@@ -41,7 +41,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public const string Removed = "removed";
     }
 
-    /// <summary>One of the viewer's own requests on the Requests page (one per title, all its requests merged).</summary>
+    /// <summary>One of the viewer's own requests on the Requests page (one per title and edition, its requests merged).</summary>
     public sealed class HubEntry
     {
         /// <summary>Title key.</summary>
@@ -248,7 +248,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // arrived in Jellyfin, which only composing knows (Seerr may mark it available without
             // touching the request).
             var titles = _requests.ForUser(viewer.UserId)
-                .GroupBy(r => r.Key!.ToString())
+                .GroupBy(r => (r.Key!.ToString(), r.Is4k))
                 .Select(g => g.ToList())
                 .Where(g => g.Any(r => r.Active) || now - LastChange(g) <= DeclinedFor)
                 .OrderBy(g => IsOpen(g) ? 0 : 1)
@@ -257,16 +257,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var more = titles.Count > MaxTitles;
             // One edition per row (as in Jellyfin Enhanced mode): a 4K request after the standard copy arrived follows
             // the 4K copy, never shown Ready (or labelled) by the standard one.
-            var entries = titles.Take(MaxTitles).Select(g => EditionOf(g).ToList()).ToList();
+            var entries = titles.Take(MaxTitles).ToList();
             var keys = entries.Select(g => g[0].Key!).ToList();
             // Each title is judged by the part asked for: a request for Season 3 of a series Jellyfin
             // already has isn't "Ready", nor is a 4K request for a title Jellyfin has in standard
             // quality. And by the viewer's own requests only: someone else's OK'd request for the
             // same title doesn't make theirs "OK'd".
-            var scopes = new Dictionary<TitleKey, ArrStatusService.RequestScope>();
+            var scopes = new Dictionary<(TitleKey Key, bool FourK), ArrStatusService.RequestScope>();
             foreach (var records in entries)
             {
-                scopes[records[0].Key!.Title] = ScopeOf(records, viewer.UserId);
+                scopes[(records[0].Key!.Title, records[0].Is4k)] = ScopeOf(records, viewer.UserId);
             }
             var state = _requests.State;
             var adminTabs = viewer.IsAdmin
@@ -274,12 +274,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 : string.Empty;
             var arrDown = ArrUnavailable();
             var what = string.Join("|", _requests.Active ? "on" : "off", _requests.Loaded ? "loaded" : "-", state.LastError == null ? "ok" : "err", arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs);
-            return _status.ForTitlesAsync(viewer, keys, "hub", what, composed => Build(viewer, entries, composed, config, state, arrDown, more), cancellationToken, scopes);
+            return _status.ForTitlesAsync(viewer, keys, "hub", what, composed => Build(viewer, entries, composed, config, state, arrDown, more), cancellationToken, editions: scopes);
         }
 
         /// <summary>
         /// The Requests page in Jellyfin Enhanced mode: the viewer's own requests from the request ledger, one entry per
-        /// title, each judged by exactly the part the viewer asked for (movie and edition, seasons, single episodes) as
+        /// title edition, each judged by exactly the part the viewer asked for (movie and edition, seasons, single episodes) as
         /// the Seerr path judges a Seerr request: waiting for an OK, OK'd, looking, downloading, almost ready, ready
         /// (with Play) or said no. Open ones first, then the newest; fulfilled ones stay as Ready for two weeks after
         /// they arrived, declined ones for 30 days. Series asked for by season or episode have Sonarr's episode list
@@ -292,7 +292,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             static bool Open(RequestWant w) => w.Status is "pending" or "queued" or "sent" or "stale";
             var mine = ledger.Database.Available ? ledger.List(viewer.UserId, false) : Array.Empty<RequestWant>();
             var titles = mine.Where(w => w.Status != "cancelled" && TitleKey.Parse(w.Input.Key) != null)
-                .GroupBy(w => w.Input.Key, StringComparer.Ordinal)
+                .GroupBy(w => RequestDestination.Edition(w.Input))
                 .Select(g => g.ToList())
                 .Where(g => g.Any(w => w.Status != "declined") || now - g.Max(w => w.UpdatedAt.UtcDateTime) <= DeclinedFor)
                 .OrderBy(g => g.Any(Open) ? 0 : 1)
@@ -300,16 +300,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 .ToList();
             var more = titles.Count > MaxTitles;
             // One edition per row: a 4K ask after the standard copy arrived follows the 4K copy.
-            var entries = titles.Take(MaxTitles).Select(g => LedgerRequestFacts.EditionOf(g).ToList()).ToList();
-            var keys = entries.Select(g => TitleKey.Parse(g[0].Input.Key)!).ToList();
-            var scopes = new Dictionary<TitleKey, ArrStatusService.RequestScope>();
+            var entries = titles.Take(MaxTitles).ToList();
+            var keys = entries.Select(g => TitleKey.Parse(g[0].Input.Key)!).Distinct().ToList();
+            var scopes = new Dictionary<(TitleKey Key, bool FourK), ArrStatusService.RequestScope>();
             for (var i = 0; i < entries.Count; i++)
             {
-                var key = keys[i].ToString();
-                scopes[keys[i]] = LedgerRequestFacts.ScopeOf(entries[i], viewer.UserId, () => ledger.Dispatches(key));
+                var key = TitleKey.Parse(entries[i][0].Input.Key)!;
+                scopes[(key, entries[i][0].Input.Variant == "4k")] = LedgerRequestFacts.ScopeOf(entries[i], viewer.UserId, () => ledger.Dispatches(key.ToString()));
             }
-            var load = entries.Where(g => g.Any(Open)).Select(g => TitleKey.Parse(g[0].Input.Key)!)
-                .Where(k => !k.IsMovie && scopes[k] is var scope && (scope.Seasons.Count > 0 || scope.Episodes?.Count > 0)).Take(MaxEpisodeLoads).ToList();
+            var load = entries.Where(g => g.Any(Open)).Select(g => (Key: TitleKey.Parse(g[0].Input.Key)!, FourK: g[0].Input.Variant == "4k"))
+                .Where(k => !k.Key.IsMovie && scopes[k] is var scope && (scope.Seasons.Count > 0 || scope.Episodes?.Count > 0))
+                .Select(k => k.Key).Distinct().Take(MaxEpisodeLoads).ToList();
             var meta = _meta != null ? await _meta(keys.Select(k => k.ToString()), viewer, cancellationToken).ConfigureAwait(false) : new Dictionary<string, HubTitleMeta>();
             var state = _requests.State;
             var adminTabs = viewer.IsAdmin
@@ -318,19 +319,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var arrDown = ArrUnavailable();
             var names = string.Join(",", meta.OrderBy(m => m.Key, StringComparer.Ordinal).Select(m => m.Key + "=" + m.Value.Title + "/" + m.Value.Year + "/" + m.Value.Poster + "/" + m.Value.ItemId));
             var what = string.Join("|", "je", ledger.Revision.ToString(CultureInfo.InvariantCulture), arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs, MutationInput.Hash(names));
-            return await _status.ForTitlesAsync(viewer, keys, "hub", what, composed => BuildLedger(viewer, entries, composed, meta, config, state, arrDown, more), cancellationToken, scopes, load).ConfigureAwait(false);
+            return await _status.ForTitlesAsync(viewer, keys, "hub", what, composed => BuildLedger(viewer, entries, composed, meta, config, state, arrDown, more), cancellationToken, loadEpisodes: load, editions: scopes).ConfigureAwait(false);
         }
 
         private byte[] BuildLedger(StatusViewer viewer, List<List<RequestWant>> entries, IReadOnlyList<ArrStatusService.KeyedStatus> titles, Dictionary<string, HubTitleMeta> meta, PluginConfiguration config, SeerrReadModelState state, bool arrDown, bool more)
         {
             var now = _status.Now.UtcDateTime;
-            var byKey = titles.ToDictionary(t => t.Key.ToString(), StringComparer.Ordinal);
+            var byKey = titles.ToDictionary(t => (t.Key.ToString(), t.Only4k));
             var mine = new List<HubEntry>();
             var soon = new List<HubEntry>();
             var ready = new List<HubEntry>();
             foreach (var wants in entries)
             {
-                if (!byKey.TryGetValue(wants[0].Input.Key, out var composed)) continue;
+                if (!byKey.TryGetValue((wants[0].Input.Key, wants[0].Input.Variant == "4k"), out var composed)) continue;
                 var entry = LedgerEntry(wants, composed, meta.GetValueOrDefault(wants[0].Input.Key), now);
                 if (entry == null) continue;
                 if (entry.Group == HubGroup.Ready) ready.Add(entry);
@@ -447,22 +448,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
-        /// The Seerr requests (one person's, for one title) that one status follows: one edition at a time, as each
-        /// edition is its own copy (<see cref="LedgerRequestFacts.EditionOf"/> in Jellyfin Enhanced mode). The edition
-        /// still waited for (not done in Seerr and its media not available; the standard copy first when both are), else
-        /// the one that changed last; declined requests only when nothing else is left.
-        /// </summary>
-        /// <param name="records">One person's requests for one title (not empty).</param>
-        internal static IReadOnlyList<SeerrRequestRecord> EditionOf(IReadOnlyList<SeerrRequestRecord> records)
-        {
-            var active = records.Where(r => r.Active).ToList();
-            if (active.Count == 0) return records;
-            var open = active.Where(r => r.Status != SeerrRequestStatus.Completed && r.MediaStatus != 5).ToList();
-            var fourK = open.Count > 0 ? open.All(r => r.Is4k) : active.MaxBy(r => r.UpdatedAt ?? r.CreatedAt ?? DateTime.MinValue)!.Is4k;
-            return active.Where(r => r.Is4k == fourK).ToList();
-        }
-
-        /// <summary>
         /// The part of a title one user's requests for it asked for (non-empty <paramref name="records"/>,
         /// all for the same title): the requested seasons, whether only the 4K copy was asked for, the
         /// facts of those requests only, and Seerr's word on whether that variant is available.
@@ -494,14 +479,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private byte[] Build(StatusViewer viewer, List<List<SeerrRequestRecord>> entries, IReadOnlyList<ArrStatusService.KeyedStatus> titles, PluginConfiguration? config, SeerrReadModelState state, bool arrDown, bool more)
         {
             var now = _status.Now.UtcDateTime;
-            var byKey = titles.ToDictionary(t => t.Key.ToString(), StringComparer.Ordinal);
+            var byKey = titles.ToDictionary(t => (t.Key.ToString(), t.Only4k));
             var mine = new List<HubEntry>();
             var soon = new List<HubEntry>();
             var ready = new List<HubEntry>();
             foreach (var records in entries)
             {
                 var first = records[0];
-                if (!byKey.TryGetValue(first.Key!.ToString(), out var composed)) continue;
+                if (!byKey.TryGetValue((first.Key!.ToString(), first.Is4k), out var composed)) continue;
                 var entry = Entry(records, composed, now);
                 if (entry == null) continue;
                 switch (entry.Group)

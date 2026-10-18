@@ -469,18 +469,14 @@ public class ApiArrRequestsHubTests
         // Emma's standard Sintel is here (Ready); she then asks Seerr for the 4K copy, which Radarr 4K doesn't have.
         using var rig = await Ready(r => r.Seerr.Requests.Add(FakeSeerr.Request(22, "movie", 45745, 1, r.Emma.UserId, Asked.AddHours(6), is4k: true)));
         var emma = Root(await Hub(rig, rig.Emma));
-        // One row, for the edition still waited for: the 4K one, labelled 4K, never Ready with the standard copy's Play.
-        Assert.Null(Find(emma, "ready", "movie:tmdb:45745"));
+        // Each edition keeps its row: standard Ready and 4K waiting, without the standard copy's Play.
+        Assert.NotNull(Find(emma, "ready", "movie:tmdb:45745"));
         var entry = Find(emma, "mine", "movie:tmdb:45745");
         Assert.NotNull(entry);
         Assert.Equal(("needsOk", "asked", true), (entry!.Value.GetProperty("group").GetString(), entry.Value.GetProperty("status").GetProperty("stage").GetString(), entry.Value.GetProperty("is4k").GetBoolean()));
         Assert.False(entry.Value.TryGetProperty("itemId", out _));
         Assert.Single(emma.GetProperty("mine").EnumerateArray(), e => e.GetProperty("key").GetString() == "movie:tmdb:45745");
-        // With both editions still waited for, the standard one leads; with both done, the one that changed last.
-        static SeerrRequestRecord R(int id, bool is4k, int status, int media, int hours = 0) => new() { Id = id, IsMovie = true, TmdbId = 45745, Is4k = is4k, Status = status, MediaStatus = media, CreatedAt = Asked, UpdatedAt = Asked.AddHours(hours) };
-        Assert.Equal(new[] { 1 }, RequestsHubService.EditionOf(new[] { R(1, false, 2, 3), R(2, true, 1, 1) }).Select(r => r.Id));
-        Assert.Equal(new[] { 2 }, RequestsHubService.EditionOf(new[] { R(1, false, SeerrRequestStatus.Completed, 5), R(2, true, 2, 3) }).Select(r => r.Id));
-        Assert.Equal(new[] { 2 }, RequestsHubService.EditionOf(new[] { R(1, false, SeerrRequestStatus.Completed, 5, 1), R(2, true, SeerrRequestStatus.Completed, 5, 2) }).Select(r => r.Id));
+
     }
 
     [Fact]
