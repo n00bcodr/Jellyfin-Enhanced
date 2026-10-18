@@ -95,6 +95,7 @@
             return JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` })
                 .then(data => data.results || [])
                 .catch(error => {
+                    if (error?.name === 'AbortError') return null;
                     console.error(`${logPrefix} Failed to fetch reviews.`, error);
                     return null;
                 });
@@ -121,6 +122,7 @@
             return JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`)
                 .then(data => data.reviews || [])
                 .catch(err => {
+                    if (err?.name === 'AbortError') return [];
                     console.error(`${logPrefix} Failed to fetch user reviews.`, err);
                     return [];
                 });
@@ -1259,4 +1261,3 @@
         });
     };
 })(window.JellyfinEnhanced);
-

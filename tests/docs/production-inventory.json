@@ -1451,6 +1451,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/session-action.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/session.js",
       "category": "js"
     },
@@ -9674,7 +9678,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 537,
+    "files": 538,
     "routes": 257,
     "configuration_properties": 579,
     "storage_references": 84,

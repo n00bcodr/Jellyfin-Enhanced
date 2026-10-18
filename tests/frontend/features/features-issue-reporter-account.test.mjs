@@ -122,6 +122,28 @@ function switchingApi(t) {
   return { h, api, calls, take, switchUser, tick };
 }
 
+for (const switched of [false, true]) test(`cancelled issue indicators stay quiet (user switched=${switched})`, async t => {
+  const { api, take, switchUser, tick } = switchingApi(t);
+  const read = api.fetchIssuesForMedia(603, 'movie');
+  await tick();
+  take('/user-status').resolve({ active: true, userFound: true, canViewIssues: true });
+  await tick();
+  if (switched) switchUser();
+  take('/issue').reject(Object.assign(new Error('Presentation policy changed'), { name: 'AbortError' }));
+  assert.deepEqual(JSON.parse(JSON.stringify(await read)), { results: [] });
+});
+
+test('a real issue indicator failure still logs its error', async t => {
+  const { h, api, take, tick } = switchingApi(t);
+  h.expectConsoleError('Failed to fetch issues for movie 603');
+  const read = api.fetchIssuesForMedia(603, 'movie');
+  await tick();
+  take('/user-status').resolve({ active: true, userFound: true, canViewIssues: true });
+  await tick();
+  take('/issue').reject(new Error('unexpected failure'));
+  assert.deepEqual(JSON.parse(JSON.stringify(await read)), { results: [] });
+});
+
 test('a status that answers the previous user after a switch doesn\'t stop the next user\'s issue reads', async t => {
   const { api, calls, take, switchUser, tick } = switchingApi(t);
   // User A's issue read waits for their status; user B signs in before it answers.

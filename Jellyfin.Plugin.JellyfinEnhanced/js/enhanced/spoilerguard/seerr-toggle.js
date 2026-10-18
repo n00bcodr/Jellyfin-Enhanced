@@ -67,19 +67,20 @@
             event.stopPropagation();
             if (button.disabled) return;
             button.disabled = true;
-            const epoch = JE.session?.getEpoch?.();
+            const action = JE.createSessionAction();
             const wasEnabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
             void (async function() {
                 try {
                     if (wasEnabled) {
                         if (!await internal.confirmDisableSpoiler()) return;
+                        if (!action.current()) return;
                         await internal.disableForTmdb(mediaType, tmdbId);
                         JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
                     } else {
                         await internal.enableForTmdb(mediaType, tmdbId, displayName);
                         JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
                     }
-                    if (JE.session?.isCurrent?.(epoch) === false) return;
+                    if (!action.current()) return;
                     window.dispatchEvent(new CustomEvent('je-spoiler-policy-changed', { detail: {
                         type: mediaType, tmdbId: Number(tmdbId), enabled: !wasEnabled, userId: ApiClient.getCurrentUserId()
                     } }));

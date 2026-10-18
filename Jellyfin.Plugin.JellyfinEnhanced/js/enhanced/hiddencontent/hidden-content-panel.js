@@ -207,6 +207,7 @@
      * Shows all hidden items in a searchable grid with unhide actions.
      */
     function showManagementPanel() {
+        const action = JE.createSessionAction();
         document.querySelector('.je-hidden-management-overlay')?.remove();
 
         const data = getHiddenData();
@@ -220,9 +221,11 @@
 
         const header = createManagementHeader(items.length);
         const closeOverlay = () => {
+            release();
             overlay.remove();
             document.removeEventListener('keydown', escHandler);
         };
+        const release = action.onCancel(closeOverlay);
         header.querySelector('.je-hidden-management-close').addEventListener('click', closeOverlay);
         panel.appendChild(header);
 
@@ -264,6 +267,7 @@
                 card.querySelector('.je-hidden-item-unhide').addEventListener('click', () => {
                     card.classList.add('je-hidden-item-removing');
                     setTimeout(() => {
+                        if (!action.current()) return;
                         unhideItem(item._key || item.itemId);
                         card.remove();
                         const remaining = gridContainer.querySelectorAll('.je-hidden-item-card').length;
@@ -289,6 +293,7 @@
 
         toolbar.unhideAllBtn.addEventListener('click', () => {
             if (!confirm(JE.t('hidden_content_clear_confirm'))) return;
+            if (!action.current()) return;
             unhideAll();
             const emptyDiv = document.createElement('div');
             emptyDiv.className = 'je-hidden-management-empty';

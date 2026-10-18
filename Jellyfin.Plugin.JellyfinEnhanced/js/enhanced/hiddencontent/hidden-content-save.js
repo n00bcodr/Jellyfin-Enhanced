@@ -26,21 +26,22 @@
     let saveGeneration = 0;
 
     function debouncedSave() {
+        const action = JE.createSessionAction();
         if (saveTimeout) clearTimeout(saveTimeout);
         const scheduledGeneration = saveGeneration;
         saveTimeout = setTimeout(async () => {
             saveTimeout = null;
-            if (scheduledGeneration !== saveGeneration) return; // user switched since scheduling
+            if (!action.current() || scheduledGeneration !== saveGeneration) return;
             try {
                 // Route through directSaveHiddenContent (not JE.saveUserSettings) so a successful save can
                 // reconcile against any in-flight retry and a failure can re-enter the retry ladder.
                 // JE.saveUserSettings swallows errors, which would leave a pending retry firing later and
                 // clobbering server state.
                 const sent = await directSaveHiddenContent();
-                reconcileAfterSave(sent, scheduledGeneration);
+                if (action.current()) reconcileAfterSave(sent, scheduledGeneration);
             } catch (e) {
                 console.warn('🪼 Jellyfin Enhanced: debouncedSave failed; scheduling background retry', e);
-                if (pendingRetryHandle == null) scheduleFlushRetry(0, scheduledGeneration);
+                if (action.current() && pendingRetryHandle == null) scheduleFlushRetry(0, scheduledGeneration);
             }
         }, SAVE_DEBOUNCE_MS);
     }
@@ -152,9 +153,9 @@
     // whether the success acknowledgement still represents the latest local intent.
     function directSaveHiddenContent() {
         const userId = ApiClient.getCurrentUserId();
-        const epoch = JE.session?.getEpoch?.();
+        const action = JE.createSessionAction();
         return internal.enqueuePersistence(async () => {
-            if (ApiClient.getCurrentUserId() !== userId || JE.session?.isCurrent?.(epoch) === false) throw new Error('user changed');
+            if (!action.current()) throw new Error('user changed');
             if (!userId) throw new Error('no current user');
             const snapshot = JSON.stringify(getHiddenData());
             const reply = await ApiClient.ajax({
@@ -166,7 +167,7 @@
             });
             const revision = reply?.revision || reply?.Revision;
             const sent = JSON.parse(snapshot);
-            if (revision && ApiClient.getCurrentUserId() === userId && JE.session?.isCurrent?.(epoch) !== false) {
+            if (revision && action.current()) {
                 getHiddenData().revision = revision;
                 sent.revision = revision;
             }
@@ -219,7 +220,9 @@
             return;
         }
         if (generation !== saveGeneration) return; // save chain belongs to a previous user
+        const action = JE.createSessionAction();
         pendingRetryHandle = setTimeout(async () => {
+            if (!action.current()) { pendingRetryHandle = null; return; }
             if (generation !== saveGeneration) { pendingRetryHandle = null; return; } // user switched since scheduling
             pendingRetryHandle = RETRY_INFLIGHT; // mark in-flight so a concurrent debouncedSave failure doesn't spawn a parallel ladder
             // Guard for ApiClient teardown / signed-out state during the window.
@@ -234,10 +237,11 @@
                 // reschedule via debouncedSave doesn't leave the sentinel stuck (cancelPendingRetry from
                 // other code paths intentionally refuses to clear RETRY_INFLIGHT).
                 if (pendingRetryHandle === RETRY_INFLIGHT) pendingRetryHandle = null;
-                reconcileAfterSave(sent, generation);
+                if (action.current()) reconcileAfterSave(sent, generation);
             } catch (err) {
+                if (pendingRetryHandle === RETRY_INFLIGHT) pendingRetryHandle = null;
                 console.warn(`🪼 Jellyfin Enhanced: hidden-content save retry ${attempt + 1} failed`, err);
-                scheduleFlushRetry(attempt + 1, generation);
+                if (action.current()) scheduleFlushRetry(attempt + 1, generation);
             }
         }, FLUSH_RETRY_DELAYS_MS[attempt]);
     }
@@ -245,6 +249,7 @@
     // Flush pending debouncedSave so a following server-direct write sees the latest local state.
     // On failure: re-throw so the caller aborts, AND start a bounded background retry so the local mutation isn't lost.
     async function flushPendingSave() {
+        const action = JE.createSessionAction();
         const generation = saveGeneration;
         // Reconcile edits made during a flush before an atomic write takes its base. Bound churn.
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -254,12 +259,12 @@
             cancelPendingRetry();
             try {
                 const sent = await directSaveHiddenContent();
-                if (generation !== saveGeneration) throw new Error('user changed');
-                reconcileAfterSave(sent, generation);
+                if (!action.current() || generation !== saveGeneration) throw new Error('user changed');
+                if (action.current()) reconcileAfterSave(sent, generation);
                 if (!saveTimeout && pendingRetryHandle == null) return;
             } catch (e) {
                 console.warn('🪼 Jellyfin Enhanced: flushPendingSave failed; scheduling background retry', e);
-                if (generation === saveGeneration && pendingRetryHandle == null) scheduleFlushRetry(0, generation);
+                if (action.current() && generation === saveGeneration && pendingRetryHandle == null) scheduleFlushRetry(0, generation);
                 throw e;
             }
         }

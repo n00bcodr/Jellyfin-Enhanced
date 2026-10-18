@@ -10,6 +10,46 @@
     const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
 
     const { hiddenIdSet, getSettings, hideItem, unhideItem, getCardSurface, getCardItemId, confirmAndHide } = internal;
+    let checkedCards = new WeakSet();
+    JE.session?.onUserChange('hidden-content-card-identities', () => { checkedCards = new WeakSet(); });
+
+    /** Resolves ID-only native card identities in bounded batches, only when provider rules exist. */
+    async function hydrateCardTitles() {
+        if (!internal.hasProviderRules() || JE.pluginConfig?.HiddenContentEnabled === false) return;
+        const action = JE.createSessionAction();
+        const byId = new Map();
+        for (const card of document.querySelectorAll('.card[data-id], .card[data-itemid]')) {
+            const id = getCardItemId(card);
+            const surface = internal.getCardSurface(card) || internal.getCurrentNativeSurface();
+            if (checkedCards.has(card) || (!card.querySelector('.je-hide-btn') && !internal.shouldFilterSurface(surface)) ||
+                !['movie', 'series'].includes((card.dataset.type || '').toLowerCase()) ||
+                internal.titleData({ itemId: id, type: card.dataset.type, tmdbId: card.dataset.tmdbId }) ||
+                JE.titleDetails?.isSynthetic?.(id)) continue;
+            checkedCards.add(card);
+            if (!byId.has(id)) byId.set(id, []);
+            byId.get(id).push(card);
+        }
+        const ids = [...byId.keys()];
+        for (let start = 0; start < ids.length; start += 50) {
+            if (!action.current()) return;
+            const batch = ids.slice(start, start + 50);
+            try {
+                const reply = await ApiClient.ajax({ type: 'GET', dataType: 'json',
+                    url: ApiClient.getUrl(`/Users/${ApiClient.getCurrentUserId()}/Items`, { Ids: batch.join(','), Fields: 'ProviderIds' }) });
+                if (!action.current()) return;
+                for (const item of reply?.Items || []) {
+                    const title = internal.titleData(item);
+                    if (!title) continue;
+                    for (const card of byId.get(internal.normalizeId(item.Id)) || []) {
+                        card.dataset.type = title.type;
+                        card.dataset.tmdbId = title.tmdbId;
+                        card.querySelector('.je-hide-btn')?.jeHiddenPaint?.();
+                    }
+                }
+                internal.refreshNativeCardVisibility();
+            } catch (_) { /* Leave unresolved cards usable; a fresh card may retry metadata. */ }
+        }
+    }
 
     // ============================================================
     // Library hide buttons
@@ -50,11 +90,14 @@
             renderIcon('visibility_off');
             btn.onmouseenter = () => { btn.title = unhideLabel; };
             btn.onmouseleave = () => { btn.title = hiddenLabel; };
-            btn.onclick = (e) => {
+            btn.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                unhideItem(itemId);
-                setHideState();
+                const action = JE.createSessionAction();
+                const saved = await unhideItem(itemId, { type: card.dataset.type, tmdbId: card.dataset.tmdbId });
+                if (!action.current()) return;
+                if (saved === false) btn.textContent = JE.t('hidden_content_save_failed_persistent');
+                else setHideState();
             };
         }
 
@@ -68,7 +111,7 @@
             btn.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const epoch = JE.session?.getEpoch?.();
+                const action = JE.createSessionAction();
 
                 const cardName = card.querySelector('.cardText')?.textContent || '';
                 const surface = getCardSurface(card);
@@ -87,19 +130,29 @@
                             itemData.tmdbId = item?.ProviderIds?.Tmdb || '';
                         } catch (_) { btn.textContent = JE.t('hidden_content_save_failed_persistent'); return; }
                     }
+                    if (!action.current()) return;
                     const title = internal.titleData(itemData);
                     if (title) {
-                        if (JE.session?.isCurrent && !JE.session.isCurrent(epoch)) return;
                         // Later filter passes (and cloned cards) need the identity resolved by this click.
                         card.dataset.type = title.type;
                         card.dataset.tmdbId = title.tmdbId;
+                        if (internal.isHiddenByTmdbId(title.tmdbId, title.type)) {
+                            const saved = await unhideItem(itemId, itemData);
+                            if (!action.current()) return;
+                            if (saved === false) btn.textContent = JE.t('hidden_content_save_failed_persistent');
+                            else setHideState();
+                            return;
+                        }
                         /** Confirms before persistence, then acknowledges only a successful provider-rule save. */
                         async function saveConfirmedTitle() {
-                            if (JE.session?.isCurrent && !JE.session.isCurrent(epoch)) return;
+                            if (!action.current()) return;
                             btn.disabled = true;
                             try {
                                 const saved = await internal.saveTitleRule(title, true).catch(() => false);
-                                if (saved) card.classList.add('je-hidden');
+                                if (saved && action.current()) {
+                                    card.classList.toggle('je-hidden', internal.shouldFilterSurface(surface || internal.getCurrentNativeSurface()));
+                                    setHiddenState();
+                                }
                                 else btn.textContent = JE.t('hidden_content_save_failed_persistent');
                             } finally { btn.disabled = false; }
                         }
@@ -116,11 +169,15 @@
             };
         }
 
-        if (hiddenIdSet.has(itemId)) {
-            setHiddenState();
-        } else {
-            setHideState();
-        }
+        /** Reuses metadata already on the card when rules change, without provider lookups. */
+        btn.jeHiddenPaint = () => {
+            const hidden = internal.isHidden(itemId, { type: card.dataset.type, tmdbId: card.dataset.tmdbId });
+            if (hidden !== btn.classList.contains('je-already-hidden')) {
+                if (hidden) setHiddenState(); else setHideState();
+            }
+        };
+        setHideState();
+        btn.jeHiddenPaint();
         btn.jeHideButtonLive = true;
         cardBox.appendChild(btn);
     }
@@ -135,6 +192,7 @@
      * @param {Function} setHiddenState Callback to switch the button to "hidden" state.
      */
     async function handleScopedCardHide(card, itemId, cardName, surface, setHiddenState) {
+        const action = JE.createSessionAction();
         const itemData = { itemId, name: cardName };
         // Pass surface through so the hideScope stays bound to the row the user clicked.
         const dialogOpts = { surface };
@@ -145,6 +203,7 @@
                 ? await JE.helpers.getItemCached(itemId, { userId })
                 : await ApiClient.getItem(userId, itemId);
             const itemType = item?.Type || '';
+            if (!action.current()) return;
             const seriesId = item?.SeriesId || '';
             const seriesName = item?.SeriesName || '';
 
@@ -172,6 +231,7 @@
                     } catch (err) {
                         console.warn('🪼 Jellyfin Enhanced: Failed to fetch series TMDB ID', err);
                     }
+                    if (!action.current()) return;
                     hideItem({
                         itemId: seriesId,
                         name: seriesName || cardName,
@@ -194,6 +254,7 @@
             };
         }
 
+        if (!action.current()) return;
         confirmAndHide(itemData, () => {
             card.classList.add('je-hidden');
         }, dialogOpts);
@@ -216,7 +277,7 @@
         for (let i = 0; i < cards.length; i++) {
             const cardBox = cards[i];
             const existing = cardBox.querySelector('.je-hide-btn');
-            if (existing?.jeHideButtonLive) continue;
+            if (existing?.jeHideButtonLive) { existing.jeHiddenPaint?.(); continue; }
             existing?.remove();
 
             const card = cardBox.closest('.card');
@@ -265,7 +326,7 @@
         if (s.showButtonJellyseerr) {
             document.querySelectorAll('[data-je-hide-title]').forEach(card => {
                 const existing = card.querySelector('.je-hide-btn');
-                if (existing?.jeHideButtonLive) return;
+                if (existing?.jeHideButtonLive) { existing.jeHiddenPaint?.(); return; }
                 existing?.remove();
                 const [type, provider, tmdbId] = card.dataset.jeHideTitle.split(':');
                 if (provider !== 'tmdb') return;
@@ -275,6 +336,7 @@
                 if (control) { card.appendChild(control); control.jeHiddenPaint(); }
             });
         }
+        void hydrateCardTitles();
     }
 
     /**
@@ -288,6 +350,6 @@
         }
     }
 
-    Object.assign(internal, { addLibraryHideButtons, removeLibraryHideButtons });
+    Object.assign(internal, { addLibraryHideButtons, removeLibraryHideButtons, hydrateCardTitles });
 
 })(window.JellyfinEnhanced);

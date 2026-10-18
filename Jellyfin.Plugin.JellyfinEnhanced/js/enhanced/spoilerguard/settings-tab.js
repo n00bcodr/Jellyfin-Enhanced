@@ -84,9 +84,11 @@
         const setDisabled = disabled => boxes.forEach(box => { box.disabled = disabled; });
 
         async function save(changed, previousChecked) {
+            const action = JE.createSessionAction();
             setDisabled(true);
             try {
                 await internal.whenLoaded();
+                if (!action.current()) return;
                 if (!internal.isLoadOk()) throw new Error('Initial Spoiler Guard load failed; refusing to overwrite preferences.');
                 const prefs = internal.getUserPrefs();
                 const key = changed.dataset.pref;

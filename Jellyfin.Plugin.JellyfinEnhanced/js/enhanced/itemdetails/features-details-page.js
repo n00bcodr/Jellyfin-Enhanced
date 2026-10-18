@@ -20,6 +20,7 @@
     // Cache the last item id and type to avoid repeated ApiClient calls
     let lastDetailsItemId = null;
     let lastDetailsItemType = null;
+    let lastDetailsItem = null;
     // A single-version item's only media source: the id Jellyfin's
     // `.selectSource` will hold once it fills it, used as the chips' source
     // until it has. Multi-version items keep waiting for the select (an
@@ -68,7 +69,7 @@
             if (!live && hideButtons.get(existing) === itemId) live = existing;
             else existing.remove();
         }
-        if (live) return;
+        if (live) { live.jeHiddenPaint?.(); return; }
 
         const selectors = [
             '.detailButtons',
@@ -87,6 +88,7 @@
         if (!buttonContainer) return;
 
         const button = document.createElement('button');
+        const detailItem = lastDetailsItem;
         button.setAttribute('is', 'emby-button');
         button.className = 'button-flat detailButton emby-button je-detail-hide-btn';
         button.type = 'button';
@@ -132,11 +134,17 @@
             button.onmouseleave = () => {
                 button.title = hiddenLabel;
             };
-            button.onclick = (e) => {
+            button.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                JE.hiddenContent.unhideItem(itemId);
-                setHideState();
+                const action = JE.createSessionAction();
+                button.disabled = true;
+                try {
+                    const saved = await JE.hiddenContent.unhideItem(itemId, detailItem);
+                    if (!action.current()) return;
+                    if (saved === false) button.setAttribute('aria-label', JE.t('hidden_content_save_failed_persistent'));
+                    else setHideState();
+                } finally { button.disabled = false; }
             };
         }
 
@@ -150,6 +158,7 @@
             button.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                const action = JE.createSessionAction();
 
                 // Get item name from the page title
                 const nameEl = visiblePage.querySelector('.itemName, h1, h2, [class*="itemName"]');
@@ -174,6 +183,7 @@
                 } catch (err) {
                     console.warn('🪼 Jellyfin Enhanced: Could not fetch item metadata for hide button', err);
                 }
+                if (!action.current()) return;
 
                 const isEpisode = lastDetailsItemType === 'Episode';
                 const isSeason = lastDetailsItemType === 'Season';
@@ -206,6 +216,7 @@
                             } catch (err) {
                                 console.warn('🪼 Jellyfin Enhanced: Could not fetch series metadata for hide-show action', err);
                             }
+                            if (!action.current()) return;
                             JE.hiddenContent.hideItem({
                                 itemId: seriesId,
                                 name: seriesName || itemName,
@@ -230,11 +241,15 @@
             };
         }
 
-        if (JE.hiddenContent.isHidden(itemId)) {
-            setHiddenState();
-        } else {
-            setHideState();
-        }
+        /** Refreshes the action from the DTO already loaded for this visit. */
+        button.jeHiddenPaint = () => {
+            const hidden = JE.hiddenContent.isHidden(itemId, detailItem);
+            if (hidden !== button.classList.contains('je-already-hidden')) {
+                if (hidden) setHiddenState(); else setHideState();
+            }
+        };
+        setHideState();
+        button.jeHiddenPaint();
 
         // Before Report issue and Spoiler Guard, and before Jellyfin's overflow menu (three-dots).
         hideButtons.set(button, itemId);
@@ -282,6 +297,7 @@
             if (lastDetailsItemId !== itemId) {
                 lastDetailsItemId = itemId;
                 lastDetailsItemType = null;
+                lastDetailsItem = null;
                 lastDetailsDefaultSourceId = null;
             }
 
@@ -290,6 +306,7 @@
                 if (itemTypeFetch?.itemId !== itemId) {
                     const userId = ApiClient.getCurrentUserId();
                     const lookup = { itemId };
+                    const action = JE.createSessionAction();
                     itemTypeFetch = lookup;
                     (JE.helpers?.getItemCached
                         ? JE.helpers.getItemCached(itemId, { userId })
@@ -299,7 +316,8 @@
                             // The page has moved on to another item: this answer
                             // is not its type or source (that item runs its own
                             // lookup).
-                            if (lastDetailsItemId !== itemId) return;
+                            if (!action.current() || lastDetailsItemId !== itemId) return;
+                            lastDetailsItem = item;
                             lastDetailsItemType = item?.Type || null;
                             lastDetailsDefaultSourceId = item?.MediaSources?.length === 1 ? (item.MediaSources[0].Id || null) : null;
                             // Re-run once the type is known, without waiting for
@@ -479,7 +497,14 @@
     JE.core.navigation.onNavigate(() => {
         if (visit && hashItemId() !== visit.itemId) endDetailsVisit();
     });
-    JE.session?.onUserChange('details-prefetch', () => endDetailsVisit());
+    JE.session?.onUserChange('details-prefetch', () => {
+        endDetailsVisit();
+        lastDetailsItemId = null;
+        lastDetailsItemType = null;
+        lastDetailsItem = null;
+        itemTypeFetch = null;
+        document.querySelectorAll('.je-detail-hide-btn').forEach(button => button.remove());
+    });
 
     // Managed observer for item details. childList-only routes it through the
     // shared body observer (Jellyfin re-renders the detail page's children on

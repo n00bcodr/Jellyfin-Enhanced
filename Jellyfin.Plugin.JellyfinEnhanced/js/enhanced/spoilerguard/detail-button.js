@@ -26,6 +26,7 @@
     }
 
     function performToggle(button, itemId, kind, page, enable) {
+        const action = JE.createSessionAction();
         let displayName = '';
         if ((kind === 'movie' || kind === 'collection') && page) {
             try {
@@ -42,6 +43,7 @@
         else operation = enable ? internal.enableForSeries(itemId) : internal.disableForSeries(itemId);
 
         operation.then(function() {
+            if (!action.current()) return;
             renderButton(button, enable);
             button.setAttribute('data-je-spoiler-state', enable ? 'on' : 'off');
             // Keep separate per-kind keys so translators can tailor the
@@ -85,6 +87,7 @@
     }
 
     function onToggle(button, itemId, kind, page) {
+        const action = JE.createSessionAction();
         if (button.disabled) return;
         const enable = !internal.isEnabledForKind(kind, itemId);
         button.disabled = true;
@@ -93,7 +96,7 @@
             return;
         }
         internal.confirmDisableSpoiler().then(function(proceed) {
-            if (proceed) performToggle(button, itemId, kind, page, false);
+            if (proceed && action.current()) performToggle(button, itemId, kind, page, false);
             else button.disabled = false;
         }).catch(function(err) {
             console.warn(`${logPrefix} disable confirmation failed:`, err);

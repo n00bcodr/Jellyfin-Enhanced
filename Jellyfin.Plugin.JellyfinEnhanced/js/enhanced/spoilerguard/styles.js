@@ -9,6 +9,14 @@
 
     internal.injectStyles = function() {
         JE.core.ui.injectCss('je-spoiler-guard-styles', `
+            .je-spoiler-confirm-dialog {
+                background: #202020; color: #fff; border: 1px solid #555; border-radius: 12px;
+                width: min(420px, calc(100vw - 64px)); padding: 24px; z-index: 100000;
+            }
+            .je-spoiler-confirm-dialog::backdrop { background: rgba(0,0,0,.65); }
+            .je-spoiler-confirm-dialog label { display: flex; gap: 8px; align-items: center; }
+            .je-spoiler-confirm-dialog > div { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+            .je-spoiler-confirm-dialog button { padding: 10px 16px; cursor: pointer; }
             .je-spoiler-blur-btn.je-spoiler-blur-on .detailButton-icon,
             .je-spoiler-pending-detail.je-spoiler-pending-on .detailButton-icon {
                 color: #d6c8ff;

@@ -8,6 +8,8 @@ In production the server concatenates the manifest into one script, `GET /Jellyf
 
 `plugin.js` also fetches everything it needs before the component stage in one request, `GET /JellyfinEnhanced/bootstrap` (version, public config, admin-only private config, the Custom Tabs / Plugin Pages presence flags, the five per-user documents and the manifest), falling back to the individual endpoints if that fails. Its `Prefetched` block also carries the small answers modules ask for on every page load (the user's Spoiler Guard state, the Seerr user status and reachability when no Seerr call is needed, the active-streams session list under that endpoint's gate), each exactly the body of its standalone endpoint; modules take them once through `JE.takePrefetched(name)` shortly after the page load and otherwise call the endpoint as before.
 
+`core/session-action.js` captures the viewer and session epoch for deferred Hidden Content and Spoiler Guard actions. It rejects stale callbacks and dismisses owned confirmations on user changes.
+
 Three client scripts are **not** in the manifest and are loaded by their own dedicated loaders: `others/splashscreen.js` and `extras/login-image.js` (both injected early, before the component stage, so they can affect the login screen) and `enhanced/translations.js` (loaded at the start of `initialize()`, in parallel with the bootstrap request, ahead of the component stage).
 
 The client is delivered by `Services/ScriptInjectionStartupFilter.cs`, which injects `plugin.js` into the web client; all `js/**` files are embedded resources (`JellyfinEnhanced.csproj`) served by `GetScript` in `Controllers/JellyfinEnhancedController.cs`.

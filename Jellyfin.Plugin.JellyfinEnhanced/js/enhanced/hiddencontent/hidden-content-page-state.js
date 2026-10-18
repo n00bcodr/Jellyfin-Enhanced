@@ -85,6 +85,9 @@
    * @param {string} [itemName] Optional item name to show below the heading.
    */
   function showUnhideConfirmation(message, onConfirm, itemName) {
+    const action = JE.createSessionAction();
+    onConfirm = action.bind(onConfirm);
+    document.querySelector('.je-hide-confirm-overlay')?.jeDismiss?.();
     document.querySelector('.je-hide-confirm-overlay')?.remove();
 
     const overlay = document.createElement('div');
@@ -104,9 +107,12 @@
     }
 
     const closeDialog = () => {
+      release();
       overlay.remove();
       document.removeEventListener('keydown', escHandler);
     };
+    const release = action.onCancel(closeDialog);
+    overlay.jeDismiss = closeDialog;
 
     const buttons = document.createElement('div');
     buttons.className = 'je-hide-confirm-buttons';

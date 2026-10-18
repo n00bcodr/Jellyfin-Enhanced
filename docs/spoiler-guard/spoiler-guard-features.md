@@ -184,7 +184,7 @@ Turning Spoiler Guard **off** prompts a brief confirmation:
 > **Disable Spoiler Guard?**  
 > Original images and episode details will be visible again straight away.
 
-A "Don't ask again for 15 minutes" checkbox lets you batch-disable a few series without re-confirming each time. The snooze is per-browser and self-expires.
+A "Don't ask again for 15 minutes" checkbox lets you batch-disable a few series without re-confirming each time. The snooze is per-user in this browser and self-expires. Switching users closes an open confirmation and cancels its toggle and snooze, including in the More Info window.
 
 This catches accidental clicks (the toggle is right next to Play / Mark Watched). If you'd rather skip the prompt every time, just tick the snooze box once — or turn it off permanently in the per-user overrides described below.
 

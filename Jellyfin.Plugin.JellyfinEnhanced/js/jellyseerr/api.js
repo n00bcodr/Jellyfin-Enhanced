@@ -814,6 +814,7 @@
         } catch (error) {
             // Seerr's own permission (VIEW_ISSUES) is missing (403), or there is no Seerr account (404): an
             // expected answer, not an error.
+            if (error?.name === 'AbortError') return { results: [] };
             if (error?.status === 403 || error?.status === 404) {
                 if (isCurrent()) issuesRefused = true;
                 console.debug(`${logPrefix} Issues aren't available to this account (${error.status}); the issue list stays hidden.`);
