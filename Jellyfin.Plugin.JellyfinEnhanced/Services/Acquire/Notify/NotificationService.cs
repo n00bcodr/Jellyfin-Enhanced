@@ -1879,6 +1879,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var at = QuietHours.EndsAt(prefs, now) ?? now;
             if (external && prefs.Ntfy && NotifyEndpoints.IsTopic(prefs.NtfyTopic) && NotifyEndpoints.NtfyReady(config)) deliveries.Add((NotifyChannel.Ntfy, at));
             if (external && prefs.Email && !string.IsNullOrEmpty(prefs.EmailAddress) && NotifyEndpoints.EmailReady(config)) deliveries.Add((NotifyChannel.Email, at));
+            // Phase 4f: a native on-screen message for what became ready (and a test), with the person's own consent. Due
+            // now: quiet hours, a busy or missing session end it at delivery instead of holding it.
+            if (kind is NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Test && prefs.NativeReadyMessages && Ready.ReadyFlags.Messages(config)) deliveries.Add((NotifyChannel.DisplayMessage, now));
             return new NotificationDraft(user, kind, eventKey, titleKey, itemId?.ToString("N", CultureInfo.InvariantCulture), payload, deliveries, now);
         }
 

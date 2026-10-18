@@ -43,6 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly TitleAliases? _aliases;
         private readonly Requests.RequestLedger? _ledger;
         private readonly Requests.IRequestPolicy? _policy;
+        private readonly Ready.ReadyNativeChannel? _native;
         private readonly Logger? _logger;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
@@ -52,8 +53,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private Task? _loopTask;
 
         /// <summary>The dispatcher (DI).</summary>
-        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger, Requests.RequestLedger ledger, Requests.IRequestPolicy policy)
-            : this(store, ntfy, email, logger, null, null, users, view, aliases, ledger, policy)
+        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger, Requests.RequestLedger ledger, Requests.IRequestPolicy policy, Ready.ReadyNativeChannel native)
+            : this(store, ntfy, email, logger, null, null, users, view, aliases, ledger, policy, native)
         {
         }
 
@@ -61,9 +62,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// A dispatcher with explicit configuration and clock (tests). With <paramref name="ledger"/>, an OK of a request
         /// held (quiet hours, retries) isn't sent once the request was cancelled, declined or removed; with
         /// <paramref name="policy"/>, an ask waiting for an OK isn't sent to an administrator who can no longer see its title.
+        /// With <paramref name="native"/>, native Ready messages (phase 4f) go out; without it they end as suppressed.
         /// </summary>
-        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null, TitleAliases? aliases = null, Requests.RequestLedger? ledger = null, Requests.IRequestPolicy? policy = null)
+        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null, TitleAliases? aliases = null, Requests.RequestLedger? ledger = null, Requests.IRequestPolicy? policy = null, Ready.ReadyNativeChannel? native = null)
         {
+            _native = native;
             _ledger = ledger;
             _policy = policy;
             _view = view;
@@ -194,6 +197,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         var config = _config();
                         if (!NotifyFlags.Enabled(config)) return attempted;
                         var list = group.ToList();
+                        // Native Ready messages (phase 4f) have their own path: never held, never retried, one at a time.
+                        if (group.Key.Channel == NotifyChannel.DisplayMessage)
+                        {
+                            attempted += await DeliverDisplayAsync(config!, list, cancellationToken).ConfigureAwait(false);
+                            continue;
+                        }
                         if (list.Count >= SummaryAt)
                         {
                             attempted += await DeliverSummaryAsync(config!, list, cancellationToken).ConfigureAwait(false);
@@ -257,10 +266,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         private async Task<(bool Ok, string? Error)> SendAsync(PluginConfiguration config, string channel, NotifyPrefs prefs, NotifyMessage message, string? link, string kind, CancellationToken cancellationToken)
         {
-            var result = channel == NotifyChannel.Ntfy
-                ? await _ntfy.SendAsync(config.ArrNtfyServerUrl, config.GetSecret(nameof(PluginConfiguration.ArrNtfyToken)), prefs.NtfyTopic!, message, link, Tags(kind), Priority(kind), cancellationToken).ConfigureAwait(false)
-                : await _email.SendAsync(config, prefs.EmailAddress!, message, link, SettingsLink(config), cancellationToken).ConfigureAwait(false);
-            return (result.Ok, result.Error);
+            // Every channel by name: a channel this code doesn't know is never sent as an e-mail.
+            switch (channel)
+            {
+                case NotifyChannel.Ntfy:
+                {
+                    var result = await _ntfy.SendAsync(config.ArrNtfyServerUrl, config.GetSecret(nameof(PluginConfiguration.ArrNtfyToken)), prefs.NtfyTopic!, message, link, Tags(kind), Priority(kind), cancellationToken).ConfigureAwait(false);
+                    return (result.Ok, result.Error);
+                }
+
+                case NotifyChannel.Email:
+                {
+                    var result = await _email.SendAsync(config, prefs.EmailAddress!, message, link, SettingsLink(config), cancellationToken).ConfigureAwait(false);
+                    return (result.Ok, result.Error);
+                }
+
+                default:
+                    return (false, "Unknown channel.");
+            }
+        }
+
+        // ------------------------------------------------------------------ native Ready messages (phase 4f)
+
+        /// <summary>
+        /// Native Ready messages due for one person: each is checked as it is now (the switches, their consent, quiet hours,
+        /// freshness, still theirs to see, Hidden Content, no earlier attempt), then one message (a summary for several) goes
+        /// to one idle session of theirs, read again right before the send. Busy, unsupported, no session or anything else
+        /// ends them as suppressed: never held for later and never retried. Returns how many were attempted.
+        /// </summary>
+        private async Task<int> DeliverDisplayAsync(PluginConfiguration config, IReadOnlyList<DueDelivery> deliveries, CancellationToken cancellationToken)
+        {
+            var ready = new List<(DueDelivery Delivery, NotifyMessage Message)>();
+            foreach (var delivery in deliveries)
+            {
+                if (PrepareDisplay(config, delivery) is { } message) ready.Add((delivery, message));
+            }
+            if (ready.Count == 0 || _native == null) return deliveries.Count;
+            var user = ready[0].Delivery.UserId;
+            var generation = ready[0].Delivery.Generation;
+            var text = ready.Count == 1 ? ready[0].Message : NotifyTexts.Summary(ready.Count);
+            // Right before the send: the switches and the person's consent once more.
+            bool StillAllowed()
+            {
+                var now = _config();
+                if (!NotifyFlags.Enabled(now) || !Ready.ReadyFlags.Messages(now)) return false;
+                var prefs = _store.Prefs(user);
+                return prefs.NativeReadyMessages && QuietHours.EndsAt(prefs, _now()) == null;
+            }
+            var result = await _native.SendAsync(user, ready.Select(r => r.Delivery.Id).ToList(), generation, text, StillAllowed, cancellationToken).ConfigureAwait(false);
+            foreach (var (delivery, _) in ready)
+            {
+                if (result.Accepted)
+                {
+                    Interlocked.Increment(ref _sent);
+                    _store.Finish(delivery.Id, true, null, null, _now(), delivery.Generation);
+                }
+                else
+                {
+                    _store.Suppress(delivery.Id, result.Unknown
+                        ? "Native message: the send started but its outcome is unknown (" + result.Reason + "); not sent again."
+                        : "Native message not sent: " + result.Reason + ".", delivery.Generation);
+                }
+            }
+            return deliveries.Count;
+        }
+
+        // A native message's checks at delivery: the message to show, or null after suppressing it.
+        private NotifyMessage? PrepareDisplay(PluginConfiguration config, DueDelivery delivery)
+        {
+            string? Reason(NotifyPrefs prefs, Dictionary<string, string> payload)
+            {
+                if (_native == null) return "Native messages aren't available on this server.";
+                if (_native.Attempted(delivery.Id)) return "Native message: an earlier attempt's outcome is unknown; not sent again.";
+                if (_now() - delivery.CreatedAt > Ready.ReadyNativeChannel.FreshFor) return "Native message is stale (it waited while notifications were off).";
+                if (!Ready.ReadyFlags.Messages(config)) return "Native Ready messages are switched off.";
+                if (!prefs.NativeReadyMessages) return "The recipient turned native messages off.";
+                if (QuietHours.EndsAt(prefs, _now()) != null) return "The recipient's quiet hours (native messages are never held).";
+                if (Suppression(delivery, prefs, payload, out var itemId) is { } reason) return reason;
+                if (delivery.Kind != NotifyKind.Test && _native.Hidden(delivery.UserId, delivery.TitleKey, itemId)) return "The title is hidden for the recipient (or their Hidden Content can't be read).";
+                return null;
+            }
+            var prefs = _store.Prefs(delivery.UserId);
+            var payload = new Dictionary<string, string>(Payload(delivery.Payload));
+            if (Reason(prefs, payload) is { } why)
+            {
+                _store.Suppress(delivery.Id, why, delivery.Generation);
+                return null;
+            }
+            return NotifyTexts.Render(delivery.Kind, payload, prefs.HideTitles);
         }
 
         // Records one delivery's outcome: sent, or failed with the next retry (none after the last).

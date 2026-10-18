@@ -262,22 +262,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (request.TimeZone != null && (request.TimeZone.Length > 64 || request.TimeZone.Any(ch => !(char.IsLetterOrDigit(ch) || ch is '/' or '_' or '-' or '+')))) return BadRequest(new { code = "invalid_time_zone" });
             if (request.Email == true && string.IsNullOrEmpty(prefs.EmailAddress)) return BadRequest(new { code = "email_not_verified" });
             if (request.Ntfy == true && !NotifyEndpoints.IsTopic(prefs.NtfyTopic)) return BadRequest(new { code = "ntfy_topic_missing" });
-            prefs.Toasts = request.Toasts ?? prefs.Toasts;
-            prefs.Ready = request.Ready ?? prefs.Ready;
-            prefs.Episodes = request.Episodes ?? prefs.Episodes;
-            prefs.Declined = request.Declined ?? prefs.Declined;
-            prefs.Approved = request.Approved ?? prefs.Approved;
-            prefs.AdminAlerts = request.AdminAlerts ?? prefs.AdminAlerts;
-            prefs.AutoFollowRequests = request.AutoFollowRequests ?? prefs.AutoFollowRequests;
-            prefs.Ntfy = request.Ntfy ?? prefs.Ntfy;
-            prefs.Email = request.Email ?? prefs.Email;
-            prefs.HideTitles = request.HideTitles ?? prefs.HideTitles;
-            prefs.QuietHours = request.QuietHours ?? prefs.QuietHours;
-            prefs.QuietFrom = request.QuietFrom ?? prefs.QuietFrom;
-            prefs.QuietTo = request.QuietTo ?? prefs.QuietTo;
-            if (request.TimeZone != null) prefs.TimeZone = request.TimeZone.Length == 0 ? null : request.TimeZone;
-            if (request.UtcOffsetMinutes.HasValue) prefs.UtcOffsetMinutes = Math.Clamp(request.UtcOffsetMinutes.Value, -14 * 60, 14 * 60);
-            Store.SavePrefs(user, prefs, Now());
+            // Only the fields sent change, in one transaction: a change made meanwhile elsewhere (another tab, an
+            // administrator's topic, the Ready settings' native-message consent) is kept.
+            Store.UpdatePrefs(user, p =>
+            {
+                p.Toasts = request.Toasts ?? p.Toasts;
+                p.Ready = request.Ready ?? p.Ready;
+                p.Episodes = request.Episodes ?? p.Episodes;
+                p.Declined = request.Declined ?? p.Declined;
+                p.Approved = request.Approved ?? p.Approved;
+                p.AdminAlerts = request.AdminAlerts ?? p.AdminAlerts;
+                p.AutoFollowRequests = request.AutoFollowRequests ?? p.AutoFollowRequests;
+                p.Ntfy = request.Ntfy ?? p.Ntfy;
+                p.Email = request.Email ?? p.Email;
+                p.HideTitles = request.HideTitles ?? p.HideTitles;
+                p.QuietHours = request.QuietHours ?? p.QuietHours;
+                p.QuietFrom = request.QuietFrom ?? p.QuietFrom;
+                p.QuietTo = request.QuietTo ?? p.QuietTo;
+                if (request.TimeZone != null) p.TimeZone = request.TimeZone.Length == 0 ? null : request.TimeZone;
+                if (request.UtcOffsetMinutes.HasValue) p.UtcOffsetMinutes = Math.Clamp(request.UtcOffsetMinutes.Value, -14 * 60, 14 * 60);
+            }, Now());
             return Ok(PrefsBody(user));
         }
 

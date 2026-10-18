@@ -4095,6 +4095,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ArrHomeHssSections = Services.Acquire.Home.HomeFlags.HssSections(config) && Services.Acquire.Home.HssSectionsAdapter.Present,
                 ArrHomeOpsStripEnabled = Services.Acquire.Home.HomeFlags.OpsStrip(config),
                 ArrCollectionGapsPhase4 = Services.Acquire.Home.HomeFlags.CollectionGaps(config),
+                // Phase 4f: the Ready playlist and native Ready messages in effect (parents included; each person opts in).
+                ArrReadyPlaylistEnabled = Services.Acquire.Ready.ReadyFlags.Playlist(config),
+                ArrReadyMessagesEnabled = Services.Acquire.Ready.ReadyFlags.Messages(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
