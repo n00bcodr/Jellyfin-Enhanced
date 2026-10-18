@@ -176,4 +176,93 @@ public class IntegrationAcquisitionStampFeedTests
         Assert.Equal(cursor + 1, w.Feed.Cursor);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemovingTheLastFourKSourcePublishesOnceAndUnchangedRefreshStaysQuiet(bool separateCopy)
+    {
+        using var w = new StampWorld(live: true);
+        var user = Guid.NewGuid();
+        var key = StampWorld.Movie(603);
+        var hd = w.AddMovie(key, w.Now.AddYears(-1), path: "/movies/hd.mkv");
+        var uhd = w.AddMovie(key, w.Now.AddYears(-1), fourK: true, path: "/movies/uhd.mkv");
+        if (!separateCopy)
+        {
+            w.Library.Items.Remove(uhd.Id);
+            hd = w.Library.Put(hd with { Sources = new[] {
+                new StampSource("hd", hd.Path, 1920, 1080, hd.DateCreated),
+                new StampSource("uhd", uhd.Path, 3840, 2160, hd.DateCreated) } });
+        }
+        await w.Feeder.TickAsync(default);
+        Assert.Equal(AcquisitionStamp.FourK, w.Resolver.Resolve(hd.Id, user));
+        var cursor = w.Feed.Cursor;
+        for (var n = 0; n < 3; n++)
+        {
+            w.Library.RaiseUpdated(hd);
+            w.Now = w.Now.AddSeconds(61);
+            await w.Feeder.TickAsync(default);
+        }
+        Assert.Equal(cursor, w.Feed.Cursor);
+        if (separateCopy) w.Library.RaiseRemoved(uhd);
+        else w.Library.RaiseUpdated(hd with { Sources = new[] { hd.Sources[0] } });
+        await w.Feeder.TickAsync(default);
+        Assert.Equal(AcquisitionStamp.None, w.Resolver.Resolve(hd.Id, user));
+        Assert.Equal(cursor + 1, w.Feed.Cursor);
+        Assert.Single(w.Feed.Read(w.Feed.Epoch, cursor).Changes);
+        w.Now = w.Now.AddSeconds(61);
+        await w.Feeder.TickAsync(default);
+        Assert.Equal(cursor + 1, w.Feed.Cursor);
+        Assert.Empty(Read(w, user, hd.Id).GetProperty("items").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task AFailedIndexRefreshHoldsCommittedNotificationsUntilTheResolverCatchesUp()
+    {
+        using var w = new StampWorld(live: true);
+        var key = StampWorld.Movie(603);
+        var hd = w.AddMovie(key, w.Now.AddYears(-1));
+        await w.Feeder.TickAsync(default);
+        var cursor = w.Feed.Cursor;
+        w.AddMovie(key, w.Now.AddYears(-1), fourK: true, path: "/movies/upgraded.mkv");
+        w.Upgrades.Imports.Add(new StampUpgradeImport("import", "/movies/upgraded.mkv", w.Now));
+        w.Library.FourKFailure = new IOException("library unavailable");
+        await Assert.ThrowsAsync<IOException>(() => w.Feeder.TickAsync(default));
+        Assert.Equal(cursor, w.Feed.Cursor);
+        w.Library.FourKFailure = null;
+        await w.Feeder.TickAsync(default);
+        Assert.Equal(cursor + 1, w.Feed.Cursor);
+        Assert.Equal(AcquisitionStamp.FourK, w.Resolver.Resolve(hd.Id, Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task EpisodeRemovalRetainsTheOrdinaryEpisodeAndSeasonInvalidations()
+    {
+        using var w = new StampWorld(live: true);
+        var show = w.AddSeries(StampWorld.Show(700));
+        var season = w.AddSeason(show, 1);
+        var episode = w.AddEpisode(show, season, 1, 2, w.Now.AddYears(-1), fourK: true);
+        await w.Feeder.TickAsync(default);
+        var cursor = w.Feed.Cursor;
+        w.Library.RaiseRemoved(episode);
+        await w.Feeder.TickAsync(default);
+        var keys = w.Feed.Read(w.Feed.Epoch, cursor).Changes.Select(c => c.Key).Order().ToArray();
+        Assert.Equal(new[] { "tv:tvdb:700", "tv:tvdb:700:s1", "tv:tvdb:700:s1:e2" }, keys);
+        Assert.Equal(cursor + 3, w.Feed.Cursor);
+    }
+
+    [Fact]
+    public async Task DisablingBadgesDoesNotDropAnAlreadyQueuedPhysicalRemoval()
+    {
+        using var w = new StampWorld(live: true);
+        var movie = w.AddMovie(StampWorld.Movie(603), w.Now.AddYears(-1), fourK: true);
+        await w.Feeder.TickAsync(default);
+        var cursor = w.Feed.Cursor;
+        w.Library.RaiseRemoved(movie);
+        w.Config.ArrPhase4AcquisitionBadgesEnabled = false;
+        await w.Feeder.TickAsync(default);
+        Assert.Equal(cursor + 1, w.Feed.Cursor);
+        await w.Feeder.TickAsync(default);
+        Assert.Equal(cursor + 1, w.Feed.Cursor);
+    }
+
 }

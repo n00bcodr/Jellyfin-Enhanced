@@ -148,10 +148,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                 {
                     _wasOn = false;
                     _pending.Clear();
-                    _removed.Clear();
+                    // A removal already delegated by the live tracker still invalidates ordinary status when badges turn off.
+                    using var removals = _store.BatchNotifications();
+                    foreach (var (id, removed) in _removed.ToArray())
+                    {
+                        if (_removed.TryRemove(id, out _)) _store.RemoveItem(removed.Item, removed.Generation);
+                    }
+                    removals.Complete();
                     return;
                 }
 
+                using var notifications = _store.BatchNotifications();
                 var now = _now().UtcDateTime;
                 if (_generation != _store.Generation)
                 {
@@ -170,7 +177,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                     _resolver.RefreshFourK(force: true);
                 }
 
-                _resolver.RefreshFourK();
                 foreach (var (id, removed) in _removed.ToArray())
                 {
                     if (!_removed.TryRemove(id, out _)) continue;
@@ -201,6 +207,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                     }
                 }
 
+                // Judging can discover late media info. Publish index and fact changes together, after both settle.
+                _resolver.RefreshFourK();
+                _store.Publish(_resolver.TakeFourKChanges());
                 _store.InvalidateExpired(now, AcquisitionStampFlags.NewLifetime(_config()), AcquisitionStampFlags.UpgradedLifetime(_config()));
                 if (now >= _nextPurge)
                 {
@@ -208,6 +217,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                     var removed = _store.Purge();
                     if (removed > 0) _logger?.Info($"Acquisition badges: housekeeping removed {removed} old rows.");
                 }
+                notifications.Complete();
             }
             finally
             {

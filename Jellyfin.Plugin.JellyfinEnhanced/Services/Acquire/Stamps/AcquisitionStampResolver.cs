@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 
@@ -36,6 +37,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         private readonly ConcurrentDictionary<(Guid User, Guid Item), (bool Open, DateTime At)> _access = new();
         private readonly object _fourKGate = new();
         private volatile FourKIndex? _fourK;
+        private readonly HashSet<string> _fourKChanges = new(StringComparer.Ordinal);
         private DateTime _fourKBuiltAt;
         private volatile bool _fourKDirty;
         private long _warnedAt;
@@ -238,7 +240,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             lock (_fourKGate)
             {
                 _fourKDirty = false;
-                _fourK = Build();
+                var previous = _fourK;
+                FourKIndex next;
+                try
+                {
+                    next = Build();
+                }
+                catch
+                {
+                    _fourKDirty = true; // retain the retry when the library read failed
+                    throw;
+                }
+                _fourK = next;
+                if (previous != null)
+                {
+                    foreach (var key in previous.ByKey.Keys.Concat(next.ByKey.Keys).Distinct(StringComparer.Ordinal))
+                    {
+                        previous.ByKey.TryGetValue(key, out var before);
+                        next.ByKey.TryGetValue(key, out var after);
+                        if (before != null && after != null && before.Count == after.Count && before.ToHashSet().SetEquals(after)) continue;
+                        _fourKChanges.Add(key.Split('|')[0]);
+                    }
+                }
+            }
+        }
+
+        /// <summary>Consumes the affected title keys after the feeder has refreshed the index.</summary>
+        internal IReadOnlyList<string> TakeFourKChanges()
+        {
+            lock (_fourKGate)
+            {
+                var changes = _fourKChanges.ToArray();
+                _fourKChanges.Clear();
+                return changes;
             }
         }
 

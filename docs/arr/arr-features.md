@@ -1417,13 +1417,16 @@ badge about what changed for the person looking at it. At most one per card, in 
 
 A series or season card shows New or Upgraded when one of its episodes does. Partial playback clears those badges
 for that viewer too. Hiding badges takes effect immediately, including while a badge request is still loading.
-Showing them again refreshes cards after the preference saves. If the latest save fails, the last successfully saved choice and the cards
-are restored, even after several quick changes. Acquisition badges follow live title changes even with phase-1 status badges off.
+Showing them again refreshes cards after the preference saves. Both badge controls keep your latest choices while
+they save. Once saving finishes, the controls and cards match the last successful save, including when quick web and
+native changes have mixed save outcomes. Acquisition badges follow live title changes even with phase-1 status badges off.
 
 Badges come from what the server already knows (no call to Sonarr, Radarr or Seerr when a page or a poster loads).
 The server stops returning a badge as soon as it expires. Open web cards hear about settled imports, version
 upgrades, removals and expiry through the existing live feed. Expiry is announced on the existing 15-second badge
-background round. Refreshing unchanged library metadata sends no acquisition update. A badge never shows a title the person can't open, and nothing is requested or changed by a badge.
+background round. Removing the last 4K version also clears its live badge. Source and fact changes in one background
+round send one update per title, after the badge state is ready. Refreshing unchanged library metadata sends no
+acquisition update. A badge never shows a title the person can't open, and nothing is requested or changed by a badge.
 
 **On TV and phone apps** (*Draw the badges into posters for TV and phone apps*, which also needs
 [Native Poster Tags](../enhanced/enhanced-features.md)): the same badge is drawn into the poster images that person's

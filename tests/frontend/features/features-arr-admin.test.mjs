@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
-import { createHarness, jsRoot } from '../helpers/harness.mjs';
+import { createHarness, deferred, jsRoot } from '../helpers/harness.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = [
@@ -531,11 +531,13 @@ test('an admin:ops change that arrives while the tab is being read is read once 
   let reads = 0;
   let rows = 7;
   let gate = null;
+  const secondReadStarted = deferred();
   const h = setup(t, {
     feed,
     responses: (path) => {
       if (path !== '/arr/admin/hub/overview') return null;
       reads++;
+      if (reads === 2) secondReadStarted.resolve();
       const o = overview();
       o.needsAttention = o.needsAttention.slice(0, rows);
       return gate ? gate.then(() => o) : o;
@@ -549,7 +551,7 @@ test('an admin:ops change that arrives while the tab is being read is read once 
   let release;
   gate = new Promise(r => { release = r; });
   sub.cb(['admin:ops']);
-  await until(() => reads === 2);
+  await secondReadStarted.promise; // the next change must arrive inside the held read, even on a busy coverage run
   // ...and the next change (a removal finished) arrives while it runs.
   rows = 2;
   sub.cb(['admin:ops']);

@@ -555,7 +555,11 @@ All off by default; they need phase 4 (not *Ask for it*). See
 | Days a title stays "Upgraded" (`ArrAcquisitionUpgradedDays`) | 7 | 1–30. Includes the first 4K version added alongside HD; playback after its own arrival clears it for that viewer. |
 
 Per person (Jellyfin Enhanced panel, *Poster badges*, shown while the badges are on): *Badges on poster cards* and
-*Badges drawn into posters on TV and phone apps* follow the household (default) or are hidden / off. Hiding web badges takes effect immediately; showing them refreshes the cards once the choice has saved. If the latest save fails, the last successfully saved choice is restored and the cards refresh to match, including after quick repeated changes. Live acquisition badges work independently of the phase-1 poster status switch.
+*Badges drawn into posters on TV and phone apps* follow the household (default) or are hidden / off. Hiding web badges
+takes effect immediately; showing them refreshes the cards once the choice has saved. Both controls keep your latest
+choices while they save. Once saving finishes, the controls and cards match the last successful save, including when
+quick web and native changes have mixed save outcomes. Live acquisition badges work independently of the phase-1
+poster status switch.
 
 #### Household tab
 

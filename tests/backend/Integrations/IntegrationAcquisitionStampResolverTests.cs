@@ -281,9 +281,10 @@ public class IntegrationAcquisitionStampResolverTests
         w.Upgrades.Imports.Add(new StampUpgradeImport("radarr:9", "/movies/m-2160p.mkv", T0.AddMinutes(-5)));
         w.Now = T0.AddSeconds(15);
         await w.Feeder.TickAsync(CancellationToken.None);                            // records the upgrade, notes the 4K copy
-        Assert.Equal(built, w.Library.FourKCalls);
+        Assert.Equal(built + 1, w.Library.FourKCalls);                         // index is current before publishing
+        Assert.Equal(AcquisitionStamp.FourK, w.Resolver.Resolve(standard.Id, user, T0));
         w.Now = T0.AddSeconds(30);
-        await w.Feeder.TickAsync(CancellationToken.None);                            // the next round rebuilds the index
+        await w.Feeder.TickAsync(CancellationToken.None);                            // unchanged next round does not rebuild
         Assert.Equal(built + 1, w.Library.FourKCalls);
         Assert.Equal(AcquisitionStamp.FourK, w.Resolver.Resolve(standard.Id, user, T0));
     }

@@ -19,6 +19,8 @@ internal sealed class FakeStampLibrary : IStampLibrary
 
     public int FourKCalls { get; private set; }
 
+    public Exception? FourKFailure { get; set; }
+
     public int CanOpenCalls { get; private set; }
 
     /// <summary>Thrown from every read when set.</summary>
@@ -84,6 +86,7 @@ internal sealed class FakeStampLibrary : IStampLibrary
 
     public IReadOnlyList<StampItem> FourKVideos()
     {
+        if (FourKFailure != null) throw FourKFailure;
         Check();
         FourKCalls++;
         return Items.Values.Where(i => i.IsVideo && i.FourK && !i.Virtual).ToList();

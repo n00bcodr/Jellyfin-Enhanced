@@ -649,7 +649,8 @@ for (const hiding of [true, false]) test(`a delayed failed ${hiding ? 'Hide' : '
   h.JE.userConfig.shortcuts = { Shortcuts: [] };
   h.load('enhanced/settingspanel/ui-panel-template.js');
   h.document.body.innerHTML = cardsHtml(['Movie']) + h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
-  h.JE.saveUserSettings = () => saved.promise;
+  h.load('enhanced/config.js');
+  h.window.ApiClient.ajax = () => saved.promise;
   h.JE.toast = () => assert.fail('a failed save must not claim success');
   h.load('enhanced/settingspanel/ui-panel-settings.js');
   h.JE.internals.enhancedUi.wireSettingsListeners({ createToast() {}, resetAutoCloseTimer() {} });
@@ -719,5 +720,62 @@ for (const initial of [null, false]) for (const outcomes of [[false, false], [fa
     assert.equal(h.JE.userConfig.settings.acquisitionBadges, persisted);
     assert.equal(select.value, persisted === false ? 'off' : '');
     assert.equal(!!h.document.querySelector('.je-arr-tone-new'), persisted !== false);
+  });
+}
+
+// Review round 5: both controls save whole documents through the same queue.
+for (const initial of [null, false]) for (const nativeFirst of [false, true]) for (const outcomes of [[false, false], [false, true], [true, false], [true, true]]) {
+  test(`mixed badge toggles from ${initial}, native first ${nativeFirst}, outcomes ${outcomes}`, async t => {
+    const saves = [deferred(), deferred()];
+    const posted = [];
+    let persisted = { acquisitionBadges: initial, nativeAcquisitionStamps: initial };
+    const h = setup(t, {
+      html: cardsHtml(['Movie']),
+      config: { ArrAcquisitionBadgesEnabled: true, ArrNativeStampsEnabled: true, ArrStatusPosterBadges: false },
+      settings: { acquisitionBadges: initial, nativeAcquisitionStamps: initial },
+      responses: path => stampAnswer(path, { [id(0)]: 'new' }),
+      apiClient: { ajax: async request => {
+        const n = posted.length;
+        posted.push(JSON.parse(request.data));
+        await saves[n].promise;
+        persisted = posted[n];
+      } }
+    });
+    h.JE.userConfig = { settings: { ...h.JE.currentSettings }, shortcuts: { Shortcuts: [] } };
+    const preset = { name: 'p', previewText: 'Aa', size: 1, family: 'sans-serif', bgColor: '#000', textColor: '#fff' };
+    Object.assign(h.JE, { escapeHtml: value => String(value ?? ''), icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
+      icons: { wrapEmoji: s => s }, state: { activeShortcuts: {} }, pluginVersion: '0.0.0',
+      fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
+      decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none', toast() {} });
+    h.JE.pluginConfig.Shortcuts = [];
+    h.load('enhanced/config.js');
+    h.load('enhanced/settingspanel/ui-panel-template.js');
+    h.document.body.innerHTML = cardsHtml(['Movie']) + h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
+    h.load('enhanced/settingspanel/ui-panel-settings.js');
+    h.JE.internals.enhancedUi.wireSettingsListeners({ createToast() {}, resetAutoCloseTimer() {} });
+    await h.show();
+    const keys = nativeFirst ? ['nativeAcquisitionStamps', 'acquisitionBadges'] : ['acquisitionBadges', 'nativeAcquisitionStamps'];
+    for (const key of keys) {
+      const select = h.document.getElementById(key + 'Select');
+      select.value = initial === false ? '' : 'off';
+      select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+    }
+    await nextTurn();
+    assert.equal(posted.length, 1, 'second snapshot waits for the real save queue');
+    for (let n = 0; n < 2; n++) {
+      if (outcomes[n]) saves[n].resolve(); else saves[n].reject(new Error('blocked save'));
+      await nextTurn();
+      if (n === 0) for (const key of keys) {
+        assert.equal(h.JE.currentSettings[key], initial === false ? null : false, 'the pending document retains both choices');
+      }
+    }
+    await h.show();
+    assert.equal(posted.length, 2);
+    for (const key of keys) {
+      assert.equal(h.JE.currentSettings[key], persisted[key], key + ' current settings match the last successful document');
+      assert.equal(h.JE.userConfig.settings[key], persisted[key], key + ' user settings match the last successful document');
+      assert.equal(h.document.getElementById(key + 'Select').value, persisted[key] === false ? 'off' : '');
+    }
+    assert.equal(!!h.document.querySelector('.je-arr-tone-new'), persisted.acquisitionBadges !== false);
   });
 }

@@ -10,7 +10,6 @@
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
     const { showReleaseNotesNotification } = internal;
-    const badgeSettingsStates = new Map();
 
     // Position-tab preview text ("AaBbCcDd") mirrors the real font family, and
     // its size scaled relative to "Normal" so it stays legible in the small
@@ -202,57 +201,48 @@
                 resetAutoCloseTimer();
             });
         }
-        // Phase 4e: Hide removes badges at once; Show reads only after persistence succeeds.
-        for (const [id, key] of [['acquisitionBadgesSelect', 'acquisitionBadges'], ['nativeAcquisitionStampsSelect', 'nativeAcquisitionStamps']]) {
+        // Phase 4e: both controls post the same settings document. The save queue owns its persisted baseline.
+        const badgeControls = [['acquisitionBadgesSelect', 'acquisitionBadges'], ['nativeAcquisitionStampsSelect', 'nativeAcquisitionStamps']];
+        JE.internals.observeSettingsDocument((document, saved, previousSaved) => {
+            const before = JE.currentSettings.acquisitionBadges;
+            for (const [id, key] of badgeControls) {
+                JE.currentSettings[key] = document[key];
+                if (Object.prototype.hasOwnProperty.call(document, key)) JE.userConfig.settings[key] = document[key];
+                else delete JE.userConfig.settings[key];
+                const select = window.document.getElementById(id);
+                if (select) select.value = document[key] === false ? 'off' : '';
+            }
+            // Show starts a fresh read only when the saved document is authoritative; rollback also resets the surface.
+            if (before !== JE.currentSettings.acquisitionBadges
+                || (saved.acquisitionBadges !== previousSaved.acquisitionBadges
+                    && saved.acquisitionBadges === document.acquisitionBadges && document.acquisitionBadges !== false)) {
+                JE.internals?.arrStatusCards?.reset?.();
+            }
+        });
+        for (const [id, key] of badgeControls) {
             document.getElementById(id)?.addEventListener('change', async (event) => {
                 if (JE.pluginConfig?.ArrAcquisitionBadgesEnabled !== true) return;
                 const value = event.target.value === 'off' ? false : null;
-                const current = JE.arrStatus?.responseGuard?.();
                 const epoch = JE.session?.getEpoch?.();
                 const settings = JE.currentSettings;
-                const select = event.target;
                 const userId = typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : undefined;
                 JE.userConfig = JE.userConfig || {};
                 JE.userConfig.settings = JE.userConfig.settings || {};
                 const userSettings = JE.userConfig.settings;
-                let state = badgeSettingsStates.get(key);
-                if (!state || state.settings !== settings || state.userSettings !== userSettings
-                    || state.epoch !== epoch || state.userId !== userId) {
-                    state = { settings, userSettings, epoch, userId, generation: 0,
-                        savedGeneration: 0, saved: settings[key], savedOwn: userSettings[key] };
-                    badgeSettingsStates.set(key, state);
-                }
-                const generation = ++state.generation;
                 userSettings[key] = value;
                 settings[key] = value;
-                const sameSession = () => badgeSettingsStates.get(key) === state
-                    && settings === JE.currentSettings && userSettings === JE.userConfig?.settings
+                const sameSession = () => settings === JE.currentSettings && userSettings === JE.userConfig?.settings
                     && (epoch === undefined || JE.session.isCurrent(epoch))
                     && (userId === undefined || ApiClient.getCurrentUserId?.() === userId);
-                const valid = () => sameSession() && state.generation === generation && settings[key] === value;
-                if (key === 'acquisitionBadges' && value === false) JE.internals?.arrStatusCards?.reset?.();
+                if (key === 'acquisitionBadges') {
+                    if (value === false) JE.internals?.arrStatusCards?.reset?.();
+                }
                 resetAutoCloseTimer();
                 try {
                     await JE.saveUserSettings('settings.json', settings, { throwOnError: true });
-                    // Earlier queued successes still advance the rollback baseline for the latest choice.
-                    if (sameSession() && generation > state.savedGeneration) {
-                        state.savedGeneration = generation;
-                        state.saved = value;
-                        state.savedOwn = value;
-                    }
-                    if (!valid()) return;
-                    // A Hide reset invalidates response tickets intentionally. Show must retain its ticket.
-                    if (key === 'acquisitionBadges' && value !== false && (!current || current())) {
-                        JE.internals?.arrStatusCards?.reset?.();
-                    }
-                    JE.toast(JE.t('toast_badge_settings_saved'));
+                    if (sameSession()) JE.toast(JE.t('toast_badge_settings_saved'));
                 } catch (err) {
-                    if (!valid()) return;
-                    settings[key] = state.saved;
-                    userSettings[key] = state.savedOwn;
-                    select.value = state.saved === false ? 'off' : '';
-                    if (key === 'acquisitionBadges') JE.internals?.arrStatusCards?.reset?.();
-                    console.warn('🪼 Jellyfin Enhanced: badge settings save failed', err);
+                    if (sameSession()) console.warn('🪼 Jellyfin Enhanced: badge settings save failed', err);
                 }
             });
         }

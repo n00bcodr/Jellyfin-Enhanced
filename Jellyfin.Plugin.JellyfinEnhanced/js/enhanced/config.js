@@ -26,12 +26,46 @@
         pauseScreenClickTimer: null
     };
 
-    // Per-file cache of the last JSON string successfully sent to the server.
-    const _lastSavedJson = {};
+    // One per-user/file document owns the successful snapshot, deduplication and pending choices.
+    const _saveDocuments = {};
     // Per-file chain of in-flight saves. Every control posts the whole object,
     // so two quick changes must reach the server in call order or the earlier
     // (smaller) snapshot can land last and drop the newer change.
     const _saveChain = {};
+
+    /** The persistence state for one person's document, isolated from replaced settings/session objects. */
+    const settingsDocument = fileName => {
+        const userId = typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : undefined;
+        const cacheKey = `${userId}:${fileName}`;
+        const epoch = JE.session?.getEpoch?.();
+        const current = fileName === 'settings.json' ? JE.currentSettings : undefined;
+        const own = fileName === 'settings.json' ? JE.userConfig?.settings : undefined;
+        let state = _saveDocuments[cacheKey];
+        if (!state || state.settings !== current || state.own !== own || state.epoch !== epoch) {
+            state = { settings: current, own, epoch, userId, saved: { ...own }, pending: [], serialized: undefined, reconcile: null };
+            _saveDocuments[cacheKey] = state;
+        }
+        return state;
+    };
+
+    JE.internals = JE.internals || {};
+    /** Registers the current document's display reconciliation before any optimistic edit. */
+    JE.internals.observeSettingsDocument = reconcile => {
+        const state = settingsDocument('settings.json');
+        state.reconcile = reconcile;
+    };
+
+    /** Reconcile only the active document, retaining the newest queued whole-document choice until it settles. */
+    const reconcileDocument = (state, cacheKey, snapshot, succeeded) => {
+        state.pending.splice(state.pending.indexOf(snapshot), 1);
+        const previousSaved = state.saved;
+        if (succeeded) state.saved = snapshot;
+        if (_saveDocuments[cacheKey] !== state || state.settings !== JE.currentSettings
+            || state.own !== JE.userConfig?.settings
+            || (state.epoch !== undefined && !JE.session?.isCurrent(state.epoch))
+            || ApiClient.getCurrentUserId?.() !== state.userId) return;
+        state.reconcile?.(state.pending.at(-1) || state.saved, state.saved, previousSaved);
+    };
 
     /**
      * Saves user settings to the server.
@@ -68,16 +102,19 @@
                 && JE.userConfig?.settings?.useNativePosterTags == null) {
                 dataToSave = { ...settings, useNativePosterTags: null };
             }
+            const snapshot = JSON.parse(JSON.stringify(dataToSave));
             if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
                 dataToSave = window.JellyfinEnhanced.toPascalCase(dataToSave);
             }
 
             const serialized = JSON.stringify(dataToSave);
+            const state = settingsDocument(fileName);
+            state.pending.push(snapshot);
             const cacheKey = `${userId}:${fileName}`;
 
             const post = async () => {
                 // Skip the POST if nothing has changed since the last save this session.
-                if (_lastSavedJson[cacheKey] === serialized) {
+                if (state.serialized === serialized) {
                     return; // no-op — identical to last save
                 }
 
@@ -89,11 +126,17 @@
                 });
 
                 // Update the cache on success so subsequent identical saves are skipped
-                _lastSavedJson[cacheKey] = serialized;
+                state.serialized = serialized;
             };
             const save = (_saveChain[cacheKey] || Promise.resolve()).then(post);
             _saveChain[cacheKey] = save.catch(() => {});
-            await save;
+            let succeeded = false;
+            try {
+                await save;
+                succeeded = true;
+            } finally {
+                reconcileDocument(state, cacheKey, snapshot, succeeded);
+            }
         } catch (e) {
             if (throwOnError) throw e;
             console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);

@@ -117,9 +117,7 @@ for (const outcome of ['saved', 'failed', 'hidden', 'switched']) test(`show badg
   const held = deferred();
   let epoch = 1;
   h.JE.session = { getEpoch: () => epoch, isCurrent: captured => captured === epoch };
-  h.JE.saveUserSettings = (_file, _settings, options) => {
-    return options?.throwOnError ? held.promise : held.promise.catch(() => {});
-  };
+  h.window.ApiClient.ajax = () => held.promise;
   h.wire();
   await h.choose('acquisitionBadgesSelect', '');
   assert.deepEqual(h.resets, [], 'no card refresh while the server still has Hide');
@@ -134,4 +132,16 @@ for (const outcome of ['saved', 'failed', 'hidden', 'switched']) test(`show badg
   await new Promise(done => setImmediate(done));
   assert.deepEqual(h.resets, outcome === 'saved' ? [null] : outcome === 'hidden' || outcome === 'failed' ? [false] : []);
   if (outcome === 'failed') assert.deepEqual(h.toasts, [], 'failed persistence never claims success');
+});
+
+test('rewiring the panel while Show is pending still refreshes cards after the document saves', async t => {
+  const h = panel(t, { config: badges, settings: { acquisitionBadges: false } });
+  const held = deferred();
+  h.window.ApiClient.ajax = () => held.promise;
+  h.wire();
+  await h.choose('acquisitionBadgesSelect', '');
+  h.wire(); // a replacement panel observes the same in-flight document
+  held.resolve();
+  await new Promise(done => setImmediate(done));
+  assert.deepEqual(h.resets, [null]);
 });

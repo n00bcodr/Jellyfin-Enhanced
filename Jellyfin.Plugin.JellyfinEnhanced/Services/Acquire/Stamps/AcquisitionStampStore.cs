@@ -33,6 +33,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 
         private readonly AcquireDatabase _db;
         private readonly ArrChangeFeed? _feed;
+        private readonly object _notificationGate = new();
+        private readonly HashSet<string> _pendingNotifications = new(StringComparer.Ordinal);
+        private int _notificationDepth;
         private readonly object _expiryGate = new();
         private Dictionary<StampFact, string?> _expired = new();
         private readonly ConcurrentDictionary<Guid, byte> _deleted = new();
@@ -250,7 +253,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             if (changed > 0)
             {
                 Reload();
-                _feed?.Bump(keys);
+                Publish(keys);
             }
         }
 
@@ -271,7 +274,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             if (removed > 0)
             {
                 Reload();
-                _feed?.Bump(keys);
+                Publish(keys);
             }
             return removed;
         }
@@ -336,7 +339,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             {
                 Reload();
                 // Guard returned only after the transaction committed. Readers woken by the feed see the new index.
-                _feed?.Bump(item.Keys.Select(k => k.Title.ToString()));
+                Publish(item.Keys.Select(k => k.Title.ToString()));
             }
             return changed > 0;
         }
@@ -360,7 +363,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                     .Select(pair => pair.Value).OfType<string>().ToList();
                 _expired = expired;
             }
-            _feed.Bump(keys);
+            Publish(keys);
         }
 
         /// <summary>Removes an item's facts, then invalidates its title after the 4K index has caught up.</summary>
@@ -373,7 +376,66 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                 return Exec(c, t, "DELETE FROM acquisition_stamps WHERE item_id=$i", ("$i", N(item.Id)));
             });
             if (changed > 0) Reload();
-            _feed?.Bump(keys.Concat(item.Keys.Select(k => k.Title.ToString())));
+            Publish(keys.Concat(RemovalKeys(item)));
+        }
+
+        private static IEnumerable<string> RemovalKeys(StampItem item)
+        {
+            foreach (var key in item.Keys)
+            {
+                var title = key.Title.ToString();
+                if (item.Kind == "episode" && ArrTitleKey.TryParse(title, out var kind, out var id, out _, out _) && kind == "tv")
+                {
+                    foreach (var affected in ArrTitleKey.WithParents(id, item.Season, item.Episode)) yield return affected;
+                }
+                else yield return title;
+            }
+        }
+
+        /// <summary>Coalesces a feeder round's committed facts and source index changes into one publish per title.</summary>
+        internal NotificationBatch BatchNotifications()
+        {
+            lock (_notificationGate) _notificationDepth++;
+            return new NotificationBatch(this);
+        }
+
+        /// <summary>Publishes only after the caller has updated the corresponding resolver state.</summary>
+        internal void Publish(IEnumerable<string> keys)
+        {
+            lock (_notificationGate)
+            {
+                if (_notificationDepth > 0)
+                {
+                    _pendingNotifications.UnionWith(keys);
+                    return;
+                }
+            }
+            _feed?.Bump(keys);
+        }
+
+        internal sealed class NotificationBatch : IDisposable
+        {
+            private AcquisitionStampStore? _owner;
+            private bool _complete;
+
+            public NotificationBatch(AcquisitionStampStore owner) => _owner = owner;
+
+            /// <summary>The resolver is current; the round may now publish its committed changes.</summary>
+            public void Complete() => _complete = true;
+
+            public void Dispose()
+            {
+                var owner = Interlocked.Exchange(ref _owner, null);
+                if (owner == null) return;
+                string[] keys;
+                lock (owner._notificationGate)
+                {
+                    if (--owner._notificationDepth > 0 || !_complete) return;
+                    keys = owner._pendingNotifications.ToArray();
+                    owner._pendingNotifications.Clear();
+                }
+                owner._feed?.Bump(keys);
+            }
         }
 
         private static IReadOnlyList<string> Titles(SqliteConnection c, SqliteTransaction t, string where, params (string Name, object? Value)[] args)
