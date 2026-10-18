@@ -142,6 +142,9 @@ public class PrivacyDddSpoilerTests
             var blocked = await rig.Read();
             Assert.True(blocked.Body.GetProperty("Guarded").GetBoolean());
             Assert.DoesNotContain("A major character dies", blocked.Body.GetRawText());
+            for (var i = 0; i < 4; i++) await rig.Read();
+            var logs = string.Join("\n", Directory.GetFiles(rig.Plugin.Core.Root, "JellyfinEnhanced_*.log").Select(File.ReadAllText));
+            Assert.Equal(1, logs.Split($"Can't inspect '{SpoilerBlurImageFilter.SpoilerBlurFileName}' of user '{rig.Viewer:N}'").Length - 1);
         }
         finally { File.SetUnixFileMode(folder, mode); }
     }

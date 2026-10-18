@@ -18,6 +18,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Static so the Singleton ResponseFilter and the Scoped IEventConsumer share one pool.
         private static readonly ConcurrentDictionary<string, object> _userFileLocks = new ConcurrentDictionary<string, object>();
 
+        // One presence warning per person, file and error kind per hour: an unreadable folder is checked on every request.
+        private static readonly TimeSpan PresenceWarnInterval = TimeSpan.FromHours(1);
+        private static readonly ConcurrentDictionary<string, DateTime> _presenceWarnedAt = new();
+
         public UserConfigurationManager(IApplicationPaths appPaths, Logger logger)
         {
             _configBaseDir = Path.Combine(appPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
@@ -104,7 +108,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
             catch (Exception ex)
             {
-                _logger.Warning($"Can't inspect '{fileName}' of user '{userId}': {ex.Message}");
+                var now = DateTime.UtcNow;
+                var key = $"{userId}|{fileName}|{ex.GetType().Name}";
+                if (_presenceWarnedAt.AddOrUpdate(key, now, (_, last) => (now - last) >= PresenceWarnInterval ? now : last) == now)
+                {
+                    _logger.Warning($"Can't inspect '{fileName}' of user '{userId}': {ex.Message}");
+                }
                 return null;
             }
         }
