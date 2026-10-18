@@ -116,11 +116,13 @@ public class ListsImportPrivacyTests
         Rate(h, 1, "PG");
         Rate(h, 2, "R");
         Rate(h, 3, "PG");
+        Rate(h, 4, null); // unrated: unknown fails closed for the kid
         h.Fetcher.Items = new List<SourceItem>
         {
             new("movie", 1, null, null, "One", 2001, null, null, null),
             new("movie", 2, null, null, "Two", 2002, null, null, null),
             new("movie", 3, null, null, "Three", 2003, null, null, null),
+            new("movie", 4, null, null, "Unrated Four", 2004, null, null, null),
             new("movie", null, null, null, "No id", null, null, null, null),
         };
 
@@ -133,11 +135,12 @@ public class ListsImportPrivacyTests
         Assert.Null(forKid.Snapshot); // its digest would tell the full list apart
         var json = JsonSerializer.Serialize(forKid);
         Assert.DoesNotContain("\"Two\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unrated Four", json, StringComparison.Ordinal);
         Assert.DoesNotContain("movie|2||", json, StringComparison.Ordinal);
 
-        Assert.Equal(new[] { 1, 2, 3 }, forAdult.Entries.Select(e => e.Ids!.Tmdb!.Value));
+        Assert.Equal(new[] { 1, 2, 3, 4 }, forAdult.Entries.Select(e => e.Ids!.Tmdb!.Value));
         Assert.Null(forAdult.CountsHidden);
-        Assert.Equal((4, 1), (forAdult.Total, forAdult.Dropped));
+        Assert.Equal((5, 1), (forAdult.Total, forAdult.Dropped));
         Assert.NotNull(forAdult.Snapshot);
     }
 
