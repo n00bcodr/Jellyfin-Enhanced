@@ -616,6 +616,153 @@ public class IntegrationJellyfinUserDispatchTests
         Assert.Equal(bracketed, key != JellyfinUserKey.None);
     }
 
+    // 4a review round 16 (4a-security-r16-1/-2): the listed transfers, implemented in full. A static abstract call runs the
+    // IMPLEMENTING type's static method, so that type's static constructor runs too (round 15 only added the interface's);
+    // and an override 19 levels below the called slot is reached (round 15 cut type graphs at 16 levels, silently).
+    private const string BoundaryProbes = Usings + """
+
+        public static class ColdSetup { public static IUserManager? Users; public static Guid Person; }
+        public interface IColdChanges { static abstract void Touch(); }
+        public sealed class ActualCold : IColdChanges {
+          static ActualCold() { ColdSetup.Users?.UpdatePolicyAsync(ColdSetup.Person, new UserPolicy { IsDisabled = true }); }
+          public static void Touch() { }
+        }
+        public sealed class ExplicitCold : IColdChanges {
+          static ExplicitCold() { ColdSetup.Users?.UpdatePolicyAsync(ColdSetup.Person, new UserPolicy { IsDisabled = true }); }
+          static void IColdChanges.Touch() { }
+        }
+        public static class ColdRunner { public static void Run<T>() where T : IColdChanges => T.Touch(); }
+        public sealed class ColdImplementationController : ControllerBase { [HttpPost] public void Disable() => ColdRunner.Run<ActualCold>(); }
+        public sealed class ColdExplicitController : ControllerBase { [HttpPost] public void Disable() => ColdRunner.Run<ExplicitCold>(); }
+        public class Deep0(IUserManager users) { protected IUserManager Users => users; public virtual Task Touch(Guid userId) => Task.CompletedTask; }
+        public class Deep1(IUserManager users) : Deep0(users) { }
+        public class Deep2(IUserManager users) : Deep1(users) { }
+        public class Deep3(IUserManager users) : Deep2(users) { }
+        public class Deep4(IUserManager users) : Deep3(users) { }
+        public class Deep5(IUserManager users) : Deep4(users) { }
+        public class Deep6(IUserManager users) : Deep5(users) { }
+        public class Deep7(IUserManager users) : Deep6(users) { }
+        public class Deep8(IUserManager users) : Deep7(users) { }
+        public class Deep9(IUserManager users) : Deep8(users) { }
+        public class Deep10(IUserManager users) : Deep9(users) { }
+        public class Deep11(IUserManager users) : Deep10(users) { }
+        public class Deep12(IUserManager users) : Deep11(users) { }
+        public class Deep13(IUserManager users) : Deep12(users) { }
+        public class Deep14(IUserManager users) : Deep13(users) { }
+        public class Deep15(IUserManager users) : Deep14(users) { }
+        public class Deep16(IUserManager users) : Deep15(users) { }
+        public class Deep17(IUserManager users) : Deep16(users) { }
+        public class Deep18(IUserManager users) : Deep17(users) { }
+        public class Deep19(IUserManager users) : Deep18(users) { public override Task Touch(Guid userId) => Users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true }); }
+        public sealed class DeepController(Deep0 changes) : ControllerBase { [HttpPost] public Task Disable(Guid userId) => changes.Touch(userId); }
+        """;
+
+    [Theory]
+    [InlineData("ColdImplementationController", "Disable")]
+    [InlineData("ColdExplicitController", "Disable")]
+    [InlineData("DeepController", "Disable")]
+    public void DispatchedInitializersAndDeepOverridesAreFollowed(string controller, string action)
+    {
+        using var probe = Probe.Build(("BoundaryProbe", BoundaryProbes, Array.Empty<string>()));
+        var found = Find(JellyfinUserActions.Scan(probe.Path("BoundaryProbe")), controller, action);
+        Assert.NotEqual(JellyfinUserKey.None, found.Key);
+        Assert.Equal("IUserManager.UpdatePolicyAsync", found.Reaches);
+    }
+
+    // Run for real: each disables the person once, and the scan brackets it.
+    [Theory]
+    [InlineData("ColdImplementationController", false)]
+    [InlineData("ColdExplicitController", false)]
+    [InlineData("DeepController", true)]
+    public async Task TheBoundaryProbesReallyDisableThePerson(string controller, bool deep)
+    {
+        using var probe = Probe.Build(("BoundaryProbe", BoundaryProbes, Array.Empty<string>()));
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var assembly = probe.Load("BoundaryProbe");
+        var setup = assembly.GetType("ColdSetup")!;
+        setup.GetField("Users")!.SetValue(null, users);
+        setup.GetField("Person")!.SetValue(null, person);
+        var instance = deep
+            ? Activator.CreateInstance(assembly.GetType(controller)!, Activator.CreateInstance(assembly.GetType("Deep19")!, users))!
+            : Activator.CreateInstance(assembly.GetType(controller)!)!;
+        var method = instance.GetType().GetMethod("Disable")!;
+        var result = method.Invoke(instance, method.GetParameters().Length == 1 ? new object[] { person } : null);
+        if (result is Task task) await task;
+        Assert.Equal(1, disabled());
+        Assert.NotEqual(JellyfinUserKey.None, Find(JellyfinUserActions.Scan(probe.Path("BoundaryProbe")), controller, "Disable").Key);
+    }
+
+    // 4a review round 16 (4a-behaviour-r16-2): a module's initializer runs before ANY access to the module, a static field of
+    // a type without a static constructor included (round 15 linked it only from the module's own method bodies). Three
+    // assemblies: the setup, the module with the initializer and a field-only type, and the controllers reading it.
+    private const string ModuleSetupSource = Usings + """
+
+        public static class ModuleSetup { public static IUserManager? Users; public static Guid Person; }
+        """;
+
+    private const string ModuleDataSource = Usings + """
+
+        public static class FieldOnly { public static int Value; }
+        internal static class ModuleStart {
+          [System.Runtime.CompilerServices.ModuleInitializer]
+          internal static void Run() { ModuleSetup.Users?.UpdatePolicyAsync(ModuleSetup.Person, new UserPolicy { IsDisabled = true }); }
+        }
+        """;
+
+    private const string ModuleApiSource = Usings + """
+
+        public sealed class ModuleFieldController : ControllerBase { [HttpPost] public int Disable() => FieldOnly.Value; }
+        public sealed class ModuleTokenController : ControllerBase { [HttpPost] public string Disable() => typeof(FieldOnly).Name; }
+        public sealed class ModuleQuietController : ControllerBase { [HttpPost] public int Note() => 1; }
+        """;
+
+    private static Probe ModuleProbe() => Probe.Build(
+        ("ModuleSetup", ModuleSetupSource, Array.Empty<string>()),
+        ("ModuleData", ModuleDataSource, new[] { "ModuleSetup" }),
+        ("ModuleApi", ModuleApiSource, new[] { "ModuleData" }));
+
+    [Fact]
+    public void AModuleInitializerIsReachedByAnyAccessToItsModule()
+    {
+        using var probe = ModuleProbe();
+        var scanned = JellyfinUserActions.Scan(probe.Path("ModuleApi"));
+        foreach (var controller in new[] { "ModuleFieldController", "ModuleTokenController" })
+        {
+            var found = Find(scanned, controller, "Disable");
+            Assert.NotEqual(JellyfinUserKey.None, found.Key);
+            Assert.Equal("IUserManager.UpdatePolicyAsync", found.Reaches);
+        }
+
+        Assert.Equal(JellyfinUserKey.None, Find(scanned, "ModuleQuietController", "Note").Key);
+    }
+
+    // Run for real: reading the field loads the module and runs its initializer, which disables the person once.
+    [Fact]
+    public void TheModuleFieldProbeReallyDisablesThePerson()
+    {
+        using var probe = ModuleProbe();
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var context = new System.Runtime.Loader.AssemblyLoadContext("module-" + Guid.NewGuid().ToString("N"), isCollectible: true);
+        var loaded = new Dictionary<string, System.Reflection.Assembly>(StringComparer.Ordinal);
+        System.Reflection.Assembly Load(string name)
+        {
+            if (!loaded.TryGetValue(name, out var assembly))
+                loaded[name] = assembly = context.LoadFromStream(new MemoryStream(File.ReadAllBytes(probe.Path(name))));
+            return assembly;
+        }
+
+        context.Resolving += (_, name) => name.Name is "ModuleSetup" or "ModuleData" ? Load(name.Name) : null;
+        var setup = Load("ModuleSetup").GetType("ModuleSetup")!;
+        setup.GetField("Users")!.SetValue(null, users);
+        setup.GetField("Person")!.SetValue(null, person);
+        var instance = Activator.CreateInstance(Load("ModuleApi").GetType("ModuleFieldController")!)!;
+        instance.GetType().GetMethod("Disable")!.Invoke(instance, null);
+        Assert.Equal(1, disabled());
+        Assert.NotEqual(JellyfinUserKey.None, Find(JellyfinUserActions.Scan(probe.Path("ModuleApi")), "ModuleFieldController", "Disable").Key);
+    }
+
     // 4a review round 11 (4a-security-r11-2): a callback the code read can't resolve is judged by what it can do, not by
     // its signature. A Func<Task> handed in by DI carries no user type, yet its closure can hold IUserManager and a user id
     // (the reviewer's probe disables that user). Round 10 counted an unresolved delegate only when its type could carry a

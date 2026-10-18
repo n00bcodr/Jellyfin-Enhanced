@@ -224,7 +224,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         // assembly's actions, classified. Only the actions are kept once read.
         private sealed class CodeSet
         {
-            private const int MaxDepth = 16;
+            // Round 16: only a fail-closed safety bound for chains of delegate fields and callers (anything past it counts as
+            // a possible change); type graphs are walked whole.
+            private const int MaxDepth = 256;
             private static readonly OpCode[] OneByte = new OpCode[0x100];
             private static readonly OpCode[] TwoByte = new OpCode[0x100];
 
@@ -368,6 +370,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 public List<string> Interfaces { get; } = new();
                 public List<int> Methods { get; } = new();
                 public HashSet<string> Events { get; } = new(StringComparer.Ordinal);
+                public int Module { get; init; } = -1;
             }
 
             private sealed class Node
@@ -476,7 +479,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 foreach (var handle in md.TypeDefinitions)
                 {
                     var type = md.GetTypeDefinition(handle);
-                    var info = new TypeInfo { Name = FullName(md, handle), Interface = (type.Attributes & TypeAttributes.Interface) != 0 };
+                    var info = new TypeInfo { Name = FullName(md, handle), Interface = (type.Attributes & TypeAttributes.Interface) != 0, Module = m };
                     info.Base = type.BaseType.IsNil ? null : ParentName(md, type.BaseType);
                     foreach (var implementation in type.GetInterfaceImplementations())
                         if (ParentName(md, md.GetInterfaceImplementation(implementation).Interface) is { } name) info.Interfaces.Add(name);
@@ -575,7 +578,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             _nodes[node].Calls.AddRange(targets);
                             // Round 15: the runtime runs a type's static constructor before the type's first use (a
                             // static call, newobj, a method pointer to it); a use reaches it.
-                            _nodes[node].Calls.AddRange(TypeInitializers(MethodOwner(md, m, handle)).Where(i => i != node));
+                            // Round 16: also each method the call may really run (every implementation and override it
+                            // dispatches to): a static abstract call runs the implementing type's static method.
+                            var owners = new HashSet<string>(StringComparer.Ordinal);
+                            if (MethodOwner(md, m, handle) is { } owner) owners.Add(owner);
+                            foreach (var t in targets)
+                                if (_nodes[t].Type >= 0) owners.Add(_types[_nodes[t].Type].Name);
+                            foreach (var o in owners) _nodes[node].Calls.AddRange(TypeInitializers(o).Concat(ModuleInitializers(o)).Where(i => i != node));
                             if (pointer)
                             {
                                 made.AddRange(targets.Select(t => new Ref(t, null)));
@@ -605,6 +614,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             var handle = MetadataTokens.EntityHandle(il.ReadInt32());
                             if (value == OpCodes.Ldsfld.Value || value == OpCodes.Stsfld.Value || value == OpCodes.Ldsflda.Value)
                                 _nodes[node].Calls.AddRange(TypeInitializers(FieldOwner(md, handle)).Where(i => i != node));
+                            // Round 16: the runtime runs a module's initializer before any access to its types, methods or
+                            // data, a field included.
+                            _nodes[node].Calls.AddRange(ModuleInitializers(FieldOwner(md, handle)).Where(i => i != node));
                             if (DelegateField(md, handle) is not { } field)
                             {
                                 pushed = Pushed.Other;
@@ -646,10 +658,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             il.Offset += 2;
                             break;
                         case OperandType.InlineType:
+                        {
+                            // Round 16: a type token is an access to the type's module (its initializer runs first).
+                            var handle = MetadataTokens.EntityHandle(il.ReadInt32());
+                            _nodes[node].Calls.AddRange(ModuleInitializers(ParentName(md, handle)).Where(i => i != node));
                             // castclass, isinst: the same delegate.
                             if (value != OpCodes.Castclass.Value && value != OpCodes.Isinst.Value) pushed = Pushed.Other;
-                            il.Offset += 4;
                             break;
+                        }
+                        case OperandType.InlineTok:
+                        {
+                            // ldtoken: a type, method or field of a module (its initializer runs first).
+                            var handle = MetadataTokens.EntityHandle(il.ReadInt32());
+                            var owner = handle.Kind switch
+                            {
+                                HandleKind.MethodDefinition or HandleKind.MethodSpecification => MethodOwner(md, m, handle),
+                                HandleKind.FieldDefinition => FieldOwner(md, handle),
+                                HandleKind.MemberReference => ParentName(md, md.GetMemberReference((MemberReferenceHandle)handle).Parent),
+                                _ => ParentName(md, handle),
+                            };
+                            _nodes[node].Calls.AddRange(ModuleInitializers(owner).Where(i => i != node));
+                            pushed = Pushed.Other;
+                            break;
+                        }
                         case OperandType.ShortInlineBrTarget or OperandType.ShortInlineI:
                             pushed = Pushed.Other;
                             il.Offset += 1;
@@ -766,7 +797,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private List<int> Resolve(string type, string name, int count)
             {
                 var name0 = type;
-                for (var depth = 0; depth < MaxDepth && name0 != null && _typesByName.TryGetValue(name0, out var ids); depth++)
+                // Round 16: the whole base chain (finite; the visited set only guards malformed metadata), never a depth cut.
+                var visited = new HashSet<string>(StringComparer.Ordinal);
+                while (name0 != null && visited.Add(name0) && _typesByName.TryGetValue(name0, out var ids))
                 {
                     var found = ids.SelectMany(t => _types[t].Methods).Where(n => _nodes[n].Method == name && _nodes[n].Params == count).ToList();
                     if (found.Count > 0) return found;
@@ -780,7 +813,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             // virtual method of a derived class that is not a new slot, with the same name and parameter count, sealed or
             // not) and an explicit one (a MethodImpl entry naming the slot, whatever the body is called). Every method
             // reached fills its own slot in turn, so an override of an override, an explicit body overridden again and an
-            // explicit entry naming a base's base are followed, up to MaxDepth. An interface member also reaches every
+            // explicit entry naming a base's base are followed (each slot once; the graph is finite). An interface member also reaches every
             // implementation by name (explicit C# implementations included) and one inherited from a base type. An
             // abstract or interface member nothing implements is unresolved.
             private IEnumerable<int> Dispatch(int target)
@@ -816,7 +849,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 while (slots.Count > 0)
                 {
                     var (s, depth) = slots.Dequeue();
-                    if (depth >= MaxDepth) continue;
                     var slot = _nodes[s];
                     if (slot.Type < 0) continue;
                     var slotType = _types[slot.Type];
@@ -866,18 +898,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 return _implementers.TryGetValue(name, out var found) ? found : new List<int>();
             }
 
+            // Round 16: every interface a type implements, through its interfaces' bases and its own base types, each once.
             private IEnumerable<string> AllInterfaces(int t, int depth)
             {
-                if (depth > MaxDepth) yield break;
-                foreach (var i in _types[t].Interfaces)
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                var types = new Queue<int>();
+                var visitedTypes = new HashSet<int> { t };
+                types.Enqueue(t);
+                while (types.Count > 0)
                 {
-                    yield return i;
-                    if (_typesByName.TryGetValue(i, out var ids))
-                        foreach (var inherited in ids.SelectMany(id => AllInterfaces(id, depth + 1))) yield return inherited;
-                }
+                    var current = types.Dequeue();
+                    foreach (var i in _types[current].Interfaces)
+                    {
+                        if (!seen.Add(i)) continue;
+                        yield return i;
+                        if (_typesByName.TryGetValue(i, out var ids))
+                            foreach (var id in ids) if (visitedTypes.Add(id)) types.Enqueue(id);
+                    }
 
-                if (_types[t].Base is { } b && _typesByName.TryGetValue(b, out var bases))
-                    foreach (var inherited in bases.SelectMany(id => AllInterfaces(id, depth + 1))) yield return inherited;
+                    if (_types[current].Base is { } b && _typesByName.TryGetValue(b, out var bases))
+                        foreach (var id in bases) if (visitedTypes.Add(id)) types.Enqueue(id);
+                }
             }
 
             private List<int> Derived(string name)
@@ -888,7 +929,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     for (var t = 0; t < _types.Count; t++)
                     {
                         var b = _types[t].Base;
-                        for (var depth = 0; depth < MaxDepth && b != null; depth++)
+                        // Round 16: every ancestor (finite chain), never a depth cut.
+                        var visited = new HashSet<string>(StringComparer.Ordinal);
+                        while (b != null && visited.Add(b))
                         {
                             if (!_derived.TryGetValue(b, out var list)) _derived[b] = list = new List<int>();
                             list.Add(t);
@@ -976,7 +1019,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             // leaves the code read (no caller).
             private List<Ref>? Callers(int node, int depth, HashSet<int> seen)
             {
-                if (depth > MaxDepth || !seen.Add(node)) return new List<Ref>();
+                // Round 16: a cycle adds nothing; running past the safety bound fails closed (null: treated as handed in).
+                if (!seen.Add(node)) return new List<Ref>();
+                if (depth > MaxDepth) return null;
                 if (!_callSites.TryGetValue(node, out var sites) || sites.Count == 0) return null;
                 var refs = new List<Ref>();
                 foreach (var (caller, count) in sites)
@@ -1105,7 +1150,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 if ((type.Attributes & TypeAttributes.VisibilityMask) != TypeAttributes.Public || (type.Attributes & (TypeAttributes.Abstract | TypeAttributes.Interface)) != 0) return false;
                 if (md.GetString(type.Name).EndsWith("Controller", StringComparison.Ordinal)) return true;
                 var name = type.BaseType.IsNil ? null : ParentName(md, type.BaseType);
-                for (var depth = 0; depth < MaxDepth && name != null; depth++)
+                var visited = new HashSet<string>(StringComparer.Ordinal);
+                while (name != null && visited.Add(name))
                 {
                     if (name is "Microsoft.AspNetCore.Mvc.ControllerBase" or "Microsoft.AspNetCore.Mvc.Controller") return true;
                     name = _typesByName.TryGetValue(name, out var ids) ? _types[ids[0]].Base : null;
@@ -1337,6 +1383,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 foreach (var t in ids)
                     foreach (var n in _types[t].Methods)
                         if (_nodes[n].Method == ".cctor") yield return n;
+            }
+
+            // The initializers of the modules that define a type (the runtime runs one before any access to the module).
+            private IEnumerable<int> ModuleInitializers(string? type)
+            {
+                if (type == null || !_typesByName.TryGetValue(type, out var ids)) yield break;
+                foreach (var id in ids.Select(t => _types[t].Module).Distinct())
+                    if (_moduleInitializers.TryGetValue(id, out var init)) yield return init;
             }
 
             // The type a called method or method pointer belongs to.
