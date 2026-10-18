@@ -23,7 +23,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
     /// <summary>
     /// <see cref="IArrJellyfinView"/> over the real library and user managers. Visibility is always
-    /// Jellyfin's own check (<c>GetItemById(id, user)</c>: library access and parental limits).
+    /// Jellyfin's own item check plus membership in a current virtual library the viewer can access.
     /// </summary>
     public sealed class ArrJellyfinView : IArrJellyfinView, IDisposable
     {
@@ -75,6 +75,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             fingerprint.Append('|');
             foreach (var f in blockedFolders.OrderBy(f => f)) fingerprint.Append(f.ToString("N", CultureInfo.InvariantCulture)).Append(',');
             fingerprint.Append('|').Append(user.DisplayMissingEpisodes ? 'M' : '-');
+            // Removed/moved libraries may never emit ItemRemoved when Jellyfin cancels cleanup. Their current
+            // topology is also part of the viewer's scope, so a cached Ready/4K body cannot outlive that scope.
+            foreach (var folder in (_libraryManager.GetVirtualFolders() ?? new List<VirtualFolderInfo>()).OrderBy(f => f.ItemId, StringComparer.Ordinal).ThenBy(f => f.Name, StringComparer.Ordinal))
+            {
+                fingerprint.Append('|').Append(folder.ItemId).Append(':').Append(folder.Name).Append(folder.LibraryOptions?.Enabled == false ? '-' : '+');
+                foreach (var path in (folder.Locations ?? Array.Empty<string>()).OrderBy(p => p, StringComparer.Ordinal)) fingerprint.Append(':').Append(path);
+            }
 
             return new StatusViewer
             {
@@ -103,14 +110,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <inheritdoc />
         public JfItemRef? Resolve(Guid itemId, StatusViewer viewer)
         {
-            if (viewer.Handle is not User user) return null;
-            var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
+            if (viewer.Handle is not User) return null;
+            var libraries = LiveLibraries(viewer);
+            var item = Openable(itemId, viewer, libraries);
             switch (item)
             {
                 case Movie movie:
                 {
                     // The library lets an instance with linked libraries match this item on the batch route too.
-                    var library = _libraryManager.GetCollectionFolders(movie).FirstOrDefault();
+                    var library = _libraryManager.GetCollectionFolders(movie).FirstOrDefault(f => libraries.TryGetValue(f.Id, out var allowed) && allowed);
                     return new JfItemRef
                     {
                         ItemId = movie.Id,
@@ -200,14 +208,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     if (items.Count < 20 && found.Add(item.Id)) items.Add(item);
                 }
             }
+            var libraries = LiveLibraries(viewer);
             var copies = new List<JfCopy>(items.Count);
             foreach (var item in items)
             {
-                var library = _libraryManager.GetCollectionFolders(item).FirstOrDefault();
+                var folders = _libraryManager.GetCollectionFolders(item).Where(f => libraries.ContainsKey(f.Id)).ToList();
+                if (folders.Count == 0) continue;
+                // Re-added/moved libraries can leave an old collection row ahead of the current one.
+                // Keep inaccessible LIVE copies as invisible policy facts, never orphaned rows.
+                var library = folders.FirstOrDefault(f => libraries[f.Id]) ?? folders[0];
                 copies.Add(new JfCopy
                 {
                     ItemId = item.Id,
-                    Visible = user == null || _libraryManager.GetItemById<BaseItem>(item.Id, user) != null,
+                    Visible = libraries[library.Id] && (user == null || _libraryManager.GetItemById<BaseItem>(item.Id, user) != null),
                     LibraryId = library?.Id.ToString("N", CultureInfo.InvariantCulture),
                     LibraryName = library?.Name,
                     Path = item.Path,
@@ -221,7 +234,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public IReadOnlyList<JfEpisode> Episodes(Guid seriesItemId, int? season, StatusViewer viewer, bool includeVirtual)
         {
             if (viewer.Handle is not User user) return Array.Empty<JfEpisode>();
-            if (_libraryManager.GetItemById<BaseItem>(seriesItemId, user) is not Series series) return Array.Empty<JfEpisode>();
+            if (Openable(seriesItemId, viewer, LiveLibraries(viewer)) is not Series series) return Array.Empty<JfEpisode>();
             var options = new DtoOptions(false);
             IEnumerable<BaseItem> items;
             if (season.HasValue)
@@ -325,7 +338,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public IReadOnlyList<JfSeason> Seasons(Guid seriesItemId, StatusViewer viewer)
         {
             if (viewer.Handle is not User user) return Array.Empty<JfSeason>();
-            if (_libraryManager.GetItemById<BaseItem>(seriesItemId, user) is not Series series) return Array.Empty<JfSeason>();
+            if (Openable(seriesItemId, viewer, LiveLibraries(viewer)) is not Series series) return Array.Empty<JfSeason>();
             var list = series.GetSeasons(user, new DtoOptions(false)).OfType<Season>()
                 .Where(s => s.IndexNumber.HasValue)
                 .Select(s => new JfSeason { ItemId = s.Id, Season = s.IndexNumber!.Value })
@@ -338,7 +351,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public IReadOnlyList<Guid> SeriesParts(Guid seriesItemId, int season, int? episode, StatusViewer viewer)
         {
             if (viewer.Handle is not User user) return Array.Empty<Guid>();
-            if (_libraryManager.GetItemById<BaseItem>(seriesItemId, user) is not Series series) return Array.Empty<Guid>();
+            if (Openable(seriesItemId, viewer, LiveLibraries(viewer)) is not Series series) return Array.Empty<Guid>();
             // The series item's own folders (its ancestry), not its presentation key: with automatic series
             // grouping, Series.GetSeasons and GetEpisodes also list the other folders' items. No user on the
             // query: the caller resolves each id as the viewer.
@@ -391,17 +404,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <inheritdoc />
         public IReadOnlyList<JfSource> Sources(Guid itemId, StatusViewer viewer, bool readDimensions = true)
-            => Openable(itemId, viewer) is Video video and (Movie or Episode) ? (readDimensions ? SourcesOf(video, viewer) : ItsOwnSource(video)) : Array.Empty<JfSource>();
+        {
+            var libraries = LiveLibraries(viewer);
+            return Openable(itemId, viewer, libraries) is Video video and (Movie or Episode)
+                ? (readDimensions ? SourcesOf(video, viewer, libraries) : ItsOwnSource(video)) : Array.Empty<JfSource>();
+        }
 
-        /// <summary>The item when the viewer can open it (Jellyfin's own check), or any item for the library context.</summary>
-        private BaseItem? Openable(Guid itemId, StatusViewer viewer)
-            => viewer.IsLibraryContext ? _libraryManager.GetItemById(itemId)
+        /// <summary>
+        /// Current virtual-library ids and their native root access, read once per lookup pass. Database ancestry
+        /// alone is insufficient: cancelled Jellyfin cleanup can retain removed collection folders and media, and
+        /// standalone item visibility accepts an item when it can no longer find any collection folder.
+        /// </summary>
+        private Dictionary<Guid, bool> LiveLibraries(StatusViewer viewer)
+        {
+            var libraries = new Dictionary<Guid, bool>();
+            if (!viewer.IsLibraryContext && viewer.Handle is not User) return libraries;
+            foreach (var folder in _libraryManager.GetVirtualFolders())
+            {
+                if (folder.LibraryOptions?.Enabled == false || !Guid.TryParse(folder.ItemId, out var id) || id == Guid.Empty || libraries.ContainsKey(id)) continue;
+                libraries[id] = viewer.IsLibraryContext || (viewer.Handle is User user && _libraryManager.GetItemById<BaseItem>(id, user) is Folder);
+            }
+            return libraries;
+        }
+
+        /// <summary>The item only when both its current library and Jellyfin's item-level rules allow it.</summary>
+        private BaseItem? Openable(Guid itemId, StatusViewer viewer, IReadOnlyDictionary<Guid, bool> libraries)
+        {
+            var item = viewer.IsLibraryContext ? _libraryManager.GetItemById(itemId)
                 : viewer.Handle is User user ? _libraryManager.GetItemById<BaseItem>(itemId, user) : null;
+            return item != null && _libraryManager.GetCollectionFolders(item).Any(f => libraries.TryGetValue(f.Id, out var allowed) && allowed) ? item : null;
+        }
 
         /// <inheritdoc />
         public IReadOnlyList<JfEpisodeSources> EpisodeSources(Guid seriesItemId, int? season, StatusViewer viewer, bool readDimensions = true)
         {
-            if (Openable(seriesItemId, viewer) is not Series series) return Array.Empty<JfEpisodeSources>();
+            var libraries = LiveLibraries(viewer);
+            if (Openable(seriesItemId, viewer, libraries) is not Series series) return Array.Empty<JfEpisodeSources>();
             // The series item's own folders (its ancestry), not its presentation key: another grouped folder's
             // episodes are that series item's, judged when it is a copy of its own.
             var items = _libraryManager.GetItemList(new InternalItemsQuery
@@ -416,8 +454,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var list = new List<JfEpisodeSources>();
             foreach (var e in items.OfType<Episode>())
             {
-                if (!OwnPlayableEpisode(e, series.Id, season) || Openable(e.Id, viewer) == null) continue;
-                var sources = readDimensions ? SourcesOf(e, viewer) : ItsOwnSource(e);
+                if (!OwnPlayableEpisode(e, series.Id, season) || Openable(e.Id, viewer, libraries) == null) continue;
+                var sources = readDimensions ? SourcesOf(e, viewer, libraries) : ItsOwnSource(e);
                 list.Add(new JfEpisodeSources { ItemId = e.Id, Season = e.ParentIndexNumber!.Value, Episode = e.IndexNumber!.Value, EpisodeEnd = e.IndexNumberEnd, Sources = sources });
             }
             return list;
@@ -434,8 +472,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <inheritdoc />
         public IReadOnlyList<Guid> GroupedSeries(Guid seriesItemId, StatusViewer viewer)
         {
-            if (viewer.Handle is not User user) return Array.Empty<Guid>();
-            if (_libraryManager.GetItemById<BaseItem>(seriesItemId, user) is not Series series) return Array.Empty<Guid>();
+            if (viewer.Handle is not User) return Array.Empty<Guid>();
+            var libraries = LiveLibraries(viewer);
+            if (Openable(seriesItemId, viewer, libraries) is not Series series) return Array.Empty<Guid>();
             var key = series.PresentationUniqueKey;
             if (string.IsNullOrEmpty(key)) return Array.Empty<Guid>();
             return _libraryManager.GetItemList(new InternalItemsQuery
@@ -444,7 +483,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 PresentationUniqueKey = key,
                 Recursive = true,
                 DtoOptions = new DtoOptions(false),
-            }).Where(i => !i.Id.Equals(series.Id) && _libraryManager.GetItemById<BaseItem>(i.Id, user) is Series).Select(i => i.Id).ToList();
+            }).Where(i => !i.Id.Equals(series.Id) && Openable(i.Id, viewer, libraries) is Series).Select(i => i.Id).ToList();
         }
 
         /// <summary>
@@ -461,9 +500,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// The playable sources of a movie or episode as Jellyfin plays them (its media sources, every version
         /// included), each with its video stream's dimensions. None for a missing (virtual) item or a placeholder.
         /// A version played by another item counts only when the viewer can open that item (Jellyfin's own check:
-        /// library access and parental limits); the library context opens every one.
+        /// library access and parental limits); the library context opens every one in a current library.
         /// </summary>
-        private List<JfSource> SourcesOf(Video video, StatusViewer viewer)
+        private List<JfSource> SourcesOf(Video video, StatusViewer viewer, IReadOnlyDictionary<Guid, bool> libraries)
         {
             var list = new List<JfSource>();
             if (!Playable(video)) return list;
@@ -478,7 +517,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 // their limit).
                 var version = id.Equals(video.Id) || string.Equals(source.Path, video.Path, StringComparison.Ordinal) ? video
                     : _libraryManager.GetItemById(id) as Video ?? _libraryManager.FindByPath(source.Path, false) as Video;
-                if (version == null || (!ReferenceEquals(version, video) && Openable(version.Id, viewer) is not Video)) continue;
+                if (version == null || (!ReferenceEquals(version, video) && Openable(version.Id, viewer, libraries) is not Video)) continue;
                 list.Add(new JfSource
                 {
                     SourceId = id,

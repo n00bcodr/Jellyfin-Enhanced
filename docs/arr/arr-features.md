@@ -551,7 +551,9 @@ again for you as you are now (if you were removed or keep changing, the Requests
       for Season 3 of a show you already have waits for Season 3, and a 4K request for the 4K copy. A 4K request has
       arrived only once a copy you can open has a playable 4K version (each version of an item counts on its own, in
       any library and in any folder of a grouped series, every requested episode by its own files, and only a version
-      whose own item you can open: one in a library you can't open, or above your parental limit, isn't yours); a 4K
+      whose own item you can open: one in a library you can't open, or above your parental limit, isn't yours).
+      Copies in removed or disabled libraries never count, even when Jellyfin keeps their database rows after an
+      interrupted scan. This also applies to Get 4K, poster badges and library-wide edition lookups; a 4K
       Sonarr/Radarr holding the title, sharing its folder or library with the standard copy, or Seerr saying it is
       available is never enough on its own. A 4K request for a whole series with no 4K seasons to follow (no 4K Sonarr,
       or one that monitors none) has arrived once a copy you can open has 4K episodes, when the newest of them arrived

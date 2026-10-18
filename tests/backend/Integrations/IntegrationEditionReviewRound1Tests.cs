@@ -78,13 +78,15 @@ public class IntegrationEditionReviewRound1Tests
             Hd.Versions.Add(Version(Hd.Id, Hd.Path, 1920, 1080));
             Hd.Versions.Add(Version(Uhd.Id, Uhd.Path, 3840, 2160));
             Uhd.Versions.Add(Version(Uhd.Id, Uhd.Path, 3840, 2160));
-            BaseItem? ById(Guid id) => id == Hd.Id ? Hd : id == Uhd.Id ? Uhd : null;
+            var root = new CollectionFolder { Id = Guid.NewGuid(), Name = "Movies" };
+            BaseItem? ById(Guid id) => id == Hd.Id ? Hd : id == Uhd.Id ? Uhd : id == root.Id ? root : null;
+            Manager.Setup(l => l.GetVirtualFolders()).Returns(new List<VirtualFolderInfo> { new() { ItemId = root.Id.ToString("N") } });
             Manager.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => q.IncludeItemTypes.Contains(BaseItemKind.Movie) ? new List<BaseItem> { Hd } : new List<BaseItem>());
-            Manager.Setup(l => l.GetCollectionFolders(It.IsAny<BaseItem>())).Returns(new List<Folder>());
+            Manager.Setup(l => l.GetCollectionFolders(It.IsAny<BaseItem>())).Returns(new List<Folder> { root });
             Manager.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => ById(id));
             Manager.Setup(l => l.FindByPath(It.IsAny<string>(), It.IsAny<bool?>())).Returns((string path, bool? _) => path == Uhd.Path ? Uhd : path == Hd.Path ? Hd : null);
             Manager.Setup(l => l.GetItemById<BaseItem>(It.IsAny<Guid>(), It.IsAny<User?>()))
-                .Returns((Guid id, User? user) => user != null && Opens.TryGetValue(user.Id, out var open) && open.Contains(id) ? ById(id) : null);
+                .Returns((Guid id, User? user) => user != null && Opens.TryGetValue(user.Id, out var open) && (id == root.Id || open.Contains(id)) ? ById(id) : null);
             Users.Setup(u => u.GetUserById(It.IsAny<Guid>())).Returns((Guid id) => People.GetValueOrDefault(id));
             View = new ArrJellyfinView(Manager.Object, Users.Object);
             // Jellyfin's items read their versions through the static library manager.
