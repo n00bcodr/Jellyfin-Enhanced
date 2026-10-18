@@ -431,8 +431,10 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   `JellyfinUserActions.cs` which actions those are, deny by default: every non-GET action of Jellyfin's user, Quick
   Connect and start-up controllers, and every action whose code reaches a user change or a sign-in, followed across the
   Jellyfin server assemblies next to it (metadata only, read once: interface and virtual calls to their implementations,
-  delegate fields and events to what is stored in them; a non-GET action reaching a call that can't be followed and whose
-  contract carries a user is bracketed for everyone; `PersonScoped` lists reviewed changes to the request's own person)
+  sealed overrides included, delegate fields and events to what is stored in them; a non-GET action reaching a call that
+  can't be followed and whose contract carries a user is bracketed for everyone, one reaching a callback that can't be
+  followed, whatever its type, for the request's person; `PersonScoped` lists reviewed changes to the request's own
+  person; its known limits are in `docs/arr/arr-features.md`)
   (`tests/backend/Integrations/IntegrationJellyfinApiUserActionTests.cs` runs the filter over Jellyfin's own
   `Jellyfin.Api.dll` and server assemblies, which `tests/backend/jellyfin_api.py` copies out of the pinned images),
   `AutomationTransportHandler.cs` the guarantee behind it: the HTTP handler on the arr, Seerr

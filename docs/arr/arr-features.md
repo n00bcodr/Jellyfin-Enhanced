@@ -1372,8 +1372,11 @@ either is off, the automatic requests above behave exactly as described there. W
   deleted, or can no longer see the title (or, for a request they edited, is no longer an administrator), nothing is
   sent; the request goes back to waiting for an OK. The person it is for is checked the same way (still an enabled
   user who may ask and sees the title). A migrated Manager's eligibility grant counts only while they are a Manager.
-  Jellyfin's actions are followed into Jellyfin's own server code (an interface to its implementation, a stored
-  callback to what was stored), so a change made several calls deep, such as a session's activity save, counts too. It also counts the
+  Jellyfin's actions are followed into Jellyfin's own server code (an interface to its implementation, an override to
+  every class that replaces it, sealed ones included, a stored callback to what was stored), so a change made several
+  calls deep, such as a session's activity save, counts too. A callback Jellyfin's code hands control to without
+  showing what it runs (an event another plugin can listen to) counts as a possible change for the person the action
+  is for (its user, else whoever is signed in; everyone when nobody is). It also counts the
   budgets again with their limits as they are at that moment (the write's own place counted once): a limit lowered to
   0 while a request was on its way stops it, and the place it had taken is given back. A request held by a full
   budget waits until every full window has room again (when the hourly and the daily window are both full, until the
@@ -1382,6 +1385,29 @@ either is off, the automatic requests above behave exactly as described there. W
   On the recording side, a recipe compares every setting its request depends on (including *Free automatic requests*, eligibility and
   the instance it would go to) right before it records the request or a *Shadow* decision, and starts over if any
   changed, so a request is never recorded under settings that no longer apply.
+
+#### Known limits of the user-change check
+
+Jellyfin Enhanced finds the actions that can change or sign in a user by reading Jellyfin's code when the server starts
+(the code is read, not run). What that guarantees:
+
+- Every action of Jellyfin's own server code that reaches a user change or a sign-in, by direct calls, interfaces,
+  overrides (sealed ones included), stored callbacks or events Jellyfin's own code subscribes to, runs inside the check's
+  bracket. For each supported Jellyfin release (12.2 and 10.11.11) the full list is pinned in the tests, and a test
+  runner checks the newest Jellyfin image the same way, so a Jellyfin update that adds or changes such an action fails
+  the tests until it has been reviewed.
+- An action that hands control to code the reading can't see (an event another plugin listens to, a callback passed in
+  from outside) is bracketed for the person it is for: on 12.2 and 10.11.11, 88 and 89 actions, among them starting
+  playback, favourites, ratings and watched-state saves. Bracketing them for everyone would hold every automatic check
+  in the household whenever anyone did one of those.
+
+What reading the code can't see: code found by reflection or created while the server runs, a service looked up by name
+at run time, and code outside Jellyfin's server (another plugin's own code, another process). A user change made there
+through Jellyfin's user manager, or made by a plugin's callback to someone other than the person the action is for, is
+covered afterwards: Jellyfin announces every user update, deletion and lockout it makes, and Jellyfin Enhanced moves
+that person's version when it does, so the next check reads the change. A check already deciding in the moment between
+the change being saved and Jellyfin's announcement can still use what it read before. A change written straight into
+Jellyfin's database, bypassing Jellyfin, isn't covered.
 
 What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic

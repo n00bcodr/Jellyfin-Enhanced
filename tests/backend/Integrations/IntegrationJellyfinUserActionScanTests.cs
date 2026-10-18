@@ -32,7 +32,8 @@ namespace JE.Tests
             var scanned = JellyfinUserActions.Scan(api.Path);
             var bracketed = scanned.Where(a => a.Key != JellyfinUserKey.None).ToList();
             Assert.NotEmpty(bracketed);
-            var problems = bracketed.Where(a => a.Reaches == null && !ControllerOnly.Contains(a.Controller + "." + a.Action)).Select(a => a.Controller + "." + a.Action + ": bracketed (" + a.Why + ") but its code reaches no user change").ToList();
+            var problems = bracketed.Where(a => a.Reaches == null && !ControllerOnly.Contains(a.Controller + "." + a.Action) && a.Why?.StartsWith("unresolved callback ", StringComparison.Ordinal) != true)
+                .Select(a => a.Controller + "." + a.Action + ": bracketed (" + a.Why + ") but its code reaches no user change").ToList();
             // The password change reaches the sign-in that can lock the account out, and the policy change its update.
             Assert.Contains(scanned, a => a is { Controller: "UserController", Action: "UpdateUserPassword", Reaches: "IUserManager.ResetPassword" or "IUserManager.AuthenticateUser" or "IUserManager.ChangePassword" });
             Assert.Contains(scanned, a => a is { Controller: "UserController", Action: "AuthenticateUserByName", Reaches: "ISessionManager.AuthenticateNewSession" });
@@ -40,7 +41,12 @@ namespace JE.Tests
             // that log the request's person's session activity (a reviewed person-scoped save).
             problems.AddRange(scanned.Where(a => a.Reaches != null && a.Verbs.All(v => v is "GET" or "HEAD") && a.Action != "GetFirstUser" && !JellyfinUserActions.PersonScoped.ContainsKey(a.Reaches)).Select(a => a.Controller + "." + a.Action + ": a GET that reaches " + a.Reaches));
             // Round 10: nothing stays unresolved with a user contract in Jellyfin's own code (each would bracket a write for everyone).
-            problems.AddRange(scanned.Where(a => a.Why?.StartsWith("unresolved ", StringComparison.Ordinal) == true).Select(a => a.Controller + "." + a.Action + ": " + a.Why));
+            problems.AddRange(scanned.Where(a => a.Why?.StartsWith("unresolved ", StringComparison.Ordinal) == true && !a.Why.StartsWith("unresolved callback ", StringComparison.Ordinal)).Select(a => a.Controller + "." + a.Action + ": " + a.Why));
+            // Round 11: an unresolved callback (a plugin's event handler) brackets a write for the request's person, never a
+            // GET, never everyone (IntegrationJellyfinApiUserActionTests holds the list).
+            problems.AddRange(scanned.Where(a => a.Why?.StartsWith("unresolved callback ", StringComparison.Ordinal) == true && (a.Key != JellyfinUserKey.User || a.Verbs.All(v => v is "GET" or "HEAD")))
+                .Select(a => a.Controller + "." + a.Action + ": an unresolved callback bracketed " + a.Key));
+            Assert.Contains(scanned, a => a is { Controller: "MediaInfoController", Action: "GetPostedPlaybackInfo", Key: JellyfinUserKey.User });
             if (problems.Count > 0) throw new Xunit.Sdk.XunitException(string.Join("\n", problems));
         }
 
@@ -63,12 +69,17 @@ namespace JE.Tests
 
         // Round 10: a reviewed person-scoped member (JellyfinUserActions.PersonScoped) is held to what it was reviewed for:
         // in Jellyfin's own code, GetSession's calls reach only LogSessionActivity's save of that user (its activity date
-        // moved, then the user saved whole). Anything more (another change, a sign-in, an unresolved call) fails here.
+        // moved, then the user saved whole). Anything more (another change, a sign-in, an unresolved call other than a callback,
+        // which brackets the same person) fails here.
         [Fact]
         public void APersonScopedMemberReachesOnlyTheReviewedChange()
         {
             using var api = JellyfinApiAssembly.Load();
-            Assert.Equal(new[] { "IUserManager.UpdateUserAsync", "User.set_LastActivityDate" }, JellyfinUserActions.ReachedFrom(api.Path, "RequestHelpers.GetSession"));
+            var reached = JellyfinUserActions.ReachedFrom(api.Path, "RequestHelpers.GetSession");
+            Assert.Equal(new[] { "IUserManager.UpdateUserAsync", "User.set_LastActivityDate" }, reached.Where(r => !r.StartsWith("callback ", StringComparison.Ordinal)));
+            // Round 11: the plugin event handlers its session code can raise (unresolved callbacks) bracket that same person,
+            // as the review does; nothing else.
+            Assert.All(reached.Where(r => r.StartsWith("callback ", StringComparison.Ordinal)), r => Assert.StartsWith("callback delegate ", r, StringComparison.Ordinal));
             Assert.Equal(new[] { "RequestHelpers.GetSession" }, JellyfinUserActions.PersonScoped.Keys);
         }
 

@@ -48,15 +48,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// assemblies (round 10): a call through an interface or a virtual method goes to every implementation or override
     /// those assemblies have, a delegate field to what its stores (a constructor's, an initializer's) put in it, an event
     /// to the handlers subscribed to it;</description></item>
-    /// <item><description>it isn't a GET and its code reaches a call that can't be followed (an interface nothing read implements,
-    /// a delegate stored from outside the code read): it is bracketed for everyone (a GET isn't: it would hold automation
-    /// on every page view);</description></item>
+    /// <item><description>it isn't a GET and its code reaches a call that can't be followed whose contract can carry a user (an
+    /// interface nothing read implements): it is bracketed for everyone (a GET isn't: it would hold automation on every
+    /// page view);</description></item>
+    /// <item><description>it isn't a GET and its code reaches a callback that can't be followed (round 11: a delegate nothing in the
+    /// code read stores or that is handed in from outside it, or an unresolved member handing one back), whatever its
+    /// type: it is bracketed for the request's person (its userId argument, else the signed-in person), everyone's when
+    /// there is none. Not for everyone: on 12.2 and 10.11.11 that would hold every automatic check during playback
+    /// starts, favourites, ratings and user-data saves (Q-4AF11-1);</description></item>
     /// <item><description>or it is on the <see cref="Reviewed"/> list.</description></item>
     /// </list>
     /// The code read is the controller's assembly, with the Jellyfin server assemblies (Jellyfin.*, MediaBrowser.*, Emby.*)
     /// of its folder when that is Jellyfin's, else every assembly of its folder and Jellyfin's. It is read once (in the
     /// background for Jellyfin.Api), then each action is a dictionary lookup. An assembly that can't be read brackets every
     /// one of its actions that isn't GET, globally. JE's own actions are left to the brackets inside them.
+    /// <para>
+    /// Known limits (docs/arr/arr-features.md, "Known limits"): this is static analysis of the metadata. It can't see
+    /// reflection, dynamic code (code generated at run time, a service resolved by name from a service locator) or code
+    /// outside the assemblies read (another plugin's, another process); a change made there is covered by Jellyfin's
+    /// user events after it commits (JellyfinUserChangeVersion).
+    /// </para>
     /// </summary>
     public static class JellyfinUserActions
     {
@@ -173,15 +184,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
         /// <summary>
         /// The calls the code read with the assembly at <paramref name="path"/> can't follow and doesn't count, because their
-        /// contract carries no user (code outside it that is handed none): recorded for review (tests and diagnostics).
+        /// contract carries no user and hands back no code to run (code outside it that is handed none): recorded for review
+        /// (tests and diagnostics). Unresolved delegates always count (round 11).
         /// </summary>
         /// <param name="path">The controller assembly.</param>
         public static IReadOnlyList<string> Uncounted(string path) => CodeSet.Read(path).Contained;
 
         /// <summary>
         /// Everything the code of <paramref name="member"/> ("Type.Member", the declaring type's simple name) reaches in the
-        /// code read with the assembly at <paramref name="path"/>: the user changes, reviewed person changes and counted
-        /// unresolved calls (tests: a reviewed member is held to what it was reviewed for).
+        /// code read with the assembly at <paramref name="path"/>: the user changes, reviewed person changes, counted
+        /// unresolved calls and ("callback …") unresolved callbacks (tests: a reviewed member is held to what it was reviewed for).
         /// </summary>
         /// <param name="path">The controller assembly.</param>
         /// <param name="member">The member.</param>
@@ -251,7 +263,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     var n = queue.Dequeue();
                     if (!seen.Add(n)) continue;
                     var node = _nodes[n];
-                    if (node.Type < 0 && (node.Reaches ?? node.PersonReaches ?? node.Unresolved) is { } what) reached.Add(what);
+                    if (node.Type < 0 && (node.Reaches ?? node.PersonReaches ?? node.Unresolved ?? (node.Callback is { } callback ? "callback " + callback : null)) is { } what) reached.Add(what);
                     foreach (var callee in node.Calls) queue.Enqueue(callee);
                 }
 
@@ -289,7 +301,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             {
                 var why = WhyFor(action, controller);
                 if (why == null) return JellyfinUserKey.None;
-                // A call nothing could follow: the person it touches isn't known.
+                // A callback nothing could follow (round 11): the request's person, everyone's when there is none (the
+                // bracket's own fallback). Any other call nothing could follow: the person it touches isn't known.
+                if (why.StartsWith("unresolved callback ", StringComparison.Ordinal)) return JellyfinUserKey.User;
                 if (why.StartsWith("unresolved ", StringComparison.Ordinal)) return JellyfinUserKey.Global;
                 return action.Key == JellyfinUserKey.User ? JellyfinUserKey.User : JellyfinUserKey.Global;
             }
@@ -369,9 +383,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 public string? Reaches { get; set; }
                 public string? PersonReaches { get; set; }
                 public string? Unresolved { get; set; }
+                public string? Callback { get; set; }
                 public int Via { get; set; } = -1;
                 public int PersonVia { get; set; } = -1;
                 public int UnresolvedVia { get; set; } = -1;
+                public int CallbackVia { get; set; } = -1;
             }
 
             // A value a delegate can come from: a method (a node) or another delegate field.
@@ -472,7 +488,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             Type = id,
                             Module = m,
                             Token = MetadataTokens.GetToken(methodHandle),
-                            Virtual = (method.Attributes & MethodAttributes.Virtual) != 0 && (method.Attributes & MethodAttributes.Final) == 0,
+                            // Round 11: virtual whether or not it is final. A sealed override is a virtual method marked
+                            // final: it can't be overridden again, but it fills its base's slot, so a call through that slot
+                            // reaches it.
+                            Virtual = (method.Attributes & MethodAttributes.Virtual) != 0,
                             Abstract = (method.Attributes & MethodAttributes.Abstract) != 0,
                             NewSlot = (method.Attributes & MethodAttributes.NewSlot) != 0,
                         };
@@ -658,7 +677,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         var count = ParamCount(md, member.Signature);
                         var found = Resolve(parent, called, count);
                         if (found.Count == 0 && !Mutates(parent, called) && !ReviewedRead(parent, called))
-                            return JellyfinType(parent) ? new List<int> { Unresolved(Simple(parent) + "." + called + " (not in the code read)", UserContract(MethodTypes(md, member.DecodeMethodSignature(Names.Instance, null)), null)) } : found;
+                        {
+                            if (!JellyfinType(parent)) return found;
+                            var signature = member.DecodeMethodSignature(Names.Instance, null);
+                            var contract = UserContract(MethodTypes(md, signature), null);
+                            return new List<int> { Unresolved(Simple(parent) + "." + called + " (not in the code read)", contract || HandsBackCallback(signature), callback: !contract) };
+                        }
+
                         return Follow(parent, called, count, found, virtualCall);
                     }
                     default:
@@ -697,7 +722,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             }
 
             // Where a virtual call of target can go: every implementation of an interface method, every override of a
-            // virtual one (in the code read). An abstract or interface member nothing implements is unresolved.
+            // virtual one (in the code read), sealed overrides included. An abstract or interface member nothing implements
+            // is unresolved.
             private IEnumerable<int> Dispatch(int target)
             {
                 var node = _nodes[target];
@@ -727,7 +753,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                                 yield return n;
                             }
 
-                if (found == 0 && (node.Abstract || type.Interface)) yield return Unresolved(node.Name + " (nothing read implements it)", UserContract(node));
+                if (found == 0 && (node.Abstract || type.Interface))
+                {
+                    var contract = UserContract(node);
+                    yield return Unresolved(node.Name + " (nothing read implements it)", contract || HandsBackCallback(node), callback: !contract);
+                }
             }
 
             private List<int> Implementers(string name)
@@ -792,11 +822,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 return _nodes.Count - 1;
             }
 
-            // A call that can't be followed. It counts (its callers are unresolved) when its contract can carry a user: a
-            // parameter, result or delegate type that is a user, a user id, or the user, session or sign-in services (see
-            // UserContract). One whose contract can't (a provider's name, a media item's delete, a configuration or timer
-            // event) runs code outside the code read that is handed no user: it is recorded for review, and not followed.
-            private int Unresolved(string what, bool couldReach = true)
+            // A call that can't be followed. A delegate whose target stays unresolved always counts (round 11: what a
+            // callback does isn't in its type). Any other call counts (its callers are unresolved) when its contract can
+            // carry a user: a parameter or result type that is a user, a user id, or the user, session or sign-in services
+            // (see UserContract), or when it hands back a delegate (a callback the code read can't see into). One whose
+            // contract can't (a provider's name, a media item's delete) runs code outside the code read that is handed no
+            // user and gives back no code to run: it is recorded for review, and not followed. A callback (callback: a
+            // delegate, or what hands one back, with no user in its contract) touches someone the code read can't name:
+            // its action is bracketed for the request's person, everyone's only when there is none (Q-4AF11-1); a call
+            // whose contract carries a user, for everyone.
+            private int Unresolved(string what, bool couldReach = true, bool callback = false)
             {
                 if (!couldReach)
                 {
@@ -812,7 +847,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
                 if (_unresolved.TryGetValue(what, out var node)) return node;
                 _unresolved[what] = _nodes.Count;
-                _nodes.Add(new Node { Name = what, Unresolved = what });
+                _nodes.Add(callback ? new Node { Name = what, Callback = what } : new Node { Name = what, Unresolved = what });
                 return _nodes.Count - 1;
             }
 
@@ -834,12 +869,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 var (owner, name) = (field.Split("::")[0], field.Split("::")[1]);
                 _nodes.Add(new Node { Name = "delegate " + Simple(owner) + "." + name });
                 var sources = _stores.GetValueOrDefault(field);
-                var contract = UserContract(new[] { _fieldTypes.GetValueOrDefault(field, string.Empty) }, null);
-                if (sources == null || sources.Count == 0) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (nothing in the code read stores it)", contract));
+                // Round 11: a delegate whose target stays unresolved counts whatever its type (Q-4AF11-1): a Func<Task> carries
+                // no user, but the closure behind it can hold the user manager and a user id. One whose type can carry a
+                // user stays a call for everyone (round 10).
+                var callback = !UserContract(new[] { _fieldTypes.GetValueOrDefault(field, string.Empty) }, null);
+                if (sources == null || sources.Count == 0) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (nothing in the code read stores it)", callback: callback));
                 foreach (var source in sources ?? new List<Source>())
                 {
                     var refs = source.Parameter ? Callers(source.Node, depth, new HashSet<int>()) : source.Made;
-                    if (refs == null) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (handed in from outside the code read)", contract));
+                    if (refs == null) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (handed in from outside the code read)", callback: callback));
                     foreach (var r in refs ?? new List<Ref>())
                         _nodes[id].Calls.Add(r.Field is { } f ? (depth > MaxDepth ? Unresolved(_nodes[id].Name + " (too deep)") : FieldNode(f, depth + 1)) : r.Node);
                 }
@@ -909,17 +947,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         queue.Enqueue(caller);
                     }
                 }
+
+                queue = new Queue<int>(Enumerable.Range(0, _nodes.Count).Where(n => _nodes[n].Callback != null));
+                while (queue.Count > 0)
+                {
+                    var n = queue.Dequeue();
+                    foreach (var caller in callers[n] ?? Enumerable.Empty<int>())
+                    {
+                        if (_nodes[caller].Callback != null) continue;
+                        _nodes[caller].Callback = _nodes[n].Callback;
+                        _nodes[caller].CallbackVia = n;
+                        queue.Enqueue(caller);
+                    }
+                }
             }
 
             // The calls from node to what it reaches: 0 a user change, 1 a reviewed change to the request's person, 2 a call
-            // that couldn't be followed.
+            // that couldn't be followed, 3 a callback that couldn't.
             private List<string> CallPath(int node, int kind)
             {
                 var path = new List<string>();
                 for (var (n, depth) = (node, 0); n >= 0 && depth < 64; depth++)
                 {
                     path.Add(_nodes[n].Name);
-                    n = kind switch { 0 => _nodes[n].Via, 1 => _nodes[n].PersonVia, _ => _nodes[n].UnresolvedVia };
+                    n = kind switch { 0 => _nodes[n].Via, 1 => _nodes[n].PersonVia, 2 => _nodes[n].UnresolvedVia, _ => _nodes[n].CallbackVia };
                 }
 
                 return path;
@@ -947,12 +998,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         var id = _nodeOf[(0, token)];
                         // A change to anyone: the person of its userId argument, else everyone. Only a reviewed change to the
                         // request's own person: that person (userId, else the signed-in person). Neither, but a call that
-                        // couldn't be followed: everyone, for a write.
+                        // couldn't be followed: everyone, for a write; only a callback that couldn't (round 11): the
+                        // request's person, everyone when there is none.
                         var reaches = node.Reaches ?? node.PersonReaches;
-                        var unresolved = reaches == null && node.Unresolved != null ? "unresolved " + node.Unresolved : null;
+                        var unresolved = reaches == null && node.Unresolved != null ? "unresolved " + node.Unresolved
+                            : reaches == null && node.Callback != null ? "unresolved callback " + node.Callback
+                            : null;
                         var key = node.Reaches == null && node.PersonReaches != null || userId ? JellyfinUserKey.User : JellyfinUserKey.Global;
                         var action = new JellyfinUserAction(controller, node.Method, verbs.Count == 0 ? new[] { "*" } : verbs, key, unresolved, reaches,
-                            node.Reaches != null ? CallPath(id, 0) : node.PersonReaches != null ? CallPath(id, 1) : unresolved != null ? CallPath(id, 2) : null);
+                            node.Reaches != null ? CallPath(id, 0) : node.PersonReaches != null ? CallPath(id, 1) : node.Unresolved != null ? CallPath(id, 2) : node.Callback != null ? CallPath(id, 3) : null);
                         _actions[token] = action with { Key = KeyFor(action, controller), Why = WhyFor(action, controller) };
                     }
                 }
@@ -1025,6 +1079,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             }
 
             private static IEnumerable<string> MethodTypes(MetadataReader md, MethodSignature<string> signature) => signature.ParameterTypes.Prepend(signature.ReturnType);
+
+            // Round 11: whether a member outside the code read hands back code to run: its result (a Task's included) or a
+            // by-reference parameter is a delegate.
+            private bool HandsBackCallback(MethodSignature<string> signature)
+                => CarriesDelegate(signature.ReturnType) || signature.ParameterTypes.Any(t => t.EndsWith('&') && CarriesDelegate(t));
+
+            private bool HandsBackCallback(Node node)
+                => node.Module >= 0 && HandsBackCallback(_modules[node.Module].Md.GetMethodDefinition(MetadataTokens.MethodDefinitionHandle(node.Token)).DecodeSignature(Names.Instance, null));
+
+            private bool CarriesDelegate(string type)
+                => type.Split(new[] { '<', '>', ',', '[', ']', '&', '*', ' ' }, StringSplitOptions.RemoveEmptyEntries).Any(DelegateType);
 
             // Type names from signatures (generic arguments included).
             private sealed class Names : ISignatureTypeProvider<string, object?>

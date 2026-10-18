@@ -110,13 +110,114 @@ public class IntegrationJellyfinApiUserActionTests
         "SyncPlayController.SyncPlayUnpause",
     };
 
+    // 4a review round 11 (4a-security-r11-2, Q-4AF11-1): the non-GET actions whose code reaches a callback the code read
+    // can't resolve, whatever its type: a delegate handed in from outside Jellyfin's assemblies (the first one found per
+    // action, each an event a plugin can subscribe to: SubtitleManager.SubtitleDownloadFailure 46, ApplicationHost.HasPendingRestartChanged 15,
+    // BaseConfigurationManager.NamedConfigurationUpdating 11, LyricManager.LyricDownloadFailure 6, the Live TV timer
+    // events 6, ServerConfigurationManager.ConfigurationUpdating 1, the collection events 3, on 12.2). 88 on 12.2, the same
+    // 88 plus LibraryStructureController.RenameVirtualFolder on 10.11.11 (12.2's reaches IUserManager.UpdateUserAsync,
+    // above). Among them the hot paths: POST PlaybackInfo and OpenLiveStream, user data, favourites, ratings and the
+    // session's end, so they are bracketed for the request's person (16 by their userId argument, the rest the signed-in
+    // person), never for everyone.
+    private static readonly string[] Callbacks =
+    {
+        "BackupController.StartRestoreBackup",
+        "CollectionController.AddToCollection",
+        "CollectionController.CreateCollection",
+        "CollectionController.RemoveFromCollection",
+        "ConfigurationController.UpdateBrandingConfiguration",
+        "ConfigurationController.UpdateConfiguration",
+        "ConfigurationController.UpdateNamedConfiguration",
+        "DevicesController.DeleteDevice",
+        "ImageController.DeleteCustomSplashscreen",
+        "ImageController.DeleteItemImage",
+        "ImageController.DeleteItemImageByIndex",
+        "ImageController.SetItemImage",
+        "ImageController.SetItemImageByIndex",
+        "ImageController.UpdateItemImageIndex",
+        "ImageController.UploadCustomSplashscreen",
+        "ItemLookupController.ApplySearchCriteria",
+        "ItemLookupController.GetBookRemoteSearchResults",
+        "ItemLookupController.GetBoxSetRemoteSearchResults",
+        "ItemLookupController.GetMovieRemoteSearchResults",
+        "ItemLookupController.GetMusicAlbumRemoteSearchResults",
+        "ItemLookupController.GetMusicArtistRemoteSearchResults",
+        "ItemLookupController.GetMusicVideoRemoteSearchResults",
+        "ItemLookupController.GetPersonRemoteSearchResults",
+        "ItemLookupController.GetSeriesRemoteSearchResults",
+        "ItemLookupController.GetTrailerRemoteSearchResults",
+        "ItemRefreshController.RefreshItem",
+        "ItemsController.UpdateItemUserData",
+        "ItemsController.UpdateItemUserDataLegacy",
+        "ItemUpdateController.UpdateItem",
+        "ItemUpdateController.UpdateItemContentType",
+        "LibraryController.DeleteItem",
+        "LibraryController.DeleteItems",
+        "LibraryController.PostUpdatedMedia",
+        "LibraryController.PostUpdatedMovies",
+        "LibraryController.PostUpdatedSeries",
+        "LibraryController.RefreshLibrary",
+        "LibraryStructureController.AddMediaPath",
+        "LibraryStructureController.AddVirtualFolder",
+        "LibraryStructureController.RemoveMediaPath",
+        "LibraryStructureController.RemoveVirtualFolder",
+        "LibraryStructureController.UpdateLibraryOptions",
+        "LibraryStructureController.UpdateMediaPath",
+        "LiveTvController.AddListingProvider",
+        "LiveTvController.AddTunerHost",
+        "LiveTvController.CancelSeriesTimer",
+        "LiveTvController.CancelTimer",
+        "LiveTvController.CreateSeriesTimer",
+        "LiveTvController.CreateTimer",
+        "LiveTvController.DeleteListingProvider",
+        "LiveTvController.DeleteRecording",
+        "LiveTvController.DeleteTunerHost",
+        "LiveTvController.GetPrograms",
+        "LiveTvController.SetChannelMapping",
+        "LiveTvController.UpdateSeriesTimer",
+        "LiveTvController.UpdateTimer",
+        "LyricsController.DeleteLyrics",
+        "LyricsController.DownloadRemoteLyrics",
+        "LyricsController.UploadLyrics",
+        "MediaInfoController.GetPostedPlaybackInfo",
+        "MediaInfoController.OpenLiveStream",
+        "PackageController.InstallPackage",
+        "PackageController.SetRepositories",
+        "PlaylistsController.AddItemToPlaylist",
+        "PlaylistsController.CreatePlaylist",
+        "PlaylistsController.MoveItem",
+        "PlaylistsController.RemoveItemFromPlaylist",
+        "PlaylistsController.RemoveUserFromPlaylist",
+        "PlaylistsController.UpdatePlaylist",
+        "PlaylistsController.UpdatePlaylistUser",
+        "PluginsController.UninstallPlugin",
+        "PluginsController.UninstallPluginByVersion",
+        "RemoteImageController.DownloadRemoteImage",
+        "ScheduledTasksController.StartTask",
+        "ScheduledTasksController.UpdateTask",
+        "SessionController.ReportSessionEnded",
+        "SubtitleController.DeleteSubtitle",
+        "SubtitleController.DownloadRemoteSubtitles",
+        "SubtitleController.UploadSubtitle",
+        "UserLibraryController.DeleteUserItemRating",
+        "UserLibraryController.DeleteUserItemRatingLegacy",
+        "UserLibraryController.MarkFavoriteItem",
+        "UserLibraryController.MarkFavoriteItemLegacy",
+        "UserLibraryController.UnmarkFavoriteItem",
+        "UserLibraryController.UnmarkFavoriteItemLegacy",
+        "UserLibraryController.UpdateUserItemRating",
+        "UserLibraryController.UpdateUserItemRatingLegacy",
+        "VideosController.DeleteAlternateSources",
+        "VideosController.MergeVersions",
+    };
+
     private static readonly Dictionary<string, Dictionary<string, string>> Reviewed = new(StringComparer.Ordinal)
     {
         // 12.2: renaming a library rewrites every user's library preferences (IUserManager.UpdateUserAsync); adding a user
         // to a session and removing one log the session's activity too.
-        ["jf12"] = With(SessionActivity.Concat(new[] { "SessionController.AddUserToSession", "SessionController.RemoveUserFromSession" }), ("LibraryStructureController.RenameVirtualFolder", "global")),
-        // 10.11: the easy (PIN) password still exists.
-        ["jf10"] = With(SessionActivity, ("UserController.UpdateUserEasyPassword", "user")),
+        ["jf12"] = With(SessionActivity.Concat(Callbacks).Concat(new[] { "SessionController.AddUserToSession", "SessionController.RemoveUserFromSession" }), ("LibraryStructureController.RenameVirtualFolder", "global")),
+        // 10.11: the easy (PIN) password still exists; renaming a library reaches only the callbacks.
+        ["jf10"] = With(SessionActivity.Concat(Callbacks).Append("LibraryStructureController.RenameVirtualFolder"), ("UserController.UpdateUserEasyPassword", "user")),
     };
 
     private static Dictionary<string, string> With(IEnumerable<string> person, params (string Action, string Key)[] more)
@@ -131,8 +232,8 @@ public class IntegrationJellyfinApiUserActionTests
     private static readonly Regex LooksLikeAUserAction = new(@"Authenticat|Password|Policy|Login|Logon|Lockout|QuickConnect|Startup|User(?!Data|Item|View|Library|Rating|Played|Favorite)|Account|Permission", RegexOptions.CultureInvariant);
 
     // Reviewed non-GET actions (12.2 and 10.11.11) whose name matches but that change no user: a playlist's shares
-    // (IPlaylistManager), and on 10.11 the extra users of a playback session (ISessionManager's session state; 12.2 also
-    // logs the session's activity, so it is bracketed there).
+    // (IPlaylistManager; bracketed for the callbacks they reach, round 11), and on 10.11 the extra users of a playback
+    // session (ISessionManager's session state; 12.2 also logs the session's activity, so it is bracketed there).
     private static readonly HashSet<string> NotUserChanges = new(StringComparer.Ordinal)
     {
         "PlaylistsController.UpdatePlaylistUser", "PlaylistsController.RemoveUserFromPlaylist",
