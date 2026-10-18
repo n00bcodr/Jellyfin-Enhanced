@@ -420,11 +420,14 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   `AutomationAdmission.cs` the send guard for queued automatic work (per-write budget admission, breaker counting),
   `AutomationWriteGate.cs` the one write gate every automatic outbound write passes immediately before it leaves (Direct
   and Seerr backends, the old recipes' direct Seerr POST: every switch, kill, mode, consent, eligibility, breaker, disk
-  and budget gate read live), `AutomationTransportHandler.cs` the guarantee behind it: the HTTP handler on the arr, Seerr
+  and budget gate; facts first, then one decision: every storage read is made before the live settings are read and
+  judged, and facts that may have gone stale meanwhile are read again, checked by version stamps),
+  `AutomationTransportHandler.cs` the guarantee behind it: the HTTP handler on the arr, Seerr
   and default clients that checks every write made in an automation context (an `AsyncLocal` the outbox and the old
-  recipes set) synchronously as it is handed on, budgets with their live limits first, then the gate; the write sites'
+  recipes set) synchronously as it is handed on, the job's budget reservations among the gate's facts and judged with
+  their live limits in the same decision; the write sites'
   own calls and the test `tests/backend/Integrations/WriteGateWalk.cs` (a walk of the code from each gate to its HTTP
-  send) stay as defence in depth, `AutomationRecordSnapshot.cs` every live setting a recorded automatic intent depends on
+  send, and in a strict mode from the final decision to the hand-off) stay as defence in depth, `AutomationRecordSnapshot.cs` every live setting a recorded automatic intent depends on
   (compared as a whole before the ledger write and before a Shadow decision is saved), `AutomationStore.cs` decisions, recorded grants, breakers and the
   migration record, `AutomationMigration.cs` the one-time start-up migration, `AutomationConsents.cs` each person's
   recipe preference, `AutomationRisk.cs` which risk classes may ever be automatic, and `AutomationStatus.cs` the

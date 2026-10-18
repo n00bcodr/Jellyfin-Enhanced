@@ -14,6 +14,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="user">The person.</param>
         /// <param name="recipe">Recipe id.</param>
         bool? Preference(Guid user, string recipe);
+
+        /// <summary>
+        /// Moves on whenever the person's stored preferences may have changed: read before <see cref="Preference"/> and
+        /// compared after, it tells whether what was read is still what is stored. Memory only, never waits.
+        /// </summary>
+        /// <param name="user">The person.</param>
+        long Version(Guid user) => 0;
     }
 
     /// <summary>The consent rule over a preference.</summary>
@@ -25,9 +32,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="recipe">Recipe id.</param>
         public static bool Allows(IAutomationConsents? consents, Guid user, string recipe)
         {
-            var preference = consents?.Preference(user, recipe);
-            return AutomationRecipes.IsLegacy(recipe) ? preference != false : preference == true;
+            return Allows(consents?.Preference(user, recipe), recipe);
         }
+
+        /// <summary>The rule over a preference already read: legacy recipes unless opted out, new ones only when opted in.</summary>
+        /// <param name="preference">The stored preference (null: never chosen).</param>
+        /// <param name="recipe">Recipe id.</param>
+        public static bool Allows(bool? preference, string recipe)
+            => AutomationRecipes.IsLegacy(recipe) ? preference != false : preference == true;
     }
 
     /// <summary>Preferences from each person's Jellyfin Enhanced settings (<c>settings.json</c>).</summary>
@@ -49,5 +61,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 _ => null,
             };
         }
+
+        /// <inheritdoc />
+        public long Version(Guid user) => UserConfigurationManager.SettingsVersion(user.ToString("N"));
     }
 }

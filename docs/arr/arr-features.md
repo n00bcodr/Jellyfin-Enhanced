@@ -1353,7 +1353,12 @@ either is off, the automatic requests above behave exactly as described there. W
   switches, the recipe's mode, the person's opt-out, whether an OK is needed, the instance's breaker, low disk and
   unknown free space, and the budgets. Whatever changed while the request was being prepared counts, including while
   the send was being counted against its budget. The last check is made inside the connection itself, as each
-  automatic write is handed over to be sent, so nothing can wait between its answer and the send. It also counts the
+  automatic write is handed over to be sent, so nothing can wait between its answer and the send. It first reads
+  everything it needs from storage (budgets, the instance's breaker, eligibility, the person's opt-out, free space);
+  those reads can wait, for example while a backup is being restored. Only then does it read the settings and decide,
+  and if anything those reads depend on changed while they were made (a setting saved, a breaker opened, the person's
+  settings saved, a restore), it reads them again, or the request waits a moment and is checked again. A kill switch,
+  budget or opt-out changed while the check was reading therefore still stops the send. It also counts the
   budgets again with their limits as they are at that moment (the write's own place counted once): a limit lowered to
   0 while a request was on its way stops it, and the place it had taken is given back. A request held by a full
   budget waits until every full window has room again (when the hourly and the daily window are both full, until the

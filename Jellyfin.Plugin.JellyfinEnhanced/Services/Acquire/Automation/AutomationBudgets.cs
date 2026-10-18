@@ -61,6 +61,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// <param name="Window">The full window that waits longest (budget_exhausted).</param>
     public sealed record BudgetAdmission(bool Admitted, string? Id, string? Reason, DateTimeOffset? RetryAt, bool Replayed = false, TimeSpan? Window = null);
 
+    /// <summary>One counted admission of a budget.</summary>
+    /// <param name="At">When it was reserved (Unix milliseconds).</param>
+    /// <param name="Uncertain">Whether it went out is unknown until a read-back settles it.</param>
+    public readonly record struct BudgetRow(long At, bool Uncertain);
+
+    /// <summary>
+    /// What a budget counts, read from the database once (that read may wait): every counted admission of a category and
+    /// scope inside its longest window, oldest first, without the write's own reservation, and whether that reservation
+    /// still holds. The limits aren't in it: <see cref="AutomationBudgets.Judge"/> applies them as they are when the
+    /// decision is made, from memory only.
+    /// </summary>
+    /// <param name="Category">The category.</param>
+    /// <param name="Scope">The scope.</param>
+    /// <param name="Own">The write's own reservation (not in <paramref name="Rows"/>), or null.</param>
+    /// <param name="Rows">The counted admissions, oldest first.</param>
+    /// <param name="Unavailable">Why nothing can be admitted on them (accounting_unavailable: unreadable, or the own reservation is gone), or null.</param>
+    public sealed record BudgetRows(string Category, string Scope, string? Own, IReadOnlyList<BudgetRow> Rows, string? Unavailable = null);
+
     /// <summary>How an admitted action ended.</summary>
     public enum BudgetOutcome
     {
@@ -93,6 +111,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <summary>Tests: runs as an admission starts, before it waits for the database writer.</summary>
         internal Action? BeforeAdmission { get; set; }
 
+        /// <summary>Tests: runs as a read of a budget's rows returns (with its category): a change made then is one the read missed.</summary>
+        internal Action<string>? RowsRead { get; set; }
+
         /// <summary>Creates the budgets (DI).</summary>
         public AutomationBudgets(AcquireDatabase db)
             : this(db, () => JellyfinEnhanced.Instance?.Configuration ?? new PluginConfiguration(), () => DateTimeOffset.UtcNow)
@@ -107,11 +128,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             _now = now;
         }
 
+        /// <summary>The database.</summary>
+        public AcquireDatabase Database => _db;
+
         /// <summary>The windows of a category as configured now (limits clamped to 0..100000; 0 admits nothing).</summary>
         /// <param name="category">Budget category.</param>
-        public IReadOnlyList<BudgetWindow> Windows(string category)
+        public IReadOnlyList<BudgetWindow> Windows(string category) => Windows(category, _config());
+
+        /// <summary>The windows of a category in <paramref name="c"/> (limits clamped to 0..100000; 0 admits nothing).</summary>
+        /// <param name="category">Budget category.</param>
+        /// <param name="c">The configuration.</param>
+        public static IReadOnlyList<BudgetWindow> Windows(string category, PluginConfiguration c)
         {
-            var c = _config();
             static int Clamp(int v) => Math.Clamp(v, 0, 100_000);
             return category switch
             {
@@ -143,7 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             try
             {
                 if (!_db.Available) return new(false, null, "accounting_unavailable", null);
-                return _db.Write((c, t) =>
+                var admitted = _db.Write((c, t) =>
                 {
                     // The limits and the clock are read once the writer is taken: a limit saved while the admission waited
                     // for it applies (4a-security-r6-1).
@@ -158,7 +186,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     }
 
                     if (existing != null && state != "released") return new BudgetAdmission(true, existing, null, null, Replayed: true);
-                    if (Full(windows.Select(w => Count(c, t, category, scope, w, now)), now) is { } full) return full;
+                    if (Full(category, scope, windows, ReadRows(c, t, category, scope, windows, now, null), now) is { } full) return full;
 
                     var id = existing ?? RequestLedger.NewId();
                     if (existing == null)
@@ -168,6 +196,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         RequestLedger.Exec(c, t, "UPDATE automation_budget SET state='reserved',outcome=NULL,settled_at=NULL,reserved_at=$at,job_id=$j WHERE id=$id", ("$id", id), ("$j", jobId), ("$at", RequestLedger.Ms(now)));
                     return new BudgetAdmission(true, id, null, null);
                 });
+                if (admitted.Admitted && !admitted.Replayed) _db.AutomationChanged();
+                return admitted;
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
@@ -176,34 +206,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         }
 
         /// <summary>
-        /// Checks an admitted action again inside the transport, against the limits and the time as they are now: it still fits
-        /// when every window has room for one more besides everything else counted there (its own row counted once, not as
-        /// a second action). Changes nothing: a refusal is released by the admission's owner, which releases only what this
-        /// attempt reserved (a row counted earlier, sent or replayed, stays counted).
+        /// Checks an admitted action again, against the limits and the time as they are now: it still fits when every window
+        /// has room for one more besides everything else counted there (its own row counted once, not as a second action).
+        /// Changes nothing: a refusal is released by the admission's owner, which releases only what this attempt reserved
+        /// (a row counted earlier, sent or replayed, stays counted). <see cref="Rows"/> then <see cref="Judge"/>; the
+        /// transport check gathers the rows first and judges them last.
         /// </summary>
         /// <param name="category">The category.</param>
         /// <param name="scope">The scope.</param>
         /// <param name="id">The current reservation (or an earlier admission replayed by this job).</param>
-        public BudgetAdmission Recheck(string category, string scope, string id)
+        public BudgetAdmission Recheck(string category, string scope, string id) => Judge(Rows(category, scope, id), _config(), _now());
+
+        /// <summary>
+        /// Reads what a budget counts (<see cref="BudgetRows"/>): the database read, which may wait. With
+        /// <paramref name="own"/>, that reservation is left out of the rows, and must still hold.
+        /// </summary>
+        /// <param name="category">The category.</param>
+        /// <param name="scope">The scope.</param>
+        /// <param name="own">The write's own reservation, or null.</param>
+        public BudgetRows Rows(string category, string scope, string? own = null)
         {
+            BudgetRows rows;
             try
             {
-                if (!_db.Available) return new(false, null, "accounting_unavailable", null);
-                return _db.Read(c =>
+                rows = !_db.Available ? new(category, scope, own, Array.Empty<BudgetRow>(), "accounting_unavailable") : _db.Read(c =>
                 {
-                    var now = _now();
-                    var windows = Windows(category);
-                    using var own = RequestLedger.Cmd(c, null, "SELECT state FROM automation_budget WHERE id=$id AND category=$c AND scope=$s", ("$id", id), ("$c", category), ("$s", scope));
-                    if (own.ExecuteScalar() is not string state || state == "released" || windows.Count == 0)
-                        return new BudgetAdmission(false, null, "accounting_unavailable", null);
-                    // Everything else in each window, then room for this one.
-                    return Full(windows.Select(w => Count(c, null, category, scope, w, now, id)), now) ?? new BudgetAdmission(true, id, null, null, Replayed: true);
+                    if (own != null)
+                    {
+                        using var cmd = RequestLedger.Cmd(c, null, "SELECT state FROM automation_budget WHERE id=$id AND category=$c AND scope=$s", ("$id", own), ("$c", category), ("$s", scope));
+                        if (cmd.ExecuteScalar() is not string state || state == "released")
+                            return new BudgetRows(category, scope, own, Array.Empty<BudgetRow>(), "accounting_unavailable");
+                    }
+                    return new BudgetRows(category, scope, own, ReadRows(c, null, category, scope, Windows(category), _now(), own));
                 });
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
-                return new(false, null, "accounting_unavailable", null);
+                rows = new(category, scope, own, Array.Empty<BudgetRow>(), "accounting_unavailable");
             }
+            RowsRead?.Invoke(category);
+            return rows;
+        }
+
+        /// <summary>
+        /// The decision on rows read earlier, with the limits in <paramref name="config"/> and the time <paramref name="now"/>:
+        /// memory only, nothing waits. Every window is counted, and a refusal waits for the latest next free slot among the
+        /// full ones (the hourly window can free up long before the daily one does).
+        /// </summary>
+        /// <param name="rows">What the budget counts.</param>
+        /// <param name="config">The configuration as it is now.</param>
+        /// <param name="now">Now.</param>
+        public static BudgetAdmission Judge(BudgetRows rows, PluginConfiguration config, DateTimeOffset now)
+        {
+            var windows = Windows(rows.Category, config);
+            if (rows.Unavailable != null || windows.Count == 0) return new(false, null, rows.Unavailable ?? "accounting_unavailable", null);
+            return Full(rows.Category, rows.Scope, windows, rows.Rows, now) ?? new BudgetAdmission(true, rows.Own, null, null, Replayed: rows.Own != null);
         }
 
         /// <summary>
@@ -224,8 +281,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             try
             {
                 if (!_db.Available) return;
-                _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_budget SET state=$s,outcome=$o,settled_at=$at WHERE id=$id AND state IN ('reserved','ambiguous')",
-                    ("$s", state), ("$o", label), ("$at", RequestLedger.Ms(_now())), ("$id", id)));
+                if (_db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_budget SET state=$s,outcome=$o,settled_at=$at WHERE id=$id AND state IN ('reserved','ambiguous')",
+                    ("$s", state), ("$o", label), ("$at", RequestLedger.Ms(_now())), ("$id", id))) > 0) _db.AutomationChanged();
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
@@ -246,8 +303,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             try
             {
                 if (!_db.Available) return 0;
-                return _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_budget SET state=$s,outcome=$o,settled_at=$at WHERE job_id=$j AND state IN ('ambiguous','reserved')",
+                var changed = _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_budget SET state=$s,outcome=$o,settled_at=$at WHERE job_id=$j AND state IN ('ambiguous','reserved')",
                     ("$s", confirmed ? "consumed" : "released"), ("$o", confirmed ? "confirmed" : "not_there"), ("$at", RequestLedger.Ms(_now())), ("$j", jobId)));
+                if (changed > 0) _db.AutomationChanged();
+                return changed;
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
@@ -260,17 +319,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="scope">Scope.</param>
         public IReadOnlyList<BudgetUsage> Usage(string category, string scope)
         {
+            var rows = Rows(category, scope);
             var now = _now();
             var windows = Windows(category);
-            try
-            {
-                if (!_db.Available) return windows.Select(w => new BudgetUsage(category, scope, w.Length, w.Limit, w.Limit, 0, null, null)).ToList();
-                return _db.Read(c => windows.Select(w => Count(c, null, category, scope, w, now)).ToList());
-            }
-            catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
-            {
-                return windows.Select(w => new BudgetUsage(category, scope, w.Length, w.Limit, w.Limit, 0, null, null)).ToList();
-            }
+            return rows.Unavailable != null
+                ? windows.Select(w => new BudgetUsage(category, scope, w.Length, w.Limit, w.Limit, 0, null, null)).ToList()
+                : windows.Select(w => Count(category, scope, rows.Rows, w, now)).ToList();
         }
 
         /// <summary>Every scope a category has been used in within the last 24 hours (for status), plus the ones named.</summary>
@@ -306,10 +360,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="scope">Scope.</param>
         public BudgetUsage? Exhausted(string category, string scope) => Blocking(Usage(category, scope), _now());
 
-        // Every window is counted: the refusal waits for the latest next slot among the full ones (the hourly window can
-        // free up long before the daily one does; 4a-behaviour-r7-1).
-        private static BudgetAdmission? Full(IEnumerable<BudgetUsage> usages, DateTimeOffset now)
-            => Blocking(usages, now) is { } blocking ? new BudgetAdmission(false, null, "budget_exhausted", NextSlot(blocking, now), Window: blocking.Window) : null;
+        // Every window is counted: the refusal waits for the latest next slot among the full ones (4a-behaviour-r7-1).
+        private static BudgetAdmission? Full(string category, string scope, IReadOnlyList<BudgetWindow> windows, IReadOnlyList<BudgetRow> rows, DateTimeOffset now)
+            => Blocking(windows.Select(w => Count(category, scope, rows, w, now)), now) is { } blocking
+                ? new BudgetAdmission(false, null, "budget_exhausted", NextSlot(blocking, now), Window: blocking.Window)
+                : null;
 
         private static BudgetUsage? Blocking(IEnumerable<BudgetUsage> usages, DateTimeOffset now)
             => usages.Where(u => u.Full).OrderByDescending(u => NextSlot(u, now)).FirstOrDefault();
@@ -317,16 +372,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         // A window with a limit of 0 never frees a slot: it is checked again after its length.
         private static DateTimeOffset NextSlot(BudgetUsage usage, DateTimeOffset now) => usage.NextSlotAt ?? now + usage.Window;
 
-        private static BudgetUsage Count(SqliteConnection c, SqliteTransaction? t, string category, string scope, BudgetWindow window, DateTimeOffset now, string? ownId = null)
+        // Every counted admission inside the category's longest window (all of its windows are rolling, ending now), oldest first.
+        private static List<BudgetRow> ReadRows(SqliteConnection c, SqliteTransaction? t, string category, string scope, IReadOnlyList<BudgetWindow> windows, DateTimeOffset now, string? ownId)
+        {
+            var longest = windows.Count == 0 ? TimeSpan.Zero : windows.Max(w => w.Length);
+            var rows = new List<BudgetRow>();
+            using var cmd = RequestLedger.Cmd(c, t, "SELECT reserved_at,state FROM automation_budget WHERE category=$c AND scope=$s AND state IN ('reserved','consumed','ambiguous') AND reserved_at>$since AND ($own IS NULL OR id<>$own) ORDER BY reserved_at",
+                ("$c", category), ("$s", scope), ("$since", RequestLedger.Ms(now - longest)), ("$own", ownId));
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) rows.Add(new BudgetRow(r.GetInt64(0), r.GetString(1) == "ambiguous"));
+            return rows;
+        }
+
+        private static BudgetUsage Count(string category, string scope, IReadOnlyList<BudgetRow> rows, BudgetWindow window, DateTimeOffset now)
         {
             var since = RequestLedger.Ms(now - window.Length);
-            var stamps = new List<(long At, bool Uncertain)>();
-            using (var cmd = RequestLedger.Cmd(c, t, "SELECT reserved_at,state FROM automation_budget WHERE category=$c AND scope=$s AND state IN ('reserved','consumed','ambiguous') AND reserved_at>$since AND ($own IS NULL OR id<>$own) ORDER BY reserved_at",
-                ("$c", category), ("$s", scope), ("$since", since), ("$own", ownId)))
-            using (var r = cmd.ExecuteReader())
-            {
-                while (r.Read()) stamps.Add((r.GetInt64(0), r.GetString(1) == "ambiguous"));
-            }
+            var stamps = rows.Where(r => r.At > since).ToList();
 
             DateTimeOffset At(long ms) => DateTimeOffset.FromUnixTimeMilliseconds(ms) + window.Length;
             DateTimeOffset? next = null;

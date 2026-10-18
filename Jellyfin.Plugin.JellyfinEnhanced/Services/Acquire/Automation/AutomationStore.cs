@@ -39,6 +39,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <summary>Creates the store (DI).</summary>
         public AutomationStore(AcquireDatabase db) { _db = db; }
 
+        /// <summary>Tests: runs as a breaker read returns (with its target): a change made then is one the read missed.</summary>
+        internal Action<string>? BreakerRead { get; set; }
+
         /// <summary>The database.</summary>
         public AcquireDatabase Database => _db;
 
@@ -124,7 +127,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="meta">Key/value state to set.</param>
         /// <param name="now">When.</param>
         internal void Commit(IEnumerable<(Guid User, string Source, string? Detail)> grants, IReadOnlyDictionary<string, string> meta, DateTimeOffset now)
-            => _db.Write((c, t) =>
+        {
+            _db.Write((c, t) =>
             {
                 foreach (var (user, source, detail) in grants)
                     RequestLedger.Exec(c, t, "INSERT OR IGNORE INTO automation_grants(user_id,source,detail,granted_at) VALUES($u,$s,$d,$at)", ("$u", RequestLedger.Id(user)), ("$s", source), ("$d", detail), ("$at", RequestLedger.Ms(now)));
@@ -132,6 +136,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     RequestLedger.Exec(c, t, "INSERT INTO meta(key,value) VALUES($k,$v) ON CONFLICT(key) DO UPDATE SET value=$v", ("$k", key), ("$v", value));
                 return 0;
             });
+            _db.AutomationChanged();
+        }
 
         /// <summary>A small state value, or null (also when unreadable).</summary>
         /// <param name="key">Key.</param>
@@ -160,17 +166,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="target">Instance id or <c>seerr</c>.</param>
         public AutomationBreaker Breaker(string target)
         {
+            AutomationBreaker? found = null;
             try
             {
                 if (_db.Available)
                 {
-                    var found = _db.Read(c =>
+                    found = _db.Read(c =>
                     {
                         using var cmd = RequestLedger.Cmd(c, null, "SELECT failures,opened_until,last_reason,updated_at FROM automation_breakers WHERE target=$t", ("$t", target));
                         using var r = cmd.ExecuteReader();
                         return r.Read() ? new AutomationBreaker(target, r.GetInt32(0), r.IsDBNull(1) ? null : DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(1)), r.IsDBNull(2) ? null : r.GetString(2), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(3))) : null;
                     });
-                    if (found != null) return found;
                 }
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
@@ -178,7 +184,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 // Closed: the budgets fail closed on their own.
             }
 
-            return new AutomationBreaker(target, 0, null, null, DateTimeOffset.MinValue);
+            BreakerRead?.Invoke(target);
+            return found ?? new AutomationBreaker(target, 0, null, null, DateTimeOffset.MinValue);
         }
 
         /// <summary>Every stored breaker.</summary>
@@ -214,6 +221,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     return RequestLedger.Exec(c, t, "UPDATE automation_breakers SET opened_until=$until WHERE target=$t AND failures>=$n",
                         ("$t", target), ("$n", BreakerThreshold), ("$until", RequestLedger.Ms(now + BreakerCooldown)));
                 });
+                _db.AutomationChanged();
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
@@ -229,8 +237,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             try
             {
                 if (!_db.Available) return;
-                _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_breakers SET failures=0,opened_until=NULL,updated_at=$at WHERE target=$t AND (failures>0 OR opened_until IS NOT NULL)",
-                    ("$t", target), ("$at", RequestLedger.Ms(now))));
+                if (_db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_breakers SET failures=0,opened_until=NULL,updated_at=$at WHERE target=$t AND (failures>0 OR opened_until IS NOT NULL)",
+                    ("$t", target), ("$at", RequestLedger.Ms(now)))) > 0) _db.AutomationChanged();
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
@@ -245,13 +253,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="target">Instance id or <c>seerr</c>.</param>
         /// <param name="now">Now.</param>
         public bool Reset(string target, DateTimeOffset now)
-            => _db.Write((c, t) =>
+        {
+            var reset = _db.Write((c, t) =>
             {
                 var reset = RequestLedger.Exec(c, t, "UPDATE automation_breakers SET failures=0,opened_until=NULL,last_reason='reset',updated_at=$at WHERE target=$t", ("$t", target), ("$at", RequestLedger.Ms(now)));
                 RequestLedger.Exec(c, t, "UPDATE jobs SET next_attempt=$at WHERE state='retry' AND reason=$r AND next_attempt>$at AND " +
                     "(CASE WHEN $t='" + AutomationFlags.SeerrTarget + "' THEN json_extract(authorization_context,'$.Backend')='seerr' ELSE json_extract(authorization_context,'$.InstanceId')=$t END)",
                     ("$t", target), ("$r", AutomationHolds.BreakerOpen), ("$at", RequestLedger.Ms(now)));
                 return reset;
-            }) == 1;
+            });
+            _db.AutomationChanged();
+            return reset == 1;
+        }
     }
 }
