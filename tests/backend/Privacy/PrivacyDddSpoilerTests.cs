@@ -124,4 +124,25 @@ public class PrivacyDddSpoilerTests
         Assert.False(File.Exists(file), "the unreadable file was quarantined");
         Assert.Contains("A major character dies", (await rig.Read()).Body.GetRawText());
     }
+
+    [Fact]
+    public async Task SpoilerSettingsThatCantBeInspectedAreNotTreatedAsMissing()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var rig = new Rig();
+        rig.State.PendingTmdb["movie:123"] = new(); rig.Save();
+        var file = Directory.GetFiles(rig.Plugin.Core.ConfigRoot, SpoilerBlurImageFilter.SpoilerBlurFileName, SearchOption.AllDirectories)
+            .Single(p => p.Contains(rig.Viewer.ToString("N"), StringComparison.OrdinalIgnoreCase));
+        var folder = Path.GetDirectoryName(file)!;
+        var mode = File.GetUnixFileMode(folder);
+        File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite); // no search permission
+        try
+        {
+            try { File.ReadAllText(file); return; } catch (UnauthorizedAccessException) { } // root ignores the mode
+            var blocked = await rig.Read();
+            Assert.True(blocked.Body.GetProperty("Guarded").GetBoolean());
+            Assert.DoesNotContain("A major character dies", blocked.Body.GetRawText());
+        }
+        finally { File.SetUnixFileMode(folder, mode); }
+    }
 }

@@ -4871,12 +4871,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private (bool Guarded, string Revision, bool Readable) DoesTheDogDiePolicy(Guid viewer, string mediaType, string tmdbId)
         {
             var config = JellyfinEnhanced.Instance!.Configuration;
-            // No settings file yet means nothing is guarded for this viewer; only a file that can't be read is
-            // treated as unknown (guarded, no reveal), as the tag strip's null covers both cases.
-            var state = !config.SpoilerBlurEnabled
-                || !_userConfigurationManager.UserConfigurationExists(viewer.ToString("N"), Services.SpoilerBlurImageFilter.SpoilerBlurFileName)
-                ? new UserSpoilerBlur()
-                : LoadSpoilerStateForTagStrip(viewer);
+            // A settings file confirmed absent means nothing is guarded for this viewer. One that can't be inspected or
+            // read is unknown (guarded, no reveal): the tag strip's null covers both, and File.Exists can't tell them apart.
+            var presence = config.SpoilerBlurEnabled
+                ? _userConfigurationManager.UserConfigurationPresence(viewer.ToString("N"), Services.SpoilerBlurImageFilter.SpoilerBlurFileName)
+                : false;
+            var state = presence == false ? new UserSpoilerBlur() : presence == true ? LoadSpoilerStateForTagStrip(viewer) : null;
             var guarded = config.SpoilerBlurEnabled && (state == null || state.PendingTmdb.ContainsKey($"{mediaType}:{tmdbId}"));
             if (config.SpoilerBlurEnabled && state != null && !guarded)
             {

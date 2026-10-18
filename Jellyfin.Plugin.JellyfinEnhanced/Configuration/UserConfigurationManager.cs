@@ -81,6 +81,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return Path.Combine(GetUserConfigDir(userId), fileName);
         }
 
+        /// <summary>
+        /// Whether a person's file is there: true, false only when its absence is confirmed, and null when the file or
+        /// its folder can't be inspected (access denied, I/O error). File.Exists answers false for all three, which a
+        /// privacy check must not read as "no settings".
+        /// </summary>
+        public bool? UserConfigurationPresence(string userId, string fileName)
+        {
+            try
+            {
+                using var stream = new FileStream(ResolveUserFile(userId, fileName), FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
+                return true;
+            }
+            catch (FileNotFoundException)
+            {
+                return false;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Can't inspect '{fileName}' of user '{userId}': {ex.Message}");
+                return null;
+            }
+        }
+
         public bool UserConfigurationExists(string userId, string fileName)
         {
             try
