@@ -74,6 +74,8 @@
             isHiddenOnSurface,
             hideItem,
             unhideItem,
+            unhideConfirmed: internal.unhideConfirmed,
+            showUnhideFailed: internal.showUnhideFailed,
             confirmAndHide,
             getSettings,
             updateSettings,

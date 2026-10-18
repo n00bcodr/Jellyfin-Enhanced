@@ -113,3 +113,10 @@ test('guard toggle clears old modal content synchronously and reopens from fresh
  fresh.resolve({id:42,jeSpoiler:{guarded:true}});await nextTurn();h.runClosing();
  assert.notEqual(h.state.currentModal,old);assert.equal(h.state.currentModal.dataset.tmdbId,'42');
 });
+test('more-info modal closing after a session transition is inert during its exit animation',async t=>{
+  const h=setup(t,{withSession:true});await h.P.open(1,'movie');const previous=h.state.currentModal;
+  assert.equal(previous.hasAttribute('inert'),false);
+  h.window.ApiClient.getCurrentUserId=()=> 'user-b';h.JE.session.checkNow('regression-user-switch');
+  assert.equal(previous.hasAttribute('inert'),true,'outgoing viewer\'s controls cannot be used while it fades');
+  assert.equal(previous.style.pointerEvents,'none');h.runClosing();
+});

@@ -304,6 +304,17 @@
       return db - da;
     });
 
+    // The rendered list belongs to the viewer it is drawn for: an identity change clears it, and
+    // every control below checks this render's session (writes already submitted still finish).
+    state.releaseView?.();
+    const view = JE.createSessionAction();
+    state.view = view;
+    state.releaseView = view.onCancel(() => {
+      state.releaseView = null;
+      if (state.view === view) state.view = null;
+      container.replaceChildren();
+    });
+
     container.replaceChildren();
 
     const header = createPageHeader(allItems.length);
@@ -326,13 +337,14 @@
       toolbar.adminUserSelect.addEventListener('change', (e) => {
         const value = e.target.value;
         try { e.target.blur(); } catch (_) {}
-        setTimeout(function () { onAdminUserChange(value); }, 0);
+        setTimeout(function () { if (view.current()) onAdminUserChange(value); }, 0);
       });
     }
 
     // Wire the admin edit-mode toggle: flips read-only ↔ editable for the viewed user.
     if (toolbar.adminEditToggle) {
       toolbar.adminEditToggle.addEventListener('click', () => {
+        if (!view.current()) return;
         state.adminEditMode = !state.adminEditMode;
         renderPage();
       });
@@ -340,7 +352,7 @@
 
     // Wire the admin "add items" button: opens the library-search modal.
     if (toolbar.adminAddBtn) {
-      toolbar.adminAddBtn.addEventListener('click', () => openAdminAddModal());
+      toolbar.adminAddBtn.addEventListener('click', () => { if (view.current()) openAdminAddModal(); });
     }
 
     // Apply scoped filter — only show items hidden from Next Up / CW
@@ -368,7 +380,7 @@
         // Load failed — show a retry affordance rather than a misleading "empty".
         emptyDiv.textContent = JE.t('hidden_content_admin_load_error');
         emptyDiv.style.cursor = 'pointer';
-        emptyDiv.addEventListener('click', () => onAdminUserChange(state.selectedAdminUserId));
+        emptyDiv.addEventListener('click', () => { if (view.current()) onAdminUserChange(state.selectedAdminUserId); });
       } else if (viewingOther && !adminReady) {
         // Another user's items are still loading — show a loading hint rather than "empty".
         emptyDiv.textContent = JE.t('hidden_content_admin_loading');
@@ -425,9 +437,11 @@
       toolbar.unhideAllBtn.style.display = 'none';
     } else {
       toolbar.unhideAllBtn.addEventListener('click', () => {
+        if (!view.current()) return;
         showUnhideConfirmation(JE.t('hidden_content_clear_confirm') || 'Unhide all items?', () => {
+          if (!view.current()) return;
           if (viewingOther) {
-            handleUnhideMany((state.adminItems || []).map((it) => it._key || it.itemId));
+            void handleUnhideMany((state.adminItems || []).map((it) => it._key || it.itemId));
           } else {
             JE.hiddenContent.unhideAll();
           }
@@ -460,13 +474,17 @@
   function attachUnhideHandler(card, item) {
     const unhideBtn = card.querySelector('.je-hidden-item-unhide');
     if (unhideBtn) {
+      const action = internal.viewAction();
       unhideBtn.addEventListener('click', () => {
-        const action = JE.createSessionAction();
+        if (!action.current()) return;
         showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
           card.classList.add('je-hidden-item-removing');
-          setTimeout(() => {
+          unhideBtn.disabled = true;
+          setTimeout(async () => {
             if (!action.current()) return;
-            handleUnhide(item._key || item.itemId);
+            // A confirmed unhide repaints the page; a failure restores the card with a retry.
+            const saved = await handleUnhide(item._key || item.itemId);
+            if (!saved && action.current()) JE.hiddenContent.showUnhideFailed(card, unhideBtn);
           }, 300);
         }, item.name || 'this item');
       });

@@ -8,10 +8,15 @@
     const internal = JE.internals.spoilerGuard = JE.internals.spoilerGuard || {};
     const logPrefix = '🪼 Jellyfin Enhanced [SpoilerGuard]:';
 
+    /** Draws ON/OFF, or (null) an unknown state that waits for the state to be read again. */
     function renderButton(button, enabled) {
-        const label = JE.t(enabled ? 'spoiler_blur_button_on' : 'spoiler_blur_button_off');
-        button.classList.toggle('je-spoiler-blur-on', enabled);
-        button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        const unknown = enabled === null;
+        const label = JE.t(unknown ? 'spoiler_blur_state_retrying' : enabled ? 'spoiler_blur_button_on' : 'spoiler_blur_button_off');
+        button.classList.toggle('je-spoiler-blur-on', enabled === true);
+        if (unknown) button.removeAttribute('aria-pressed');
+        else button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        button.setAttribute('aria-busy', unknown ? 'true' : 'false');
+        button.disabled = unknown;
         button.title = label;
         button.setAttribute('aria-label', label);
         button.replaceChildren();
@@ -20,10 +25,16 @@
         const icon = document.createElement('span');
         icon.className = 'material-icons detailButton-icon';
         icon.setAttribute('aria-hidden', 'true');
-        icon.textContent = enabled ? 'blur_on' : 'blur_off';
+        icon.textContent = unknown ? 'sync' : enabled ? 'blur_on' : 'blur_off';
         content.appendChild(icon);
         button.appendChild(content);
     }
+
+    /** true/false from the mirrors, or null while they cannot answer for this title. */
+    function stateOf(kind, itemId) {
+        return internal.isKnownForKind?.(kind, itemId) !== false ? internal.isEnabledForKind(kind, itemId) : null;
+    }
+    const stateName = enabled => enabled === null ? 'unknown' : enabled ? 'on' : 'off';
 
     function performToggle(button, itemId, kind, page, enable) {
         const action = JE.createSessionAction();
@@ -44,8 +55,9 @@
 
         operation.then(function() {
             if (!action.current()) return;
-            renderButton(button, internal.isEnabledForKind(kind, itemId));
-            button.setAttribute('data-je-spoiler-state', internal.isEnabledForKind(kind, itemId) ? 'on' : 'off');
+            const enabled = stateOf(kind, itemId);
+            renderButton(button, enabled);
+            button.setAttribute('data-je-spoiler-state', stateName(enabled));
             // Keep separate per-kind keys so translators can tailor the
             // wording later; all enabled messages are deliberately
             // mode-neutral because images may be hidden or blurred.
@@ -78,13 +90,13 @@
             console.error(`${logPrefix} toggle failed:`, err);
             JE.toast?.(JE.t('spoiler_blur_error_toast'));
         }).finally(function() {
-            button.disabled = false;
+            button.disabled = stateOf(kind, itemId) === null;
         });
     }
 
     function onToggle(button, itemId, kind, page) {
         const action = JE.createSessionAction();
-        if (button.disabled) return;
+        if (button.disabled || stateOf(kind, itemId) === null) return;
         const enable = !internal.isEnabledForKind(kind, itemId);
         button.disabled = true;
         if (enable) {
@@ -116,8 +128,8 @@
             .map(selector => visiblePage.querySelector(selector)).find(Boolean);
         if (!container) return;
 
-        const enabled = internal.isEnabledForKind(kind, itemId);
-        const state = enabled ? 'on' : 'off';
+        const enabled = stateOf(kind, itemId);
+        const state = stateName(enabled);
         let button = null;
         for (const existing of visiblePage.querySelectorAll('.je-spoiler-blur-btn')) {
             if (!button && drawnButtons.has(existing)) button = existing;
@@ -142,6 +154,13 @@
             button.setAttribute('data-je-spoiler-kind', kind);
             button.setAttribute('data-je-spoiler-state', state);
             renderButton(button, enabled);
+            // Shared state changes (a write, or a recovered read) repaint the drawn control.
+            button.jeSpoilerRefresh = function() {
+                const live = stateOf(button.getAttribute('data-je-spoiler-kind') || 'series', button.getAttribute('data-je-item-id') || '');
+                if (button.getAttribute('data-je-spoiler-state') === stateName(live)) return;
+                button.setAttribute('data-je-spoiler-state', stateName(live));
+                renderButton(button, live);
+            };
             return;
         }
 

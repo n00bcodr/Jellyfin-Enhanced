@@ -11,11 +11,14 @@
 
     const { hiddenIdSet, getSettings, hideItem, unhideItem, getCardSurface, getCardItemId, confirmAndHide } = internal;
     let checkedCards = new WeakSet();
-    JE.session?.onUserChange('hidden-content-card-identities', () => { checkedCards = new WeakSet(); });
+    /** After a failed identity batch, later passes retry it once this window has passed. */
+    const TITLE_RETRY_AFTER_MS = 30000;
+    let titlesRetryAt = 0;
+    JE.session?.onUserChange('hidden-content-card-identities', () => { checkedCards = new WeakSet(); titlesRetryAt = 0; });
 
     /** Resolves ID-only native card identities in bounded batches, only when provider rules exist. */
     async function hydrateCardTitles() {
-        if (!internal.hasProviderRules() || JE.pluginConfig?.HiddenContentEnabled === false) return;
+        if (!internal.hasProviderRules() || JE.pluginConfig?.HiddenContentEnabled === false || Date.now() < titlesRetryAt) return;
         const action = JE.createSessionAction();
         const byId = new Map();
         for (const card of document.querySelectorAll('.card[data-id], .card[data-itemid]')) {
@@ -47,7 +50,13 @@
                     }
                 }
                 internal.refreshNativeCardVisibility();
-            } catch (_) { /* Leave unresolved cards usable; a fresh card may retry metadata. */ }
+            } catch (_) {
+                // Leave unresolved cards usable; the same cards retry after the window.
+                if (!action.current()) return;
+                for (const id of batch) for (const card of byId.get(id) || []) checkedCards.delete(card);
+                titlesRetryAt = Date.now() + TITLE_RETRY_AFTER_MS;
+                return;
+            }
         }
     }
 

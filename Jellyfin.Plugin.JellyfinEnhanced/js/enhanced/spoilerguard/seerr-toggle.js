@@ -47,9 +47,15 @@
             button.appendChild(label);
         }
 
+        /** The mirrors once they can answer for this title; until then the server's projection of it. */
+        function current() {
+            return internal.isTmdbKnown?.(mediaType, tmdbId) !== false
+                ? internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId)
+                : data.jeSpoiler?.guarded === true;
+        }
+
         function refresh() {
-            const enabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId)
-                || internal.isLoaded?.() !== true && data.jeSpoiler?.guarded === true;
+            const enabled = current();
             const text = JE.t(enabled ? 'spoiler_blur_pending_button_on' : 'spoiler_blur_pending_button_off');
             button.classList.toggle('je-spoiler-pending-on', enabled);
             button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
@@ -68,7 +74,7 @@
             if (button.disabled) return;
             button.disabled = true;
             const action = JE.createSessionAction();
-            const wasEnabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
+            const wasEnabled = current();
             void (async function() {
                 try {
                     if (wasEnabled) {

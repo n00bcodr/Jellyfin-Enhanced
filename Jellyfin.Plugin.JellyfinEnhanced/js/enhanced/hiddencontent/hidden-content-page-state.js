@@ -59,6 +59,15 @@
     state.adminLoadToken++; // in-flight admin fetches see a stale token and drop their result
   });
 
+  /**
+   * The session action of the page render in progress. Controls created during a render keep it,
+   * so an identity change makes every control of the outgoing viewer's list inert.
+   * @returns {{current: function(): boolean}}
+   */
+  function viewAction() {
+    return state.view || JE.createSessionAction();
+  }
+
   function scopeBadgeText(scope) {
     const s = (scope || '').toLowerCase();
     if (s === 'continuewatching') return JE.t('hidden_content_scope_cw_label');
@@ -155,6 +164,7 @@
     scopeUnhideText,
     POSTER_MAX_WIDTH,
     showUnhideConfirmation,
+    viewAction,
   });
 
 })();

@@ -232,6 +232,9 @@ function closeCurrentModal() {
             state.currentModal._cleanupEscapeListener();
         }
         state.currentModal.classList.remove('active');
+        // The fading modal keeps its DOM for the exit animation but takes no more input.
+        state.currentModal.setAttribute('inert', '');
+        state.currentModal.style.pointerEvents = 'none';
         // A replacement can open during the exit animation. Remove only the
         // modal this close owns, never the replacement stored in currentModal.
         const closingModal = state.currentModal;

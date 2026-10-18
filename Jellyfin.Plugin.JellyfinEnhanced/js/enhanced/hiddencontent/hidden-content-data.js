@@ -532,6 +532,33 @@
     }
 
     /**
+     * Resolves an unhide to its confirmed outcome. A provider-rule write resolves false on failure;
+     * a local-store edit (no promise) is owned by the debounced save and its retry ladder.
+     * @param {*} result Value returned by {@link unhideItem}.
+     * @returns {Promise<boolean>}
+     */
+    function unhideConfirmed(result) {
+        return Promise.resolve(result).then(saved => saved !== false, () => false);
+    }
+
+    /**
+     * Restores a manager entry whose unhide failed and turns its control into a visible retry.
+     * @param {HTMLElement|null} entry Card or row that was fading out.
+     * @param {HTMLButtonElement|null} button The entry's unhide control.
+     */
+    function showUnhideFailed(entry, button) {
+        if (entry) {
+            entry.classList.remove('je-hidden-item-removing');
+            entry.style.opacity = '';
+        }
+        if (!button) return;
+        const label = JE.t('hidden_content_unhide_failed_retry');
+        button.textContent = label;
+        button.title = label;
+        button.disabled = false;
+    }
+
+    /**
      * Merges partial settings into the hidden-content settings.
      * Triggers a save, change event, and native card re-filter.
      * @param {Object} partial Key-value pairs to merge into settings.
@@ -695,6 +722,8 @@
         isHiddenByTmdbId,
         hideItem,
         unhideItem,
+        unhideConfirmed,
+        showUnhideFailed,
         updateSettings,
         getAllHiddenItems,
         getHiddenCount,

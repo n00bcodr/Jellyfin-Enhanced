@@ -9,7 +9,7 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
 
-    const { getHiddenData, unhideItem, unhideAll } = internal;
+    const { getHiddenData, unhideItem, unhideAll, unhideConfirmed, showUnhideFailed } = internal;
 
     /** Max poster width when loading images from TMDB / Jellyfin. */
     const POSTER_MAX_WIDTH = 300;
@@ -264,15 +264,25 @@
             for (const item of filtered) {
                 const card = createItemCard(item, () => overlay.remove());
 
-                card.querySelector('.je-hidden-item-unhide').addEventListener('click', () => {
+                const unhideBtn = card.querySelector('.je-hidden-item-unhide');
+                unhideBtn.addEventListener('click', () => {
+                    if (unhideBtn.disabled) return;
+                    unhideBtn.disabled = true;
                     card.classList.add('je-hidden-item-removing');
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         if (!action.current()) return;
-                        unhideItem(item._key || item.itemId);
+                        // The card, count and empty state change only once the unhide is confirmed.
+                        const saved = await unhideConfirmed(unhideItem(item._key || item.itemId));
+                        if (!action.current()) return;
+                        if (!saved) {
+                            showUnhideFailed(card, unhideBtn);
+                            return;
+                        }
+                        const index = items.indexOf(item);
+                        if (index !== -1) items.splice(index, 1);
                         card.remove();
-                        const remaining = gridContainer.querySelectorAll('.je-hidden-item-card').length;
-                        header.querySelector('h2').textContent = `${JE.t('hidden_content_manage_title')} (${remaining})`;
-                        if (remaining === 0) {
+                        header.querySelector('h2').textContent = `${JE.t('hidden_content_manage_title')} (${items.length})`;
+                        if (!gridContainer.querySelector('.je-hidden-item-card')) {
                             const emptyDiv = document.createElement('div');
                             emptyDiv.className = 'je-hidden-management-empty';
                             emptyDiv.textContent = JE.t('hidden_content_manage_empty');

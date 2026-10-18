@@ -30,6 +30,7 @@
         parentSeriesCache.clear();
         parentSeriesRequestMap.clear();
         parentTitlesChecked.clear();
+        parentTitlesRetryAt = 0;
         try {
             document.querySelectorAll('.je-hidden').forEach((el) => el.classList.remove('je-hidden'));
             document.querySelectorAll(`[${PROCESSED_ATTR}]`).forEach((el) => {
@@ -89,8 +90,8 @@
                 return seriesId;
             } catch (e) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return null;
+                // A failed read is not an answer: the next view looks it up again.
                 console.warn('🪼 Jellyfin Enhanced: Failed to fetch parent series for', itemId, e);
-                parentSeriesCache.set(itemId, null);
                 return null;
             } finally {
                 if (!JE.session || JE.session.isCurrent(requestEpoch)) parentSeriesRequestMap.delete(itemId);
@@ -227,9 +228,13 @@
         });
     }
 
+    /** After a failed identity batch, later views retry it once this window has passed. */
+    const TITLE_RETRY_AFTER_MS = 30000;
+    let parentTitlesRetryAt = 0;
+
     /** Resolves parent provider identities once per view in batches, never once per episode card. */
     async function hydrateParentTitles(ids, action) {
-        if (!internal.hasProviderRules()) return;
+        if (!internal.hasProviderRules() || Date.now() < parentTitlesRetryAt) return;
         const missing = [...new Set(ids)].filter(id => id && !parentTitlesChecked.has(id) && !internal.titleData({ itemId: id }));
         for (let start = 0; start < missing.length; start += 50) {
             if (!action.current()) return;
@@ -245,7 +250,13 @@
                 for (const item of reply?.Items || []) {
                     if (internal.titleData(item)) parentTitlesChecked.delete(normalizeId(item.Id));
                 }
-            } catch (_) { /* A later view can retry; never turn a failed batch into per-card requests. */ }
+            } catch (_) {
+                // A later view retries after the window; never turn a failed batch into per-card requests.
+                if (!action.current()) return;
+                for (const id of batch) parentTitlesChecked.delete(id);
+                parentTitlesRetryAt = Date.now() + TITLE_RETRY_AFTER_MS;
+                return;
+            }
         }
     }
 

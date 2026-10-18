@@ -82,9 +82,15 @@
         const boxes = Array.from(ctx.help.querySelectorAll('input[type="checkbox"][id^="sbPref"][data-pref]'));
         if (boxes.length === 0) return;
         const setDisabled = disabled => boxes.forEach(box => { box.disabled = disabled; });
+        // The section shows the viewer it was rendered for; a later viewer's change never saves through it.
+        const action = JE.createSessionAction();
 
         async function save(changed, previousChecked) {
-            const action = JE.createSessionAction();
+            if (!action.current()) {
+                changed.checked = previousChecked;
+                setDisabled(true);
+                return;
+            }
             setDisabled(true);
             try {
                 await internal.whenLoaded();
@@ -100,7 +106,7 @@
                 changed.checked = previousChecked;
                 JE.toast?.(JE.t('spoiler_blur_error_toast'));
             } finally {
-                setDisabled(false);
+                setDisabled(!action.current());
             }
         }
 
@@ -114,6 +120,7 @@
         void (async function() {
             try {
                 await internal.whenLoaded();
+                if (!action.current()) return;
                 if (!internal.isLoadOk()) { setDisabled(true); return; }
                 const prefs = internal.getUserPrefs();
                 boxes.forEach(function(box) {

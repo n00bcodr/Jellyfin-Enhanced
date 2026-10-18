@@ -17,9 +17,23 @@
     let loaded = false;
     let loadOk = false;
     let statePromise = null;
+    // A failed read settles fail-closed but stays retryable: a few timed recoveries, then
+    // on-demand reloads at most once per window. Both belong to the session that failed.
+    const RECOVERY_DELAYS_MS = [2000, 10000, 30000];
+    const RETRY_AFTER_MS = 5000;
+    let failedAt = 0;
+    let recoveryAttempt = 0;
+    let recoveryTimer = null;
+    // Titles whose state an accepted write established while the full state is unavailable.
+    const confirmed = new Set();
 
     function request(path, options) {
         return JE.core.api.plugin(path, options);
+    }
+
+    /** An unshared full-state read; a unique signal prevents joining a read submitted before a write. */
+    function readState() {
+        return request('/spoiler-blur/series', { skipCache: true, signal: new AbortController().signal });
     }
 
     let mutationQueue = Promise.resolve();
@@ -40,10 +54,43 @@
         userPrefs = value.Prefs || {};
         loaded = true;
         loadOk = true;
+        recoveryAttempt = 0;
+        clearTimeout(recoveryTimer);
+        recoveryTimer = null;
+        confirmed.clear();
+    }
+
+    /** Applies an accepted write's own effect when its authoritative reread failed. */
+    function applyConfirmed(kind, key, set, enabled) {
+        if (enabled) set.add(key);
+        else set.delete(key);
+        confirmed.add(`${kind}:${key}`);
+    }
+
+    /** Repaints every owned guard control from the current mirrors. */
+    function refreshControls() {
+        document.querySelectorAll('.je-spoiler-pending-btn, .je-spoiler-pending-detail, .je-spoiler-blur-btn').forEach(node => node.jeSpoilerRefresh?.());
+    }
+
+    /** Settles a failed read fail-closed and schedules the next bounded, session-bound recovery read. */
+    function settleFailed() {
+        loaded = true;
+        loadOk = false;
+        statePromise = null;
+        failedAt = Date.now();
+        if (recoveryTimer || recoveryAttempt >= RECOVERY_DELAYS_MS.length) return;
+        const action = JE.createSessionAction();
+        recoveryTimer = setTimeout(function() {
+            recoveryTimer = null;
+            // A load already in flight settles (and reschedules) on its own.
+            if (!action.current() || loadOk || statePromise) return;
+            recoveryAttempt++;
+            void startLoad();
+        }, RECOVERY_DELAYS_MS[recoveryAttempt]);
     }
 
     /** All controls share one ordered write, authoritative read and policy notification path. */
-    function mutateState(path, options) {
+    function mutateState(path, options, project) {
         const action = JE.createSessionAction();
         const task = mutationQueue.catch(() => {}).then(async () => {
             if (!action.current()) return;
@@ -52,20 +99,21 @@
             generation++;
             JE.core.api.manager?.invalidatePresentation?.();
             try {
-                // A unique signal prevents joining a read submitted before this write.
-                const value = await request('/spoiler-blur/series', { skipCache: true, signal: new AbortController().signal });
+                const value = await readState();
                 if (!action.current()) return response;
                 adoptState(value);
                 statePromise = Promise.resolve();
             } catch (err) {
                 if (!action.current()) return response;
-                loaded = true;
-                loadOk = false;
-                throw err;
+                // The write was accepted: show its own effect, keep consumers fail-closed, and reconcile later.
+                console.warn(`${logPrefix} state reread failed after an accepted change; recovering:`, err);
+                project();
+                recoveryAttempt = 0;
+                settleFailed();
             } finally {
                 if (action.current()) {
                     window.dispatchEvent(new CustomEvent('je-spoiler-policy-changed', { detail: { userId: ApiClient.getCurrentUserId() } }));
-                    document.querySelectorAll('.je-spoiler-pending-btn, .je-spoiler-pending-detail').forEach(node => node.jeSpoilerRefresh?.());
+                    refreshControls();
                     internal.refreshSpoilerableImages?.();
                     void JE.tagPipeline?.invalidateServerCache?.();
                     JE.tagPipeline?.clearProcessed?.();
@@ -78,8 +126,8 @@
         return task;
     }
 
-    internal.loadState = function() {
-        if (statePromise) return statePromise;
+    /** Reads this viewer's state; a late reply from another session or an older generation is dropped. */
+    function startLoad() {
         // A response resolving after a user switch must not populate the
         // (already reset) state with the previous user's data.
         const action = JE.createSessionAction();
@@ -87,10 +135,11 @@
         // endpoint); it is handed out once, so later loads ask the server.
         const requestGeneration = generation;
         const prefetchedState = JE.takePrefetched?.('SpoilerBlurSeries');
-        statePromise = (prefetchedState ? Promise.resolve(prefetchedState) : request('/spoiler-blur/series'))
+        statePromise = (prefetchedState ? Promise.resolve(prefetchedState) : readState())
             .then(function(data) {
                 if (!action.current() || requestGeneration !== generation) return;
                 adoptState(data);
+                refreshControls();
                 // If tag renderers already ran fail-closed while this request was
                 // in flight, give them one authoritative pass now.
                 try {
@@ -103,8 +152,7 @@
             .catch(function(err) {
                 if (!action.current() || requestGeneration !== generation) return;
                 console.error(`${logPrefix} state load failed; downstream consumers will fail closed:`, err);
-                loaded = true;
-                loadOk = false;
+                settleFailed();
                 // Tag renderers held back on cards while this was in flight
                 // (e.g. user-review chips, see ratingtags.js): with the state
                 // settled — failed, so ratings stay suppressed — give them
@@ -117,17 +165,24 @@
                 }
             });
         return statePromise;
+    }
+
+    internal.loadState = function() {
+        if (statePromise) return statePromise;
+        // A settled failure answers fail-closed until its window passes; the next demand retries.
+        if (loaded && !loadOk && Date.now() - failedAt < RETRY_AFTER_MS) return Promise.resolve();
+        return startLoad();
     };
 
     internal.whenLoaded = function() {
         if (JE.pluginConfig?.SpoilerBlurEnabled !== true) return Promise.resolve();
-        if (loaded) return Promise.resolve();
-        return statePromise || internal.loadState();
+        if (loaded && loadOk) return Promise.resolve();
+        return internal.loadState();
     };
 
     internal.isStateLoaded = function() { return loaded; };
     internal.isLoadOk = function() { return loadOk; };
-    // True once the initial state request has settled (successfully or not).
+    // True once a state request has settled (successfully or not).
     internal.isLoaded = function() { return loaded; };
     internal.isEnabledFor = function(id) { return enabledSeries.has(internal.normalizeId(id)); };
     internal.isMovieEnabledFor = function(id) { return enabledMovies.has(internal.normalizeId(id)); };
@@ -143,22 +198,36 @@
     };
 
     internal.enableForSeries = function(id) {
-        return mutateState(`/spoiler-blur/series/${encodeURIComponent(internal.normalizeId(id))}`, { method: 'POST', skipRetry: true });
+        const key = internal.normalizeId(id);
+        return mutateState(`/spoiler-blur/series/${encodeURIComponent(key)}`, { method: 'POST', skipRetry: true }, () => applyConfirmed('series', key, enabledSeries, true));
     };
     internal.disableForSeries = function(id) {
-        return mutateState(`/spoiler-blur/series/${encodeURIComponent(internal.normalizeId(id))}`, { method: 'DELETE', skipRetry: true });
+        const key = internal.normalizeId(id);
+        return mutateState(`/spoiler-blur/series/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('series', key, enabledSeries, false));
     };
     internal.enableForMovie = function(id, name) {
-        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(internal.normalizeId(id))}`, { method: 'POST', body: { MovieName: name || '' }, skipRetry: true });
+        const key = internal.normalizeId(id);
+        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(key)}`, { method: 'POST', body: { MovieName: name || '' }, skipRetry: true }, () => applyConfirmed('movie', key, enabledMovies, true));
     };
     internal.disableForMovie = function(id) {
-        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(internal.normalizeId(id))}`, { method: 'DELETE', skipRetry: true });
+        const key = internal.normalizeId(id);
+        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('movie', key, enabledMovies, false));
     };
     internal.enableForCollection = function(id, name) {
-        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(internal.normalizeId(id))}`, { method: 'POST', body: { CollectionName: name || '' }, skipRetry: true });
+        const key = internal.normalizeId(id);
+        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(key)}`, { method: 'POST', body: { CollectionName: name || '' }, skipRetry: true }, () => applyConfirmed('collection', key, enabledCollections, true));
     };
     internal.disableForCollection = function(id) {
-        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(internal.normalizeId(id))}`, { method: 'DELETE', skipRetry: true });
+        const key = internal.normalizeId(id);
+        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('collection', key, enabledCollections, false));
+    };
+
+    /** True when the mirrors can answer for this title: a loaded state, or an accepted write since. */
+    internal.isKnownForKind = function(kind, id) {
+        return loadOk || confirmed.has(`${kind === 'movie' || kind === 'collection' ? kind : 'series'}:${internal.normalizeId(id)}`);
+    };
+    internal.isTmdbKnown = function(mediaType, tmdbId) {
+        return loadOk || confirmed.has(`tmdb:${internal.pendingKey(mediaType, tmdbId)}`);
     };
 
     internal.isTmdbEnabled = function(mediaType, tmdbId, jellyfinMediaId) {
@@ -176,18 +245,18 @@
         const id = String(tmdbId || '').trim();
         if (!id || (type !== 'tv' && type !== 'movie')) return Promise.reject(new Error('invalid mediaType/tmdbId'));
         const query = displayName ? `?displayName=${encodeURIComponent(displayName)}` : '';
-        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}${query}`, { method: 'POST', skipRetry: true });
+        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}${query}`, { method: 'POST', skipRetry: true }, () => applyConfirmed('tmdb', internal.pendingKey(type, id), enabledPendingTmdb, true));
     };
     internal.disableForTmdb = function(mediaType, tmdbId) {
         const type = String(mediaType || '').toLowerCase();
         const id = String(tmdbId || '').trim();
         if (!id || (type !== 'tv' && type !== 'movie')) return Promise.reject(new Error('invalid mediaType/tmdbId'));
-        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', skipRetry: true });
+        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('tmdb', internal.pendingKey(type, id), enabledPendingTmdb, false));
     };
 
     internal.getUserPrefs = function() { return Object.assign({}, userPrefs); };
     internal.setUserPrefs = function(next) {
-        return mutateState('/spoiler-blur/user-prefs', { method: 'POST', body: next || {}, skipRetry: true })
+        return mutateState('/spoiler-blur/user-prefs', { method: 'POST', body: next || {}, skipRetry: true }, () => { userPrefs = { ...(next || {}) }; })
             .then(() => internal.getUserPrefs());
     };
 
@@ -199,6 +268,11 @@
         generation++;
         mutationQueue = Promise.resolve();
         statePromise = null;
+        clearTimeout(recoveryTimer);
+        recoveryTimer = null;
+        recoveryAttempt = 0;
+        failedAt = 0;
+        confirmed.clear();
         loaded = false;
         loadOk = false;
         enabledSeries.clear();
@@ -206,5 +280,7 @@
         enabledCollections.clear();
         enabledPendingTmdb.clear();
         userPrefs = {};
+        // The outgoing viewer's native toggles show their state; the next page view draws the incoming one.
+        document.querySelectorAll('.je-spoiler-blur-btn').forEach(button => button.remove());
     });
 })(window.JellyfinEnhanced);
