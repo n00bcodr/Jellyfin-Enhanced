@@ -1471,6 +1471,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-paint.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-playlist.js",
       "category": "js"
     },
@@ -10211,7 +10215,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 575,
+    "files": 576,
     "routes": 270,
     "configuration_properties": 609,
     "storage_references": 86,

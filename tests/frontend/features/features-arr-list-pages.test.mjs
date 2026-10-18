@@ -8,12 +8,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createHarness, jsRoot, jsonResponse, deferred } from '../helpers/harness.mjs';
+import { installDomWriteSpy } from '../helpers/dom-write-spy.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = [
   'arr/status/status-core.js', 'arr/status/status-styles.js',
   'arr/ask/ask-core.js', 'arr/ask/ask-sheet-styles.js', 'arr/ask/ask-sheet.js',
-  'arr/lists/list-api.js', 'arr/lists/list-render.js', 'arr/lists/list-request.js', 'arr/lists/list-playlist.js',
+  'arr/lists/list-api.js', 'arr/lists/list-paint.js', 'arr/lists/list-render.js', 'arr/lists/list-request.js', 'arr/lists/list-playlist.js',
   'arr/lists/list-collection.js', 'arr/lists/list-grid.js', 'arr/lists/list-pages.js'
 ];
 
@@ -54,7 +55,7 @@ function view(placeholders, order, extra = {}) {
  * A harness with the list pages loaded against fake routes.
  * @returns {Object} Harness pieces.
  */
-function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, items = {}, spoiler = null, getItems, html = '', me = MEMBER, route = null, realBody = false } = {}) {
+function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, items = {}, spoiler = null, getItems, html = '', me = MEMBER, route = null, realBody = false, plant = {} } = {}) {
   const calls = [];
   const toasts = [];
   const viewHooks = [];
@@ -112,7 +113,16 @@ function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, 
     }
   });
   t.after(() => h.close());
-  for (const m of MODULES) h.load(m);
+  // Every DOM write by a list module must go through the paint gate (paint / erase); the test fails otherwise.
+  const spy = installDomWriteSpy(h.window);
+  t.after(() => { assert.deepEqual(spy.violations, [], 'list DOM writes outside paint()'); assert.equal(spy.overflow(), 0); });
+  for (const m of MODULES) {
+    if (!plant[m]) { h.load(m); continue; }
+    // A planted copy of a module (same file name in its stack frames), to prove the spy catches what it should.
+    const file = resolve(jsRoot, m);
+    const source = plant[m](readFileSync(file, 'utf8'));
+    h.window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
+  }
   const doc = h.document;
   /** Shows a page through the captured view hook. */
   const show = async (page, hash) => {
@@ -143,9 +153,22 @@ function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, 
   };
   /** The DOM order of the container as tokens (real rows by data-id, JE rows by entry id). */
   const order = container => [...container.children].map(n => n.classList.contains('listItem') ? `e:${n.getAttribute('data-id').slice(-2)}` : n.classList.contains('je-list-row') ? `p:${n.dataset.jeListId.slice(-2)}` : '?');
+  /** A collection details page. */
+  const collectionPage = () => {
+    const page = doc.createElement('div');
+    page.className = 'page itemDetailPage';
+    page.innerHTML = '<div class="detailSection"><div class="collectionItems"><div class="verticalSection"></div></div></div>';
+    doc.body.appendChild(page);
+    return page;
+  };
+  /** Shows a page without waiting (jellyfin-web's view hook only). */
+  const showNow = (page, hash) => {
+    if (hash) h.window.location.hash = hash;
+    for (const fn of viewHooks) fn('x', page, h.window.location.hash);
+  };
   /** Starts the pages (the delayed first look, at once). */
   const start = async () => { h.JE.arrListPages.settingsChanged(); await settle(); };
-  return { ...h, calls, toasts, state, show, settle, start, playlistPage, order, bodySubs, userChange, viewHooks };
+  return { ...h, calls, toasts, state, show, showNow, settle, start, playlistPage, collectionPage, order, bodySubs, userChange, viewHooks, spy };
 }
 
 const PLAYLIST_ITEM = { Id: LIST, Type: 'Playlist' };
@@ -700,7 +723,7 @@ test('r1 B1: a page element re-used for another list ignores the late identity l
   assert.equal(h.calls.filter(c => c.path === `/acquire/lists/${LIST}`).length, 0, 'A was never read');
 });
 
-test('r1 S1/B1: the one acceptance rule (session, view-show generation, route, list) and every await in the list modules goes through it', async t => {
+test('r1 S1/B1: the one acceptance rule (session, view-show generation, route, list) is the controller\'s one ticket', async t => {
   const h = setup(t, { views: () => [view([ph(P(1))], ['p:' + P(1)])], items: { [LIST]: PLAYLIST_ITEM } });
   await h.start();
   const { page } = h.playlistPage([]);
@@ -710,38 +733,24 @@ test('r1 S1/B1: the one acceptance rule (session, view-show generation, route, l
   assert.equal(ticket.current(), true);
   assert.equal(ticket.accepts(view([], [])), true);
   assert.equal(ticket.accepts(view([], [], { listId: LIST_B })), false, 'another list\'s view');
-  // The pages' rule adds the view shown and its route.
+  // The controller's ticket adds the page show and its route.
   const lp = h.JE.internals.arrListPages;
   const ctrl = [...lp.pages.controllers][0];
-  const pageTicket = lp.pages.ticket(ctrl);
+  const pageTicket = ctrl.ticket;
   assert.equal(pageTicket.current(), true);
+  assert.equal(pageTicket.accepts(view([], [])), true);
   h.window.location.hash = '#/details?id=' + LIST_B;
   assert.equal(pageTicket.current(), false, 'route changed');
   h.window.location.hash = '#/details?id=' + LIST;
   assert.equal(pageTicket.current(), true);
   await h.show(page);
   assert.equal(pageTicket.current(), false, 'a newer view show');
-  const second = lp.pages.ticket(ctrl);
+  assert.notEqual(ctrl.ticket, pageTicket, 'the show gave the controller a new ticket');
+  const second = ctrl.ticket;
+  assert.equal(second.current(), true);
   h.state.epoch = 5;
   assert.equal(second.current(), false, 'another session');
   assert.equal(ticket.current(), false);
-  // Source: every await in the list modules is followed, before anything else runs, by the rule.
-  const files = ['list-api.js', 'list-pages.js', 'list-playlist.js', 'list-collection.js', 'list-grid.js', 'list-request.js'];
-  let awaits = 0;
-  for (const file of files) {
-    const lines = readFileSync(resolve(jsRoot, 'arr/lists', file), 'utf8').split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const code = lines[i].replace(/\/\/.*$/, '');
-      if (!/\bawait\b/.test(code) || /^\s*(\*|\/\*)/.test(lines[i])) continue;
-      awaits += 1;
-      let end = i;
-      while (end < lines.length && !/;\s*$/.test(lines[end].replace(/\/\/.*$/, ''))) end += 1;
-      let next = end + 1;
-      while (next < lines.length && (!lines[next].trim() || /^\s*\/\//.test(lines[next]))) next += 1;
-      assert.match(lines[next] || '', /\.current\(\)/, `${file}:${i + 1} "${lines[i].trim()}" is not followed by the acceptance rule`);
-    }
-  }
-  assert.ok(awaits >= 12, `awaits found: ${awaits}`);
 });
 
 test('r1 S2: Spoiler Guard hides a guarded entry\'s air dates (rows, cards and labels) when air dates are hidden', async t => {
@@ -921,3 +930,347 @@ function tnEn(key, count) {
   const forms = translate(key, { count }).split('|');
   return (count === 1 ? forms[0] : forms[forms.length - 1]).trim();
 }
+
+// ------------------------------------------------------------------ review round 2: the paint gate
+
+const HEADER_BUTTON = '<div class="mainDetailButtons"><button is="emby-playstatebutton" type="button" class="button-flat btnPlaystate detailButton emby-button playstatebutton-played" title="Watched" data-played="true"><div class="detailButton-content"><span class="material-icons detailButton-icon check playstatebutton-icon-played" aria-hidden="true"></span></div></button></div>';
+const realRow = id => `<div class="listItem" data-id="${id}" data-playlistitemid="${id}"></div>`;
+
+test('r2 gate: paint() runs only for a current ticket with a resolved Spoiler policy, re-queues until it resolves, drops after revoke', async t => {
+  const h = setup(t, { views: () => [view([], [])] });
+  const gate = h.JE.internals.arrListPages.gate;
+  const policy = deferred();
+  let live = true;
+  const ticket = gate.issue(LIST, () => live, () => policy.promise);
+  const ran = [];
+  assert.equal(gate.paint(ticket, () => ran.push('a'), 'k'), false, 'no policy yet');
+  assert.equal(gate.paint(ticket, () => ran.push('b'), 'k'), false);
+  assert.deepEqual(ran, []);
+  policy.resolve(gate.policy(() => false, false));
+  await h.settle();
+  assert.deepEqual(ran, ['b'], 'the queued paint ran once, the newest of its key');
+  assert.equal(gate.paint(ticket, () => ran.push('c')), true);
+  live = false;
+  assert.equal(gate.paint(ticket, () => ran.push('d')), false, 'scope gone');
+  live = true;
+  ticket.revoke();
+  assert.equal(gate.paint(ticket, () => ran.push('e')), false, 'revoked');
+  assert.equal(ticket.current(), false);
+  // A ticket revoked while its policy loads never paints what was queued.
+  const slow = deferred();
+  const other = gate.issue(LIST, () => true, () => slow.promise);
+  gate.paint(other, () => ran.push('f'), 'k');
+  other.revoke();
+  slow.resolve(gate.policy(() => false, false));
+  await h.settle();
+  // A transport ticket (no policy) never paints; nor does a missing one.
+  assert.equal(gate.paint(h.JE.arrLists.ticket(LIST), () => ran.push('g')), false);
+  assert.equal(gate.paint(null, () => ran.push('h')), false);
+  assert.deepEqual(ran, ['b', 'c']);
+  // A policy that fails to load is a resolved one that guards everything (dates too).
+  const failing = gate.issue(LIST, () => true, () => Promise.reject(new Error('x')));
+  await h.settle();
+  assert.equal(failing.policy.resolved, true);
+  assert.equal(failing.policy({ kind: 'movie', tmdbId: 1 }), true);
+  assert.equal(failing.policy.airDates, true);
+});
+
+test('r2 gate: a dropped paint is held at most once per key, runs once when the policy resolves, and can never re-queue itself', async t => {
+  const h = setup(t, { views: () => [view([], [])] });
+  const gate = h.JE.internals.arrListPages.gate;
+  // A loader that "resolves" to a policy that isn't resolved (the fail-closed one): taken as guard-everything, resolved.
+  const odd = deferred();
+  const ticket = gate.issue(LIST, () => true, () => odd.promise);
+  let runs = 0;
+  // A paint that paints again from inside itself: held once before the policy, then it runs and its inner paint runs at
+  // once (a resolved ticket never holds anything), so it can't loop through the queue.
+  const again = () => { runs += 1; if (runs < 3) gate.paint(ticket, again, 'k'); };
+  for (let i = 0; i < 50; i++) gate.paint(ticket, again, 'k');
+  // More keys than the queue keeps: the extra ones are dropped, not kept.
+  const keyed = [];
+  for (let i = 0; i < 40; i++) gate.paint(ticket, () => keyed.push(i), 'key' + i);
+  odd.resolve(gate.FAIL_CLOSED);
+  await h.settle();
+  assert.equal(ticket.policy.resolved, true);
+  assert.equal(ticket.policy({ kind: 'movie' }), true);
+  assert.equal(ticket.policy.airDates, true);
+  assert.equal(runs, 3, 'the held paint ran once, its own re-paints ran directly');
+  assert.ok(keyed.length > 0 && keyed.length <= 16, `held keys: ${keyed.length}`);
+  await h.settle();
+  assert.equal(runs, 3, 'nothing more later');
+  // A ticket that goes stale while held: its held paints never run, and later paints are dropped (not held).
+  const slow = deferred();
+  let scopeOk = true;
+  const stale = gate.issue(LIST, () => scopeOk, () => slow.promise);
+  let staleRuns = 0;
+  gate.paint(stale, () => { staleRuns += 1; }, 'k');
+  scopeOk = false;
+  slow.resolve(gate.policy(() => false, false));
+  await h.settle();
+  scopeOk = true;
+  assert.equal(staleRuns, 0, 'held for a ticket that was not current when its policy came');
+  // Writes inside paint/erase are scoped; nothing is left scoped after a throw.
+  assert.throws(() => gate.paint(gate.issue(LIST, () => true, gate.policy(() => false, false)), () => { throw new Error('boom'); }));
+  assert.equal(gate.scope(), '');
+});
+
+test('r2 policy: the policy before it is resolved fails closed (no air dates, no episode titles, no notes)', async t => {
+  const h = setup(t, { views: () => [view([], [])] });
+  const lp = h.JE.internals.arrListPages;
+  const closed = lp.gate.FAIL_CLOSED;
+  assert.equal(closed.resolved, false);
+  const entry = ph(P(1), { kind: 'episodes', mediaType: 'tv', tmdbId: 5, seasonNumber: 2, episodes: [{ s: 2, e: 4, title: 'The Twist' }], releaseDate: '2099-01-02', released: false, note: 'dies' });
+  const ctx = { guarded: closed };
+  assert.equal(lp.render.subtitle(entry, ctx), 'S02E04');
+  assert.equal(lp.render.dateLabel(ph(P(2), { releaseDate: '2099-01-02', released: false }), ctx), '');
+  assert.equal(lp.render.signature(entry, ctx).includes('|g|d|'), true);
+});
+
+test('r2 S1: nothing is painted before the Spoiler policy is resolved, a change notification included; then the newest view is painted with it', async t => {
+  const loaded = deferred();
+  const sg = { whenLoaded: () => loaded.promise, isLoadOk: () => true, isTmdbEnabled: (media, id) => media === 'tv' && Number(id) === 77, isCollectionEnabledFor: () => false, guardedIds: () => ({ series: [], movies: [] }), getUserPrefs: () => ({}) };
+  const guardedEp = ph(P(1), { kind: 'episodes', mediaType: 'tv', tmdbId: 77, titleKey: 'tv:tvdb:7', seasonNumber: 3, episodes: [{ s: 3, e: 1, title: 'The Reveal' }], releaseDate: '2099-01-02', released: false, note: 'She was the killer' });
+  const open = ph(P(2), { title: 'Open movie', releaseDate: '2099-03-04', released: false });
+  const h = setup(t, { config: { SpoilerBlurEnabled: true }, spoiler: sg, views: () => [view([guardedEp], [guardedEp.token])], items: { [LIST]: PLAYLIST_ITEM } });
+  await h.start();
+  const { page, container } = h.playlistPage([]);
+  page.insertAdjacentHTML('afterbegin', HEADER_BUTTON);
+  await h.show(page);
+  assert.equal(container.querySelectorAll('.je-list-row').length, 0, 'the read answered, the policy did not: nothing');
+  // A change of this list, from this session, while Spoiler Guard is still loading.
+  h.JE.internals.arrListPages.pages.onListChange(LIST, view([guardedEp, open], [guardedEp.token, open.token], { rev: 2 }), { epoch: 1 });
+  await h.settle();
+  assert.equal(container.querySelectorAll('.je-list-row').length, 0, 'the change is not painted either');
+  assert.ok(!container.textContent.includes('2099') && !container.textContent.includes('Coming'));
+  assert.equal(page.classList.contains('je-list-incomplete-page'), false, 'nor the header');
+  loaded.resolve();
+  await h.settle();
+  const rows = [...container.querySelectorAll('.je-list-row')];
+  assert.equal(rows.length, 2, 'the newest view, once the policy is known');
+  const text = rows[0].textContent + ' | ' + rows[0].querySelector('.je-list-row-main').getAttribute('aria-label');
+  assert.ok(!/Reveal|killer|2099|Coming/.test(text), text);
+  assert.match(rows[1].textContent, /Coming/, 'an unguarded entry keeps its date');
+  assert.ok(page.classList.contains('je-list-incomplete-page'));
+});
+
+test('r2 S2/B5 notification: a change for list A after A\'s page was re-used for B (B\'s lookup pending) paints nothing; A\'s rows go at once', async t => {
+  const lookupB = deferred();
+  const h = setup(t, {
+    views: id => [id === LIST ? view([ph(P(1))], ['p:' + P(1)]) : view([ph(P(2))], ['p:' + P(2)], { listId: LIST_B })],
+    items: { [LIST]: PLAYLIST_ITEM, [LIST_B]: lookupB.promise }
+  });
+  await h.start();
+  const { page, container } = h.playlistPage([]);
+  page.insertAdjacentHTML('afterbegin', HEADER_BUTTON);
+  await h.show(page, '#/details?id=' + LIST);
+  assert.deepEqual(h.order(container), ['p:01']);
+  await h.show(page, '#/details?id=' + LIST_B);
+  assert.deepEqual(h.order(container), [], 'A\'s rows go as soon as the page shows another list');
+  assert.equal(page.querySelector('.btnPlaystate').title, 'Watched', 'and A\'s header mark');
+  h.JE.internals.arrListPages.pages.onListChange(LIST, view([ph(P(1)), ph(P(8), { title: 'Only on A' })], ['p:' + P(1), 'p:' + P(8)], { rev: 7 }), { epoch: 1 });
+  await h.settle();
+  assert.deepEqual(h.order(container), []);
+  assert.ok(!container.textContent.includes('Only on A'));
+  lookupB.resolve({ Id: LIST_B, Type: 'Playlist' });
+  await h.settle(60);
+  assert.deepEqual(h.order(container), ['p:02']);
+});
+
+test('r2 response: A\'s read answering after A\'s page was re-used for B paints nothing', async t => {
+  const readA = deferred();
+  const lookupB = deferred();
+  const h = setup(t, {
+    views: id => (id === LIST ? readA.promise : [view([ph(P(2))], ['p:' + P(2)], { listId: LIST_B })]),
+    items: { [LIST]: PLAYLIST_ITEM, [LIST_B]: lookupB.promise }
+  });
+  await h.start();
+  const { page, container } = h.playlistPage([]);
+  await h.show(page, '#/details?id=' + LIST);
+  await h.show(page, '#/details?id=' + LIST_B);
+  readA.resolve([view([ph(P(1))], ['p:' + P(1)])]);
+  await h.settle(60);
+  assert.deepEqual(h.order(container), []);
+  lookupB.resolve({ Id: LIST_B, Type: 'Playlist' });
+  await h.settle(60);
+  assert.deepEqual(h.order(container), ['p:02']);
+});
+
+test('r2 S3 slice: collection cards still to come are dropped when the page is left between two slices', async t => {
+  const entries = Array.from({ length: 50 }, (_, i) => ph('d' + String(i).padStart(31, '0'), { title: `C${i}` }));
+  const coll = { listId: COLL, listKind: 'collection', rev: 1, canEdit: false, actions: [], statusShown: false, placeholders: entries, order: null };
+  const h = setup(t, { views: () => [coll], items: { [COLL]: { Id: COLL, Type: 'BoxSet' } } });
+  const page = h.collectionPage();
+  const other = h.document.createElement('div');
+  other.className = 'page itemDetailPage hide';
+  h.document.body.appendChild(other);
+  await h.start();
+  const lp = h.JE.internals.arrListPages;
+  const original = lp.render.card;
+  let built = 0;
+  // Navigation right after the first slice, before the next one runs.
+  lp.render.card = (...args) => {
+    built += 1;
+    if (built === 24) queueMicrotask(() => { page.classList.add('hide'); other.classList.remove('hide'); h.showNow(other, '#/details?id=' + 'e'.repeat(32)); });
+    return original(...args);
+  };
+  h.showNow(page, '#/details?id=' + COLL);
+  await h.settle(150);
+  assert.equal(built, 24, 'no card built after the page was left');
+  assert.equal(page.querySelectorAll('.je-list-card').length, 24);
+});
+
+test('r2 slice: a 699-row playlist still being built when its page is re-used for another list never lands there', async t => {
+  const entries = Array.from({ length: 699 }, (_, i) => ph('e' + String(i).padStart(31, '0'), { title: `E${i}` }));
+  const lookupB = deferred();
+  const h = setup(t, { views: () => [view(entries, entries.map(e => e.token))], items: { [LIST]: PLAYLIST_ITEM, [LIST_B]: lookupB.promise } });
+  await h.start();
+  const { page, container } = h.playlistPage([]);
+  const lp = h.JE.internals.arrListPages;
+  const original = lp.render.row;
+  let built = 0;
+  lp.render.row = (...args) => {
+    built += 1;
+    if (built === 150) queueMicrotask(() => h.showNow(page, '#/details?id=' + LIST_B));
+    return original(...args);
+  };
+  h.showNow(page, '#/details?id=' + LIST);
+  await h.settle(200);
+  assert.equal(container.querySelectorAll('.je-list-row').length, 0);
+  assert.equal(built, 150);
+});
+
+test('r2 observer: Jellyfin re-rendering a page re-used for B never gets A\'s rows back, and a hidden page\'s header is not relabelled', async t => {
+  const x = ITEM(0x99);
+  const lookupB = deferred();
+  const h = setup(t, { views: () => [view([ph(P(1))], ['p:' + P(1)])], items: { [LIST]: PLAYLIST_ITEM, [LIST_B]: lookupB.promise } });
+  await h.start();
+  const { page, container } = h.playlistPage([]);
+  await h.show(page, '#/details?id=' + LIST);
+  assert.deepEqual(h.order(container), ['p:01']);
+  await h.show(page, '#/details?id=' + LIST_B);
+  // jellyfin-web draws B's rows, bypassing afterRefresh.
+  container.innerHTML = realRow(x);
+  await h.settle(60);
+  assert.equal(container.querySelectorAll('.je-list-row').length, 0);
+  // The header: list A shown, then left (its page hidden); Jellyfin sets its button again while it is hidden.
+  const second = setup(t, { views: () => [view([ph(P(1)), ph(P(2))], ['p:' + P(1), 'p:' + P(2)])], items: { [LIST]: PLAYLIST_ITEM } });
+  await second.start();
+  const a = second.playlistPage([]);
+  a.page.insertAdjacentHTML('afterbegin', HEADER_BUTTON);
+  const btn = a.page.querySelector('.btnPlaystate');
+  await second.show(a.page, '#/details?id=' + LIST);
+  assert.equal(btn.title, tnEn('arr_lists_header_incomplete', 2));
+  const other = second.document.createElement('div');
+  other.className = 'page itemDetailPage';
+  second.document.body.appendChild(other);
+  a.page.classList.add('hide');
+  await second.show(other, '#/details?id=' + 'e'.repeat(32));
+  btn.title = 'Watched';
+  await second.settle();
+  assert.equal(btn.title, 'Watched', 'no relabel on a page not shown');
+  // Back: the mark comes back with the page.
+  other.classList.add('hide');
+  a.page.classList.remove('hide');
+  await second.show(a.page, '#/details?id=' + LIST);
+  assert.equal(btn.title, tnEn('arr_lists_header_incomplete', 2));
+});
+
+test('r2 timer: the wait for a not-yet-ready container never draws A after its page was re-used for B', async t => {
+  const lookupB = deferred();
+  const h = setup(t, { views: () => [view([ph(P(1))], ['p:' + P(1)])], items: { [LIST]: PLAYLIST_ITEM, [LIST_B]: lookupB.promise } });
+  await h.start();
+  const { page, container } = h.playlistPage([], { ready: false });
+  await h.show(page, '#/details?id=' + LIST);
+  assert.equal(container.querySelectorAll('.je-list-row').length, 0, 'waiting for the container');
+  await h.show(page, '#/details?id=' + LIST_B);
+  container.fetchData = () => Promise.resolve();
+  await sleep(320);
+  assert.equal(container.querySelectorAll('.je-list-row').length, 0);
+});
+
+test('r2 B6: while Jellyfin refreshes its rows (slower than the 1 s re-read) later views wait; the entries move once its rows are in', async t => {
+  const [a, b] = [ITEM(0xa1), ITEM(0xb2)];
+  const v1 = view([ph(P(1)), ph(P(2)), ph(P(3))], ['p:' + P(1), `e:${a}:0`, 'p:' + P(2), 'p:' + P(3)]);
+  const v2 = view([ph(P(1)), ph(P(3))], ['p:' + P(1), `e:${a}:0`, `e:${b}:0`, 'p:' + P(3)], { rev: 2 });
+  let reads = 0;
+  const h = setup(t, { views: () => { reads += 1; return [reads === 1 ? v1 : v2]; }, items: { [LIST]: PLAYLIST_ITEM } });
+  await h.start();
+  const { page, container } = h.playlistPage([a]);
+  let refreshes = 0;
+  container.notifyRefreshNeeded = () => {
+    refreshes += 1;
+    setTimeout(() => { container.innerHTML = realRow(a) + realRow(b); container.afterRefresh(); }, 1600);
+  };
+  await h.show(page);
+  assert.deepEqual(h.order(container), ['p:01', 'e:a1', 'p:02', 'p:03']);
+  // P(2) swapped in as b: the change's view, then its re-read 1 s later (same members).
+  h.JE.internals.arrListPages.pages.onListChange(LIST, v2, { epoch: 1 });
+  assert.equal(refreshes, 1);
+  await sleep(1300);
+  assert.equal(reads, 2, 'the re-read came back while Jellyfin was still refreshing');
+  assert.deepEqual(h.order(container), ['p:01', 'e:a1', 'p:02', 'p:03'], 'nothing moves before Jellyfin\'s rows are in');
+  await sleep(500);
+  await h.settle();
+  assert.deepEqual(h.order(container), ['p:01', 'e:a1', 'e:b2', 'p:03']);
+  assert.equal(refreshes, 1);
+});
+
+test('r2 B7: the header keeps Jellyfin\'s own title across JE count changes (2, 1, then none)', async t => {
+  let entries = [ph(P(1)), ph(P(2))];
+  let rev = 0;
+  const h = setup(t, { views: () => [view(entries, entries.map(e => e.token), { rev: ++rev })], items: { [LIST]: PLAYLIST_ITEM } });
+  await h.start();
+  const { page } = h.playlistPage([]);
+  page.insertAdjacentHTML('afterbegin', HEADER_BUTTON);
+  const btn = page.querySelector('.btnPlaystate');
+  await h.show(page);
+  assert.equal(btn.title, tnEn('arr_lists_header_incomplete', 2));
+  entries = [ph(P(1))];
+  await h.show(page);
+  assert.equal(btn.title, tnEn('arr_lists_header_incomplete', 1));
+  entries = [];
+  await h.show(page);
+  assert.equal(btn.title, 'Watched', 'Jellyfin\'s own title is back');
+  assert.ok(!page.classList.contains('je-list-incomplete-page'));
+});
+
+test('r2 spy: a list module writing to the DOM outside paint() is caught (planted), and the spy sees the real writes', async t => {
+  // The real modules: many list writes, none outside the gate.
+  const entries = Array.from({ length: 30 }, (_, i) => ph('d' + String(i).padStart(31, '0')));
+  const coll = { listId: COLL, listKind: 'collection', rev: 1, canEdit: false, actions: [], statusShown: false, placeholders: entries, order: null };
+  const clean = setup(t, { views: () => [coll], items: { [COLL]: { Id: COLL, Type: 'BoxSet' } } });
+  const cleanPage = clean.collectionPage();
+  await clean.start();
+  await clean.show(cleanPage, '#/details?id=' + COLL);
+  assert.equal(cleanPage.querySelectorAll('.je-list-card').length, 30);
+  assert.ok(clean.spy.writes() > 100, `writes seen: ${clean.spy.writes()}`);
+  assert.deepEqual(clean.spy.violations, []);
+  // Planted: the collection's next slice scheduled outside the gate (the r2 S3 bug).
+  const marker = 'setTimeout(() => lp.gate.paint(t, step, \'slice\'), 0)';
+  const planted = setup(t, {
+    views: () => [coll],
+    items: { [COLL]: { Id: COLL, Type: 'BoxSet' } },
+    plant: { 'arr/lists/list-collection.js': src => { assert.ok(src.includes(marker), 'the slice scheduling is where the plant expects it'); return src.replace(marker, 'setTimeout(step, 0)'); } }
+  });
+  const page = planted.collectionPage();
+  await planted.start();
+  await planted.show(page, '#/details?id=' + COLL);
+  assert.equal(page.querySelectorAll('.je-list-card').length, 30);
+  const caught = planted.spy.take();
+  assert.ok(caught.length > 0, 'the planted write was caught');
+  assert.ok(caught.every(v => /list-(collection|render)\.js/.test(v.frame)), JSON.stringify(caught.slice(0, 3)));
+  // Planted: a removal path that puts something in (erase() only takes away).
+  const eraseMarker = 'ctrl.section?.remove();';
+  const inserting = setup(t, {
+    views: () => [coll],
+    items: { [COLL]: { Id: COLL, Type: 'BoxSet' } },
+    plant: { 'arr/lists/list-collection.js': src => { assert.ok(src.includes(eraseMarker)); return src.replace(eraseMarker, eraseMarker + ' page.appendChild(document.createElement(\'i\'));'); } }
+  });
+  const third = inserting.collectionPage();
+  await inserting.start();
+  await inserting.show(third, '#/details?id=' + COLL);
+  inserting.JE.currentSettings.listCollectionUi = false;
+  inserting.JE.arrListPages.settingsChanged();
+  const inserted = inserting.spy.take();
+  assert.ok(inserted.some(v => v.scope === 'erase' && v.op === 'appendChild'), JSON.stringify(inserted));
+});

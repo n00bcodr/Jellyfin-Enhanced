@@ -7,10 +7,11 @@
  * - A details page of a playlist or collection that is shown gets one controller (made once per page element; a page
  *   jellyfin-web keeps hidden is paused: no reads, timers or subscriptions; it reads again when shown).
  * - Stops and removes everything on a person change.
- * - One acceptance rule for every answer a page uses ({@link ticket}): the transport's (the session it was asked in, the
- *   list asked about) plus the page show it was asked for (a generation bumped on every show) and the route still
- *   naming that list. It is asked after every await, before anything is cached or drawn, so neither an answer from
- *   before a person switch nor the late lookup of a list shown before on a re-used page element is ever drawn.
+ * - Each controller owns ONE ticket ({@link issue}, lp.gate): the session, the page show (a generation bumped on every
+ *   show), the route still naming the list, the list id, and that page's Spoiler Guard policy. It is issued when the
+ *   page is shown and revoked when it is paused, disposed or the page element shows another list (at once, before
+ *   that list's lookup is awaited). Every DOM write of the list modules goes through lp.gate.paint(ticket, …), so no
+ *   answer, change notification, timer, slice or observer of an older show, list or person ever paints.
  * - Refreshes: a list change made through JE.arrLists (its new view), the shared status feed of the titles shown
  *   (JE.arrStatus.subscribe, inside the controllers), and Jellyfin's LibraryChanged (the list's own items, or new items
  *   that may be an entry arriving), each debounced and bounded per list.
@@ -18,7 +19,8 @@
  *   the list and focus goes back to the entry that was opened.
  *
  * Public: JE.arrListPages { uiOn(kind), coveredKeys(listId) → Promise<{keys, entries}|null>, settingsChanged() }.
- * Internal: lp.pages.ticket(ctrl, extra?) is the rule the controllers use.
+ * Internal: lp.pages.issue(ctrl) gives a controller its ticket; lp.pages.ticket(ctrl, extra?) is that ticket's rule
+ * plus the caller's own condition (for requests).
  */
 (function (JE) {
     'use strict';
@@ -88,13 +90,26 @@
     }
 
     /**
-     * The acceptance rule of a controller's request: session and list (the transport's), plus page show and route.
-     * @param {{listId: string, page: HTMLElement}} ctrl Controller.
-     * @param {function(): boolean} [extra] The controller's own condition.
-     * @returns {{epoch: number, listId: string, current: function(): boolean, accepts: function(Object=): boolean}} Ticket.
+     * A controller's one ticket, for the page show now: session, page show, route, the page on screen, the controller
+     * not paused or disposed, the list id, and the page's Spoiler policy (fails closed until it is read).
+     * @param {{listId: string, page: HTMLElement, kind: string, paused: boolean, disposed: boolean}} ctrl Controller.
+     * @returns {Object} Ticket (lp.gate).
+     */
+    function issue(ctrl) {
+        const scope = scopeOf(ctrl.page, ctrl.listId, () => !ctrl.paused && !ctrl.disposed);
+        const list = { listKind: ctrl.kind, listId: ctrl.listId };
+        return lp.gate.issue(ctrl.listId, scope, lp.render.knownPolicy() || (() => lp.render.spoilerPolicy(list)));
+    }
+
+    /**
+     * The acceptance rule of a controller's request: its current ticket, plus the caller's own condition.
+     * @param {{listId: string, ticket: Object}} ctrl Controller.
+     * @param {function(): boolean} [extra] The caller's own condition (a controller's newest read).
+     * @returns {{epoch: number, listId: string, current: function(): boolean, accepts: function(Object=): boolean}} Rule.
      */
     function ticket(ctrl, extra) {
-        return JE.arrLists.ticket(ctrl.listId, scopeOf(ctrl.page, ctrl.listId, extra));
+        const owned = ctrl.ticket;
+        return JE.arrLists.ticket(ctrl.listId, () => !!owned && owned === ctrl.ticket && owned.current() && (typeof extra !== 'function' || extra() === true));
     }
 
     /**
@@ -122,7 +137,7 @@
     function disposeAll() {
         Array.from(controllers).forEach(dispose);
         // Copies a re-render may have left behind.
-        document.querySelectorAll('.je-list-row, .je-list-section').forEach(n => n.remove());
+        lp.gate.erase(() => document.querySelectorAll('.je-list-row, .je-list-section').forEach(n => n.remove()));
     }
 
     /**
@@ -149,6 +164,12 @@
         if (!uiOn('playlist') && !uiOn('collection')) return;
         lp.grid.scan();
         const id = idFromHash(hash || window.location.hash);
+        // The page element shows another list (or no list): its old controller is done now, before any await.
+        for (const ctrl of Array.from(controllers)) {
+            if (!page || ctrl.page !== page || ctrl.listId === id) continue;
+            if (id) dispose(ctrl);
+            else if (!ctrl.paused) ctrl.pause();
+        }
         if (!id || !page) return;
         // The page element may be shown for another list (or another person) before this lookup answers.
         const rule = JE.arrLists.ticket(id, scopeOf(page, id));
@@ -180,15 +201,18 @@
      */
     function openEntry(ctrl, ph) {
         if (!lp.render.opensTitle(ph)) return;
-        lastOpened = { listId: ctrl.listId, placeholderId: ph.id };
         const options = { mediaType: ph.mediaType === 'movie' ? 'movie' : 'tv', tmdbId: Number(ph.tmdbId) || undefined };
         if (ph.kind === 'season' || ph.kind === 'episodes') options.season = Number(ph.seasonNumber);
         if (ph.kind === 'episodes' && (ph.episodes || []).length === 1) options.episode = Number(ph.episodes[0]?.e);
-        if (typeof JE.titleDetails?.openKey === 'function') {
-            JE.titleDetails.openKey(ph.titleKey, options).catch?.(() => {});
-        } else if (Number(ph.tmdbId) > 0 && typeof JE.jellyseerrMoreInfo?.open === 'function') {
-            JE.jellyseerrMoreInfo.open(Number(ph.tmdbId), options.mediaType);
-        }
+        // Opening draws (a page or a dialog): only from the page's current ticket.
+        lp.gate.paint(ctrl.ticket, () => {
+            lastOpened = { listId: ctrl.listId, placeholderId: ph.id };
+            if (typeof JE.titleDetails?.openKey === 'function') {
+                JE.titleDetails.openKey(ph.titleKey, options).catch?.(() => {});
+            } else if (Number(ph.tmdbId) > 0 && typeof JE.jellyseerrMoreInfo?.open === 'function') {
+                JE.jellyseerrMoreInfo.open(Number(ph.tmdbId), options.mediaType);
+            }
+        }, 'open');
     }
 
     /**
@@ -241,7 +265,8 @@
         const id = lp.render.normalizeId(listId);
         lp.grid.invalidate(id);
         for (const ctrl of controllers) {
-            if (ctrl.listId !== id || ctrl.paused) continue;
+            // Only the controller whose ticket is current: a paused page, or one shown for another list, hears nothing.
+            if (ctrl.listId !== id || ctrl.paused || !ctrl.ticket?.current()) continue;
             if (view && lp.render.normalizeId(view.listId) === id) ctrl.applyView(view, { fromChange: true });
             else ctrl.scheduleRefetch(500);
         }
@@ -268,7 +293,7 @@
             // The person changed one of the kinds: drop the controllers of a kind now off, draw the other again.
             for (const ctrl of Array.from(controllers)) if (!uiOn(ctrl.kind)) dispose(ctrl);
             lp.grid.reset();
-            document.querySelectorAll('.card[data-je-list-grid]').forEach(card => lp.grid.decorate(card, '', 0));
+            lp.grid.unmarkAll();
             lp.grid.scan();
             onViewShow(null, window.location.hash);
         }
@@ -300,13 +325,13 @@
         disposeAll();
         JE.arrLists?.reset?.();
         lp.grid.reset();
-        document.querySelectorAll('.card[data-je-list-grid]').forEach(card => lp.grid.decorate(card, '', 0));
+        lp.grid.unmarkAll();
         subscribeLibrary();
         // The new person's settings decide whether the pages stay on (they arrive after the switch).
         setTimeout(sync, 0);
     });
 
-    lp.pages = { uiOn, idFromHash, onViewShow, openEntry, onLibraryChanged, onListChange, ticket, sync, controllers, disposeAll };
+    lp.pages = { uiOn, idFromHash, onViewShow, openEntry, onLibraryChanged, onListChange, issue, ticket, sync, controllers, disposeAll };
     JE.arrListPages = Object.freeze({ uiOn, coveredKeys, settingsChanged: sync });
 
     // No network and no DOM work while the bundle loads: the first look happens a moment later.

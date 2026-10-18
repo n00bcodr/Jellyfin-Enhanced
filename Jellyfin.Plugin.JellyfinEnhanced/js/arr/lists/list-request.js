@@ -9,6 +9,8 @@
  * reused only when the same confirmation is sent again after a lost answer → the shared wording for the result.
  * Answers go through the one acceptance rule: the preview only opens the sheet while the page it was asked from is
  * still the one shown (session, page show, route, list); the confirmation's outcome only while the session is the same.
+ * What it draws (the button's busy state, toasts, the sheet) goes through the paint gate with the page's ticket; the
+ * button is enabled again through erase (it only gives back what JE took).
  */
 (function (JE) {
     'use strict';
@@ -96,8 +98,8 @@
 
     /**
      * Request on an entry: preview, then the shared sheet in its fixed mode.
-     * @param {{listId: string, ticket?: function(): Object, onDone?: function(): void}} list The list (its page's
-     *   acceptance rule, taken when Request is pressed).
+     * @param {{listId: string, ticket: function(): Object, onDone?: function(): void}} list The list (its page's
+     *   ticket, taken when Request is pressed).
      * @param {Object} ph The entry (as drawn).
      * @param {HTMLElement|null} opener The button (focus returns to it).
      * @returns {Promise<Object|null>} The result, or null when nothing was sent.
@@ -106,11 +108,14 @@
         const tr = lp.render.tr;
         const key = `${list.listId}|${ph.id}`;
         if (busy.has(key) || !JE.arrLists || !JE.arrAskSheet?.open || !JE.arrAsk?.interpret) return null;
-        busy.add(key);
-        // The page's rule (session, page show, route, list) for the preview; the session's for the outcome.
-        const rule = typeof list.ticket === 'function' ? list.ticket() : JE.arrLists.ticket(list.listId);
+        // The page's ticket (session, page show, route, list) for the preview and what it draws; the session's for
+        // the outcome.
+        const rule = typeof list.ticket === 'function' ? list.ticket() : null;
         const session = JE.arrLists.ticket(list.listId);
-        if (opener) opener.disabled = true;
+        if (!lp.gate.paint(rule, () => { if (opener) opener.disabled = true; }, 'request')) return null;
+        busy.add(key);
+        /** @param {string} text Toast words (drawn only for the page's current ticket). */
+        const toast = text => lp.gate.paint(rule, () => JE.arrAsk.toast?.(text), 'toast');
         try {
             let preview;
             try {
@@ -118,26 +123,26 @@
                 if (!rule.current()) return null;
             } catch (err) {
                 if (err?.stale) return null;
-                if (rule.current()) JE.arrAsk.toast?.(tr('arr_ask_toast_failed'));
+                toast(tr('arr_ask_toast_failed'));
                 return null;
             }
             if (preview.status !== 200) {
-                JE.arrAsk.toast?.(JE.arrAsk.describe(JE.arrAsk.interpret(preview.status, { reason: preview.body?.code || '' })).text);
+                toast(JE.arrAsk.describe(JE.arrAsk.interpret(preview.status, { reason: preview.body?.code || '' })).text);
                 if (preview.status === 404 || preview.status === 409) list.onDone?.();
                 return null;
             }
             const item = (preview.body?.items || []).find(i => i?.placeholderId === ph.id);
             if (!item) {
-                JE.arrAsk.toast?.(tr('arr_ask_toast_changed'));
+                toast(tr('arr_ask_toast_changed'));
                 list.onDone?.();
                 return null;
             }
             if (item.outcome === 'already') {
-                JE.arrAsk.toast?.(tr('arr_lists_already'));
+                toast(tr('arr_lists_already'));
                 return null;
             }
             if (item.outcome === 'skip') {
-                JE.arrAsk.toast?.(skipText(item.reason));
+                toast(skipText(item.reason));
                 return null;
             }
             const clientId = JE.arrLists.newRequestId();
@@ -149,24 +154,29 @@
                 year: Number.isInteger(ph.year) ? ph.year : undefined,
                 poster: typeof ph.posterPath === 'string' ? ph.posterPath : undefined
             };
-            if (opener) opener.disabled = false;
-            const result = await JE.arrAskSheet.open(title, {
-                opener,
-                variant: fourK ? '4k' : 'standard',
-                fixed: {
-                    scope: lp.render.kindLabel(ph) + (fourK ? ' · 4K' : ''),
-                    input: { scope: 'list', placeholderId: ph.id },
-                    cost: Number.isInteger(item.cost) ? item.cost : 0,
-                    note: previewNote(item),
-                    send: () => send(list.listId, ph.id, clientId)
-                }
-            });
+            lp.gate.erase(() => { if (opener) opener.disabled = false; });
+            let sheet = null;
+            lp.gate.paint(rule, () => {
+                sheet = JE.arrAskSheet.open(title, {
+                    opener,
+                    variant: fourK ? '4k' : 'standard',
+                    fixed: {
+                        scope: lp.render.kindLabel(ph) + (fourK ? ' · 4K' : ''),
+                        input: { scope: 'list', placeholderId: ph.id },
+                        cost: Number.isInteger(item.cost) ? item.cost : 0,
+                        note: previewNote(item),
+                        send: () => send(list.listId, ph.id, clientId)
+                    }
+                });
+            }, 'sheet');
+            if (!sheet) return null;
+            const result = await sheet;
             if (!session.current()) return null;
             if (result) list.onDone?.();
             return result;
         } finally {
             busy.delete(key);
-            if (opener && document.contains(opener)) opener.disabled = false;
+            if (opener && document.contains(opener)) lp.gate.erase(() => { opener.disabled = false; });
         }
     }
 

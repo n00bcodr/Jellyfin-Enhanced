@@ -14,6 +14,9 @@
  * looked at again, and so is a card whose insides were rebuilt (jellyfin-web's user-data update puts the played check
  * back). Lists the person can't see or with no entry they can see aren't answered, so the mark never reveals a hidden
  * entry. A summary is used only while the rule accepts it (the session it was asked in, and no reset since).
+ *
+ * Marks are painted through the paint gate with the grid's ticket (the session, watching, no reset since; a mark shows
+ * a count only, nothing Spoiler Guard hides, so its policy is resolved at once); marks are taken away through erase.
  */
 (function (JE) {
     'use strict';
@@ -46,6 +49,21 @@
     let generation = 0;
     /** @type {MutationObserver|null} card identity changes (data-id / data-type of an element in place) */
     let identity = null;
+    /** @type {Object|null} the grid's paint ticket (one per session and generation) */
+    let paintTicket = null;
+
+    /**
+     * The grid's ticket for this session and generation (a new one after a reset or a person change).
+     * @returns {Object|null} Ticket, or null while not watching.
+     */
+    function ticket() {
+        if (!observing) return null;
+        if (!paintTicket || !paintTicket.current()) {
+            const started = generation;
+            paintTicket = lp.gate.issue(null, () => observing && started === generation, lp.gate.policy(() => false, false));
+        }
+        return paintTicket;
+    }
 
     /**
      * Whether a kind's mark is on for this person (admin switch and their preferences).
@@ -57,20 +75,45 @@
     }
 
     /**
-     * Whether a card is decorated as incomplete for its current list.
+     * Takes a card's mark away.
+     * @param {HTMLElement} card Card.
+     */
+    function unmark(card) {
+        lp.gate.erase(() => {
+            card.classList.remove('je-list-incomplete');
+            card.querySelector(':scope .je-list-grid-indicator')?.remove();
+            card.removeAttribute('data-je-list-grid');
+        });
+    }
+
+    /** Takes every mark away (person change, settings changed, stopped). */
+    function unmarkAll() {
+        document.querySelectorAll('.card[data-je-list-grid]').forEach(card => unmark(/** @type {HTMLElement} */ (card)));
+    }
+
+    /**
+     * Whether a card is decorated as incomplete for its current list (a mark through the gate, or none).
+     * @param {HTMLElement} card Card.
+     * @param {string} id List id.
+     * @param {number} missing Entries not in the library.
+     * @param {Object} [t] The ticket to paint with (the grid's current one by default).
+     */
+    function decorate(card, id, missing, t) {
+        if (!(missing > 0)) {
+            unmark(card);
+            return;
+        }
+        lp.gate.paint(t || ticket(), () => mark(card, id, missing), 'grid');
+    }
+
+    /**
+     * Puts a card's mark in (inside paint()).
      * @param {HTMLElement} card Card.
      * @param {string} id List id.
      * @param {number} missing Entries not in the library.
      */
-    function decorate(card, id, missing) {
-        const tr = lp.render.tr;
-        let mark = card.querySelector(':scope .je-list-grid-indicator');
-        if (!(missing > 0)) {
-            card.classList.remove('je-list-incomplete');
-            mark?.remove();
-            card.removeAttribute('data-je-list-grid');
-            return;
-        }
+    function mark(card, id, missing) {
+        let badge = card.querySelector(':scope .je-list-grid-indicator');
         lp.render.ensureStyles();
         card.classList.add('je-list-incomplete');
         card.dataset.jeListGrid = id;
@@ -82,40 +125,41 @@
             return box;
         })();
         if (!host) return;
-        if (!mark) {
-            mark = lp.render.el('div', 'indicator je-list-grid-indicator');
-            mark.setAttribute('role', 'img');
-            mark.appendChild(lp.render.icon('pending'));
-            mark.appendChild(lp.render.el('span', 'je-list-grid-count'));
-            host.appendChild(mark);
+        if (!badge) {
+            badge = lp.render.el('div', 'indicator je-list-grid-indicator');
+            badge.setAttribute('role', 'img');
+            badge.appendChild(lp.render.icon('pending'));
+            badge.appendChild(lp.render.el('span', 'je-list-grid-count'));
+            host.appendChild(badge);
         }
         const text = lp.render.tn('arr_lists_grid_missing', { count: missing });
-        mark.querySelector('.je-list-grid-count').textContent = String(missing);
-        mark.title = text;
-        mark.setAttribute('aria-label', text);
+        badge.querySelector('.je-list-grid-count').textContent = String(missing);
+        badge.title = text;
+        badge.setAttribute('aria-label', text);
     }
 
     /**
      * Brings one card in line with what is known of its list.
      * @param {HTMLElement} card Card.
+     * @param {Object} [t] The ticket to paint with.
      * @returns {string|null} The id still to ask about, or null.
      */
-    function apply(card) {
+    function apply(card, t) {
         const raw = lp.render.normalizeId(card.getAttribute('data-id'));
         // The empty id is no list (and the summary route refuses a batch holding it).
         const id = raw && raw !== EMPTY_ID ? raw : null;
         const type = card.getAttribute('data-type');
         if (!id || !shownFor(type)) {
-            if (card.dataset.jeListGrid) decorate(card, '', 0);
+            if (card.dataset.jeListGrid) unmark(card);
             return null;
         }
-        if (card.dataset.jeListGrid && card.dataset.jeListGrid !== id) decorate(card, '', 0);
+        if (card.dataset.jeListGrid && card.dataset.jeListGrid !== id) unmark(card);
         const entry = known.get(id);
         if (entry && Date.now() - entry.at < TTL_MS) {
-            decorate(card, id, entry.missing);
+            decorate(card, id, entry.missing, t);
             return null;
         }
-        if (entry) decorate(card, id, entry.missing);
+        if (entry) decorate(card, id, entry.missing, t);
         return id;
     }
 
@@ -141,8 +185,10 @@
         ids.forEach((id) => { queue.delete(id); inflight.add(id); });
         if (queue.size) timer = setTimeout(flush, BATCH_MS);
         const started = generation;
-        // The one acceptance rule: the session it was asked in, and nothing reset since (person, settings).
+        // The one acceptance rule: the session it was asked in, and nothing reset since (person, settings). Its marks
+        // are painted with the grid ticket of that same session and generation.
         const rule = JE.arrLists.ticket(null, () => started === generation);
+        const painter = ticket();
         let answer = null;
         try {
             const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/acquire/lists/summaries'), {
@@ -177,7 +223,7 @@
         }
         for (const card of document.querySelectorAll(CARD_SELECTOR)) {
             const id = lp.render.normalizeId(card.getAttribute('data-id'));
-            if (id && known.has(id) && ids.includes(id)) apply(/** @type {HTMLElement} */ (card));
+            if (id && known.has(id) && ids.includes(id)) apply(/** @type {HTMLElement} */ (card), painter);
         }
     }
 
@@ -216,7 +262,7 @@
             if (!card) continue;
             if (card.matches(CARD_SELECTOR)) cards.add(card);
             // No longer a list card (another kind of item): its mark goes.
-            else if (card.getAttribute('data-je-list-grid')) decorate(/** @type {HTMLElement} */ (card), '', 0);
+            else if (card.getAttribute('data-je-list-grid')) unmark(/** @type {HTMLElement} */ (card));
         }
         if (cards.size) scan(cards);
     }
@@ -243,7 +289,7 @@
         identity?.disconnect();
         identity = null;
         reset();
-        document.querySelectorAll('.card[data-je-list-grid]').forEach(card => decorate(/** @type {HTMLElement} */ (card), '', 0));
+        unmarkAll();
     }
 
     /** Forgets everything known (another person, settings changed). */
@@ -255,6 +301,8 @@
         retries.clear();
         clearTimeout(timer);
         timer = null;
+        paintTicket?.revoke();
+        paintTicket = null;
     }
 
     /**
@@ -266,5 +314,5 @@
         if (id) known.delete(id);
     }
 
-    lp.grid = { start, stop, scan, reset, invalidate, decorate, onMutations, onIdentity, known, MAX_IDS };
+    lp.grid = { start, stop, scan, reset, invalidate, decorate, unmark, unmarkAll, onMutations, onIdentity, known, MAX_IDS };
 })(window.JellyfinEnhanced);

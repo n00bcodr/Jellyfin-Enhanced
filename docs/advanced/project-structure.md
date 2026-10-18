@@ -442,7 +442,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   **`Controllers/AcquireListsController.cs`**, models in **`Model/ListPlaceholders/`**, the daily task in
   **`ScheduledTasks/ListMaintenanceTask.cs`** and the client transport in **`js/arr/lists/list-api.js`** (`JE.arrLists`).
   `ListSummaries.cs` answers the Playlists page (which lists have entries the person can see), with its models in
-  `Model/ListPlaceholders/ListPageDtos.cs`. The pages themselves are in **`js/arr/lists/`**: `list-render.js` (rows,
+  `Model/ListPlaceholders/ListPageDtos.cs`. The pages themselves are in **`js/arr/lists/`**: `list-paint.js` (the paint
+  gate: each page's ticket and Spoiler Guard policy, through which every list DOM write goes), `list-render.js` (rows,
   collection cards, styles, the Spoiler Guard rule), `list-playlist.js` (entries inline on playlist pages),
   `list-collection.js` (the collection section and the covered keys), `list-grid.js` (the Playlists page mark),
   `list-request.js` (Request on one entry through the shared sheet) and `list-pages.js` (when they draw and stop,
