@@ -263,6 +263,9 @@
     "arr/ask/ask-styles.js",
     "// lists (Requests & downloads, phase 4c1): the transport (JE.arrLists); page modules come with the list UI.",
     "arr/lists/list-api.js",
+    "// list import (phase 4c2): the paste parser and the review model/transport (JE.arrListImport); no DOM, no network on load.",
+    "arr/lists/list-parser.js",
+    "arr/lists/list-import.js",
 
     "// extras",
     "extras/colored-activity-icons.js",
