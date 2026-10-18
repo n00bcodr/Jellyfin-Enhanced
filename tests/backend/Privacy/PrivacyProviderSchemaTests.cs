@@ -19,7 +19,7 @@ public class PrivacyProviderSchemaTests
         ["episode"] = new("id tmdbId seasonNumber episodeNumber productionCode runtime showId episodeType crew guestStars",
             "name title originalName originalTitle overview voteAverage voteCount airDate stillPath still images"),
         ["season"] = new("id seasonNumber episodeCount episodes networks", "name overview airDate posterPath voteAverage"), // S1 exemption asserted separately.
-        ["person"] = new("alsoKnownAs homepage biography birthday deathday placeOfBirth imdbId id name originalName gender knownForDepartment popularity profilePath adult castId creditId order totalEpisodeCount roles jobs", "character job department"),
+        ["person"] = new("alsoKnownAs homepage biography birthday deathday placeOfBirth imdbId id name originalName gender knownForDepartment popularity profilePath adult castId creditId order totalEpisodeCount roles jobs", "character job department knownFor"),
         ["request"] = new("id status type media is4k seasons requestedBy modifiedBy createdAt updatedAt", ""),
         ["user"] = new("id displayName username email avatar jellyfinUsername jellyfinUserId userType", ""),
         ["role"] = new("creditId episodeCount", "character job"),
@@ -60,16 +60,17 @@ public class PrivacyProviderSchemaTests
         // Reflect the actual served model so an added property fails even before the fixture is updated.
         var model = new ArrItem { Source="Sonarr", Type="Series", TmdbId=42, Title="Entry", EpisodeTitle="secret", Subtitle="S02E03 - secret",
             SeasonNumber=2, EpisodeNumber=3, ReleaseDate="secret", ReleaseDateLocal="secret", DateOnly=true,
-            Overview="secret", PosterUrl="secret", BackdropUrl="secret", ArrPath="server-only", InstanceId="server-only" };
+            Overview="secret", PosterUrl="/safe-series-poster.jpg", BackdropUrl="secret", ArrPath="server-only", InstanceId="server-only" };
         var raw = JsonSerializer.SerializeToNode(model)!.AsObject();
-        var policy = Policy(); var projected = JsonNode.Parse(policy.Project("["+raw.ToJsonString()+"]"))![0]!.AsObject();
+        var policy = Policy(); var projected = JsonNode.Parse(policy.ProjectResource("["+raw.ToJsonString()+"]", null, "calendar"))![0]!.AsObject();
         foreach (var pair in raw)
         {
             var disposition = Disposition("calendar", pair.Key);
-            if (disposition == "projected" && pair.Value != null) Assert.False(JsonNode.DeepEquals(pair.Value, projected[pair.Key]), pair.Key);
+            if (disposition == "projected" && pair.Value != null && pair.Key != "posterUrl") Assert.False(JsonNode.DeepEquals(pair.Value, projected[pair.Key]), pair.Key);
             if (disposition == "allowed" && pair.Key != "subtitle") Assert.True(JsonNode.DeepEquals(pair.Value, projected[pair.Key]), pair.Key);
             Assert.NotEqual("rejected", disposition);
         }
+        Assert.Equal("/safe-series-poster.jpg",projected["posterUrl"]?.ToString());
         // Server-only fields are deliberately rejected by serialization.
         Assert.DoesNotContain("server-only", raw.ToJsonString());
         Assert.Equal("rejected", Disposition("calendar", "arrPath")); Assert.Equal("rejected", Disposition("calendar", "instanceId"));
@@ -87,7 +88,7 @@ public class PrivacyProviderSchemaTests
         { "tmdb tv", "title", "tv:tmdb:42", """{"id":42,"name":"Entry","original_name":"Entry","origin_country":["US"],"number_of_episodes":1,"number_of_seasons":1,"episode_run_time":[60],"in_production":true,"first_air_date":"secret","last_air_date":"secret","overview":"secret","networks":[{"id":1,"name":"Network","logo_path":null,"origin_country":"US"}],"seasons":[{"id":1,"season_number":1,"episode_count":1,"name":"Season 1","overview":"First","air_date":"2020-01-01","poster_path":"/first.jpg"}],"last_episode_to_air":{"id":999,"season_number":2,"episode_number":1,"name":"secret","overview":"secret","air_date":"secret","still_path":"secret","vote_average":9,"vote_count":1,"runtime":60,"show_id":42,"production_code":"X","episode_type":"standard"}}""" },
         { "seerr movie/tv details", "title", "tv:tmdb:42", """{"id":42,"mediaType":"tv","name":"Entry","originalName":"Entry","originalLanguage":"en","overview":"secret","posterPath":"/entry.jpg","backdropPath":"secret","logoPath":"secret","firstAirDate":"secret","lastAirDate":"secret","voteAverage":9,"voteCount":1,"tagline":"secret","mediaInfo":{"id":1,"tmdbId":42,"tvdbId":123,"mediaType":"tv","status":1,"status4k":1,"jellyfinMediaId":null,"jellyfinMediaId4k":null,"createdAt":"2020-01-01","updatedAt":"2020-01-01","seasons":[],"requests":[]},"credits":{"cast":[{"id":1,"name":"Person","character":"secret","profilePath":"/person.jpg"}],"crew":[]},"keywords":[{"id":1,"name":"secret"}],"relatedVideos":[{"id":"v","name":"secret","key":"secret","site":"YouTube","type":"Trailer"}]}""" },
         { "native title cards", "title", "movie:tmdb:42", """{"id":42,"mediaType":"movie","title":"Entry","overview":"secret","posterPath":"secret","backdropPath":"secret","voteAverage":9,"voteCount":1,"releaseDate":"secret","genreIds":[1],"character":"secret","job":"secret","department":"secret"}""" },
-        { "sonarr calendar", "calendar", "tv:tmdb:42", """{"id":"sonarr|x|999","source":"Sonarr","type":"Series","tmdbId":42,"title":"Entry","subtitle":"S02E03 - secret","seasonNumber":2,"episodeNumber":3,"episode_title":"secret","overview":"secret","releaseDate":"secret","releaseDateLocal":"secret","airDateUtc":"secret","posterUrl":"secret","backdropUrl":"secret","dateOnly":true,"releaseType":"Episode","hasFile":false,"monitored":true}""" },
+        { "sonarr calendar", "calendar", "tv:tmdb:42", """{"id":"sonarr|x|999","source":"Sonarr","type":"Series","tmdbId":42,"title":"Entry","subtitle":"S02E03 - secret","seasonNumber":2,"episodeNumber":3,"episode_title":"secret","overview":"secret","releaseDate":"secret","releaseDateLocal":"secret","airDateUtc":"secret","posterUrl":"/safe-series-poster.jpg","backdropUrl":"secret","dateOnly":true,"releaseType":"Episode","hasFile":false,"monitored":true}""" },
         { "radarr calendar", "calendar", "movie:tmdb:42", """{"id":"radarr|x|999-digital","source":"Radarr","type":"Movie","tmdbId":42,"title":"Entry","subtitle":"2020","releaseDate":"secret","releaseDateLocal":"secret","physicalRelease":"secret","digitalRelease":"secret","inCinemas":"secret","overview":"secret","posterUrl":"secret","backdropUrl":"secret","dateOnly":true,"releaseType":"Digital","hasFile":false,"monitored":true}""" }
     };
 
@@ -96,7 +97,7 @@ public class PrivacyProviderSchemaTests
     public void EveryKeyOfEveryProviderShapeHasAnEnforcedDisposition(string name, string schema, string title, string json)
     {
         var raw = JsonNode.Parse(json)!.AsObject(); Classify(raw, schema, name);
-        var projected = schema == "calendar" ? JsonNode.Parse(Policy().Project("["+json+"]"))![0] : JsonNode.Parse(Policy().Project(json,title));
+        var projected = schema == "calendar" ? JsonNode.Parse(Policy().ProjectResource("["+json+"]", null, "calendar"))![0] : JsonNode.Parse(Policy().Project(json,title));
         Assert.DoesNotContain("secret", projected!.ToJsonString());
         foreach (var pair in raw)
             if (Disposition(schema,pair.Key) == "allowed" && pair.Value is JsonValue && pair.Key != "subtitle")
@@ -114,7 +115,7 @@ public class PrivacyProviderSchemaTests
                 "mediainfo" or "media" => "media", "requests" => "request", "requestedby" or "modifiedby" => "user",
                 "results" => schema switch { "page" => "title", "release_dates" => "release", "videos" => "video", "keywords" => "named", "reviews" => "review", _ => schema },
                 "releasedates" or "releases" => "release", "externalids" => "external_ids", "contentratings" => "content_ratings",
-                "parts" => "title", "createdby" => "person", "credits" or "aggregatecredits" => "credits", "cast" or "crew" => schema == "page" ? "title" : "person",
+                "parts" or "knownfor" => "title", "createdby" => "person", "credits" or "aggregatecredits" => "credits", "cast" or "crew" => schema == "page" ? "title" : "person",
                 "gueststars" => "person", "watchproviders" => "watch/providers", "collection" => "title",
                 "roles" or "jobs" => "role", "images" => "images", "posters" or "backdrops" or "stills" or "logos" => "image",
                 "relatedvideos" => "video", "keywords" => "named", "productioncountries" or "productioncompanies" or "spokenlanguages" or "networks" or "genres" => "named",

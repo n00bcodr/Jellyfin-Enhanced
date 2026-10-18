@@ -41,34 +41,7 @@ public sealed record TitlePresentationPolicy(HiddenContentPolicy Hidden, Spoiler
     /// <summary>Known JSON schemas are projected from private bytes, including envelopes and seed headings.</summary>
     public string Project(string json, string surface, string? title = null, string resource = "", string? kind = null, string? scope = null, int season = 0, int episode = 0)
     {
-        var node = JsonNode.Parse(json);
-        // These are response envelopes, not arbitrary recursive objects with title-looking IDs.
-        if (node is JsonObject envelope)
-            foreach (var field in new[] { "answer", "data", "body", "rows" })
-                if (envelope[field] is JsonObject or JsonArray)
-                    envelope[field] = JsonNode.Parse(Project(envelope[field]!.ToJsonString(), surface, title, resource, kind, scope, season, episode));
-        title ??= node is JsonObject row ? TitleFeedProjection.Identity(row, kind) : null;
-        if (node is JsonObject special)
-        {
-            if (resource == "user-reviews" && Spoilers?.HidesReviews(title) == true) special["reviews"] = new JsonArray();
-            if (resource == "review-ratings" && special["ratings"] is JsonObject ratings)
-                foreach (var key in ratings.Select(p => p.Key).ToArray())
-                {
-                    var parts = key.Split(':');
-                    if (parts.Length >= 2 && Spoilers?.HidesRatings(HiddenContentPolicy.TitleIdentity(parts[0], parts[1])) == true) ratings[key] = null;
-                }
-            if (resource == "inbox" && special["items"] is JsonArray notifications)
-                foreach (var item in notifications.OfType<JsonObject>())
-                {
-                    var key = TitleKey.Parse(item["key"]?.ToString())?.Title.ToString();
-                    if (!Hidden.IsHidden(key, item["itemId"]?.ToString(), null, surface) && Spoilers?.Guarded(key) != true) continue;
-                    item["key"] = null; item["itemId"] = null; item["link"] = null;
-                    if (item["params"] is JsonObject parameters)
-                        foreach (var field in new[] { "title", "year", "poster", "image" }) parameters.Remove(field);
-                }
-        }
-        json = TitleFeedProjection.Hidden(node?.ToJsonString() ?? json, Hidden, surface, kind);
-        return Spoilers?.ProjectResource(json, title, resource, kind, scope, season, episode) ?? json;
+        return ProviderPresentationSchema.Project(json, Hidden, Spoilers, surface, title, resource, kind, scope, season, episode);
     }
 }
 
@@ -168,6 +141,9 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             { summary.Remove("name"); summary.Remove("Name"); }
             if (final.Spoilers?.ProtectArtwork(key, item.GetBaseItemKind().ToString().ToLowerInvariant(), "Primary") == true)
                 foreach (var field in new[] { "hasPrimaryImage", "hasThumbImage", "HasPrimaryImage", "HasThumbImage" }) if (summary[field] != null) summary[field] = false;
+            var projected = JsonNode.Parse(ProviderPresentationSchema.Project(row.ToJsonString(), null, final.Spoilers, "library", key,
+                "activity-row", item.GetBaseItemKind().ToString().ToLowerInvariant()));
+            rows[i] = projected;
         }
         return root.ToJsonString();
     }
@@ -223,6 +199,8 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         var episode = episodeAt >= 0 && episodeAt + 1 < p.Length && int.TryParse(p[episodeAt + 1], out var en) ? en : 0;
         var scope = episodeAt >= 0 ? "episode" : seasonAt >= 0 ? "season" : kind;
         var resource = p.LastOrDefault() ?? "";
+        if (p.Length >= 2 && p[^2] == "watch" && p[^1] == "providers") resource = "watch/providers";
+        resource = ProviderPresentationSchema.LookupResource(string.Join('/', p.Skip(1))) ?? resource;
         if (p[0] is "tmdb" or "jellyseerr" or "native-details")
         {
             if (p.Any(v => v is "keywords" or "genres") && title == null && !p.Contains("discover")) return null;
@@ -232,11 +210,11 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         if (p[0] is "awards" or "mdblist-ratings") return new("details", title, p[0] == "awards" ? "awards" : "ratings", kind);
         if (p[0] == "reviews") return new("details", title, p.Length == 2 && p[1] == "ratings" ? "review-ratings" : "user-reviews", kind);
         if (p[0] == "activity") return new("library", Resource: "activity");
-        if (p[0] == "arr" && p.Length == 2 && p[1] is "requests" or "calendar") return new(p[1]);
+        if (p[0] == "arr" && p.Length == 2 && p[1] is "requests" or "calendar") return new(p[1], Resource: p[1]);
         if (p[0] != "acquire" || p.Length < 2) return null;
         if (p[1] == "hub") return new("requests");
         if (p[1] is "discover" or "search") return new(p[1] == "search" ? "search" : "discovery");
-        if (p[1] == "requests" && (p.Length == 2 || p[2] is "mine" or "season")) return http.Request.Query["view"] == "pending" ? null : new("requests");
+        if (p[1] == "requests" && (p.Length == 2 || p[2] is "mine" or "season")) return http.Request.Query["view"] == "pending" ? null : new("requests", Resource: p.Length > 2 && p[2] == "season" ? "season-rows" : "");
         if (p[1] == "notify" && p.Last() == "inbox") return new("requests", Resource: "inbox");
         return null;
     }

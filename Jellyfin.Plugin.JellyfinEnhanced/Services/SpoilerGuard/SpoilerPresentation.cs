@@ -83,6 +83,7 @@ public sealed class SpoilerPresentationContext
     private readonly PluginConfiguration _config;
     private readonly bool _unavailable;
     internal bool Unavailable => _unavailable;
+    internal bool Enabled => _config.SpoilerBlurEnabled;
 
     /// <summary>The viewer's state; callers pass it to the existing native DTO stripper.</summary>
     public UserSpoilerBlur State { get; }
@@ -145,35 +146,7 @@ public sealed class SpoilerPresentationContext
 
     /// <summary>Known provider subresources have distinct schemas and must not bypass the title strip.</summary>
     public string ProjectResource(string json, string? title, string resource, string? fallbackKind = null, string? scopeKind = null, int season = 0, int episode = 0)
-    {
-        if (resource is "content_ratings" or "watch/providers" or "external_ids") return json;
-        if (resource is "credits" or "aggregate_credits")
-        {
-            var credits = JsonNode.Parse(json) as JsonObject ?? new();
-            // These IDs identify people, not titles. Only the owning title selects their cast policy.
-            if (Guarded(title) && Strip(_config.SpoilerStripCast, State.Prefs?.HideCast))
-            {
-                Remove(credits, "guestStars");
-                if (string.Equals(_config.SpoilerStripCastMode, "All", StringComparison.OrdinalIgnoreCase))
-                    Remove(credits, "cast", "crew");
-            }
-            return credits.ToJsonString();
-        }
-        if (title != null && ((resource is "release_dates" or "releases" && HidesDates(title)) || (resource == "reviews" && HidesReviews(title)))) return "{\"results\":[]}";
-        if (title != null && Guarded(title))
-        {
-            if (resource == "videos" && Strip(_config.SpoilerStripOverview, State.Prefs?.HideEpisodeDescriptions)) return "{\"results\":[]}";
-            if (resource == "keywords" && Strip(_config.SpoilerStripTags, State.Prefs?.HideTags)) return "{\"results\":[],\"keywords\":[]}";
-        }
-        if (resource is "ratings" or "awards" && HidesRatings(title)) return "null";
-        if (resource == "images" && title != null)
-        {
-            var images = JsonNode.Parse(json) as JsonObject ?? new();
-            ProjectImages(images, title, scopeKind ?? TitleKind(title), season);
-            return images.ToJsonString();
-        }
-        return Project(json, title, resource == "ratings", fallbackKind, scopeKind, season, episode);
-    }
+        => ProviderPresentationSchema.Project(json, null, this, "discovery", title, resource, fallbackKind, scopeKind, season, episode);
 
     /// <summary>Whether original artwork is protected. Movie posters follow the existing keep-posters option.</summary>
     public bool ProtectArtwork(string? title, string kind, string imageType, int season = 0)
@@ -187,40 +160,18 @@ public sealed class SpoilerPresentationContext
 
     /// <summary>Projects known title/list schemas from a private fresh tree; raw shared source/cache bytes stay intact.</summary>
     public string Project(string json, string? title = null, bool ratingsOnly = false, string? fallbackKind = null, string? scopeKind = null, int season = 0, int episode = 0)
-    {
-        if (!_config.SpoilerBlurEnabled) return json;
-        var node = JsonNode.Parse(json);
-        if (ratingsOnly && Guarded(title) && Strip(_config.SpoilerStripRatings, State.Prefs?.HideRatings)) return "null";
-        if (node is JsonObject obj)
-        {
-            if (title != null) ProjectTitle(obj, title, scopeKind ?? (title.StartsWith("movie:", StringComparison.Ordinal) ? "movie" : "tv"), season, episode);
-            ProjectAppended(obj, title, fallbackKind, scopeKind, season, episode);
-            foreach (var field in new[] { "results", "cast", "crew", "parts", "items", "requests", "events", "mine", "soon", "ready" })
-                if (obj[field] is JsonArray rows) ProjectRows(rows, field == "parts" ? "movie" : fallbackKind);
-            if (obj["groups"] is JsonArray groups)
-                foreach (var group in groups.OfType<JsonObject>()) if (group["results"] is JsonArray rows) ProjectRows(rows, null);
-        }
-        else if (node is JsonArray rows) ProjectRows(rows, null);
-        return node?.ToJsonString() ?? json;
-    }
-
-    private void ProjectRows(JsonArray rows, string? fallback)
-    {
-        foreach (var row in rows.OfType<JsonObject>())
-        {
-            var title = TitleFeedProjection.Identity(row, fallback);
-            if (title != null)
-            {
-                var kind = title.StartsWith("movie:", StringComparison.Ordinal) ? "movie" : "tv";
-                if (CalendarEpisode(row)) ProjectCalendarEpisode(row, title);
-                else ProjectTitle(row, title, kind);
-                if (row["media"] is JsonObject media) ProjectTitle(media, title, kind);
-            }
-        }
-    }
+        => !_config.SpoilerBlurEnabled ? json : ProviderPresentationSchema.Project(json, null, this, "discovery", title, ratingsOnly ? "ratings" : "", fallbackKind, scopeKind, season, episode);
 
     /// <summary>Projects one title/card, its nested season/episode fields and safe effective flags.</summary>
     public void ProjectTitle(JsonObject row, string title, string kind, int season = 0, int episode = 0)
+    {
+        if (!_config.SpoilerBlurEnabled) { AddNavigationMetadata(row, title, kind, season, episode); return; }
+        var projected = JsonNode.Parse(ProviderPresentationSchema.Project(row.ToJsonString(), null, this, "discovery", title, "", kind, kind, season, episode))!.AsObject();
+        row.Clear();
+        foreach (var pair in projected.ToArray()) row[pair.Key] = pair.Value?.DeepClone();
+    }
+
+    internal void AddNavigationMetadata(JsonObject row, string title, string kind, int season, int episode)
     {
         // The year is navigation metadata; precise release/air dates still follow the strip policy.
         if (kind is "movie" or "tv" && row["year"] == null)
@@ -235,7 +186,8 @@ public sealed class SpoilerPresentationContext
             foreach (var release in releases.OfType<JsonObject>())
                 if (release["release_dates"] is JsonArray releaseDates)
                 {
-                    var certification = releaseDates.OfType<JsonObject>().FirstOrDefault(d => !string.IsNullOrWhiteSpace(d["certification"]?.ToString()))?["certification"]?.ToString();
+                    var certification = releaseDates.OfType<JsonObject>().Select(d => d["certification"]).OfType<JsonValue>()
+                        .Select(value => value.TryGetValue<string>(out var label) ? label : null).FirstOrDefault(label => !string.IsNullOrWhiteSpace(label));
                     if (certification != null) certifications.Add(new JsonObject { ["iso_3166_1"] = release["iso_3166_1"]?.DeepClone(), ["rating"] = certification });
                 }
             row["contentRatings"] = new JsonObject { ["results"] = certifications };
@@ -250,83 +202,30 @@ public sealed class SpoilerPresentationContext
         var cast = guarded && !exempt && Strip(_config.SpoilerStripCast, prefs?.HideCast);
         var tags = guarded && !exempt && Strip(_config.SpoilerStripTags, prefs?.HideTags);
         var reviews = guarded && !exempt && Strip(_config.SpoilerStripReviews, prefs?.HideReviews);
-        if (overview) Remove(row, "overview", "description", "summary", "plot", "relatedVideos", "videos");
-        if (ratings) Remove(row, "voteAverage", "voteCount", "vote_average", "vote_count", "ratings", "rating", "communityRating", "criticRating", "awards");
-        if (dates) Remove(row, "releaseDate", "releaseDateLocal", "airDateUtc", "date", "digitalRelease", "physicalRelease", "inCinemas", "physicalReleaseNote", "release_date", "firstAirDate", "first_air_date", "lastAirDate", "last_air_date", "airDate", "air_date", "nextAirDate", "nextDate", "nextDay", "digitalReleaseDate", "theatricalReleaseDate", "initialAirDate", "releaseDates", "release_dates", "releases");
-        if (guarded && Strip(_config.SpoilerStripTaglines, prefs?.HideTaglines)) Remove(row, "tagline", "taglines");
-        if (tags) Remove(row, "keywords", "tags");
-        if (reviews) Remove(row, "reviews", "review", "content");
         var allCast = cast && string.Equals(_config.SpoilerStripCastMode, "All", StringComparison.OrdinalIgnoreCase);
-        if (cast)
-        {
-            Remove(row, "character", "job", "department", "guestStars", "guest_stars");
-            if (row["credits"] is JsonObject credits) Remove(credits, "guestStars", "guest_stars");
-            if (allCast) Remove(row, "credits", "cast", "crew", "createdBy", "created_by");
-        }
-        if (guarded && kind == "episode" && Strip(_config.SpoilerReplaceTitle, prefs?.ReplaceEpisodeTitles))
-        {
-            Remove(row, "title", "originalTitle", "originalName", "original_name", "original_title");
-            row["name"] = "";
-        }
-        if (ProtectArtwork(title, kind, "Primary", season)) Remove(row, "posterPath", "poster_path", "poster", "posterUrl", "stillPath", "still_path", "still");
-        if (ProtectArtwork(title, kind, "Backdrop", season)) Remove(row, "backdropPath", "backdrop_path", "backdrop", "backdropUrl");
-        if (ProtectArtwork(title, kind, "Logo", season)) Remove(row, "logoPath", "logoUrl", "logo");
-        ProjectImages(row, title, kind, season);
-        if (row["images"] is JsonObject images) ProjectImages(images, title, kind, season);
-        foreach (var field in new[] { "last_episode_to_air", "next_episode_to_air", "lastEpisodeToAir", "nextEpisodeToAir" })
-            if (row[field] is JsonObject child) ProjectTitle(child, title, "episode", Number(child, "seasonNumber", "season_number", season), Number(child, "episodeNumber", "episode_number"));
-        if (row["seasons"] is JsonArray seasons)
-            foreach (var child in seasons.OfType<JsonObject>()) ProjectTitle(child, title, "season", Number(child, "seasonNumber", "season_number"));
-        if (row["episodes"] is JsonArray episodes)
-            foreach (var child in episodes.OfType<JsonObject>()) ProjectTitle(child, title, "episode", Number(child, "seasonNumber", "season_number", season), Number(child, "episodeNumber", "episode_number"));
-        row["jeSpoiler"] = new JsonObject { ["guarded"] = guarded, ["overview"] = overview, ["ratings"] = ratings,
-            ["dates"] = dates, ["cast"] = allCast, ["tags"] = tags, ["reviews"] = reviews, ["revision"] = Revision };
+        var flags = row["jeSpoiler"] as JsonObject ?? new();
+        flags["guarded"] = guarded; flags["overview"] = overview; flags["ratings"] = ratings;
+        flags["dates"] = dates; flags["cast"] = allCast; flags["tags"] = tags; flags["reviews"] = reviews; flags["revision"] = Revision;
+        row["jeSpoiler"] = flags;
     }
 
-    // Calendar IDs are arr episode IDs. Only the owning series' provider identity selects policy.
-    private static bool CalendarEpisode(JsonObject row)
-        => (row["episodeNumber"] ?? row["episode_number"]) != null
-            && ((row["source"]?.ToString() is "Sonarr" or "Shoko") || row["episodeTitle"] != null || row["episode_title"] != null || row["releaseType"]?.ToString() == "Episode");
-
-    private void ProjectCalendarEpisode(JsonObject row, string title)
+    internal bool Suppresses(string? title, string policy, string kind, int season)
     {
-        var entryTitle = row["title"]?.DeepClone();
-        ProjectTitle(row, title, "episode", Number(row, "seasonNumber", "season_number"), Number(row, "episodeNumber", "episode_number"));
-        // Calendar title is the series entry point; subtitle and aliases contain episode text.
-        if (entryTitle != null) row["title"] = entryTitle;
-        if (MissingRow(title).Title)
-        {
-            Remove(row, "episodeTitle", "episodeName");
-            row["subtitle"] = string.Create(CultureInfo.InvariantCulture, $"S{Number(row, "seasonNumber", "season_number"):00}E{Number(row, "episodeNumber", "episode_number"):00}");
-        }
+        if (!Guarded(title) || kind == "season" && season <= 1) return false;
+        return policy switch {
+            "taglines" => Strip(_config.SpoilerStripTaglines, State.Prefs?.HideTaglines),
+            "ratings" => Strip(_config.SpoilerStripRatings, State.Prefs?.HideRatings),
+            "dates" => Strip(_config.SpoilerStripPremiereDate, State.Prefs?.HideAirDate),
+            "reviews" => Strip(_config.SpoilerStripReviews, State.Prefs?.HideReviews),
+            "tags" => Strip(_config.SpoilerStripTags, State.Prefs?.HideTags),
+            "cast" => Strip(_config.SpoilerStripCast, State.Prefs?.HideCast),
+            "all-cast" => Strip(_config.SpoilerStripCast, State.Prefs?.HideCast) && string.Equals(_config.SpoilerStripCastMode, "All", StringComparison.OrdinalIgnoreCase),
+            "plot" => Strip(_config.SpoilerStripOverview, State.Prefs?.HideEpisodeDescriptions),
+            "overview" => Strip(kind == "tv" ? _config.SpoilerStripSeriesOverview ?? _config.SpoilerStripOverview : _config.SpoilerStripOverview,
+                kind == "tv" ? State.Prefs?.HideSeriesDescriptions : State.Prefs?.HideEpisodeDescriptions),
+            _ => false
+        };
     }
 
-    private void ProjectAppended(JsonObject row, string? title, string? fallback, string? scope, int season, int episode)
-    {
-        foreach (var envelope in TmdbAppendProjection.Envelopes)
-        {
-            if (row[envelope] is not JsonObject child) continue;
-            if (envelope is "recommendations" or "similar")
-            {
-                if (child["results"] is JsonArray results) ProjectRows(results, title == null ? fallback : TitleKind(title));
-            }
-            else if (title != null)
-            {
-                row[envelope] = JsonNode.Parse(ProjectResource(child.ToJsonString(), title, envelope, fallback, scope, season, episode));
-            }
-        }
-    }
-
-    private static string TitleKind(string title) => title.StartsWith("movie:", StringComparison.Ordinal) ? "movie" : "tv";
-
-    private void ProjectImages(JsonObject images, string title, string kind, int season)
-    {
-        foreach (var (field, type) in new[] { ("posters", "Primary"), ("backdrops", "Backdrop"), ("stills", "Screenshot"), ("logos", "Logo") })
-            if (ProtectArtwork(title, kind, type, season) && images[field] != null) images[field] = new JsonArray();
-    }
-
-    private static int Number(JsonObject row, string name, string alternate, int fallback = 0)
-        => int.TryParse((row[name] ?? row[alternate])?.ToString(), out var n) ? n : fallback;
     private static bool Strip(bool admin, bool? preference) => admin && preference != false;
-    private static void Remove(JsonObject row, params string[] names) { foreach (var name in names) { row.Remove(name); row.Remove(JsonNamingPolicy.SnakeCaseLower.ConvertName(name)); } }
 }

@@ -807,7 +807,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     : apiPath.StartsWith("/api/v1/tv/", StringComparison.OrdinalIgnoreCase) || apiPath.Contains("/discover/tv", StringComparison.OrdinalIgnoreCase) ? "tv" : null;
                 // Both raw-cache hits and misses reach this caller boundary.
                 var projected = Services.TitleFeedProjection.Hidden(result.Body,
-                    Services.HiddenContentPolicy.Load(_userConfigurationManager, Guid.Parse(jellyfinUserId), HttpContext, _libraryManager), surface, kind);
+                    Services.HiddenContentPolicy.Load(_userConfigurationManager, Guid.Parse(jellyfinUserId), HttpContext, _libraryManager), surface, kind, apiPath.Split('?', 2)[0].Split('/').LastOrDefault() ?? "");
                 Response.Headers["Cache-Control"] = "private, no-store";
                 var segments = apiPath.Split('?', 2)[0].Split('/', StringSplitOptions.RemoveEmptyEntries);
                 var title = segments.Length >= 4 && segments[2] is "movie" or "tv"
@@ -4420,6 +4420,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503, "TMDB API key is not configured.");
             }
 
+            if (!Services.ProviderPresentationSchema.SupportsTmdbPath(apiPath))
+                return BadRequest(new { error = "unsupported_tmdb_resource" });
             if (!Services.TmdbAppendProjection.IsSupported(apiPath, Request.Query))
                 return BadRequest(new { error = "unsupported_tmdb_append" });
 
@@ -4483,7 +4485,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var projected = Services.TitleFeedProjection.Hidden(response.Content,
                         Services.HiddenContentPolicy.Load(_userConfigurationManager, UserHelper.GetCurrentUserId(User)!.Value, HttpContext, _libraryManager),
                         apiPath.StartsWith("search/", StringComparison.Ordinal) ? "search" : apiPath.Contains("/recommendations", StringComparison.Ordinal) || apiPath.Contains("/similar", StringComparison.Ordinal) ? "recommendations" : "discovery",
-                        apiPath.StartsWith("movie/", StringComparison.Ordinal) || apiPath == "discover/movie" ? "movie" : apiPath.StartsWith("tv/", StringComparison.Ordinal) || apiPath == "discover/tv" ? "tv" : null);
+                        apiPath.StartsWith("movie/", StringComparison.Ordinal) || apiPath == "discover/movie" ? "movie" : apiPath.StartsWith("tv/", StringComparison.Ordinal) || apiPath == "discover/tv" ? "tv" : null,
+                        resource: Services.ProviderPresentationSchema.LookupResource(apiPath) ?? apiPath.Split('/').LastOrDefault() ?? "");
                     var pathParts = apiPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
                     var title = pathParts.Length >= 2 ? Services.HiddenContentPolicy.TitleIdentity(pathParts[0], pathParts[1]) : null;
                     var seasonIndex = Array.IndexOf(pathParts, "season");
@@ -4491,7 +4494,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var seasonNumber = seasonIndex >= 0 && seasonIndex + 1 < pathParts.Length && int.TryParse(pathParts[seasonIndex + 1], out var seasonValue) ? seasonValue : 0;
                     var episodeNumber = episodeIndex >= 0 && episodeIndex + 1 < pathParts.Length && int.TryParse(pathParts[episodeIndex + 1], out var episodeValue) ? episodeValue : 0;
                     projected = _presentation?.Load(UserHelper.GetCurrentUserId(User)!.Value, HttpContext).ProjectResource(projected, title,
-                        pathParts.LastOrDefault() ?? "", apiPath == "discover/movie" ? "movie" : apiPath == "discover/tv" ? "tv" : null,
+                        Services.ProviderPresentationSchema.LookupResource(apiPath) ?? pathParts.LastOrDefault() ?? "", apiPath == "discover/movie" ? "movie" : apiPath == "discover/tv" ? "tv" : null,
                         scopeKind: episodeIndex >= 0 ? "episode" : seasonIndex >= 0 ? "season" : null, season: seasonNumber, episode: episodeNumber) ?? projected;
                     var etag = "\"" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(projected))) + "\"";
                     Response.Headers["ETag"] = etag;

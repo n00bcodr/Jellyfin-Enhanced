@@ -43,6 +43,7 @@ public class PrivacyPresentationGateTests
         var filter=new TitlePresentationResultFilter(f.Core.Manager,service,library,Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(),null!);
         var action=new ActionContext(http,new RouteData(),new ActionDescriptor());
         var raw="""{"results":[{"key":"movie:tmdb:42","title":"hidden"},{"key":"movie:tmdb:43","overview":"secret"}],"groups":[{"key":"movie:tmdb:42","basedOn":"hidden seed","results":[{"key":"movie:tmdb:43"}]}]}""";
+        if(path=="native-details/collection/9") raw="""{"parts":[{"key":"movie:tmdb:42","title":"hidden"},{"key":"movie:tmdb:43","overview":"secret"}]}""";
         ResultExecutingContext Run() { var c=new ResultExecutingContext(action,new List<IFilterMetadata>(),new ContentResult { Content=raw,ContentType="application/json" },new object()); filter.OnResultExecuting(c); return c; }
         var result=Run(); var json=Assert.IsType<ContentResult>(result.Result).Content!;
         Assert.DoesNotContain("secret",json); Assert.DoesNotContain("hidden",json);

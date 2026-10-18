@@ -38,6 +38,7 @@ public class PrivacySpoilerPresentationTests
     [InlineData("movie:tmdb:42", null, "posters")]
     [InlineData("movie:tmdb:42", null, "logos")]
     [InlineData("tv:tmdb:42", "episode", "stills")]
+    [InlineData("tv:tmdb:42", null, "stills")]
     public void StandaloneAndEmbeddedImageArraysUseTypedRouteScope(string title, string? scope, string array)
     {
         var state = new UserSpoilerBlur { ProviderTitles = new() { [title] = new() } };
@@ -118,14 +119,15 @@ public class PrivacySpoilerPresentationTests
     {
         var state = new UserSpoilerBlur { ProviderTitles = new() { ["tv:tmdb:42"] = new() } };
         state.Prefs.HideSeriesDescriptions = false;
-        var raw = """{"source":"Sonarr","id":"sonarr|instance|999","type":"Series","tmdbId":42,"title":"Series entry","subtitle":"S02E03 - secret","episodeTitle":"secret","episode_title":"secret","seasonNumber":2,"episodeNumber":3,"overview":"secret","releaseDate":"2030-01-01","releaseDateLocal":"2030-01-01","airDateUtc":"2030-01-01","airDate":"2030-01-01","posterUrl":"/secret.jpg","backdropUrl":"/secret.jpg"}""";
-        var projected = JsonNode.Parse(new SpoilerPresentationContext(state, Config()).Project("{\"" + field + "\":[" + raw + "]}"))![field]![0]!;
+        var raw = """{"source":"Sonarr","id":"sonarr|instance|999","type":"Series","tmdbId":42,"title":"Series entry","subtitle":"S02E03 - secret","episodeTitle":"secret","episode_title":"secret","seasonNumber":2,"episodeNumber":3,"overview":"secret","releaseDate":"2030-01-01","releaseDateLocal":"2030-01-01","airDateUtc":"2030-01-01","airDate":"2030-01-01","posterUrl":"/safe-series-poster.jpg","backdropUrl":"/secret.jpg"}""";
+        var projected = JsonNode.Parse(new SpoilerPresentationContext(state, Config()).ProjectResource("{\"" + field + "\":[" + raw + "]}", null, "calendar"))![field]![0]!;
         Assert.DoesNotContain("secret", projected.ToJsonString());
         Assert.Equal("Series entry", projected["title"]!.ToString());
         Assert.Equal("S02E03", projected["subtitle"]!.ToString());
+        Assert.True(projected["jeSpoiler"]!["overview"]!.GetValue<bool>());
         foreach (var date in new[] { "releaseDate", "releaseDateLocal", "airDateUtc", "airDate" }) Assert.Null(projected[date]);
         state.Prefs.ReplaceEpisodeTitles = false; state.Prefs.HideAirDate = false;
-        var allowed = new SpoilerPresentationContext(state, Config()).Project("[" + raw + "]");
+        var allowed = new SpoilerPresentationContext(state, Config()).ProjectResource("[" + raw + "]", null, "calendar");
         Assert.Contains("secret", allowed); Assert.Contains("releaseDateLocal", allowed);
     }
 
