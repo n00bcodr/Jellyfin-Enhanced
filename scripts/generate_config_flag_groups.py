@@ -19,7 +19,7 @@ Also derives each tab's icon (Material Icons ligature, or the real public
 jsDelivr URL for an <img data-je-cdn="..."> like Seerr's -- the docs site is
 static and has no plugin backend to proxy CdnAssetService.cs's route through).
 
-Also lists each person's on/off settings that may be left unchosen (`bool?` in UserConfiguration.cs's UserSettings)
+Also lists each person's on/off settings that may be left unchosen (`bool?` in UserConfiguration.cs's JellyfinEnhancedUserSettings)
 with the class they belong to (Requests & downloads phase 4, decision D29): "display" (a display preference: unset
 follows the administrator's switch, false opts out) or "consent" (the person allows something to be done or sent on
 their behalf: unset means the class rule, see USER_PREFERENCE_CLASSES). Deliberate actions (a person pressing a button)
@@ -386,10 +386,10 @@ def extract_defaults(cs_source):
 
 
 def extract_user_preferences(cs_source):
-    """The nullable on/off settings of UserSettings, each with its D29 class (raises for one without a class)."""
-    match = re.search(r"public class UserSettings\s*\{", cs_source)
+    """The nullable on/off settings of JellyfinEnhancedUserSettings, each with its D29 class (raises for one without a class)."""
+    match = re.search(r"public class (?:JellyfinEnhanced)?UserSettings\s*\{", cs_source)
     if not match:
-        raise RuntimeError("Could not find the UserSettings class")
+        raise RuntimeError("Could not find the JellyfinEnhancedUserSettings class")
     body = brace_scan(cs_source, match.end() - 1)
     found = re.findall(r"public bool\? (\w+)\s*\{\s*get;\s*set;\s*\}", body)
     missing = [name for name in found if name not in USER_PREFERENCE_CLASSES]
