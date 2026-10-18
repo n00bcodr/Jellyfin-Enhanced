@@ -9,8 +9,8 @@
  * cover the standard copy), plus `tv:…:s<n>` for a season entry. Hidden entries are never in the view, so they never
  * suppress a gap or change a count.
  *
- * The controller's one ticket (lp.pages.issue) is issued when the page is shown and revoked when it is paused or
- * disposed. Every DOM write (the section, each slice of cards, the header, Jellyfin's card refresh) goes through
+ * The controller's one ticket (lp.pages.issue) is issued after a successful read and revoked on access loss, pause or
+ * disposal. Every DOM write (the section, each slice of cards, the header, Jellyfin's card refresh) goes through
  * lp.gate.paint with it, removals through lp.gate.erase; answers are taken only while the ticket and this controller's
  * newest read hold.
  */
@@ -259,8 +259,8 @@
             ctrl.abort?.abort();
             const abort = new AbortController();
             ctrl.abort = abort;
-            // The controller's ticket (session, page show, route, list), plus: this is still the newest read. What it
-            // paints waits for the ticket's Spoiler policy (the gate holds it until the policy is read).
+            // Read permission is separate from paint permission so a revoked page can establish access again.
+            // This rule still binds the session, page show, route, controller and newest read.
             const rule = lp.pages.ticket(ctrl, () => seq === ctrl.seq && !abort.signal.aborted && ctrl.isShown() && !ctrl.paused);
             let answer;
             let since;
@@ -274,6 +274,7 @@
                 return;
             }
             if (answer.status === 404 || answer.status === 403) {
+                ctrl.ticket?.revoke();
                 ctrl.view = null;
                 ctrl.header.clear();
                 ctrl.removeSection();
@@ -283,6 +284,7 @@
                 return;
             }
             if (answer.status !== 200 || !answer.body || !rule.accepts(answer.body)) return;
+            if (!ctrl.ticket?.current()) ctrl.ticket = lp.pages.issue(ctrl);
             ctrl.since = since;
             ctrl.applyView(answer.body);
         };
@@ -364,8 +366,7 @@
             if (ctrl.disposed) return;
             ctrl.paused = false;
             ctrl.ticket?.revoke();
-            ctrl.ticket = lp.pages.issue(ctrl);
-            ctrl.restoreIfLost();
+            ctrl.ticket = null;
             ctrl.load();
         };
 

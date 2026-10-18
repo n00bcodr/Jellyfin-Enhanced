@@ -1392,7 +1392,7 @@ follows Jellyfin's own rights and the household's request rules:
   (a movie, a season, the episodes it stands for, a custom entry), its release (the year, *Coming* a date, or *Date to
   be announced*), how much of a season or series is already in the list (counted apart from where its request
   stands), and the shared request status; *Request* is there for entries the person may ask for, and opens the usual
-  request sheet for exactly that entry (its season or episodes and its edition). Leaving the page cancels a loading
+  request sheet for exactly that entry (its season or episodes and its edition). Leaving the page or losing access to the list cancels a loading
   sheet and closes an open one. Selecting an entry opens its title at
   the same scope (the season or the episode), and Back returns to the list on that entry. On the *Playlists* page a
   list that still has entries the person can see shows how many instead of Jellyfin's *played* check (Jellyfin counts

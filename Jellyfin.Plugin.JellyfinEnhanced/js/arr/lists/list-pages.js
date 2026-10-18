@@ -19,8 +19,8 @@
  *   the list and focus goes back to the entry that was opened.
  *
  * Public: JE.arrListPages { uiOn(kind), coveredKeys(listId) → Promise<{keys, entries}|null>, settingsChanged() }.
- * Internal: lp.pages.issue(ctrl) gives a controller its ticket; lp.pages.ticket(ctrl, extra?) is that ticket's rule
- * plus the caller's own condition (for requests).
+ * Internal: lp.pages.issue(ctrl) gives a controller its paint ticket after a successful read; lp.pages.ticket(ctrl,
+ * extra?) permits a refresh to establish access again after the paint ticket was revoked.
  */
 (function (JE) {
     'use strict';
@@ -102,14 +102,16 @@
     }
 
     /**
-     * The acceptance rule of a controller's request: its current ticket, plus the caller's own condition.
-     * @param {{listId: string, ticket: Object}} ctrl Controller.
+     * A refresh rule independent of paint permission: a denied page may read again, but cannot paint until a
+     * successful response issues a fresh ticket. Session, page show, route and newest-read checks still apply.
+     * @param {{listId: string, page: HTMLElement, ticket: Object|null, paused: boolean, disposed: boolean}} ctrl Controller.
      * @param {function(): boolean} [extra] The caller's own condition (a controller's newest read).
      * @returns {{epoch: number, listId: string, current: function(): boolean, accepts: function(Object=): boolean}} Rule.
      */
     function ticket(ctrl, extra) {
         const owned = ctrl.ticket;
-        return JE.arrLists.ticket(ctrl.listId, () => !!owned && owned === ctrl.ticket && owned.current() && (typeof extra !== 'function' || extra() === true));
+        return JE.arrLists.ticket(ctrl.listId, scopeOf(ctrl.page, ctrl.listId, () => owned === ctrl.ticket
+            && !ctrl.paused && !ctrl.disposed && (typeof extra !== 'function' || extra() === true)));
     }
 
     /**

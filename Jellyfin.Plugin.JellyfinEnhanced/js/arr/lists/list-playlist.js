@@ -15,8 +15,8 @@
  * - When the real items change between two views (an entry swapped in, a title removed or added elsewhere), Jellyfin's
  *   own rows are refreshed first and the entries are placed once its new rows are in (they anchor to them). Views that
  *   come meanwhile (a re-read) wait for those rows too (its afterRefresh, or NATIVE_REFRESH_MS at most).
- * - The controller's one ticket (lp.pages.issue) is issued when the page is shown and revoked when it is paused or
- *   disposed. Every DOM write (rows, slices, the header, the native refresh, timers and the observer putting rows back)
+ * - The controller's one ticket (lp.pages.issue) is issued after a successful read and revoked on access loss, pause or
+ *   disposal. Every DOM write (rows, slices, the header, the native refresh, timers and the observer putting rows back)
  *   goes through lp.gate.paint with it; removals through lp.gate.erase. Answers are taken only while the ticket and this
  *   controller's newest read hold; a lower revision never replaces a higher one.
  */
@@ -376,8 +376,8 @@
             ctrl.abort?.abort();
             const abort = new AbortController();
             ctrl.abort = abort;
-            // The controller's ticket (session, page show, route, list), plus: this is still the newest read. What it
-            // paints waits for the ticket's Spoiler policy (the gate holds it until the policy is read).
+            // Read permission is separate from paint permission so a revoked page can establish access again.
+            // This rule still binds the session, page show, route, controller and newest read.
             const rule = lp.pages.ticket(ctrl, () => seq === ctrl.seq && !abort.signal.aborted && ctrl.isShown() && !ctrl.paused);
             let answer;
             let since;
@@ -391,6 +391,7 @@
                 return;
             }
             if (answer.status === 404 || answer.status === 403) {
+                ctrl.ticket?.revoke();
                 // Gone or no longer this person's to see: nothing of it stays on the page.
                 ctrl.view = null;
                 ctrl.clear();
@@ -401,6 +402,7 @@
                 return;
             }
             if (answer.status !== 200 || !answer.body || !rule.accepts(answer.body)) return;
+            if (!ctrl.ticket?.current()) ctrl.ticket = lp.pages.issue(ctrl);
             ctrl.since = since;
             ctrl.applyView(answer.body);
         };
@@ -530,7 +532,7 @@
             if (ctrl.disposed) return;
             ctrl.paused = false;
             ctrl.ticket?.revoke();
-            ctrl.ticket = lp.pages.issue(ctrl);
+            ctrl.ticket = null;
             ctrl.waitTries = 0;
             ctrl.load();
         };
