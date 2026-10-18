@@ -116,6 +116,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<Guid, IReadOnlyList<string>, IReadOnlyDictionary<string, RequestBlock?>>? _refusals;
         private readonly ICollectionCoverage? _coverage;
         private readonly Func<bool> _phase4;
+        private readonly Func<bool> _enabled;
+        private readonly Func<string> _policyRevision;
 
         /// <summary>Creates the service over the library, the shared TMDB cache and the parental filter.</summary>
         /// <param name="view">Jellyfin facts.</param>
@@ -142,7 +144,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 keys => StorageUnknown(policy, keys),
                 coverage,
                 () => HomeFlags.CollectionGaps(policy.Configuration),
-                (user, keys) => Refusals(policy, user, keys))
+                (user, keys) => Refusals(policy, user, keys),
+                () => requests.Enabled,
+                () => MutationInput.Hash(JsonSerializer.Serialize(policy.Configuration)))
         {
         }
 
@@ -161,7 +165,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Func<IReadOnlyList<string>, bool>? pausesUnknown = null,
             ICollectionCoverage? coverage = null,
             Func<bool>? phase4 = null,
-            Func<Guid, IReadOnlyList<string>, IReadOnlyDictionary<string, RequestBlock?>>? refusals = null)
+            Func<Guid, IReadOnlyList<string>, IReadOnlyDictionary<string, RequestBlock?>>? refusals = null,
+            Func<bool>? enabled = null,
+            Func<string>? policyRevision = null)
         {
             _view = view;
             _boxSet = boxSet;
@@ -177,6 +183,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _coverage = coverage;
             _phase4 = phase4 ?? (() => false);
             _refusals = refusals;
+            _enabled = enabled ?? (() => true);
+            _policyRevision = policyRevision ?? (() => string.Empty);
         }
 
         /// <summary>
@@ -186,66 +194,77 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         public async Task<(CollectionGaps? Gaps, string? Refusal)> ForCollectionAsync(StatusViewer viewer, Guid itemId, string? language, CancellationToken ct)
         {
+            return await ProjectAsync(viewer, itemId, language, gaps => gaps, ct).ConfigureAwait(false);
+        }
+
+        /// <summary>Prepares the facts and projects/serialises the answer inside the common final response gate.</summary>
+        /// <typeparam name="T">Answer body.</typeparam>
+        /// <param name="viewer">Viewer.</param>
+        /// <param name="itemId">Collection.</param>
+        /// <param name="language">Metadata language.</param>
+        /// <param name="project">Synchronous projection (including serialisation).</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>Body or refusal.</returns>
+        internal async Task<(T? Gaps, string? Refusal)> ProjectAsync<T>(StatusViewer viewer, Guid itemId, string? language, Func<CollectionGaps, T> project, CancellationToken ct) where T : class
+        {
+            var gate = new AcquireResponseGate(_view, viewer.UserId, _ => _phase4() + "|" + _enabled() + "|" + _policyRevision());
+            for (var attempt = 0; attempt < AcquireResponseGate.Attempts; attempt++)
+            {
+                if (gate.Read() is not { } policy) return (null, "not_found");
+                if (!_enabled()) return (null, "feature_disabled");
+                try { return await PrepareAsync(policy.Viewer, itemId, language, gate, policy, project, ct).ConfigureAwait(false); }
+                catch (AcquireResponseGate.Changed) { ct.ThrowIfCancellationRequested(); }
+            }
+            return (null, "authorization_changed");
+        }
+
+        private async Task<(T? Gaps, string? Refusal)> PrepareAsync<T>(StatusViewer viewer, Guid itemId, string? language, AcquireResponseGate gate, AcquireResponseGate.Policy policy, Func<CollectionGaps, T> project, CancellationToken ct) where T : class
+        {
             if (_boxSet(viewer, itemId) is not { } set) return (null, "not_found");
             if (set.TmdbCollectionId is not int collectionId || collectionId <= 0) return (null, "collection_unknown");
             var json = await _tmdbCollection(collectionId, language != null && Language.IsMatch(language) ? language : null, ct).ConfigureAwait(false);
             var parts = ParseCollection(json, DateOnly.FromDateTime(_now().UtcDateTime));
             if (parts == null) return (null, "collection_unknown");
-
-            // Phase 4: what the collection's list holds as entries this viewer sees (read alongside the parts).
             var covering = _coverage != null && _phase4() ? CoveredAsync(set.ItemId, viewer, ct) : null;
-            var have = 0;
-            var missing = new List<CollectionPart>();
-            foreach (var part in parts)
-            {
-                var key = TitleKey.Parse(part.Key)!;
-                var aliases = _aliases?.Of(key);
-                var copies = _view.Copies(key, viewer, aliases);
-                if (copies.Any(c => c.Visible)) have++;
-                // A copy the viewer can't open (another library, its rating or tags): Jellyfin's answer
-                // is final, so the movie isn't theirs to see here.
-                else if (copies.Count == 0) missing.Add(part);
-            }
-
-            // Absent movies: only what the viewer's parental limits allow (the filter refuses unknowns).
-            var allowed = await Task.WhenAll(missing.Select(p => MaySeeAsync(p, viewer.UserId, ct))).ConfigureAwait(false);
-            var visible = missing.Where((_, i) => allowed[i]).ToList();
-            int? covered = null;
-            if (covering != null)
-            {
-                // A title the list already offers on this page is left out here, so it's never offered twice; only
-                // movies this viewer is shown at all count (the list side is filtered for them too).
-                var keys = await covering.ConfigureAwait(false);
-                var before = visible.Count;
-                if (keys.Count > 0) visible = visible.Where(p => !IsCovered(p.Key, keys)).ToList();
-                covered = before - visible.Count;
-            }
-
+            // Prepare every absent part, including covered titles: a later revoke can make them gaps again.
+            var absent = parts.Where(p => _view.Copies(TitleKey.Parse(p.Key)!, viewer, _aliases?.Of(TitleKey.Parse(p.Key)!)).Count == 0).ToList();
+            var allowed = await Task.WhenAll(absent.Select(p => MaySeeAsync(p, viewer.UserId, ct))).ConfigureAwait(false);
+            var permitted = absent.Where((_, i) => allowed[i]).Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
+            var coverage = covering != null ? await covering.ConfigureAwait(false) : null;
             var wants = _ledger?.Database.Available == true;
             var target = wants ? _currentTarget?.Invoke(viewer.UserId) : null;
-            var listed = visible.Select(p => wants ? p with { Request = RequestState(p.Key, viewer.UserId, target) } : p).ToList();
-            // What "Get the N missing" would ask for, checked title by title: a movie Radarr already has is measured on
-            // its own folder's drive, a new one on the default root's (never the household's new-add pause for all).
-            var askable = listed.Where(p => p.Released && p.Request == null).Select(p => p.Key).ToList();
-            bool? pending = null;
-            if (_pauses != null && askable.Count > 0)
+            var askable = absent.Where(p => permitted.Contains(p.Key) && p.Released && (!wants || RequestState(p.Key, viewer.UserId, target) == null)).Select(p => p.Key).ToList();
+            var paused = _pauses != null && askable.Count > 0 ? await _pauses(viewer.UserId, askable, ct).ConfigureAwait(false) : new Dictionary<string, RequestBlock>();
+            return gate.Project(policy, current =>
             {
-                var paused = await _pauses(viewer.UserId, askable, ct).ConfigureAwait(false);
-                if (paused.Count > 0) listed = listed.Select(p => paused.TryGetValue(p.Key, out var block) ? p with { Blocked = block } : p).ToList();
-                var open = askable.Where(k => !paused.ContainsKey(k)).ToList();
-                // A movie the viewer can't ask for at all (the title check's canRequest false) is not offered: said
-                // when the controls explain it, else just left out of the batch.
-                var refused = open.Count > 0 ? _refusals?.Invoke(viewer.UserId, open) : null;
+                // Everything below, including the caller's serialiser, runs without another await.
+                if (_boxSet(current, itemId) is not { } finalSet || finalSet.TmdbCollectionId != collectionId) return ((T?)null, "not_found");
+                var keys = _phase4() && coverage != null ? coverage() : new HashSet<string>(StringComparer.Ordinal);
+                var have = 0;
+                int? covered = _phase4() && coverage != null ? 0 : null;
+                var listed = new List<CollectionPart>();
+                var currentTarget = wants ? _currentTarget?.Invoke(current.UserId) : null;
+                foreach (var part in parts)
+                {
+                    var key = TitleKey.Parse(part.Key)!;
+                    var copies = _view.Copies(key, current, _aliases?.Of(key));
+                    if (copies.Any(c => c.Visible)) { have++; continue; }
+                    if (copies.Count > 0 || !permitted.Contains(part.Key)) continue;
+                    if (IsCovered(part.Key, keys)) { covered++; continue; }
+                    var row = wants ? part with { Request = RequestState(part.Key, current.UserId, currentTarget) } : part;
+                    if (paused.TryGetValue(part.Key, out var block)) row = row with { Blocked = block };
+                    listed.Add(row);
+                }
+                var open = listed.Where(p => p.Released && p.Request == null && p.Blocked == null).Select(p => p.Key).ToList();
+                var refused = _refusals?.Invoke(current.UserId, open);
                 if (refused is { Count: > 0 })
                 {
-                    listed = listed.Select(p => refused.TryGetValue(p.Key, out var block) ? (block != null ? p with { Blocked = block } : p with { Askable = false }) : p).ToList();
+                    listed = listed.Select(p => refused.TryGetValue(p.Key, out var block) ? block != null ? p with { Blocked = block } : p with { Askable = false } : p).ToList();
                     open = open.Where(k => !refused.ContainsKey(k)).ToList();
                 }
-                // A movie not marked paused is only known to be gettable when its drive could be checked: otherwise
-                // the answer says so (the page reads again shortly before offering it).
-                if (open.Count > 0 && _pausesUnknown?.Invoke(open) == true) pending = true;
-            }
-            return (new CollectionGaps { Have = have, Total = have + (covered ?? 0) + listed.Count, Missing = listed, Covered = covered, PausesPending = pending }, null);
+                bool? pending = open.Count > 0 && _pausesUnknown?.Invoke(open) == true ? true : null;
+                return (project(new CollectionGaps { Have = have, Total = have + (covered ?? 0) + listed.Count, Missing = listed, Covered = covered, PausesPending = pending }), (string?)null);
+            });
         }
 
         /// <summary>
@@ -284,11 +303,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private static MutationInput StorageInput(TitleKey key) => new() { Key = key.Title.ToString(), Scope = "movie", Variant = "standard" };
 
-        private async Task<IReadOnlySet<string>> CoveredAsync(Guid collectionId, StatusViewer viewer, CancellationToken ct)
+        private async Task<Func<IReadOnlySet<string>>> CoveredAsync(Guid collectionId, StatusViewer viewer, CancellationToken ct)
         {
             try
             {
-                return await _coverage!.CoveredAsync(collectionId, viewer, ct).ConfigureAwait(false);
+                return await _coverage!.PrepareAsync(collectionId, viewer, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -297,7 +316,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             catch (Exception)
             {
                 // Coverage is an addition: when it can't be read, every missing title is offered, as before.
-                return new HashSet<string>(StringComparer.Ordinal);
+                return () => new HashSet<string>(StringComparer.Ordinal);
             }
         }
 

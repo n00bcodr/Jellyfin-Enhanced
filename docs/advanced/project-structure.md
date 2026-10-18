@@ -494,6 +494,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
 ### Personal home rows and collection coverage (phase 4d)
 
 `Controllers/AcquireHomeController.cs` serves the caller's home rows and the administrator's actionable ops strip.
+`Services/Acquire/AcquireResponseGate.cs` checks current policy at the synchronous response boundary for home and collection answers.
 `Services/Acquire/Home/HomeProjection.cs` projects ledger/Seerr requests and notification follows into independent
 30-day coming-soon and 7-day first-arrival windows. `HomeFlags.cs` owns the effective switches and tri-state display
 preferences. `HomeArrivals.cs` records library events outside the scan thread; `Services/Acquire/ContentArrivalHistory.cs`
@@ -511,3 +512,5 @@ that DI seam; hidden entries must never affect the visible gap count.
 change feed. It mounts once, clears on navigation or account changes, and adds no status poller. Home tests live in
 `tests/backend/Home/`, collection integration tests in `IntegrationCollectionGapsPhase4Tests.cs`, and browser-module tests
 in `features-arr-home.test.mjs`, `features-arr-collection-gaps-p4.test.mjs` and `bootstrap-settings-home.test.mjs`.
+
+Home arrival projection consumes the badge adapter's playable source facts and persistent source observations, keeping edition arrival separate from permanent first-content arrival. HSS sections reconcile their cards, order and visibility against each fresh home answer.

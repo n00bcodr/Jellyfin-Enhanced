@@ -134,7 +134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <summary>The first known arrival of this source, stable across primary-item promotion and restart.</summary>
         /// <param name="source">Source identity.</param>
         /// <returns>Arrival (UTC), or null.</returns>
-        public DateTime? SourceArrival(string source) => FirstArrival(new[] { "src|" + source });
+        public DateTime? SourceArrival(string source) => EditionArrival(new[] { "src|" + source });
 
         /// <summary>Owners of source arrivals within the catch-up window, including an old promoted primary.</summary>
         /// <param name="since">Earliest arrival (UTC).</param>
@@ -167,7 +167,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                 (Id: source.Identity, Item: item.Id, At: arrived ?? source.Arrived)))
                 .Where(source => source.At != DateTime.MinValue).DistinctBy(source => source.Id).ToList();
             if (sources.Count == 0) return;
-            Guard(generation, Guid.Empty, (c, t) =>
+            var added = Guard(generation, Guid.Empty, (c, t) =>
             {
                 var count = 0;
                 foreach (var source in sources)
@@ -175,12 +175,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                         ("$p", "src|" + source.Id), ("$at", Ms(source.At)), ("$i", N(source.Item)));
                 return count;
             });
+            if (added > 0) Interlocked.Increment(ref _db.ArrivalRevision);
         }
 
         /// <summary>The earliest recorded arrival of any of these parts, or null.</summary>
         /// <param name="parts">Part keys (<see cref="PartKeys"/>).</param>
         /// <returns>First arrival (UTC).</returns>
-        public DateTime? FirstArrival(IEnumerable<string> parts) => ReadArrival(parts, content: false);
+        public DateTime? FirstArrival(IEnumerable<string> parts) => ReadArrival(parts, content: true);
+
+        /// <summary>The first arrival of an edition or stable source, independently of first content.</summary>
+        /// <param name="parts">Edition or source keys.</param>
+        /// <returns>Arrival (UTC), or null.</returns>
+        public DateTime? EditionArrival(IEnumerable<string> parts) => ReadArrival(parts, content: false);
 
         /// <summary>The permanent first arrival of the content, across editions and sources.</summary>
         /// <param name="parts">Edition part keys.</param>
@@ -243,7 +249,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             Reload();
         }
 
-        /// <summary>Removes expired facts and part records; source identities retain their original arrival.</summary>
+        /// <summary>Removes expired facts and seen markers; content, edition and source arrival histories remain.</summary>
         /// <returns>Rows removed.</returns>
         public int Purge()
         {
@@ -251,8 +257,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             var cutoff = Ms(_now().UtcDateTime - Keep);
             var removed = Guard(Generation, Guid.Empty, (c, t) =>
                 Exec(c, t, "DELETE FROM acquisition_stamps WHERE at<$c", ("$c", cutoff))
-                + Exec(c, t, "DELETE FROM acquisition_seen WHERE seen_at<$c", ("$c", cutoff))
-                + Exec(c, t, "DELETE FROM acquisition_arrivals WHERE first_at<$c AND part_key NOT LIKE 'src|%'", ("$c", cutoff)));
+                + Exec(c, t, "DELETE FROM acquisition_seen WHERE seen_at<$c", ("$c", cutoff)));
             if (removed > 0) Reload();
             return removed;
         }

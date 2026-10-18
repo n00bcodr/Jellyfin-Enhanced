@@ -283,7 +283,7 @@ test('on a home drawn by Home Screen Sections with the rows registered there, no
   assert.ok(andor.querySelector('.cardScalable > .je-home-overlay .je-arr-ring'), 'ring inside cardScalable');
   assert.equal(andor.querySelector('.je-home-line').textContent, 'Downloading');
   assert.ok(andor.querySelector('.cardText-secondary:not(.je-home-line)').classList.contains('je-home-replaced'));
-  assert.equal(h.document.querySelector(`.card[data-id="${ID('7')}"]`).querySelector('.je-home-overlay'), null, 'unmatched card untouched');
+  assert.equal(h.document.querySelector(`.card[data-id="${ID('7')}"]`), null, 'stale HSS card removed');
   const dune = h.document.querySelector(`.card[data-id="${ID('d')}"]`);
   assert.equal(dune.querySelector('.je-home-pill-new').textContent, 'New');
   assert.equal(dune.querySelector('.je-home-line').textContent, '2024');
@@ -293,8 +293,9 @@ test('on a home drawn by Home Screen Sections with the rows registered there, no
   items.innerHTML = `<div class="card" data-id="${ID('a')}"><div class="cardBox"><div class="cardScalable"></div><div class="cardText cardText-first">Andor Film</div></div></div>`;
   await until(() => items.querySelector('.je-home-overlay'));
   await wait(150);
-  assert.equal(items.querySelectorAll('.je-home-overlay').length, 1);
-  assert.equal(items.querySelectorAll('.je-home-line').length, 1);
+  assert.equal(items.querySelectorAll('.card[data-id]').length, 3, 'the full current row is reconciled after HSS redraws');
+  assert.equal(items.querySelector(`[data-id="${ID('a')}"]`).querySelectorAll('.je-home-overlay').length, 1);
+  assert.equal(items.querySelector(`[data-id="${ID('a')}"]`).querySelectorAll('.je-home-line').length, 1);
 });
 
 test('with HSS installed but not drawn yet, JE waits for it instead of injecting, then decorates', async t => {
@@ -391,3 +392,28 @@ test('logout clears the rows and never starts an anonymous home read', async t =
   assert.equal(h.rows().length, 0);
   assert.equal(h.homeReads().length, before);
 });
+
+for (const change of ['add', 'remove', 'empty', 'opt-out', 'return']) {
+  test(`HSS reconciles ${change} against a fresh answer without navigation or an observer loop`, async t => {
+    let data = answer({ hss: true });
+    const h = setup(t, { home: HSS_HOME, config: { ArrHomeHssSections: true }, routes: path => path === '/acquire/home' ? ok(data) : null });
+    await until(() => h.document.querySelector('.je-home-hss-card'));
+    const section = h.document.querySelector('.JellyfinEnhancedYourRequests');
+    const added = { ...data.requests[0], key: 'movie:tmdb:6', title: 'New arrival', hssId: ID('6') };
+    if (change === 'add') data = { ...data, requests: [...data.requests, added] };
+    if (change === 'remove') data = { ...data, requests: data.requests.slice(1) };
+    if (change === 'empty' || change === 'return') data = { ...data, requests: [] };
+    if (change === 'opt-out') data = { ...data, requests: null };
+    await h.JE.arrHome.refresh({ fresh: true });
+    if (change === 'return') {
+      data = { ...data, requests: [added] };
+      await h.JE.arrHome.refresh({ fresh: true });
+    }
+    const expected = (data.requests || []).map(c => c.hssId);
+    assert.deepEqual([...section.querySelectorAll('.card[data-id]')].map(c => c.dataset.id), expected);
+    assert.equal(section.hidden || section.classList.contains('hide') || section.style.display === 'none', expected.length === 0);
+    await wait(250);
+    assert.equal(h.homeReads().length, change === 'return' ? 3 : 2, 'no self-triggered reads');
+    assert.equal(h.document.querySelector('.je-home-rows'), null);
+  });
+}

@@ -431,6 +431,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/AcquireResponseGate.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrAdminHubService.cs",
       "category": "Services"
     },
@@ -10361,7 +10365,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 585,
+    "files": 586,
     "routes": 272,
     "configuration_properties": 619,
     "storage_references": 89,

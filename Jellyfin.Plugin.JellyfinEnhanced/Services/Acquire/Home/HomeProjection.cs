@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -128,11 +129,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         private readonly Func<IReadOnlyList<(TitleKey Key, int Tmdb)>, CancellationToken, Task<Dictionary<string, FollowDate>>> _dates;
         private readonly Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>> _meta;
         private readonly Func<int, SyntheticKindHint, string?> _synthetic;
+        private readonly Func<bool>? _hssNow;
 
         /// <summary>Creates the projection (DI).</summary>
-        public HomeProjection(RequestsHubService hub, NotifyStore notify, HomeArrivals arrivals, IHomePreferences preferences, ILibraryManager library, RequestHubProjection projection, TmdbResponseCache tmdb, IServerConfigurationManager serverConfig, MediaBrowser.Controller.IServerApplicationHost host)
-            : this(hub, notify, arrivals, preferences, new JellyfinHomeLibrary(library), () => JellyfinEnhanced.Instance?.Configuration,
-                (keys, ct) => FollowDates.ReadAsync(tmdb, Region(serverConfig), keys, ct), projection.MetaAsync, (tmdb, kind) => SyntheticHssId(host.SystemId, tmdb, kind))
+        public HomeProjection(RequestsHubService hub, NotifyStore notify, HomeArrivals arrivals, IHomePreferences preferences, ILibraryManager library, RequestHubProjection projection, TmdbResponseCache tmdb, IServerConfigurationManager serverConfig, MediaBrowser.Controller.IServerApplicationHost host, IStampLibrary sources)
+            : this(hub, notify, arrivals, preferences, new JellyfinHomeLibrary(library, sources), () => JellyfinEnhanced.Instance?.Configuration,
+                (keys, ct) => FollowDates.ReadAsync(tmdb, Region(serverConfig), keys, ct), projection.MetaAsync, (tmdb, kind) => SyntheticHssId(host.SystemId, tmdb, kind), () => HomeFlags.HssSections(JellyfinEnhanced.Instance?.Configuration) && HssSectionsAdapter.Present)
         {
         }
 
@@ -146,7 +148,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
             Func<PluginConfiguration?> config,
             Func<IReadOnlyList<(TitleKey Key, int Tmdb)>, CancellationToken, Task<Dictionary<string, FollowDate>>> dates,
             Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>> meta,
-            Func<int, SyntheticKindHint, string?> synthetic)
+            Func<int, SyntheticKindHint, string?> synthetic, Func<bool>? hssNow = null)
         {
             _hub = hub;
             _notify = notify;
@@ -157,6 +159,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
             _dates = dates;
             _meta = meta;
             _synthetic = synthetic;
+            _hssNow = hssNow;
         }
 
         /// <summary>Which kind of title a native page id names.</summary>
@@ -184,6 +187,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         /// <returns>The body, or null.</returns>
         public async Task<StatusBody?> ForViewerAsync(StatusViewer viewer, bool hss, CancellationToken cancellationToken)
         {
+            var gate = new AcquireResponseGate(Status.View, viewer.UserId, current =>
+            {
+                var c = _config();
+                var prefs = HomeRowChoice.Of(c, _preferences.For(current.UserId));
+                var follows = CurrentFollows(current.UserId);
+                return string.Join("|", HomeFlags.Rows(c), prefs, HomeFlags.HssSections(c), _hssNow?.Invoke(), NotifyFlags.Enabled(c),
+                    MutationInput.Hash(JsonSerializer.Serialize(c)), MutationInput.Hash(string.Join(",", follows.OrderBy(f => f.Key, StringComparer.Ordinal)
+                        .ThenBy(f => f.Kind, StringComparer.Ordinal).Select(f => f.Key + ":" + f.Kind + ":" + f.CreatedAt))));
+            });
+            for (var attempt = 0; attempt < AcquireResponseGate.Attempts; attempt++)
+            {
+                if (gate.Read() is not { } policy || !HomeFlags.Rows(_config())) return null;
+                try { return await PrepareAsync(policy.Viewer, _hssNow?.Invoke() ?? hss, gate, policy, cancellationToken).ConfigureAwait(false); }
+                catch (AcquireResponseGate.Changed) { cancellationToken.ThrowIfCancellationRequested(); }
+            }
+            return null;
+        }
+
+        private IReadOnlyList<FollowRow> CurrentFollows(Guid user)
+            => !NotifyFlags.Enabled(_config()) || _notify?.Available != true ? Array.Empty<FollowRow>()
+                : _notify.Follows(user).Where(f => !f.Muted && TitleKey.Parse(f.Key) != null).ToList();
+
+        private async Task<StatusBody?> PrepareAsync(StatusViewer viewer, bool hss, AcquireResponseGate gate, AcquireResponseGate.Policy policy, CancellationToken cancellationToken)
+        {
             var config = _config();
             if (!HomeFlags.Rows(config)) return null;
             _arrivals.EnsureSeeded();
@@ -207,13 +234,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
             var dates = lookups.Count == 0 ? new Dictionary<string, FollowDate>() : await _dates(lookups, cancellationToken).ConfigureAwait(false);
             var what = string.Join(
                 "|",
-                "home1",
+                "home2",
+                policy.Revision,
                 (choice.Requests ? "r" : "-") + (choice.Soon ? "s" : "-") + (choice.Arrived ? "a" : "-") + (choice.Ops && viewer.IsAdmin ? "o" : "-") + (hss ? "h" : "-"),
                 _arrivals.Revision.ToString(CultureInfo.InvariantCulture),
                 MutationInput.Hash(string.Join(",", follows.Select(f => f.Key + ":" + f.Kind).OrderBy(k => k, StringComparer.Ordinal))),
                 MutationInput.Hash(string.Join(",", meta.OrderBy(m => m.Key, StringComparer.Ordinal).Select(m => m.Key + "=" + m.Value.Title + "/" + m.Value.Year + "/" + m.Value.Poster + "/" + m.Value.ItemId))),
                 MutationInput.Hash(string.Join(",", dates.OrderBy(d => d.Key, StringComparer.Ordinal).Select(d => d.Key + "=" + d.Value))));
-            return await _hub.ForHomeAsync(viewer, what, followKeys, (entries, composed) => JsonSerializer.SerializeToUtf8Bytes(Build(viewer, choice, hss, entries, composed, follows, meta, dates), Json), cancellationToken).ConfigureAwait(false);
+            return await _hub.ForHomeAsync(viewer, what, followKeys, (entries, composed) => JsonSerializer.SerializeToUtf8Bytes(Build(viewer, choice, hss, entries, composed, follows, meta, dates), Json), cancellationToken, respond => gate.Project(policy, _ => respond())).ConfigureAwait(false);
         }
 
         /// <summary>The rows (typed) from a body this projection made.</summary>
@@ -408,7 +436,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                 foreach (var content in item.Content)
                 {
                     var at = _arrivals.FirstAtOrRecord(content, item.Created);
-                    if (only4k && ContentArrivalHistory.IsLaterVersion(at, item.Created)) continue;
+                    var editionAt = EditionArrival(item, content, only4k);
+                    if (only4k && (editionAt == null || ContentArrivalHistory.IsLaterVersion(at, editionAt.Value))) continue;
                     if (first == null || at < first) first = at;
                     // A standard ask or a follow: the title was here once any edition was (an upgrade from 1080p to 2160p
                     // in the same Radarr replaces the standard file with a 4K one).
@@ -416,6 +445,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                 }
             }
             return first;
+        }
+
+        private DateTime? EditionArrival(HomeItem item, string content, bool only4k)
+        {
+            if (item.Sources.Count == 0) return _arrivals.EditionAt(content, only4k) ?? item.Created;
+            var arrivals = item.Sources.Where(s => !only4k || AcquisitionCopyPolicy.IsFourK(s.Width, s.Height))
+                .Select(s => _arrivals.SourceAt(s.Identity)).OfType<DateTime>().ToList();
+            return arrivals.Count == 0 ? null : arrivals.Min();
         }
 
         private sealed record NewEpisode(DateTime At, int Season, int Episode, string? Name, string ItemId, string SeriesItemId);
@@ -445,7 +482,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                             || picked?.Any(p => p.Season == e.Season && p.Episode == number) == true;
                         if (!inScope) continue;
                         var first = seriesKey != null ? _arrivals.FirstAtOrRecord(HomeArrivals.EpisodeContent(seriesKey, e.Season, number), created) : created;
-                        if (only4k && (ContentArrivalHistory.IsLaterVersion(first, created)
+                        var edition = _library.Item(e.ItemId) is { } item ? EditionArrival(item, HomeArrivals.EpisodeContent(seriesKey ?? key, e.Season, number), only4k) : null;
+                        if (only4k && (edition == null || ContentArrivalHistory.IsLaterVersion(first, edition.Value)
                             || (askedAt is DateTime interest && !ContentArrivalHistory.InterestPrecedes(interest, first)))) continue;
                         if (now - first > ArrivedWithin || first > now) continue;
                         if (best == null || first > best.At || (first == best.At && (e.Season, number).CompareTo((best.Season, best.Episode)) > 0))
@@ -482,7 +520,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
     /// <param name="FourK">A 4K copy.</param>
     /// <param name="Name">Its name.</param>
     /// <param name="SeriesKey">For a series: its key from its own provider ids.</param>
-    public sealed record HomeItem(IReadOnlyList<string> Content, DateTime Created, bool FourK, string? Name, TitleKey? SeriesKey);
+    public sealed record HomeItem(IReadOnlyList<string> Content, DateTime Created, bool FourK, string? Name, TitleKey? SeriesKey)
+    {
+        /// <summary>Playable source facts from the shared badge adapter.</summary>
+        public IReadOnlyList<StampSource> Sources { get; init; } = Array.Empty<StampSource>();
+    }
 
     /// <summary>The library as the home rows read it (a seam for tests).</summary>
     public interface IHomeLibrary
@@ -497,17 +539,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
     public sealed class JellyfinHomeLibrary : IHomeLibrary
     {
         private readonly ILibraryManager _library;
+        private readonly IStampLibrary? _sources;
 
         /// <summary>Creates the view.</summary>
         /// <param name="library">Jellyfin's library.</param>
-        public JellyfinHomeLibrary(ILibraryManager library) { _library = library; }
+        public JellyfinHomeLibrary(ILibraryManager library, IStampLibrary? sources = null) { _library = library; _sources = sources; }
 
         /// <inheritdoc />
         public HomeItem? Item(Guid id)
         {
             if (_library.GetItemById(id) is not { } item) return null;
             var created = item.DateCreated.Kind == DateTimeKind.Local ? item.DateCreated.ToUniversalTime() : DateTime.SpecifyKind(item.DateCreated, DateTimeKind.Utc);
-            return new HomeItem(HomeArrivals.ContentOf(item), created, HomeArrivals.IsFourK(item), item.Name, item is MediaBrowser.Controller.Entities.TV.Series ? HomeArrivals.SeriesKey(item) : null);
+            var sourceItem = _sources?.Item(id);
+            return new HomeItem(HomeArrivals.ContentOf(item), created, sourceItem?.FourK ?? HomeArrivals.IsFourK(item), item.Name, item is MediaBrowser.Controller.Entities.TV.Series ? HomeArrivals.SeriesKey(item) : null) { Sources = sourceItem?.Sources ?? Array.Empty<StampSource>() };
         }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
@@ -71,7 +72,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return NotFound(new { outcome = "refused", reason = "disabled" });
             using var scope = _home.Status.Store.BeginRequest("arr/admin/home/ops");
             var overview = await _admin.OverviewAsync(cancellationToken).ConfigureAwait(false);
-            return Ok(Ops(overview));
+            var gate = new AcquireResponseGate(_home.Status.View, viewer.UserId,
+                current => HomeFlags.OpsStrip(JellyfinEnhanced.Instance?.Configuration) + "|" + _home.Choice(current.UserId));
+            if (gate.Read() is not { } policy) return Forbid();
+            try
+            {
+                return gate.Project<IActionResult>(policy, current =>
+                {
+                    if (!current.IsAdmin) return Forbid();
+                    if (!HomeFlags.OpsStrip(JellyfinEnhanced.Instance?.Configuration) || !_home.Choice(current.UserId).Ops || !_admin.Enabled)
+                        return NotFound(new { outcome = "refused", reason = "disabled" });
+                    return File(JsonSerializer.SerializeToUtf8Bytes(Ops(overview)), "application/json; charset=utf-8");
+                });
+            }
+            catch (AcquireResponseGate.Changed) { return Forbid(); }
         }
 
         /// <summary>The strip's counts from the admin overview.</summary>

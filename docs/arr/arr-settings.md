@@ -585,3 +585,7 @@ lands while the page is saving.
 
 HSS sections also require the native absent-title pages and their configured Seerr metadata source. When either is
 unavailable in configuration, JE uses native home injection. The request backend may still be Jellyfin Enhanced.
+
+Home row and list display choices take effect on the next live refresh. Responses recheck current viewer
+access, parental limits, preferences and follows after slow reads, so a change made while a request is waiting
+also applies to that answer.

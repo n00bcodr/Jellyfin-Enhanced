@@ -916,3 +916,9 @@ The home `hss` flag means all three JE sections registered successfully, with na
 finding the HSS assembly does not enable it. First-arrival dates refer to content, across editions. A later 4K version
 fulfils that edition but is an upgrade, excluded from new-content arrivals. `ICollectionCoverage` projections recheck
 list access and parental limits at the final answer and return only visible movie title keys.
+
+Home rows and collection gaps prepare remote facts first, then use a shared synchronous response gate. The
+gate resolves the current viewer and policy again before serializing or returning cached home bytes. Policy
+changes restart preparation up to three times; continued changes fail closed. Home cache identities include
+that policy revision, effective switches, row choices and current follows. Collection coverage is projected
+from current list access, entries and preferences after the storage wait.

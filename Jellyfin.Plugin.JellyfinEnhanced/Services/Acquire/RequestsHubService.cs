@@ -256,7 +256,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// scope) in one cached body under its own route. <paramref name="build"/> gets the entries and every composed
         /// title; <paramref name="what"/> names everything else the body depends on.
         /// </summary>
-        internal async Task<StatusBody> ForHomeAsync(StatusViewer viewer, string what, IReadOnlyCollection<TitleKey> extraKeys, Func<IReadOnlyList<HubEntry>, IReadOnlyList<ArrStatusService.KeyedStatus>, byte[]> build, CancellationToken cancellationToken)
+        internal async Task<StatusBody> ForHomeAsync(StatusViewer viewer, string what, IReadOnlyCollection<TitleKey> extraKeys, Func<IReadOnlyList<HubEntry>, IReadOnlyList<ArrStatusService.KeyedStatus>, byte[]> build, CancellationToken cancellationToken, Func<Func<StatusBody>, StatusBody>? responseGate = null)
         {
             var config = _config();
             var now = _status.Now.UtcDateTime;
@@ -268,7 +268,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     var byKey = composed.ToDictionary(t => t.Key.ToString(), StringComparer.Ordinal);
                     var entries = ledger.Entries.Select(w => byKey.TryGetValue(w[0].Input.Key, out var c) ? LedgerEntry(w, c, ledger.Meta.GetValueOrDefault(w[0].Input.Key), now) : null).OfType<HubEntry>().ToList();
                     return build(entries, composed);
-                }, cancellationToken, ledger.Scopes, ledger.Load).ConfigureAwait(false);
+                }, cancellationToken, ledger.Scopes, ledger.Load, responseGate).ConfigureAwait(false);
             }
             var seerr = PrepareSeerr(viewer, config);
             return await _status.ForTitlesAsync(viewer, With(seerr.Keys, extraKeys), "home", seerr.What + "|" + what, composed =>
@@ -276,7 +276,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var byKey = composed.ToDictionary(t => t.Key.ToString(), StringComparer.Ordinal);
                 var entries = seerr.Entries.Select(r => byKey.TryGetValue(r[0].Key!.ToString(), out var c) ? Entry(r, c, now) : null).OfType<HubEntry>().ToList();
                 return build(entries, composed);
-            }, cancellationToken, seerr.Scopes).ConfigureAwait(false);
+            }, cancellationToken, seerr.Scopes, responseGate: responseGate).ConfigureAwait(false);
         }
 
         private static List<TitleKey> With(IReadOnlyList<TitleKey> keys, IReadOnlyCollection<TitleKey> extra)

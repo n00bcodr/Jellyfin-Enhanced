@@ -1487,3 +1487,7 @@ The HSS adapter supports Home Screen Sections 3.0.3.0 on Jellyfin 12 with native
 registration of all three sections is required. A missing or incompatible registration API, or registration failure,
 uses the native home rows. Jellyfin 10.11 uses native injection because it has no native absent-title pages. Section
 placement and activation remain in HSS's own settings; individual users can still hide each row in JE's panel.
+
+Home Screen Sections rows update their cards and visibility when a fresh home answer arrives, including after
+an opt-out. A later 4K version fulfils a 4K request without making the title new again, even when the request
+was placed before the original HD copy arrived.

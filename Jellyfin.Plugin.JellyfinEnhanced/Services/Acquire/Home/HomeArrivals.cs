@@ -8,6 +8,7 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
@@ -33,11 +34,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         private const int SeedPage = 500;
 
         private readonly AcquireDatabase _db;
+        private readonly AcquisitionStampStore _stamps;
+        private readonly IStampLibrary? _sources;
         private readonly ILibraryManager? _library;
         private readonly Logger? _logger;
         private readonly Func<bool> _enabled;
         private readonly ConcurrentDictionary<string, long> _known = new(StringComparer.Ordinal);
-        private readonly Channel<Guid> _added = Channel.CreateBounded<Guid>(new BoundedChannelOptions(4096) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+        private readonly Channel<(Guid Id, DateTime At, long Generation)> _added = Channel.CreateBounded<(Guid Id, DateTime At, long Generation)>(new BoundedChannelOptions(4096) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
         private readonly CancellationTokenSource _stop = new();
         private long _loadedGeneration = -1;
         private long _loadedArrivalRevision = -1;
@@ -49,8 +52,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         /// <param name="db">The acquire database.</param>
         /// <param name="library">Jellyfin's library.</param>
         /// <param name="logger">Logger.</param>
-        public HomeArrivals(AcquireDatabase db, ILibraryManager library, Logger logger)
-            : this(db, library, logger, () => HomeFlags.Rows(JellyfinEnhanced.Instance?.Configuration))
+        public HomeArrivals(AcquireDatabase db, ILibraryManager library, Logger logger, IStampLibrary? sources = null)
+            : this(db, library, logger, () => HomeFlags.Rows(JellyfinEnhanced.Instance?.Configuration), sources)
         {
         }
 
@@ -59,9 +62,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         /// <param name="library">Jellyfin's library (null: no seeding or events).</param>
         /// <param name="logger">Logger.</param>
         /// <param name="enabled">Whether home rows are on.</param>
-        internal HomeArrivals(AcquireDatabase db, ILibraryManager? library, Logger? logger, Func<bool> enabled)
+        internal HomeArrivals(AcquireDatabase db, ILibraryManager? library, Logger? logger, Func<bool> enabled, IStampLibrary? sources = null)
         {
             _db = db;
+            _stamps = new AcquisitionStampStore(db);
+            _sources = sources;
             _library = library;
             _logger = logger;
             _enabled = enabled;
@@ -69,6 +74,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
 
         /// <summary>Changes whenever a first date was recorded or moved (part of the home rows' cache key).</summary>
         public long Revision => Interlocked.Read(ref _revision) + Interlocked.Read(ref _db.ArrivalRevision) + (_db.Generation * 1_000_000_007L);
+
+        /// <summary>The authoritative first observation of a source, shared with acquisition badges.</summary>
+        /// <param name="source">Stable source identity.</param>
+        /// <returns>Arrival, or null until observed.</returns>
+        public DateTime? SourceAt(string source) => _stamps.SourceArrival(source);
+
+        /// <summary>An edition's arrival, separate from first content.</summary>
+        /// <param name="content">Content key.</param>
+        /// <param name="fourK">Requested edition.</param>
+        /// <returns>Arrival, or null.</returns>
+        public DateTime? EditionAt(string content, bool fourK)
+        {
+            var key = TitleKey.Parse(ContentArrivalHistory.ContentKey(content));
+            if (key == null) return null;
+            var part = key.IsMovie ? "m|" + key.Title : "e|" + key.Title + "|s" + key.Season + "e" + key.Episode;
+            return _stamps.EditionArrival(new[] { part + (fourK ? "|4k" : "|std") });
+        }
 
         /// <summary>The first-arrival date of a piece of content, or null when it was never recorded.</summary>
         /// <param name="content">Content key.</param>
@@ -155,20 +177,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         public void Record(IReadOnlyCollection<(string Content, DateTime At)> seen)
         {
             if (seen.Count == 0 || !_db.Available) return;
+            var generation = _db.Generation;
             Load();
             seen = seen.Select(s => (ContentArrivalHistory.ContentKey(s.Content), s.At)).ToList();
             var changed = seen.Where(s => !_known.TryGetValue(s.Content, out var ms) || Ms(s.At) < ms).ToList();
             if (changed.Count == 0) return;
             try
             {
-                _db.Write((c, t) =>
+                var written = _db.WriteIf(generation, (c, t) =>
                 {
                     foreach (var (content, at) in changed)
                     {
                         ContentArrivalHistory.Record(c, t, content, Ms(at));
                     }
                     return true;
-                });
+                }, false);
+                if (!written.Done) return;
             }
             catch (Exception ex)
             {
@@ -211,7 +235,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                             if (!series.TryGetValue(episode.SeriesId, out key)) series[episode.SeriesId] = key = SeriesKey(episode.Series);
                             if (key == null) continue;
                         }
-                        foreach (var content in ContentOf(item, key)) batch.Add((content, Utc(item.DateCreated)));
+                        if (_sources?.Item(item.Id) is { } sourceItem)
+                        {
+                            var generation = _db.Generation;
+                            _stamps.ObserveSources(new[] { sourceItem }, null, generation);
+                            foreach (var source in sourceItem.SourceItems())
+                            {
+                                var at = source.SourceId is { } identity ? SourceAt(identity) : source.DateCreated;
+                                if (at is not DateTime known || known == DateTime.MinValue) continue;
+                                foreach (var content in ContentOf(item, key)) batch.Add((content, known));
+                            }
+                        }
+                        else foreach (var content in ContentOf(item, key)) batch.Add((content, Utc(item.DateCreated)));
                     }
                     seen += batch.Count;
                     Record(batch);
@@ -279,7 +314,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         private void OnItemChanged(object? sender, ItemChangeEventArgs e)
         {
             if (e.Item is not (Movie or Episode) || !_enabled()) return;
-            _added.Writer.TryWrite(e.Item.Id);
+            _added.Writer.TryWrite((e.Item.Id, DateTime.UtcNow, _db.Generation));
         }
 
         private async Task RunAsync(CancellationToken ct)
@@ -290,11 +325,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                 while (await _added.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
                 {
                     var batch = new List<(string, DateTime)>();
-                    var ids = new HashSet<Guid>();
-                    while (ids.Count < 200 && _added.Reader.TryRead(out var id)) ids.Add(id);
+                    var ids = new Dictionary<Guid, (DateTime At, long Generation)>();
+                    while (ids.Count < 200 && _added.Reader.TryRead(out var change)) ids.TryAdd(change.Id, (change.At, change.Generation));
                     EnsureSeeded();
-                    foreach (var id in ids)
+                    foreach (var (id, change) in ids)
                     {
+                        if (_sources?.Item(id) is { } sourceItem) _stamps.ObserveSources(new[] { sourceItem }, change.At, change.Generation);
                         if (_library!.GetItemById(id) is not { } item) continue;
                         foreach (var content in ContentOf(item)) batch.Add((content, Utc(item.DateCreated)));
                     }

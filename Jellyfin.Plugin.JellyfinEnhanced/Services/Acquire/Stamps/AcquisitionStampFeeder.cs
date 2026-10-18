@@ -250,7 +250,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         {
             if (item.FourK) _resolver.NoteFourKCopy();
             var parts = AcquisitionStampStore.PartKeys(item);
-            var recorded = _store.FirstArrival(parts);
+            var recorded = _store.EditionArrival(parts);
             var recordedAny = _store.FirstContentArrival(parts);
             DateTime? earlierAny = recordedAny < item.DateCreated ? recordedAny : null;
             DateTime? earlierSame = recorded < item.DateCreated ? recorded : null;

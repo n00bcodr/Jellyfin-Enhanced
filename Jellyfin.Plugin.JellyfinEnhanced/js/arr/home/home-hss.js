@@ -93,22 +93,67 @@
      * @returns {number} Cards decorated.
      */
     function decorate(container, data) {
+        // Disconnect during our own reconciliation. Re-observing only after all writes prevents a self-triggered
+        // MutationObserver loop, including card moves and HSS's late section creation.
+        state.observer?.disconnect();
         let count = 0;
-        for (const { section, row } of sectionsIn(container)) {
-            const byId = new Map();
-            for (const entry of Array.isArray(data?.[row]) ? data[row] : []) {
-                const id = R.normalizeId(entry?.hssId) || R.normalizeId(entry?.itemId);
-                if (id && !byId.has(id)) byId.set(id, entry);
-            }
-            section.querySelectorAll('.card[data-id]').forEach(card => {
-                const entry = byId.get(R.normalizeId(card.getAttribute('data-id')));
-                if (entry) {
-                    paint(card, row, entry);
-                    count++;
-                } else if (card.classList.contains('je-home-hss-card')) {
-                    undecorate(card);
+        try {
+            for (const [cls, row] of Object.entries(SECTIONS)) {
+                const entries = Array.isArray(data?.[row]) ? data[row] : [];
+                let section = container.querySelector(`.verticalSection.${cls}`);
+                if (!section && entries.length) {
+                    section = R.buildRow(R.ROWS.find(spec => spec.id === row), []);
+                    section.classList.remove('je-home-row', `je-home-row-${row}`);
+                    section.classList.add(cls, 'je-home-hss-section');
+                    section.dataset.page = container.querySelector('[data-page]')?.dataset.page || '1';
+                    const anchor = container.querySelector('.verticalSection[data-page]');
+                    if (anchor) anchor.after(section);
+                    else container.appendChild(section);
                 }
-            });
+                if (!section) continue;
+                let items = section.querySelector('.itemsContainer');
+                if (!items) {
+                    items = R.el('div', 'itemsContainer');
+                    section.appendChild(items);
+                }
+                const byId = new Map();
+                for (const entry of entries) {
+                    const id = R.normalizeId(entry?.hssId) || R.normalizeId(entry?.itemId);
+                    if (id && !byId.has(id)) byId.set(id, entry);
+                }
+                const active = document.activeElement?.closest('.card[data-id]');
+                const focused = active && section.contains(active) ? R.normalizeId(active.dataset.id) : null;
+                const existing = new Map();
+                section.querySelectorAll('.card[data-id]').forEach(card => {
+                    const id = R.normalizeId(card.dataset.id);
+                    if (!byId.has(id) || existing.has(id)) card.remove();
+                    else existing.set(id, card);
+                });
+                for (const [id, entry] of byId) {
+                    let card = existing.get(id);
+                    if (!card) {
+                        card = R.buildCard(row, entry);
+                        card.dataset.id = id;
+                        card.dataset.jeHomeGenerated = 'true';
+                    }
+                    paint(card, row, entry);
+                    // Avoid moving already-ordered nodes (focus and scroll stay where HSS put them).
+                    const index = [...byId.keys()].indexOf(id);
+                    if (items.children[index] !== card) items.insertBefore(card, items.children[index] || null);
+                    count++;
+                }
+                section.hidden = byId.size === 0;
+                section.classList.toggle('hide', byId.size === 0);
+                if (focused && byId.has(focused) && !section.contains(document.activeElement)) {
+                    [...items.children].find(card => R.normalizeId(card.dataset.id) === focused)?.focus({ preventScroll: true });
+                }
+            }
+        } finally {
+            if (state.observer && state.container) {
+                state.sections.clear();
+                state.observer.observe(state.container, { childList: true });
+                observeSections();
+            }
         }
         return count;
     }
@@ -118,7 +163,17 @@
      * @returns {void}
      */
     function clear() {
-        document.querySelectorAll('.je-home-hss-card').forEach(undecorate);
+        state.observer?.disconnect();
+        document.querySelectorAll(Object.keys(SECTIONS).map(cls => `.verticalSection.${cls}`).join(',')).forEach(section => {
+            section.querySelectorAll('.card[data-id]').forEach(card => card.remove());
+            section.hidden = true;
+            section.classList.add('hide');
+        });
+        if (state.observer && state.container) {
+            state.sections.clear();
+            state.observer.observe(state.container, { childList: true });
+            observeSections();
+        }
     }
 
     /**

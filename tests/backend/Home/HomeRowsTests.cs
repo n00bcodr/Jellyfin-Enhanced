@@ -188,6 +188,85 @@ public class HomeRowsTests
         Assert.Empty((await home.Rows(home.Lab.Emma)).Arrived!);
     }
 
+    public static IEnumerable<object[]> ResponseWaits()
+    {
+        foreach (var wait in new[] { "follow-meta", "follow-dates", "request-meta", "library", "queue", "history", "episodes", "cache" })
+            foreach (var change in new[] { "parental", "opt-out", "unfollow", "disabled", "deleted" })
+                yield return new object[] { wait, change };
+    }
+
+    [Theory]
+    [MemberData(nameof(ResponseWaits))]
+    public async Task EveryHomeWaitEndsWithCurrentPolicyPreferencesAndFollows(string wait, string change)
+    {
+        using var home = new Home();
+        var lab = home.Lab;
+        home.Notify.SetFollow(lab.Emma.UserId, Inception, "title", false, false, lab.Arr.Now);
+        await lab.Ask(lab.Emma, new MutationInput { Key = Firefly, Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 4) } });
+        var changed = false;
+        async Task ChangeAt(string point)
+        {
+            await Task.Yield(); // An actual suspension at each dependency, including a warm-cache answer.
+            if (changed || point != wait) return;
+            changed = true;
+            if (change == "parental") lab.View.Users[lab.Emma.UserId] = new StatusViewer { UserId = lab.Emma.UserId, HasParentalLimit = true, PolicyRevision = "restricted" };
+            if (change == "opt-out") home.Prefs.By[lab.Emma.UserId] = new HomePreferences(false, false, false, false);
+            if (change == "unfollow") home.Notify.SetFollow(lab.Emma.UserId, Inception, "title", true, false, lab.Arr.Now);
+            if (change == "disabled") lab.Config.ArrPhase4HomeRowsEnabled = false;
+            if (change == "deleted") lab.View.Users.Remove(lab.Emma.UserId);
+        }
+        var hub = new RequestsHubService(lab.Status, lab.Model, () => lab.Config, lab.Ledger, async (keys, viewer, ct) =>
+        {
+            await ChangeAt("request-meta");
+            return keys.ToDictionary(k => k, k => new HubTitleMeta { Title = k });
+        });
+        var projection = new HomeProjection(hub, home.Notify, home.Arrivals, home.Prefs, home.Library, () => lab.Config,
+            async (keys, ct) => { await ChangeAt("follow-dates"); await ChangeAt("cache"); return new() { [Inception] = new FollowDate(home.Now.AddDays(1), null, null) }; },
+            async (keys, viewer, ct) => { await ChangeAt("follow-meta"); return keys.ToDictionary(k => k, k => new HubTitleMeta { Title = "Inception" }); },
+            (id, kind) => "syn-" + id);
+        if (wait == "cache")
+        {
+            // Prime the exact body, then change policy in the date read preceding its cache lookup.
+            changed = true;
+            Assert.NotNull(await projection.ForViewerAsync(lab.Emma, false, default));
+            changed = false;
+        }
+        foreach (var host in lab.Arr.Hosts.Values) host.Before = async (path, ct) =>
+        {
+            if (path.EndsWith("/movie", StringComparison.Ordinal) || path.EndsWith("/series", StringComparison.Ordinal)) await ChangeAt("library");
+            if (path.EndsWith("/queue", StringComparison.Ordinal)) await ChangeAt("queue");
+            if (path.EndsWith("/history", StringComparison.Ordinal)) await ChangeAt("history");
+            if (path.EndsWith("/episode", StringComparison.Ordinal)) await ChangeAt("episodes");
+        };
+        var body = await projection.ForViewerAsync(lab.Emma, false, default);
+        Assert.True(changed, "Dependency was not exercised: " + wait);
+        if (change is "disabled" or "deleted") { Assert.Null(body); return; }
+        Assert.NotNull(body);
+        var rows = HomeProjection.Read(body!)!;
+        if (change == "opt-out") Assert.Null(rows.Soon);
+        else Assert.DoesNotContain(rows.Soon ?? new(), c => c.Key == Inception);
+    }
+
+    [Fact]
+    public async Task AGroupedFourKSourceIsAnUpgradeEvenWhenItsRequestPredatesTheHdArrival()
+    {
+        using var home = new Home();
+        await home.Lab.Warm();
+        var want = await home.Lab.Ask(home.Lab.Emma, new MutationInput { Key = Matrix, Variant = "4k" });
+        await home.Lab.Outbox.TickAsync(default);
+        home.Lab.Arr.Now = home.Lab.Arr.Now.AddDays(2);
+        var hdAt = home.Now.AddDays(-1);
+        home.Arrivals.Record(new[] { (HomeArrivals.MovieContent(TitleKey.Parse(Matrix)!, false), hdAt) });
+        var id = home.MovieCopy(Matrix, hdAt, fourK: true);
+        // The source fact was recorded by 4e after Updated; the primary inherited the old title date.
+        var store = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.AcquisitionStampStore(home.Lab.Db);
+        store.NoteArrival(new[] { "m|" + Matrix + "|4k" }, home.Now.AddHours(-1), id);
+        Assert.True(home.Lab.Ledger.Fulfil(want, home.Lab.Arr.Now));
+        await home.Lab.Warm();
+        Assert.Empty((await home.Rows(home.Lab.Emma)).Arrived!);
+        Assert.Equal(hdAt, store.FirstArrival(new[] { "m|" + Matrix + "|4k" }));
+    }
+
     [Fact]
     public async Task NothingAtAllWithTheSwitchOrAParentOff()
     {

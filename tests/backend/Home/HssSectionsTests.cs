@@ -149,6 +149,41 @@ public class HssSectionsTests
         Assert.Equal(404, ((ObjectResult)await Controller(TestCallers.Principal(lab.Admin.UserId, true)).GetOps(default)).StatusCode);
     }
 
+    [Theory]
+    [InlineData("demoted")]
+    [InlineData("deleted")]
+    [InlineData("preference")]
+    [InlineData("flag")]
+    public async Task TheOpsStripRechecksItsViewerAndDisplayChoiceAfterTheOverviewWait(string change)
+    {
+        using var lab = new IntegrationRequestArrivalsTests.Lab();
+        lab.Config.ArrPhase2Enabled = true;
+        lab.Config.ArrPhase4Enabled = true;
+        lab.Config.ArrPhase4HomeRowsEnabled = true;
+        lab.Config.ArrPhase4HomeOpsStripEnabled = true;
+        var prefs = new HomeRowsTests.Prefs();
+        var home = HomeRowsTests.Projection(lab.Hub, null, lab.Db, () => lab.Config, prefs);
+        using var bridge = new JellyfinBridge(lab.Store, new FakeLibraryAccess(), null, () => lab.Config, () => lab.Arr.Now, null);
+        var admin = new ArrAdminHubService(lab.Store, bridge, lab.Model, null, null, () => lab.Config, () => lab.Arr.Now);
+        var changed = false;
+        foreach (var host in lab.Arr.Hosts.Values) host.Before = async (path, ct) =>
+        {
+            await Task.Yield();
+            if (changed || !path.EndsWith("/diskspace", StringComparison.Ordinal)) return;
+            changed = true;
+            if (change == "demoted") lab.View.Users[lab.Admin.UserId] = new StatusViewer { UserId = lab.Admin.UserId, PolicyRevision = "member" };
+            if (change == "deleted") lab.View.Users.Remove(lab.Admin.UserId);
+            if (change == "preference") prefs.By[lab.Admin.UserId] = new HomePreferences(null, null, null, false);
+            if (change == "flag") lab.Config.ArrPhase4HomeOpsStripEnabled = false;
+        };
+        var controller = new AcquireHomeController(home, admin) { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
+        controller.HttpContext.User = TestCallers.Principal(lab.Admin.UserId, true);
+        var result = await controller.GetOps(default);
+        Assert.True(changed);
+        if (change is "demoted" or "deleted") Assert.IsType<ForbidResult>(result);
+        else Assert.Equal(404, Assert.IsAssignableFrom<ObjectResult>(result).StatusCode);
+    }
+
     [Fact]
     public void TheStripIsActionableOnlyWhenSomethingNeedsDoing()
     {

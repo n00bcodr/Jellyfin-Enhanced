@@ -414,7 +414,7 @@ public class IntegrationAcquisitionStampFeederTests
         await w.Feeder.TickAsync(CancellationToken.None);
         var fact = Assert.Single(w.Store.FactsFor(old.Id));
         Assert.Equal((AcquisitionStampKinds.Upgraded, T0), (fact.Kind, fact.At));
-        Assert.Equal(T0, w.Store.FirstArrival(new[] { "m|movie:tmdb:603|4k" }));
+        Assert.Equal(T0, w.Store.EditionArrival(new[] { "m|movie:tmdb:603|4k" }));
         Assert.Equal(AcquisitionStamp.Upgraded, w.Resolver.Resolve(old.Id, user));
         w.Library.Played(user, old.Id, false, T0.AddSeconds(30));
         Assert.Equal(AcquisitionStamp.FourK, w.Resolver.Resolve(old.Id, user));
@@ -450,7 +450,7 @@ public class IntegrationAcquisitionStampFeederTests
         using var w = new StampWorld();
         var movie = w.AddMovie(StampWorld.Movie(603), T0);
         w.Library.RaiseRemoved(movie with { Sources = new[] { new StampSource("unknown", "/alternate.mkv", 3840, 2160, DateTime.MinValue) } });
-        Assert.Null(w.Store.FirstArrival(new[] { "m|movie:tmdb:603|4k" }));
+        Assert.Null(w.Store.EditionArrival(new[] { "m|movie:tmdb:603|4k" }));
     }
 
     [Fact]
@@ -470,7 +470,7 @@ public class IntegrationAcquisitionStampFeederTests
         await w.Feeder.TickAsync(CancellationToken.None);
         var fact = Assert.Single(w.Store.FactsFor(promoted.Id));
         Assert.Equal((AcquisitionStampKinds.Upgraded, T0), (fact.Kind, fact.At));
-        Assert.Equal(T0, w.Store.FirstArrival(new[] { "m|movie:tmdb:603|4k" }));
+        Assert.Equal(T0, w.Store.EditionArrival(new[] { "m|movie:tmdb:603|4k" }));
         // Neither a metadata refresh nor a restart may make the same source arrive again.
         w.Library.RaiseUpdated(promoted);
         w.Now = T0.AddMinutes(3);

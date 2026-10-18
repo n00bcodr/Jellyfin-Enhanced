@@ -35,6 +35,12 @@ public class IntegrationCollectionGapsPhase4Tests
         public List<(Guid Collection, Guid User)> Calls { get; } = new();
         public Exception? Throw { get; set; }
 
+        public async Task<Func<IReadOnlySet<string>>> PrepareAsync(Guid collectionId, StatusViewer viewer, CancellationToken ct)
+        {
+            await CoveredAsync(collectionId, viewer, ct);
+            return () => Keys;
+        }
+
         public Task<IReadOnlySet<string>> CoveredAsync(Guid collectionId, StatusViewer viewer, CancellationToken ct)
         {
             Calls.Add((collectionId, viewer.UserId));
@@ -123,6 +129,77 @@ public class IntegrationCollectionGapsPhase4Tests
         Assert.True(changed);
     }
 
+    public static IEnumerable<object[]> GapWaits()
+    {
+        foreach (var wait in new[] { "collection", "coverage", "parental", "storage" })
+            foreach (var change in new[] { "revoke", "preference", "rating", "removed-entry", "flag", "deleted" })
+                yield return new object[] { wait, change };
+    }
+
+    [Theory]
+    [MemberData(nameof(GapWaits))]
+    public async Task EveryGapWaitEndsWithCurrentAccessCoverageAndParentalPolicy(string wait, string change)
+    {
+        using var h = new ListsHarness(seerr: true);
+        var user = h.NewUser("viewer", maxRating: 17);
+        h.MovieCertifications[2] = "R";
+        h.MovieCertifications[3] = "G";
+        var collection = h.Host.AddCollection("Saga");
+        await SaveEntries(h, collection, ListsHarness.Movie(2, addedBy: Guid.NewGuid().ToString("N")));
+        var view = new FakeJellyfinView();
+        view.Users[user.Id] = Viewer(user, parental: true);
+        var changed = false;
+        async Task ChangeAt(string point)
+        {
+            await Task.Yield();
+            if (changed || point != wait) return;
+            changed = true;
+            if (change == "revoke") h.Host.ListHiddenFrom[user.Id] = new HashSet<Guid> { collection.Info.Id };
+            if (change == "preference") h.Preferences.ByUser[user.Id] = (false, null, null);
+            if (change == "rating")
+            {
+                user.MaxParentalRatingScore = 10;
+                view.Users[user.Id] = new StatusViewer { UserId = user.Id, Handle = user, HasParentalLimit = true, PolicyRevision = "restricted" };
+            }
+            if (change == "removed-entry") { var doc = h.Store.Load(collection.Info.Id.ToString("N"))!; doc.Items.Clear(); h.Store.Save(doc); }
+            if (change == "flag") h.Plugin.Plugin.Configuration.ArrPhase4ListPlaceholdersEnabled = false;
+            if (change == "deleted") view.Users.Remove(user.Id);
+        }
+        var original = h.Reply;
+        h.ReplyAsync = async (request, ct) => { await ChangeAt("coverage"); return original(request); };
+        var coverage = new ListCollectionCoverage(h.Store, h.Access, h.Users.Object, h.Preferences, () => h.Plugin.Plugin.Configuration, null);
+        var gaps = new CollectionGapsService(view, (_, id) => new BoxSetRef(id, 10), null, null,
+            async (_, _, _) => { await ChangeAt("collection"); return Body(2, 3); },
+            async (id, _, _) => { await ChangeAt("parental"); return id != 2 || user.MaxParentalRatingScore > 10; }, () => Today,
+            pauses: async (_, _, _) => { await ChangeAt("storage"); return new Dictionary<string, RequestBlock>(); },
+            coverage: coverage, phase4: () => true);
+        var result = await gaps.ForCollectionAsync(view.Users[user.Id], collection.Info.Id, null, default);
+        Assert.True(changed, "Dependency was not exercised: " + wait);
+        if (change == "deleted") { Assert.Null(result.Gaps); return; }
+        Assert.NotNull(result.Gaps);
+        Assert.Equal(0, result.Gaps!.Covered);
+        Assert.Equal(change == "rating" ? new[] { "movie:tmdb:3" } : new[] { "movie:tmdb:2", "movie:tmdb:3" }, result.Gaps.Missing.Select(p => p.Key));
+    }
+
+    [Fact]
+    public async Task CoverageUsesAPreferenceEnabledDuringTheStorageWait()
+    {
+        using var h = new ListsHarness();
+        var user = h.NewUser("viewer");
+        var collection = h.Host.AddCollection("Saga");
+        await SaveEntries(h, collection, ListsHarness.Movie(2));
+        h.Preferences.ByUser[user.Id] = (false, null, null);
+        var view = new FakeJellyfinView();
+        var viewer = Viewer(user);
+        view.Users[user.Id] = viewer;
+        var coverage = new ListCollectionCoverage(h.Store, h.Access, h.Users.Object, h.Preferences, () => h.Plugin.Plugin.Configuration, null);
+        var gaps = Gaps(view, collection.Info.Id, Body(2, 3), coverage: coverage,
+            pauses: async (_, _, _) => { await Task.Yield(); h.Preferences.ByUser[user.Id] = (true, null, null); return new Dictionary<string, RequestBlock>(); });
+        var answer = (await gaps.ForCollectionAsync(viewer, collection.Info.Id, null, default)).Gaps!;
+        Assert.Equal(1, answer.Covered);
+        Assert.Equal("movie:tmdb:3", Assert.Single(answer.Missing).Key);
+    }
+
     [Fact]
     public async Task ListEntriesTheViewerSeesAreLeftOutAndCountedCoveredAndHiddenOnesChangeNothing()
     {
@@ -141,6 +218,8 @@ public class IntegrationCollectionGapsPhase4Tests
         var coverage = new ListCollectionCoverage(h.Store, h.Access, h.Users.Object, h.Preferences, () => h.Plugin.Plugin.Configuration, null);
 
         var view = new FakeJellyfinView();
+        view.Users[adult.Id] = Viewer(adult);
+        view.Users[kid.Id] = Viewer(kid, parental: true);
         view.AddCopy(TitleKey.Parse("movie:tmdb:1")!, new JfCopy { ItemId = Guid.NewGuid(), Path = "/m/1" });
         // The gaps' own parental decision is the same filter the list entries go through.
         Func<int, Guid, CancellationToken, Task<bool>> maySee = async (tmdb, user, ct) => await h.Access.CheckTitleAsync("movie", tmdb, user.ToString("N"), ct) == true;
