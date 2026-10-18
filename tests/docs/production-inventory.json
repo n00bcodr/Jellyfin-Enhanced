@@ -675,6 +675,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Sources/SourceCompleteness.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Sources/SourceHttp.cs",
       "category": "Services"
     },
@@ -10346,7 +10350,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 591,
+    "files": 592,
     "routes": 272,
     "configuration_properties": 615,
     "storage_references": 87,

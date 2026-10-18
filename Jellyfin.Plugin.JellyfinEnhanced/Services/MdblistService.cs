@@ -190,11 +190,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// Phase 4c2 (list sources): charges one API request of an administrator's deliberate MDBList list read to the
         /// same quota bookkeeping the ratings fetches use, so the two never starve each other. False when the remaining
-        /// quota is at the <see cref="SafetyMargin"/>; an unknown status fails open like the ratings path.
+        /// quota is at the <see cref="SafetyMargin"/>; an unknown status fails open like the ratings path. A status that
+        /// isn't fresh is read with <paramref name="readStatus"/>, the list-source fetcher's own transmission gate (review
+        /// round 2, 4C2-R2-SEC-01): this path never reaches this service's unnamed client, and a refused status read (a
+        /// redirect, a private address, the switch turned off) propagates as the caller's typed failure.
         /// </summary>
-        public virtual async Task<bool> TryReserveListRequestAsync(CancellationToken cancellationToken)
+        /// <param name="readStatus">Reads the account status (MDBList's /user) through the caller's transport.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>True when one request was reserved.</returns>
+        public async Task<bool> TryReserveListRequestAsync(Func<CancellationToken, Task<MdblistAccountStatus?>> readStatus, CancellationToken cancellationToken)
         {
-            var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
+            ArgumentNullException.ThrowIfNull(readStatus);
+            var status = FreshStatus();
+            if (status == null)
+            {
+                status = await readStatus(cancellationToken).ConfigureAwait(false);
+                if (status != null)
+                {
+                    lock (_accountStatusLock)
+                    {
+                        _accountStatus = status;
+                    }
+                }
+            }
+
             lock (_accountStatusLock)
             {
                 if (status != null && status.RateLimitRemaining <= SafetyMargin)
@@ -210,6 +229,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return true;
             }
         }
+
+        // The cached account status while it is fresh, else null.
+        private MdblistAccountStatus? FreshStatus()
+        {
+            lock (_accountStatusLock)
+            {
+                return _accountStatus != null && DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(_accountStatus.FetchedAtUnixMs) < AccountStatusTtl
+                    ? _accountStatus
+                    : null;
+            }
+        }
+
+        /// <summary>Reads MDBList's GET /user answer (plan, daily limit, remaining requests, reset time).</summary>
+        /// <param name="json">The answer.</param>
+        /// <returns>The status, or null when it isn't an account status.</returns>
+        public static MdblistAccountStatus? ParseAccountStatus(string json)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                return doc.RootElement.ValueKind == JsonValueKind.Object ? StatusOf(doc.RootElement) : null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
+        private static MdblistAccountStatus StatusOf(JsonElement root) => new()
+        {
+            Plan = root.TryGetProperty("plan", out var planEl) && planEl.ValueKind == JsonValueKind.String ? (planEl.GetString() ?? string.Empty) : string.Empty,
+            IsSupporter = root.TryGetProperty("is_supporter", out var supEl) && supEl.ValueKind == JsonValueKind.True,
+            RateLimit = GetNullableInt(root, "rate_limit") ?? 0,
+            RateLimitRemaining = GetNullableInt(root, "rate_limit_remaining") ?? 0,
+            RateLimitResetUnixSeconds = GetNullableLong(root, "rate_limit_reset") ?? 0,
+            FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
 
         /// <summary>
         /// Fetches (or returns the cached, still-fresh) account status from
@@ -227,16 +283,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var testingOverride = !string.IsNullOrWhiteSpace(apiKeyOverride);
 
-            if (!forceRefresh && !testingOverride)
+            if (!forceRefresh && !testingOverride && FreshStatus() is { } fresh)
             {
-                lock (_accountStatusLock)
-                {
-                    if (_accountStatus != null &&
-                        DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(_accountStatus.FetchedAtUnixMs) < AccountStatusTtl)
-                    {
-                        return _accountStatus;
-                    }
-                }
+                return fresh;
             }
 
             var apiKey = testingOverride ? apiKeyOverride : JellyfinEnhanced.Instance?.Configuration?.GetMdblistApiKey();
@@ -257,17 +306,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
                 using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
-                var root = doc.RootElement;
-
-                var status = new MdblistAccountStatus
-                {
-                    Plan = root.TryGetProperty("plan", out var planEl) && planEl.ValueKind == JsonValueKind.String ? (planEl.GetString() ?? string.Empty) : string.Empty,
-                    IsSupporter = root.TryGetProperty("is_supporter", out var supEl) && supEl.ValueKind == JsonValueKind.True,
-                    RateLimit = GetNullableInt(root, "rate_limit") ?? 0,
-                    RateLimitRemaining = GetNullableInt(root, "rate_limit_remaining") ?? 0,
-                    RateLimitResetUnixSeconds = GetNullableLong(root, "rate_limit_reset") ?? 0,
-                    FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                };
+                var status = StatusOf(doc.RootElement);
 
                 if (!testingOverride)
                 {

@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 {
@@ -803,7 +804,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 cts.CancelAfter(Timeout);
-                var client = _httpClientFactory.CreateClient();
+                // The source transport (no redirects, public addresses only), like every TMDB read of the lists subsystem.
+                var client = _httpClientFactory.CreateClient(SourceHttp.ClientName);
                 var url = "https://api.themoviedb.org/3/" + apiPath + "?api_key=" + Uri.EscapeDataString(apiKey);
                 using var response = await ListContinuation.Await(() => client.GetAsync(url, cts.Token)).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)

@@ -49,16 +49,6 @@ public class ListsImportReviewR1FixTests
         }
     }
 
-    /// <summary>The MDBList quota, counted: grants the first <see cref="Allow"/> reservations.</summary>
-    private sealed class CountingQuota(IHttpClientFactory factory, Jellyfin.Plugin.JellyfinEnhanced.Logger logger)
-        : MdblistService(factory, Mock.Of<IApplicationPaths>(p => p.PluginsPath == Path.Combine(Path.GetTempPath(), "je-4c2-quota-" + Guid.NewGuid().ToString("N"))), logger)
-    {
-        public int Reserved;
-        public int Allow { get; set; } = int.MaxValue;
-
-        public override Task<bool> TryReserveListRequestAsync(CancellationToken cancellationToken) => Task.FromResult(Interlocked.Increment(ref Reserved) <= Allow);
-    }
-
     /// <summary>A client factory that records the client names asked for.</summary>
     private sealed class NamedFactory(IntegrationTransport transport) : IHttpClientFactory
     {
@@ -84,7 +74,7 @@ public class ListsImportReviewR1FixTests
         public NamedFactory Factory { get; }
         public TmdbResponseCache Tmdb { get; }
         public CountingAdmission Admission { get; } = new();
-        public CountingQuota Quota { get; }
+        public MdblistService Quota { get; }
         public ListSourceFetcher Fetcher { get; }
 
         public Net()
@@ -102,7 +92,8 @@ public class ListsImportReviewR1FixTests
             Factory = new NamedFactory(Transport);
             Tmdb = new TmdbResponseCache(Factory, TimeProvider.System);
             ImportTestFlags.AllOn(Plugin.Plugin.Configuration);
-            Quota = new CountingQuota(Factory, Plugin.Core.Logger);
+            // The REAL quota (review round 2): its account status read goes through the fetcher's gate.
+            Quota = new MdblistService(Factory, Mock.Of<IApplicationPaths>(p => p.PluginsPath == Path.Combine(Path.GetTempPath(), "je-4c2-quota-" + Guid.NewGuid().ToString("N"))), Plugin.Core.Logger);
             Fetcher = new ListSourceFetcher(Factory, Tmdb, Quota, new MetadataCallLimiter(4, TimeSpan.Zero, TimeProvider.System), Plugin.Core.Logger, null, Admission);
         }
 
@@ -418,19 +409,16 @@ public class ListsImportReviewR1FixTests
         using var net = new Net();
         net.Plugin.Plugin.Configuration.MdblistApiKey = "mdb-key";
         net.Plugin.Plugin.Configuration.ArrPhase4ListMdblistApiEnabled = true;
+        net.Routes["https://api.mdblist.com/user"] = _ => Json("{\"rate_limit\":1000,\"rate_limit_remaining\":900}");
         var calls = 0;
         net.Routes["https://api.mdblist.com/lists/me/mine/items"] = _ => Interlocked.Increment(ref calls) % 2 == 1 ? Limited(1) : Json("{\"items\":[{\"ids\":{\"tmdb\":10193},\"title\":\"Toy Story 3\",\"mediatype\":\"movie\"}]}");
         var api = new SourceFetchOptions { AllowMdblistApi = true, Fresh = true };
 
         var charged = await net.Fetch("https://mdblist.com/lists/me/mine", api);
         Assert.True(charged.Ok);
-        Assert.Equal((2, 2), (net.Requests.Count, net.Quota.Reserved));
-
-        // The quota grants the first transmission only: the retry is refused, typed, and never sent.
-        net.Quota.Allow = net.Quota.Reserved + 1;
-        var refused = await net.Fetch("https://mdblist.com/lists/me/mine", api);
-        Assert.Equal((false, "quota_exhausted"), (refused.Ok, refused.ErrorCode));
-        Assert.Equal(3, net.Requests.Count);
+        Assert.Equal(2, calls);
+        Assert.Equal(898, net.Quota.RemainingQuota()); // the real quota: both transmissions charged
+        // A retry the quota refuses is never sent: ListsImportReviewR2FixTests.TheRealQuotaRefusesARetryAtTheSafetyMargin.
     }
 
     // ── SEC-03: the source transport for every read, redirects typed ──
