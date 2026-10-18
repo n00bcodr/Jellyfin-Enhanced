@@ -24,18 +24,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// <summary>
     /// The private Ready playlist (Requests &amp; downloads, phase 4f). For each person who turned it on, one Jellyfin playlist
     /// of theirs, private and shared with nobody, holds the exact versions of what they asked for or follow that is ready to
-    /// watch (<see cref="ReadyCopySelector"/>). Its identity is the server, the owner, the playlist id and the create marker
-    /// its own folder carries: never a name.
+    /// watch (<see cref="ReadyCopySelector"/>). Its identity is the server, the owner, the playlist id, the create marker
+    /// its own folder carries and the random nonce JE wrote into the playlist itself with the creation time Jellyfin gave it:
+    /// never a name. Jellyfin derives a playlist's id from its folder, so a playlist made again under the same folder has the
+    /// same id; without JE's nonce and that creation time it is never JE's (the binding is lost, nothing of it is touched).
     /// <list type="bullet">
     /// <item><description>One person's work at a time (an async lock per person; never a database transaction, a settings lock or
     /// 4c1's list Lifecycle lock around a Jellyfin call). Every write is generation- and epoch-checked, and the binding and the
     /// switch are read again after every await.</description></item>
-    /// <item><description>Create: the marker, the id Jellyfin will give the playlist and the time are recorded first; the playlist is
-    /// made under a name carrying the marker, verified (owner, private, no shares, marker), recorded, then named. After a crash
-    /// in between only that id is taken, and only while it is JE's own create (made then, empty, the person's, private, the
-    /// marker): never a playlist the person made under that name.</description></item>
+    /// <item><description>Create: the marker, the id Jellyfin will give the playlist, the time and a random nonce are recorded
+    /// first; the playlist is made under a name carrying the marker, the nonce is written into it, it is verified (owner,
+    /// private, no shares, marker, nonce), bound with its creation time, then named. After a crash in between only that id is
+    /// taken, and only while it carries the nonce (and was made then, is empty, the person's, private, the marker): never a
+    /// playlist the person made under that name.</description></item>
     /// <item><description>Right before every Jellyfin change the switch, the binding (opted in, this epoch, this playlist), the
-    /// person and the playlist as Jellyfin stored it are checked again, with no await before the call (<see cref="ReadyGate"/>).</description></item>
+    /// person and the playlist as Jellyfin stored it (owner, privacy, marker, nonce, creation time) are checked again, with no
+    /// await before the call (<see cref="ReadyGate"/>); a membership write also checks every version it sets against the
+    /// person's Hidden Content and access as they are then, and chooses again when one changed.</description></item>
     /// <item><description>Change: the raw membership is read fresh (entries Jellyfin keeps by path only resolved, duplicates and
     /// dangling entries kept as such); when it differs, the desired membership is journalled and set in one Jellyfin update
     /// (exactly these versions, in order), then read back; only what was observed is confirmed. After a crash the next run
@@ -52,6 +57,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     {
         /// <summary>The playlist's display name (the person may rename it; its identity doesn't depend on it).</summary>
         public const string PlaylistName = "Ready to watch";
+
+        /// <summary>
+        /// How often one pass chooses the entries again after the last check before the membership write found them changed
+        /// (a hide, lost access); then the pass ends and another look is queued.
+        /// </summary>
+        internal const int MaxChoices = 3;
 
         /// <summary>Most queued events (more are dropped; the sweep covers them).</summary>
         public const int QueueCapacity = 1024;
@@ -227,7 +238,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             var enabled = ReadyFlags.Playlist(config);
             var b = _store.Available ? _store.Binding(_server, user) : null;
             if (b == null) return new ReadyStatus(enabled, false, ReadyState.Off, null, null, 0, ReadyFlags.RetentionDays(config), false);
-            var removable = b.PlaylistId is Guid id && _host.Get(id) is { } info && info.OwnerId == user && info.HasMarker(b.Marker);
+            var removable = b.PlaylistId is Guid id && _host.Get(id) is { } info && info.OwnerId == user && info.HasMarker(b.Marker) && info.Carries(b.Nonce, b.PlaylistCreated);
             return new ReadyStatus(enabled, b.OptedIn, b.State, b.Reason, b.PlaylistId, b.Confirmed.Count, ReadyFlags.RetentionDays(config), removable || (b.PlaylistId != null && b.State == ReadyState.Privacy));
         }
 
@@ -256,7 +267,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
         /// <summary>
         /// Removes the person's managed playlist (only that one, and only while it is verifiably theirs and private: their own,
-        /// carrying the marker, not public and shared with nobody, as Jellyfin stored it right before the delete) and records
+        /// carrying the marker, JE's nonce and its creation time, not public and shared with nobody, as Jellyfin stored it right
+        /// before the delete) and records
         /// it as removed: it isn't made again until they turn it on again. <c>removed</c>; <c>kept</c> (shared or public: left
         /// as it is, no longer managed); <c>not_ours</c> (the binding is dropped but the playlist is left alone);
         /// <c>nothing</c>; <c>changed</c> (the settings changed meanwhile: nothing done) or <c>off</c>.
@@ -307,7 +319,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             if (!ReadyFlags.Playlist(_config())) return "off";
             if (_store.Binding(_server, user) is not { } now || now.Revision != read.Revision || now.PlaylistId != playlist) return "changed";
             if (stored == null) return "gone";
-            if (stored.OwnerId != user || !stored.HasMarker(read.Marker)) return "not_ours";
+            if (stored.OwnerId != user || !stored.HasMarker(read.Marker) || !stored.Carries(read.Nonce, read.PlaylistCreated)) return "not_ours";
             return stored.PrivateTo(user) ? null : "kept";
         }
 
@@ -316,7 +328,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// <summary>
         /// One look at a person's Ready playlist: make or check it, choose its entries, change it to match and confirm what
         /// Jellyfin then has. Returns <c>off</c>, <c>not_active</c>, <c>no_user</c>, <c>unreadable</c>, <c>missing</c>,
-        /// <c>deleted</c>, <c>privacy</c>, <c>changed</c>, <c>native_error</c>, <c>unchanged</c> or <c>updated</c>. Never throws
+        /// <c>deleted</c>, <c>lost</c>, <c>privacy</c>, <c>changed</c>, <c>native_error</c>, <c>unchanged</c> or <c>updated</c>. Never throws
         /// for a failed Jellyfin call (the journal is left for the next run).
         /// </summary>
         public async Task<string> ReconcileAsync(Guid user, CancellationToken cancellationToken = default)
@@ -349,34 +361,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             var now = _now();
             var epoch = b.Epoch;
 
-            // 1. The playlist: made under its marker, or the bound one checked in full.
+            // 1. The playlist: made under its marker and carrying JE's nonce, or the bound one checked in full.
             Guid playlist;
             if (b.PlaylistId is Guid bound)
             {
                 var info = _host.Get(bound);
                 if (info == null) return Missing(generation, user, epoch, now);
-                if (Unsafe(info, b, user) is { } reason) return Privacy(generation, user, epoch, reason, now);
+                if (Unsafe(info, b, user) is { } reason) return Refused(generation, user, epoch, reason, now);
                 // Read and checked: an earlier missing read doesn't count towards a deletion any more.
                 if (b.MissingCount > 0 || b.MissingSince != null) _store.ClearMissing(generation, _server, user, epoch, now);
                 playlist = bound;
             }
             else
             {
-                // JE's own create a crash interrupted (recorded before it, made then), else a new one under a new marker.
+                // JE's own create a crash interrupted (recorded before it, made then, carrying its nonce), else a new one under
+                // a new marker and nonce.
                 var made = Interrupted(b, user);
                 var marker = made != null ? b.Marker! : Guid.NewGuid().ToString("N");
+                var nonce = made != null ? b.Nonce! : Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
                 if (made == null)
                 {
                     var name = CreateName(marker);
-                    if (!_store.BeginCreate(generation, _server, user, epoch, marker, _host.NewPlaylistId(name), now)) return "changed";
+                    if (!_store.BeginCreate(generation, _server, user, epoch, marker, _host.NewPlaylistId(name), nonce, now)) return "changed";
                     var (id, refused) = await _host.CreateAsync(user, name, Gate(generation, user, epoch, null, marker, null)).ConfigureAwait(false);
                     if (refused != null) return Refused(generation, user, epoch, refused, now);
                     if (!Still(generation, user, epoch) || id is not Guid madeId) return "changed";
+                    // The nonce goes into the playlist itself before it is bound: only a playlist carrying it is ever JE's.
+                    var stamped = await _host.StampAsync(madeId, nonce, StampGate(generation, user, epoch, marker, nonce)).ConfigureAwait(false);
+                    if (stamped != null || !Still(generation, user, epoch)) return "changed";
                     made = _host.Get(madeId);
                 }
 
-                if (made == null || !made.PrivateTo(user) || !made.HasMarker(marker)) return "changed";
-                if (!_store.Bind(generation, _server, user, epoch, made.Id, now)) return "changed";
+                if (made == null || !made.PrivateTo(user) || !made.HasMarker(marker) || !string.Equals(made.Nonce, nonce, StringComparison.Ordinal)) return "changed";
+                if (!_store.Bind(generation, _server, user, epoch, made.Id, made.Created.ToUnixTimeMilliseconds(), now)) return "changed";
                 if (!string.Equals(made.Name, PlaylistName, StringComparison.Ordinal))
                 {
                     // JE's name only while the stored name is still the create's own (a name the person gave it stays).
@@ -388,10 +405,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                 }
 
                 playlist = made.Id;
-                b = _store.Binding(_server, user)!;
             }
 
-            // 2. What it should hold now.
+            // 2 and 3, chosen again (a few times at most) when the last check before the write finds the choice changed.
+            for (var choice = 1; ; choice++)
+            {
+                b = _store.Binding(_server, user);
+                if (b == null || !Still(generation, user, epoch)) return "changed";
+                var outcome = await ChangeAsync(generation, user, epoch, viewer, b, playlist, _now()).ConfigureAwait(false);
+                if (outcome != "stale") return outcome;
+                if (choice >= MaxChoices)
+                {
+                    _logger?.Info("Ready playlist: what a person's playlist should hold kept changing right before the change; it is looked at again shortly.");
+                    MarkDirty(user);
+                    return "changed";
+                }
+            }
+        }
+
+        // 2. What the playlist should hold now; 3. change it to match, reading Jellyfin back after the change; confirm only
+        // what was observed. "stale" when the last check before the write found a chosen version hidden or no longer
+        // accessible (nothing was written).
+        private async Task<string> ChangeAsync(long generation, Guid user, long epoch, StatusViewer viewer, ReadyBinding b, Guid playlist, DateTimeOffset now)
+        {
             var interests = _interests.For(user);
             var hides = _privacy.Load(user);
             if (interests == null || hides == null) return "unreadable";
@@ -399,7 +435,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             if (!_store.SaveEntries(generation, _server, user, epoch, selection.Rows, selection.Removed, now)) return "changed";
             var desired = selection.Desired;
 
-            // 3. Change it to match, reading Jellyfin back after every change; confirm only what was observed.
             var raw = _host.Entries(playlist);
             if (raw.SequenceEqual(desired))
             {
@@ -417,8 +452,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             if (!_store.BeginChange(generation, _server, user, epoch, desired, now)) return "changed";
             // One change: exactly the desired versions in order (duplicates, entries Jellyfin keeps by path only and
             // entries that resolve to nothing go with it), made only if everything still holds right before it (switch, opt-in,
-            // person, playlist as stored); then read back, and only what Jellyfin then has is confirmed.
-            var notSet = await _host.SetAsync(playlist, desired, user, Gate(generation, user, epoch, playlist, b.Marker, null)).ConfigureAwait(false);
+            // person, playlist as stored, and every chosen version still visible and open to the person); then read back, and
+            // only what Jellyfin then has is confirmed.
+            var notSet = await _host.SetAsync(playlist, desired, user, Gate(generation, user, epoch, playlist, b.Marker, _ => StillChosen(user, selection))).ConfigureAwait(false);
+            if (notSet == "stale") return "stale";
             if (notSet != null) return Refused(generation, user, epoch, notSet, now);
             if (!Still(generation, user, epoch)) return "changed";
             raw = _host.Entries(playlist);
@@ -437,18 +474,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             return "updated";
         }
 
+        // The last check of what a membership write sets (run by the host with no await before its call): every chosen version
+        // against the person's Hidden Content as it is now (unreadable: no write) and their access to that exact version.
+        private string? StillChosen(Guid user, ReadySelection selection)
+        {
+            var hides = _privacy.Load(user);
+            if (hides == null) return "unreadable";
+            return selection.Candidates.All(c => _selector.StillChosen(user, hides, c)) ? null : "stale";
+        }
+
         /// <summary>The name a playlist is made under: the display name and the create's marker (its folder keeps it).</summary>
         internal static string CreateName(string marker) => PlaylistName + " (" + marker + ")";
 
         // The playlist an interrupted create made, when the evidence says it is JE's own: the id recorded before the create
-        // call, made within the window after it, still empty, the person's, private and carrying the marker. A playlist the
-        // person made under that name (the name shows the marker) fails at least the time or the contents, so it's never
-        // adopted; without that evidence nothing is.
+        // call, carrying the create's nonce, made within the window after it, still empty, the person's, private and carrying
+        // the marker. A playlist the person made under that name (the name shows the marker) never carries the nonce, so it's
+        // never adopted; a create interrupted before the nonce was written is left alone too (a new one is made).
         private ReadyPlaylistInfo? Interrupted(ReadyBinding b, Guid user)
         {
-            if (b.Marker == null || b.CreateId is not Guid id || b.CreateAt is not long at) return null;
+            if (b.Marker == null || string.IsNullOrEmpty(b.Nonce) || b.CreateId is not Guid id || b.CreateAt is not long at) return null;
             var found = _host.Get(id);
-            if (found == null || found.Id != id || !found.PrivateTo(user) || !found.HasMarker(b.Marker)) return null;
+            if (found == null || found.Id != id || !found.PrivateTo(user) || !found.HasMarker(b.Marker) || !string.Equals(found.Nonce, b.Nonce, StringComparison.Ordinal)) return null;
             var created = found.Created.ToUnixTimeMilliseconds();
             if (created < at - 5000 || created > at + (long)CreateWindow.TotalMilliseconds) return null;
             return _host.Entries(id).Count == 0 ? found : null;
@@ -470,20 +516,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                 return Unsafe(stored, now, user) ?? extra?.Invoke(stored);
             };
 
-        // A change the gate didn't let through: a missing playlist counts towards a deletion, a privacy or identity change
-        // stops the writes, anything else (switch off, opt-out, a new epoch, the person gone) just ends this look.
+        // The last check before JE writes its nonce into the playlist it has just made: the binding still names no playlist,
+        // this marker and this nonce, and the playlist as stored is the person's, private, carries the marker, carries no other
+        // nonce and was made within the create window.
+        private ReadyGate StampGate(long generation, Guid user, long epoch, string marker, string nonce)
+            => stored =>
+            {
+                if (_store.Generation != generation) return "changed";
+                if (!ReadyFlags.Playlist(_config())) return "off";
+                if (_store.Binding(_server, user) is not { OptedIn: true, State: ReadyState.Active, PlaylistId: null } now || now.Epoch != epoch
+                    || !string.Equals(now.Marker, marker, StringComparison.Ordinal) || !string.Equals(now.Nonce, nonce, StringComparison.Ordinal) || now.CreateAt is not long at) return "changed";
+                if (_view.Viewer(user) == null) return "no_user";
+                if (stored == null) return "missing";
+                if (!stored.PrivateTo(user) || !stored.HasMarker(marker) || (stored.Nonce != null && !string.Equals(stored.Nonce, nonce, StringComparison.Ordinal))) return "identity";
+                var created = stored.Created.ToUnixTimeMilliseconds();
+                return created < at - 5000 || created > at + (long)CreateWindow.TotalMilliseconds ? "identity" : null;
+            };
+
+        // A change the gate didn't let through: a missing playlist counts towards a deletion, a playlist that isn't JE's any
+        // more is lost (left alone for good), a privacy change stops the writes, anything else (switch off, opt-out, a new
+        // epoch, the person gone) just ends this look.
         private string Refused(long generation, Guid user, long epoch, string reason, DateTimeOffset now) => reason switch
         {
             "missing" => Missing(generation, user, epoch, now),
-            "owner_changed" or "identity" or "public" or "shared" => Privacy(generation, user, epoch, reason, now),
+            "identity" => Lost(generation, user, epoch, now),
+            "owner_changed" or "public" or "shared" => Privacy(generation, user, epoch, reason, now),
             _ => reason,
         };
 
-        // Owner, privacy and marker, as the playlist is now; null when it is safe to change.
+        // Identity (marker, JE's nonce, creation time), owner and privacy, as the playlist is now; null when it is safe to change.
         private static string? Unsafe(ReadyPlaylistInfo info, ReadyBinding b, Guid user)
         {
+            if (!info.HasMarker(b.Marker) || !info.Carries(b.Nonce, b.PlaylistCreated)) return "identity";
             if (info.OwnerId != user) return "owner_changed";
-            if (!info.HasMarker(b.Marker)) return "identity";
             if (info.OpenAccess) return "public";
             if (info.ShareCount > 0) return "shared";
             return null;
@@ -500,6 +565,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             }
 
             return "missing";
+        }
+
+        private string Lost(long generation, Guid user, long epoch, DateTimeOffset now)
+        {
+            _store.SetState(generation, _server, user, epoch, ReadyState.Lost, "identity", now);
+            _logger?.Info("Ready playlist: a person's bound playlist isn't the one Jellyfin Enhanced made any more (deleted and made again under the same name); it is left alone, and a new one is made only after they turn it on again.");
+            return "lost";
         }
 
         private string Privacy(long generation, Guid user, long epoch, string reason, DateTimeOffset now)

@@ -43,6 +43,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// <summary>The person removed it from their Jellyfin Enhanced settings: not made again until they turn it on again.</summary>
         public const string Removed = "removed";
 
+        /// <summary>
+        /// The bound playlist is no longer the one JE made (no JE nonce in it, or another creation time: deleted and made
+        /// again under the same folder, so with the same id): left alone, never changed or deleted; a new one is made only
+        /// after the person turns it on again.
+        /// </summary>
+        public const string Lost = "lost";
+
         /// <summary>A JE backup was restored: nothing changes until the person turns it on again (D47).</summary>
         public const string Renew = "renew";
 
@@ -50,7 +57,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         public const string Privacy = "privacy";
 
         /// <summary>True for a state that needs the person to turn the playlist on again.</summary>
-        public static bool NeedsRenewal(string state) => state is Deleted or Removed or Renew;
+        public static bool NeedsRenewal(string state) => state is Deleted or Removed or Renew or Lost;
     }
 
     /// <summary>What happened to one Ready entry (<c>ready_entries.disposition</c>).</summary>
@@ -117,6 +124,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// <param name="ReadyAt">When it became ready for this interest (UTC).</param>
     public sealed record ReadyCandidate(ReadyInterest Interest, string Part, Guid LogicalItemId, Guid? SeriesId, Guid PlayableItemId, int? Season, int? Episode, DateTime ReadyAt)
     {
+        /// <summary>Every copy of the content the choice was made among (its item and physical series): a title-level Hidden Content rule on any of them hides it.</summary>
+        public IReadOnlyList<(Guid ItemId, Guid? SeriesId)> Copies { get; init; } = Array.Empty<(Guid, Guid?)>();
+
         /// <summary>The content coordinate of a movie or an episode.</summary>
         public static string PartOf(int? season, int? episode)
             => season is int s && episode is int e ? "s" + s.ToString(CultureInfo.InvariantCulture) + "e" + e.ToString(CultureInfo.InvariantCulture) : "m";
@@ -168,6 +178,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// <summary>When the create call was about to be made (UTC ms), or null.</summary>
         public long? CreateAt { get; init; }
 
+        /// <summary>
+        /// The random nonce of this binding's create: recorded before the create call and written into the playlist itself
+        /// (<see cref="JellyfinReadyPlaylistHost.NoncePrefix"/>, a field the person can neither see nor set) before it is bound. A
+        /// playlist without it is never JE's.
+        /// </summary>
+        public string? Nonce { get; init; }
+
+        /// <summary>When Jellyfin made the bound playlist (its DateCreated, UTC ms), recorded when it was bound; null before.</summary>
+        public long? PlaylistCreated { get; init; }
+
         /// <summary>The membership change in progress (JSON), or null.</summary>
         public string? PendingOperation { get; init; }
 
@@ -198,10 +218,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// <param name="FolderName">The playlist's folder name (it carries the create marker; renames keep it).</param>
     /// <param name="Name">Its display name.</param>
     /// <param name="Created">When Jellyfin made it (its folder's creation time).</param>
-    public sealed record ReadyPlaylistInfo(Guid Id, Guid OwnerId, bool OpenAccess, int ShareCount, string FolderName, string Name, DateTimeOffset Created)
+    /// <param name="Nonce">JE's nonce in it (<see cref="JellyfinReadyPlaylistHost.NoncePrefix"/>), or null.</param>
+    public sealed record ReadyPlaylistInfo(Guid Id, Guid OwnerId, bool OpenAccess, int ShareCount, string FolderName, string Name, DateTimeOffset Created, string? Nonce = null)
     {
         /// <summary>True when the folder carries <paramref name="marker"/>.</summary>
         public bool HasMarker(string? marker) => !string.IsNullOrEmpty(marker) && FolderName.Contains(marker, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// True when this is the very playlist a binding made: JE's nonce in it and the creation time recorded when it was
+        /// bound (within a second: Jellyfin rounds it). Jellyfin gives a playlist made again under the same folder the same
+        /// id, but neither the nonce nor the time.
+        /// </summary>
+        public bool Carries(string? nonce, long? createdMs)
+            => !string.IsNullOrEmpty(nonce) && string.Equals(Nonce, nonce, StringComparison.Ordinal)
+               && createdMs is long created && Math.Abs(Created.ToUnixTimeMilliseconds() - created) < 1000;
 
         /// <summary>True when it is owned by <paramref name="owner"/>, not public and shared with nobody.</summary>
         public bool PrivateTo(Guid owner) => OwnerId == owner && !OpenAccess && ShareCount == 0;

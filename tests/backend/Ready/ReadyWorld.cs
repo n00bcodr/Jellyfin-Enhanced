@@ -22,6 +22,10 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         public string Folder { get; init; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public DateTimeOffset Created { get; init; }
+
+        /// <summary>JE's nonce in the playlist's provider ids (a field only JE or an administrator's editor sets), or null.</summary>
+        public string? Nonce { get; set; }
+
         public List<Guid> Entries { get; } = new();
     }
 
@@ -90,7 +94,7 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         }
     }
 
-    private static ReadyPlaylistInfo Info(Native p) => new(p.Id, p.Owner, p.Public, p.Shares, p.Folder, p.Name, p.Created);
+    private static ReadyPlaylistInfo Info(Native p) => new(p.Id, p.Owner, p.Public, p.Shares, p.Folder, p.Name, p.Created, p.Nonce);
 
     public ReadyPlaylistInfo? Get(Guid playlistId) => Playlists.TryGetValue(playlistId, out var p) ? Info(p) : null;
 
@@ -100,6 +104,9 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
 
     /// <summary>The gates each change was asked through and what they said (null: allowed).</summary>
     public List<(string Call, string? Refused)> Gates { get; } = new();
+
+    /// <summary>Every membership Jellyfin was asked to set (after the gate allowed it), in order.</summary>
+    public List<(Guid Playlist, Guid[] Items)> Sets { get; } = new();
 
     // Like the production host: the hook and faults first, then the gate on the playlist as stored now, then the change.
     private string? Gate(string call, Guid? playlistId, ReadyGate gate)
@@ -134,11 +141,21 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         Enter("set");
         if (Gate("set", playlistId, gate) is { } refused) return Task.FromResult<string?>(refused);
         if (!Playlists.TryGetValue(playlistId, out var p)) throw new ArgumentException("No Playlist exists with Id " + playlistId);
+        Sets.Add((playlistId, itemIds.ToArray()));
         // Like Jellyfin: empty the list, then add what it will hold (once each), in order.
         p.Entries.Clear();
         Leave("set-cleared");
         foreach (var id in itemIds.Where(i => !Refuses.Contains(i)).Distinct()) p.Entries.Add(id);
         Leave("set");
+        return Task.FromResult<string?>(null);
+    }
+
+    public Task<string?> StampAsync(Guid playlistId, string nonce, ReadyGate gate)
+    {
+        Enter("stamp");
+        if (Gate("stamp", playlistId, gate) is { } refused) return Task.FromResult<string?>(refused);
+        Playlists[playlistId].Nonce = nonce;
+        Leave("stamp");
         return Task.FromResult<string?>(null);
     }
 

@@ -63,8 +63,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         });
 
         /// <summary>
-        /// The person turns the playlist on (or on again): a new epoch. After a deletion or removal the old binding is
-        /// dropped (a new playlist is made); after a restore or a privacy change it is kept, to be checked in full before
+        /// The person turns the playlist on (or on again): a new epoch. After a deletion, removal or a lost playlist the old
+        /// binding is dropped (a new playlist is made); after a restore or a privacy change it is kept, to be checked in full before
         /// any change. Returns the binding.
         /// </summary>
         public ReadyBinding OptIn(string server, Guid user, DateTimeOffset now) => _db.Write((c, t) =>
@@ -72,11 +72,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             Exec(c, t, @"INSERT INTO ready_playlists(server_id,user_id,opted_in,opt_in_epoch,state,revision,updated_at) VALUES($s,$u,1,1,'active',1,$n)
 ON CONFLICT(server_id,user_id) DO UPDATE SET opted_in=1, opt_in_epoch=opt_in_epoch+1, revision=revision+1, updated_at=$n, pending_op=NULL,
   missing_since=NULL, missing_count=0, reason=NULL,
-  playlist_id=CASE WHEN state IN ('deleted','removed') THEN NULL ELSE playlist_id END,
-  create_marker=CASE WHEN state IN ('deleted','removed') THEN NULL ELSE create_marker END,
-  create_id=CASE WHEN state IN ('deleted','removed') THEN NULL ELSE create_id END,
-  create_at=CASE WHEN state IN ('deleted','removed') THEN NULL ELSE create_at END,
-  confirmed=CASE WHEN state IN ('deleted','removed') THEN NULL ELSE confirmed END,
+  playlist_id=CASE WHEN state IN ('deleted','removed','lost') THEN NULL ELSE playlist_id END,
+  create_marker=CASE WHEN state IN ('deleted','removed','lost') THEN NULL ELSE create_marker END,
+  create_id=CASE WHEN state IN ('deleted','removed','lost') THEN NULL ELSE create_id END,
+  create_at=CASE WHEN state IN ('deleted','removed','lost') THEN NULL ELSE create_at END,
+  nonce=CASE WHEN state IN ('deleted','removed','lost') THEN NULL ELSE nonce END,
+  playlist_created=CASE WHEN state IN ('deleted','removed','lost') THEN NULL ELSE playlist_created END,
+  confirmed=CASE WHEN state IN ('deleted','removed','lost') THEN NULL ELSE confirmed END,
   state='active'", ("$s", server), ("$u", Id(user)), ("$n", Ms(now)));
             return Read(c, t, server, user)!;
         });
@@ -91,15 +93,20 @@ ON CONFLICT(server_id,user_id) DO UPDATE SET opted_in=1, opt_in_epoch=opt_in_epo
 
         /// <summary>
         /// Records a create before the playlist is made (the create's journal): its marker, the id Jellyfin will give it (null
-        /// when it can't be known: then an interrupted create is never recovered) and when. False when the epoch moved on or a
-        /// restore happened.
+        /// when it can't be known: then an interrupted create is never recovered), when, and the nonce JE writes into it. False
+        /// when the epoch moved on or a restore happened.
         /// </summary>
-        public bool BeginCreate(long generation, string server, Guid user, long epoch, string marker, Guid? createId, DateTimeOffset now)
-            => Update(generation, server, user, epoch, "create_marker=$m, create_id=$ci, create_at=$n", now, ("$m", marker), ("$ci", createId is Guid id ? Id(id) : null));
+        public bool BeginCreate(long generation, string server, Guid user, long epoch, string marker, Guid? createId, string nonce, DateTimeOffset now)
+            => Update(generation, server, user, epoch, "create_marker=$m, create_id=$ci, create_at=$n, nonce=$nc, playlist_created=NULL", now,
+                ("$m", marker), ("$ci", createId is Guid id ? Id(id) : null), ("$nc", nonce));
 
-        /// <summary>Binds the playlist made (or JE's own interrupted create). False when the epoch moved on or a restore happened.</summary>
-        public bool Bind(long generation, string server, Guid user, long epoch, Guid playlistId, DateTimeOffset now)
-            => Update(generation, server, user, epoch, "playlist_id=$p, create_id=NULL, create_at=NULL, missing_since=NULL, missing_count=0", now, ("$p", Id(playlistId)));
+        /// <summary>
+        /// Binds the playlist made (or JE's own interrupted create), carrying the create's nonce, with the creation time Jellyfin
+        /// gave it. False when the epoch moved on or a restore happened.
+        /// </summary>
+        public bool Bind(long generation, string server, Guid user, long epoch, Guid playlistId, long createdMs, DateTimeOffset now)
+            => Update(generation, server, user, epoch, "playlist_id=$p, playlist_created=$pc, create_id=NULL, create_at=NULL, missing_since=NULL, missing_count=0", now,
+                ("$p", Id(playlistId)), ("$pc", createdMs));
 
         /// <summary>The bound playlist was read and checked: earlier missing reads no longer count (only consecutive ones do).</summary>
         public bool ClearMissing(long generation, string server, Guid user, long epoch, DateTimeOffset now)
@@ -123,14 +130,14 @@ ON CONFLICT(server_id,user_id) DO UPDATE SET opted_in=1, opt_in_epoch=opt_in_epo
         }
 
         /// <summary>
-        /// Moves the binding to <paramref name="state"/> for this epoch (deleted, removed, privacy, active); deleted and
-        /// removed drop the playlist id and the person's opt-in (a renewed opt-in makes a new playlist).
+        /// Moves the binding to <paramref name="state"/> for this epoch (deleted, removed, lost, privacy, active); deleted,
+        /// removed and lost drop the playlist id, its nonce and the person's opt-in (a renewed opt-in makes a new playlist).
         /// </summary>
         public bool SetState(long generation, string server, Guid user, long epoch, string state, string? reason, DateTimeOffset now)
         {
-            var tombstone = state is ReadyState.Deleted or ReadyState.Removed;
+            var tombstone = state is ReadyState.Deleted or ReadyState.Removed or ReadyState.Lost;
             return Update(generation, server, user, epoch,
-                "state=$st, reason=$r, pending_op=NULL, missing_since=NULL, missing_count=0" + (tombstone ? ", opted_in=0, playlist_id=NULL, confirmed=NULL" : string.Empty),
+                "state=$st, reason=$r, pending_op=NULL, missing_since=NULL, missing_count=0" + (tombstone ? ", opted_in=0, playlist_id=NULL, nonce=NULL, playlist_created=NULL, confirmed=NULL" : string.Empty),
                 now, ("$st", state), ("$r", reason));
         }
 
@@ -140,7 +147,7 @@ ON CONFLICT(server_id,user_id) DO UPDATE SET opted_in=1, opt_in_epoch=opt_in_epo
         /// no longer managed). Returns false when the binding changed since it was read.
         /// </summary>
         public bool Removed(long generation, string server, Guid user, long revision, DateTimeOffset now, string reason = "removed")
-            => _db.WriteIf(generation, (c, t) => Exec(c, t, "UPDATE ready_playlists SET state='removed', reason=$why, opted_in=0, playlist_id=NULL, create_marker=NULL, create_id=NULL, create_at=NULL, confirmed=NULL, pending_op=NULL, missing_since=NULL, missing_count=0, revision=revision+1, updated_at=$n WHERE server_id=$s AND user_id=$u AND revision=$r",
+            => _db.WriteIf(generation, (c, t) => Exec(c, t, "UPDATE ready_playlists SET state='removed', reason=$why, opted_in=0, playlist_id=NULL, create_marker=NULL, create_id=NULL, create_at=NULL, nonce=NULL, playlist_created=NULL, confirmed=NULL, pending_op=NULL, missing_since=NULL, missing_count=0, revision=revision+1, updated_at=$n WHERE server_id=$s AND user_id=$u AND revision=$r",
                 ("$s", server), ("$u", Id(user)), ("$r", revision), ("$n", Ms(now)), ("$why", reason)), 0).Result == 1;
 
         // One guarded update: only while the database is still at the generation the rows were read under, and the binding is
@@ -238,7 +245,7 @@ WHERE n.user_id=$u AND d.channel=$ch AND d.status='suppressed' AND n.created_at>
 
         // ------------------------------------------------------------------ helpers
 
-        private const string Select = "SELECT server_id,user_id,opted_in,opt_in_epoch,state,playlist_id,create_marker,pending_op,confirmed,confirmed_at,missing_since,missing_count,reason,revision,create_id,create_at FROM ready_playlists";
+        private const string Select = "SELECT server_id,user_id,opted_in,opt_in_epoch,state,playlist_id,create_marker,pending_op,confirmed,confirmed_at,missing_since,missing_count,reason,revision,create_id,create_at,nonce,playlist_created FROM ready_playlists";
 
         private static ReadyBinding? Read(SqliteConnection c, SqliteTransaction t, string server, Guid user)
         {
@@ -265,6 +272,8 @@ WHERE n.user_id=$u AND d.channel=$ch AND d.status='suppressed' AND n.created_at>
             Revision = r.GetInt64(13),
             CreateId = r.IsDBNull(14) ? null : Guid.Parse(r.GetString(14)),
             CreateAt = r.IsDBNull(15) ? null : r.GetInt64(15),
+            Nonce = r.IsDBNull(16) ? null : r.GetString(16),
+            PlaylistCreated = r.IsDBNull(17) ? null : r.GetInt64(17),
         };
 
         private static IReadOnlyList<Guid> Ids(string json)

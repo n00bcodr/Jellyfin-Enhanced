@@ -1268,6 +1268,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     ids.Add(e.ItemId);
                 }
             }
+            // Each number linked to a copy the viewer can open and hasn't hidden (Hidden Content: the episode itself, its series
+            // or the title); a number whose every open copy is hidden isn't announced, and with nothing left there is no
+            // notification at all (no bell row, toast or delivery). Rules that can't be read now leave the batch to the
+            // delivery checks, which fail closed.
+            var hidden = _dispatcher.EpisodeHides(user, title.ToString()) ?? (_ => false);
+            foreach (var x in state.Episodes)
+            {
+                if (!open.TryGetValue((x.S, x.E), out var visible)) continue;
+                visible.RemoveWhere(id => hidden(id));
+                if (visible.Count == 0) open.Remove((x.S, x.E));
+            }
             var episodes = state.Episodes.Where(x => open.ContainsKey((x.S, x.E))).OrderBy(x => x.S).ThenBy(x => x.E).ToList();
             if (episodes.Count == 0)
             {

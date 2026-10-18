@@ -198,7 +198,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                     var chosen = ordered.FirstOrDefault(h => !hides.CopyHidden(h.ItemId, h.PlayableItemId, h.SeriesId) && _library.Check(viewer.UserId, h.PlayableItemId) == ReadyVersionCheck.Ok);
                     if (chosen == null) continue;
                     rows.Add(new ReadyEntryRow(interest.Id, part, interest.Title.ToString(), interest.EditionName, chosen.ItemId, chosen.SeriesId, chosen.PlayableItemId, readyAt, expiresAt, ReadyDisposition.Ready));
-                    candidates.Add(new ReadyCandidate(interest, part, chosen.ItemId, chosen.SeriesId, chosen.PlayableItemId, chosen.Season, chosen.Episode, DateTimeOffset.FromUnixTimeMilliseconds(readyAt).UtcDateTime));
+                    candidates.Add(new ReadyCandidate(interest, part, chosen.ItemId, chosen.SeriesId, chosen.PlayableItemId, chosen.Season, chosen.Episode, DateTimeOffset.FromUnixTimeMilliseconds(readyAt).UtcDateTime)
+                    {
+                        Copies = ordered.Select(h => (h.ItemId, h.SeriesId)).Distinct().ToList(),
+                    });
                 }
             }
 
@@ -214,6 +217,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             }
 
             return new ReadySelection(ordered2, desired, rows, removed);
+        }
+
+        /// <summary>
+        /// True while a chosen entry would still be chosen as far as the person's Hidden Content and access go: no title-level
+        /// rule on the title or any of its copies, no rule on this copy (its item, its exact version, its series), and the person
+        /// can still open that exact version. Synchronous (the last check before a membership write).
+        /// </summary>
+        /// <param name="userId">The person.</param>
+        /// <param name="hides">Their Hidden Content rules as they are now.</param>
+        /// <param name="candidate">The chosen entry.</param>
+        /// <returns>Still chosen.</returns>
+        public bool StillChosen(Guid userId, ReadyHides hides, ReadyCandidate candidate)
+        {
+            var copies = candidate.Copies.Count > 0 ? candidate.Copies : new[] { (candidate.LogicalItemId, candidate.SeriesId) };
+            if (hides.TitleHidden(Keys(candidate.Interest.Title), copies)) return false;
+            if (hides.CopyHidden(candidate.LogicalItemId, candidate.PlayableItemId, candidate.SeriesId)) return false;
+            return _library.Check(userId, candidate.PlayableItemId) == ReadyVersionCheck.Ok;
         }
 
         // Playlist order: titles with the newest arrival first; a series' episodes in season and episode order.

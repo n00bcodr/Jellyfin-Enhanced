@@ -116,6 +116,7 @@
             case 'removed': return tr(p.reason === 'kept' ? 'arr_ready_state_kept' : 'arr_ready_state_removed');
             case 'renew': return tr('arr_ready_state_renew');
             case 'privacy': return tr('arr_ready_state_privacy');
+            case 'lost': return tr('arr_ready_state_lost');
             default: return p.playlistId ? tr('arr_ready_state_off_kept') : '';
         }
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
@@ -60,6 +61,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
         /// <summary>Deletes exactly this playlist (never the owner's other playlists) if the gate allows it; null or why not.</summary>
         Task<string?> DeleteAsync(Guid playlistId, ReadyGate gate);
+
+        /// <summary>
+        /// Writes JE's nonce into the playlist item itself (its <c>ExternalId</c>, <see cref="JellyfinReadyPlaylistHost.NoncePrefix"/>:
+        /// a field no Jellyfin route or editor reads or sets) if the gate allows it; null or why not.
+        /// </summary>
+        Task<string?> StampAsync(Guid playlistId, string nonce, ReadyGate gate);
     }
 
     /// <summary>
@@ -68,9 +75,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// instance and save it, leaving the cached one as it was. Its membership update saves the whole cached instance, so
     /// right before one the cached instance's metadata JE doesn't own (name, shares, privacy, owner and the rest the person
     /// may edit) is set from the stored one (heal-then-write, D49): a membership write never undoes the person's change.
+    /// After the heal the stored playlist is read again: when it is no longer the one the gate passed (another nonce,
+    /// creation time or owner: deleted and made again with the same id in between), nothing is written.
     /// </summary>
     public sealed class JellyfinReadyPlaylistHost : IReadyPlaylistHost
     {
+        /// <summary>
+        /// What JE's per-binding nonce is stored under: the playlist item's <c>ExternalId</c> (a plain column of Jellyfin's
+        /// item table, used by Jellyfin only for channel items), as this prefix and the nonce. No Jellyfin route, item
+        /// editor or DTO reads or sets it, so a person can neither see nor forge it, and Jellyfin's own playlist saves keep
+        /// it: they save an instance read with a partial field set (12.2 and 10.11 re-read the playlist with
+        /// <c>DtoOptions(allFields: false)</c> in UpdatePlaylist), which always maps the item's columns but leaves out its
+        /// provider ids, and the save then deletes the provider ids it didn't load (seen live on 12.2).
+        /// </summary>
+        public const string NoncePrefix = "jellyfin-enhanced-ready:";
+
         private readonly ILibraryManager _library;
         private readonly IPlaylistManager _playlists;
         private readonly IFileSystem _fileSystem;
@@ -136,7 +155,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// <inheritdoc />
         public async Task<string?> RenameAsync(Guid playlistId, Guid ownerId, string name, ReadyGate gate)
         {
-            if (Checked(playlistId, gate) is { } refused) return refused;
+            if (Checked(playlistId, gate, out _) is { } refused) return refused;
             await _playlists.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlistId, UserId = ownerId, Name = name }).ConfigureAwait(false);
             return null;
         }
@@ -144,31 +163,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// <inheritdoc />
         public async Task<string?> SetAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, Guid ownerId, ReadyGate gate)
         {
-            if (Checked(playlistId, gate) is { } refused) return refused;
+            if (Checked(playlistId, gate, out _) is { } refused) return refused;
             await _playlists.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlistId, UserId = ownerId, Ids = itemIds.ToArray() }).ConfigureAwait(false);
+            return null;
+        }
+
+        /// <inheritdoc />
+        public async Task<string?> StampAsync(Guid playlistId, string nonce, ReadyGate gate)
+        {
+            var refused = Checked(playlistId, gate, out var cached);
+            if (refused != null || cached == null) return refused ?? "missing";
+            cached.ExternalId = NoncePrefix + nonce;
+            // As BaseItem.UpdateToRepositoryAsync, with the parent read through the library manager: saved to the database
+            // (and the playlist's own metadata file).
+            var parent = cached.ParentId.Equals(Guid.Empty) ? null : _library.GetItemById(cached.ParentId);
+            await _library.UpdateItemAsync(cached, parent!, ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
             return null;
         }
 
         /// <inheritdoc />
         public Task<string?> DeleteAsync(Guid playlistId, ReadyGate gate)
         {
-            if (Checked(playlistId, gate) is { } refused) return Task.FromResult<string?>(refused);
-            if (_library.GetItemById(playlistId) is Playlist playlist)
-                _library.DeleteItem(playlist, new DeleteOptions { DeleteFileLocation = true }, true);
+            var refused = Checked(playlistId, gate, out var cached);
+            if (refused != null || cached == null) return Task.FromResult<string?>(refused ?? "missing");
+            _library.DeleteItem(cached, new DeleteOptions { DeleteFileLocation = true }, true);
             return Task.FromResult<string?>(null);
         }
 
-        // The stored playlist through the gate, then the cached instance healed from it; nothing awaited in between, and the
-        // caller calls Jellyfin right after. Jellyfin has no conditional save: a native edit landing inside its own save is a
-        // Jellyfin limitation (D49).
-        private string? Checked(Guid playlistId, ReadyGate gate)
+        // The stored playlist through the gate, then the cached instance healed from it, then the stored playlist read again:
+        // it and the healed instance Jellyfin is about to save must still be the playlist the gate passed (its id, owner, JE's
+        // nonce and creation time). Nothing awaited in between, and the caller calls Jellyfin right after. Jellyfin has no
+        // conditional save: a native edit landing inside its own save is a Jellyfin limitation (D49).
+        private string? Checked(Guid playlistId, ReadyGate gate, out Playlist? cached)
         {
+            cached = null;
             var stored = Stored(playlistId);
-            if (gate(Info(stored)) is { } refused) return refused;
-            if (_library.GetItemById(playlistId) is not Playlist cached || stored == null) return "missing";
-            Heal(stored, cached);
+            var passed = Info(stored);
+            if (gate(passed) is { } refused) return refused;
+            if (_library.GetItemById(playlistId) is not Playlist live || stored == null || passed == null) return "missing";
+            Heal(stored, live);
+            var again = Info(Stored(playlistId));
+            if (again == null) return "missing";
+            if (!Same(passed, again) || !Same(passed, Info(live)!)) return "identity";
+            cached = live;
             return null;
         }
+
+        private static bool Same(ReadyPlaylistInfo a, ReadyPlaylistInfo b)
+            => a.Id == b.Id && a.OwnerId == b.OwnerId && string.Equals(a.Nonce, b.Nonce, StringComparison.Ordinal) && a.Created == b.Created
+               && string.Equals(a.FolderName, b.FolderName, StringComparison.OrdinalIgnoreCase);
 
         private Playlist? Stored(Guid playlistId) => playlistId == Guid.Empty ? null : _library.RetrieveItem(playlistId) as Playlist;
 
@@ -203,6 +246,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             cached.ProductionLocations = (stored.ProductionLocations ?? Array.Empty<string>()).ToArray();
             cached.ProviderIds = new Dictionary<string, string>(stored.ProviderIds ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
             cached.ImageInfos = (stored.ImageInfos ?? Array.Empty<ItemImageInfo>()).ToArray();
+            cached.ExternalId = stored.ExternalId;
             cached.OwnerUserId = stored.OwnerUserId;
             cached.OpenAccess = stored.OpenAccess;
             cached.Shares = (stored.Shares ?? Array.Empty<PlaylistUserPermissions>()).ToArray();
@@ -211,6 +255,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         private static ReadyPlaylistInfo? Info(Playlist? p)
             => p == null ? null : new ReadyPlaylistInfo(p.Id, p.OwnerUserId, p.OpenAccess, p.Shares?.Count() ?? 0,
                 string.IsNullOrEmpty(p.Path) ? string.Empty : Path.GetFileName(p.Path.TrimEnd('/', '\\')), p.Name ?? string.Empty,
-                new DateTimeOffset(DateTime.SpecifyKind(p.DateCreated, DateTimeKind.Utc)));
+                new DateTimeOffset(DateTime.SpecifyKind(p.DateCreated, DateTimeKind.Utc)),
+                p.ExternalId is { } external && external.StartsWith(NoncePrefix, StringComparison.Ordinal) && external.Length > NoncePrefix.Length ? external[NoncePrefix.Length..] : null);
     }
 }
