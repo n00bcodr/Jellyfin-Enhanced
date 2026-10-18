@@ -713,15 +713,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private static bool JellyfinType(string type) => type.StartsWith("MediaBrowser.", StringComparison.Ordinal) || type.StartsWith("Jellyfin.", StringComparison.Ordinal) || type.StartsWith("Emby.", StringComparison.Ordinal);
 
             // A resolved call: a Mutates member ends there (reached), a reviewed read ends there (nothing), anything else is
-            // followed, through dispatch for a virtual call.
+            // followed, through dispatch where the runtime may run another method: a virtual call (callvirt, ldvirtftn), and
+            // any call or method pointer to an INTERFACE member, static ones included (C# 11 calls a static abstract or
+            // static virtual member as `constrained. T call I::M`). A plain call to a class method runs that method only
+            // (`base.M()`).
             private List<int> Follow(string type, string name, int count, List<int> found, bool virtualCall)
             {
                 if (Mutates(type, name)) return new List<int> { Terminal(Simple(type) + "." + name) };
                 if (PersonScoped.ContainsKey(Simple(type) + "." + name)) return new List<int> { Terminal(Simple(type) + "." + name, person: true) };
                 if (ReviewedRead(type, name)) return new List<int>();
                 var targets = new List<int>(found);
-                if (virtualCall)
-                    foreach (var target in found.ToList())
+                foreach (var target in found.ToList())
+                    if (virtualCall || (_nodes[target].Type >= 0 && _types[_nodes[target].Type].Interface))
                         targets.AddRange(Dispatch(target));
                 return targets;
             }

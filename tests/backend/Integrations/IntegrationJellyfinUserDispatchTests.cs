@@ -421,6 +421,102 @@ public class IntegrationJellyfinUserDispatchTests
         Assert.Equal(disables == 1, key != JellyfinUserKey.None);
     }
 
+    // 4a review round 14 (4a-security-r14-1): a call to an INTERFACE member reaches its implementations whatever the
+    // instruction. C# 11 calls a static abstract or static virtual interface member as `constrained. T call I::M`; round 13
+    // dispatched only callvirt and ldvirtftn, so the reviewer's generic runner reached the declaration (no body) and the
+    // implementation that disables the user was never read (Key None). A plain `call` to a CLASS method stays non-virtual
+    // (`base.M()`), as the runtime runs it.
+    private const string StaticProbes = Usings + """
+
+        public interface IStaticChanges { static abstract Task Apply(IUserManager users, Guid userId); }
+        public sealed class StaticChanges : IStaticChanges {
+          public static Task Apply(IUserManager users, Guid userId) => users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true });
+        }
+        public static class StaticRunner { public static Task Run<T>(IUserManager users, Guid userId) where T : IStaticChanges => T.Apply(users, userId); }
+        public sealed class StaticAbstractController(IUserManager users) : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId) => StaticRunner.Run<StaticChanges>(users, userId);
+        }
+        public interface IStaticVirtualChanges { static virtual Task Apply(IUserManager users, Guid userId) => Task.CompletedTask; }
+        public sealed class StaticVirtualChanges : IStaticVirtualChanges {
+          public static Task Apply(IUserManager users, Guid userId) => users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true });
+        }
+        public static class StaticVirtualRunner { public static Task Run<T>(IUserManager users, Guid userId) where T : IStaticVirtualChanges => T.Apply(users, userId); }
+        public sealed class StaticVirtualController(IUserManager users) : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId) => StaticVirtualRunner.Run<StaticVirtualChanges>(users, userId);
+        }
+        public interface IExplicitStaticChanges { static abstract Task Apply(IUserManager users, Guid userId); }
+        public sealed class ExplicitStaticChanges : IExplicitStaticChanges {
+          static Task IExplicitStaticChanges.Apply(IUserManager users, Guid userId) => users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true });
+        }
+        public static class ExplicitStaticRunner { public static Task Run<T>(IUserManager users, Guid userId) where T : IExplicitStaticChanges => T.Apply(users, userId); }
+        public sealed class ExplicitStaticController(IUserManager users) : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId) => ExplicitStaticRunner.Run<ExplicitStaticChanges>(users, userId);
+        }
+        public interface IQuietStaticChanges { static abstract Task Apply(IUserManager users, Guid userId); }
+        public sealed class QuietStaticChanges : IQuietStaticChanges { public static Task Apply(IUserManager users, Guid userId) => Task.CompletedTask; }
+        public static class QuietStaticRunner { public static Task Run<T>(IUserManager users, Guid userId) where T : IQuietStaticChanges => T.Apply(users, userId); }
+        public sealed class QuietStaticController(IUserManager users) : ControllerBase {
+          [HttpPost] public Task Note(Guid userId) => QuietStaticRunner.Run<QuietStaticChanges>(users, userId);
+        }
+        public class BaseCallChanges(IUserManager users) { public virtual Task Apply(Guid userId) => Task.CompletedTask; protected IUserManager Users => users; }
+        public sealed class BaseCallDerived(IUserManager users) : BaseCallChanges(users) {
+          public override Task Apply(Guid userId) => Users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true });
+          public Task Quiet(Guid userId) => base.Apply(userId);
+        }
+        public sealed class BaseCallController(BaseCallDerived changes) : ControllerBase {
+          [HttpPost] public Task Note(Guid userId) => changes.Quiet(userId);
+        }
+        """;
+
+    [Theory]
+    [InlineData("StaticAbstractController", "Disable")]
+    [InlineData("StaticVirtualController", "Disable")]
+    [InlineData("ExplicitStaticController", "Disable")]
+    public void AStaticInterfaceMemberIsFollowedToItsImplementations(string controller, string action)
+    {
+        using var probe = Probe.Build(("StaticProbe", StaticProbes, Array.Empty<string>()));
+        var scanned = JellyfinUserActions.Scan(probe.Path("StaticProbe"));
+        var found = Find(scanned, controller, action);
+        Assert.Equal(JellyfinUserKey.User, found.Key);
+        Assert.Equal("IUserManager.UpdatePolicyAsync", found.Reaches);
+        Assert.Equal(JellyfinUserKey.None, Find(scanned, "QuietStaticController", "Note").Key);
+        // `base.Apply()` is a plain call to a class method: the runtime runs that method only, not the override.
+        Assert.Equal(JellyfinUserKey.None, Find(scanned, "BaseCallController", "Note").Key);
+    }
+
+    // Run for real: each generic runner really disables the person through the implementation; the controls don't.
+    [Theory]
+    [InlineData("StaticAbstractController", "Disable", 1)]
+    [InlineData("StaticVirtualController", "Disable", 1)]
+    [InlineData("ExplicitStaticController", "Disable", 1)]
+    [InlineData("QuietStaticController", "Note", 0)]
+    public async Task TheStaticInterfaceProbesReallyDoWhatTheScanSays(string controller, string action, int disables)
+    {
+        using var probe = Probe.Build(("StaticProbe", StaticProbes, Array.Empty<string>()));
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var assembly = probe.Load("StaticProbe");
+        var instance = Activator.CreateInstance(assembly.GetType(controller)!, users)!;
+        await (Task)instance.GetType().GetMethod(action)!.Invoke(instance, new object[] { person })!;
+        Assert.Equal(disables, disabled());
+        var key = Find(JellyfinUserActions.Scan(probe.Path("StaticProbe")), controller, action).Key;
+        Assert.Equal(disables == 1, key != JellyfinUserKey.None);
+    }
+
+    // The base-call control, run for real: `base.Apply()` from the derived class runs the harmless base method.
+    [Fact]
+    public async Task ABaseCallRunsOnlyTheBaseMethod()
+    {
+        using var probe = Probe.Build(("StaticProbe", StaticProbes, Array.Empty<string>()));
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var assembly = probe.Load("StaticProbe");
+        var changes = Activator.CreateInstance(assembly.GetType("BaseCallDerived")!, users)!;
+        var instance = Activator.CreateInstance(assembly.GetType("BaseCallController")!, changes)!;
+        await (Task)instance.GetType().GetMethod("Note")!.Invoke(instance, new object[] { person })!;
+        Assert.Equal(0, disabled());
+    }
+
     // 4a review round 11 (4a-security-r11-2): a callback the code read can't resolve is judged by what it can do, not by
     // its signature. A Func<Task> handed in by DI carries no user type, yet its closure can hold IUserManager and a user id
     // (the reviewer's probe disables that user). Round 10 counted an unresolved delegate only when its type could carry a
