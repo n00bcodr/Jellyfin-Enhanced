@@ -317,6 +317,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly HashSet<string> _historyLoads = new(StringComparer.OrdinalIgnoreCase);
         /// <summary>Files whose missing twins are being removed (with their retries), under the bridge's lock.</summary>
         private readonly HashSet<string> _twinFiles = new(StringComparer.Ordinal);
+        // Items asked to be read again after an import at their own path, and when (one ask per item per window).
+        private readonly Dictionary<Guid, DateTimeOffset> _rereadAt = new();
         private readonly CancellationTokenSource _stop = new();
         private readonly List<Pending> _pending = new();
         private readonly LinkedList<BridgeRefresh> _recent = new();
@@ -673,6 +675,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                             break;
                         case RefreshOutcome.Present when p.Replay:
                             // Replayed after a start and already listed: nothing happened, nothing to tell.
+                            break;
+                        case RefreshOutcome.Present:
+                            // Already listed: an upgrade imported at the same path (or Jellyfin's own monitor came
+                            // first). Jellyfin keeps the item and its old media info, so it reads the file again.
+                            if (plan.AncestorId is Guid present && plan.AncestorKind is "movie" or "episode") ReRead(present, file);
+                            Record(p.Instance, p.ArrPath, file, plan.Ancestor, plan.AncestorKind, plan.Outcome, true, before, null);
                             break;
                         default:
                             Record(p.Instance, p.ArrPath, file, plan.Ancestor, plan.AncestorKind, plan.Outcome, plan.Outcome == RefreshOutcome.Present, before, null);
@@ -1036,6 +1044,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             public Task? Task { get; set; }
         }
+
+        /// <summary>
+        /// Asks Jellyfin to read a movie or episode again whose file was imported at the path it already has (an
+        /// upgrade): its media info, dimensions and versions are re-read, so the new file's resolution counts (a 4K
+        /// request, the version picker). Once per item within <see cref="ReReadWindow"/> (Sonarr reports a
+        /// multi-episode file once per episode).
+        /// </summary>
+        private void ReRead(Guid itemId, string file)
+        {
+            var now = _now();
+            lock (_lock)
+            {
+                if (_rereadAt.TryGetValue(itemId, out var at) && now - at < ReReadWindow) return;
+                if (_rereadAt.Count >= 200)
+                {
+                    foreach (var old in _rereadAt.Where(kv => now - kv.Value >= ReReadWindow).Select(kv => kv.Key).ToList()) _rereadAt.Remove(old);
+                }
+                _rereadAt[itemId] = now;
+            }
+            try
+            {
+                if (_library.QueueFileRefresh(itemId)) _logger?.Info($"Jellyfin bridge: {file} was imported again at the same path; asked Jellyfin to read it again.");
+            }
+            catch (Exception ex)
+            {
+                _logger?.Warning($"Jellyfin bridge: asking Jellyfin to read {file} again failed ({ex.GetType().Name}).");
+            }
+        }
+
+        /// <summary>How long one item's re-read stands for further imports of the same file.</summary>
+        internal static readonly TimeSpan ReReadWindow = TimeSpan.FromMinutes(2);
 
         private void Record(ArrConnection instance, string arrPath, string file, string? folder, string? kind, string outcome, bool found, long ms, string? error)
         {

@@ -756,7 +756,8 @@
     }
 
     /**
-     * A movie in the library: Get 4K for people who may ask for 4K when no 4K copy is here.
+     * A movie in the library: Get 4K for people who may ask for 4K when no 4K copy is here: neither a version of
+     * this item nor a copy elsewhere they can open (the status' `fourK`, from the server's edition check).
      * @param {HTMLElement} page Page.
      * @param {Object} status Movie status.
      * @param {Object} caps Capabilities.
@@ -764,7 +765,7 @@
      * @returns {Promise<HTMLElement|null>} Box.
      */
     async function movieActions(page, status, caps, gen) {
-        if (!caps.can4kMovies || !status.itemId) return null;
+        if (!caps.can4kMovies || !status.itemId || status.fourK === true) return null;
         const item = await loadItem(status.itemId);
         if (gen !== generation || !item || has4k(item)) return null;
         const box = actionsBox(caps);

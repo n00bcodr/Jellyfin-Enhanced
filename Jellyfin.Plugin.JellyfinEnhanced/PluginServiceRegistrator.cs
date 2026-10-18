@@ -71,6 +71,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts, Services.Acquire.Requests.LedgerRequestFacts>();
             serviceCollection.AddSingleton<Services.Acquire.TitleAliases>();
             serviceCollection.AddSingleton<Services.Acquire.ArrStatusService>();
+            // Edition availability (D44): the status service's own instance, for every surface that asks "is edition E here".
+            serviceCollection.AddSingleton(sp => sp.GetRequiredService<Services.Acquire.ArrStatusService>().Editions);
             // Discover rows and the search row for the JE request backend (TMDB, filtered per caller).
             serviceCollection.AddSingleton<Services.Acquire.Requests.DiscoverService>();
             // The Requests page (everyone's own requests) and the administrator's Manage drawer.

@@ -300,6 +300,45 @@ public class IntegrationArrBridgeTests
     }
 
     [Fact]
+    public async Task AnUpgradeImportedAtAPathJellyfinAlreadyHasIsReadAgainOnce()
+    {
+        using var rig = new Rig();
+        // Jellyfin has E1 and the movie; their imports from before the first read are replayed and left alone.
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E1.mkv", indexed: true);
+        rig.Library.AddFile("/media/tv/Firefly (2002)/Season 01/E2-E3.mkv", indexed: true);
+        rig.Library.AddFolder("/media/movies/Dune (2021)", "folder");
+        rig.Library.AddFile("/media/movies/Dune (2021)/Dune (2021).mkv", indexed: true, kind: "movie");
+        rig.Sonarr.History.Add(Rig.Import(1, rig.Arr.Now.UtcDateTime.AddMinutes(-5), "/data/tv/Firefly (2002)/Season 01/E1.mkv", episode: 1));
+        await rig.History(rig.Sonarr, "SonarrZ");
+        await rig.History(rig.Radarr, "RadarrZ");
+        await Task.Delay(100);
+        Assert.Empty(rig.Library.FileRefreshes);
+
+        // Sonarr upgrades E1 and the E2-E3 file in place (one import per episode), Radarr the movie: the same paths.
+        rig.Sonarr.History.Add(Rig.Import(2, rig.Arr.Now.UtcDateTime.AddSeconds(-3), "/data/tv/Firefly (2002)/Season 01/E1.mkv", episode: 1));
+        rig.Sonarr.History.Add(Rig.Import(3, rig.Arr.Now.UtcDateTime.AddSeconds(-2), "/data/tv/Firefly (2002)/Season 01/E2-E3.mkv", episode: 2));
+        rig.Sonarr.History.Add(Rig.Import(4, rig.Arr.Now.UtcDateTime.AddSeconds(-2), "/data/tv/Firefly (2002)/Season 01/E2-E3.mkv", episode: 3));
+        rig.Radarr.History.Add(Rig.Import(5, rig.Arr.Now.UtcDateTime.AddSeconds(-1), "/data/movies/Dune (2021)/Dune (2021).mkv", movie: 1));
+        await rig.History(rig.Sonarr, "SonarrZ");
+        await rig.History(rig.Radarr, "RadarrZ");
+        await Until(() => rig.Library.FileRefreshes.Count >= 3);
+        await Task.Delay(100);
+        // Each item once, never a folder refresh: Jellyfin reads the changed file (its media info) again.
+        var expected = new[] { "/media/tv/Firefly (2002)/Season 01/E1.mkv", "/media/tv/Firefly (2002)/Season 01/E2-E3.mkv", "/media/movies/Dune (2021)/Dune (2021).mkv" }
+            .Select(p => rig.Library.Items[p].Id).OrderBy(i => i).ToList();
+        Assert.Equal(expected, rig.Library.FileRefreshes.OrderBy(i => i).ToList());
+        Assert.Empty(rig.Library.Refreshes);
+        Assert.Contains(rig.Bridge.Recent(), r => r.Outcome == RefreshOutcome.Present && r.Found);
+
+        // With targeted refresh switched off, nothing is asked of Jellyfin.
+        rig.Arr.Plugin.Plugin.Configuration.ArrTargetedRefreshEnabled = false;
+        rig.Sonarr.History.Add(Rig.Import(6, rig.Arr.Now.UtcDateTime, "/data/tv/Firefly (2002)/Season 01/E1.mkv", episode: 1));
+        await rig.History(rig.Sonarr, "SonarrZ");
+        await Task.Delay(200);
+        Assert.Equal(3, rig.Library.FileRefreshes.Count);
+    }
+
+    [Fact]
     public async Task AnImportedEpisodeReplacesTheMissingEpisodeJellyfinStillListsForItsSlot()
     {
         using var rig = new Rig();

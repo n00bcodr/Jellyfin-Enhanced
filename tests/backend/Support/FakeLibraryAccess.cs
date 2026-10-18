@@ -122,6 +122,15 @@ internal sealed class FakeLibraryAccess : IJellyfinLibraryAccess
         return true;
     }
 
+    /// <summary>Movie or episode items the bridge asked Jellyfin to read again (their file changed in place), in order.</summary>
+    public List<Guid> FileRefreshes { get; } = new();
+
+    public bool QueueFileRefresh(Guid itemId)
+    {
+        lock (FileRefreshes) FileRefreshes.Add(itemId);
+        return true;
+    }
+
     public void ReportChanged(string path)
     {
         lock (Reported) Reported.Add(path);

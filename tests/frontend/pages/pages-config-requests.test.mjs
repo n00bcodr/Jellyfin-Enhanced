@@ -23,7 +23,7 @@ test('durable request settings round trip through actual config-page wiring with
     t.after(() => h.close());
     h.window.eval(`${serverOwned} window.loadRequests = function(config) { ${load} }; window.saveRequests = function(config) { ${save} }; ${parents} window.requestParents = PARENT_DEPS;`);
     const config = {
-        ArrPhase3Enabled: false, ArrRequestBackend: 'seerr', ArrRequest4kMoviesEnabled: false, ArrRequest4kSeriesEnabled: false, ArrRequestPreset: 'ask_first', ArrRequestDefaultRole: 'Watcher', ArrRequestUsers: '{}', ArrRequestRoles: '{}',
+        ArrPhase3Enabled: false, ArrRequestBackend: 'seerr', ArrRequest4kMoviesEnabled: false, ArrRequest4kSeriesEnabled: false, ArrStandardNeedsNonFourK: false, ArrRequestPreset: 'ask_first', ArrRequestDefaultRole: 'Watcher', ArrRequestUsers: '{}', ArrRequestRoles: '{}',
         ArrRequestQuotaLimit: 0, ArrRequestQuotaWindowDays: 7, ArrRequestSeriesThreshold: 4, ArrRequestDeclineCooldownDays: 7, ArrRequestPendingLimit: 10,
         ArrRequestQuotaGb: 0, ArrRequestStaleDays: 30, ArrRequestChargeFutureSeasons: true, ArrKidsHideSearch: false
     };
@@ -36,8 +36,11 @@ test('durable request settings round trip through actual config-page wiring with
     h.document.getElementById('arrPhase3Enabled').checked = true;
     h.document.getElementById('arrRequestQuotaLimit').value = '3';
     h.document.getElementById('arrKidsHideSearch').checked = true;
+    h.document.getElementById('arrStandardNeedsNonFourK').checked = true;
     h.window.saveRequests(result);
     assert.equal(result.ArrKidsHideSearch, true);
+    assert.equal(result.ArrStandardNeedsNonFourK, true);
+    assert.match(h.document.querySelector('label:has(#arrStandardNeedsNonFourK) span').textContent, /^Standard requests need a non-4K copy$/);
     assert.match(h.document.querySelector('label:has(#arrKidsHideSearch) span').textContent, /^Hide free-text search from Kids$/);
     assert.equal(result.ArrRequestBackend, 'je');
     assert.equal(result.ArrRequestQuotaLimit, 3);
