@@ -12,62 +12,95 @@ using Moq;
 namespace JE.Tests;
 
 // The production Jellyfin seam (JellyfinListHost) over mocked managers.
+[Collection("Plugin singleton")]
 public class ListsHostTests
 {
+    // Round 8: the native save lands after RetrieveItem has materialised its snapshot, before RegisterItem.
+    // Run the real host's failure handling AND the real service's retry against separate cache/repository names.
     [Theory]
-    [InlineData(ListKinds.Playlist)]
-    [InlineData(ListKinds.Collection)]
-    public async Task AFailedRenameCannotOverwriteANativeRenameAfterReadingTheCachedName(string kind)
+    [InlineData(ListKinds.Playlist, "snapshot")]
+    [InlineData(ListKinds.Collection, "snapshot")]
+    [InlineData(ListKinds.Playlist, "before-failure")]
+    [InlineData(ListKinds.Collection, "before-failure")]
+    [InlineData(ListKinds.Playlist, "after-failure")]
+    [InlineData(ListKinds.Collection, "after-failure")]
+    public async Task ACreateRetryPreservesTheDurableNativeNameAcrossAFailedSave(string kind, string timing)
     {
-        var owner = Guid.NewGuid();
-        var playlist = new Mock<Playlist> { CallBase = true };
-        var collection = new Mock<BoxSet> { CallBase = true };
-        BaseItem item = kind == ListKinds.Playlist ? playlist.Object : collection.Object;
-        item.Id = Guid.NewGuid();
-        var currentName = "Marked";
-        var storedName = "Marked";
-        var failing = false;
-        string ReadName()
+        using var h = new ListsHarness();
+        var owner = h.NewUser("owner", collections: true);
+        BaseItem? cached = null;
+        string? storedName = null;
+        var fail = true;
+        var renamed = false;
+        var finishCalls = 0;
+        void NativeRename()
         {
-            var read = currentName;
-            if (failing)
+            renamed = true;
+            storedName = "The person's name";
+            // A different native materialisation can commit without updating our cached reference.
+        }
+        BaseItem Snapshot() => kind == ListKinds.Playlist
+            ? new Playlist { Id = cached!.Id, OwnerUserId = owner.Id, Name = storedName }
+            : new BoxSet { Id = cached!.Id, Name = storedName };
+        Task Save()
+        {
+            if (!fail)
             {
-                // A native request runs AFTER the rollback read, BEFORE the rollback assignment.
-                currentName = storedName = "The person's name";
+                storedName = cached!.Name;
+                return Task.CompletedTask;
             }
-            return read;
-        }
-        void SetName(string value) => currentName = value;
-        if (kind == ListKinds.Playlist)
-        {
-            playlist.SetupGet(p => p.Name).Returns(ReadName);
-            playlist.SetupSet(p => p.Name = It.IsAny<string>()).Callback(SetName);
-        }
-        else
-        {
-            collection.SetupGet(p => p.Name).Returns(ReadName);
-            collection.SetupSet(p => p.Name = It.IsAny<string>()).Callback(SetName);
+            if (timing == "before-failure") NativeRename();
+            return Task.FromException(new IOException("save failed"));
         }
         var library = new Mock<ILibraryManager>();
-        library.Setup(l => l.GetItemById(item.Id)).Returns(item);
-        // A reload gets a fresh store item, never writes back into the shared object. Model the same native rename
-        // while the failed save is being handled if the implementation doesn't inspect the old Name at all.
-        library.Setup(l => l.RetrieveItem(item.Id)).Returns(() =>
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns(() => cached);
+        library.Setup(l => l.RetrieveItem(It.IsAny<Guid>())).Returns(() =>
         {
-            currentName = storedName = "The person's name";
-            return kind == ListKinds.Playlist ? (BaseItem)new Playlist { Id = item.Id, Name = storedName } : new BoxSet { Id = item.Id, Name = storedName };
+            var snapshot = Snapshot();
+            if (fail && timing == "snapshot") NativeRename();
+            return snapshot;
         });
-        library.Setup(l => l.UpdateItemAsync(item, It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>()))
-            .Callback(() => failing = true).ThrowsAsync(new IOException("save failed"));
+        library.Setup(l => l.RegisterItem(It.IsAny<BaseItem>())).Callback((BaseItem snapshot) => cached = snapshot);
+        library.Setup(l => l.UpdateItemAsync(It.IsAny<BaseItem>(), It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>())).Returns(Save);
         var playlists = new Mock<IPlaylistManager>();
         playlists.Setup(p => p.UpdatePlaylist(It.IsAny<PlaylistUpdateRequest>()))
-            .Callback((PlaylistUpdateRequest r) => { currentName = r.Name!; failing = true; }).ThrowsAsync(new IOException("save failed"));
-        var host = new JellyfinListHost(library.Object, playlists.Object, Mock.Of<ICollectionManager>(), Mock.Of<MediaBrowser.Model.IO.IFileSystem>());
+            .Returns((PlaylistUpdateRequest r) => { cached!.Name = r.Name; return Save(); });
+        var realHost = new JellyfinListHost(library.Object, playlists.Object, Mock.Of<ICollectionManager>(), Mock.Of<MediaBrowser.Model.IO.IFileSystem>());
+        h.Host.FinishCreateOverride = async (write, name) =>
+        {
+            finishCalls++;
+            var list = h.Host.Lists[write.ListId];
+            cached ??= kind == ListKinds.Playlist
+                ? new Playlist { Id = write.ListId, OwnerUserId = owner.Id, Name = list.Info.Name }
+                : new BoxSet { Id = write.ListId, Name = list.Info.Name };
+            storedName ??= list.SavedName;
+            try
+            {
+                await realHost.FinishCreateAsync(write, name);
+            }
+            finally
+            {
+                list.Info = list.Info with { Name = cached.Name! };
+                list.SavedName = storedName;
+            }
+        };
+        var entries = new[] { new ApplyEntry(0, h.Host.AddItem(), null) };
+        await Assert.ThrowsAsync<IOException>(() => h.Service.CreateListAsync(owner, kind, "JE name", false, entries, ListsHarness.K("rename-race"), CancellationToken.None));
+        var made = Assert.Single(h.Host.Lists.Values);
+        // Without a failure reload there is no snapshot window; the person's rename completes after the failure.
+        if (!renamed) NativeRename();
+        made.SavedName = storedName;
+        fail = false;
 
-        await Assert.ThrowsAsync<IOException>(() => host.FinishCreateAsync(new ListWrite(item.Id, owner, ListWriteKind.FinishCreate), "JE name"));
+        var retry = ListsHarness.Ok<CreateListResultDto>(await h.Service.CreateListAsync(owner, kind, "JE name", false, entries, ListsHarness.K("rename-race"), CancellationToken.None));
 
-        Assert.Equal("The person's name", currentName);
         Assert.Equal("The person's name", storedName);
+        Assert.Equal("The person's name", made.SavedName);
+        Assert.Equal(1, finishCalls);
+        Assert.Equal("The person's name", retry.Name);
+        library.Verify(l => l.RegisterItem(It.IsAny<BaseItem>()), Times.Never);
+        Assert.Equal(made.Info.Id.ToString("N"), retry.ListId);
+        Assert.Single(h.Host.Lists);
     }
 
     [Theory]
@@ -181,9 +214,9 @@ public class ListsHostTests
     }
 
     // Review round 4 (4c1-r4-behaviour-2): Jellyfin's rename changes the cached item, then saves it. When the save fails the
-    // cache is reloaded from the store, so future reads see the durable name without mutating a shared reference.
+    // failed-save handling leaves the cache and every shared reference alone. Naming reads bypass that cache.
     [Fact]
-    public async Task AFailedRenameReloadsTheCachedItemWithItsStoredName()
+    public async Task AFailedRenameLeavesTheCacheAloneAndNamingReadsUseTheRepository()
     {
         var owner = FakeListHost.MakeUser("owner");
         var marker = Guid.NewGuid();
@@ -217,10 +250,16 @@ public class ListsHostTests
         await Assert.ThrowsAsync<IOException>(() => host.FinishCreateAsync(new ListWrite(playlist.Id, owner.Id, ListWriteKind.FinishCreate), "Mine"));
         await Assert.ThrowsAsync<IOException>(() => host.FinishCreateAsync(new ListWrite(box.Id, owner.Id, ListWriteKind.FinishCreate), "Heist"));
 
-        Assert.Equal(playlistName, library.Object.GetItemById(playlist.Id)!.Name);
-        Assert.Equal(collectionName, library.Object.GetItemById(box.Id)!.Name);
-        Assert.NotSame(playlist, cachedPlaylist);
-        Assert.NotSame(box, cachedBox);
+        Assert.Equal("Mine", playlist.Name);
+        Assert.Equal("Heist", box.Name);
+        Assert.Same(playlist, cachedPlaylist);
+        Assert.Same(box, cachedBox);
+        library.Verify(l => l.RetrieveItem(It.IsAny<Guid>()), Times.Never);
+        library.Verify(l => l.RegisterItem(It.IsAny<BaseItem>()), Times.Never);
+        Assert.Equal(playlistName, host.GetStoredName(playlist.Id));
+        Assert.Equal(collectionName, host.GetStoredName(box.Id));
+        Assert.Null(host.GetStoredName(Guid.NewGuid()));
+        library.Verify(l => l.RegisterItem(It.IsAny<BaseItem>()), Times.Never);
     }
 
     // Review round 3 (4c1-r3-behaviour-3): a collection name is taken only by a collection where Jellyfin's create would put
@@ -232,6 +271,7 @@ public class ListsHostTests
         var items = new List<BaseItem> { new BoxSet { Id = Guid.NewGuid(), Name = "Heist", Path = "/media/other-library/Heist [boxset]" } };
         var library = new Mock<ILibraryManager>();
         library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(() => items.ToList());
+        library.Setup(l => l.RetrieveItem(It.IsAny<Guid>())).Returns((Guid id) => items.FirstOrDefault(i => i.Id == id)!);
         var collections = new Mock<ICollectionManager>();
         collections.Setup(c => c.GetCollectionsFolder(true)).ReturnsAsync(new Folder { Path = "/config/data/collections/" });
         var folders = new HashSet<string>();
@@ -258,6 +298,22 @@ public class ListsHostTests
         items.Add(new BoxSet { Id = Guid.NewGuid(), Name = "HEIST", Path = "/config/data/collections/" + ListService.CreateName("Heist", Guid.NewGuid()) + " [boxset]" });
         Assert.True(host.CollectionNameTaken(destination!));
         Assert.False(host.CollectionNameTaken((await host.CollectionDestinationAsync("Heists"))!));
+    }
+
+    [Theory]
+    [InlineData("Old cache", "Heist", true)]
+    [InlineData("Heist", "Native name", false)]
+    public void CollectionNameCollisionsUseTheStoredName(string cachedName, string storedName, bool taken)
+    {
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = cachedName, Path = "/config/data/collections/Marked [boxset]" };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { box });
+        library.Setup(l => l.RetrieveItem(box.Id)).Returns(new BoxSet { Id = box.Id, Name = storedName });
+        var files = new Mock<MediaBrowser.Model.IO.IFileSystem>();
+        files.Setup(f => f.GetValidFilename(It.IsAny<string>())).Returns((string name) => name);
+        var host = new JellyfinListHost(library.Object, Mock.Of<IPlaylistManager>(), Mock.Of<ICollectionManager>(), files.Object);
+
+        Assert.Equal(taken, host.CollectionNameTaken("/config/data/collections/Heist [boxset]"));
     }
 
     // A grant is for one write of one list: a second use, another list or another kind of write throws before Jellyfin is asked.

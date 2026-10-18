@@ -195,6 +195,8 @@ internal sealed class FakeListHost : IListHost
 
     public ListInfo? GetList(Guid listId) => Lists.TryGetValue(listId, out var list) ? list.Info : null;
 
+    public string? GetStoredName(Guid listId) => Lists.TryGetValue(listId, out var list) ? list.SavedName ?? list.Info.Name : null;
+
     /// <summary>Runs at the start of every <see cref="GetRawEntries"/> call (to change a list between two reads).</summary>
     public Action<Guid>? OnRawRead { get; set; }
 
@@ -414,8 +416,11 @@ internal sealed class FakeListHost : IListHost
     /// </summary>
     public int FailFinishesAfterRename { get; set; }
 
+    public Func<ListWrite, string, Task>? FinishCreateOverride { get; set; }
+
     public Task FinishCreateAsync(ListWrite write, string name)
     {
+        if (FinishCreateOverride != null) return FinishCreateOverride(write, name);
         write.Spend(write.ListId, ListWriteKind.FinishCreate);
         Calls.Add($"finish:{name}");
         OnWrite?.Invoke("finish", write.ListId, write.ActAs, Array.Empty<Guid>());
@@ -463,7 +468,7 @@ internal sealed class FakeListHost : IListHost
         return Lists.Values.Any(l => l.Info.Kind == ListKinds.Collection && l.Path.LastIndexOf('/') is var cut and > 0
             && string.Equals(l.Path[..cut], root, StringComparison.OrdinalIgnoreCase)
             && (string.Equals(l.Path[(cut + 1)..], folder, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(ValidFilename(l.Info.Name) + " [boxset]", folder, StringComparison.OrdinalIgnoreCase)));
+                || string.Equals(ValidFilename(GetStoredName(l.Info.Id)!) + " [boxset]", folder, StringComparison.OrdinalIgnoreCase)));
     }
 
     /// <summary>A playlist someone made in Jellyfin itself (no JE marker).</summary>

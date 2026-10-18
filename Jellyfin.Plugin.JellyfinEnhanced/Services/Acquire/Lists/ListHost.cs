@@ -95,6 +95,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The list, or null when the id is not a playlist/collection.</returns>
         ListInfo? GetList(Guid listId);
 
+        /// <summary>Reads a list's durable name directly from the repository, without changing the shared item cache.</summary>
+        /// <param name="listId">Id.</param>
+        /// <returns>The saved name, or null when the list is missing.</returns>
+        string? GetStoredName(Guid listId);
+
         /// <summary>The raw <c>LinkedChildren</c> slots of a list, freshly read, in order.</summary>
         /// <param name="listId">Id.</param>
         /// <returns>The slots.</returns>
@@ -189,7 +194,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>
         /// Gives a list JE created its chosen name (it was created under the one carrying its marker); the list keeps its
         /// folder. As the grant's user (a playlist's owner). Saves every time it is called, whatever the cached item shows;
-        /// when the save fails the cached item gets its old name back only while it still has JE's chosen name.
+        /// failure handling leaves the shared cache untouched. Naming decisions must use <see cref="GetStoredName"/>.
         /// </summary>
         /// <param name="write">The gate's grant (<see cref="ListWriteKind.FinishCreate"/>).</param>
         /// <param name="name">The chosen name.</param>
@@ -308,6 +313,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <inheritdoc />
         public ListInfo? GetList(Guid listId) => ToInfo(_libraryManager.GetItemById(listId));
+
+        /// <inheritdoc />
+        public string? GetStoredName(Guid listId) => _libraryManager.RetrieveItem(listId) is { } item && item is Playlist or BoxSet ? item.Name ?? string.Empty : null;
 
         /// <inheritdoc />
         public IReadOnlyList<RawEntry> GetRawEntries(Guid listId)
@@ -488,49 +496,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public async Task FinishCreateAsync(ListWrite write, string name)
         {
             write.Spend(write.ListId, ListWriteKind.FinishCreate);
-            // Always saved, also when the cached item already shows the name: Jellyfin changes the cached item before it
-            // saves it, so an earlier failed save can leave the name showing with nothing kept. On failure reload the
-            // stored item into the cache; never roll back Name on the shared object, which a native rename may be using.
+            // Always save when asked: the cached Name alone is not proof that an earlier save succeeded. There is no
+            // supported per-item cache invalidation on either target. On failure leave the cache alone: neither writing
+            // Name nor registering an unversioned repository snapshot can be coordinated with a native rename.
             switch (_libraryManager.GetItemById(write.ListId))
             {
                 case Playlist playlist:
-                    try
-                    {
-                        await ListContinuation.Await(() => _playlistManager.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlist.Id, UserId = write.ActAs, Name = name })).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        ReloadFailedRename(playlist.Id);
-                        throw;
-                    }
-
+                    await ListContinuation.Await(() => _playlistManager.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlist.Id, UserId = write.ActAs, Name = name })).ConfigureAwait(false);
                     break;
                 case BoxSet boxSet:
                     // BaseItem.UpdateToRepositoryAsync, with the parent read through the library manager: saved with its
                     // metadata (collection.xml), so the name stays through scans and refreshes.
                     boxSet.Name = name;
-                    try
-                    {
-                        var parent = boxSet.ParentId.Equals(Guid.Empty) ? null : _libraryManager.GetItemById(boxSet.ParentId);
-                        await ListContinuation.Await(() => _libraryManager.UpdateItemAsync(boxSet, parent!, ItemUpdateType.MetadataEdit, CancellationToken.None)).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        ReloadFailedRename(boxSet.Id);
-                        throw;
-                    }
-
+                    var parent = boxSet.ParentId.Equals(Guid.Empty) ? null : _libraryManager.GetItemById(boxSet.ParentId);
+                    await ListContinuation.Await(() => _libraryManager.UpdateItemAsync(boxSet, parent!, ItemUpdateType.MetadataEdit, CancellationToken.None)).ConfigureAwait(false);
                     break;
-            }
-        }
-
-        private void ReloadFailedRename(Guid id)
-        {
-            // RetrieveItem reads the repository, bypassing GetItemById's mutable cache. Register that separate instance
-            // instead of copying any property onto the object a native request may still hold. This never saves a name.
-            if (_libraryManager.RetrieveItem(id) is { } stored)
-            {
-                _libraryManager.RegisterItem(stored);
             }
         }
 
@@ -597,7 +577,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 .Any(i => !string.IsNullOrEmpty(i.Path)
                     && string.Equals(Path.GetDirectoryName(Normalised(i.Path)), root, StringComparison.OrdinalIgnoreCase)
                     && (string.Equals(Path.GetFileName(Normalised(i.Path)), folder, StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(_fileSystem.GetValidFilename(i.Name ?? string.Empty) + " [boxset]", folder, StringComparison.OrdinalIgnoreCase)));
+                        || GetStoredName(i.Id) is { } storedName && string.Equals(_fileSystem.GetValidFilename(storedName) + " [boxset]", folder, StringComparison.OrdinalIgnoreCase)));
         }
 
         private static string Trimmed(string path) => path.TrimEnd('/', '\\');

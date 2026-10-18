@@ -1876,6 +1876,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         return ListContinuation.NotFound();
                     }
 
+                    var storedName = result != null ? _service._host.GetStoredName(list!.Id) : null;
+                    if (result != null && storedName == null)
+                    {
+                        return ListContinuation.NotFound();
+                    }
+
                     if (Operation is { State: "open" or "failed" } && Start?.Conflict != true)
                     {
                         // A failed create stays retryable: a retry with the same request id continues with the same list.
@@ -1884,7 +1890,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                     if (result != null)
                     {
-                        return ListOutcome.Ok(new CreateListResultDto { ListId = list!.Id.ToString("N", CultureInfo.InvariantCulture), ListKind = list.Kind, Name = list.Name, Result = result });
+                        return ListOutcome.Ok(new CreateListResultDto { ListId = list!.Id.ToString("N", CultureInfo.InvariantCulture), ListKind = list.Kind, Name = storedName!, Result = result });
                     }
 
                     if (outcome.Value is ListErrorDto error)
@@ -2011,12 +2017,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 state.ListId = id;
-                if (string.Equals(list.Name, markedName, StringComparison.Ordinal)
-                    || (_unsavedNames.ContainsKey(id) && string.Equals(list.Name, name, StringComparison.Ordinal)))
+                var storedName = _host.GetStoredName(id);
+                if (storedName == null)
+                {
+                    return ListContinuation.NotFound();
+                }
+
+                if (string.Equals(storedName, markedName, StringComparison.Ordinal)
+                    || (_unsavedNames.ContainsKey(id) && string.Equals(storedName, name, StringComparison.Ordinal)))
                 {
                     // The list still carries the name with its marker (just created, or a retry after a crash right after
                     // the create), or its rename wasn't saved: it gets its chosen name. The name counts once Jellyfin saved
-                    // it, not when its cached item shows it. A failure leaves the operation retryable; the retry renames it.
+                    // it, not when its cached item shows it. Every create, retry and marker recovery reads the repository
+                    // here: failure handling leaves the shared cache alone, and native renames need not refresh that cache.
                     _unsavedNames[id] = 0;
                     await ListContinuation.Await(() => _host.FinishCreateAsync(_gate.FinishWrite(list, user), name)).ConfigureAwait(false);
                     _unsavedNames.TryRemove(id, out _);

@@ -213,6 +213,34 @@ public class ListsGateRound4Tests
 
     // The create died after Jellyfin made the collection, before it was recorded; then the creator lost sight of it (they
     // still manage collections). The retry finds it by its marker, but never renames it: 404, the list untouched.
+    [Theory]
+    [InlineData(ListKinds.Playlist, false)]
+    [InlineData(ListKinds.Collection, false)]
+    [InlineData(ListKinds.Playlist, true)]
+    [InlineData(ListKinds.Collection, true)]
+    public async Task InitialAndRecoveredCreatesUseTheRepositoryNameInsteadOfAStaleMarker(string kind, bool recovery)
+    {
+        using var h = new ListsHarness();
+        var owner = h.NewUser("owner", collections: true);
+        var entries = Entries(h.Host.AddItem());
+        h.Host.AfterCreate = id =>
+        {
+            // Native rename persisted, but the original cached item still has the marked name.
+            h.Host.Lists[id].SavedName = "Native name";
+            if (recovery) throw new IOException("crash before claim");
+        };
+        if (recovery)
+        {
+            await Assert.ThrowsAsync<IOException>(() => h.Service.CreateListAsync(owner, kind, "JE name", false, entries, K("native-name"), None));
+            h.Host.AfterCreate = null;
+        }
+
+        Ok<CreateListResultDto>(await h.Service.CreateListAsync(owner, kind, "JE name", false, entries, K("native-name"), None));
+
+        Assert.Equal("Native name", Assert.Single(h.Host.Lists.Values).SavedName);
+        Assert.DoesNotContain(h.Host.Calls, c => c.StartsWith("finish:", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task ARecoveredCreateIsNeverRenamedAfterTheCreatorLostTheList()
     {
