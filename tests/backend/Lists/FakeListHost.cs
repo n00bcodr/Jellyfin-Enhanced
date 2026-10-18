@@ -441,7 +441,7 @@ internal sealed class FakeListHost : IListHost
     }
 
     public ListInfo? FindCreated(string kind, Guid marker, Guid ownerId) => kind == ListKinds.Playlist
-        ? Lists.Values.Where(l => l.Info.Kind == ListKinds.Playlist && l.Info.OwnerId == ownerId && l.Path.Contains(marker.ToString("N"), StringComparison.OrdinalIgnoreCase)).Select(l => l.Info).FirstOrDefault()
+        ? Lists.Values.Where(l => l.Info.Kind == ListKinds.Playlist && (ownerId == Guid.Empty || l.Info.OwnerId == ownerId) && l.Path.Contains(marker.ToString("N"), StringComparison.OrdinalIgnoreCase)).Select(l => l.Info).FirstOrDefault()
         : Lists.Values.Where(l => l.Info.Kind == ListKinds.Collection && CollectionProviderIds.TryGetValue(l.Info.Id, out var ids)
             && ids.TryGetValue(JellyfinListHost.CreateMarkerKey, out var value) && value == marker.ToString("N")).Select(l => l.Info).FirstOrDefault();
 

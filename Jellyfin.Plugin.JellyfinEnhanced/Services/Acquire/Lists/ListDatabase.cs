@@ -62,6 +62,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>How long finished operations are kept for replays.</summary>
         public static readonly TimeSpan Retention = TimeSpan.FromDays(30);
 
+        private const string TombstoneKind = "create_tombstone";
+
+        // A create operation whose marker was tombstoned is never written again.
+        private const string NotTombstoned = " AND NOT EXISTS (SELECT 1 FROM list_operations m WHERE m.id=$marker AND m.kind='" + TombstoneKind + "')";
+
         private readonly AcquireDatabase _db;
 
         /// <summary>Creates the store (DI).</summary>
@@ -81,7 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The start.</returns>
         public ListOperationStart Begin(Guid user, string scope, string clientId, string kind, string fingerprint, DateTimeOffset now)
         {
-            return _db.Write((c, t) =>
+            return Write((c, t) =>
             {
                 var existing = Read(c, t, "user_id=$u AND scope=$s AND client_id=$c", ("$u", RequestLedger.Id(user)), ("$s", scope), ("$c", clientId));
                 if (existing != null)
@@ -96,12 +101,80 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             });
         }
 
+        /// <summary>Reads an operation as it is now (a continuation never trusts what it read before an await).</summary>
+        /// <param name="id">Operation id.</param>
+        /// <returns>The operation, or null when it is gone.</returns>
+        public ListOperation? Find(string id) => !_db.Available ? null : _db.Read(c => Read(c, null, "id=$id", ("$id", id)));
+
+        /// <summary>
+        /// Whether a list carrying this create marker was deleted. The tombstone is a row of its own, keyed by the marker
+        /// (no person, no list, no name): it also stops a create that never recorded its list, one without a durable
+        /// operation, and one whose person's operations are gone. Kept for the retention period like other finished rows.
+        /// </summary>
+        /// <param name="marker">The create marker (<see cref="ListService.CreateMarker"/>).</param>
+        /// <returns>True when tombstoned.</returns>
+        public bool MarkerDeleted(Guid marker) => Find(MarkerKey(marker))?.Kind == TombstoneKind;
+
+        /// <summary>
+        /// A list was deleted: tombstones its create marker and every create operation that recorded it, or that never
+        /// recorded a list and carries this marker (it crashed before <see cref="ClaimList"/>). Atomic with the create
+        /// continuations (the lifecycle lock), so none writes or answers for the list after this.
+        /// </summary>
+        /// <param name="listId">The removed list ("N").</param>
+        /// <param name="marker">The removed list's create marker, when it had one.</param>
+        /// <param name="now">Now.</param>
+        public void DeleteCreate(string listId, Guid? marker, DateTimeOffset now)
+        {
+            if (!_db.Available)
+            {
+                return;
+            }
+
+            Write((c, t) =>
+            {
+                var ids = new List<string>();
+                using (var cmd = RequestLedger.Cmd(c, t, "SELECT id,list_id FROM list_operations WHERE kind='create' AND (list_id=$l OR list_id IS NULL)", ("$l", listId)))
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var id = reader.GetString(0);
+                        if (!reader.IsDBNull(1) || (marker.HasValue && ListService.CreateMarker(id) == marker.Value))
+                        {
+                            ids.Add(id);
+                        }
+                    }
+                }
+
+                foreach (var id in ids)
+                {
+                    Tombstone(c, t, ListService.CreateMarker(id), now);
+                    RequestLedger.Exec(c, t, "UPDATE list_operations SET state='deleted',status=404,result=NULL,updated_at=$at WHERE id=$id AND state<>'deleted'", ("$at", RequestLedger.Ms(now)), ("$id", id));
+                }
+
+                if (marker.HasValue)
+                {
+                    Tombstone(c, t, marker.Value, now);
+                }
+
+                return ids.Count;
+            });
+        }
+
+        private static string MarkerKey(Guid marker) => marker.ToString("N", CultureInfo.InvariantCulture);
+
+        // Repeated deletion keeps the first tombstone (retention isn't extended).
+        private static void Tombstone(SqliteConnection c, SqliteTransaction t, Guid marker, DateTimeOffset now) =>
+            RequestLedger.Exec(c, t, "INSERT OR IGNORE INTO list_operations(id,user_id,scope,client_id,kind,fingerprint,state,status,created_at,updated_at) VALUES($id,$u,'create-marker',$id,'" + TombstoneKind + "','','deleted',404,$at,$at)",
+                ("$id", MarkerKey(marker)), ("$u", RequestLedger.Id(Guid.Empty)), ("$at", RequestLedger.Ms(now)));
+
         /// <summary>Records the list a create operation made (before anything else is applied to it).</summary>
         /// <param name="id">Operation.</param>
         /// <param name="listId">The new list ("N").</param>
         /// <param name="now">Now.</param>
         public void SetList(string id, string listId, DateTimeOffset now)
-            => _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE list_operations SET list_id=$l,updated_at=$at WHERE id=$id AND state<>'deleted'", ("$l", listId), ("$at", RequestLedger.Ms(now)), ("$id", id)));
+            => Write((c, t) => RequestLedger.Exec(c, t, "UPDATE list_operations SET list_id=$l,updated_at=$at WHERE id=$id AND state<>'deleted'" + NotTombstoned,
+                ("$l", listId), ("$at", RequestLedger.Ms(now)), ("$id", id), ("$marker", MarkerKey(ListService.CreateMarker(id)))));
 
         /// <summary>
         /// Records the list a create operation made, atomically: only when the operation has no list yet (or this one) and
@@ -112,9 +185,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="now">Now.</param>
         /// <returns>Whether the operation now records this list.</returns>
         public bool ClaimList(string id, string listId, DateTimeOffset now)
-            => _db.Write((c, t) => RequestLedger.Exec(c, t,
-                "UPDATE list_operations SET list_id=$l,updated_at=$at WHERE id=$id AND state<>'deleted' AND (list_id IS NULL OR list_id=$l) AND NOT EXISTS (SELECT 1 FROM list_operations o WHERE o.list_id=$l AND o.id<>$id)",
-                ("$l", listId), ("$at", RequestLedger.Ms(now)), ("$id", id)) == 1);
+            => Write((c, t) => RequestLedger.Exec(c, t,
+                "UPDATE list_operations SET list_id=$l,updated_at=$at WHERE id=$id AND state<>'deleted' AND (list_id IS NULL OR list_id=$l) AND NOT EXISTS (SELECT 1 FROM list_operations o WHERE o.kind='create' AND o.list_id=$l AND o.id<>$id)" + NotTombstoned,
+                ("$l", listId), ("$at", RequestLedger.Ms(now)), ("$id", id), ("$marker", MarkerKey(ListService.CreateMarker(id)))) == 1);
 
         /// <summary>Whether any operation recorded this list as the one it created.</summary>
         /// <param name="listId">List ("N").</param>
@@ -133,8 +206,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="result">Bounded result JSON, or null.</param>
         /// <param name="now">Now.</param>
         public void Finish(string id, bool completed, int status, string? result, DateTimeOffset now)
-            => _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE list_operations SET state=$s,status=$st,result=$r,updated_at=$at WHERE id=$id AND state<>'deleted'",
-                ("$s", completed ? "completed" : "failed"), ("$st", status), ("$r", result), ("$at", RequestLedger.Ms(now)), ("$id", id)));
+            => Write((c, t) => RequestLedger.Exec(c, t, "UPDATE list_operations SET state=$s,status=$st,result=$r,updated_at=$at WHERE id=$id AND state<>'deleted'" + NotTombstoned,
+                ("$s", completed ? "completed" : "failed"), ("$st", status), ("$r", result), ("$at", RequestLedger.Ms(now)), ("$id", id), ("$marker", MarkerKey(ListService.CreateMarker(id)))));
 
         /// <summary>Removes expired/non-create operations and marks removed creates deleted for the retry retention period.</summary>
         /// <param name="now">Now.</param>
@@ -143,7 +216,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public int Purge(DateTimeOffset now, IReadOnlyCollection<string>? removedLists = null)
         {
             if (!_db.Available) return 0;
-            return _db.Write((c, t) =>
+            return Write((c, t) =>
             {
                 var removed = RequestLedger.Exec(c, t, "DELETE FROM list_operations WHERE updated_at < $cut AND state <> 'open'", ("$cut", RequestLedger.Ms(now - Retention)));
                 removed += RequestLedger.Exec(c, t, "DELETE FROM list_operations WHERE updated_at < $cut", ("$cut", RequestLedger.Ms(now - Retention - Retention)));
@@ -161,12 +234,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             });
         }
 
-        /// <summary>Removes a person's operations (the user was deleted).</summary>
+        /// <summary>Removes a person's operations (the user was deleted); their creates' markers stay tombstoned.</summary>
         /// <param name="user">The person.</param>
         public void PurgeUser(Guid user)
         {
-            if (_db.Available) _db.Write((c, t) => RequestLedger.Exec(c, t, "DELETE FROM list_operations WHERE user_id=$u", ("$u", RequestLedger.Id(user))));
+            if (!_db.Available)
+            {
+                return;
+            }
+
+            Write((c, t) =>
+            {
+                var ids = new List<string>();
+                using (var cmd = RequestLedger.Cmd(c, t, "SELECT id FROM list_operations WHERE user_id=$u AND kind='create'", ("$u", RequestLedger.Id(user))))
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        ids.Add(reader.GetString(0));
+                    }
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                foreach (var id in ids)
+                {
+                    Tombstone(c, t, ListService.CreateMarker(id), now);
+                }
+
+                return RequestLedger.Exec(c, t, "DELETE FROM list_operations WHERE user_id=$u", ("$u", RequestLedger.Id(user)));
+            });
         }
+
+        // Every write shares the lifecycle lock and, inside a create continuation, its check (ListContinuation.Write).
+        private T Write<T>(Func<SqliteConnection, SqliteTransaction, T> action) => ListContinuation.Write(() => _db.Write(action));
 
         private static ListOperation? Read(SqliteConnection c, SqliteTransaction? t, string where, params (string, object?)[] args)
         {
@@ -187,6 +287,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// </summary>
     public sealed class ListLinks
     {
+        private const string TombstoneKind = "create_tombstone";
+
+        // A create operation whose marker was tombstoned is never written again.
+        private const string NotTombstoned = " AND NOT EXISTS (SELECT 1 FROM list_operations m WHERE m.id=$marker AND m.kind='" + TombstoneKind + "')";
+
         private readonly AcquireDatabase _db;
 
         /// <summary>Creates the store (DI).</summary>
@@ -264,6 +369,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     public sealed class ListEventStore
     {
         private const int MaxPending = 5000;
+        private const string TombstoneKind = "create_tombstone";
+
+        // A create operation whose marker was tombstoned is never written again.
+        private const string NotTombstoned = " AND NOT EXISTS (SELECT 1 FROM list_operations m WHERE m.id=$marker AND m.kind='" + TombstoneKind + "')";
+
         private readonly AcquireDatabase _db;
 
         /// <summary>Creates the store (DI).</summary>

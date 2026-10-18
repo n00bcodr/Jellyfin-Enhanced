@@ -62,6 +62,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="kind">What the write does.</param>
         public void Spend(Guid listId, ListWriteKind kind)
         {
+            // Inside a create or swap continuation, the write also needs its operation and list as they are now.
+            ListContinuation.Ensure();
             // A move grant also covers placing rows JE just inserted (both are Jellyfin moves).
             if (listId != ListId || !(kind == Kind || (kind == ListWriteKind.Move && Kind == ListWriteKind.Place)))
             {
@@ -375,7 +377,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 var visibility = known != null && known.Matches(_access.ParentalStamp(current.User))
                     ? known
-                    : await VisibilityAsync(items, current.User, cancellationToken).ConfigureAwait(false);
+                    : await ListContinuation.Await(() => VisibilityAsync(items, current.User, cancellationToken)).ConfigureAwait(false);
                 if (Current(access) is not { } final)
                 {
                     return null;
@@ -421,7 +423,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return PlaceholderVisibility.Unrestricted(stamp);
             }
 
-            var hidden = await _access.GetHiddenPlaceholderIdsAsync(items, user, cancellationToken).ConfigureAwait(false);
+            var hidden = await ListContinuation.Await(() => _access.GetHiddenPlaceholderIdsAsync(items, user, cancellationToken)).ConfigureAwait(false);
             return PlaceholderVisibility.Allowlist(items.Where(p => !hidden.Contains(p.Id)), stamp);
         }
 

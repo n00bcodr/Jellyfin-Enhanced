@@ -337,7 +337,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 _stopping = new CancellationTokenSource();
                 var token = _stopping.Token;
-                _worker = Task.Run(() => WorkerLoopAsync(token), CancellationToken.None);
+                // The worker never inherits a create's or pass's continuation it happened to be started from.
+                using (ListContinuation.Detach())
+                {
+                    _worker = Task.Run(() => WorkerLoopAsync(token), CancellationToken.None);
+                }
             }
         }
 
@@ -475,6 +479,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>What the pass did.</returns>
         public async Task<SwapPassResult> RunListPassAsync(string listIdN, IReadOnlyCollection<string>? placeholderIds, MetadataMode mode, CancellationToken cancellationToken)
         {
+            if (!ListStore.IsValidListId(listIdN))
+            {
+                return default;
+            }
+
+            // Its own continuation (never one it was started from): after every await, and before every write, the list
+            // must still be the one the pass started on (not removed, also not removed and re-added under its id, and no
+            // restore since). Consent and access are the gate's, at every Jellyfin write (SwapWrite).
+            var id = Guid.ParseExact(listIdN, "N");
+            var removals = _store.RemovalVersion(listIdN);
+            bool Removed() => _store.RemovalVersion(listIdN) != removals || _host.GetList(id) == null;
+            using var execution = new ListContinuation(_store, () => Removed() ? ListContinuation.NotFound() : null);
+            try
+            {
+                return await ListContinuation.Await(() => RunListPassCoreAsync(listIdN, placeholderIds, mode, cancellationToken)).ConfigureAwait(false);
+            }
+            catch (ListAccessLostException) when (execution.Refused)
+            {
+                // Removed: terminal (the lifecycle removes the document). Restored: the restore queues every list again.
+                if (Removed())
+                {
+                    ForgetList(listIdN);
+                }
+
+                _logger.Debug($"[Lists] Swap pass for list {listIdN} stopped: the list was removed or restored meanwhile.");
+                return default;
+            }
+        }
+
+        private async Task<SwapPassResult> RunListPassCoreAsync(string listIdN, IReadOnlyCollection<string>? placeholderIds, MetadataMode mode, CancellationToken cancellationToken)
+        {
             if (!Enabled || !ListStore.IsValidListId(listIdN))
             {
                 return default;
@@ -502,9 +537,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return default;
             }
 
-            var metadata = await FetchMetadataAsync(snapshot.Items.Where(p => placeholderIds == null || placeholderIds.Contains(p.Id)), mode, UtcNow(), cancellationToken).ConfigureAwait(false);
+            var metadata = await ListContinuation.Await(() => FetchMetadataAsync(snapshot.Items.Where(p => placeholderIds == null || placeholderIds.Contains(p.Id)), mode, UtcNow(), cancellationToken)).ConfigureAwait(false);
 
-            using (await _store.LockAsync(listIdN, cancellationToken).ConfigureAwait(false))
+            using (await ListContinuation.Await(() => _store.LockAsync(listIdN, cancellationToken)).ConfigureAwait(false))
             {
                 // The list as Jellyfin has it now: its owner and shares may have changed while metadata was read.
                 list = _host.GetList(list.Id);
@@ -516,7 +551,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 var doc = _store.LoadForUpdate(listIdN, list.Kind);
                 User? owner = list.Kind == ListKinds.Playlist && list.OwnerId != Guid.Empty ? _userManager.GetUserById(list.OwnerId) : null;
-                var outcome = await SwapLockedAsync(list, owner, doc, placeholderIds, metadata, null, mode, cancellationToken).ConfigureAwait(false);
+                var outcome = await ListContinuation.Await(() => SwapLockedAsync(list, owner, doc, placeholderIds, metadata, null, mode, cancellationToken)).ConfigureAwait(false);
                 if (outcome.Dirty)
                 {
                     _store.Save(outcome.Doc);
@@ -586,7 +621,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             }
 
-            await RecoverIntentsAsync(context).ConfigureAwait(false);
+            await ListContinuation.Await(() => RecoverIntentsAsync(context)).ConfigureAwait(false);
             if (context.Doc.Reconcile != null)
             {
                 // Restore/import reconciliation: intents are settled by Jellyfin's real membership (above) before
@@ -641,12 +676,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
 
                     var resolution = _resolver.Resolve(placeholder, list.Kind, new[] { owner });
-                    ok = await SwapIntoPlaylistAsync(context, placeholderId, resolution).ConfigureAwait(false);
+                    ok = await ListContinuation.Await(() => SwapIntoPlaylistAsync(context, placeholderId, resolution)).ConfigureAwait(false);
                 }
                 else
                 {
                     var resolution = _resolver.Resolve(placeholder, list.Kind, Array.Empty<User>());
-                    ok = await SwapIntoCollectionAsync(context, placeholderId, resolution).ConfigureAwait(false);
+                    ok = await ListContinuation.Await(() => SwapIntoCollectionAsync(context, placeholderId, resolution)).ConfigureAwait(false);
                 }
 
                 placeholder = context.Doc.Items.FirstOrDefault(p => p.Id == placeholderId);
@@ -723,7 +758,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     return true;
                 }
 
-                var landed = await InsertRunAsync(context, placeholderId, new[] { itemId }, index).ConfigureAwait(false);
+                var landed = await ListContinuation.Await(() => InsertRunAsync(context, placeholderId, new[] { itemId }, index)).ConfigureAwait(false);
                 if (landed == null)
                 {
                     return false;
@@ -771,7 +806,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     return true;
                 }
 
-                var landed = await InsertRunAsync(context, placeholderId, run.Select(e => e.ItemId).ToList(), index).ConfigureAwait(false);
+                var landed = await ListContinuation.Await(() => InsertRunAsync(context, placeholderId, run.Select(e => e.ItemId).ToList(), index)).ConfigureAwait(false);
                 if (landed == null)
                 {
                     return false;
@@ -900,7 +935,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             List<string>? placed = null;
             try
             {
-                placed = await ListPlaylistPlacement.PlaceAsync(_host, _logger, listId, context.ListIdN, context.Owner!, items, anchor, desired, inserted, (kind, written) => SwapWrite(context, kind, written)).ConfigureAwait(false);
+                placed = await ListContinuation.Await(() => ListPlaylistPlacement.PlaceAsync(_host, _logger, listId, context.ListIdN, context.Owner!, items, anchor, desired, inserted, (kind, written) => SwapWrite(context, kind, written))).ConfigureAwait(false);
             }
             catch (ListAccessLostException lost)
             {
@@ -918,7 +953,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var landed = items.Where(id => after.TryGetValue(id, out var count) && count > intent.OccurrenceCountsBefore[N(id)]).ToHashSet();
             context.Doc.Intents.RemoveAll(i => i.CreatedAt == intent.CreatedAt);
             context.Doc.Order = placed
-                ?? (landed.Count > 0 ? await SettleLandedAsync(context, anchor, index, items.Where(landed.Contains).ToList()).ConfigureAwait(false) : Canonical(context.Doc, raw));
+                ?? (landed.Count > 0 ? await ListContinuation.Await(() => SettleLandedAsync(context, anchor, index, items.Where(landed.Contains).ToList())).ConfigureAwait(false) : Canonical(context.Doc, raw));
             context.Dirty = true;
             return placed == null && landed.Count == 0 ? null : landed;
         }
@@ -952,7 +987,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 try
                 {
-                    actual = await ListPlaylistPlacement.MoveAfterAnchorAsync(_host, _logger, context.List.Id, context.Owner, anchor, inserted, (kind, written) => SwapWrite(context, kind, written)).ConfigureAwait(false);
+                    actual = await ListContinuation.Await(() => ListPlaylistPlacement.MoveAfterAnchorAsync(_host, _logger, context.List.Id, context.Owner, anchor, inserted, (kind, written) => SwapWrite(context, kind, written))).ConfigureAwait(false);
                 }
                 catch (ListAccessLostException lost)
                 {
@@ -1065,7 +1100,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     try
                     {
-                        await _host.AddToCollectionAsync(_gate!.SwapWrite(context.List.Id, context.Doc, context.Owner, ListWriteKind.CollectionAdd, toAdd, InsertsAllowed, context.OnBehalfOf), toAdd).ConfigureAwait(false);
+                        await ListContinuation.Await(() => _host.AddToCollectionAsync(_gate!.SwapWrite(context.List.Id, context.Doc, context.Owner, ListWriteKind.CollectionAdd, toAdd, InsertsAllowed, context.OnBehalfOf), toAdd)).ConfigureAwait(false);
                     }
                     catch (ListAccessLostException lost)
                     {
@@ -1394,7 +1429,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     continue;
                 }
 
-                context.Doc.Order = await SettleLandedAsync(context, intent.Anchor, intent.Index, landed).ConfigureAwait(false);
+                context.Doc.Order = await ListContinuation.Await(() => SettleLandedAsync(context, intent.Anchor, intent.Index, landed)).ConfigureAwait(false);
                 if (placeholder.Kind == PlaceholderKinds.Movie)
                 {
                     Retire(context, placeholder, landed.Select(N).ToList());
@@ -1589,7 +1624,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 // couldn't read in its interactive budget, or left empty while no poster source was configured.
                 if ((mode & (MetadataMode.New | MetadataMode.Maintenance)) != 0 && PostersAvailable)
                 {
-                    await FetchTmdbPostersAsync(placeholders, result, cancellationToken).ConfigureAwait(false);
+                    await ListContinuation.Await(() => FetchTmdbPostersAsync(placeholders, result, cancellationToken)).ConfigureAwait(false);
                 }
 
                 return result;
@@ -1632,12 +1667,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var wanted = placeholders.Select(p => (Placeholder: p, MaxAge: MaxAge(p))).Where(w => w.MaxAge.HasValue).ToList();
             var fetched = new ConcurrentDictionary<string, PlaceholderMetadata>(StringComparer.Ordinal);
             var options = new ParallelOptions { MaxDegreeOfParallelism = PassMetadataConcurrency, CancellationToken = cancellationToken };
-            await Parallel.ForEachAsync(wanted, options, async (w, token) =>
+            await ListContinuation.Await(() => Parallel.ForEachAsync(wanted, options, async (w, token) =>
             {
                 var p = w.Placeholder;
                 try
                 {
-                    var meta = await _metadata.FetchAsync(p, w.MaxAge!.Value, today, token).ConfigureAwait(false);
+                    var meta = await ListContinuation.Await(() => _metadata.FetchAsync(p, w.MaxAge!.Value, today, token)).ConfigureAwait(false);
                     if (meta != null)
                     {
                         fetched[p.Id] = meta;
@@ -1647,7 +1682,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     _logger.Debug($"[Lists] Metadata for \"{p.Title}\" failed: {ex.Message}");
                 }
-            }).ConfigureAwait(false);
+            })).ConfigureAwait(false);
             foreach (var pair in fetched)
             {
                 result[pair.Key] = pair.Value;
@@ -1664,12 +1699,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var wanted = placeholders.Where(p => p.Kind != PlaceholderKinds.Custom && p.TmdbId is > 0 && (p.PosterPath == null || p.PosterUnverified == true)).ToList();
             var fetched = new ConcurrentDictionary<string, PlaceholderMetadata>(StringComparer.Ordinal);
             var options = new ParallelOptions { MaxDegreeOfParallelism = PassMetadataConcurrency, CancellationToken = cancellationToken };
-            await Parallel.ForEachAsync(wanted, options, async (p, token) =>
+            await ListContinuation.Await(() => Parallel.ForEachAsync(wanted, options, async (p, token) =>
             {
                 try
                 {
                     // A title TMDB read without a poster also counts: it replaces (clears) an unverified client poster.
-                    var (poster, answered) = await _metadata.ReadTmdbPosterAsync(p, token).ConfigureAwait(false);
+                    var (poster, answered) = await ListContinuation.Await(() => _metadata.ReadTmdbPosterAsync(p, token)).ConfigureAwait(false);
                     if (answered)
                     {
                         fetched[p.Id] = new PlaceholderMetadata { FetchedAtUtc = DateTime.UtcNow, PosterPath = ListRules.IsValidPosterPath(poster) ? poster : null, Partial = true };
@@ -1679,7 +1714,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     _logger.Debug($"[Lists] TMDB poster for \"{p.Title}\" failed: {ex.Message}");
                 }
-            }).ConfigureAwait(false);
+            })).ConfigureAwait(false);
             foreach (var pair in fetched)
             {
                 result[pair.Key] = pair.Value;
@@ -1756,7 +1791,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             try
             {
-                _events.Record(context.ListIdN, placeholder.Id, placeholder.Kind, ListRules.TitleKeyOf(placeholder)?.ToString(), ListRules.EditionOf(placeholder), itemIds.Select(N).ToList(), complete, DateTimeOffset.UtcNow);
+                ListContinuation.Write(() => _events.Record(context.ListIdN, placeholder.Id, placeholder.Kind, ListRules.TitleKeyOf(placeholder)?.ToString(), ListRules.EditionOf(placeholder), itemIds.Select(N).ToList(), complete, DateTimeOffset.UtcNow));
             }
             catch (Exception ex)
             {

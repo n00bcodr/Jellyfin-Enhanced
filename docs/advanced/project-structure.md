@@ -437,7 +437,9 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   items at their spot; `ListService.cs` views and every change (durable operations); `ListAcquisition.cs` Request one /
   Request all missing through the request service; `ListSwapService.cs`/`ListSwapMonitor.cs` swap-in on arrivals
   (consent-gated, intents settled by Jellyfin's real membership); `ListLifecycle.cs` deleted lists, restores and
-  deleted people; `ListDatabase.cs` operations, request links and swap-in events in acquire.db (schema 5);
+  deleted people; `ListDatabase.cs` operations, marker tombstones, request links and swap-in events in acquire.db (schema 5);
+  `ListContinuation.cs` the runtime create/swap continuation boundary (fresh state and access after awaits, synchronous
+  writes and the final create projection sharing deletion's lifecycle lock);
   `ListStatusSource.cs` the shared status for entries; `ListMetadata.cs` the metadata source behind
   `IListMetadataSource`; `ListSourceOwnership.cs` linked-source ownership on swap-in; `ExperimentalListImporter.cs` the
   one-time importer of the experimental lists; `ListFlags.cs` the switches and per-person preferences. Routes in

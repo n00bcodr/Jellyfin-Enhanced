@@ -456,7 +456,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public async Task<Guid> CreatePlaylistAsync(ListWrite write, string name, bool isPublic)
         {
             write.Spend(Guid.Empty, ListWriteKind.Create);
-            var result = await _playlistManager.CreatePlaylist(new PlaylistCreationRequest
+            var result = await ListContinuation.Await(() => _playlistManager.CreatePlaylist(new PlaylistCreationRequest
             {
                 Name = name,
                 UserId = write.ActAs,
@@ -465,7 +465,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 Public = isPublic,
                 // No shares: Jellyfin hands a deleted owner's playlist to its first share, so none may stand for nobody.
                 Users = Array.Empty<PlaylistUserPermissions>(),
-            }).ConfigureAwait(false);
+            })).ConfigureAwait(false);
             return Guid.Parse(result.Id);
         }
 
@@ -480,7 +480,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             };
             // Saved with the collection itself (one write).
             options.ProviderIds[CreateMarkerKey] = marker.ToString("N", System.Globalization.CultureInfo.InvariantCulture);
-            var boxSet = await _collectionManager.CreateCollectionAsync(options).ConfigureAwait(false);
+            var boxSet = await ListContinuation.Await(() => _collectionManager.CreateCollectionAsync(options)).ConfigureAwait(false);
             return boxSet.Id;
         }
 
@@ -497,7 +497,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var playlistName = playlist.Name;
                     try
                     {
-                        await _playlistManager.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlist.Id, UserId = write.ActAs, Name = name }).ConfigureAwait(false);
+                        await ListContinuation.Await(() => _playlistManager.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlist.Id, UserId = write.ActAs, Name = name })).ConfigureAwait(false);
                     }
                     catch
                     {
@@ -514,7 +514,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     try
                     {
                         var parent = boxSet.ParentId.Equals(Guid.Empty) ? null : _libraryManager.GetItemById(boxSet.ParentId);
-                        await _libraryManager.UpdateItemAsync(boxSet, parent!, ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+                        await ListContinuation.Await(() => _libraryManager.UpdateItemAsync(boxSet, parent!, ItemUpdateType.MetadataEdit, CancellationToken.None)).ConfigureAwait(false);
                     }
                     catch
                     {
@@ -526,6 +526,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
+        /// <summary>
+        /// The create marker a list item carries (a collection's provider id, a playlist's folder name from
+        /// <see cref="ListService.CreateName"/>), read from the item itself: also from a removed one, which no lookup finds.
+        /// </summary>
+        /// <param name="item">The playlist or collection.</param>
+        /// <returns>The marker, or null.</returns>
+        internal static Guid? CreateMarkerOf(BaseItem item)
+        {
+            if (item.ProviderIds != null && item.ProviderIds.TryGetValue(CreateMarkerKey, out var value) && Guid.TryParseExact(value, "N", out var marker))
+            {
+                return marker;
+            }
+
+            var folder = Path.GetFileName(Trimmed(item.Path ?? string.Empty));
+            var matches = System.Text.RegularExpressions.Regex.Matches(folder, @"\(([0-9a-fA-F]{32})\)");
+            return matches.Count > 0 && Guid.TryParseExact(matches[^1].Groups[1].Value, "N", out marker) ? marker : null;
+        }
+
         /// <inheritdoc />
         public ListInfo? FindCreated(string kind, Guid marker, Guid ownerId)
         {
@@ -535,7 +553,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 // The folder Jellyfin made from the name the create used (ListService.CreateName), never renamed.
                 return _libraryManager.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { BaseItemKind.Playlist }, Recursive = true })
                     .OfType<Playlist>()
-                    .Where(p => p.OwnerUserId == ownerId && !string.IsNullOrEmpty(p.Path) && Path.GetFileName(Trimmed(p.Path)).Contains(value, StringComparison.OrdinalIgnoreCase))
+                    .Where(p => (ownerId == Guid.Empty || p.OwnerUserId == ownerId) && !string.IsNullOrEmpty(p.Path) && Path.GetFileName(Trimmed(p.Path)).Contains(value, StringComparison.OrdinalIgnoreCase))
                     .Select(ToInfo)
                     .OfType<ListInfo>()
                     .FirstOrDefault();
@@ -552,7 +570,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public async Task<string?> CollectionDestinationAsync(string name)
         {
             // CollectionManager.CreateCollectionAsync: "<collections folder>/<valid file name> [boxset]".
-            var folder = await _collectionManager.GetCollectionsFolder(true).ConfigureAwait(false);
+            var folder = await ListContinuation.Await(() => _collectionManager.GetCollectionsFolder(true)).ConfigureAwait(false);
             return string.IsNullOrEmpty(folder?.Path) ? null : Normalised(Path.Combine(folder.Path, _fileSystem.GetValidFilename(name) + " [boxset]"));
         }
 

@@ -327,7 +327,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return true;
             }
 
-            if (await _parentalFilter.MaySeeAbsentAsync(mediaType, tmdbId, userIdN, cancellationToken).ConfigureAwait(false))
+            if (await ListContinuation.Await(() => _parentalFilter.MaySeeAbsentAsync(mediaType, tmdbId, userIdN, cancellationToken)).ConfigureAwait(false))
             {
                 return true;
             }
@@ -390,7 +390,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 checks.Add(CheckAsync(placeholder));
             }
 
-            await Task.WhenAll(checks).ConfigureAwait(false);
+            await ListContinuation.Await(() => Task.WhenAll(checks)).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             return hidden;
 
@@ -399,15 +399,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 bool? blocked = null;
                 try
                 {
-                    await gate.WaitAsync(budget.Token).ConfigureAwait(false);
-                    try
+                    using (await ListContinuation.AwaitLock(gate, budget.Token).ConfigureAwait(false))
                     {
-                        var allowed = await CheckTitleAsync(placeholder.MediaType, placeholder.TmdbId!.Value, userIdN, budget.Token).ConfigureAwait(false);
+                        var allowed = await ListContinuation.Await(() => CheckTitleAsync(placeholder.MediaType, placeholder.TmdbId!.Value, userIdN, budget.Token)).ConfigureAwait(false);
                         blocked = allowed.HasValue ? !allowed.Value : null;
-                    }
-                    finally
-                    {
-                        gate.Release();
                     }
                 }
                 catch (OperationCanceledException)

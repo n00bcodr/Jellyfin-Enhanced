@@ -258,7 +258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return null;
             }
 
-            var (doc, canonical) = await ReconciledAsync(current, cancellationToken).ConfigureAwait(false);
+            var (doc, canonical) = await ListContinuation.Await(() => ReconciledAsync(current, cancellationToken)).ConfigureAwait(false);
             var items = doc?.Items ?? new List<Placeholder>();
             if (items.Count > 0)
             {
@@ -268,11 +268,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             for (var attempt = 0; ; attempt++)
             {
-                var visibility = await _gate.VisibilityAsync(items, current.User, cancellationToken).ConfigureAwait(false);
+                var visibility = await ListContinuation.Await(() => _gate.VisibilityAsync(items, current.User, cancellationToken)).ConfigureAwait(false);
                 var policy = _gate.Policy(current.User);
-                var statuses = await StatusesAsync(current, items.Where(visibility.IsVisible).ToList(), cancellationToken).ConfigureAwait(false);
+                var statuses = await ListContinuation.Await(() => StatusesAsync(current, items.Where(visibility.IsVisible).ToList(), cancellationToken)).ConfigureAwait(false);
                 var stale = false;
-                var view = await _gate.ProjectAsync(current, items, visibility, grant => BuildView(grant, doc, canonical, Fresh(grant, policy, statuses, ref stale)), cancellationToken).ConfigureAwait(false);
+                var view = await ListContinuation.Await(() => _gate.ProjectAsync(current, items, visibility, grant => BuildView(grant, doc, canonical, Fresh(grant, policy, statuses, ref stale)), cancellationToken)).ConfigureAwait(false);
                 if (view == null || !stale || attempt >= 2)
                 {
                     return view;
@@ -312,7 +312,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return (doc, canonical);
             }
 
-            using (await _store.LockAsync(access.ListIdN, cancellationToken).ConfigureAwait(false))
+            using (await ListContinuation.Await(() => _store.LockAsync(access.ListIdN, cancellationToken)).ConfigureAwait(false))
             {
                 return Reconciled(access);
             }
@@ -352,7 +352,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var keys = keyed.Where(p => StatusPartOf(p) == null && p.Kind is not (PlaceholderKinds.Season or PlaceholderKinds.Episodes))
                     .Select(ListRules.TitleKeyOf).OfType<TitleKey>().Distinct().ToList();
                 var statuses = new Dictionary<string, JsonElement>(
-                    keys.Count == 0 ? new Dictionary<string, JsonElement>() : await _status.StatusesAsync(access.User.Id, keys, cancellationToken).ConfigureAwait(false),
+                    keys.Count == 0 ? new Dictionary<string, JsonElement>() : await ListContinuation.Await(() => _status.StatusesAsync(access.User.Id, keys, cancellationToken)).ConfigureAwait(false),
                     StringComparer.Ordinal);
                 // Standard seasons: the season's status (a series card reads Ready once any season is in).
                 // With the episodes each entry knows of its season (its expected episode list), so a season no Sonarr
@@ -372,7 +372,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     .ToList();
                 if (seasons.Count > 0)
                 {
-                    foreach (var pair in await _status.SeasonStatusesAsync(access.User.Id, seasons, cancellationToken).ConfigureAwait(false))
+                    foreach (var pair in await ListContinuation.Await(() => _status.SeasonStatusesAsync(access.User.Id, seasons, cancellationToken)).ConfigureAwait(false))
                     {
                         statuses[pair.Key] = pair.Value;
                     }
@@ -382,7 +382,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var parts = keyed.Select(StatusPartOf).OfType<ListStatusPart>().DistinctBy(p => p.Id).ToList();
                 if (parts.Count > 0)
                 {
-                    foreach (var pair in await _status.PartStatusesAsync(access.User.Id, parts, cancellationToken).ConfigureAwait(false))
+                    foreach (var pair in await ListContinuation.Await(() => _status.PartStatusesAsync(access.User.Id, parts, cancellationToken)).ConfigureAwait(false))
                     {
                         statuses[pair.Key] = pair.Value;
                     }
@@ -444,16 +444,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public async Task<ListOutcome> ApplyAsync(ListAccess access, IReadOnlyList<ApplyEntry> entries, PositionDto? position, int? expectedRev, ListRequestKey? request, CancellationToken cancellationToken, ApplyHooks? hooks = null, bool recheckAccess = false, string kind = "apply")
         {
             var skipped = new List<SkippedEntryDto>();
-            var accepted = await PrevalidateAsync(access, entries, skipped, cancellationToken).ConfigureAwait(false);
-            accepted = await ExpandAsync(access, accepted, cancellationToken).ConfigureAwait(false);
-            await UseServerPostersAsync(accepted.Where(e => e.Placeholder != null).Select(e => e.Placeholder!).ToList(), cancellationToken).ConfigureAwait(false);
+            var accepted = await ListContinuation.Await(() => PrevalidateAsync(access, entries, skipped, cancellationToken)).ConfigureAwait(false);
+            accepted = await ListContinuation.Await(() => ExpandAsync(access, accepted, cancellationToken)).ConfigureAwait(false);
+            await ListContinuation.Await(() => UseServerPostersAsync(accepted.Where(e => e.Placeholder != null).Select(e => e.Placeholder!).ToList(), cancellationToken)).ConfigureAwait(false);
 
-            var outcome = await RunLockedAsync(access, kind, request, cancellationToken, async () =>
+            var outcome = await ListContinuation.Await(() => RunLockedAsync(access, kind, request, cancellationToken, async () =>
             {
                 // Everything above ran before the lock and can take seconds. The person's limits are checked again for what
                 // this write adds and what the list holds (awaited lookups), then the gate decides with their rights as
                 // they are right after those lookups: which items they and the owner can still open, and what is written.
-                var checkedNow = await CheckedAsync(access, accepted.Where(e => e.ItemId == null && e.Placeholder != null).Select(e => e.Placeholder!).ToList(), _store.Load(access.ListIdN), cancellationToken).ConfigureAwait(false);
+                var checkedNow = await ListContinuation.Await(() => CheckedAsync(access, accepted.Where(e => e.ItemId == null && e.Placeholder != null).Select(e => e.Placeholder!).ToList(), _store.Load(access.ListIdN), cancellationToken)).ConfigureAwait(false);
                 if (checkedNow.Denied != null)
                 {
                     return checkedNow.Denied;
@@ -461,8 +461,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 access = checkedNow.Access!;
                 var still = Revalidate(access, accepted, skipped, checkedNow.Blocked);
-                return await ApplyLockedAsync(access, still, skipped, position, expectedRev, checkedNow.Visibility!, hooks, cancellationToken).ConfigureAwait(false);
-            }).ConfigureAwait(false);
+                return await ListContinuation.Await(() => ApplyLockedAsync(access, still, skipped, position, expectedRev, checkedNow.Visibility!, hooks, cancellationToken)).ConfigureAwait(false);
+            })).ConfigureAwait(false);
             if (outcome.Value is ApplyResultDto { Added.Count: > 0 } applied)
             {
                 // Seerr metadata (dates, ids, expected episodes) for the new placeholders, then a swap check, in the background.
@@ -497,12 +497,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 .Select(e => e.Placeholder != null && HasTmdb(e.Placeholder) ? _resolver.Resolve(e.Placeholder, access.List.Kind, users, memo) : ScopeResolution.None)
                 .ToList();
             var today = DateTime.UtcNow;
-            var fresh = await ReadCompletionMetadataAsync(
+            var fresh = await ListContinuation.Await(() => ReadCompletionMetadataAsync(
                 accepted.Where((e, i) => e.Placeholder is { Kind: PlaceholderKinds.Season or PlaceholderKinds.Series } && resolutions[i].Episodes.Count > 0)
                     .Select(e => e.Placeholder!)
                     .ToList(),
                 today,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken)).ConfigureAwait(false);
 
             var result = new List<ApplyEntry>(accepted.Count);
             for (var i = 0; i < accepted.Count; i++)
@@ -577,11 +577,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             budget.CancelAfter(ListSwapService.InteractiveMetadataBudget);
-            await Task.WhenAll(placeholders.Select(async placeholder =>
+            await ListContinuation.Await(() => Task.WhenAll(placeholders.Select(async placeholder =>
             {
                 try
                 {
-                    var metadata = await _metadata.FetchAsync(placeholder, ListSwapService.CompletionMetadataMaxAge, today, budget.Token).ConfigureAwait(false);
+                    var metadata = await ListContinuation.Await(() => _metadata.FetchAsync(placeholder, ListSwapService.CompletionMetadataMaxAge, today, budget.Token)).ConfigureAwait(false);
                     if (metadata != null)
                     {
                         ListMetadataService.Apply(placeholder, metadata);
@@ -598,7 +598,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     // over budget: the placeholder is kept; the background pass completes it later
                 }
-            })).ConfigureAwait(false);
+            }))).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             return fresh;
         }
@@ -636,14 +636,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             budget.CancelAfter(ListSwapService.InteractiveMetadataBudget);
             var today = DateTime.UtcNow;
-            await Task.WhenAll(titles.Select(async placeholder =>
+            await ListContinuation.Await(() => Task.WhenAll(titles.Select(async placeholder =>
             {
                 string? poster = null;
                 try
                 {
                     poster = seerr
-                        ? (await _metadata.FetchAsync(placeholder, ListMetadataService.CacheTtl, today, budget.Token).ConfigureAwait(false))?.PosterPath
-                        : await _metadata.FetchTmdbPosterAsync(placeholder, budget.Token).ConfigureAwait(false);
+                        ? (await ListContinuation.Await(() => _metadata.FetchAsync(placeholder, ListMetadataService.CacheTtl, today, budget.Token)).ConfigureAwait(false))?.PosterPath
+                        : await ListContinuation.Await(() => _metadata.FetchTmdbPosterAsync(placeholder, budget.Token)).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
@@ -651,7 +651,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 placeholder.PosterPath = poster;
-            })).ConfigureAwait(false);
+            }))).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
         }
 
@@ -659,10 +659,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             // C5: TMDB placeholders must pass the caller's parental filter (checked concurrently, failing closed; a
             // no-op without lookups for unrestricted callers). New custom entries are the caller's own, so they pass.
-            var blocked = await _access.GetHiddenPlaceholderIdsAsync(
+            var blocked = await ListContinuation.Await(() => _access.GetHiddenPlaceholderIdsAsync(
                 entries.Where(e => e.Placeholder != null).Select(e => e.Placeholder!).ToList(),
                 access.User,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken)).ConfigureAwait(false);
 
             var accepted = new List<ApplyEntry>(entries.Count);
             var isPlaylist = access.List.Kind == ListKinds.Playlist;
@@ -761,8 +761,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var stamp = _access.ParentalStamp(current!.User);
-                var blocked = await _access.GetHiddenPlaceholderIdsAsync(adding, current.User, cancellationToken).ConfigureAwait(false);
-                var visibility = await _gate.VisibilityAsync(items, current.User, cancellationToken).ConfigureAwait(false);
+                var blocked = await ListContinuation.Await(() => _access.GetHiddenPlaceholderIdsAsync(adding, current.User, cancellationToken)).ConfigureAwait(false);
+                var visibility = await ListContinuation.Await(() => _gate.VisibilityAsync(items, current.User, cancellationToken)).ConfigureAwait(false);
                 (denied, current) = _gate.Edit(access);
                 if (denied != null)
                 {
@@ -795,12 +795,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
             if (expectedRev.HasValue && expectedRev.Value != doc.Rev)
             {
-                return await ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken).ConfigureAwait(false);
+                return await ListContinuation.Await(() => ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken)).ConfigureAwait(false);
             }
 
             if (hooks?.Precondition?.Invoke(doc) is { } preconditionFailure)
             {
-                return await ConflictAsync(access, preconditionFailure, "The list's linked source changed; try again.", visibility, cancellationToken).ConfigureAwait(false);
+                return await ListContinuation.Await(() => ConflictAsync(access, preconditionFailure, "The list's linked source changed; try again.", visibility, cancellationToken)).ConfigureAwait(false);
             }
 
             // Leftover swap intents (a swap-in interrupted after Jellyfin added the item) are settled first, in this write:
@@ -809,7 +809,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var settled = false;
             if (doc.Intents.Count > 0 && _swap != null)
             {
-                var recovered = await _swap.SwapLockedAsync(access.List, access.Owner, doc, Array.Empty<string>(), null, null, MetadataMode.None, CancellationToken.None).ConfigureAwait(false);
+                var recovered = await ListContinuation.Await(() => _swap.SwapLockedAsync(access.List, access.Owner, doc, Array.Empty<string>(), null, null, MetadataMode.None, CancellationToken.None)).ConfigureAwait(false);
                 doc = recovered.Doc;
                 settled = recovered.Dirty;
             }
@@ -832,7 +832,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var index = order.IndexOf(position.AfterToken);
                     if (index < 0 || !IsVisibleToken(position.AfterToken, access.User, visibility.For(doc.Items), new Dictionary<Guid, bool>()))
                     {
-                        return await ConflictAsync(access, "stale_anchor", "The position no longer exists; reload the list.", visibility, cancellationToken).ConfigureAwait(false);
+                        return await ListContinuation.Await(() => ConflictAsync(access, "stale_anchor", "The position no longer exists; reload the list.", visibility, cancellationToken)).ConfigureAwait(false);
                     }
 
                     cursor = index + 1;
@@ -984,7 +984,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         order = desired; // what a failure below is reconciled from
                         if (inserted.Count > 0)
                         {
-                            order = await PlaceRealItemsAsync(access, segment.Where(e => e.ItemId.HasValue).Select(e => e.ItemId!.Value).ToList(), anchor, desired, inserted).ConfigureAwait(false);
+                            order = await ListContinuation.Await(() => PlaceRealItemsAsync(access, segment.Where(e => e.ItemId.HasValue).Select(e => e.ItemId!.Value).ToList(), anchor, desired, inserted)).ConfigureAwait(false);
                         }
                     }
                 }
@@ -992,7 +992,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 if (collectionItems.Count > 0)
                 {
                     var items = collectionItems.Distinct().ToList();
-                    await _host.AddToCollectionAsync(_gate.Write(access, ListWriteKind.CollectionAdd, items), items).ConfigureAwait(false);
+                    await ListContinuation.Await(() => _host.AddToCollectionAsync(_gate.Write(access, ListWriteKind.CollectionAdd, items), items)).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -1050,7 +1050,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var failure = ex is ListAccessLostException { Outcome: { } refused } ? (ListErrorDto)refused.Value! : new ListErrorDto { Code = "list_update_failed", Message = "Jellyfin could not update the list." };
-                failure.View = await _gate.ProjectAsync(current!, saved?.Items ?? new List<Placeholder>(), visibility, grant => BuildView(grant, saved, isPlaylist ? order : null), cancellationToken).ConfigureAwait(false);
+                failure.View = await ListContinuation.Await(() => _gate.ProjectAsync(current!, saved?.Items ?? new List<Placeholder>(), visibility, grant => BuildView(grant, saved, isPlaylist ? order : null), cancellationToken)).ConfigureAwait(false);
                 return new ListOutcome { StatusCode = ex is ListAccessLostException { Outcome: { } status } ? status.StatusCode : 500, Value = failure };
             }
 
@@ -1098,7 +1098,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 bool hookChanged;
                 try
                 {
-                    hookChanged = await hooks.AfterApplyAsync(doc, result, accepted).ConfigureAwait(false);
+                    hookChanged = await ListContinuation.Await(() => hooks.AfterApplyAsync(doc, result, accepted)).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -1147,7 +1147,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             // Jellyfin's writes are done (and awaited): the person's rights and limits as they are now decide what of the
             // write's own additions is kept. What landed in Jellyfin is recorded either way.
             var added = result.Added.Select(id => doc.Items.FirstOrDefault(p => p.Id == id)).OfType<Placeholder>().ToList();
-            var after = await CheckedAsync(access, added, doc, cancellationToken).ConfigureAwait(false);
+            var after = await ListContinuation.Await(() => CheckedAsync(access, added, doc, cancellationToken)).ConfigureAwait(false);
             if (after.Denied != null)
             {
                 // The person lost the list (or their limits kept changing): their placeholders aren't added, what Jellyfin
@@ -1172,7 +1172,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             result.Skipped = result.Skipped.OrderBy(x => x.Index).ToList();
             var final = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || settled || regrouped);
-            result.View = await _gate.ProjectAsync(access, final?.Items ?? new List<Placeholder>(), after.Visibility, grant => BuildView(grant, final, isPlaylist ? order : null), cancellationToken).ConfigureAwait(false);
+            result.View = await ListContinuation.Await(() => _gate.ProjectAsync(access, final?.Items ?? new List<Placeholder>(), after.Visibility, grant => BuildView(grant, final, isPlaylist ? order : null), cancellationToken)).ConfigureAwait(false);
             return ListOutcome.Ok(result);
         }
 
@@ -1299,29 +1299,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The outcome (<see cref="ListViewDto"/>).</returns>
         public async Task<ListOutcome> PatchAsync(ListAccess access, string placeholderId, int rev, string? note, Placeholder? link, ListRequestKey? request, CancellationToken cancellationToken)
         {
-            if (link != null && HasTmdb(link) && await _access.IsTitleBlockedAsync(link.MediaType, link.TmdbId!.Value, access.User, cancellationToken).ConfigureAwait(false))
+            if (link != null && HasTmdb(link) && await ListContinuation.Await(() => _access.IsTitleBlockedAsync(link.MediaType, link.TmdbId!.Value, access.User, cancellationToken)).ConfigureAwait(false))
             {
                 return ListOutcome.Error(403, "parental_block", "This title isn't available for your account.");
             }
 
             if (link != null)
             {
-                await UseServerPostersAsync(new[] { link }, cancellationToken).ConfigureAwait(false);
+                await ListContinuation.Await(() => UseServerPostersAsync(new[] { link }, cancellationToken)).ConfigureAwait(false);
             }
 
             // A linked title gets its Seerr metadata now (release date, ids, expected episodes) so it can be swapped in
             // right away when it is already in the library.
             var linkFresh = link != null && HasTmdb(link)
-                && (await ReadCompletionMetadataAsync(new[] { link }, DateTime.UtcNow, cancellationToken).ConfigureAwait(false)).Count > 0;
+                && (await ListContinuation.Await(() => ReadCompletionMetadataAsync(new[] { link }, DateTime.UtcNow, cancellationToken)).ConfigureAwait(false)).Count > 0;
             // The parental lookups run before the lock (they can take seconds); under it they are read again from the
             // warmed cache with the person as they are then.
-            await _gate.VisibilityAsync(_store.Load(access.ListIdN)?.Items ?? new List<Placeholder>(), access.User, cancellationToken).ConfigureAwait(false);
-            var outcome = await RunLockedAsync(access, "patch", request, cancellationToken, async () =>
+            await ListContinuation.Await(() => _gate.VisibilityAsync(_store.Load(access.ListIdN)?.Items ?? new List<Placeholder>(), access.User, cancellationToken)).ConfigureAwait(false);
+            var outcome = await ListContinuation.Await(() => RunLockedAsync(access, "patch", request, cancellationToken, async () =>
             {
                 // The awaited checks first (what the caller sees of the list; the linked title against their limits), then
                 // the gate, with no await before the change it allows.
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
-                var checkedNow = await CheckedAsync(access, link != null && HasTmdb(link) ? new[] { link } : Array.Empty<Placeholder>(), doc, cancellationToken).ConfigureAwait(false);
+                var checkedNow = await ListContinuation.Await(() => CheckedAsync(access, link != null && HasTmdb(link) ? new[] { link } : Array.Empty<Placeholder>(), doc, cancellationToken)).ConfigureAwait(false);
                 if (checkedNow.Denied != null)
                 {
                     return checkedNow.Denied;
@@ -1336,7 +1336,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 if (doc.Rev != rev)
                 {
-                    return await ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken).ConfigureAwait(false);
+                    return await ListContinuation.Await(() => ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken)).ConfigureAwait(false);
                 }
 
                 var placeholder = doc.Items.FirstOrDefault(p => p.Id == placeholderId);
@@ -1355,7 +1355,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var key = ListRules.IdentityKey(link);
                     if (doc.Items.Any(p => p.Id != placeholderId && ListRules.IdentityKey(p) == key))
                     {
-                        return await ConflictAsync(access, "duplicate", "This title is already in the list.", visibility, cancellationToken).ConfigureAwait(false);
+                        return await ListContinuation.Await(() => ConflictAsync(access, "duplicate", "This title is already in the list.", visibility, cancellationToken)).ConfigureAwait(false);
                     }
 
                     placeholder.Kind = link.Kind;
@@ -1397,7 +1397,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     // still edit the list (the gate checks both before every insert). The caller's own library access is
                     // not what decides (C5's caller checks cover items the client sends, not swap-in).
                     var fresh = linkFresh ? new HashSet<string>(StringComparer.Ordinal) { placeholderId } : null;
-                    var swapped = await _swap.SwapLockedAsync(access.List, access.Owner, doc, new[] { placeholderId }, null, fresh, linkFresh ? MetadataMode.Completion : MetadataMode.None, cancellationToken, onBehalfOf: access).ConfigureAwait(false);
+                    var swapped = await ListContinuation.Await(() => _swap.SwapLockedAsync(access.List, access.Owner, doc, new[] { placeholderId }, null, fresh, linkFresh ? MetadataMode.Completion : MetadataMode.None, cancellationToken, onBehalfOf: access)).ConfigureAwait(false);
                     doc = swapped.Doc;
                     swappedIn = swapped.Result.Inserted > 0;
                 }
@@ -1423,8 +1423,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var saved = _store.Save(doc);
-                return await ViewOutcomeAsync(access, saved, canonical, visibility, cancellationToken).ConfigureAwait(false);
-            }).ConfigureAwait(false);
+                return await ListContinuation.Await(() => ViewOutcomeAsync(access, saved, canonical, visibility, cancellationToken)).ConfigureAwait(false);
+            })).ConfigureAwait(false);
             if (link != null && outcome.StatusCode < 300)
             {
                 _swap?.QueuePass(access.ListIdN, new[] { placeholderId }, MetadataMode.New);
@@ -1444,13 +1444,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             // The parental lookups run before the lock (they can take seconds); under it they are read again from the
             // warmed cache with the person as they are then.
-            await _gate.VisibilityAsync(_store.Load(access.ListIdN)?.Items ?? new List<Placeholder>(), access.User, cancellationToken).ConfigureAwait(false);
-            return await RunLockedAsync(access, "delete", request, cancellationToken, async () =>
+            await ListContinuation.Await(() => _gate.VisibilityAsync(_store.Load(access.ListIdN)?.Items ?? new List<Placeholder>(), access.User, cancellationToken)).ConfigureAwait(false);
+            return await ListContinuation.Await(() => RunLockedAsync(access, "delete", request, cancellationToken, async () =>
             {
                 // The awaited parental lookups first, then the gate (the lookups and the lock wait can take seconds; the
                 // share may be gone), with no await before the change it allows.
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
-                var checkedNow = await CheckedAsync(access, Array.Empty<Placeholder>(), doc, cancellationToken).ConfigureAwait(false);
+                var checkedNow = await ListContinuation.Await(() => CheckedAsync(access, Array.Empty<Placeholder>(), doc, cancellationToken)).ConfigureAwait(false);
                 if (checkedNow.Denied != null)
                 {
                     return checkedNow.Denied;
@@ -1460,7 +1460,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var visibility = checkedNow.Visibility!;
                 if (doc.Rev != rev)
                 {
-                    return await ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken).ConfigureAwait(false);
+                    return await ListContinuation.Await(() => ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken)).ConfigureAwait(false);
                 }
 
                 var placeholder = doc.Items.FirstOrDefault(p => p.Id == placeholderId);
@@ -1484,8 +1484,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var saved = _store.Save(doc);
-                return await ViewOutcomeAsync(access, saved, canonical, visibility, cancellationToken).ConfigureAwait(false);
-            }).ConfigureAwait(false);
+                return await ListContinuation.Await(() => ViewOutcomeAsync(access, saved, canonical, visibility, cancellationToken)).ConfigureAwait(false);
+            })).ConfigureAwait(false);
         }
 
         // ── Reorder ──────────────────────────────────────────────────────────
@@ -1507,13 +1507,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             // The parental lookups run before the lock (they can take seconds); under it they are read again from the
             // warmed cache with the person as they are then.
-            await _gate.VisibilityAsync(_store.Load(access.ListIdN)?.Items ?? new List<Placeholder>(), access.User, cancellationToken).ConfigureAwait(false);
-            return await RunLockedAsync(access, "order", request, cancellationToken, async () =>
+            await ListContinuation.Await(() => _gate.VisibilityAsync(_store.Load(access.ListIdN)?.Items ?? new List<Placeholder>(), access.User, cancellationToken)).ConfigureAwait(false);
+            return await ListContinuation.Await(() => RunLockedAsync(access, "order", request, cancellationToken, async () =>
             {
                 // The awaited parental lookups first, then the gate: a real row is moved as the owner when the caller can't
                 // edit natively, so a caller whose share was removed must not reach that move.
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
-                var checkedNow = await CheckedAsync(access, Array.Empty<Placeholder>(), doc, cancellationToken).ConfigureAwait(false);
+                var checkedNow = await ListContinuation.Await(() => CheckedAsync(access, Array.Empty<Placeholder>(), doc, cancellationToken)).ConfigureAwait(false);
                 if (checkedNow.Denied != null)
                 {
                     return checkedNow.Denied;
@@ -1523,7 +1523,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var visibility = checkedNow.Visibility!;
                 if (doc.Rev != rev)
                 {
-                    return await ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken).ConfigureAwait(false);
+                    return await ListContinuation.Await(() => ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken)).ConfigureAwait(false);
                 }
 
                 var callerVisible = new Dictionary<Guid, bool>();
@@ -1538,7 +1538,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var message = merge.Error == "duplicate_copy"
                         ? "Only the first copy of an item that is in the playlist more than once can be moved."
                         : "The list changed; reload it.";
-                    return await ConflictAsync(access, merge.Error!, message, visibility, cancellationToken).ConfigureAwait(false);
+                    return await ListContinuation.Await(() => ConflictAsync(access, merge.Error!, message, visibility, cancellationToken)).ConfigureAwait(false);
                 }
 
                 var final = merge.Desired.ToList();
@@ -1549,7 +1549,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var mover = access.Permissions.NativeCanEdit ? access.User : access.Owner;
                     if (mover == null)
                     {
-                        return await ConflictAsync(access, "owner_missing", "The playlist owner no longer exists.", visibility, cancellationToken).ConfigureAwait(false);
+                        return await ListContinuation.Await(() => ConflictAsync(access, "owner_missing", "The playlist owner no longer exists.", visibility, cancellationToken)).ConfigureAwait(false);
                     }
 
                     var moverVisible = new Dictionary<Guid, bool>();
@@ -1563,7 +1563,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         id => EntryVisible(ListOrder.RealToken(id, 0), mover, moverVisible));
                     if (moves == null)
                     {
-                        return await ConflictAsync(access, "move_unsupported", "Jellyfin can't move the entry there without also moving entries that are hidden or missing.", visibility, cancellationToken).ConfigureAwait(false);
+                        return await ListContinuation.Await(() => ConflictAsync(access, "move_unsupported", "Jellyfin can't move the entry there without also moving entries that are hidden or missing.", visibility, cancellationToken)).ConfigureAwait(false);
                     }
 
                     try
@@ -1571,7 +1571,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         foreach (var newIndex in moves)
                         {
                             // The gate before every move: the person may still edit and the row is one they and the mover see.
-                            await _host.MoveInPlaylistAsync(_gate.Write(access, ListWriteKind.Move, new[] { itemId }), itemId, newIndex).ConfigureAwait(false);
+                            await ListContinuation.Await(() => _host.MoveInPlaylistAsync(_gate.Write(access, ListWriteKind.Move, new[] { itemId }), itemId, newIndex)).ConfigureAwait(false);
                             movedNow = true;
                         }
                     }
@@ -1586,7 +1586,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     catch (Exception ex)
                     {
                         _logger.Error($"[Lists] Moving an entry of list {access.ListIdN} failed: {ex.Message}");
-                        return await ConflictAsync(access, "move_failed", "Jellyfin could not move the entry.", visibility, cancellationToken).ConfigureAwait(false);
+                        return await ListContinuation.Await(() => ConflictAsync(access, "move_failed", "Jellyfin could not move the entry.", visibility, cancellationToken)).ConfigureAwait(false);
                     }
 
                     var actual = ListOrder.BuildRealTokens(_host.GetRawEntries(access.List.Id));
@@ -1618,7 +1618,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     saved = _store.Save(doc);
                 }
 
-                var view = await _gate.ProjectAsync(access, saved?.Items ?? new List<Placeholder>(), visibility, grant => BuildView(grant, saved, final), cancellationToken).ConfigureAwait(false);
+                var view = await ListContinuation.Await(() => _gate.ProjectAsync(access, saved?.Items ?? new List<Placeholder>(), visibility, grant => BuildView(grant, saved, final), cancellationToken)).ConfigureAwait(false);
                 if (view == null)
                 {
                     return ListOutcome.Error(404, "not_found", "List not found.");
@@ -1627,7 +1627,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return success
                     ? ListOutcome.Ok(view)
                     : ListOutcome.Error(409, "move_mismatch", "Jellyfin placed the entry differently; the list was refreshed.", view);
-            }).ConfigureAwait(false);
+            })).ConfigureAwait(false);
         }
 
         // ── Pickers and creation ─────────────────────────────────────────────
@@ -1717,12 +1717,195 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The outcome (<see cref="CreateListResultDto"/>).</returns>
         public async Task<ListOutcome> CreateListAsync(User user, string kind, string name, bool isPublic, IReadOnlyList<ApplyEntry> entries, ListRequestKey? request, CancellationToken cancellationToken, Func<ListAccess, ApplyHooks?>? hooks = null)
         {
-            var scope = "create-" + kind;
-            var turn = _createLocks.GetOrAdd(user.Id, _ => new SemaphoreSlim(1, 1));
-            await turn.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // One continuation for the whole create, recovery and retry included: after every await, and before every
+            // write and the answer, its operation and the person's access are read again (CreateState.Refusal).
+            var state = new CreateState(this, user.Id, kind);
+            using var continuation = new ListContinuation(_store, state.Refusal);
+            IDisposable? turn = null;
+            try
+            {
+                ListOutcome outcome;
+                try
+                {
+                    continuation.Check();
+                    if (request != null && _operations?.Available == true)
+                    {
+                        // Recorded before the person's turn is waited for, so deletion can already stop this create.
+                        state.Began(ListContinuation.Write(() => _operations.Begin(user.Id, "create-" + kind, request.RequestId, "create", request.Fingerprint, Now())));
+                    }
+
+                    turn = await ListContinuation.AwaitLock(_createLocks.GetOrAdd(user.Id, _ => new SemaphoreSlim(1, 1)), cancellationToken).ConfigureAwait(false);
+                    outcome = state.Start?.Conflict == true
+                        ? IdempotencyConflict()
+                        : await ListContinuation.Await(() => ContinueCreateAsync(state, user, kind, name, isPublic, entries, cancellationToken, hooks)).ConfigureAwait(false);
+                }
+                catch (ListAccessLostException lost) when (lost.Outcome != null)
+                {
+                    // The gate refused the create or its name (the person was disabled or lost collection management meanwhile).
+                    outcome = lost.Outcome;
+                }
+
+                return state.Project(continuation, outcome);
+            }
+            finally
+            {
+                turn?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// What a create knows about its operation and list, read again by every check of its continuation, and the one
+        /// place its answer is made (<see cref="Project"/>).
+        /// </summary>
+        private sealed class CreateState
+        {
+            private readonly ListService _service;
+            private readonly Guid _user;
+            private readonly string _kind;
+
+            internal CreateState(ListService service, Guid user, string kind)
+            {
+                _service = service;
+                _user = user;
+                _kind = kind;
+            }
+
+            /// <summary>Gets the durable operation's start (null: not idempotent).</summary>
+            internal ListOperationStart? Start { get; private set; }
+
+            /// <summary>Gets the durable operation as last read.</summary>
+            internal ListOperation? Operation { get; private set; }
+
+            /// <summary>Gets the marker the create's list carries (the operation's, or one of its own).</summary>
+            internal Guid Marker { get; private set; } = Guid.NewGuid();
+
+            /// <summary>Gets or sets the list the create made or continues with.</summary>
+            internal Guid? ListId { get; set; }
+
+            /// <summary>Gets or sets a value indicating whether a list with the marker may exist without its id known here.</summary>
+            internal bool Creating { get; set; }
+
+            internal void Began(ListOperationStart start)
+            {
+                Start = start;
+                Operation = start.Operation;
+                if (Operation != null)
+                {
+                    Marker = CreateMarker(Operation.Id);
+                    Creating = start.Replayed;
+                }
+            }
+
+            /// <summary>
+            /// The check of every step: the person may still create this kind; the operation is still there and not deleted
+            /// (by its list id or its marker); the list, once known, is one they can see and edit (a playlist: still theirs).
+            /// Runs under the lifecycle lock.
+            /// </summary>
+            /// <returns>The refusal, or null.</returns>
+            internal ListOutcome? Refusal()
+            {
+                var person = _service._gate.Person(_user, _kind);
+                if (person == null)
+                {
+                    return _service._gate.CreateRefusal(_user);
+                }
+
+                var operations = _service._operations;
+                if (Operation != null)
+                {
+                    Operation = operations!.Find(Operation.Id);
+                    if (Operation == null || Operation.State == "deleted")
+                    {
+                        return ListContinuation.NotFound();
+                    }
+
+                    if (Guid.TryParseExact(Operation.ListId, "N", out var recorded))
+                    {
+                        ListId = recorded;
+                    }
+                }
+
+                if (operations?.Available == true && operations.MarkerDeleted(Marker))
+                {
+                    return ListContinuation.NotFound();
+                }
+
+                if (ListId == null && Creating)
+                {
+                    // Jellyfin made the list but its id isn't recorded yet: the marker finds it (anyone's: the owner is checked below).
+                    ListId = _service._host.FindCreated(_kind, Marker, Guid.Empty)?.Id;
+                }
+
+                if (ListId is not Guid id)
+                {
+                    return null;
+                }
+
+                var access = _service._access.Resolve(id, person);
+                return access is not { Permissions.CanView: true, Permissions.CanEdit: true } || access.List.Kind != _kind
+                    || (_kind == ListKinds.Playlist && access.List.OwnerId != _user)
+                    ? ListContinuation.NotFound()
+                    : null;
+            }
+
+            /// <summary>
+            /// The one answer of a create (success, error, replay or recovery), made synchronously under the lifecycle lock
+            /// after one more check: the operation is finished and the list identified only while the operation and the
+            /// person's current access allow it. Otherwise the identity-free refusal, the same as if they never had it.
+            /// </summary>
+            /// <param name="continuation">The create's continuation.</param>
+            /// <param name="outcome">What the create came to.</param>
+            /// <returns>The answer.</returns>
+            internal ListOutcome Project(ListContinuation continuation, ListOutcome outcome)
+            {
+                lock (ListContinuation.Lifecycle)
+                {
+                    try
+                    {
+                        continuation.Check();
+                    }
+                    catch (ListAccessLostException lost)
+                    {
+                        return lost.Outcome ?? ListContinuation.NotFound();
+                    }
+
+                    var list = ListId is Guid id ? _service._host.GetList(id) : null;
+                    var result = outcome.StatusCode < 300 && list != null ? outcome.Value as ApplyResultDto : null;
+                    if (outcome.StatusCode < 300 && result == null)
+                    {
+                        return ListContinuation.NotFound();
+                    }
+
+                    if (Operation is { State: "open" or "failed" } && Start?.Conflict != true)
+                    {
+                        // A failed create stays retryable: a retry with the same request id continues with the same list.
+                        _service._operations!.Finish(Operation.Id, result != null, result != null ? 200 : outcome.StatusCode, result != null ? ResultIdentity(result) : null, _service.Now());
+                    }
+
+                    if (result != null)
+                    {
+                        return ListOutcome.Ok(new CreateListResultDto { ListId = list!.Id.ToString("N", CultureInfo.InvariantCulture), ListKind = list.Kind, Name = list.Name, Result = result });
+                    }
+
+                    if (outcome.Value is ListErrorDto error)
+                    {
+                        // The list to reload, except with an access-denied 404 (even if access came back since).
+                        var identified = outcome.StatusCode != 404 && list != null;
+                        error.ListId = identified ? list!.Id.ToString("N", CultureInfo.InvariantCulture) : null;
+                        error.ListKind = identified ? list!.Kind : null;
+                    }
+
+                    return outcome;
+                }
+            }
+        }
+
+        // The create itself, inside its continuation: it answers what happened (the list's identity is added only by
+        // CreateState.Project) and records nothing final itself.
+        private async Task<ListOutcome> ContinueCreateAsync(CreateState state, User user, string kind, string name, bool isPublic, IReadOnlyList<ApplyEntry> entries, CancellationToken cancellationToken, Func<ListAccess, ApplyHooks?>? hooks)
+        {
             // Held only once its wait succeeded: a create cancelled (or failing) while it waits releases nothing it never had.
-            SemaphoreSlim? destinationTurn = null;
-            ListOperation? operation = null;
+            IDisposable? destinationTurn = null;
             try
             {
                 string? destination = null;
@@ -1733,15 +1916,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         return _gate.CreateRefusal(user.Id);
                     }
 
-                    destination = await _host.CollectionDestinationAsync(name).ConfigureAwait(false);
+                    destination = await ListContinuation.Await(() => _host.CollectionDestinationAsync(name)).ConfigureAwait(false);
                     if (destination == null)
                     {
                         return ListOutcome.Error(500, "list_update_failed", "Jellyfin could not create the collection.");
                     }
 
-                    var waiting = _destinationLocks.GetOrAdd(destination, _ => new SemaphoreSlim(1, 1));
-                    await waiting.WaitAsync(cancellationToken).ConfigureAwait(false);
-                    destinationTurn = waiting;
+                    destinationTurn = await ListContinuation.AwaitLock(_destinationLocks.GetOrAdd(destination, _ => new SemaphoreSlim(1, 1)), cancellationToken).ConfigureAwait(false);
                 }
 
                 // A create can wait for an earlier one: the person is read again now (not disabled; collections need
@@ -1754,64 +1935,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 user = fresh;
                 ListInfo? list = null;
-                if (request != null && _operations?.Available == true)
+                // As read by the last check (after the turns were waited for), not as begun.
+                var operation = state.Operation;
+                if (operation?.ListId != null && Guid.TryParseExact(operation.ListId, "N", out var createdId))
                 {
-                    var start = _operations.Begin(user.Id, scope, request.RequestId, "create", request.Fingerprint, Now());
-                    if (start.Conflict)
+                    // A retry goes to the list the first attempt created (B10), and a completed one is answered from it.
+                    list = _host.GetList(createdId);
+                    if (list != null && (list.Kind != kind || (kind == ListKinds.Playlist && list.OwnerId != user.Id)))
                     {
-                        return IdempotencyConflict();
+                        list = null;
                     }
 
-                    operation = start.Operation;
-                    if (operation?.State == "deleted")
+                    if (list == null)
                     {
-                        return ListOutcome.Error(404, "not_found", "List not found.");
+                        // The list this operation made is gone or isn't the person's any more: nothing is made in its
+                        // place (the operation can't record another list).
+                        return ListContinuation.NotFound();
                     }
 
-                    if (operation?.ListId != null && Guid.TryParseExact(operation.ListId, "N", out var createdId))
+                    if (operation.State == "completed")
                     {
-                        // A retry goes to the list the first attempt created (B10), and a completed one is answered from it.
-                        list = _host.GetList(createdId);
-                        if (list != null && (list.Kind != kind || (kind == ListKinds.Playlist && list.OwnerId != user.Id)))
-                        {
-                            list = null;
-                        }
-
-                        if (start.Replayed && operation.State == "completed")
-                        {
-                            return list == null
-                                ? ListOutcome.Error(404, "not_found", "List not found.")
-                                : await ReplayCreatedAsync(user, list, operation, cancellationToken).ConfigureAwait(false);
-                        }
-
-                        if (list == null)
-                        {
-                            // The list this operation made is gone or isn't the person's any more: nothing is made in its
-                            // place (the operation can't record another list).
-                            return Finished(operation, ListOutcome.Error(404, "not_found", "List not found."));
-                        }
+                        return await ListContinuation.Await(() => ReplayCreatedAsync(user, list, operation, cancellationToken)).ConfigureAwait(false);
                     }
-                    else if (operation != null && start.Replayed)
+                }
+                else if (operation != null && state.Start!.Replayed)
+                {
+                    // The first attempt may have died after Jellyfin created the list but before it was recorded. Only
+                    // the list carrying this operation's marker is its own; without it nothing was made (a namesake,
+                    // anyone's, is never taken for it). A deleted one was tombstoned by its marker: the checks stop it.
+                    var made = _host.FindCreated(kind, state.Marker, user.Id);
+                    if (made != null)
                     {
-                        // The first attempt may have died after Jellyfin created the list but before it was recorded. Only
-                        // the list carrying this operation's marker is its own; without it nothing was made (a namesake,
-                        // anyone's, is never taken for it).
-                        var made = _host.FindCreated(kind, CreateMarker(operation.Id), user.Id);
-                        if (made != null)
+                        if (!_operations!.ClaimList(operation.Id, made.Id.ToString("N", CultureInfo.InvariantCulture), Now()))
                         {
-                            if (!_operations.ClaimList(operation.Id, made.Id.ToString("N", CultureInfo.InvariantCulture), Now()))
-                            {
-                                return ListOutcome.Error(409, "create_uncertain", "An earlier attempt may already have created this list. Check your lists, or create it again as a new request.");
-                            }
-
-                            _logger.Info($"[Lists] Continuing with {kind} \"{name}\" ({made.Id:N}), created by an earlier attempt that wasn't recorded.");
-                            list = made;
+                            return ListOutcome.Error(409, "create_uncertain", "An earlier attempt may already have created this list. Check your lists, or create it again as a new request.");
                         }
+
+                        _logger.Info($"[Lists] Continuing with {kind} \"{name}\" ({made.Id:N}), created by an earlier attempt that wasn't recorded.");
+                        state.ListId = made.Id;
+                        list = made;
                     }
                 }
 
-                var marker = CreateMarker(operation?.Id ?? Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
-                var markedName = CreateName(name, marker);
+                var markedName = CreateName(name, state.Marker);
                 Guid id;
                 if (list != null)
                 {
@@ -1822,25 +1988,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     if (destination != null && _host.CollectionNameTaken(destination))
                     {
                         // A collection already has the name: Jellyfin would keep both under one name in its folder.
-                        return Finished(operation, ListOutcome.Error(409, "name_taken", "A collection with this name already exists. Choose another name."));
+                        return ListOutcome.Error(409, "name_taken", "A collection with this name already exists. Choose another name.");
                     }
 
                     // Under the name carrying the marker: a folder no other list has, so nothing is replaced, and the marker
-                    // is Jellyfin's own record of which operation made the list.
+                    // is Jellyfin's own record of which operation made the list (the checks find it by the marker until
+                    // its id is recorded).
+                    state.Creating = true;
                     id = kind == ListKinds.Playlist
-                        ? await _host.CreatePlaylistAsync(_gate.CreateWrite(user, kind), markedName, isPublic).ConfigureAwait(false)
-                        : await _host.CreateCollectionAsync(_gate.CreateWrite(user, kind), markedName, marker).ConfigureAwait(false);
+                        ? await ListContinuation.Await(() => _host.CreatePlaylistAsync(_gate.CreateWrite(user, kind), markedName, isPublic)).ConfigureAwait(false)
+                        : await ListContinuation.Await(() => _host.CreateCollectionAsync(_gate.CreateWrite(user, kind), markedName, state.Marker)).ConfigureAwait(false);
+                    state.ListId = id;
                     _logger.Info($"[Lists] {user.Username} created {kind} \"{name}\" ({id:N}).");
                     if (operation != null && !_operations!.ClaimList(operation.Id, id.ToString("N", CultureInfo.InvariantCulture), Now()))
                     {
                         // Another operation recorded this list first: it isn't this create's to fill.
                         _logger.Warning($"[Lists] The {kind} {id:N} just created is recorded by another operation; nothing is applied to it.");
-                        return Finished(operation, ListOutcome.Error(409, "create_uncertain", "An earlier attempt may already have created this list. Check your lists, or create it again as a new request."));
+                        return ListOutcome.Error(409, "create_uncertain", "An earlier attempt may already have created this list. Check your lists, or create it again as a new request.");
                     }
 
                     list = _host.GetList(id) ?? new ListInfo(id, kind, markedName, kind == ListKinds.Playlist ? user.Id : Guid.Empty, isPublic, Array.Empty<ListShare>());
                 }
 
+                state.ListId = id;
                 if (string.Equals(list.Name, markedName, StringComparison.Ordinal)
                     || (_unsavedNames.ContainsKey(id) && string.Equals(list.Name, name, StringComparison.Ordinal)))
                 {
@@ -1848,7 +2018,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     // the create), or its rename wasn't saved: it gets its chosen name. The name counts once Jellyfin saved
                     // it, not when its cached item shows it. A failure leaves the operation retryable; the retry renames it.
                     _unsavedNames[id] = 0;
-                    await _host.FinishCreateAsync(_gate.FinishWrite(list, user), name).ConfigureAwait(false);
+                    await ListContinuation.Await(() => _host.FinishCreateAsync(_gate.FinishWrite(list, user), name)).ConfigureAwait(false);
                     _unsavedNames.TryRemove(id, out _);
                     list = _host.GetList(id) ?? list;
                 }
@@ -1865,64 +2035,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var access = _access.Evaluate(list, user);
                 if (!access.Permissions.CanEdit)
                 {
-                    return ListOutcome.Error(404, "not_found", "List not found.");
+                    return ListContinuation.NotFound();
                 }
 
-                var listIdN = id.ToString("N", CultureInfo.InvariantCulture);
-                var applied = await ApplyAsync(access, entries, null, null, null, cancellationToken, hooks?.Invoke(access)).ConfigureAwait(false);
+                var applied = await ListContinuation.Await(() => ApplyAsync(access, entries, null, null, null, cancellationToken, hooks?.Invoke(access))).ConfigureAwait(false);
                 if (applied.StatusCode >= 300 || applied.Value is not ApplyResultDto result)
                 {
-                    // The list exists but its entries didn't (all) apply: report the failure with the list to reload; the
-                    // operation stays retryable, so a retry with the same request id re-applies to this same list.
-                    var error = applied.Value as ListErrorDto ?? new ListErrorDto { Code = "list_update_failed", Message = "Jellyfin could not update the list." };
-                    // Validation awaits external metadata: access may have been revoked while it ran. An access-denied
-                    // 404 never identifies the recovered list, even if access was restored since the refusal.
-                    var visible = _gate.Current(access)?.Permissions.CanView == true;
-                    error.ListId = applied.StatusCode != 404 && visible ? listIdN : null;
-                    error.ListKind = applied.StatusCode != 404 && visible ? kind : null;
-                    return Finished(operation, new ListOutcome { StatusCode = applied.StatusCode >= 300 ? applied.StatusCode : 500, Value = error });
+                    // The list exists but its entries didn't (all) apply: the failure, with the list to reload (added by the
+                    // projection); the operation stays retryable, so a retry re-applies to this same list.
+                    return new ListOutcome
+                    {
+                        StatusCode = applied.StatusCode >= 300 ? applied.StatusCode : 500,
+                        Value = applied.Value as ListErrorDto ?? new ListErrorDto { Code = "list_update_failed", Message = "Jellyfin could not update the list." },
+                    };
                 }
 
-                var body = new CreateListResultDto
-                {
-                    ListId = listIdN,
-                    ListKind = kind,
-                    Name = list.Name,
-                    Result = result,
-                };
-                if (operation != null)
-                {
-                    _operations!.Finish(operation.Id, true, 200, ResultIdentity(result), Now());
-                }
-
-                return ListOutcome.Ok(body);
-            }
-            catch (ListAccessLostException lost) when (lost.Outcome != null)
-            {
-                // The gate refused the create or its name (the person was disabled or lost collection management meanwhile).
-                return Finished(operation, lost.Outcome);
+                return ListOutcome.Ok(result);
             }
             finally
             {
-                // The person's own turn is released whatever releasing the destination does.
-                try
-                {
-                    ReleaseDestination(ref destinationTurn);
-                }
-                finally
-                {
-                    turn.Release();
-                }
+                ReleaseDestination(ref destinationTurn);
             }
         }
 
         /// <summary>Releases a destination lock the create holds, once (it no longer holds it, even when the release throws).</summary>
         /// <param name="held">The lock held, or null; null afterwards.</param>
-        private static void ReleaseDestination(ref SemaphoreSlim? held)
+        private static void ReleaseDestination(ref IDisposable? held)
         {
             var release = held;
             held = null;
-            release?.Release();
+            release?.Dispose();
         }
 
         /// <summary>
@@ -1943,17 +2085,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The name to create under.</returns>
         internal static string CreateName(string name, Guid marker) => name + " (" + marker.ToString("N", CultureInfo.InvariantCulture) + ")";
 
-        // A create's answer, recorded on its operation as not completed (a retry with the same request id runs again).
-        private ListOutcome Finished(ListOperation? operation, ListOutcome outcome)
-        {
-            if (operation != null)
-            {
-                _operations!.Finish(operation.Id, false, outcome.StatusCode, null, Now());
-            }
-
-            return outcome;
-        }
-
         /// <summary>
         /// PUT /{listId}/swap-in: turns automatic swap-in on for the list (recording the caller as the person who agreed;
         /// it then also needs their own swap-in preference) or off. Needs edit rights (rechecked under the lock).
@@ -1968,12 +2099,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             // The parental lookups run before the lock (they can take seconds); under it they are read again from the
             // warmed cache with the person as they are then.
-            await _gate.VisibilityAsync(_store.Load(access.ListIdN)?.Items ?? new List<Placeholder>(), access.User, cancellationToken).ConfigureAwait(false);
-            var outcome = await RunLockedAsync(access, "swap_in", request, cancellationToken, async () =>
+            await ListContinuation.Await(() => _gate.VisibilityAsync(_store.Load(access.ListIdN)?.Items ?? new List<Placeholder>(), access.User, cancellationToken)).ConfigureAwait(false);
+            var outcome = await ListContinuation.Await(() => RunLockedAsync(access, "swap_in", request, cancellationToken, async () =>
             {
                 // The awaited parental lookups first, then the gate, with no await before the change it allows.
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
-                var checkedNow = await CheckedAsync(access, Array.Empty<Placeholder>(), doc, cancellationToken).ConfigureAwait(false);
+                var checkedNow = await ListContinuation.Await(() => CheckedAsync(access, Array.Empty<Placeholder>(), doc, cancellationToken)).ConfigureAwait(false);
                 if (checkedNow.Denied != null)
                 {
                     return checkedNow.Denied;
@@ -1983,7 +2114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var visibility = checkedNow.Visibility!;
                 if (doc.Rev != rev)
                 {
-                    return await ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken).ConfigureAwait(false);
+                    return await ListContinuation.Await(() => ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken)).ConfigureAwait(false);
                 }
 
                 doc.SwapIn = enabled
@@ -1997,8 +2128,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var saved = _store.Save(doc);
-                return await ViewOutcomeAsync(access, saved, canonical, visibility, cancellationToken).ConfigureAwait(false);
-            }).ConfigureAwait(false);
+                return await ListContinuation.Await(() => ViewOutcomeAsync(access, saved, canonical, visibility, cancellationToken)).ConfigureAwait(false);
+            })).ConfigureAwait(false);
             if (enabled && outcome.StatusCode < 300)
             {
                 _swap?.QueuePass(access.ListIdN, null, MetadataMode.None);
@@ -2011,7 +2142,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // (through the gate: nothing when they can no longer see it).
         private async Task<ListOutcome> ReplayCreatedAsync(User user, ListInfo list, ListOperation operation, CancellationToken cancellationToken)
         {
-            var view = await ViewAsync(_access.Evaluate(list, user), cancellationToken).ConfigureAwait(false);
+            var view = await ListContinuation.Await(() => ViewAsync(_access.Evaluate(list, user), cancellationToken)).ConfigureAwait(false);
             if (view == null)
             {
                 return ListOutcome.Error(404, "not_found", "List not found.");
@@ -2019,7 +2150,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             var result = ReadResult(operation.Result);
             result.View = view;
-            return ListOutcome.Ok(new CreateListResultDto { ListId = list.Id.ToString("N", CultureInfo.InvariantCulture), ListKind = list.Kind, Name = list.Name, Result = result });
+            return ListOutcome.Ok(result);
         }
 
         // ── Helpers ──────────────────────────────────────────────────────────
@@ -2267,14 +2398,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             var current = _store.Load(access.ListIdN);
             var canonical = access.List.Kind == ListKinds.Playlist ? Canonical(access, current) : null;
-            var view = await _gate.ProjectAsync(access, current?.Items ?? new List<Placeholder>(), visibility, grant => BuildView(grant, current, canonical), cancellationToken).ConfigureAwait(false);
+            var view = await ListContinuation.Await(() => _gate.ProjectAsync(access, current?.Items ?? new List<Placeholder>(), visibility, grant => BuildView(grant, current, canonical), cancellationToken)).ConfigureAwait(false);
             return view == null ? ListOutcome.Error(404, "not_found", "List not found.") : ListOutcome.Error(409, code, message, view);
         }
 
         // A change's answer: the list as the caller may see it now; 404 when they can no longer see it (the change stands).
         private async Task<ListOutcome> ViewOutcomeAsync(ListAccess access, ListDoc? doc, IReadOnlyList<string>? canonical, PlaceholderVisibility visibility, CancellationToken cancellationToken)
         {
-            var view = await _gate.ProjectAsync(access, doc?.Items ?? new List<Placeholder>(), visibility, grant => BuildView(grant, doc, canonical), cancellationToken).ConfigureAwait(false);
+            var view = await ListContinuation.Await(() => _gate.ProjectAsync(access, doc?.Items ?? new List<Placeholder>(), visibility, grant => BuildView(grant, doc, canonical), cancellationToken)).ConfigureAwait(false);
             return view == null ? ListOutcome.Error(404, "not_found", "List not found.") : ListOutcome.Ok(view);
         }
 
@@ -2327,7 +2458,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private async Task<ListOutcome> RunLockedAsync(ListAccess access, string kind, ListRequestKey? request, CancellationToken cancellationToken, Func<Task<ListOutcome>> body)
         {
-            using (await _store.LockAsync(access.ListIdN, cancellationToken).ConfigureAwait(false))
+            using (await ListContinuation.Await(() => _store.LockAsync(access.ListIdN, cancellationToken)).ConfigureAwait(false))
             {
                 ListOperation? operation = null;
                 if (request != null && _operations?.Available == true)
@@ -2340,7 +2471,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                     if (start.Replayed && start.Operation!.State == "completed")
                     {
-                        return await ReplayAsync(access, start.Operation, cancellationToken).ConfigureAwait(false);
+                        return await ListContinuation.Await(() => ReplayAsync(access, start.Operation, cancellationToken)).ConfigureAwait(false);
                     }
 
                     operation = start.Operation;
@@ -2353,7 +2484,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     return ListOutcome.Error(404, "not_found", "List not found.");
                 }
 
-                var outcome = await body().ConfigureAwait(false);
+                var outcome = await ListContinuation.Await(() => body()).ConfigureAwait(false);
                 if (operation != null)
                 {
                     // A failed operation stays retryable (the same request id runs it again); a finished one is replayed.
@@ -2375,7 +2506,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             var doc = _store.Load(current.ListIdN);
             var canonical = current.List.Kind == ListKinds.Playlist ? Canonical(current, doc) : null;
-            var view = await _gate.ProjectAsync(current, doc?.Items ?? new List<Placeholder>(), null, grant => BuildView(grant, doc, canonical), cancellationToken).ConfigureAwait(false);
+            var view = await ListContinuation.Await(() => _gate.ProjectAsync(current, doc?.Items ?? new List<Placeholder>(), null, grant => BuildView(grant, doc, canonical), cancellationToken)).ConfigureAwait(false);
             if (view == null)
             {
                 return ListOutcome.Error(404, "not_found", "List not found.");

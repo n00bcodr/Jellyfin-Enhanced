@@ -68,11 +68,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             if (host.SupportsPositionalInsert)
             {
                 var position = ListOrder.RawInsertPosition(host.GetRawEntries(listId), anchor);
-                await host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, position).ConfigureAwait(false);
+                await ListContinuation.Await(() => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, position)).ConfigureAwait(false);
             }
             else
             {
-                await host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, null).ConfigureAwait(false);
+                await ListContinuation.Await(() => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, null)).ConfigureAwait(false);
                 var raw = host.GetRawEntries(listId);
                 var current = ListOrder.BuildRealTokens(raw);
                 var previous = anchor;
@@ -90,7 +90,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var moves = ListOrder.FindMoves(raw, itemId, target, VisibleToOwner) ?? Array.Empty<int>();
                     foreach (var newIndex in moves)
                     {
-                        await host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex).ConfigureAwait(false);
+                        await ListContinuation.Await(() => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex)).ConfigureAwait(false);
                     }
 
                     if (moves.Count > 0)
@@ -116,7 +116,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var moves = ListOrder.FindMoves(actualRaw, items[0], target, VisibleToOwner) ?? Array.Empty<int>();
                 foreach (var newIndex in moves)
                 {
-                    await host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { items[0] }), items[0], newIndex).ConfigureAwait(false);
+                    await ListContinuation.Await(() => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { items[0] }), items[0], newIndex)).ConfigureAwait(false);
                 }
 
                 if (moves.Count > 0)
@@ -209,7 +209,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var moves = ListOrder.FindMoves(raw, itemId, target, VisibleToOwner) ?? Array.Empty<int>();
                 foreach (var newIndex in moves)
                 {
-                    await host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex).ConfigureAwait(false);
+                    await ListContinuation.Await(() => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex)).ConfigureAwait(false);
                 }
 
                 if (moves.Count > 0)

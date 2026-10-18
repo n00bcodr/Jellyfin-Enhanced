@@ -846,6 +846,14 @@ a change that loses the list on the way is `404 not_found` (`403 forbidden` with
 one that already wrote to Jellyfin answers its results without the list (`view` left out, the caller's new entries
 skipped as `accessLost`); a placeholder their limits hide meanwhile is skipped as `blocked`; a library item
 someone lost meanwhile is `409 access_changed` with the fresh view.
+A create (its retry and recovery included) and a swap-in pass are each one continuation: after every await, and
+right before every write and the answer, the create's operation and the caller's current access (a pass: its list, with
+the agreeing editor's rights checked at every Jellyfin write) are read again, under the same lock deletion takes. Deletion marks the list's create operation and its create marker (the folder name or provider id
+Jellyfin keeps) at once, also when the server stopped before it recorded the new list; a deleted create answers the
+same identity-free `404 not_found`, writes nothing more to Jellyfin, and stays deleted if Jellyfin re-adds the folder
+under the same item id. A create answers `listId`, `listKind` and `name` only while the operation and the caller's
+current access allow it; one that lost access meanwhile answers like one that never had it. A restore stops create and
+swap-in work that started before it; a retry with the same request id continues from the restored state.
 
 | Method and path | Who | Body / answer |
 |---|---|---|

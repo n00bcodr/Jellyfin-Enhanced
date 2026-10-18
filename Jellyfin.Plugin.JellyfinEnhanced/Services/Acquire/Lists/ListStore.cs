@@ -60,6 +60,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly ConcurrentDictionary<string, ListDoc> _cache = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, byte> _absent = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, byte> _backedUp = new(StringComparer.Ordinal);
+        // How often each list was removed natively (under the lifecycle lock): a swap pass stops when its list's count moves.
+        private readonly ConcurrentDictionary<string, long> _removed = new(StringComparer.Ordinal);
 
         // Guards publishing to _cache/_absent: a lock-free cold read only publishes what it read when no Save/Delete
         // of that list happened meanwhile (per-list generation), so it can never put an older revision back.
@@ -206,7 +208,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// </summary>
         /// <param name="doc">The document (a <see cref="LoadForUpdate"/> copy).</param>
         /// <returns>The saved document (now the shared cached instance).</returns>
-        public ListDoc Save(ListDoc doc)
+        public ListDoc Save(ListDoc doc) => ListContinuation.Write(() => SaveCore(doc));
+
+        private ListDoc SaveCore(ListDoc doc)
         {
             ArgumentNullException.ThrowIfNull(doc);
             EnsureValid(doc.ListId);
@@ -365,9 +369,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>
         /// Forgets every cached document and the reverse index (a restore wrote documents behind the store's back): the
-        /// next read of each list comes from disk. Takes no locks; writers that raced the restore save over it as usual.
+        /// next read of each list comes from disk. Takes no list locks; writers that raced the restore save over it as usual.
         /// </summary>
         public void InvalidateAll()
+        {
+            // Under the lifecycle lock: a create or swap continuation started before the restore stops at its next step.
+            lock (ListContinuation.Lifecycle)
+            {
+                RestoreVersion++;
+                InvalidateCached();
+            }
+        }
+
+        /// <summary>Gets how many restores this store has seen (a continuation started before one stops).</summary>
+        internal long RestoreVersion { get; private set; }
+
+        /// <summary>Gets or sets the test seam called at each completed await of a create or swap continuation.</summary>
+        internal Action<string>? Awaited { get; set; }
+
+        /// <summary>How often the list was removed natively.</summary>
+        /// <param name="listIdN">List ("N").</param>
+        /// <returns>The count.</returns>
+        internal long RemovalVersion(string listIdN) => _removed.GetValueOrDefault(listIdN);
+
+        /// <summary>Counts a native removal of the list (call under <see cref="ListContinuation.Lifecycle"/>).</summary>
+        /// <param name="listIdN">List ("N").</param>
+        internal void Removed(string listIdN) => _removed.AddOrUpdate(listIdN, 1, (_, version) => version + 1);
+
+        private void InvalidateCached()
         {
             lock (_cacheLock)
             {

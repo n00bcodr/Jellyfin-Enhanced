@@ -66,7 +66,7 @@ internal sealed class ListGateWalk
         var trees = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f[root.Length..].Split(Path.DirectorySeparatorChar).Any(d => d is "obj" or "bin"))
             .OrderBy(f => f, StringComparer.Ordinal)
-            .Select(f => CSharpSyntaxTree.ParseText(SourceText.From(File.ReadAllText(f)), options, f))
+            .Select(f => CSharpSyntaxTree.ParseText(SourceText.From(Unwrap(File.ReadAllText(f))), options, f))
             .Append(CSharpSyntaxTree.ParseText("global using System; global using System.Collections.Generic; global using System.IO; global using System.Linq; global using System.Net.Http; global using System.Threading; global using System.Threading.Tasks;", options, "ImplicitUsings.cs"));
         var paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator).Concat(Directory.EnumerateFiles(AppContext.BaseDirectory, "*.dll")))
@@ -91,6 +91,22 @@ internal sealed class ListGateWalk
 
         return CSharpCompilation.Create("Jellyfin.Plugin.JellyfinEnhanced", trees, paths.Values.Select(p => MetadataReference.CreateFromFile(p)),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable, allowUnsafe: true));
+    }
+
+    // Runtime await boundaries are independently checked and injected by ListsContinuationTests. This walk remains
+    // defence in depth for the underlying access gates; transparent synchronous task factories are lowered before
+    // analysis so a CheckedAsync call still belongs to the function that awaits its result.
+    private static string Unwrap(string source) => new TaskFactories().Visit(CSharpSyntaxTree.ParseText(source).GetRoot())!.ToFullString();
+
+    private sealed class TaskFactories : CSharpSyntaxRewriter
+    {
+        public override SyntaxNode? VisitInvocationExpression(InvocationExpressionSyntax node)
+        {
+            var rewritten = (InvocationExpressionSyntax)base.VisitInvocationExpression(node)!;
+            return rewritten.Expression.ToString() == "ListContinuation.Await"
+                && rewritten.ArgumentList.Arguments.FirstOrDefault()?.Expression is ParenthesizedLambdaExpressionSyntax { Body: ExpressionSyntax body }
+                ? body.WithTriviaFrom(rewritten) : rewritten;
+        }
     }
 
     /// <summary>The same plugin with one file's text changed (a planted bypass).</summary>

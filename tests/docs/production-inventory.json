@@ -531,6 +531,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListContinuation.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListDatabase.cs",
       "category": "Services"
     },
@@ -10145,7 +10149,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 568,
+    "files": 569,
     "routes": 269,
     "configuration_properties": 605,
     "storage_references": 87,
