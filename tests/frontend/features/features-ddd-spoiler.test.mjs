@@ -7,13 +7,13 @@ const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const topic = 'A major character dies';
 const entry = { Found: true, Confirmed: true, ItemId: 123, Topics: [{ Id: 1, Name: topic, Yes: 9, No: 1 }] };
 const stub = revision => ({ Guarded: true, PolicyRevision: revision, Topics: [] });
-async function setup(t, { id = 'library-movie', guarded = true } = {}) {
+async function setup(t, { id = 'library-movie', guarded = true, ajax = async () => ({ Triggers: [] }), firstRender = true } = {}) {
   let view, switched, user = 'viewer-a';
   const calls = [], pending = [];
   let policy = 'p1';
   const h = createHarness({ html: '<div id="itemDetailPage"><div class="itemExternalLinks"></div></div>',
     url: `http://jellyfin.test/web/index.html#/details?id=${id}`,
-    apiClient: { getCurrentUserId: () => user, getItem: async () => ({ Type: 'Movie', ProviderIds: { Tmdb: '123' } }), ajax: async () => ({ Triggers: [] }) },
+    apiClient: { getCurrentUserId: () => user, getItem: async () => ({ Type: 'Movie', ProviderIds: { Tmdb: '123' } }), ajax },
     JE: { pluginConfig: { DoesTheDogDieEnabled: true, SpoilerBlurEnabled: true }, t: key => en[key] || key,
       helpers: { onViewPage: cb => { view = cb; return () => {}; } },
       session: { getEpoch: () => user, isCurrent: epoch => epoch === user, onUserChange: (key, cb) => { switched = cb; } },
@@ -28,7 +28,7 @@ async function setup(t, { id = 'library-movie', guarded = true } = {}) {
     } });
   t.after(() => h.close()); h.load('others/doesthedogdie.js'); h.JE.initializeDoesTheDogDieScript();
   const render = async () => { await view(null, h.document.getElementById('itemDetailPage'), h.window.location.hash); await new Promise(r => setTimeout(r, 30)); };
-  await render();
+  if (firstRender) await render();
   return { ...h, calls, render, pending, change: () => { policy = 'p2'; guarded = true; h.window.dispatchEvent(new h.window.Event('je:spoiler-changed')); },
     switchUser: () => { user = 'viewer-b'; switched?.(); } };
 }
@@ -58,6 +58,20 @@ test('DDD a reveal request in flight cannot render for the incoming viewer', asy
   show.click(); assert.ok(h.calls.at(-1).path.includes('reveal=true'), 'the reveal is actually in flight');
   h.switchUser(); gate.resolve();
   await new Promise(r => setTimeout(r, 30)); assert.ok(!h.document.body.textContent.includes(topic));
+});
+test('DDD the outgoing viewer\'s trigger picks, read late, never become the incoming viewer\'s', async t => {
+  const outgoing = deferred(), reads = [];
+  const ajax = async ({ url }) => { reads.push(url); return url.includes('/viewer-a/') ? outgoing.promise : { Triggers: [] }; };
+  const h = await setup(t, { guarded: false, ajax, firstRender: false });
+  h.render(); // viewer A's page waits on A's trigger read
+  for (let i = 0; i < 100 && !reads.some(u => u.includes('/viewer-a/')); i++) await new Promise(r => setTimeout(r, 10));
+  assert.ok(reads.some(u => u.includes('/viewer-a/')), "A's trigger read is in flight");
+  h.switchUser(); await h.render();
+  const summary = () => h.document.querySelector('.je-ddd-sum')?.textContent;
+  assert.equal(summary(), en.ddd_summary_all, 'B has no picks');
+  outgoing.resolve({ Triggers: [1] }); await new Promise(r => setTimeout(r, 30));
+  await h.render();
+  assert.equal(summary(), en.ddd_summary_all, "A's picks stay A's after B's page is drawn again");
 });
 // Other locales come from Weblate; the per-key English fallback (translations.js) covers keys they don't have yet.
 test('every key the DDD module and the one-season toast use exists in English', () => {

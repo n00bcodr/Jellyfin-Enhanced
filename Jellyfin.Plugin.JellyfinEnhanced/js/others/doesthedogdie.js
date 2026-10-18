@@ -76,7 +76,10 @@
 
         async function loadPicked() {
             if (picked) return picked;
-            picked = new Set();
+            // Filled through its own reference: after a user change `picked` is the next viewer's set, and a late
+            // reply must not add this viewer's private picks to it.
+            const mine = new Set();
+            picked = mine;
             try {
                 const userId = ApiClient.getCurrentUserId();
                 const doc = await ApiClient.ajax({
@@ -84,11 +87,11 @@
                     url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/ddd-triggers.json?_=${Date.now()}`),
                     dataType: 'json'
                 });
-                (doc?.Triggers || []).forEach((id) => picked.add(id));
+                if (picked === mine && ApiClient.getCurrentUserId() === userId) (doc?.Triggers || []).forEach((id) => mine.add(id));
             } catch (e) {
                 console.warn(`${logPrefix} Could not load your triggers.`, e);
             }
-            return picked;
+            return mine;
         }
 
         function chip(topic) {
