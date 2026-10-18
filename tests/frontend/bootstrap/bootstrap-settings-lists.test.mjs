@@ -161,7 +161,7 @@ test('a consent operation never retains a display save that failed ahead of it',
     if (request.type === 'POST') return new Promise((_, reject) => { fail = () => reject(new Error('display refused')); });
     return Promise.resolve({ consents: { ListSwapIn: true } });
   };
-  h.wire();h.expectConsoleError(/Failed to save settings.json/);
+  h.wire();
   await h.choose('listStatusSelect', 'off');
   await h.choose('listSwapInSelect', 'on');
   fail();await new Promise(done => setImmediate(done));

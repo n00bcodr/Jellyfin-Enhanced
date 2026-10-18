@@ -244,9 +244,9 @@
                 if (JE.pluginConfig?.ArrListsEnabled !== true) return;
                 const value = event.target.value === 'on' ? true : event.target.value === 'off' ? false : null;
                 const save = key === 'listSwapIn' ? JE.setPersonalConsent(key, value === true, { throwOnError: true })
-                    : JE.updateSettings({ [key]: value });
-                save.then(() => { if (scope.isCurrent()) JE.toast(JE.t('toast_list_settings_saved')); })
-                    .catch(err => { if (scope.isCurrent()) console.warn('🪼 Jellyfin Enhanced: list settings save failed', err); });
+                    : JE.updateSettings({ [key]: value }, { throwOnError: true });
+                save.then(() => { if (scope.session.isCurrent()) JE.toast(JE.t('toast_list_settings_saved')); })
+                    .catch(err => { if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: list settings save failed', err); });
                 resetAutoCloseTimer();
             });
         }
@@ -256,16 +256,12 @@
             listen(document.getElementById(id), 'change', async (event) => {
                 if (JE.pluginConfig?.ArrAcquisitionBadgesEnabled !== true) return;
                 const value = event.target.value === 'off' ? false : null;
-                const epoch = JE.session?.getEpoch?.();
-                const userId = typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : undefined;
-                const sameSession = () => (epoch === undefined || JE.session.isCurrent(epoch))
-                    && (userId === undefined || ApiClient.getCurrentUserId?.() === userId);
                 resetAutoCloseTimer();
                 try {
                     await JE.updateSettings({ [key]: value }, { throwOnError: true });
-                    if (sameSession()) JE.toast(JE.t('toast_badge_settings_saved'));
+                    if (scope.session.isCurrent()) JE.toast(JE.t('toast_badge_settings_saved'));
                 } catch (err) {
-                    if (sameSession()) console.warn('🪼 Jellyfin Enhanced: badge settings save failed', err);
+                    if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: badge settings save failed', err);
                 }
             });
         }
@@ -359,6 +355,7 @@
             (async () => {
                 try {
                     const cultures = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' });
+                    if (!scope.isCurrent()) return;
                     const seen = new Set();
                     cultures
                         .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
@@ -377,6 +374,7 @@
                 }
                 // Read the setting only now: the user may have picked one of the
                 // fixed choices while the list was loading.
+                if (!scope.isCurrent()) return;
                 const saved = JE.currentSettings.qualityTagsPreferredAudioLanguage || '';
                 // A saved code the list doesn't offer (e.g. a hand-edited pt-BR) still shows as selected.
                 if (saved && !Array.from(audioLangSelect.options).some(o => o.value === saved)) {
@@ -550,6 +548,7 @@
                         isUnsupportedFormat = !!activeStream && NON_TEXT_CODECS.has((activeStream.Codec || '').toLowerCase());
                     } catch (e) { /* leave hidden on failure */ }
 
+                    if (!scope.isCurrent()) return;
                     const applyFormatWarningState = () => {
                         formatWarning.style.display = (stylesEnabled() && isUnsupportedFormat) ? 'flex' : 'none';
                     };
@@ -720,7 +719,7 @@
             const userId = ApiClient.getCurrentUserId();
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=Playlist,BoxSet&Recursive=true&SortBy=SortName`), dataType: 'json' })
                 .then(async response => {
-                    if (!sourceSelect.isConnected) return; // panel closed before the list arrived
+                    if (!scope.isCurrent() || !sourceSelect.isConnected) return; // panel closed before the list arrived
                     const groups = { Playlist: 'panel_settings_random_button_source_playlists', BoxSet: 'panel_settings_random_button_source_collections' };
                     for (const [type, labelKey] of Object.entries(groups)) {
                         const items = (response?.Items || []).filter(item => item.Type === type);
@@ -735,7 +734,7 @@
                     // case the button still draws from it, so show its real name.
                     if (savedId && sourceSelect.value !== savedId) {
                         const saved = await ApiClient.getItem(userId, savedId).catch(() => null);
-                        if (!sourceSelect.isConnected || JE.currentSettings.randomSourceId !== savedId) return;
+                        if (!scope.isCurrent() || !sourceSelect.isConnected || JE.currentSettings.randomSourceId !== savedId) return;
                         const label = saved && ['Playlist', 'BoxSet'].includes(saved.Type)
                             ? saved.Name
                             : JE.t('panel_settings_random_button_source_missing');
@@ -750,7 +749,7 @@
             });
         }
 
-        listen(document.getElementById('releaseNotesBtn'), 'click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
+        listen(document.getElementById('releaseNotesBtn'), 'click', async () => { await showReleaseNotesNotification(); if (scope.isCurrent()) resetAutoCloseTimer(); });
 
         // --- Position Selectors ---
         const positionSelectors = help.querySelectorAll('.position-selector');

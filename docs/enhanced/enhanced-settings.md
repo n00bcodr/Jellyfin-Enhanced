@@ -154,3 +154,5 @@ Configured under **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **E
 | **Record Catch Up activity** | On | Logs who swiped what to `catchup-log.jsonl`; administrators read it in the page's Activity panel. Turn off to record nothing |
 
 Unfinished subtitle-position drags are cancelled when the panel closes or the signed-in session changes. Releasing an old mouse or touch gesture cannot save into the next session.
+
+A display-language save that has already been sent finishes syncing the browser language and reloading the page even if you close the panel. Changing the signed-in session cancels those browser follow-ups. A failed save keeps the previous browser language.

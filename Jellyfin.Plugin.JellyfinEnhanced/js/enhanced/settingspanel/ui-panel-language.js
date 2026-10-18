@@ -52,6 +52,8 @@
                         ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' })
                     ]);
 
+                    if (!scope.isCurrent()) return;
+
                     // Check GitHub for any new locale files added since the last plugin release (1 request)
                     try {
                         const ghResp = await fetch('https://api.github.com/repos/n00bcodr/Jellyfin-Enhanced/contents/Jellyfin.Plugin.JellyfinEnhanced/js/locales');
@@ -69,6 +71,7 @@
                         }
                     } catch (_) { /* GitHub unavailable, server list is sufficient */ }
 
+                    if (!scope.isCurrent()) return;
                     const cultureMap = {};
                     cultures.forEach(c => {
                         cultureMap[c.TwoLetterISOLanguageName.toLowerCase()] = c;
@@ -100,6 +103,8 @@
                 } catch (err) {
                     console.warn('🪼 Jellyfin Enhanced: Failed to load language options:', err);
                 }
+
+                if (!scope.isCurrent()) return;
 
                 // Normalize saved language code with region support (e.g., zh-HK) when available
                 let normalizedLanguage = '';
@@ -140,9 +145,14 @@
                 const translationExists = true;
 
                 // Save to settings.json (use base language code)
-                await JE.updateSettings({ displayLanguage: newLang });
+                try {
+                    await JE.updateSettings({ displayLanguage: newLang }, { throwOnError: true });
+                } catch (err) {
+                    if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: language settings save failed', err);
+                    return;
+                }
 
-                if (!scope.isCurrent()) return;
+                if (!scope.session.isCurrent()) return;
 
                 // Save to localStorage (use the same code)
                 if (fullCultureCode) {
@@ -157,7 +167,7 @@
                 } else {
                     JE.toast(JE.t('toast_language_changed'));
                 }
-                setTimeout(() => { if (scope.isCurrent()) window.location.reload(); }, 1500);
+                setTimeout(() => { if (scope.session.isCurrent()) window.location.reload(); }, 1500);
             });
         }
 
@@ -179,7 +189,7 @@
                 cacheKeys.forEach(key => localStorage.removeItem(key));
 
                 JE.toast(JE.t('toast_translation_cache_cleared', { count: cacheKeys.length }));
-                setTimeout(() => window.location.reload(), 2000);
+                setTimeout(() => { if (scope.session.isCurrent()) window.location.reload(); }, 2000);
                 resetAutoCloseTimer();
             });
         }

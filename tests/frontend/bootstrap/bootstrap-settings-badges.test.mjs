@@ -256,7 +256,7 @@ for (const [id, key, value, initial] of [
   h.wire();
   const held = deferred();
   h.window.ApiClient.ajax = request => request.type === 'POST' ? held.promise : Promise.resolve([]);
-  h.expectConsoleError(/Failed to save settings.json/);
+  if (id !== 'listStatusSelect') h.expectConsoleError(/Failed to save settings.json/);
   const input = h.document.getElementById(id);
   if (input.type === 'checkbox') input.checked = value; else input.value = value;
   input.dispatchEvent(new h.window.Event('change', { bubbles: true }));
@@ -419,5 +419,136 @@ for (const id of ['acquisitionBadgesSelect', 'subtitlePositionReset', 'pauseScre
     control.dispatchEvent(new h.window.Event(id === 'subtitlePositionReset' ? 'click' : 'change', { bubbles: true }));
     await new Promise(done => setImmediate(done));
     assert.equal(h.writes.length, 0);
+  });
+}
+
+// Review round 8: a submitted write outlives its panel, but never its identity session.
+const tick = () => new Promise(done => setImmediate(done));
+function completionSession(h) {
+  let epoch = 1, user = 'user-a', server = 'server-a';
+  h.window.ApiClient.getCurrentUserId = () => user;
+  h.JE.session = { getEpoch: () => epoch, getServerId: () => server, isCurrent: n => n === epoch };
+  return boundary => {
+    if (boundary === 'close') h.panelCleanups.forEach(cleanup => cleanup());
+    else if (boundary === 'user switch') user = 'user-b';
+    else if (boundary === 'server switch') server = 'server-b';
+    else epoch++;
+  };
+}
+async function languagePanel(t) {
+  const h = panel(t, { config: badges, settings: { displayLanguage: 'en' } });
+  const transition = completionSession(h), timers = [];
+  h.window.localStorage.setItem('user-a-language', 'en');
+  h.window.localStorage.setItem('user-b-language', 'en');
+  h.window.setTimeout = (callback, ms) => { timers.push({ callback, ms }); return timers.length; };
+  h.window.fetch = async () => ({ ok: false });
+  h.window.ApiClient.ajax = async request => request.url.includes('/locales') ? ['en', 'fr'] : [];
+  h.load('enhanced/settingspanel/ui-panel-language.js');
+  h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} });
+  await tick();
+  const held = deferred();
+  h.window.ApiClient.ajax = request => { if (request.type === 'GET') return Promise.resolve([]); h.writes.push(request); return held.promise; };
+  await h.choose('displayLanguageSelect', 'fr');
+  assert.equal(h.writes.length, 1, 'POST has been submitted before the boundary');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'en');
+  return { ...h, held, transition, timers };
+}
+function expectReload(h, expected) {
+  const before = h.errors.length;
+  h.timers.filter(timer => timer.ms === 1500).forEach(timer => timer.callback());
+  const errors = h.errors.splice(before);
+  assert.equal(errors.length, expected ? 1 : 0, 'reload reaches the browser only in the captured session');
+  if (expected) assert.match(errors[0].message, /Not implemented: navigation/);
+}
+for (const boundary of ['close', 'user switch', 'same-user new epoch', 'server switch']) {
+  test(`submitted French save completes under its session after ${boundary}`, async t => {
+    const h = await languagePanel(t);
+    h.transition(boundary);
+    h.held.resolve();
+    await tick();
+    const current = boundary === 'close';
+    assert.equal(h.window.localStorage.getItem('user-a-language'), current ? 'fr' : 'en');
+    assert.equal(h.window.localStorage.getItem('user-b-language'), 'en');
+    assert.equal(h.toasts.length, current ? 1 : 0);
+    assert.equal(h.timers.filter(timer => timer.ms === 1500).length, current ? 1 : 0);
+    expectReload(h, current);
+  });
+  test(`French reload scheduled after success respects later ${boundary}`, async t => {
+    const h = await languagePanel(t);
+    h.held.resolve(); await tick();
+    assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+    h.transition(boundary);
+    expectReload(h, boundary === 'close');
+  });
+}
+test('failed French save does not mirror or reload after close', async t => {
+  const h = await languagePanel(t);
+  h.transition('close');
+  h.allowConsoleError('Failed to save settings.json');
+  h.held.reject(new Error('save failed')); await tick();
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'en');
+  assert.equal(h.toasts.length, 0);
+  assert.equal(h.timers.length, 0);
+});
+for (const id of ['listPlaceholdersSelect', 'listStatusSelect', 'listSwapInSelect', 'acquisitionBadgesSelect', 'nativeAcquisitionStampsSelect']) {
+  for (const boundary of ['close', 'user switch', 'same-user new epoch', 'server switch']) {
+    test(`${id} submitted save follow-up survives only panel close: ${boundary}`, async t => {
+      const h = panel(t, { config: { ...badges, ArrListsEnabled: true, ArrListStatusEnabled: true, ArrListSwapInEnabled: true } });
+      const transition = completionSession(h), held = deferred();
+      h.window.ApiClient.ajax = request => { if (request.type === 'GET') return Promise.resolve([]); h.writes.push(request); return held.promise; };
+      h.wire();
+      await h.choose(id, id === 'listSwapInSelect' ? 'on' : 'off');
+      assert.equal(h.writes.length, 1);
+      transition(boundary); held.resolve(); await tick();
+      assert.equal(h.toasts.length, boundary === 'close' ? 1 : 0);
+    });
+  }
+}
+
+test('failed French save in an open panel does not mirror or reload', async t => {
+  const h = await languagePanel(t);
+  h.allowConsoleError('Failed to save settings.json');
+  h.held.reject(new Error('save failed')); await tick();
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'en');
+  assert.equal(h.toasts.length, 0);
+  assert.equal(h.timers.length, 0);
+});
+
+for (const boundary of ['close', 'user switch', 'same-user new epoch', 'server switch']) {
+  test(`clear translation cache reload respects its captured session after ${boundary}`, async t => {
+    const h = panel(t), transition = completionSession(h), timers = [];
+    h.window.setTimeout = callback => { timers.push(callback); return timers.length; };
+    h.load('enhanced/settingspanel/ui-panel-language.js');
+    // Isolate the cache button from unrelated locale enumeration.
+    h.document.getElementById('displayLanguageSelect').remove();
+    h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} });
+    h.document.getElementById('clearTranslationCacheButton').click();
+    transition(boundary);
+    const before = h.errors.length;
+    timers.forEach(callback => callback());
+    const errors = h.errors.splice(before);
+    assert.equal(errors.length, boundary === 'close' ? 1 : 0);
+    if (errors.length) assert.match(errors[0].message, /Not implemented: navigation/);
+  });
+}
+test('async view work cannot install a listener after cleanup', t => {
+  const h = panel(t), ctx = { panelCleanups: h.panelCleanups };
+  const scope = h.JE.internals.settingsPanelScope(ctx), target = h.document.createElement('input');
+  let added = 0;
+  target.addEventListener = () => added++;
+  scope.close();
+  scope.listen(target, 'change', () => {});
+  assert.equal(added, 0);
+});
+for (const id of ['listPlaceholdersSelect', 'listStatusSelect', 'listSwapInSelect']) {
+  test(`${id} failed submitted save never reports saved after close`, async t => {
+    const h = panel(t, { config: { ArrListsEnabled: true, ArrListStatusEnabled: true, ArrListSwapInEnabled: true } });
+    const held = deferred();
+    h.wire();
+    h.window.ApiClient.ajax = () => held.promise;
+    h.allowConsoleError('Failed to save settings.json');
+    await h.choose(id, id === 'listSwapInSelect' ? 'on' : 'off'); h.panelCleanups.forEach(cleanup => cleanup());
+    held.reject(new Error('save failed')); await tick();
+    assert.equal(h.toasts.length, 0);
   });
 }

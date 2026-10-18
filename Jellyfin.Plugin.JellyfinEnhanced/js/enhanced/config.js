@@ -50,19 +50,26 @@
     };
     JE.session?.onUserChange?.('settings-store', clearDocuments);
 
+    /** Capture the user/server/epoch for work that may finish after its panel closes. */
+    JE.internals.settingsSessionScope = () => {
+        const captured = currentIdentity();
+        return { isCurrent: () => currentIdentity() === captured };
+    };
+
     /**
      * Bind panel callbacks to their opening identity/epoch and lifetime. Closing cancels gestures
      * and removes every registered listener, including document/window callbacks and detached controls.
      * @param {object} ctx Panel context; panelCleanups is drained on every host close path.
-     * @returns {object} Shared lifetime, guarded listener registration and cleanup registration.
+     * @returns {object} View lifetime/listeners/cleanup plus a session scope for submitted save completions.
      */
     JE.internals.settingsPanelScope = ctx => {
         if (ctx.settingsScope) return ctx.settingsScope;
         settingsDocument('settings.json');
-        const captured = currentIdentity(), cleanups = [];
+        const session = JE.internals.settingsSessionScope(), cleanups = [];
         let closed = false;
         const scope = {
-            isCurrent: () => !closed && currentIdentity() === captured,
+            session,
+            isCurrent: () => !closed && session.isCurrent(),
             onCleanup: cleanup => cleanups.push(cleanup),
             close: () => {
                 if (closed) return;
@@ -71,7 +78,7 @@
                 panelScopes.delete(scope);
             },
             listen: (target, type, handler, options) => {
-                if (!target) return;
+                if (!target || !scope.isCurrent()) return;
                 const guarded = event => { if (scope.isCurrent()) return handler(event); };
                 target.addEventListener(type, guarded, options);
                 cleanups.push(() => target.removeEventListener(type, guarded, options));
