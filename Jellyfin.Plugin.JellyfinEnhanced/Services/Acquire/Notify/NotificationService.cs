@@ -828,7 +828,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // Rows read from here on are only written back to the same database (not a restored one).
             var generation = _store.Generation;
             var scopes = interest.Scope != null ? new Dictionary<TitleKey, ArrStatusService.RequestScope> { [key] = interest.Scope } : null;
+            using var bound = CopyLookupBound.Track();
             var composed = (await _status.ComposeForAsync(viewer, new[] { key }, scopes, cancellationToken).ConfigureAwait(false)).FirstOrDefault();
+            // A copy lookup that reached its scan bound is not "not here": nothing is remembered from it (the next look reads again).
+            if (bound.Reached) return;
             var stage = composed?.Status.Stage ?? "hidden";
             var scopeName = interest.Scope?.Only4k == true ? "m4k" : "m";
             var mark = "ready|" + key + "|" + scopeName;
@@ -925,7 +928,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             Guid? seriesItem = null;
             var seriesItems = new HashSet<string>(StringComparer.Ordinal);
             var files = new List<(Guid Series, JfEpisode Episode)>();
-            foreach (var copy in SeriesCopies(key, viewer, interest.Only4k))
+            using var bound = CopyLookupBound.Track();
+            var seriesCopies = SeriesCopies(key, viewer, interest.Only4k);
+            // As for a movie: a lookup that reached its scan bound leaves the watch (what is here) as it was.
+            if (bound.Reached) return;
+            foreach (var copy in seriesCopies)
             {
                 seriesItem ??= copy.ItemId;
                 if (copy.ItemId != Guid.Empty) seriesItems.Add(copy.ItemId.ToString("N", CultureInfo.InvariantCulture));
@@ -1240,11 +1247,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // Only what the viewer can still open (a library or parental limit may have changed), each
             // number linked to an episode item the viewer can open now: the one stored when it was
             // batched while it is still visible, else the copy that still is.
+            using var bound = CopyLookupBound.Track();
             var copies = SeriesCopies(title, viewer, only4k);
             foreach (var joined in state.Keys)
             {
                 if (TitleKey.Parse(joined) is { } k) copies.AddRange(SeriesCopies(k, viewer, only4k));
             }
+            // A copy lookup that reached its scan bound: the batch is kept for the next round, never dropped as gone.
+            if (bound.Reached) return false;
             copies = copies.DistinctBy(c => c.ItemId).ToList();
             var open = new Dictionary<(int, int), HashSet<Guid>>();
             var files = copies.SelectMany(copy => _view.Episodes(copy.ItemId, null, viewer, includeVirtual: false))

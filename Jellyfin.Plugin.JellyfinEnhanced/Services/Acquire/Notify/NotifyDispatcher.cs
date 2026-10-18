@@ -228,6 +228,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>How many alerts due at once for one person on one channel go out as one summary.</summary>
         internal const int SummaryAt = 4;
 
+        /// <summary>How long an alert whose check met a copy lookup's scan bound waits before it is looked at again.</summary>
+        internal static readonly TimeSpan BoundRetry = TimeSpan.FromMinutes(15);
+
         // Whether a delivery may go out now: held by quiet hours (postponed), no longer for the recipient (suppressed), or
         // ready with its message and link. Held back by quiet hours, a batch window or retries: whether the recipient may
         // still get it is decided now, not when it was queued.
@@ -240,7 +243,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 return (prefs, null, null);
             }
             var payload = new Dictionary<string, string>(Payload(delivery.Payload));
-            if (Suppression(delivery, prefs, payload, out var itemId) is { } reason)
+            string? reason;
+            string? itemId;
+            using (var bound = CopyLookupBound.Track())
+            {
+                reason = Suppression(delivery, prefs, payload, out itemId);
+                if (bound.Reached)
+                {
+                    // A copy lookup that reached its scan bound says neither "still theirs" nor "gone": the alert stays
+                    // pending and is looked at again later, and the round goes on to the others.
+                    _store.Postpone(delivery.Id, _now() + BoundRetry, delivery.Generation);
+                    return (prefs, null, null);
+                }
+            }
+            if (reason != null)
             {
                 _store.Suppress(delivery.Id, reason, delivery.Generation);
                 return (prefs, null, null);

@@ -632,10 +632,12 @@ The advanced fields are server-owned. Quota and preset settings govern JE mode; 
 | `ArrRequestUsers` | `{}` | Per-user `Role`, `QuotaLimit`, `QuotaGb` and `FourKInstances` overrides |
 
 Copy lookups count at most 20 distinct copies in current enabled libraries, after excluding retained rows from removed
-paths. Native queries read pages of 100 rows, at most 10 pages per provider query (up to four provider queries for aliases).
-Reaching the row or provider-query bound before exhaustion or the copy budget makes the lookup unknown; it is not cached as absent or
-used to fulfil a request. Status reads return HTTP 503 with `library_lookup_unknown` and no stored response, so a later
-read can retry. These bounds are fixed and do not add a setting.
+paths. Native queries read pages of 100 rows for the title and each of its aliases. A lookup stops at 1,000 rows under
+current locations of libraries the viewer can open (rows from removed paths or libraries they can't open never count),
+or after 100 pages of any rows. A lookup that stops there reports no copy found for that read only: status, Requests
+and Discover answers composed from it are not cached (the next read looks again), it never makes a request
+Ready or fulfilled, alerts that depend on it stay pending, and it is logged once per title per hour. Real libraries
+don't come near these bounds. These bounds are fixed and do not add a setting.
 
 ??? info "Per-role and per-user JSON, 4K, and size estimates"
     For example, the roles JSON can be `{"Manager":{"FourKInstances":["your-4k-instance-id"]}}`; the users JSON is keyed by

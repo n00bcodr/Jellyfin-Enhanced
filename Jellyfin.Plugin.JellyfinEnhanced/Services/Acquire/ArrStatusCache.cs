@@ -63,10 +63,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
         }
 
-        /// <summary>Stores a body (the ETag is computed from the key and the bytes) and returns it.</summary>
+        /// <summary>
+        /// Stores a body (the ETag is computed from the key and the bytes) and returns it. A body composed from a copy
+        /// lookup that reached its scan bound (<see cref="CopyLookupBound"/>) is returned with the same ETag but not kept,
+        /// so the next read scans again.
+        /// </summary>
         public StatusBody Put(string key, byte[] json)
         {
             var body = new StatusBody(json, ETagFor(key, json));
+            if (CopyLookupBound.Reached) return body;
             lock (_lock)
             {
                 if (_map.TryGetValue(key, out var existing))

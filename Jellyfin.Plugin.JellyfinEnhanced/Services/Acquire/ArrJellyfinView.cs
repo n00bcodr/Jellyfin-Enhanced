@@ -36,11 +36,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Native rows per copy-query page; the eligible copy budget is separate.</summary>
         internal const int CopyPageSize = 100;
 
-        /// <summary>At most 1000 native rows per provider query (at most four queries).</summary>
-        internal const int CopyScanPages = 10;
+        /// <summary>
+        /// The copy scan bound: native rows the viewer may observe (under a current location of a library they may
+        /// open) per lookup. Rows retained from removed paths and rows of libraries they can't open never count, so
+        /// reaching it can't tell hidden records apart from absence.
+        /// </summary>
+        internal const int CopyObservableBound = 1000;
+
+        /// <summary>The work ceiling: native pages per lookup, every row counted, so a lookup always ends.</summary>
+        internal const int CopyPageCeiling = 100;
 
         private const int CopyBudget = 20;
-        private const int CopyProviderQueries = 4;
+        private static readonly TimeSpan BoundLogEvery = TimeSpan.FromHours(1);
+        private const int BoundLogTitles = 256;
+        private readonly Dictionary<string, DateTimeOffset> _boundLogged = new(StringComparer.Ordinal);
 
         /// <summary>Creates the view and starts following library changes.</summary>
         public ArrJellyfinView(ILibraryManager libraryManager, IUserManager userManager, ILogger<ArrJellyfinView>? logger = null)
@@ -55,6 +64,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <inheritdoc />
         public long Revision => Interlocked.Read(ref _revision);
+
+        /// <summary>Observable rows per lookup before the scan bound (<see cref="CopyObservableBound"/>; tests lower it).</summary>
+        internal int ObservableBound { get; set; } = CopyObservableBound;
+
+        /// <summary>Native pages per lookup before the work ceiling (<see cref="CopyPageCeiling"/>; tests lower it).</summary>
+        internal int PageCeiling { get; set; } = CopyPageCeiling;
+
+        /// <summary>The clock of the once-per-title-per-hour bound log (tests move it).</summary>
+        internal Func<DateTimeOffset> Clock { get; set; } = () => DateTimeOffset.UtcNow;
 
         /// <inheritdoc />
         public StatusViewer? Viewer(Guid userId)
@@ -207,12 +225,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var queries = TitleAliases.ProviderQueries(titleKey, aliases ?? Array.Empty<TitleKey>(), maxQueries: null);
             var items = new List<BaseItem>();
             var found = new HashSet<Guid>();
-            foreach (var providers in queries.Take(CopyProviderQueries))
+            int pages = 0, rowsRead = 0, observable = 0, searched = 0;
+            string? bound = null;
+            foreach (var providers in queries)
             {
-                if (items.Count == CopyBudget) break;
-                var exhausted = false;
-                for (var page = 0; page < CopyScanPages; page++)
+                if (items.Count == CopyBudget || bound != null) break;
+                searched++;
+                for (var page = 0; ; page++)
                 {
+                    if (pages == PageCeiling)
+                    {
+                        bound = "work ceiling of " + PageCeiling.ToString(CultureInfo.InvariantCulture) + " native pages";
+                        break;
+                    }
                     // A native limit precedes LibraryOf. Retained or duplicate rows must not spend the
                     // eligible budget. Explicit, unchanged ordering keeps offsets stable between pages.
                     var rows = _libraryManager.GetItemList(new InternalItemsQuery
@@ -225,27 +250,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         OrderBy = new[] { (ItemSortBy.SortName, SortOrder.Ascending), (ItemSortBy.DateCreated, SortOrder.Ascending) },
                         DtoOptions = new DtoOptions(false),
                     });
+                    pages++;
+                    rowsRead += rows.Count;
                     foreach (var item in rows)
                     {
-                        if (LibraryOf(item, viewer, libraries, includeHidden: true) == null || !found.Add(item.Id)) continue;
+                        // LibraryOf(includeHidden) membership: a current location of a current library. Only rows of a
+                        // library the viewer may open count toward the bound (Jellyfin's query has no current-location
+                        // filter, and live rows of other libraries stay policy facts, so the count is taken here).
+                        var roots = CurrentRoots(item, libraries);
+                        if (roots.Count == 0) continue;
+                        if (roots.Exists(f => libraries[f.Id].Openable)) observable++;
+                        if (!found.Add(item.Id)) continue;
                         items.Add(item);
                         if (items.Count == CopyBudget) break;
                     }
-                    exhausted = rows.Count < CopyPageSize;
-                    if (exhausted || items.Count == CopyBudget) break;
-                }
-                if (!exhausted && items.Count < CopyBudget)
-                {
-                    // A full last page is not evidence of absence, even when every row was filtered.
-                    // Propagate uncertainty before any caller can compose/cache absence or fulfil a request.
-                    _logger?.LogWarning("Jellyfin copy lookup reached its {Rows}-row scan bound with {Copies} eligible copies; availability is unknown.", CopyPageSize * CopyScanPages, items.Count);
-                    throw new IncompleteLibraryScanException();
+                    // A full page is not evidence of absence, even when every row was filtered.
+                    if (rows.Count < CopyPageSize || items.Count == CopyBudget) break;
+                    if (observable >= ObservableBound)
+                    {
+                        bound = "bound of " + ObservableBound.ToString(CultureInfo.InvariantCulture) + " observable native rows";
+                        break;
+                    }
                 }
             }
-            if (items.Count < CopyBudget && queries.Count > CopyProviderQueries)
+            if (bound != null)
             {
-                _logger?.LogWarning("Jellyfin copy lookup reached its {Queries}-provider-query bound with {Copies} eligible copies; availability is unknown.", CopyProviderQueries, items.Count);
-                throw new IncompleteLibraryScanException();
+                // No eligible copy found, for this read only: no partial hits, never cached as absence, no credit.
+                ReachedBound(titleKey, bound, pages, rowsRead, observable, items.Count, searched, queries.Count);
+                return Array.Empty<JfCopy>();
             }
             var copies = new List<JfCopy>(items.Count);
             foreach (var item in items)
@@ -480,6 +512,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private Folder? LibraryOf(BaseItem item, StatusViewer viewer, IReadOnlyDictionary<Guid, LiveLibrary> libraries,
             bool includeHidden = false, bool requireLibraryAccess = false, string? sourcePath = null)
         {
+            var path = PhysicalPath(item, sourcePath);
+            if (path == null) return null;
+            var folders = CurrentRoots(item, libraries, path);
+            var library = folders.FirstOrDefault(f => libraries[f.Id].Openable);
+            if (library == null && includeHidden && !requireLibraryAccess) library = folders.FirstOrDefault();
+            if (library == null) return null;
+            return includeHidden || viewer.IsLibraryContext || (viewer.Handle is User user && _libraryManager.GetItemById<BaseItem>(item.Id, user) != null)
+                ? library : null;
+        }
+
+        /// <summary>
+        /// The physical path membership is judged by: the source's, the item's own, or for a pathless season or episode
+        /// its own nearest physical parent's (never a grouped presentation-key peer's). Null when there is none.
+        /// </summary>
+        private static string? PhysicalPath(BaseItem item, string? sourcePath = null)
+        {
             var path = sourcePath ?? item.Path;
             if (string.IsNullOrEmpty(path) && item is Season or Episode)
             {
@@ -491,15 +539,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     parent = parent.GetParent();
                 }
             }
-            if (string.IsNullOrEmpty(path)) return null;
-            var folders = _libraryManager.GetCollectionFolders(item)
+            return string.IsNullOrEmpty(path) ? null : path;
+        }
+
+        /// <summary>
+        /// The current enabled libraries whose CURRENT locations hold the item physically (the membership part of
+        /// <see cref="LibraryOf"/>, before access and item policy). Empty for a row retained from a removed path.
+        /// </summary>
+        private List<Folder> CurrentRoots(BaseItem item, IReadOnlyDictionary<Guid, LiveLibrary> libraries, string? path = null)
+        {
+            path ??= PhysicalPath(item);
+            if (path == null) return new List<Folder>();
+            return _libraryManager.GetCollectionFolders(item)
                 .Where(f => libraries.TryGetValue(f.Id, out var live) && live.Locations.Any(p => BridgePaths.IsUnder(path, p)))
                 .ToList();
-            var library = folders.FirstOrDefault(f => libraries[f.Id].Openable);
-            if (library == null && includeHidden && !requireLibraryAccess) library = folders.FirstOrDefault();
-            if (library == null) return null;
-            return includeHidden || viewer.IsLibraryContext || (viewer.Handle is User user && _libraryManager.GetItemById<BaseItem>(item.Id, user) != null)
-                ? library : null;
+        }
+
+        /// <summary>
+        /// A copy lookup reached its bound: the flow's watches are told (<see cref="CopyLookupBound"/>), and it is logged
+        /// once per title per hour with the bound and counts (no viewer, library or path).
+        /// </summary>
+        private void ReachedBound(TitleKey key, string bound, int pages, int rows, int observable, int copies, int searched, int queries)
+        {
+            CopyLookupBound.Note();
+            var now = Clock();
+            var title = key.Title.ToString();
+            lock (_boundLogged)
+            {
+                if (_boundLogged.TryGetValue(title, out var last) && now - last < BoundLogEvery) return;
+                if (_boundLogged.Count >= BoundLogTitles)
+                {
+                    foreach (var old in _boundLogged.Where(e => now - e.Value >= BoundLogEvery).Select(e => e.Key).ToList()) _boundLogged.Remove(old);
+                    if (_boundLogged.Count >= BoundLogTitles) _boundLogged.Clear();
+                }
+                _boundLogged[title] = now;
+            }
+            _logger?.LogWarning(
+                "Jellyfin copy lookup for {Title} reached its {Bound} ({Pages} pages, {Rows} native rows, {Observable} observable rows, {Copies} eligible copies, {Searched} of {Queries} provider queries); this read reports no eligible copy and is not cached.",
+                title, bound, pages, rows, observable, copies, searched, queries);
         }
 
         /// <summary>The item only when the shared current-location and visibility predicate accepts it.</summary>

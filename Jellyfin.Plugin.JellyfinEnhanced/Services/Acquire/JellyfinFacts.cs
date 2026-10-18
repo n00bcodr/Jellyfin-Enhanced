@@ -1,16 +1,60 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
     /// <summary>
-    /// A bounded native lookup ended before exhaustion or the eligible budget. Availability is unknown:
-    /// callers must retry later, never cache absence or grant Ready/fulfilment credit from this lookup.
+    /// Copy lookups (<see cref="IArrJellyfinView.Copies"/>) that reached their scan bound in the current flow: an
+    /// HTTP read, a notification round, a recipe run. Such a lookup reports no eligible copy, which is the answer for
+    /// that read only: whatever is composed from it is never cached or stored as absence (the next read scans again),
+    /// and a background decision that would act on absence waits for a conclusive read. Work that keeps or acts on
+    /// lookups starts a <see cref="Track"/> watch around them; the lookup calls <see cref="Note"/>.
     /// </summary>
-    public sealed class IncompleteLibraryScanException : InvalidOperationException
+    public static class CopyLookupBound
     {
-        /// <summary>Creates a lookup failure without disclosing title, library, path or viewer details.</summary>
-        public IncompleteLibraryScanException() : base("Jellyfin copy availability is unknown because a native lookup bound was reached.") { }
+        private static readonly AsyncLocal<Watch?> Current = new();
+
+        /// <summary>True when a lookup reached its bound in the current flow since the innermost watch began.</summary>
+        public static bool Reached => Current.Value?.Reached == true;
+
+        /// <summary>Starts a watch for this flow (and the work it awaits); dispose it when the work is done.</summary>
+        /// <returns>The watch.</returns>
+        public static Watch Track()
+        {
+            var watch = new Watch(Current.Value);
+            Current.Value = watch;
+            return watch;
+        }
+
+        /// <summary>A lookup reached its bound: every watch of the flow sees it.</summary>
+        internal static void Note()
+        {
+            for (var watch = Current.Value; watch != null; watch = watch.Parent) watch.Reached = true;
+        }
+
+        /// <summary>One watch over a piece of work.</summary>
+        public sealed class Watch : IDisposable
+        {
+            private int _reached;
+
+            internal Watch(Watch? parent) => Parent = parent;
+
+            internal Watch? Parent { get; }
+
+            /// <summary>True when a lookup of the work reached its bound.</summary>
+            public bool Reached
+            {
+                get => Volatile.Read(ref _reached) == 1;
+                internal set => Volatile.Write(ref _reached, value ? 1 : 0);
+            }
+
+            /// <summary>Ends the watch (the enclosing one, if any, is current again).</summary>
+            public void Dispose()
+            {
+                if (ReferenceEquals(Current.Value, this)) Current.Value = Parent;
+            }
+        }
     }
 
     /// <summary>
@@ -243,9 +287,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// Every Jellyfin movie (or series) carrying the key's provider id, or any of its
         /// <paramref name="aliases"/> (the title's other ids, <see cref="TitleAliases"/>), in any
         /// current library: the key's kind only, once per item, up to twenty eligible copies. Native
-        /// query limits apply after current-library membership, with bounded paging.
+        /// query limits apply after current-library membership, with bounded paging. A scan that reaches its
+        /// bound reports no copy for this read and tells <see cref="CopyLookupBound"/> (never cached as absence).
         /// </summary>
-        /// <exception cref="IncompleteLibraryScanException">The scan bound prevented a conclusive lookup; never an absent result.</exception>
         IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null);
 
         /// <summary>

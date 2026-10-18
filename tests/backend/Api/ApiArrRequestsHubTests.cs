@@ -211,6 +211,21 @@ public class ApiArrRequestsHubTests
     }
 
     [Fact]
+    public async Task ATitleWhoseCopyLookupReachesItsBoundStillLeavesEveryRequestOnThePage()
+    {
+        // Dune's copy lookup reads rows retained from removed paths past the native work ceiling (edition round 6):
+        // the page answers 200 with every one of Emma's requests, and nothing is cached from that read.
+        using var library = new IntegrationEditionOrphanTests.Library();
+        IntegrationEditionBoundTests.Rows(library, IntegrationEditionBoundTests.PastTheCeiling, live: false, id: "693134");
+        using var rig = await Ready(r => r.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == "movie:tmdb:693134" ? library.View.Copies(key, viewer, aliases) : null);
+        rig.Service.Cache.Clear();
+        var emma = await Hub(rig, rig.Emma);
+        Assert.Equal(200, emma.Status);
+        Assert.Equal(new[] { "Waiting Film", "Dune: Part Two", "Agent 327", "Said No Film" }, Entries(Root(emma).GetProperty("mine")).Select(e => e.Title));
+        Assert.Equal(0, rig.Service.Cache.Count);
+    }
+
+    [Fact]
     public async Task EachMemberSeesOnlyTheirOwnRequestsGroupedWithTheirStatus()
     {
         using var rig = await Ready();

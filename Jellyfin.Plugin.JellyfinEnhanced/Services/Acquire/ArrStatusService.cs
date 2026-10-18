@@ -770,6 +770,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal async Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null, Func<Func<StatusBody>, StatusBody>? responseGate = null)
         {
             var titles = keys.Select(k => k.Title).Distinct().ToList();
+            // As in GatedAsync: a page composed from a lookup that reached its bound is answered, never cached.
+            using var bound = CopyLookupBound.Track();
             var gather = await GatherAsync(viewer, titles, loadEpisodes: loadEpisodes, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
             if (Current(viewer) is not { } now) throw new ViewerChangedException();
             return responseGate != null ? responseGate(Respond) : Respond();
@@ -1094,6 +1096,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private async Task<T> GatedAsync<TPrepared, T>(StatusViewer viewer, Func<StatusViewer, Task<TPrepared>> prepare, Func<StatusViewer, TPrepared, T> answer, Func<StatusViewer, T> refused, bool again = true)
         {
+            // A copy lookup that reached its scan bound answers "no copy" for this read: nothing composed from it is cached.
+            using var bound = CopyLookupBound.Track();
             var prepared = viewer;
             for (var attempt = 0; attempt < GateAttempts; attempt++)
             {

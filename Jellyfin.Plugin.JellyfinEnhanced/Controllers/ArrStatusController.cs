@@ -62,9 +62,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (detail && (keyList.Count != 1 || idList.Count > 0)) return BadRequest(new { code = "detail_needs_one_key" });
 
             using var scope = _service.Store.BeginRequest("acquire/status");
-            return await Read(() => detail
-                ? _service.ForKeyDetailAsync(viewer, keyList[0], cancellationToken)
-                : _service.ForBatchAsync(viewer, idList, keyList, cancellationToken)).ConfigureAwait(false);
+            var body = detail
+                ? await _service.ForKeyDetailAsync(viewer, keyList[0], cancellationToken).ConfigureAwait(false)
+                : await _service.ForBatchAsync(viewer, idList, keyList, cancellationToken).ConfigureAwait(false);
+            return Send(body);
         }
 
         /// <summary>The full status of one Jellyfin item for its details page (journey; seasons on a series; episodes on a season); an empty list for items without one.</summary>
@@ -85,7 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var absent = await pages.ResolveAsync(viewer.UserId, id, cancellationToken).ConfigureAwait(false);
                 if (absent.Outcome == AbsentLookup.Found && absent.Title != null)
                 {
-                    return await Read(() => _service.ForAbsentAsync(viewer, absent.Title, cancellationToken)).ConfigureAwait(false);
+                    return Send(await _service.ForAbsentAsync(viewer, absent.Title, cancellationToken).ConfigureAwait(false));
                 }
 
                 if (absent.Outcome != AbsentLookup.NotAbsent) return Send(_service.Empty(viewer, id));
@@ -93,7 +94,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             // Items the caller can't see (or that have no status: other types, no provider id) get an
             // empty list, never a 404 that would tell them apart.
-            return await Read(() => _service.ForItemAsync(viewer, id, cancellationToken)).ConfigureAwait(false);
+            var body = await _service.ForItemAsync(viewer, id, cancellationToken).ConfigureAwait(false);
+            return Send(body);
         }
 
         /// <summary>
@@ -126,37 +128,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             using var scope = _service.Store.BeginRequest("acquire/status/arrival");
-            try
-            {
-                var arrived = _service.ArrivedItem(viewer, title, shown, series);
-                // What one person may open right now: never kept by a browser or proxy.
-                Response.Headers["Cache-Control"] = "private, no-store";
-                return Ok(new { itemId = arrived?.ToString("N", CultureInfo.InvariantCulture) });
-            }
-            catch (IncompleteLibraryScanException)
-            {
-                return UnknownLibrary();
-            }
-        }
-
-        /// <summary>An incomplete native scan is retryable uncertainty, without an absent body or ETag.</summary>
-        private async Task<IActionResult> Read(Func<Task<StatusBody>> lookup)
-        {
-            try
-            {
-                return Send(await lookup().ConfigureAwait(false));
-            }
-            catch (IncompleteLibraryScanException)
-            {
-                return UnknownLibrary();
-            }
-        }
-
-        /// <summary>Retryable uncertainty carries neither cached absence nor a validator.</summary>
-        private IActionResult UnknownLibrary()
-        {
-            Response.Headers.CacheControl = "private, no-store";
-            return StatusCode(503, new { code = "library_lookup_unknown" });
+            var arrived = _service.ArrivedItem(viewer, title, shown, series);
+            // What one person may open right now: never kept by a browser or proxy.
+            Response.Headers["Cache-Control"] = "private, no-store";
+            return Ok(new { itemId = arrived?.ToString("N", CultureInfo.InvariantCulture) });
         }
 
         // A person only (never an API key or an unknown user).

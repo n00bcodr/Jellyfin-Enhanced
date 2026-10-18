@@ -474,7 +474,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (status == null) return AutoRequestOutcome.Noop("next_season_unknown", seriesKey.ToString());
                 if (status.IsAvailable) return AutoRequestOutcome.Noop("already_available", seriesKey.ToString());
             }
-            if (_recorder!.EpisodesInLibrary(seriesKey, nextSeasonNumber, user.Id) >= nextCount)
+            var have = _recorder!.EpisodesInLibrary(seriesKey, nextSeasonNumber, user.Id);
+            if (have == null)
+            {
+                return AutoRequestOutcome.Noop("library_lookup_incomplete", seriesKey.ToString());
+            }
+            if (have >= nextCount)
             {
                 return AutoRequestOutcome.Noop("already_available", seriesKey.ToString());
             }

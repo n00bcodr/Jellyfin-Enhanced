@@ -10,7 +10,7 @@
     'use strict';
 
     const SURFACE = 'details';
-    /** Pauses before asking again after a failed re-read (the page keeps following meanwhile). */
+    /** Pauses before asking again after a failed read (a re-read keeps following meanwhile); the last one repeats. */
     const RETRY_MS = [5000, 15000, 60000];
     let current = null; // { page, itemId, epoch, userId, serverId, controller, loading, dirty, quiet, unsubscribe, retries, retryTimer }
     let started = false;
@@ -119,7 +119,9 @@
      * Loads and renders the status of the details page shown now (once per item; again on refresh).
      * A re-read of the item shown (a change was reported) keeps following the title until its
      * answer arrives; if it fails, the page keeps what it shows, keeps following and asks again
-     * after a pause, so one failed request doesn't end the live updates of the page view.
+     * after a pause, so one failed request doesn't end the live updates of the page view. A failed
+     * first read (a dropped connection, a 5xx) is asked again after the same pauses too, not left quiet;
+     * view events meanwhile don't add requests.
      * @param {boolean} [force] Fetch even if this item is already shown.
      * @returns {Promise<void>}
      */
@@ -145,7 +147,7 @@
             if (force) current.dirty = true;
             return;
         }
-        if (!force && current && (page.querySelector(`.je-arr-status[data-je-arr-surface="${SURFACE}"]`) || current.quiet)) return;
+        if (!force && current && (page.querySelector(`.je-arr-status[data-je-arr-surface="${SURFACE}"]`) || current.quiet || current.retryTimer)) return;
         // The subscription of the item shown is handed over until the new answer replaces it.
         const previous = force ? current : null;
         const kept = previous ? previous.unsubscribe : null;
@@ -163,8 +165,8 @@
             const data = await JE.arrStatus.fetchItem(itemId, controller.signal);
             if (current !== state) return;
             if (!sameContext(state)) { stop(); return; }
-            if (!data && kept) {
-                // The re-read failed (or timed out): keep what is shown and the subscription, ask again later.
+            if (!data && (kept || JE.arrStatus?.enabled())) {
+                // The read failed (or timed out): keep what is shown and the subscription (if any), ask again later.
                 state.retries = retries + 1;
                 state.retryTimer = setTimeout(() => {
                     state.retryTimer = null;
@@ -191,8 +193,8 @@
                     if (moving) return;
                     state.unsubscribe = null;
                 }
-                // Nothing to show (a person, collection or album page, an item without provider ids, or a
-                // failed first request): don't ask again for this page view, and drop what was shown.
+                // Nothing to show (a person, collection or album page, an item without provider ids, or the
+                // status surfaces were switched off): don't ask again for this page view, and drop what was shown.
                 state.quiet = true;
                 clear();
                 JE.internals?.arrStatusEpisodes?.clear?.();

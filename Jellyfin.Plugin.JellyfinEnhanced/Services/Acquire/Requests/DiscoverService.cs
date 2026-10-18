@@ -230,6 +230,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         public async Task<DiscoverAnswer?> DiscoverAsync(StatusViewer viewer, string list, string type, int page, string? language, CancellationToken ct)
         {
+            // Cards whose copy lookup reached its scan bound read "not in the library" for this answer only (see Store).
+            using var bound = CopyLookupBound.Track();
             var lang = Lang(language);
             var hidden = Hidden(viewer.UserId);
             var cacheKey = CacheKey(viewer, list + "|" + type + "|" + page + "|" + lang, hidden);
@@ -272,6 +274,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>One page of free-text search (movies and series only), or null when TMDB could not answer.</summary>
         public async Task<DiscoverAnswer?> SearchAsync(StatusViewer viewer, string query, int page, string? language, CancellationToken ct)
         {
+            // Cards whose copy lookup reached its scan bound read "not in the library" for this answer only (see Store).
+            using var bound = CopyLookupBound.Track();
             var lang = Lang(language);
             var hidden = Hidden(viewer.UserId);
             var cacheKey = CacheKey(viewer, "search|" + page + "|" + lang + "|" + query, hidden);
@@ -636,8 +640,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private DiscoverAnswer? Cached(string key)
             => _cache.TryGetValue(key, out var entry) && _now() - entry.At < CacheTtl ? entry.Answer : null;
 
+        // Not an answer composed from a copy lookup that reached its bound: the next read looks again.
         private void Store(string key, DiscoverAnswer answer)
         {
+            if (CopyLookupBound.Reached) return;
             var now = _now();
             if (_cache.Count >= MaxCacheEntries)
             {

@@ -151,6 +151,9 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
         return !Withdrawn(seriesItemId, viewer) && (copies.Count == 0 || copies.Any(c => c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId)));
     }
 
+    /// <summary>Answers Copies instead of the in-memory copies when it returns a list (tests route one title to a real ArrJellyfinView).</summary>
+    public Func<TitleKey, StatusViewer, IReadOnlyCollection<TitleKey>?, IReadOnlyList<JfCopy>?>? CopiesFrom { get; set; }
+
     /// <summary>The keys every Copies call looked for (the key first, then its aliases of the same kind).</summary>
     public List<IReadOnlyList<string>> CopyQueries { get; } = new();
 
@@ -158,6 +161,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
     {
         OnCopies?.Invoke();
+        if (CopiesFrom?.Invoke(titleKey, viewer, aliases) is { } routed) return routed;
         var keys = new[] { titleKey }.Concat(aliases ?? Array.Empty<TitleKey>()).Where(k => k.IsMovie == titleKey.IsMovie).Select(k => k.Title.ToString()).Distinct().ToList();
         CopyQueries.Add(keys);
         var seen = new HashSet<Guid>();

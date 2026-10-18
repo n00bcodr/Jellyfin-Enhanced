@@ -171,7 +171,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var key = TitleKey.ForMovie(nextMovieInfo.TmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture), null)!;
             if (ledger)
             {
-                if (_recorder!.InLibrary(key, user.Id))
+                var inLibrary = _recorder!.InLibrary(key, user.Id);
+                if (inLibrary == null)
+                {
+                    return AutoRequestOutcome.Noop("library_lookup_incomplete", key.ToString());
+                }
+                if (inLibrary == true)
                 {
                     return AutoRequestOutcome.Noop("already_available", key.ToString());
                 }

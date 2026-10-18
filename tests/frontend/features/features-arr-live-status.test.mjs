@@ -350,6 +350,34 @@ test('a failed live re-read keeps the page following its title (and asks again),
   assert.equal(h.document.querySelectorAll('.je-arr-status').length, 0);
 });
 
+test('a failed first read asks again after growing pauses instead of leaving the page quiet; view events add no requests', async t => {
+  let mode = 'fail';
+  const h = setup(t, {
+    html: detailsHtml, hash: '#/details?id=movie1',
+    responses: path => !path.startsWith('/acquire/status/item/movie1') ? null : mode === 'fail' ? null : moviePill(42)
+  });
+  h.JE.arr.live.seed('e1', 5);
+  // The first read fails (a dropped connection, a 5xx): nothing drawn, and view events meanwhile don't ask again.
+  await h.JE.internals.arrStatusDetails.update(false);
+  await h.JE.internals.arrStatusDetails.update(false);
+  assert.equal(h.statusCalls.length, 1);
+  assert.equal(h.document.querySelectorAll('.je-arr-status').length, 0);
+  // It asks again after 5 s; failing again, the next pause is longer (15 s).
+  await h.tick(5000);
+  assert.equal(h.statusCalls.length, 2);
+  await h.tick(5000);
+  assert.equal(h.statusCalls.length, 2);
+  mode = 'ok';
+  await h.tick(15000);
+  assert.equal(h.statusCalls.length, 3);
+  const section = h.document.querySelector('.detailSection');
+  assert.match(section.textContent, /Downloading · 42%/);
+  // From then on the page follows its title like any other.
+  await h.tick();
+  const poll = h.open();
+  assert.deepEqual([...poll.body.keys], ['movie:tmdb:1']);
+});
+
 test('a title Jellyfin knows by another id follows the key the feed announces it under', async t => {
   let percent = 10;
   const h = setup(t, { html: detailsHtml, hash: '#/details?id=movie1', responses: path => path.startsWith('/acquire/status/item/movie1') ? { items: [{ ...moviePill(percent).items[0], key: 'movie:imdb:tt1', liveKey: 'movie:tmdb:1' }] } : null });

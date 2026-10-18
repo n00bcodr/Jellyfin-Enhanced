@@ -25,20 +25,20 @@ public class IntegrationEditionOrphanTests
     private static readonly TitleKey Matrix = TitleKey.Parse("movie:tmdb:603")!;
     private static readonly TitleKey Firefly = TitleKey.Parse("tv:tvdb:78874")!;
 
-    private sealed class MovieFile : Movie
+    internal sealed class MovieFile : Movie
     {
         public List<MediaSourceInfo> Files { get; } = new();
         public override List<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => Files;
     }
 
-    private sealed class EpisodeFile : Episode
+    internal sealed class EpisodeFile : Episode
     {
         protected override bool IsActiveRecording() => false;
         public List<MediaSourceInfo> Files { get; } = new();
         public override List<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => Files;
     }
 
-    private sealed class Library : IDisposable
+    internal sealed class Library : IDisposable
     {
         public Mock<ILibraryManager> Manager { get; } = new();
         public Mock<IUserManager> Users { get; } = new();
@@ -119,7 +119,7 @@ public class IntegrationEditionOrphanTests
         public void Dispose() { View.Dispose(); BaseItem.LibraryManager = _previous; BaseItem.ConfigurationManager = _previousConfiguration; BaseItem.FileSystem = _previousFileSystem; }
     }
 
-    private static MediaSourceInfo File(Video item, int width) => new()
+    internal static MediaSourceInfo File(Video item, int width) => new()
     {
         Id = item.Id.ToString("N"), Path = item.Path, Protocol = MediaProtocol.File, Type = MediaSourceType.Default,
         MediaStreams = new List<MediaStream> { new() { Type = MediaStreamType.Video, Width = width, Height = width == 3840 ? 2160 : 1080 } },
@@ -455,7 +455,7 @@ public class IntegrationEditionOrphanTests
     }
 
     /// <summary>A native page really limits BEFORE LibraryOf, including duplicates and retained orphan rows.</summary>
-    private static List<BaseItem> PagedRows(Library l, int orphans, bool series, bool live = true)
+    internal static List<BaseItem> PagedRows(Library l, int orphans, bool series, bool live = true)
     {
         var rows = new List<BaseItem>();
         for (var n = 0; n < orphans; n++)
@@ -531,51 +531,6 @@ public class IntegrationEditionOrphanTests
         Assert.True(queries.Sum(q => q.Limit ?? 0) > 25);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task NonExhaustedScanIsUnknownAndCannotCacheAbsenceOrFulfil(bool partial)
-    {
-        using var l = new Library();
-        using var lab = new IntegrationRequestArrivalsTests.Lab(fourK: true, jellyfin: l.View);
-        var viewer = l.Person(lab.Emma); l.Person(lab.Admin); l.Person(lab.Kid);
-        PagedRows(l, 25, false, live: false);
-        await lab.Warm();
-        lab.Policy.Adjust = (_, _, policy) => policy with { Can4k = true };
-        var request = await lab.Ask(lab.Emma, new MutationInput { Key = Matrix.ToString(), Variant = "4k" });
-        var rows = PagedRows(l, 1001, false, live: false);
-        if (partial) rows.Insert(0, l.Hd);
-        Assert.ThrowsAny<InvalidOperationException>(() => l.View.Copies(Matrix, viewer));
-        Assert.ThrowsAny<InvalidOperationException>(() => lab.Status.Editions.Available(viewer, Matrix, Edition.FourK));
-        lab.Status.Cache.Clear();
-        await Assert.ThrowsAnyAsync<InvalidOperationException>(() => lab.Status.ForKeyDetailAsync(viewer, Matrix, default));
-        Assert.Equal(0, lab.Status.Cache.Count);
-        var controller = new Jellyfin.Plugin.JellyfinEnhanced.Controllers.ArrStatusController(lab.Status)
-        {
-            ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
-            {
-                HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
-                {
-                    User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(new[] { new System.Security.Claims.Claim("Jellyfin-UserId", viewer.UserId.ToString()) }, "test")),
-                },
-            },
-        };
-        var response = Assert.IsType<Microsoft.AspNetCore.Mvc.ObjectResult>(await controller.GetStatuses(null, Matrix.ToString(), default, detail: true));
-        Assert.Equal(503, response.StatusCode);
-        Assert.Contains("library_lookup_unknown", JsonSerializer.Serialize(response.Value));
-        Assert.Equal("private, no-store", controller.Response.Headers.CacheControl.ToString());
-        Assert.False(controller.Response.Headers.ContainsKey("ETag"));
-        Assert.Equal(0, lab.Status.Cache.Count);
-        Assert.Equal(503, Assert.IsType<Microsoft.AspNetCore.Mvc.ObjectResult>(controller.GetArrival(Matrix.ToString(), null)).StatusCode);
-        Assert.Equal(0, await lab.Fulfilment.CheckAsync(new[] { Matrix.ToString() }, default));
-        Assert.NotEqual("fulfilled", lab.Ledger.Find(request)!.Status);
-        // No native item event: the next lookup must retry rather than reuse an absent body.
-        rows.Clear(); rows.Add(l.Uhd);
-        Assert.True(lab.Status.Editions.Available(viewer, Matrix, Edition.FourK));
-        using var body = JsonDocument.Parse((await lab.Status.ForKeyDetailAsync(viewer, Matrix, default)).Json);
-        Assert.Equal("ready", body.RootElement.GetProperty("items")[0].GetProperty("stage").GetString());
-    }
-
     [Fact]
     public void PagingCountsDistinctEligibleCopiesAcrossAliasesAndStopsAtTwenty()
     {
@@ -615,14 +570,15 @@ public class IntegrationEditionOrphanTests
     }
 
     [Fact]
-    public void UnsearchedProviderAliasesAreUnknownRatherThanAbsent()
+    public void EveryProviderAliasIsSearchedBeforeAbsence()
     {
         using var l = new Library();
         l.Manager.Setup(m => m.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
             q.HasAnyProviderId?.GetValueOrDefault("Tmdb") == "608" ? new List<BaseItem> { l.Uhd } : new());
+        // Six TMDB ids: six queries (one value of a provider per query), every one searched within the page ceiling.
         var aliases = Enumerable.Range(604, 5).Select(n => TitleKey.Parse("movie:tmdb:" + n)!).ToArray();
-        Assert.ThrowsAny<InvalidOperationException>(() => l.View.Copies(Matrix, StatusViewer.Library, aliases));
-        l.Manager.Verify(m => m.GetItemList(It.IsAny<InternalItemsQuery>()), Times.AtMost(40));
+        Assert.Equal(l.Uhd.Id, Assert.Single(l.View.Copies(Matrix, StatusViewer.Library, aliases)).ItemId);
+        l.Manager.Verify(m => m.GetItemList(It.IsAny<InternalItemsQuery>()), Times.Exactly(6));
     }
 
 }
