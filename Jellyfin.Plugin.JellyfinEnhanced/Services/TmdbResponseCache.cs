@@ -184,8 +184,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// details-page sub-resources fetches the whole set in one upstream call
         /// (see the class remarks); callers that only ever want one resource
         /// for many titles (the watch-providers batch) leave it off.
+        /// With <paramref name="refresh"/> (Phase 4c2, list sources), a cached copy is never returned: the
+        /// response comes from upstream (joining a call already in flight) and is stored as usual, for callers
+        /// that must see the current data (a linked TMDB list, which the 6 h lookup TTL would hide).
         /// </summary>
-        public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false)
+        public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false, bool refresh = false)
         {
             BundleTarget? target = bundle ? ResolveBundleTarget(apiPath, query) : null;
             if (target.HasValue)
@@ -205,7 +208,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var keyPrefix = GetKeyHash(apiKey) + "|";
                 key = keyPrefix + upstreamUrl;
-                if (TryGetFreshLocked(key, out var cached))
+                if (!refresh && TryGetFreshLocked(key, out var cached))
                 {
                     return Task.FromResult(cached);
                 }

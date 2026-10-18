@@ -202,6 +202,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHostedService<Services.Acquire.Lists.ListSwapMonitor>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Lists.ListUserPurge>();
             // ---- end Phase 4c1 ----
+            // ---- Phase 4c2: list import review and sources (preview only; inert while off). The title lookup is the
+            // metadata adapter (TMDB with JE's key, else Seerr); list metadata without Seerr comes from TMDB behind its own
+            // switch: this registration of IListMetadataSource replaces 4c1's (the last one wins) and keeps Seerr first.
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.MetadataCallLimiter>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.SeerrImportLookup>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.TmdbImportLookup>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IImportLookup, Services.Acquire.Lists.Import.MetadataImportLookup>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IListLibraryLookup, Services.Acquire.Lists.Import.ResolverListLibraryLookup>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IImportViewerPolicy, Services.Acquire.Lists.Import.UserImportViewerPolicy>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.ListImportResolver>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Sources.IListSourceFetcher, Services.Acquire.Lists.Sources.ListSourceFetcher>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Sources.ListSourcePreview>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListMetadataService>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.TmdbListMetadataSource>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.IListMetadataSource, Services.Acquire.Lists.Import.ListMetadataSources>();
+            // ---- end Phase 4c2 ----
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             // "Keep getting new episodes": charges each new season once when a Sonarr library read shows it started.
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();

@@ -188,6 +188,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
+        /// Phase 4c2 (list sources): charges one API request of an administrator's deliberate MDBList list read to the
+        /// same quota bookkeeping the ratings fetches use, so the two never starve each other. False when the remaining
+        /// quota is at the <see cref="SafetyMargin"/>; an unknown status fails open like the ratings path.
+        /// </summary>
+        public virtual async Task<bool> TryReserveListRequestAsync(CancellationToken cancellationToken)
+        {
+            var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
+            lock (_accountStatusLock)
+            {
+                if (status != null && status.RateLimitRemaining <= SafetyMargin)
+                {
+                    return false;
+                }
+
+                if (_accountStatus != null)
+                {
+                    _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
+                }
+
+                return true;
+            }
+        }
+
+        /// <summary>
         /// Fetches (or returns the cached, still-fresh) account status from
         /// MDBList's GET /user endpoint: plan, daily limit, remaining
         /// requests, and reset time. This call itself doesn't count against

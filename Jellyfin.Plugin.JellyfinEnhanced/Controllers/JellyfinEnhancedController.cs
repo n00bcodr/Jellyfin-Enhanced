@@ -4046,6 +4046,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ArrListRequestAllEnabled = Services.Acquire.Lists.ListFlags.RequestAll(config),
                 ArrListSwapInEnabled = Services.Acquire.Lists.ListFlags.SwapIn(config),
                 ArrListStatusEnabled = Services.Acquire.Lists.ListFlags.Status(config),
+                // Phase 4c2: list import review and From URL (effective switches only; providers come from the import route)
+                ArrListImportEnabled = Services.Acquire.Lists.Import.ListImportFlags.Import(config),
+                ArrListSourcesEnabled = Services.Acquire.Lists.Import.ListImportFlags.Sources(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
