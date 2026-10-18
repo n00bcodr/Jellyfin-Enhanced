@@ -1924,7 +1924,7 @@
     "arr_user_unsaved": "Unsaved Jellyfin Enhanced changes",
     "arr_user_saving": "Saving…",
     "arr_user_saved": "Jellyfin Enhanced changes saved.",
-    "arr_user_conflict": "These settings changed elsewhere. Your draft is kept. Cancel to reload the current values.",
+    "arr_user_conflict": "These settings changed elsewhere. Your draft is kept. Reload the page to read the current values.",
     "arr_user_saveError": "Could not save. Your draft is kept; try again.",
     "arr_user_requests": "Requests & household",
     "arr_user_backend": "Request handling",

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createHarness, deferred, jsonResponse } from '../helpers/harness.mjs';
 const A='11111111111111111111111111111111', B='22222222222222222222222222222222';
 function muiTabs(){return '<div class="MuiTabs-root"><div role="tablist">'+['profile','access','parentalcontrol','password'].map((t,i)=>`<button role="tab" class="MuiTab-root ${i===1?'Mui-selected':''}" aria-selected="${i===1}" tabindex="${i===1?0:-1}" data-native="${t}">${t}</button>`).join('')+'</div><span class="MuiTabs-indicator" style="left:80px;width:80px"></span></div>';}
@@ -227,5 +228,90 @@ test('React attribute-only tab updates reconcile selection and indicator without
  const access=h.document.querySelector('[data-native="access"]');access.classList.add('Mui-selected');access.setAttribute('aria-selected','true');h.document.querySelector('.MuiTabs-indicator').style.left='80px';await tick();
  assert.equal(access.getAttribute('aria-selected'),'false');assert.equal(access.classList.contains('Mui-selected'),false);assert.equal(h.document.querySelector('.MuiTabs-indicator').style.left,'0px');
  const settled=mutations;await tick();assert.equal(mutations,settled,'owned mutations settle');observer.disconnect();
+ }finally{h.close();}
+});
+
+function edit(h,field,value){const input=h.document.querySelector(`[data-field="${field}"]`);input.value=value;input.dispatchEvent(new h.window.Event('change',{bubbles:true}));}
+function save(h){h.document.querySelector('[data-je-user-save]').click();}
+function status(h,group){return h.document.querySelector(`[data-group="${group}"] [role="status"]`).textContent;}
+
+test('a native-tab conflict explains the available reload action and retains the draft',async()=>{
+ const en=JSON.parse(readFileSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json',import.meta.url),'utf8'));
+ const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');
+ try{h.JE.t=key=>en[key]||key;await tick();h.JE.arrAdminUsersApi.patch=async()=>{throw {status:409};};edit(h,'quotaLimit','5');save(h);await tick();assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'5');assert.match(status(h,'policy'),/Reload the page/);assert.doesNotMatch(status(h,'policy'),/Cancel/);}finally{h.close();}
+});
+
+test('B2: reverting a queued display group to inheritance survives the whole Save',async()=>{
+ const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');
+ try{
+  await tick();const pending=deferred(),writes=[];let stored=view();
+  h.JE.arrAdminUsersApi.patch=async(id,group,body)=>{
+   writes.push({group,body});if(group==='policy')await pending.promise;
+   stored=structuredClone(stored);
+   if(group==='policy'){stored.policy.stored.quotaLimit=body.quotaLimit;stored.revisions.policy='p2';}
+   else {stored.display.stored.listStatus=body.listStatus;stored.revisions.display='d'+writes.length;}
+   return structuredClone(stored);
+  };
+  edit(h,'quotaLimit','5');edit(h,'listStatus','false');save(h);edit(h,'listStatus','');pending.resolve();await tick();
+  assert.equal(writes.length,2);assert.equal(writes[1].body.listStatus,false,'queued submission remains the Save-start snapshot');
+  assert.equal(h.document.querySelector('[data-field="listStatus"]').value,'','desired inheritance survives the queued write');
+  assert.equal(status(h,'display'),'arr_user_unsaved');save(h);await tick();
+  assert.equal(writes.length,3);assert.equal(writes[2].body.listStatus,null);assert.equal(writes[2].body.revision,'d2');
+  assert.equal(stored.display.stored.listStatus,null);assert.equal(status(h,'display'),'arr_user_saved');
+ }finally{h.close();}
+});
+
+test('B3: 5 to 8 to 5 during a failed Save keeps 5 and retries it',async()=>{
+ const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');
+ try{
+  await tick();const pending=deferred(),writes=[];
+  h.JE.arrAdminUsersApi.patch=async(id,group,body)=>{writes.push({group,body});if(writes.length===1)return pending.promise;const data=view();data.policy.stored.quotaLimit=body.quotaLimit;data.revisions.policy='p2';return data;};
+  edit(h,'quotaLimit','5');save(h);edit(h,'quotaLimit','8');edit(h,'quotaLimit','5');pending.reject({status:503});await tick();
+  assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'5');assert.equal(status(h,'policy'),'arr_user_saveError');save(h);await tick();
+  assert.equal(writes.length,2);assert.equal(writes[1].body.quotaLimit,5);assert.equal(writes[1].body.revision,'p1');assert.equal(status(h,'policy'),'arr_user_saved');
+ }finally{h.close();}
+});
+
+for(const later of ['pool-membership','seerr-import'])test(`B4: ${later} advances a retained policy draft past this Save's own config writes`,async()=>{
+ const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');
+ try{
+  await tick();const pending=deferred(),writes=[];let stored=view(),counter=1;
+  h.JE.arrAdminUsersApi.patch=async(id,group,body)=>{
+   writes.push({group,body});if(body.revision!==stored.revisions[group])throw {status:409};
+   if(writes.length===1)await pending.promise;
+   const previousRevisions={...stored.revisions};stored=structuredClone(stored);stored.revisions.policy='p'+(++counter);
+   if(group==='policy')stored.policy.stored.quotaLimit=body.quotaLimit;
+   else if(group==='pool-membership'){stored.pools.explicit=body.poolId;stored.revisions[group]='g2';}
+   else {stored.seerr.blocked=body.blocked;stored.revisions[group]='s2';}
+   return {...structuredClone(stored),previousRevisions};
+  };
+  edit(h,'quotaLimit','5');edit(h,later==='pool-membership'?'poolId':'blocked',later==='pool-membership'?'family':'true');
+  save(h);edit(h,'quotaLimit','8');pending.resolve();await tick();
+  assert.equal(writes.length,2);assert.equal(status(h,later),'arr_user_saved');assert.equal(status(h,'policy'),'arr_user_unsaved');
+  save(h);await tick();assert.equal(writes.length,3);assert.equal(writes[2].body.revision,'p3');assert.equal(writes[2].body.quotaLimit,8);assert.equal(status(h,'policy'),'arr_user_saved');
+ }finally{h.close();}
+});
+
+test('a genuine external display writer still conflicts after this Save writes policy',async()=>{
+ const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');
+ try{
+  await tick();const writes=[];
+  h.JE.arrAdminUsersApi.patch=async(id,group,body)=>{writes.push({group,body});if(group==='display'){if(body.revision!=='external-d2')throw {status:409};throw new Error('external edit overwritten');}const data=view();data.policy.stored.quotaLimit=5;data.revisions.policy='p2';data.revisions.display='external-d2';data.display.stored.listStatus=true;return data;};
+  edit(h,'quotaLimit','5');edit(h,'listStatus','false');save(h);await tick();
+  assert.equal(writes.length,2);assert.equal(writes[1].body.revision,'d1');assert.equal(status(h,'display'),'arr_user_conflict');assert.equal(h.document.querySelector('[data-field="listStatus"]').value,'false');
+ }finally{h.close();}
+});
+
+test('an external policy write before our pool write cannot be adopted as our own revision',async()=>{
+ const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>');
+ try{
+  await tick();const pending=deferred(),writes=[];
+  h.JE.arrAdminUsersApi.patch=async(id,group,body)=>{
+   writes.push({group,body});if(writes.length===1){await pending.promise;const data=view();data.policy.stored.quotaLimit=5;data.revisions.policy='p2';return data;}
+   if(group==='pool-membership'){const data=view();data.pools.explicit='family';data.policy.stored.quotaLimit=9;data.revisions.policy='p4';data.revisions['pool-membership']='g2';return {...data,previousRevisions:{policy:'external-p3','pool-membership':'g1'}};}
+   if(body.revision!=='p4')throw {status:409};throw new Error('external edit overwritten');
+  };
+  edit(h,'quotaLimit','5');edit(h,'poolId','family');save(h);edit(h,'quotaLimit','8');pending.resolve();await tick();save(h);await tick();
+  assert.equal(writes.length,3);assert.equal(writes[2].body.revision,'p2');assert.equal(status(h,'policy'),'arr_user_conflict');assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'8');
  }finally{h.close();}
 });

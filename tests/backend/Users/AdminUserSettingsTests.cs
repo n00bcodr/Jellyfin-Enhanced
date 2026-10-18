@@ -224,6 +224,41 @@ public class AdminUserSettingsTests
         Assert.Equal(6,f.R.Policy.Configuration.ArrRequestQuotaLimit);
     }
 
+    [Theory]
+    [InlineData("policy", "\"quotaLimit\":5")]
+    [InlineData("pool-membership", "\"poolId\":\"family\"")]
+    [InlineData("seerr-import", "\"blocked\":true")]
+    [InlineData("display", "\"listStatus\":false")]
+    public void SuccessfulWritesReturnTheRevisionTransitionInsideTheWriteLock(string group, string fields)
+    {
+        using var f = new Fixture();
+        f.R.Policy.Configuration.ArrGroupQuotaPools="[{\"id\":\"family\",\"name\":\"Family\",\"limit\":5,\"roles\":[\"Member\"],\"users\":[]}]";
+        var before=f.Read().GetProperty("revisions");
+        var answer=f.Patch(group,fields);
+        Assert.Equal(200,answer.Status);
+        var data=Json(answer.Body);
+        Assert.Equal(before.GetProperty(group).GetString(),data.GetProperty("previousRevisions").GetProperty(group).GetString());
+        Assert.NotEqual(before.GetProperty(group).GetString(),data.GetProperty("revisions").GetProperty(group).GetString());
+        if(group!="display") {
+            Assert.Equal(before.GetProperty("policy").GetString(),data.GetProperty("previousRevisions").GetProperty("policy").GetString());
+            Assert.NotEqual(before.GetProperty("policy").GetString(),data.GetProperty("revisions").GetProperty("policy").GetString());
+        } else Assert.Equal(before.GetProperty("policy").GetString(),data.GetProperty("revisions").GetProperty("policy").GetString());
+    }
+
+    [Fact]
+    public void APoolWriteReportsAnExternalPolicyChangeRatherThanClaimingTheOldBaseline()
+    {
+        using var f=new Fixture();
+        f.R.Policy.Configuration.ArrGroupQuotaPools="[{\"id\":\"family\",\"name\":\"Family\",\"limit\":5,\"roles\":[\"Member\"],\"users\":[]}]";
+        var before=f.Read().GetProperty("revisions");
+        f.R.Policy.Configuration.ArrRequestQuotaLimit=9;
+        var external=f.Revision();
+        var answer=f.Patch("pool-membership","\"poolId\":\"family\"",before.GetProperty("pool-membership").GetString());
+        Assert.Equal(200,answer.Status);
+        Assert.Equal(external,Json(answer.Body).GetProperty("previousRevisions").GetProperty("policy").GetString());
+        Assert.Equal(409,f.Patch("policy","\"quotaLimit\":8",before.GetProperty("policy").GetString()).Status);
+    }
+
     [Fact]
     public async Task HttpSerializationKeepsNullInheritanceAndUnknownValuesExplicit()
     {

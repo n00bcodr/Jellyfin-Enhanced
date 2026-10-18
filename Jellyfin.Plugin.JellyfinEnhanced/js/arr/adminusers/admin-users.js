@@ -118,17 +118,26 @@
             if ([t('conflict'), t('saveError')].includes(state.messages[name])) status.classList.add('je-save-error');
             fieldset._status = status; return fieldset;
         }
-        /** Keep a named value separate from the server snapshot; absence remains absence in PATCH. */
-        function changed(state, groupName, name, value, fieldset) {
-            const data = state.data;
-            const stored = groupName === 'pool-membership' ? data.pools.explicit
+        /** Read a persisted field from its group's server snapshot. */
+        function storedValue(data, groupName, name) {
+            return groupName === 'pool-membership' ? data.pools.explicit
                 : groupName === 'seerr-import' ? data.seerr.blocked
                 : groupName === 'notifications' ? (data.notifications.topic || '')
                 : data[groupName]?.stored?.[name];
-            const baseline = Object.hasOwn(state.submitted[groupName] || {}, name) ? state.submitted[groupName][name] : stored;
-            const changes = { ...(state.changes[groupName] || {}) };
-            if (JSON.stringify(value) === JSON.stringify(baseline)) delete changes[name]; else changes[name] = value;
-            if (Object.keys(changes).length) state.changes[groupName] = changes; else delete state.changes[groupName];
+        }
+        /** Remove desired fields only when they match persistence and no queued submission can change it. */
+        function reconcile(state, name) {
+            if (state.submitted[name]) return;
+            const remaining = Object.fromEntries(Object.entries(state.changes[name] || {}).filter(([field, value]) =>
+                JSON.stringify(value) !== JSON.stringify(storedValue(state.data, name, field))));
+            if (Object.keys(remaining).length) state.changes[name] = remaining; else delete state.changes[name];
+        }
+        /** Keep the desired value independent of every queued/in-flight submission, including reversions. */
+        function changed(state, groupName, name, value, fieldset) {
+            // This UI-only choice is translated to fourKInstances by its own listener.
+            if (name === 'fourKMode') return;
+            state.changes[groupName] = { ...(state.changes[groupName] || {}), [name]: value };
+            reconcile(state, groupName);
             state.messages[groupName] = state.changes[groupName] ? t('unsaved') : '';
             fieldset._status.textContent = state.messages[groupName]; fieldset._status.classList.remove('je-save-error');
         }
@@ -199,7 +208,6 @@
                 else line(policy, 'quota', null);
                 const grants = select(policy, state, 'policy', 'fourKMode', 'fourK', value(state, 'policy', 'fourKInstances', stored.fourKInstances) == null ? null : 'explicit', [[null, t('inherit')], ['explicit', t('explicit')]], d.policy.backend !== 'je');
                 grants.addEventListener('change', () => {
-                    delete state.changes.policy.fourKMode;
                     changed(state, 'policy', 'fourKInstances', grants.value === '' ? null : [], policy);
                     render(state);
                 });
@@ -272,10 +280,21 @@
             if (focused) Array.from(section.querySelectorAll('[data-field]')).find(n => n.dataset.field === focused)?.focus();
 
         }
-        /** Refresh clean groups while retaining dirty drafts and their original conflict revisions. */
-        function mergeFresh(state, data) {
+        /** Refresh clean groups and proven own-write transitions; preserve other drafts' conflict baselines. */
+        function mergeFresh(state, data, written) {
             const revisions = { ...data.revisions };
-            for (const name of Object.keys(state.changes)) revisions[name] = state.data.revisions[name];
+            const previous = state.data;
+            for (const name of Object.keys(state.changes)) {
+                const ownWrite = name === written || (written && Object.hasOwn(data.previousRevisions || {}, name)
+                    && data.previousRevisions[name] === previous.revisions[name]);
+                if (ownWrite) continue;
+                revisions[name] = previous.revisions[name];
+                // Keep persisted values paired with their original revision, separate from desired drafts.
+                if (name === 'pool-membership') data = { ...data, pools: { ...data.pools, explicit: previous.pools.explicit } };
+                else if (name === 'seerr-import') data = { ...data, seerr: { ...data.seerr, blocked: previous.seerr.blocked } };
+                else if (name === 'notifications') data = { ...data, notifications: previous.notifications };
+                else data = { ...data, [name]: { ...data[name], stored: previous[name].stored } };
+            }
             state.data = { ...data, revisions };
         }
         /** Save one draft. Conflicts retain it until reload; other groups stay dirty. */
@@ -283,27 +302,22 @@
             if (!authorized || !changes || state.busy.has(name)) return false;
             const gen = generation, epoch = JE.session?.getEpoch?.(), id = state.data.id;
             const revision = state.data.revisions[name];
-            state.submitted[name] = changes;
             state.busy.add(name); state.messages[name] = t('saving'); render(state);
             try {
                 const result = name === 'notifications' ? await api.assignTopic(id, changes, request?.signal)
                     : await api.patch(id, name, { revision, ...changes }, request?.signal);
                 if (!current(gen, epoch, id)) return;
-                // Save completion never overwrites edits made after this request began.
-                if (state.changes[name] === changes) delete state.changes[name];
-                else if (state.changes[name]) {
-                    const remaining = Object.fromEntries(Object.entries(state.changes[name]).filter(([field, value]) =>
-                        !Object.hasOwn(changes, field) || JSON.stringify(value) !== JSON.stringify(changes[field])));
-                    if (Object.keys(remaining).length) state.changes[name] = remaining; else delete state.changes[name];
-                }
                 if (name === 'notifications') state.data = { ...state.data, notifications: {
                     ...state.data.notifications, ...result, topic: result.topic ?? null, assigned: !!result.topic
                 } };
                 else {
-                    mergeFresh(state, result);
-                    // Our own successful write advances this group even when a newer draft remains.
-                    state.data.revisions[name] = result.revisions[name];
+                    mergeFresh(state, result, name);
+                    // Persist the submitted patch; desired fields remain independent until reconciliation.
+                    if (name === 'pool-membership') state.data.pools = { ...state.data.pools, explicit: changes.poolId };
+                    else if (name === 'seerr-import') state.data.seerr = { ...state.data.seerr, blocked: changes.blocked };
+                    else state.data[name] = { ...state.data[name], stored: { ...state.data[name].stored, ...changes } };
                 }
+                delete state.submitted[name]; reconcile(state, name);
                 state.messages[name] = t(state.changes[name] ? 'unsaved' : 'saved');
                 return true;
             } catch (error) {
@@ -311,7 +325,10 @@
                 if (error.status === 403 || error.status === 401) { clear(true); return; }
                 state.messages[name] = t(error.status === 409 ? 'conflict' : 'saveError');
                 return false;
-            } finally { delete state.submitted[name]; state.busy.delete(name); if (current(gen, epoch, id)) render(state); }
+            } finally {
+                delete state.submitted[name]; reconcile(state, name); state.busy.delete(name);
+                if (current(gen, epoch, id)) render(state);
+            }
         }
         /** Use Jellyfin's toast service where exported, otherwise its native toast markup and styles. */
         function nativeToast(success, gen, epoch, id) {
@@ -329,7 +346,8 @@
         /** Save the submitted drafts sequentially, retaining independent errors and edits made in flight. */
         async function saveAll(state) {
             if (!authorized || state.saving || !Object.keys(state.changes).length) return;
-            const submitted = { ...state.changes }, gen = generation, epoch = JE.session?.getEpoch?.(), id = state.data.id;
+            const submitted = structuredClone(state.changes), gen = generation, epoch = JE.session?.getEpoch?.(), id = state.data.id;
+            state.submitted = submitted;
             state.saving = true; let success = true;
             render(state);
             try {
@@ -339,7 +357,11 @@
                 }
                 if (!current(gen, epoch, id)) return;
                 nativeToast(success, gen, epoch, id);
-            } finally { state.saving = false; if (current(gen, epoch, id)) render(state); }
+            } finally {
+                state.submitted = {};
+                for (const name of Object.keys(state.changes)) reconcile(state, name);
+                state.saving = false; if (current(gen, epoch, id)) render(state);
+            }
         }
         /** Decorate by user id once per actual card; never intercept native card or menu clicks. */
         function cards() {

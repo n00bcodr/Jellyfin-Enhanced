@@ -1563,7 +1563,7 @@ Each person can hide the web badges, or turn off the drawn ones, in the Jellyfin
 
 ### Jellyfin Dashboard user settings
 
-Administrators can open **Dashboard → Users**, select a person, and open the **Jellyfin Enhanced** tab between **Access** and **Parental control** in Jellyfin 12 and 10.11. The vertical form uses Jellyfin's native controls and one **Save** at the bottom. It saves changed sections and shows **Settings saved**; a failed section keeps its draft and shows an inline error. JE drafts survive native tab changes, and the tab supports bookmarks, reload and Back/Forward.
+Administrators can open **Dashboard → Users**, select a person, and open the **Jellyfin Enhanced** tab between **Access** and **Parental control** in Jellyfin 12 and 10.11. The vertical form uses Jellyfin's native controls and one **Save** at the bottom. It saves changed sections and shows **Settings saved**; a failed section keeps its draft and shows an inline error. Edits made while Save is running remain as drafts for the next Save, including returning to an inherited value. Failed writes keep the desired values for retry. JE drafts survive native tab changes, and the tab supports bookmarks, reload and Back/Forward.
 
 The tab’s private content hides while administrator permission is checked again. A refused or failed check clears its private data and drafts. Edits made while a group is saving remain unsaved and can be saved next without reloading; other groups keep their own drafts and conflict checks.
 
