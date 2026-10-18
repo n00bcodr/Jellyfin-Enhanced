@@ -256,3 +256,21 @@ test('crowded MUI header includes native spacing when allocating inline actions'
   assert.equal(h.document.querySelector('[title="Appearance"]').classList.contains('je-header-overflowed'), false);
   assert.equal(h.document.querySelector('[href="#search"]').classList.contains('je-header-overflowed'), true);
 });
+
+test('crowded MUI header keeps the notification bell reachable in More under its own name, opening its inbox', async t => {
+  const h = crowdedMuiHeader(t);
+  const bell = h.document.createElement('button');
+  bell.id = 'je-notify-bell'; bell.className = 'headerButton headerButtonRight je-notify-bell';
+  bell.setAttribute('aria-haspopup', 'dialog'); bell.title = '3 unread notifications'; bell.dataset.headerLabel = 'Notifications';
+  let opened = 0; bell.addEventListener('click', () => opened++);
+  h.tray.insertBefore(bell, h.tray.firstChild);
+  const original = h.document.querySelector('[href="#extra-a"]');
+  await until(() => original.classList.contains('je-header-overflowed'));
+  const mirror = [...h.document.querySelectorAll('.je-launcher-action')].find(button => button.querySelector('.je-launcher-label').textContent === 'Notifications');
+  // At this width the bell goes into More with the other JE buttons, under its own name.
+  assert.ok(bell.classList.contains('je-header-overflowed'));
+  assert.ok(mirror, 'the overflowed bell is offered in More');
+  mirror.click();
+  assert.equal(opened, 1);
+  assert.equal(bell.parentElement, h.tray, 'the bell stays in JE\'s tray');
+});
