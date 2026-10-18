@@ -15,6 +15,22 @@ namespace JE.Tests;
 public class PrivacyPresentationGateTests
 {
     [Theory]
+    [InlineData("native-details/title/tv/83867/ratings", false)]
+    [InlineData("native-details/title/tv/83867/ratings", true)]
+    [InlineData("jellyseerr/tv/83867/ratings", false)]
+    [InlineData("jellyseerr/tv/83867/ratings", true)]
+    public void GuardedFlatTvRatingsHonorSuppressionAtFinalDelivery(string path, bool suppress)
+    {
+        using var f = new ApiPluginFixture();
+        var user = Guid.NewGuid();
+        var spoilers = PrivacyOperationalProjectionTests.Guard(f, user, "tv:tmdb:83867", suppress);
+        var final = PrivacyOperationalProjectionTests.Final(f, spoilers, user, path,
+            new ContentResult { Content = "{\"criticsScore\":96}", ContentType = "application/json" });
+        if (suppress) Assert.Null(final);
+        else Assert.Equal(96, final["criticsScore"]!.GetValue<int>());
+    }
+
+    [Theory]
     [InlineData("native-details/person/9/filmography")]
     [InlineData("native-details/discover/movie/genre/1")]
     [InlineData("native-details/title/movie/9/related/similar")]

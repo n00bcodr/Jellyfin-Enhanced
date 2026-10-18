@@ -39,7 +39,7 @@ function setup(t, { routes = {}, jeMode = true, window: withWindow = false, conf
     renderActions: () => {},
     enrichSeasonCardsWithJellyfinLinks: () => {},
     backfillSeasonMetadata: () => {},
-    buildRatingLogos: ratings => JSON.stringify(ratings)
+    buildRatingLogos: ratings => ratings ? JSON.stringify(ratings) : ''
   };
   const h = createHarness({ JE: {
     pluginConfig: { JellyseerrEnabled: true, ...config },
@@ -132,6 +132,18 @@ test('a title the server won\'t show the viewer says so; an outage of the public
     assert.equal(h.internal.errorKey(failure, 'jellyseerr_modal_load_failed'), key);
     assert.equal(h.internal.isExplained(failure), true);
   }
+});
+
+for (const suppressed of [false, true]) test(`guarded jf10 public TV ratings follow suppression=${suppressed} through the window`, async t => {
+  const h = setup(t, { window: true, routes: {
+    '/jellyseerr/user-status': UNLINKED,
+    '/native-details/title/tv/83867': { id: 83867, name: 'Andor', jeSpoiler: { guarded: true, ratings: suppressed } },
+    '/native-details/title/tv/83867/ratings': suppressed ? null : { criticsScore: 96 }
+  } });
+  await h.JE.jellyseerrMoreInfo.open(83867, 'tv');
+  await nextTurn(); await nextTurn();
+  const text = h.internal.state.currentModal.querySelector('[data-mount="ratings"]').textContent;
+  assert.equal(text, suppressed ? '' : JSON.stringify({ rt: { criticsScore: 96 } }));
 });
 
 test('public details\' ratings come from the same public route (series ratings kept under rt)', async t => {

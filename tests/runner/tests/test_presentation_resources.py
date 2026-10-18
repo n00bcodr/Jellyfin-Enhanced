@@ -1,5 +1,6 @@
 """Defence-in-depth source walk for the resource-required presentation API."""
 import re
+import json
 import unittest
 from pathlib import Path
 
@@ -30,6 +31,21 @@ def project_calls(source):
 
 
 class PresentationResourceTests(unittest.TestCase):
+    def test_every_declared_resource_and_strip_switch_has_matrix_cells(self):
+        source = (ROOT / 'Services/ProviderPresentationSchema.cs').read_text()
+        dispatch = source.split('private static string Resource(', 1)[1].split('private static JsonNode? Walk(', 1)[0]
+        declared = set(re.findall(r'"([\w/-]+)"', dispatch))
+        fixture = json.loads((ROOT.parent / 'tests/fixtures/presentation-settings-matrix.json').read_text())
+        covered = {s['resource'] for s in fixture['samples']}
+        # The native TV fixture exercises the same route selector as the producer and final filter.
+        if any(s.get('provider') == 'tv/83867/ratings' for s in fixture['samples']):
+            covered.add('tv-ratings')
+        # The resource switch's implementation schema is not a public resource.
+        self.assertEqual(declared - {'score', 'calendar-page', 'seerr-provider-country'}, covered)
+        policy = (ROOT / 'Services/SpoilerGuard/SpoilerPresentation.cs').read_text()
+        flags = set(re.findall(r'config\.(Spoiler(?:Strip\w+|ReplaceTitle|BlurArtwork|KeepMoviePosters))', policy))
+        self.assertEqual(flags - {'SpoilerStripCastMode'}, set(fixture['settings']))
+
     def test_production_project_calls_name_a_resource(self):
         calls = 0
         for path in ROOT.rglob('*.cs'):

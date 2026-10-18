@@ -68,6 +68,7 @@
             btn.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                const epoch = JE.session?.getEpoch?.();
 
                 const cardName = card.querySelector('.cardText')?.textContent || '';
                 const surface = getCardSurface(card);
@@ -88,10 +89,25 @@
                     }
                     const title = internal.titleData(itemData);
                     if (title) {
-                        const saved = await internal.saveTitleRule(title, true).catch(() => false);
-                        if (saved) card.classList.add('je-hidden');
-                        else btn.textContent = JE.t('hidden_content_save_failed_persistent');
-                        return;
+                        if (JE.session?.isCurrent && !JE.session.isCurrent(epoch)) return;
+                        // Later filter passes (and cloned cards) need the identity resolved by this click.
+                        card.dataset.type = title.type;
+                        card.dataset.tmdbId = title.tmdbId;
+                        /** Confirms before persistence, then acknowledges only a successful provider-rule save. */
+                        async function saveConfirmedTitle() {
+                            if (JE.session?.isCurrent && !JE.session.isCurrent(epoch)) return;
+                            btn.disabled = true;
+                            try {
+                                const saved = await internal.saveTitleRule(title, true).catch(() => false);
+                                if (saved) card.classList.add('je-hidden');
+                                else btn.textContent = JE.t('hidden_content_save_failed_persistent');
+                            } finally { btn.disabled = false; }
+                        }
+                        if (!internal.isConfirmationSuppressed()) {
+                            internal.showHideConfirmation(title.name || 'Item', saveConfirmedTitle);
+                            return;
+                        }
+                        return saveConfirmedTitle();
                     }
                     confirmAndHide(itemData, () => {
                         card.classList.add('je-hidden');

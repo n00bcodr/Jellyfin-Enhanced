@@ -315,7 +315,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var access = await ViewerAsync(_policy.SeeDetailsAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
             var answer = await _source.RatingsAsync(movie, tmdb, viewer.Id, ct).ConfigureAwait(false);
-            if (answer.Data is { } data) return new FeedAnswer(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).ProjectResource(data.GetRawText(), (movie ? "movie" : "tv") + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), "ratings") ?? data.GetRawText());
+            var kind = movie ? "movie" : "tv";
+            var resource = ProviderPresentationSchema.ProviderResource(kind + "/" + tmdb.ToString(CultureInfo.InvariantCulture) + "/ratings");
+            if (answer.Data is { } data) return new FeedAnswer(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).ProjectResource(data.GetRawText(), kind + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), resource) ?? data.GetRawText());
             // The title itself was admitted above: the source's "not found" here means it has no ratings
             // (Seerr answers 404 when Rotten Tomatoes doesn't know a series), which is an answer, not an error.
             return answer.NotFound && !answer.Busy ? new FeedAnswer(FeedOutcome.Ok, "null") : Failed(answer);

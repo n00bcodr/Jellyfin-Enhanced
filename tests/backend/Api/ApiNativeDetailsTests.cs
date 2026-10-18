@@ -1238,6 +1238,30 @@ public class ApiNativeDetailsTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GuardedTvRatingsHonorSuppressionThroughProducerAndFinalGate(bool suppress)
+    {
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        var spoilers = PrivacyOperationalProjectionTests.Guard(rig.Plugin, viewer.Id, "tv:tmdb:83867", suppress);
+        var answer = await rig.Feeds.RatingsAsync(viewer, false, 83867, default);
+        Assert.Equal(FeedOutcome.Ok, answer.Outcome);
+        var final = PrivacyOperationalProjectionTests.Final(rig.Plugin, spoilers, viewer.Id,
+            "native-details/title/tv/83867/ratings", new ContentResult { Content = answer.Json, ContentType = "application/json" });
+        if (suppress)
+        {
+            Assert.Equal("null", answer.Json);
+            Assert.Null(final);
+        }
+        else
+        {
+            Assert.Equal(96, Body(answer).GetProperty("criticsScore").GetInt32());
+            Assert.Equal(96, final["criticsScore"]!.GetValue<int>());
+        }
+    }
+
+    [Theory]
     [InlineData("title")]
     [InlineData("season")]
     [InlineData("ratings")]

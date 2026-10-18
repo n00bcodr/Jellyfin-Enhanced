@@ -35,6 +35,8 @@ If the chosen source has nothing eligible (empty, all watched, or deleted), the 
 
 Requests & downloads also offers Hide/Unhide on titles that have not arrived yet, their recommendation and discovery cards, and the More Info window. These hides use the movie or series TMDB identity, so all library copies remain hidden after arrival or reimport. Undo removes that title rule. Search continues to follow your separate search-filter preference. A failed save leaves the control available to retry.
 
+Native movie and series card hides honor your confirmation preference before saving. Cancel leaves the title visible; turning confirmations off, or temporarily suppressing them, saves the hide directly.
+
 ![Hidden content management panel](../images/hidden-content-panel.png)
 
 Per-user content hiding with server-side storage and granular filtering controls.

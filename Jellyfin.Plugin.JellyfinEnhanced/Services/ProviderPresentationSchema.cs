@@ -75,6 +75,9 @@ public static class ProviderPresentationSchema
         Add("countries", Role.Metadata, ""); schemas["countries"] = schemas["countries"] with { Countries = true };
         Add("providers", Role.Metadata, "link");
         Add("provider", Role.Metadata, "displayPriority logoPath providerId providerName");
+        Add("seerr-provider-country", Role.Metadata, "iso31661 link");
+        Add("seerr-provider", Role.Metadata, "displayPriority logoPath id name");
+        Children("seerr-provider-country", "flatrate rent buy ads free", "seerr-provider");
         Add("video", Role.Text, "url id iso6391 iso31661 name key site size type official publishedAt");
         Add("review", Role.Text, "id author username name avatarPath createdAt updatedAt url", "rating content");
         Add("release", Role.Metadata, "iso31661 certification descriptors iso6391 note type", "releaseDate");
@@ -295,6 +298,8 @@ public static class ProviderPresentationSchema
     {
         var p = path.Split('?', 2)[0].Trim('/').Split('/');
         if (p.Length >= 2 && p[0] == "api" && p[1] == "v1") p = p.Skip(2).ToArray();
+        // Seerr TV ratings are one flat score, unlike movie ratingscombined or MDBList.
+        if (p.Length == 3 && p[0] == "tv" && p[2] == "ratings") return "tv-ratings";
         var lookup = LookupResource(string.Join('/', p));
         if (lookup != null) return lookup;
         if (p.Length >= 2 && p[^2] == "watch" && p[^1] == "providers") return "watch/providers";
@@ -328,8 +333,10 @@ public static class ProviderPresentationSchema
             "combined_credits" or "movie_credits" or "tv_credits" or "filmography" or "recommendations" or "similar" or "mixed-search"=>"page",
             "season-rows"=>"season-rows",
             "ratings" or "ratingscombined" or "awards"=>"ratings",
-            "images" or "videos" or "keywords" or "reviews" or "content_ratings" or "external_ids" or "watch/providers" or "translations"=>resource,
-            "providers"=>"watch/providers", "release_dates" or "releases"=>"release_dates",
+            "tv-ratings"=>"score",
+            "images" or "videos" or "keywords" or "reviews" or "content_ratings" or "external_ids" or "translations"=>resource,
+            "watch/providers" or "providers"=>root is JsonArray ? "seerr-provider-country" : "watch/providers",
+            "release_dates" or "releases"=>"release_dates",
             "inbox" or "activity" or "activity-row" or "user-reviews" or "review-ratings" => resource,
             "person-search" or "named-search" or "named-lookup" or "named" => resource,
             "person"=>"person", "collection"=>"collection", "calendar"=>root is JsonArray ? "calendar" : "calendar-page",
@@ -414,7 +421,8 @@ public static class ProviderPresentationSchema
             if(field.Child!=null)
             {
                 // Seerr uses direct arrays for keywords/videos as well as TMDB's resource envelopes.
-                var childSchema=pair.Value is JsonArray ? field.Child switch { "keywords"=>"named","videos"=>"video",_=>field.Child } : field.Child;
+                var childSchema=pair.Value is JsonArray ? field.Child switch {
+                    "keywords"=>"named", "videos"=>"video", "watch/providers"=>"seerr-provider-country", _=>field.Child } : field.Child;
                 var childScope=childSchema is "episode" or "season"?childSchema:scope;
                 var own=OwnsTitle(childSchema) || childSchema=="page" && field.Surface!=null;
                 // Related pages contain independent titles; person/metadata IDs never select a title policy.

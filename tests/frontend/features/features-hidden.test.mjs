@@ -9,6 +9,43 @@ function setup(t,{items={},settings={},html='',ajax=async()=>({Items:[]})}={}){
  const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
  return {...h,api,flush(){while(frames.length)frames.shift()();},switchUser(){epoch++;h.JE.userConfig={hiddenContent:{items:{},settings:{}}};for(const fn of handlers.values())fn({userId:'next'});}};
 }
+for (const type of ['Movie','Series']) for (const mode of ['confirm','cancel','preference','timer','switch'])
+ test(`native ${type} provider hide respects ${mode} before persistence`,async t=>{
+  const writes=[];
+  const h=setup(t,{html:`<div class="card" data-id="library" data-type="${type}" data-tmdb-id="42"><div class="cardBox"></div><div class="cardText">Entry</div></div>`,
+   settings:{enabled:true,showHideButtons:true,showButtonLibrary:true,showHideConfirmation:mode!=='preference'},
+   ajax:async o=>{writes.push(o);return {success:true};}});
+  h.JE.t=k=>k;
+  h.JE.session.userScopedKey=k=>k+':anonymous';
+  h.load('enhanced/hiddencontent/hidden-content-dialogs.js');
+  if(mode==='timer') h.window.localStorage.setItem('je_hide_confirm_suppressed_until:anonymous',new Date(Date.now()+60000).toISOString());
+  h.load('enhanced/hiddencontent/hidden-content-buttons.js');h.api.addLibraryHideButtons();
+  const card=h.document.querySelector('.card');const button=card.querySelector('.je-hide-btn');assert.ok(button);
+  await button.onclick({preventDefault(){},stopPropagation(){}});
+  const dialog=h.document.querySelector('.je-hide-confirm-overlay');
+  if(mode==='confirm'||mode==='cancel'||mode==='switch'){
+   assert.ok(dialog,'confirmation opens');assert.equal(writes.length,0,'no persistence before confirmation');
+   assert.equal(card.classList.contains('je-hidden'),false);
+   if(mode==='switch') h.switchUser();
+   dialog.querySelector(mode==='cancel'?'.je-hide-confirm-cancel':'.je-hide-confirm-hide').click();
+  }else assert.equal(dialog,null);
+  await new Promise(r=>setImmediate(r));h.flush();
+  assert.equal(writes.length,mode==='cancel'||mode==='switch'?0:1);
+  assert.equal(card.classList.contains('je-hidden'),mode!=='cancel'&&mode!=='switch');
+  if(writes.length) assert.ok(decodeURIComponent(writes[0].url).includes((type==='Movie'?'movie':'tv')+':tmdb:42'));
+ });
+for (const type of ['Movie','Series']) test(`ID-only native ${type} retains its provider hide across filter repaints`,async t=>{
+ const h=setup(t,{html:`<div class="card" data-id="library" data-type="${type}"><div class="cardBox"></div><div class="cardText">Entry</div></div>`,
+  settings:{enabled:true,showHideButtons:true,showButtonLibrary:true,showHideConfirmation:false}});
+ h.JE.t=k=>k;h.window.ApiClient.getItem=async()=>({Type:type,ProviderIds:{Tmdb:'42'}});
+ h.load('enhanced/hiddencontent/hidden-content-dialogs.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
+ h.api.addLibraryHideButtons();const card=h.document.querySelector('.card');
+ await card.querySelector('.je-hide-btn').onclick({preventDefault(){},stopPropagation(){}});
+ h.api.refreshNativeCardVisibility();h.flush();
+ assert.equal(card.classList.contains('je-hidden'),true,'a later filter paint must know the deliberately resolved provider');
+ assert.equal(card.dataset.tmdbId,'42');
+});
+
 test('hidden scope filters home rows without hiding same title in the library',t=>{
  const h=setup(t,{items:{global:{itemId:'AA-BB'},next:{itemId:'CC-DD',hideScope:'nextup'}},html:'<div class="card" data-id="AABB"></div><div class="section"><h2>Next Up</h2><div class="card" data-id="ccdd"></div></div><div class="card" data-itemid="ccdd"></div>'});
  h.api.filterNativeCards();h.flush();const cards=h.document.querySelectorAll('.card');
