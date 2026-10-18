@@ -72,7 +72,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!_hub.Enabled) return StatusCode(403, new { code = "feature_disabled" });
             if (Viewer(_hub.Status) is not { } viewer) return StatusCode(403, new { code = "user_required" });
             using var scope = _hub.Status.Store.BeginRequest("acquire/hub");
-            var body = await _hub.ForViewerAsync(viewer, cancellationToken).ConfigureAwait(false);
+            // Removed, disabled or still changing while the page was prepared: the answer for a viewer who isn't there.
+            if (await _hub.ForViewerAsync(viewer, cancellationToken).ConfigureAwait(false) is not { } body) return StatusCode(403, new { code = "user_required" });
             Response.Headers["Cache-Control"] = "private, no-cache";
             Response.Headers["ETag"] = body.ETag;
             if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], body.ETag)) return StatusCode(304);

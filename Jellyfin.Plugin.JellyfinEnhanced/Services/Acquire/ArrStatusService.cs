@@ -130,11 +130,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var statuses = new List<TitleStatus>();
             var seriesEpisodes = new Dictionary<Guid, IReadOnlyList<JfEpisode>>();
             var titleCopies = new Dictionary<TitleKey, IReadOnlyList<JfCopy>>();
-            // A season or episode card is of one series copy: it reads the Sonarr that owns that copy's folder.
+            // A series, season or episode card is of one series copy: it reads the Sonarr that owns that copy's folder. The
+            // copies the gather read for the viewer serve (the final gate kept their policy), so a page of posters reads
+            // each title's copies once.
             IReadOnlyList<JfCopy>? SeriesCopiesOf(TitleFacts facts)
             {
                 if (!facts.Copies.Any(x => x.Series != null)) return null;
-                if (!titleCopies.TryGetValue(facts.Key, out var found)) titleCopies[facts.Key] = found = CopiesOf(facts.Key, viewer);
+                if (!titleCopies.TryGetValue(facts.Key, out var found)) titleCopies[facts.Key] = found = gather.Copies.GetValueOrDefault(facts.Key) ?? CopiesOf(facts.Key, viewer);
                 return found;
             }
             foreach (var item in items)
@@ -147,7 +149,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         statuses.Add(StatusComposer.Movie(facts, item, null, c, detail: false));
                         break;
                     case "series":
-                        statuses.Add(StatusComposer.SeriesCard(facts, item, c, HiddenFromViewer(facts, item.ItemId, viewer)));
+                        statuses.Add(StatusComposer.SeriesCard(facts, item, c, HiddenFromViewer(facts, item.ItemId, viewer), SeriesCopiesOf(facts)));
                         break;
                     case "season":
                         if (item.SeriesId is not Guid seriesId) break;
@@ -862,11 +864,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     .Select(s => s.SeasonNumber).Distinct().OrderBy(n => n).ToList();
                 if (seasons.Count == 0)
                 {
-                    // No 4K seasons to follow: the request says where it is; it arrived once Seerr says so and a copy
-                    // the viewer can open has 4K episodes.
+                    // No 4K seasons to follow (no 4K Sonarr, or one that monitors none): the request says where it is,
+                    // and 4K episodes in a copy the viewer can open say it arrived, when the newest of them did (Seerr's
+                    // word that it is available is neither needed nor enough; its time only when Jellyfin has none).
                     var any = Editions.Episodes(viewer, copies, Edition.FourK, null, readDimensions: true);
                     var held = HeldCopies(any.Hits.Select(h => h.CopyId), copies, scope.JellyfinItemId);
-                    var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, scope.Available && held.Count > 0, scope.AvailableAt);
+                    var arrivedAt = any.Hits.Select(h => h.Source.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max();
+                    var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, held.Count > 0, held.Count > 0 ? arrivedAt ?? scope.AvailableAt : null);
                     return whole with { Status = WithLiveKey(only, facts), Visible = held.FirstOrDefault(), Scoped = true, ArrivedAt = at };
                 }
             }
@@ -989,9 +993,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private sealed record CopyAccess(bool Absent, bool Visible, bool Asked);
 
-        private CopyAccess AccessOf(TitleKey key, StatusViewer viewer)
+        private CopyAccess AccessOf(TitleKey key, StatusViewer viewer, IReadOnlyList<JfCopy>? read = null)
         {
-            var copies = CopiesOf(key, viewer);
+            var copies = read ?? CopiesOf(key, viewer);
             var absent = copies.Count == 0;
             return new CopyAccess(absent, copies.Any(c => c.Visible), absent && AskedBy(key, viewer));
         }
@@ -1221,6 +1225,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             public Dictionary<TitleKey, TitleFacts> Facts { get; } = new();
 
+            /// <summary>The Jellyfin copies of each title, as the viewer the facts were gathered for could open them.</summary>
+            public Dictionary<TitleKey, IReadOnlyList<JfCopy>> Copies { get; } = new();
+
             public string Revision { get; set; } = string.Empty;
         }
 
@@ -1291,7 +1298,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         // Library reads above also populate aliases; decide access after they finish,
                         // once per title, even when several instances hold that title.
                         if (!access.TryGetValue(title, out var copyAccess))
-                            access[title] = copyAccess = AccessOf(title, viewer);
+                            access[title] = copyAccess = AccessOf(title, viewer, result.Copies[title] = CopiesOf(title, viewer));
                         if (kind == ArrKind.Radarr)
                         {
                             foreach (var movie in MoviesOf(library.Value, title))
