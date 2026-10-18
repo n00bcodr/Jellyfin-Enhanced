@@ -1527,7 +1527,7 @@ follows Jellyfin's own rights and the household's request rules:
   guard (its library copy, or one they turned on from Seerr before it arrived) and on a guarded collection, entries
   show no episode titles and no notes (an editor's note can give the story away); if those choices can't be read,
   every entry is treated as guarded, with air dates hidden too. If the load never answers, the page uses that fully
-  guarded view for the rest of the visit.
+  guarded view for the rest of the visit, hiding released years as well.
 - **Deleted lists and people.** Deleting a playlist or collection removes its entries; deleting a person removes what
   lists kept about them (their requests stay).
 - **Backups.** Lists are part of Jellyfin Enhanced backups. After a restore every list is checked against what is

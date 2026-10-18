@@ -34,11 +34,13 @@
      * A resolved Spoiler policy: a guard test with whether guarded entries lose their air dates.
      * @param {function(Object): boolean} test guarded(entry).
      * @param {boolean} airDates Guarded entries lose their air dates.
+     * @param {boolean} [allDates] Hide released years too when no policy could be established.
      * @returns {function(Object): boolean & {airDates: boolean, resolved: boolean}} Policy.
      */
-    function policy(test, airDates) {
+    function policy(test, airDates, allDates = false) {
         const guarded = (ph) => test(ph) === true;
         guarded.airDates = airDates === true;
+        guarded.allDates = allDates === true;
         guarded.resolved = true;
         return Object.freeze(guarded);
     }
@@ -47,12 +49,13 @@
     const FAIL_CLOSED = (() => {
         const guarded = () => true;
         guarded.airDates = true;
+        guarded.allDates = true;
         guarded.resolved = false;
         return Object.freeze(guarded);
     })();
 
     /** What a policy that can't be read resolves to: the same, but resolved. */
-    const GUARD_ALL = policy(() => true, true);
+    const GUARD_ALL = policy(() => true, true, true);
 
     /**
      * Runs fn in a scope.
