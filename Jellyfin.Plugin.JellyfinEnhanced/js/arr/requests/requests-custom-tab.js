@@ -29,7 +29,12 @@
   }
 
   if (useNativeTab) {
-    window.JellyfinEnhanced.nativeTabs.register('requests', window.JellyfinEnhanced.t('requests_requests') || 'Requests', function (panel) {
+    // With the new Requests page (#/requests) on, this page is the Downloads page, as its sidebar link says.
+    var hubOn = window.JellyfinEnhanced.pluginConfig.ArrRequestsHubEnabled === true;
+    var tabLabel = hubOn
+      ? (window.JellyfinEnhanced.t('requests_downloads') || 'Downloads')
+      : (window.JellyfinEnhanced.t('requests_requests') || 'Requests');
+    window.JellyfinEnhanced.nativeTabs.register('requests', tabLabel, function (panel) {
       var marker = document.createElement('div');
       marker.className = 'jellyfinenhanced requests';
       panel.appendChild(marker);
