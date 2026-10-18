@@ -568,19 +568,19 @@
         }
         if (!whole && roundedUp && plan.missing > 0) {
             // Seerr mode: the missing episodes are asked for as their seasons, and the button names them.
-            const doneKey = `${key}|missing`;
             const seasons = partial.map(s => s.season);
+            const doneKey = `${key}|missing|seasons:${seasons.join(',')}`;
             box.appendChild(action(doneKey, 'playlist_add', JE.arrAsk.roundedLabel(caps, seasons, ask),
                 (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, seasons), 'tv'), plan.nextSeason != null));
             if (!firstCost) firstCost = JE.arrAsk.seasonsInput(key, seasons);
             note = JE.arrAsk.roundedNote(caps, seasons);
         } else if (!whole && plan.missing > 0) {
-            const doneKey = `${key}|missing`;
+            const doneKey = `${key}|missing|episodes:${partial.map(s => s.season).join(',')}`;
             const words = ask ? tr('arr_actions_ask_missing', { contact }) : tr('arr_actions_get_missing');
             const label = one && plan.partial.length > 1 ? `${words} · ${tr('arr_sheet_season', { season: partial[0].season })}` : words;
             box.appendChild(action(doneKey, 'playlist_add', label,
                 (b) => run(b, doneKey, () => missingInput(key, partial), 'tv'), plan.nextSeason != null));
-            if (!firstCost) firstCost = { scope: 'episodes', episodes: new Array(plan.missing).fill(0) };
+            if (!firstCost) firstCost = { scope: 'episodes', episodes: new Array(partial.reduce((count, s) => count + notFetchedOf(s.summary), 0)).fill(0) };
         }
         // Every episode still to come is monitored and missing for a long while: Search. An administrator's
         // runs the arr's search for it right away; everyone else's runs it again for those episodes when

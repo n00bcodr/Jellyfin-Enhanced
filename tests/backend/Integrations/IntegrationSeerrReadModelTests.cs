@@ -53,6 +53,24 @@ public class IntegrationSeerrReadModelTests
         }
     }
 
+    [Theory]
+    [InlineData(SeerrRequestStatus.Pending)]
+    [InlineData(SeerrRequestStatus.Approved)]
+    [InlineData(SeerrRequestStatus.Failed)]
+    public async Task OwnOutstandingStandardSeasonsReachTheSeriesActionPlan(int status)
+    {
+        using var rig = new Rig();
+        rig.Seerr.Requests.Add(FakeSeerr.Request(1, "tv", 745, status, rig.Emma, T0, tvdb: 72658, seasons: [1]));
+        rig.Seerr.Requests.Add(FakeSeerr.Request(2, "tv", 745, SeerrRequestStatus.Pending, rig.Sam, T0, tvdb: 72658, seasons: [2]));
+        rig.Seerr.Requests.Add(FakeSeerr.Request(3, "tv", 745, SeerrRequestStatus.Declined, rig.Emma, T0, tvdb: 72658, seasons: [3]));
+        rig.Seerr.Requests.Add(FakeSeerr.Request(4, "tv", 745, SeerrRequestStatus.Completed, rig.Emma, T0, tvdb: 72658, seasons: [4]));
+        var fourK = FakeSeerr.Request(5, "tv", 745, SeerrRequestStatus.Pending, rig.Emma, T0, tvdb: 72658, seasons: [5]);
+        fourK["is4k"] = true; rig.Seerr.Requests.Add(fourK);
+        Assert.True(await rig.Model.RefreshAsync(default));
+        Assert.Equal(new[] { 1 }, rig.Model.For(Key("tv:tvdb:72658"), rig.Viewer(rig.Emma))!.ViewerSeasons);
+        Assert.Equal(new[] { 2 }, rig.Model.For(Key("tv:tvdb:72658"), rig.Viewer(rig.Sam))!.ViewerSeasons);
+    }
+
     private static TitleKey Key(string key) => TitleKey.Parse(key)!;
 
     [Theory]
