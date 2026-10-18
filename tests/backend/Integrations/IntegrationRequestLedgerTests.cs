@@ -53,7 +53,9 @@ public class IntegrationRequestLedgerTests
         }
         // Like Jellyfin's user permissions: a change moves the version odd before it is visible and even after.
         private long _permissions;
-        public long PermissionVersion(Guid user) => Interlocked.Read(ref _permissions);
+        /// <summary>Set: the permission version comes from here (the production JellyfinUserVersions, say).</summary>
+        public Func<Guid, long>? Permissions { get; set; }
+        public long PermissionVersion(Guid user) => Permissions?.Invoke(user) ?? Interlocked.Read(ref _permissions);
         /// <summary>Changes a person's role (an administrator demoted, say) inside the permission version's bracket.</summary>
         public void Demote(Guid user, string role)
         {

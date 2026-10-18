@@ -176,6 +176,25 @@ def pull(image):
     return resolved
 
 
+def user_actions(target, image, temp, output, name):
+    """Runs the backend's Jellyfin user-action coverage tests against this image's own Jellyfin.Api.dll (the newest release
+    of the line, not the pinned one): a Jellyfin update that adds or renames an action that can change or authenticate a
+    user fails here until it is reviewed. The assembly is copied out of a created, never started, labelled container."""
+    api = temp / "jellyfin-api"
+    api.mkdir()
+    container = command("docker", "create", "--label", f"{LABEL}={name}", image)
+    try:
+        command("docker", "cp", container + ":/jellyfin/Jellyfin.Api.dll", str(api / "Jellyfin.Api.dll"))
+    finally:
+        owned("docker", "rm", "-f", container)
+    result = subprocess.run(["dotnet", "test", str(ROOT / "tests/backend/JE.Tests.csproj"), "-c", "Release", f"-p:JellyfinTarget={target}",
+        "--artifacts-path", str(temp / "user-actions"), "--filter", "FullyQualifiedName~IntegrationJellyfinApiUserActionTests|FullyQualifiedName~IntegrationJellyfinUserActionScanTests"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=dict(os.environ, JE_JELLYFIN_API=str(api / "Jellyfin.Api.dll")))
+    (output / "user-actions.log").write_text(result.stdout)
+    assert result.returncode == 0, f"Jellyfin user-action coverage failed on {image}: {output / 'user-actions.log'}"
+    print(f"{target}: every Jellyfin action that can change or authenticate a user is bracketed on {image}", flush=True)
+
+
 def run(target, artifacts, browser=False):
     output = artifacts / target
     output.mkdir(parents=True, exist_ok=True)
@@ -187,6 +206,8 @@ def run(target, artifacts, browser=False):
         temp.chmod(0o755)
         try:
             report["resolved_image"] = pull(IMAGES[target])
+            user_actions(target, report["resolved_image"], temp, output, name)
+            report["user_actions"] = "passed"
             print(f"Building {target}", flush=True)
             result = subprocess.run(["dotnet", "build", str(ROOT / "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj"),
                 "-c", "Release", f"-p:JellyfinTarget={target}", "--artifacts-path", str(temp / "build")],

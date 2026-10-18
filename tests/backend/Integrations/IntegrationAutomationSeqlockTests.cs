@@ -207,6 +207,86 @@ public class IntegrationAutomationSeqlockTests
         Assert.Equal(0, s.Transport.Calls);
     }
 
+    // 4a review round 9 (4a-security-r9-1): Jellyfin's own actions that can lock an administrator out or take their
+    // permission away while the check reads their consent, as Jellyfin runs them (through the production bracket filter
+    // and the production Jellyfin user version). Jellyfin 12.2's password change authenticates the current password
+    // first; a wrong one counts a failed sign-in, and the last allowed one disables the account before the action
+    // returns 403. The check read "administrator" before that and must not send without the OK now required.
+    [Theory]
+    [InlineData("UserController.UpdateUserPassword")]
+    [InlineData("UserController.UpdateUserPasswordLegacy")]
+    [InlineData("UserController.AuthenticateUserByName")]
+    [InlineData("UserController.AuthenticateWithQuickConnect")]
+    [InlineData("QuickConnectController.AuthorizeQuickConnect")]
+    [InlineData("StartupController.UpdateStartupUser")]
+    [InlineData("UserController.UpdateUserConfiguration")]
+    public async Task AJellyfinActionThatLocksTheAdministratorOutDuringTheConsentReadNeedsAnOk(string name)
+    {
+        using var s = new Send();
+        s.E.R.Policy.Permissions = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.JellyfinUserVersions.Sample;
+        var admin = s.E.R.Admin;
+        var (controller, action) = (name.Split('.')[0], name.Split('.')[1]);
+        // The arguments as Jellyfin binds them: the person's own id where the action takes one (none for a sign-in by
+        // name, a Quick Connect sign-in or the start-up wizard: the person isn't known before it runs).
+        var args = new Dictionary<string, object?>();
+        if (action is "UpdateUserPassword" or "UpdateUserPasswordLegacy" or "AuthorizeQuickConnect" or "UpdateUserConfiguration") args["userId"] = admin;
+        var context = controller switch
+        {
+            "UserController" => JellyfinUserBracketHarness.Context<Jellyfin.Api.Controllers.UserController>(action, args, signedIn: admin),
+            "QuickConnectController" => JellyfinUserBracketHarness.Context<Jellyfin.Api.Controllers.QuickConnectController>(action, args, signedIn: admin),
+            _ => JellyfinUserBracketHarness.Context<Jellyfin.Api.Controllers.StartupController>(action, args),
+        };
+        var locked = 0;
+        s.E.Consent.Reading = () =>
+        {
+            if (Interlocked.Exchange(ref locked, 1) != 0) return;
+            // Jellyfin's action: the failed authentication disables the account (no longer an administrator to JE),
+            // then the action returns.
+            JellyfinUserBracketHarness.New().OnActionExecutionAsync(context, () =>
+            {
+                s.E.R.Policy.People[admin] = s.E.R.Policy.People[admin] with { Role = "Member", CanApprove = false, Can4k = false };
+                return JellyfinUserBracketHarness.Done(context);
+            }).GetAwaiter().GetResult();
+        };
+        var refused = await Assert.ThrowsAsync<AutomationTransportRefusedException>(() => s.Post(s.E.Guard.Gate));
+        Assert.Equal(1, locked);
+        Assert.Equal(AutomationHolds.ApprovalRequired, refused.Hold.Reason);
+        Assert.True(refused.Hold.Park);
+        Assert.Equal(0, s.Transport.Calls);
+    }
+
+    // The same, with the password change still running as the check decides (it locked the account while the check
+    // read the consent, and hasn't returned): its version is odd, so the check reads again and, while it stays odd,
+    // holds. Nothing is sent.
+    [Fact]
+    public async Task APasswordChangeStillRunningAsTheCheckDecidesHoldsTheWrite()
+    {
+        using var s = new Send();
+        s.E.R.Policy.Permissions = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.JellyfinUserVersions.Sample;
+        var admin = s.E.R.Admin;
+        var context = JellyfinUserBracketHarness.Context<Jellyfin.Api.Controllers.UserController>("UpdateUserPassword", new Dictionary<string, object?> { ["userId"] = admin }, signedIn: admin);
+        using var lockedOut = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        Task? running = null;
+        s.E.Consent.Reading = () =>
+        {
+            if (running != null) return;
+            running = Task.Run(() => JellyfinUserBracketHarness.New().OnActionExecutionAsync(context, () =>
+            {
+                s.E.R.Policy.People[admin] = s.E.R.Policy.People[admin] with { Role = "Member", CanApprove = false, Can4k = false };
+                lockedOut.Set();
+                release.Wait(TimeSpan.FromSeconds(20));
+                return JellyfinUserBracketHarness.Done(context);
+            }));
+            Assert.True(lockedOut.Wait(TimeSpan.FromSeconds(10)));
+        };
+        var refused = await Assert.ThrowsAsync<AutomationTransportRefusedException>(() => s.Post(s.E.Guard.Gate));
+        release.Set();
+        await running!;
+        Assert.Equal(AutomationHolds.EngineChanged, refused.Hold.Reason);
+        Assert.Equal(0, s.Transport.Calls);
+    }
+
     // Control: nothing changes while the consent is read; the person's automatic request goes (an administrator's,
     // eligible by role).
     [Fact]

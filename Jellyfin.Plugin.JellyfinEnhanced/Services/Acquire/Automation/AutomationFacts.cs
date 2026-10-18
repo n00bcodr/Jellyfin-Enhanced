@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Jellyfin.Data.Events.Users;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Controller.Events;
-using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -53,7 +52,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             ["generation"] = "AcquireDatabase.Generation: a restore replaced the database (the write is held at once)",
             ["automation"] = "AcquireDatabase.Automation: every write of automation_budget, automation_breakers and automation_grants (WriteAutomation), and a restore",
             ["person_settings"] = "IAutomationConsents.Version: the person's settings.json put in place or removed, and every person's at once (restore, quarantine, start-up migration)",
-            ["jellyfin_user"] = "IRequestPolicy.PermissionVersion: JellyfinUserVersions, bracketed around Jellyfin's user policy, delete and sign-in actions and JE's own policy writes, and moved by Jellyfin's user events",
+            ["jellyfin_user"] = "IRequestPolicy.PermissionVersion: JellyfinUserVersions (the person's and every person's), bracketed around every Jellyfin action that can change or authenticate a user (JellyfinUserActions) and JE's own user changes, and moved by Jellyfin's user events",
             ["secrets"] = "SecretsStore.Version: every change of the stored credentials (Seerr's API key among them)",
         };
 
@@ -114,23 +113,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
     /// <summary>
     /// The version of each person's Jellyfin permissions (administrator, disabled, deleted), which the automatic-write check
-    /// reads through Jellyfin's database. Jellyfin's own writes can't be bracketed from inside, so
-    /// <see cref="JellyfinUserChangeBracket"/> brackets the HTTP actions that make them (odd before the action runs, even
-    /// after it returned), JE's own policy writes run inside <see cref="Mutate"/>, and Jellyfin's user events move it too
-    /// (after the change: changes made by other code than these actions).
+    /// reads through Jellyfin's database, and one version of every person's at once (a change whose person isn't known
+    /// before it runs: a sign-in by name, a new user, the start-up wizard). Jellyfin's own writes can't be bracketed from
+    /// inside, so <see cref="JellyfinUserChangeBracket"/> brackets the HTTP actions that make them (odd before the action
+    /// runs, even after it returned), JE's own changes run inside <see cref="Mutate"/>, and Jellyfin's user events move it
+    /// too (after the change: changes made by other code than these actions).
     /// </summary>
     public static class JellyfinUserVersions
     {
         private static readonly FactVersions Versions = new();
+        private static readonly FactVersion Everyone = new();
 
-        /// <summary>The person's version now (a <see cref="FactVersion"/> sample).</summary>
+        /// <summary>
+        /// The person's version now, with every person's (one <see cref="FactVersion"/> sample: unsettled while either is,
+        /// else their sum, which a change of either moves up).
+        /// </summary>
         /// <param name="user">The person.</param>
-        public static long Sample(Guid user) => Versions.Sample(user.ToString("N"));
+        public static long Sample(Guid user) => FactVersion.Combine(Versions.Sample(user.ToString("N")), Everyone.Sample());
 
-        /// <summary>Makes a change to the person's Jellyfin permissions inside their version's bracket.</summary>
+        /// <summary>Makes a change to the person's Jellyfin user inside their version's bracket.</summary>
         /// <param name="user">The person.</param>
         /// <param name="change">The change (it has completed when its task has).</param>
         public static Task Mutate(Guid user, Func<Task> change) => Versions.For(user.ToString("N")).MutateAsync(change);
+
+        /// <summary>Makes a change whose person isn't known before it runs inside every person's bracket.</summary>
+        /// <param name="change">The change (it has completed when its task has).</param>
+        public static Task MutateAll(Func<Task> change) => Everyone.MutateAsync(change);
 
         /// <summary>Moves the person's version after a change Jellyfin reported.</summary>
         /// <param name="user">The person.</param>
@@ -138,43 +146,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     }
 
     /// <summary>
-    /// Brackets Jellyfin's own user actions that can take a person's administrator permission away or disable them
-    /// (Users/{id}/Policy, deleting a user, signing in, whose failures lock an account out): the person's
-    /// <see cref="JellyfinUserVersions"/> is odd from before the action runs until it has returned, so the
-    /// automatic-write check never decides on a permission read while one of them was landing.
+    /// 4a review round 9: DENY BY DEFAULT. Every controller action that can create, delete, change, lock or authenticate a
+    /// Jellyfin user (<see cref="JellyfinUserActions"/>: every non-GET action of Jellyfin's user, Quick Connect and start-up
+    /// controllers, and every action whose code reaches a user change or a sign-in, a failed one of which can lock the
+    /// account) runs inside a <see cref="JellyfinUserVersions"/> bracket: the person's (the <c>userId</c> argument, else the
+    /// signed-in person) or, when the person isn't known before it runs, every person's. The version is odd from before the
+    /// action runs until it has returned, so the automatic-write check never decides on a permission read while one was
+    /// landing. No lock is held across the action: the bracket is two interlocked adds, and the classification is a lookup.
     /// </summary>
     public sealed class JellyfinUserChangeBracket : IAsyncActionFilter
     {
-        /// <summary>Jellyfin's user controller.</summary>
-        internal const string UserController = "Jellyfin.Api.Controllers.UserController";
+        /// <summary>Jellyfin's claim for the signed-in person's id.</summary>
+        internal const string UserIdClaim = "Jellyfin-UserId";
 
-        /// <summary>Its actions that can change a person's administrator or disabled permission.</summary>
-        internal static readonly IReadOnlySet<string> Actions = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "UpdateUserPolicy", "DeleteUser", "AuthenticateUser", "AuthenticateUserByName",
-        };
-
-        private readonly IUserManager _users;
-
-        /// <summary>Creates the filter (DI).</summary>
-        public JellyfinUserChangeBracket(IUserManager users) { _users = users; }
+        /// <summary>Creates the filter (DI): it starts reading Jellyfin's controllers in the background.</summary>
+        public JellyfinUserChangeBracket() { JellyfinUserActions.Warm(); }
 
         /// <inheritdoc />
         public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            if (context.ActionDescriptor is not ControllerActionDescriptor { ControllerTypeInfo.FullName: UserController } action || !Actions.Contains(action.ActionName))
-                return next();
-            return Person(context) is { } user ? JellyfinUserVersions.Mutate(user, () => next()) : next();
+            if (context.ActionDescriptor is not ControllerActionDescriptor { MethodInfo: { } method } action) return next();
+            switch (JellyfinUserActions.KeyOf(method, action.ControllerTypeInfo.Name, context.HttpContext.Request.Method))
+            {
+                case JellyfinUserKey.None:
+                    return next();
+                case JellyfinUserKey.User when Person(context) is { } user:
+                    return JellyfinUserVersions.Mutate(user, () => next());
+                default:
+                    return JellyfinUserVersions.MutateAll(() => next());
+            }
         }
 
-        // The person the action is about: the route's id, or the user a sign-in by name is for.
-        private Guid? Person(ActionExecutingContext context)
+        // The person the action is about: the userId argument, else the signed-in person (Jellyfin's default for it).
+        private static Guid? Person(ActionExecutingContext context)
         {
             if (context.ActionArguments.TryGetValue("userId", out var id) && id is Guid user && user != Guid.Empty) return user;
-            // A sign-in by name (Jellyfin.Api's AuthenticateUserByName body, not referenced here): its Username.
-            if (context.ActionArguments.TryGetValue("request", out var request) && request?.GetType().GetProperty("Username")?.GetValue(request) is string { Length: > 0 } name)
-                return _users.GetUserByName(name)?.Id;
-            return null;
+            return Guid.TryParse(context.HttpContext.User?.FindFirst(UserIdClaim)?.Value, out var principal) && principal != Guid.Empty ? principal : null;
         }
     }
 

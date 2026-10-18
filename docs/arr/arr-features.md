@@ -1423,7 +1423,10 @@ either is off, the automatic requests above behave exactly as described there. W
   is known, both from the same reading of the instance's disk facts; the person's household role), and decide. Every
   change to something it read from storage is marked as under way before it can be seen and as done after, even when
   the change fails: a breaker opening, a budget counted, a grant, a person's settings saved, a backup restored, an
-  administrator removing someone's administrator rights or disabling them, a credential saved. If any such change was
+  administrator removing someone's administrator rights or disabling them, a credential saved. Every Jellyfin action
+  that can create, delete, change, lock or sign in a user counts too, including a password change or sign-in with a
+  wrong password that locks the account, Quick Connect and the start-up wizard; Jellyfin Enhanced finds them in
+  Jellyfin's own code when the server starts, so an action a Jellyfin update adds is covered as well. If any such change was
   under way or happened while the check was reading, it reads again, or the request waits a moment and is checked
   again. A kill switch, budget, opt-out or administrator change made while the check was reading therefore still stops
   the send, as does low disk space reported meanwhile. It also counts the

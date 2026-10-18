@@ -28,6 +28,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// <param name="sample">A sample.</param>
         public static bool Settled(long sample) => (sample & 1) == 0 && sample < InFlight;
 
+        /// <summary>
+        /// Several versions read as one sample: unsettled (-1) while any is, else their sum. A settled version only moves
+        /// up (each finished change adds 2), so a settled sum that is the same twice means none of them moved.
+        /// </summary>
+        /// <param name="first">One version's sample.</param>
+        /// <param name="second">The other's.</param>
+        public static long Combine(long first, long second) => Settled(first) && Settled(second) ? first + second : -1;
+
         /// <summary>Makes <paramref name="change"/> inside the bracket.</summary>
         /// <param name="change">The change (whatever makes it visible: a commit, a file move, a published reference).</param>
         public void Mutate(Action change)
