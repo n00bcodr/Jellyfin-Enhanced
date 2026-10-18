@@ -238,6 +238,7 @@
                     settings[key] = previous;
                     userSettings[key] = previousOwn;
                     select.value = previous === false ? 'off' : '';
+                    if (key === 'acquisitionBadges') JE.internals?.arrStatusCards?.reset?.();
                     console.warn('🪼 Jellyfin Enhanced: badge settings save failed', err);
                 }
             });

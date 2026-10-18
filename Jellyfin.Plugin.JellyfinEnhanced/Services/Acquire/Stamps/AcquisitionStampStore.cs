@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using Microsoft.Data.Sqlite;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 {
@@ -31,6 +32,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         private static readonly TimeSpan Keep = TimeSpan.FromDays(AcquisitionStampFlags.MaxDays);
 
         private readonly AcquireDatabase _db;
+        private readonly ArrChangeFeed? _feed;
+        private readonly object _expiryGate = new();
+        private Dictionary<StampFact, string?> _expired = new();
         private readonly ConcurrentDictionary<Guid, byte> _deleted = new();
         private readonly Func<DateTimeOffset> _now;
         private readonly object _gate = new();
@@ -39,31 +43,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 
         /// <summary>Creates the store (DI).</summary>
         /// <param name="db">The acquire database.</param>
-        public AcquisitionStampStore(AcquireDatabase db)
-            : this(db, () => DateTimeOffset.UtcNow)
+        /// <param name="feed">Existing title change feed; its audience checks still apply.</param>
+        public AcquisitionStampStore(AcquireDatabase db, ArrChangeFeed feed)
+            : this(db, () => DateTimeOffset.UtcNow, feed)
         {
         }
 
         /// <summary>Creates the store with a clock (tests).</summary>
         /// <param name="db">The acquire database.</param>
         /// <param name="now">Clock.</param>
-        internal AcquisitionStampStore(AcquireDatabase db, Func<DateTimeOffset> now)
+        /// <param name="feed">Optional feed for integration tests.</param>
+        internal AcquisitionStampStore(AcquireDatabase db, Func<DateTimeOffset> now, ArrChangeFeed? feed = null)
         {
             _db = db;
             _now = now;
+            _feed = feed;
         }
 
         private sealed class Index
         {
-            public Index(long generation, Dictionary<Guid, List<StampFact>> facts)
+            public Index(long generation, Dictionary<Guid, List<StampFact>> facts, Dictionary<StampFact, string?> titles)
             {
                 Generation = generation;
                 Facts = facts;
+                Titles = titles;
             }
 
             public long Generation { get; }
 
             public Dictionary<Guid, List<StampFact>> Facts { get; }
+
+            public Dictionary<StampFact, string?> Titles { get; }
         }
 
         /// <summary>True when the database can be used.</summary>
@@ -231,8 +241,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             // Record before waiting for the database writer, including when the database is unavailable.
             _deleted.TryAdd(user, 0);
             if (!_db.Available) return;
-            Guard(Generation, Guid.Empty, (c, t) => Exec(c, t, "DELETE FROM acquisition_stamps WHERE user_id=$u", ("$u", N(user))));
-            Reload();
+            var keys = new List<string>();
+            var changed = Guard(Generation, Guid.Empty, (c, t) =>
+            {
+                keys.AddRange(Titles(c, t, "user_id=$u", ("$u", N(user))));
+                return Exec(c, t, "DELETE FROM acquisition_stamps WHERE user_id=$u", ("$u", N(user)));
+            });
+            if (changed > 0)
+            {
+                Reload();
+                _feed?.Bump(keys);
+            }
         }
 
         /// <summary>Removes expired facts and part records; source identities retain their original arrival.</summary>
@@ -241,11 +260,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         {
             if (!_db.Available) return 0;
             var cutoff = Ms(_now().UtcDateTime - Keep);
+            var keys = new List<string>();
             var removed = Guard(Generation, Guid.Empty, (c, t) =>
-                Exec(c, t, "DELETE FROM acquisition_stamps WHERE at<$c", ("$c", cutoff))
+            {
+                keys.AddRange(Titles(c, t, "at<$c", ("$c", cutoff)));
+                return Exec(c, t, "DELETE FROM acquisition_stamps WHERE at<$c", ("$c", cutoff))
                 + Exec(c, t, "DELETE FROM acquisition_seen WHERE seen_at<$c", ("$c", cutoff))
-                + Exec(c, t, "DELETE FROM acquisition_arrivals WHERE first_at<$c AND part_key NOT LIKE 'src|%'", ("$c", cutoff)));
-            if (removed > 0) Reload();
+                + Exec(c, t, "DELETE FROM acquisition_arrivals WHERE first_at<$c AND part_key NOT LIKE 'src|%'", ("$c", cutoff));
+            });
+            if (removed > 0)
+            {
+                Reload();
+                _feed?.Bump(keys);
+            }
             return removed;
         }
 
@@ -295,7 +322,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                     ? "INSERT INTO acquisition_stamps(item_id,user_id,kind,title_key,series_id,season_id,at,source,created_at) VALUES($i,$u,$k,$t,$se,$sn,$at,$src,$c) ON CONFLICT(item_id,user_id,kind) DO UPDATE SET at=excluded.at,source=excluded.source WHERE excluded.at>acquisition_stamps.at"
                     : "INSERT OR IGNORE INTO acquisition_stamps(item_id,user_id,kind,title_key,series_id,season_id,at,source,created_at) VALUES($i,$u,$k,$t,$se,$sn,$at,$src,$c)";
                 var n = Exec(c, t, sql,
-                    ("$i", N(item.Id)), ("$u", user == Guid.Empty ? string.Empty : N(user)), ("$k", kind), ("$t", item.Keys.FirstOrDefault()?.ToString()),
+                    ("$i", N(item.Id)), ("$u", user == Guid.Empty ? string.Empty : N(user)), ("$k", kind), ("$t", item.Keys.Select(k => k.Title.ToString()).FirstOrDefault(ArrTitleKey.IsValid) ?? item.Keys.FirstOrDefault()?.Title.ToString()),
                     ("$se", item.SeriesId is Guid se ? N(se) : null), ("$sn", item.SeasonId is Guid sn ? N(sn) : null),
                     ("$at", Ms(at)), ("$src", source), ("$c", created));
                 if (kind == AcquisitionStampKinds.Upgraded)
@@ -305,8 +332,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 
                 return n;
             });
-            if (changed > 0) Reload();
+            if (changed > 0)
+            {
+                Reload();
+                // Guard returned only after the transaction committed. Readers woken by the feed see the new index.
+                _feed?.Bump(item.Keys.Select(k => k.Title.ToString()));
+            }
             return changed > 0;
+        }
+
+        /// <summary>
+        /// Announces expiry transitions from the feeder's existing round (no separate timer or database poll).
+        /// The resolver still expires at read time. Remembering expired facts also handles a lifetime being extended.
+        /// </summary>
+        internal void InvalidateExpired(DateTime now, TimeSpan newFor, TimeSpan upgradedFor)
+        {
+            if (_feed == null || Current() is not { } index) return;
+            List<string> keys;
+            lock (_expiryGate)
+            {
+                var expired = index.Titles.Where(pair => now >= pair.Key.At + (pair.Key.Kind == AcquisitionStampKinds.New ? newFor : upgradedFor))
+                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+                keys = expired.Where(pair => !_expired.ContainsKey(pair.Key))
+                    .Concat(_expired.Where(pair => !expired.ContainsKey(pair.Key)))
+                    .Select(pair => pair.Value).OfType<string>().ToList();
+                _expired = expired;
+            }
+            _feed.Bump(keys);
+        }
+
+        /// <summary>Removes an item's facts, then invalidates its title after the 4K index has caught up.</summary>
+        internal void RemoveItem(StampItem item, long generation)
+        {
+            var keys = new List<string>();
+            var changed = Guard(generation, Guid.Empty, (c, t) =>
+            {
+                keys.AddRange(Titles(c, t, "item_id=$i", ("$i", N(item.Id))));
+                return Exec(c, t, "DELETE FROM acquisition_stamps WHERE item_id=$i", ("$i", N(item.Id)));
+            });
+            if (changed > 0) Reload();
+            _feed?.Bump(keys.Concat(item.Keys.Select(k => k.Title.ToString())));
+        }
+
+        private static IReadOnlyList<string> Titles(SqliteConnection c, SqliteTransaction t, string where, params (string Name, object? Value)[] args)
+        {
+            using var cmd = c.CreateCommand();
+            cmd.Transaction = t;
+            cmd.CommandText = "SELECT DISTINCT title_key FROM acquisition_stamps WHERE " + where;
+            foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            using var reader = cmd.ExecuteReader();
+            var keys = new List<string>();
+            while (reader.Read()) if (!reader.IsDBNull(0)) keys.Add(reader.GetString(0));
+            return keys;
         }
 
         // The only stamp write boundary: restore and deletion are checked under AcquireDatabase's insert lock.
@@ -341,9 +418,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             var cutoff = Ms(_now().UtcDateTime - Keep);
             var facts = _db.Read(c =>
             {
-                var list = new List<StampFact>();
+                var list = new Dictionary<StampFact, string?>();
                 using var cmd = c.CreateCommand();
-                cmd.CommandText = "SELECT item_id,user_id,kind,at,series_id,season_id FROM acquisition_stamps WHERE at>=$c";
+                cmd.CommandText = "SELECT item_id,user_id,kind,at,series_id,season_id,title_key FROM acquisition_stamps WHERE at>=$c";
                 cmd.Parameters.AddWithValue("$c", cutoff);
                 using var r = cmd.ExecuteReader();
                 while (r.Read())
@@ -356,7 +433,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                         r.GetString(2),
                         FromMs(r.GetInt64(3)),
                         r.IsDBNull(4) || !Guid.TryParse(r.GetString(4), out var se) ? null : se,
-                        r.IsDBNull(5) || !Guid.TryParse(r.GetString(5), out var sn) ? null : sn));
+                        r.IsDBNull(5) || !Guid.TryParse(r.GetString(5), out var sn) ? null : sn), r.IsDBNull(6) ? null : r.GetString(6));
                 }
 
                 return list;
@@ -368,14 +445,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                 list.Add(fact);
             }
 
-            foreach (var fact in facts)
+            foreach (var fact in facts.Keys)
             {
                 Put(fact.ItemId, fact);
                 if (fact.SeasonId is Guid season && season != Guid.Empty) Put(season, fact);
                 if (fact.SeriesId is Guid series && series != Guid.Empty) Put(series, fact);
             }
 
-            return new Index(generation, byId);
+            return new Index(generation, byId, facts);
         }
 
         private static string N(Guid id) => id.ToString("N", CultureInfo.InvariantCulture);

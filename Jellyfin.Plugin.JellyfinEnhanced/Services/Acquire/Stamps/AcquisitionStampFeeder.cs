@@ -44,6 +44,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
         private readonly ConcurrentDictionary<Guid, DateTime> _pending = new();
+        private readonly ConcurrentDictionary<Guid, (StampItem Item, long Generation)> _removed = new();
         private readonly HashSet<string> _upgradesDone = new(StringComparer.Ordinal);
         private readonly object _upgradesGate = new();
         private readonly SemaphoreSlim _round = new(1, 1);
@@ -147,6 +148,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                 {
                     _wasOn = false;
                     _pending.Clear();
+                    _removed.Clear();
                     return;
                 }
 
@@ -169,6 +171,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                 }
 
                 _resolver.RefreshFourK();
+                foreach (var (id, removed) in _removed.ToArray())
+                {
+                    if (!_removed.TryRemove(id, out _)) continue;
+                    _store.RemoveItem(removed.Item, generation: removed.Generation);
+                }
                 Upgrades(now);
                 foreach (var (id, queued) in _pending.ToArray())
                 {
@@ -194,6 +201,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                     }
                 }
 
+                _store.InvalidateExpired(now, AcquisitionStampFlags.NewLifetime(_config()), AcquisitionStampFlags.UpgradedLifetime(_config()));
                 if (now >= _nextPurge)
                 {
                     _nextPurge = now + PurgeEvery;
@@ -389,6 +397,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                 var generation = _store.Generation;
                 foreach (var source in item.SourceItems().Select(Arrival).Where(s => s.DateCreated != DateTime.MinValue))
                     _store.NoteArrival(AcquisitionStampStore.PartKeys(source), source.DateCreated, item.Id, generation: generation);
+                _pending.TryRemove(item.Id, out _);
+                _removed[item.Id] = (item, generation);
             }
             catch (Exception ex)
             {

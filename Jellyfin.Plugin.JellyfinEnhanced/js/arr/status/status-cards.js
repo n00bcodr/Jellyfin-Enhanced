@@ -322,6 +322,7 @@
      * @returns {void}
      */
     function scan() {
+        if (!statusBadgesOn() && !stampsOn()) return;
         if (!io) return;
         document.querySelectorAll('.card[data-id][data-type]').forEach(card => {
             if (seen.has(card)) return;

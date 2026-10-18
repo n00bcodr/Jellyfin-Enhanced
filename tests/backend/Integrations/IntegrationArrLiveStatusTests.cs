@@ -538,7 +538,7 @@ public class IntegrationArrLiveStatusTests
     }
 
     [Fact]
-    public async Task UpdatesOfItemsJellyfinJustAddedAnnounceTheirTitleAgainOlderItemsDoNot()
+    public async Task UpdatesOfOldPrimariesAlsoAnnounceNewVersions()
     {
         // A new episode gets its numbers (and so its "Ready" on the season page) only when its
         // metadata is read, after ItemAdded: that ItemUpdated must reach the feed too.
@@ -555,7 +555,11 @@ public class IntegrationArrLiveStatusTests
             old.SetProviderId(MetadataProvider.Tmdb, "101");
 
             library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = old });
-            Assert.Equal(0, tracker.FlushItems());   // an update of an item that was not just added
+            Assert.Equal(0, tracker.FlushItems());   // acquisition badges off: retain the phase-1 arrival window
+            rig.Arr.Plugin.Plugin.Configuration.ArrPhase4Enabled = true;
+            rig.Arr.Plugin.Plugin.Configuration.ArrPhase4AcquisitionBadgesEnabled = true;
+            library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = old });
+            Assert.Equal(1, tracker.FlushItems());   // an alternate source can arrive on an old primary
 
             library.Raise(l => l.ItemAdded += null, library.Object, new ItemChangeEventArgs { Item = fresh });
             Assert.Equal(1, tracker.FlushItems());

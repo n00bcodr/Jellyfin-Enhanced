@@ -627,3 +627,47 @@ test('a reset starts an independent HTTP read even while the core API holds the 
   assert.equal(started, 2, 'the new surface must not join the old HTTP response');
   assert.equal(h.cards.cache.get(id(0)).stamp, 'upgraded');
 });
+
+// Review round 3: use the actual panel listener and card surface across delayed failures.
+for (const hiding of [true, false]) test(`a delayed failed ${hiding ? 'Hide' : 'Show'} restores rendering, observer and watch listener`, async t => {
+  const saved = deferred();
+  const listeners = new Set();
+  const h = setup(t, {
+    html: cardsHtml(['Movie']) + '<select id="acquisitionBadgesSelect"><option value="">Show</option><option value="off">Hide</option></select>',
+    config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+    settings: { acquisitionBadges: hiding ? null : false },
+    apiClient: { subscribe: (_name, fn) => { listeners.add(fn); return () => listeners.delete(fn); } },
+    responses: path => stampAnswer(path, { [id(0)]: 'new' })
+  });
+  h.JE.userConfig = { settings: { ...h.JE.currentSettings } };
+  const preset = { name: 'p', previewText: 'Aa', size: 1, family: 'sans-serif', bgColor: '#000', textColor: '#fff' };
+  Object.assign(h.JE, { escapeHtml: value => String(value ?? ''), icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
+    icons: { wrapEmoji: s => s }, state: { activeShortcuts: {} }, pluginVersion: '0.0.0',
+    fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
+    decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none' });
+  h.JE.pluginConfig.Shortcuts = [];
+  h.JE.userConfig.shortcuts = { Shortcuts: [] };
+  h.load('enhanced/settingspanel/ui-panel-template.js');
+  h.document.body.innerHTML = cardsHtml(['Movie']) + h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
+  h.JE.saveUserSettings = () => saved.promise;
+  h.JE.toast = () => assert.fail('a failed save must not claim success');
+  h.load('enhanced/settingspanel/ui-panel-settings.js');
+  h.JE.internals.enhancedUi.wireSettingsListeners({ createToast() {}, resetAutoCloseTimer() {} });
+  await h.show();
+  const select = h.document.getElementById('acquisitionBadgesSelect');
+  select.value = hiding ? 'off' : '';
+  select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  await nextTurn();
+  await h.show();
+  await h.cards.flush(); // give the optimistic surface time to detach/observe before the failure
+  saved.reject(new Error('blocked save'));
+  await new Promise(resolve => h.window.setTimeout(resolve, 20));
+  for (const io of h.observers) io.fn([...io.observed].map(target => ({ isIntersecting: true, target })));
+  await h.cards.flush();
+  assert.equal(h.JE.currentSettings.acquisitionBadges, hiding ? null : false);
+  assert.equal(!!h.document.querySelector('.je-arr-tone-new'), hiding);
+  assert.equal(listeners.size, hiding ? 1 : 0, 'watch listener follows restored preference');
+  h.document.body.insertAdjacentHTML('beforeend', cardsHtml(['Movie', 'Movie']));
+  h.cards.scan();
+  assert.equal(h.observers.some(io => io.observed.size > 0), hiding, 'observer follows restored preference');
+});

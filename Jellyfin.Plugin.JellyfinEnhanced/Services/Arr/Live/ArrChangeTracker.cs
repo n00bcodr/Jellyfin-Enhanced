@@ -19,9 +19,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
     /// it works out which titles changed (<see cref="ArrChangeDetector"/>) and bumps their keys.
     /// New history events whose files changed also get their library entry re-read. Jellyfin's own
     /// library adds and removes bump the titles the arrs know about (that is when a title becomes
-    /// "Ready"); so do updates of items added in the last few minutes, because a new episode only
+    /// "Ready"); so do recent updates and, with acquisition badges on, updates of old primaries. A new episode only
     /// gets its season and episode numbers (and so becomes "Ready" on its season page) when its
-    /// metadata is read, after it was added. They are gathered off the scanner thread and handled
+    /// metadata is read, after it was added. Changes are gathered off the scanner thread and handled
     /// once a second. Does nothing while phase 1 is off.
     /// </summary>
     public sealed class ArrChangeTracker : IHostedService, IDisposable
@@ -239,11 +239,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             Enqueue(e?.Item);
         }
 
-        // Only items added a moment ago: their first metadata read fills in what the status needs
-        // (episode numbers, provider ids). Updates of older items are not arrivals.
+        // An old primary can gain a new MediaSource. Announce its title as well as the metadata
+        // updates that finish a recent arrival; Enqueue still coalesces them off the scanner thread.
         private void OnItemUpdated(object? sender, ItemChangeEventArgs e)
         {
-            if (e?.Item is not { } item || !_recentlyAdded.IsRecent(item.Id)) return;
+            if (e?.Item is not { } item) return;
+            if (!_recentlyAdded.IsRecent(item.Id) && !Acquire.Stamps.AcquisitionStampFlags.Badges(_config())) return;
             Enqueue(item);
         }
 

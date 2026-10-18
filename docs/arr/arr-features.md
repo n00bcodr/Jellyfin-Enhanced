@@ -1416,10 +1416,14 @@ badge about what changed for the person looking at it. At most one per card, in 
    this season or episode.
 
 A series or season card shows New or Upgraded when one of its episodes does. Partial playback clears those badges
-for that viewer too. Hiding badges takes effect immediately, including while a badge request is still loading. Showing them again refreshes cards after the preference saves. Acquisition badges follow live title changes even with phase-1 status badges off. Badges come from what the server already
-knows (no call to Sonarr, Radarr or Seerr when a page or a poster loads), and a badge whose time is up is gone at once,
-without waiting for anything to run. A badge never shows a title the person can't open, and nothing is requested or
-changed by a badge.
+for that viewer too. Hiding badges takes effect immediately, including while a badge request is still loading.
+Showing them again refreshes cards after the preference saves. If saving fails, the previous choice and the cards
+are restored. Acquisition badges follow live title changes even with phase-1 status badges off.
+
+Badges come from what the server already knows (no call to Sonarr, Radarr or Seerr when a page or a poster loads).
+The server stops returning a badge as soon as it expires. Open web cards hear about settled imports, version
+upgrades, removals and expiry through the existing live feed. Expiry is announced on the existing 15-second badge
+background round. A badge never shows a title the person can't open, and nothing is requested or changed by a badge.
 
 **On TV and phone apps** (*Draw the badges into posters for TV and phone apps*, which also needs
 [Native Poster Tags](../enhanced/enhanced-features.md)): the same badge is drawn into the poster images that person's

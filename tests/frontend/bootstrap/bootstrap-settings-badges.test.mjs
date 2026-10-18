@@ -132,6 +132,6 @@ for (const outcome of ['saved', 'failed', 'hidden', 'switched']) test(`show badg
   if (outcome === 'failed') held.reject(new Error('save failed'));
   else held.resolve();
   await new Promise(done => setImmediate(done));
-  assert.deepEqual(h.resets, outcome === 'saved' ? [null] : outcome === 'hidden' ? [false] : []);
+  assert.deepEqual(h.resets, outcome === 'saved' ? [null] : outcome === 'hidden' || outcome === 'failed' ? [false] : []);
   if (outcome === 'failed') assert.deepEqual(h.toasts, [], 'failed persistence never claims success');
 });
