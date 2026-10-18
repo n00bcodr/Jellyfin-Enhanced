@@ -528,6 +528,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
 - `Controllers/AcquireAdminUsersController.cs`: D19 human-administrator routes, private responses and partial group edits.
 - `Services/Acquire/Users/AdminUserSettingsService.cs`: adapters over existing request policy, quota projection, pools, personal JSON, notification state, automation grants and list attribution; source revisions and audited writes.
 - `js/arr/adminusers/admin-users-api.js`: independent private reads and narrow PATCH/ntfy transport.
-- `js/arr/adminusers/admin-users.js`: both native Users route families, React-safe sibling mounting, retained drafts and batched card decoration.
+- `js/arr/adminusers/admin-user-tabs.js`: reversible native tab selection, indicator, keyboard and supported deep links for both Dashboard route families.
+- `js/arr/adminusers/admin-users.js`: vertical user form, retained drafts, one Save with per-section errors and batched card decoration.
 - `tests/backend/Users/AdminUserSettingsTests.cs` and `tests/frontend/features/features-arr-admin-users.test.mjs`: administrator boundaries, inheritance/conflicts/unavailability/consent preservation and native-route lifecycle coverage.
 - `Configuration/UserSettingsDefaults.cs`: one in-memory default mapping shared by first access, first administrator display write and reset, keeping unrelated preferences consistent without recording personal consent.

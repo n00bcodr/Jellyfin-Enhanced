@@ -886,5 +886,9 @@
     "arr_user_backend_seerr": "Seerr",
     "arr_user_backend_status_only": "Status only",
     "arr_user_fourKMoviesBlocking": "4K movie restrictions",
-    "arr_user_fourKSeriesBlocking": "4K series restrictions"
+    "arr_user_fourKSeriesBlocking": "4K series restrictions",
+    "arr_user_tab": "Jellyfin Enhanced",
+    "arr_user_nativeSave": "Save",
+    "arr_user_showDetails": "Show details",
+    "arr_user_settingsSaved": "Settings saved."
 }

@@ -281,6 +281,7 @@
     "extras/plugin-icons.js",
     "extras/plugin-revisions.js",
     "arr/adminusers/admin-users-api.js",
+    "arr/adminusers/admin-user-tabs.js",
     "arr/adminusers/admin-users.js",
     "extras/theme-selector.js",
     "extras/active-streams.js",
