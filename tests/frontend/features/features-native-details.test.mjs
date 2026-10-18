@@ -395,7 +395,7 @@ test('a deep link to a title here now goes by the one arrival rule: held while a
   const copy = '0123456789abcdef0123456789abcdef';
   const h = setup(t, {
     html: PAGE + '<div class="dialogContainer"><div class="dialog opened"></div></div>', url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`,
-    getItem: async () => ({ Id: MOVIE, Type: 'Movie', Name: 'Dune: Part Two' }), resolve: () => ({ itemId: copy }),
+    getItem: async (user, id) => ({ Id: id, Type: 'Movie', Name: 'Dune: Part Two' }), resolve: () => ({ itemId: copy }),
   });
   h.load('arr/status/status-arrival.js');
   Object.assign(h.JE.internals.arrStatusArrival.timing, { recheck: 5 });
@@ -404,13 +404,14 @@ test('a deep link to a title here now goes by the one arrival rule: held while a
   assert.equal(h.window.location.hash, `#/details?id=${MOVIE}&serverId=${SERVER}`, 'not while the dialog is open');
   assert.equal(h.mounts.length, 1, 'the native page is drawn meanwhile');
   h.document.querySelector('.dialogContainer').remove();
+  // The copy is read again as the viewer right before the move.
   for (let i = 0; i < 100 && !h.window.location.hash.includes(copy); i++) await wait(5);
   assert.equal(h.window.location.hash, `#/details?id=${copy}&serverId=${SERVER}`);
 
   // Nothing open: at once, the page not drawn.
   const now = setup(t, {
     html: PAGE, url: `http://jellyfin.test/web/index.html#/details?id=${MOVIE}&serverId=${SERVER}`,
-    getItem: async () => ({ Id: MOVIE, Type: 'Movie', Name: 'Dune: Part Two' }), resolve: () => ({ itemId: copy }),
+    getItem: async (user, id) => ({ Id: id, Type: 'Movie', Name: 'Dune: Part Two' }), resolve: () => ({ itemId: copy }),
   });
   now.load('arr/status/status-arrival.js');
   await now.JE.internals.nativeDetails.onView();

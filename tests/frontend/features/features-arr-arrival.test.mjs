@@ -39,10 +39,12 @@ function setup(t, { hash = `#/details?id=${OLD}&serverId=${SERVER}&context=tvsho
   const replays = [];
   const itemReads = [];
   const userChange = [];
+  const session = { epoch: 0 };
   const h = createHarness({
     html: html ?? page(type),
     url: `http://jellyfin.test/web/index.html${hash}`,
-    apiClient,
+    // Jellyfin answers the viewer's item reads (the destination check before a move) unless a test says otherwise.
+    apiClient: { getItem: async (user, id) => ({ Id: id }), ...apiClient },
     JE: {
       pluginConfig: { ArrStatusEnabled: true, ...config },
       t: translate,
@@ -64,7 +66,7 @@ function setup(t, { hash = `#/details?id=${OLD}&serverId=${SERVER}&context=tvsho
         navigation: { onNavigate: () => () => {}, onViewPage: () => () => {}, replayViewShow: el => replays.push(el) },
         lifecycle: { register: () => ({ track: x => x }) }
       },
-      session: { getEpoch: () => 0, isCurrent: () => true, onUserChange: (k, fn) => userChange.push(fn) }
+      session: { getEpoch: () => session.epoch, isCurrent: e => e === session.epoch, onUserChange: (k, fn) => userChange.push(fn) }
     }
   });
   t.after(() => h.close());
@@ -77,7 +79,7 @@ function setup(t, { hash = `#/details?id=${OLD}&serverId=${SERVER}&context=tvsho
   view.addEventListener('viewshow', e => host.shows.push(e));
   h.document.addEventListener('viewshow', () => { host.bubbled++; });
   return {
-    ...h, calls, replays, itemReads, userChange, A, view, host,
+    ...h, calls, replays, itemReads, userChange, session, A, view, host,
     S: h.JE.arrStatus,
     D: h.JE.internals.arrStatusDetails,
     statusReads: () => calls.filter(c => c.path.startsWith('/acquire/status/item/')).length,
@@ -94,7 +96,17 @@ const until = async (fn, ms = 1000) => {
   return !!fn();
 };
 
+/** Jellyfin's open dialog over the page; returns a function that closes it. */
+function openDialog(h) {
+  const box = h.document.createElement('div');
+  box.className = 'dialogContainer';
+  box.innerHTML = '<div class="dialog opened"></div>';
+  h.document.body.appendChild(box);
+  return () => box.remove();
+}
+
 const episode = (stage, extra = {}) => ({ items: [{ key: KEY, itemId: OLD, kind: 'episode', stage, reason: { code: stage === 'ready' ? 'ready' : 'downloading' }, ...extra }] });
+const series = (ready, extra = {}) => ({ items: [{ key: 'tv:tvdb:75932', itemId: SERIES, kind: 'series', stage: 'downloading', reason: { code: 'partial' }, summary: { aired: 12, ready, missing: 12 - ready }, ...extra }] });
 const season = (ready, extra = {}) => ({ items: [{ key: 'tv:tvdb:75932:s1', itemId: SEASON, kind: 'season', stage: 'downloading', reason: { code: 'partial' }, summary: { aired: 6, ready, missing: 6 - ready }, episodes: [], ...extra }] });
 
 test('a missing episode Jellyfin replaced with its file is swapped for the new item in the same history entry', async t => {
@@ -210,17 +222,24 @@ test('a season gaining episodes reloads once per change; downloads moving along 
 
 test('a season page waits for a burst of arrivals (and Jellyfin tidying up after them) to settle, then reloads once', async t => {
   let ready = 1;
-  const h = setup(t, { type: 'Season', hash: `#/details?id=${SEASON}&serverId=${SERVER}`, answers: () => season(ready) });
+  const handlers = [];
+  const h = setup(t, {
+    type: 'Season', hash: `#/details?id=${SEASON}&serverId=${SERVER}`,
+    apiClient: { subscribe: (types, fn) => { handlers.push(fn); return () => {}; } },
+    items: { [SEASON]: { Id: SEASON, Type: 'Season', SeriesId: SERIES } },
+    answers: () => season(ready)
+  });
   h.A.timing.batch = 200;
   await h.D.update(false);
+  assert.ok(await until(() => handlers.length === 1));
   ready = 2;
   h.S.refresh(['tv:tvdb:75932:s1']);
   await sleep(50);
   ready = 3;
   h.S.refresh(['tv:tvdb:75932:s1']);
   await sleep(150);
-  // Jellyfin dropped the missing episode the file replaced: the same count, read again.
-  h.S.refresh(['tv:tvdb:75932:s1']);
+  // Jellyfin dropped the missing episode the file replaced (the count is the same).
+  handlers[0]({ MessageType: 'LibraryChanged', Data: { ItemsRemoved: [OLD], FoldersRemovedFrom: [SEASON] } });
   await sleep(120);
   assert.equal(h.host.shows.length, 0, 'not while it keeps changing');
   assert.ok(await until(() => h.host.shows.length === 1, 1000));
@@ -494,4 +513,170 @@ test('with the status surfaces off nothing listens and nothing moves', async t =
   assert.equal(h.calls.length, 0);
   assert.equal(handlers.length, 0);
   assert.equal(h.id(), OLD);
+});
+
+test('a move that waited for the viewer reads its destination again as them right before going, and is dropped when they may no longer open it', async t => {
+  let allowed = true;
+  const reads = [];
+  const h = setup(t, {
+    apiClient: {
+      getItem: async (user, id) => {
+        reads.push({ user, id });
+        if (!allowed) throw Object.assign(new Error('Not Found'), { status: 404 });
+        return { Id: id };
+      }
+    },
+    answers: (path, n) => (n === 1 ? episode('almostReady') : episode('ready', { itemId: NEW, openItemId: NEW }))
+  });
+  await h.D.update(false);
+  const close = openDialog(h);
+  h.S.refresh([KEY]);
+  await sleep(40);
+  assert.equal(h.id(), OLD, 'held while the dialog is open');
+  // Meanwhile an admin takes the library (or a parental rating) away from them.
+  allowed = false;
+  close();
+  assert.ok(await until(() => reads.length === 1));
+  await sleep(40);
+  assert.equal(h.id(), OLD, 'never sent to an item they can no longer open');
+  assert.deepEqual(reads[0], { user: 'user-a', id: NEW }, 'read as the signed-in viewer');
+  assert.equal(h.A.state()?.pending ?? null, null, 'the move is dropped');
+  await sleep(40);
+  assert.equal(reads.length, 1, 'and not tried again by itself');
+  // Allowed again: the next read naming it moves the page (checked again first).
+  allowed = true;
+  h.S.refresh([KEY]);
+  assert.ok(await until(() => h.id() === NEW));
+  assert.equal(reads.length, 2);
+});
+
+test('a destination check that answers after the user changed, the viewer left or opened a dialog never moves the page then', async t => {
+  for (const what of ['user', 'left', 'dialog']) {
+    await t.test(what, async st => {
+      const answers = [];
+      const h = setup(st, {
+        apiClient: { getItem: (user, id) => new Promise(resolve => answers.push(() => resolve({ Id: id }))) },
+        answers: (path, n) => (n === 1 ? episode('almostReady') : episode('ready', { itemId: NEW, openItemId: NEW }))
+      });
+      await h.D.update(false);
+      h.S.refresh([KEY]);
+      assert.ok(await until(() => answers.length === 1), 'the destination is read before the move');
+      let close = null;
+      if (what === 'user') h.session.epoch++;
+      else if (what === 'left') h.window.location.hash = `#/details?id=${SERIES}&serverId=${SERVER}`;
+      else close = openDialog(h);
+      answers.shift()();
+      await sleep(40);
+      if (what === 'left') {
+        assert.equal(h.id(), SERIES, 'never sent back to the old page\'s successor');
+        return;
+      }
+      assert.equal(h.id(), OLD, `no move once ${what === 'user' ? 'the user changed' : 'a dialog opened'}`);
+      if (what === 'user') {
+        assert.equal(h.A.state(), null, 'the page is forgotten');
+        return;
+      }
+      close();
+      assert.ok(await until(() => answers.length === 1), 'read again once the dialog closes');
+      answers.shift()();
+      assert.ok(await until(() => h.id() === NEW));
+    });
+  }
+});
+
+test('the arrival route is told the series copy the page showed (a 4K copy or the series in another library is another series item)', async t => {
+  const items = { [OLD]: { Id: OLD, Type: 'Episode', SeriesId: SERIES, SeasonId: SEASON, LocationType: 'Virtual' } };
+  let deleted = false;
+  const h = setup(t, {
+    items,
+    answers: (path) => {
+      if (path.startsWith('/acquire/status/arrival')) return { itemId: NEW };
+      if (path.includes(SEASON)) return season(2);
+      return deleted ? { items: [] } : episode('almostReady');
+    }
+  });
+  await h.D.update(false);
+  assert.ok(await until(() => h.itemReads.some(r => r.id === OLD)));
+  await sleep(5);
+  // Off to the season page while Jellyfin deletes the missing episode (JE's copy of it goes too).
+  h.window.location.hash = `#/details?id=${SEASON}&serverId=${SERVER}`;
+  await h.D.update(false);
+  deleted = true;
+  delete items[OLD];
+  h.window.location.hash = `#/details?id=${OLD}&serverId=${SERVER}&context=tvshows`;
+  await h.D.update(false);
+  assert.ok(await until(() => h.id() === NEW));
+  assert.equal(h.arrivalReads()[0].path, `/acquire/status/arrival?key=${encodeURIComponent(KEY)}&itemId=${OLD}&seriesId=${SERIES}`, 'remembered with the page\'s key');
+});
+
+for (const kind of ['season', 'series']) {
+  test(`a ${kind} page Jellyfin restored catches up on episodes that arrived while the viewer was away, once`, async t => {
+    const SELF = kind === 'season' ? SEASON : SERIES;
+    const OTHER = kind === 'season' ? SERIES : SEASON;
+    const selfKey = kind === 'season' ? 'tv:tvdb:75932:s1' : 'tv:tvdb:75932';
+    let ready = 2;
+    const status = id => (id === SEASON ? season(ready) : series(ready));
+    const h = setup(t, {
+      type: kind === 'season' ? 'Season' : 'Series', hash: `#/details?id=${SELF}&serverId=${SERVER}`,
+      answers: path => status(path.includes(SELF) ? SELF : OTHER)
+    });
+    h.A.timing.batch = 20;
+    await h.D.update(false);
+    // To the other page (Jellyfin keeps this one, hidden), where episodes arrive.
+    h.view.classList.add('hide');
+    h.document.body.insertAdjacentHTML('beforeend', page(kind === 'season' ? 'Series' : 'Season'));
+    const other = [...h.document.querySelectorAll('#itemDetailPage')].pop();
+    h.window.location.hash = `#/details?id=${OTHER}&serverId=${SERVER}`;
+    await h.D.update(false);
+    ready = 4;
+    await sleep(40);
+    assert.equal(h.host.shows.length, 0);
+    // Back: Jellyfin restores the page as it was drawn (2 ready) without reading it again.
+    other.classList.add('hide');
+    h.view.classList.remove('hide');
+    h.window.location.hash = `#/details?id=${SELF}&serverId=${SERVER}`;
+    await h.D.update(false);
+    assert.ok(await until(() => h.host.shows.length === 1), 'Jellyfin redraws it with what arrived');
+    // Its own reads after the redraw, and more of them, are no new arrival: no loop.
+    h.S.refresh([selfKey]);
+    h.S.refresh([selfKey]);
+    await sleep(80);
+    assert.equal(h.host.shows.length, 1);
+    // A page Jellyfin draws afresh for the same item shows what is there: nothing to catch up.
+    h.view.remove();
+    h.document.body.insertAdjacentHTML('beforeend', page(kind === 'season' ? 'Season' : 'Series'));
+    const fresh = [...h.document.querySelectorAll('#itemDetailPage')].pop();
+    let freshShows = 0;
+    fresh.addEventListener('viewshow', () => { freshShows++; });
+    other.remove();
+    ready = 5;
+    await h.D.update(true);
+    await sleep(80);
+    assert.equal(freshShows, 0);
+  });
+}
+
+test('a season page\'s wait restarts only when what is available changes, and never runs past its cap', async t => {
+  let ready = 1;
+  const h = setup(t, { type: 'Season', hash: `#/details?id=${SEASON}&serverId=${SERVER}`, answers: () => season(ready) });
+  Object.assign(h.A.timing, { batch: 120, batchMax: 300 });
+  await h.D.update(false);
+  ready = 2;
+  // A long download stream: the change feed reads the same count again and again.
+  let start = Date.now();
+  while (h.host.shows.length === 0 && Date.now() - start < 1500) {
+    h.S.refresh(['tv:tvdb:75932:s1']);
+    await sleep(20);
+  }
+  assert.equal(h.host.shows.length, 1, 'reloaded while the reads went on');
+  assert.ok(Date.now() - start < 280, `repeated reads of the same count don't postpone it (${Date.now() - start} ms)`);
+  // Arrivals that keep coming faster than the wait: one reload within the cap.
+  start = Date.now();
+  while (h.host.shows.length === 1 && Date.now() - start < 1500) {
+    ready++;
+    h.S.refresh(['tv:tvdb:75932:s1']);
+    await sleep(40);
+  }
+  assert.equal(h.host.shows.length, 2);
+  assert.ok(Date.now() - start < 480, `the cap holds (${Date.now() - start} ms)`);
 });

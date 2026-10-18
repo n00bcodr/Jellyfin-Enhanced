@@ -173,7 +173,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // A missing (virtual) episode or season whose file has arrived: Jellyfin adds the file's item
             // under a new id and drops the virtual one at its next series refresh. Until then the page of
             // the virtual item reads as the arrived one and names it, so the page can move there.
-            if (item.Virtual && item.Kind is "episode" or "season" && ScopeItem(viewer, item.Key) is { Virtual: false } arrived && arrived.ItemId != item.ItemId)
+            if (item.Virtual && item.Kind is "episode" or "season" && ScopeItem(viewer, item.Key, item.SeriesId) is { Virtual: false } arrived && arrived.ItemId != item.ItemId)
             {
                 var status = ComposeItem(viewer, arrived, gather);
                 status.OpenItemId = arrived.ItemId.ToString("N", CultureInfo.InvariantCulture);
@@ -396,12 +396,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// The Jellyfin season or episode item a season/episode key names, when the viewer can see the
-        /// series (a virtual episode included); null otherwise or for movie/series keys.
+        /// series (a virtual episode included); null otherwise or for movie/series keys. In the series item
+        /// <paramref name="seriesId"/> when given (a page's own copy: a 4K copy, or the series in another
+        /// library, is another series item; never swapped for one), else the first copy the viewer can open.
         /// </summary>
-        internal JfItemRef? ScopeItem(StatusViewer viewer, TitleKey key)
+        internal JfItemRef? ScopeItem(StatusViewer viewer, TitleKey key, Guid? seriesId = null)
         {
             if (key.IsMovie || key.Season is not int season) return null;
-            if (CopiesOf(key.Title, viewer).FirstOrDefault(x => x.Visible) is not { } series) return null;
+            var copies = CopiesOf(key.Title, viewer);
+            if ((seriesId is Guid shown ? copies.FirstOrDefault(x => x.Visible && x.ItemId == shown) : copies.FirstOrDefault(x => x.Visible)) is not { } series) return null;
             var ids = key.Episode is int e
                 ? _view.Episodes(series.ItemId, season, viewer, includeVirtual: true)
                     .Where(x => !x.Hidden && x.Season == season && new EpisodeRange(x.Episode, x.EpisodeEnd).Contains(e)).Select(x => x.ItemId)
@@ -422,17 +425,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// The item a details page of <paramref name="key"/>'s scope should show now (the arrival route):
         /// the movie's copy (<paramref name="shown"/> while the viewer can open it), the series, the
         /// season, or the episode with a file (a multi-episode file covering it included; a missing
-        /// one is no arrival). Null when the viewer can open none. Never calls an arr.
+        /// one is no arrival). A series, season or episode stays in the series copy the page showed: the
+        /// shown item's own series while Jellyfin still has it, else <paramref name="seriesId"/> (the page
+        /// names it once the item is gone); never another copy then. Null when the viewer can open none.
+        /// Never calls an arr.
         /// </summary>
-        internal Guid? ArrivedItem(StatusViewer viewer, TitleKey key, Guid? shown)
+        internal Guid? ArrivedItem(StatusViewer viewer, TitleKey key, Guid? shown, Guid? seriesId = null)
         {
             if (key.Season == null)
             {
                 var visible = CopiesOf(key.Title, viewer).Where(x => x.Visible).Select(x => x.ItemId).ToList();
                 if (visible.Count == 0) return null;
-                return shown is Guid id && visible.Contains(id) ? id : visible[0];
+                if (shown is Guid id && visible.Contains(id)) return id;
+                if (!key.IsMovie && seriesId is Guid copy) return visible.Contains(copy) ? copy : null;
+                return visible[0];
             }
-            var scope = ScopeItem(viewer, key);
+            var series = shown is Guid page && _view.Resolve(page, viewer) is { SeriesId: Guid of } ? of : seriesId;
+            var scope = ScopeItem(viewer, key, series);
             return scope == null || (key.Episode != null && scope.Virtual) ? null : scope.ItemId;
         }
 

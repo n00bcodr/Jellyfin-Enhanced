@@ -979,8 +979,8 @@ public class ApiArrStatusTests
     }
 #endif
 
-    private static Task<Reply> Arrival(Rig rig, StatusViewer? viewer, string? key, Guid? itemId = null)
-        => Call(rig, viewer, c => Task.FromResult(c.GetArrival(key, itemId?.ToString("N"))));
+    private static Task<Reply> Arrival(Rig rig, StatusViewer? viewer, string? key, Guid? itemId = null, Guid? seriesId = null)
+        => Call(rig, viewer, c => Task.FromResult(c.GetArrival(key, itemId?.ToString("N"), seriesId?.ToString("N"))));
 
     private static string? ArrivedId(Reply reply)
     {
@@ -1078,8 +1078,89 @@ public class ApiArrStatusTests
         Assert.Equal(400, (await Arrival(rig, rig.Member, null)).Status);
         Assert.Equal(400, (await Arrival(rig, rig.Member, "nonsense")).Status);
         Assert.Equal(400, (await Call(rig, rig.Member, ctl => Task.FromResult(ctl.GetArrival("movie:tmdb:45745", "x")))).Status);
+        Assert.Equal(400, (await Call(rig, rig.Member, ctl => Task.FromResult(ctl.GetArrival("tv:tvdb:78874:s1", null, "x")))).Status);
         Assert.Equal(403, (await Arrival(rig, null, "movie:tmdb:45745")).Status);
         c.ArrPhase1Enabled = false;
         Assert.Equal(403, (await Arrival(rig, rig.Member, "movie:tmdb:45745")).Status);
+    }
+
+    [Fact]
+    public async Task TheArrivalAnswerIsNeverStored()
+    {
+        using var rig = new Rig();
+        // It names what one person may open now: no browser or proxy keeps it.
+        var reply = await Arrival(rig, rig.Member, "movie:tmdb:45745");
+        Assert.Equal(200, reply.Status);
+        Assert.Equal("private, no-store", reply.CacheControl);
+        Assert.Equal("private, no-store", (await Arrival(rig, rig.Member, "tv:tvdb:78874:s1:e3", rig.Episode3)).CacheControl);
+    }
+
+    [Theory]
+    [InlineData("/media/tv4k/Firefly", "TV 4K")]
+    [InlineData("/media/tv2/Firefly", "TV 2")]
+    public async Task AMissingEpisodesSuccessorIsFoundInTheSeriesCopyThePageShows(string path, string library)
+    {
+        // Firefly twice: the rig's copy in "TV" (listed first) and a second series item, the 4K copy or the
+        // same series in another library. Each has its own missing S1E3.
+        using var rig = new Rig();
+        var fireflyKey = TitleKey.Parse("tv:tvdb:78874")!;
+        var key = fireflyKey.WithEpisode(1, 3);
+        var firefly2 = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = firefly2, Kind = "series", Key = fireflyKey });
+        rig.View.AddCopy(fireflyKey, new JfCopy { ItemId = firefly2, Path = path, LibraryName = library, LibraryId = library });
+        var missing2 = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = missing2, Kind = "episode", Key = key, SeriesId = firefly2, Season = 1, Episode = 3, Virtual = true });
+        rig.View.AddEpisode(firefly2, new JfEpisode { ItemId = missing2, Season = 1, Episode = 3, Virtual = true });
+
+        // The first copy's file arrives: only the first copy's missing episode moves to it.
+        var file1 = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = file1, Kind = "episode", Key = key, SeriesId = rig.Firefly, Season = 1, Episode = 3 });
+        rig.View.AddEpisode(rig.Firefly, new JfEpisode { ItemId = file1, Season = 1, Episode = 3 });
+        rig.View.Rev++;
+        Assert.Equal(file1.ToString("N"), Items(await Item(rig, rig.Member, rig.Episode3))[0].GetProperty("openItemId").GetString());
+        var stays = Items(await Item(rig, rig.Member, missing2))[0];
+        Assert.False(stays.TryGetProperty("openItemId", out _), "the second copy's page never jumps to the first copy's file");
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, key.ToString(), missing2)));
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, key.ToString(), null, firefly2)));
+
+        // The second copy's own file arrives: its page moves there, also by key once Jellyfin deleted
+        // the missing episode (the page names the series it showed).
+        var file2 = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = file2, Kind = "episode", Key = key, SeriesId = firefly2, Season = 1, Episode = 3 });
+        rig.View.AddEpisode(firefly2, new JfEpisode { ItemId = file2, Season = 1, Episode = 3 });
+        rig.View.Rev++;
+        Assert.Equal(file2.ToString("N"), Items(await Item(rig, rig.Member, missing2))[0].GetProperty("openItemId").GetString());
+        Assert.Equal(file2.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key.ToString(), missing2)));
+        rig.View.Items.Remove(missing2);
+        rig.View.EpisodesBySeries[firefly2].RemoveAll(e => e.Episode.ItemId == missing2);
+        rig.View.Rev++;
+        Assert.Equal(file2.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key.ToString(), missing2, firefly2)));
+        Assert.Equal(file1.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key.ToString(), rig.Episode3, rig.Firefly)));
+        // A page that named no series (an older page): the first copy, as before.
+        Assert.Equal(file1.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key.ToString(), missing2)));
+
+        // Season and series pages keep their copy too.
+        var season2 = Guid.NewGuid();
+        rig.View.AddSeason(rig.Firefly, new JfSeason { ItemId = rig.Season1, Season = 1 });
+        rig.View.AddSeason(firefly2, new JfSeason { ItemId = season2, Season = 1 });
+        rig.View.AddItem(new JfItemRef { ItemId = season2, Kind = "season", Key = fireflyKey.WithSeason(1), SeriesId = firefly2, Season = 1 });
+        rig.View.Rev++;
+        Assert.Equal(season2.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s1", null, firefly2)));
+        Assert.Equal(rig.Season1.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s1", null, rig.Firefly)));
+        Assert.Equal(firefly2.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874", firefly2)));
+        Assert.Equal(firefly2.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874", null, firefly2)));
+
+        // A copy the viewer can't open is never named, and never swapped for another copy.
+        var adminCopy = Guid.NewGuid();
+        var file3 = Guid.NewGuid();
+        rig.View.AddCopy(fireflyKey, new JfCopy { ItemId = adminCopy, Path = "/media/private/Firefly", LibraryName = "Private" }, rig.Admin.UserId);
+        rig.View.AddEpisode(adminCopy, new JfEpisode { ItemId = file3, Season = 1, Episode = 3 }, rig.Admin.UserId);
+        rig.View.AddItem(new JfItemRef { ItemId = file3, Kind = "episode", Key = key, SeriesId = adminCopy, Season = 1, Episode = 3 }, rig.Admin.UserId);
+        rig.View.Rev++;
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, key.ToString(), null, adminCopy)));
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874", null, adminCopy)));
+        Assert.Equal(file3.ToString("N"), ArrivedId(await Arrival(rig, rig.Admin, key.ToString(), null, adminCopy)));
+        // A series id of another title is no copy of this one.
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, key.ToString(), null, rig.Sintel)));
     }
 }
