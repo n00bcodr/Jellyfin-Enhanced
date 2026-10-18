@@ -631,6 +631,12 @@ The advanced fields are server-owned. Quota and preset settings govern JE mode; 
 | `ArrRequestRoles` | `{}` | Optional per-role `QuotaLimit`, `QuotaGb` and `FourKInstances` defaults |
 | `ArrRequestUsers` | `{}` | Per-user `Role`, `QuotaLimit`, `QuotaGb` and `FourKInstances` overrides |
 
+Copy lookups count at most 20 distinct copies in current enabled libraries, after excluding retained rows from removed
+paths. Native queries read pages of 100 rows, at most 10 pages per provider query (up to four provider queries for aliases).
+Reaching the row or provider-query bound before exhaustion or the copy budget makes the lookup unknown; it is not cached as absent or
+used to fulfil a request. Status reads return HTTP 503 with `library_lookup_unknown` and no stored response, so a later
+read can retry. These bounds are fixed and do not add a setting.
+
 ??? info "Per-role and per-user JSON, 4K, and size estimates"
     For example, the roles JSON can be `{"Manager":{"FourKInstances":["your-4k-instance-id"]}}`; the users JSON is keyed by
     Jellyfin user id. A missing per-user quota inherits the role quota, then the global/preset quota. In JE mode the count

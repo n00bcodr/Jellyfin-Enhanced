@@ -554,7 +554,10 @@ again for you as you are now (if you were removed or keep changing, the Requests
       whose own item you can open: one in a library you can't open, or above your parental limit, isn't yours).
       Copies must lie under a current location of an enabled library you can open. Removing one path from a
       library excludes its copies, seasons and episodes immediately, including rows grouped with a live series,
-      even when an interrupted scan leaves their database rows and collection mappings behind. This also applies to Get 4K, poster badges and library-wide edition lookups; a 4K
+      even when an interrupted scan leaves their database rows and collection mappings behind. Retained rows do not
+      spend the 20-copy lookup budget: Jellyfin Enhanced keeps reading until it finds current copies or reaches the
+      end. If its scan bound prevents a conclusive answer, availability stays unknown and requests remain pending
+      until a later lookup succeeds. This also applies to Get 4K, poster badges and library-wide edition lookups; a 4K
       Sonarr/Radarr holding the title, sharing its folder or library with the standard copy, or Seerr saying it is
       available is never enough on its own. A 4K request for a whole series with no 4K seasons to follow (no 4K Sonarr,
       or one that monitors none) has arrived once a copy you can open has 4K episodes, when the newest of them arrived

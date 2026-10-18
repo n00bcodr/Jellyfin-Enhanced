@@ -454,4 +454,175 @@ public class IntegrationEditionOrphanTests
         Assert.Single(l.View.Sources(l.Hd.Id, l.Person(fake.Member)));
     }
 
+    /// <summary>A native page really limits BEFORE LibraryOf, including duplicates and retained orphan rows.</summary>
+    private static List<BaseItem> PagedRows(Library l, int orphans, bool series, bool live = true)
+    {
+        var rows = new List<BaseItem>();
+        for (var n = 0; n < orphans; n++)
+        {
+            BaseItem row = series
+                ? new Series { Id = Guid.NewGuid(), Name = $"A orphan {n:D4}", Path = $"/removed/{n}/series" }
+                : new MovieFile { Id = Guid.NewGuid(), Name = $"A orphan {n:D4}", Path = $"/removed/{n}/movie.mkv" };
+            l.Items[row.Id] = row; l.Parents[row.Id] = new() { l.UhdRoot }; rows.Add(row);
+        }
+        if (live)
+        {
+            if (series)
+            {
+                var row = new Series { Id = Guid.NewGuid(), Name = "Z live", Path = "/media/Movies/Firefly" };
+                row.SetProviderId(MetadataProvider.Tvdb, "78874");
+                l.Items[row.Id] = row; l.Parents[row.Id] = new() { l.HdRoot }; rows.Add(row);
+                var episode = new EpisodeFile { Id = Guid.NewGuid(), SeriesId = row.Id, ParentIndexNumber = 1, IndexNumber = 1, Path = row.Path + "/S01E01.mkv" };
+                episode.Files.Add(File(episode, 3840)); l.Items[episode.Id] = episode; l.Parents[episode.Id] = new() { l.HdRoot };
+            }
+            else rows.Add(l.Uhd);
+        }
+        l.Manager.Setup(m => m.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
+            q.IncludeItemTypes.Contains(BaseItemKind.Episode)
+                ? l.Items.Values.OfType<Episode>().Cast<BaseItem>().ToList()
+                : rows.Skip(q.StartIndex ?? 0).Take(q.Limit ?? int.MaxValue).ToList());
+        return rows;
+    }
+
+    [Theory]
+    [InlineData("movie", false)]
+    [InlineData("movie", true)]
+    [InlineData("series", false)]
+    [InlineData("series", true)]
+    [InlineData("4k", false)]
+    [InlineData("4k", true)]
+    [InlineData("alias", false)]
+    [InlineData("alias", true)]
+    public void NativeLimitsCannotHideALiveCopyBehindTwentyOrphans(string entry, bool libraryContext)
+    {
+        using var l = new Library();
+        using var rig = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
+        var viewer = libraryContext ? StatusViewer.Library : l.Person(rig.Member);
+        var rows = PagedRows(l, 20, entry == "series");
+        var key = entry == "series" ? Firefly : Matrix;
+        IReadOnlyCollection<TitleKey>? aliases = null;
+        if (entry == "alias")
+        {
+            aliases = new[] { TitleKey.Parse("movie:tmdb:604")! };
+            l.Manager.Setup(m => m.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
+                q.HasAnyProviderId?.GetValueOrDefault("Tmdb") == "604"
+                    ? rows.Skip(q.StartIndex ?? 0).Take(q.Limit ?? int.MaxValue).ToList() : new());
+        }
+        var copies = l.View.Copies(key, viewer, aliases);
+        Assert.Equal(rows.Last().Id, Assert.Single(copies).ItemId);
+        if (entry != "alias")
+        {
+            var editions = new EditionAvailability(l.View, () => rig.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v));
+            Assert.True(editions.Available(viewer, key, entry == "4k" ? Edition.FourK : Edition.Standard));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TwentyFiveOrphansOnlyProveAbsenceAfterExhaustion(bool libraryContext)
+    {
+        using var l = new Library();
+        using var rig = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
+        PagedRows(l, 25, false, live: false);
+        Assert.Empty(l.View.Copies(Matrix, libraryContext ? StatusViewer.Library : l.Person(rig.Member)));
+        // Check exhaustion, not merely an empty projection from a full native page.
+        var queries = l.Manager.Invocations.Where(i => i.Method.Name == "GetItemList").Select(i => (InternalItemsQuery)i.Arguments[0]).ToList();
+        Assert.True(queries.Sum(q => q.Limit ?? 0) > 25);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NonExhaustedScanIsUnknownAndCannotCacheAbsenceOrFulfil(bool partial)
+    {
+        using var l = new Library();
+        using var lab = new IntegrationRequestArrivalsTests.Lab(fourK: true, jellyfin: l.View);
+        var viewer = l.Person(lab.Emma); l.Person(lab.Admin); l.Person(lab.Kid);
+        PagedRows(l, 25, false, live: false);
+        await lab.Warm();
+        lab.Policy.Adjust = (_, _, policy) => policy with { Can4k = true };
+        var request = await lab.Ask(lab.Emma, new MutationInput { Key = Matrix.ToString(), Variant = "4k" });
+        var rows = PagedRows(l, 1001, false, live: false);
+        if (partial) rows.Insert(0, l.Hd);
+        Assert.ThrowsAny<InvalidOperationException>(() => l.View.Copies(Matrix, viewer));
+        Assert.ThrowsAny<InvalidOperationException>(() => lab.Status.Editions.Available(viewer, Matrix, Edition.FourK));
+        lab.Status.Cache.Clear();
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(() => lab.Status.ForKeyDetailAsync(viewer, Matrix, default));
+        Assert.Equal(0, lab.Status.Cache.Count);
+        var controller = new Jellyfin.Plugin.JellyfinEnhanced.Controllers.ArrStatusController(lab.Status)
+        {
+            ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
+            {
+                HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+                {
+                    User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(new[] { new System.Security.Claims.Claim("Jellyfin-UserId", viewer.UserId.ToString()) }, "test")),
+                },
+            },
+        };
+        var response = Assert.IsType<Microsoft.AspNetCore.Mvc.ObjectResult>(await controller.GetStatuses(null, Matrix.ToString(), default, detail: true));
+        Assert.Equal(503, response.StatusCode);
+        Assert.Contains("library_lookup_unknown", JsonSerializer.Serialize(response.Value));
+        Assert.Equal("private, no-store", controller.Response.Headers.CacheControl.ToString());
+        Assert.False(controller.Response.Headers.ContainsKey("ETag"));
+        Assert.Equal(0, lab.Status.Cache.Count);
+        Assert.Equal(503, Assert.IsType<Microsoft.AspNetCore.Mvc.ObjectResult>(controller.GetArrival(Matrix.ToString(), null)).StatusCode);
+        Assert.Equal(0, await lab.Fulfilment.CheckAsync(new[] { Matrix.ToString() }, default));
+        Assert.NotEqual("fulfilled", lab.Ledger.Find(request)!.Status);
+        // No native item event: the next lookup must retry rather than reuse an absent body.
+        rows.Clear(); rows.Add(l.Uhd);
+        Assert.True(lab.Status.Editions.Available(viewer, Matrix, Edition.FourK));
+        using var body = JsonDocument.Parse((await lab.Status.ForKeyDetailAsync(viewer, Matrix, default)).Json);
+        Assert.Equal("ready", body.RootElement.GetProperty("items")[0].GetProperty("stage").GetString());
+    }
+
+    [Fact]
+    public void PagingCountsDistinctEligibleCopiesAcrossAliasesAndStopsAtTwenty()
+    {
+        using var l = new Library();
+        var rows = PagedRows(l, 210, false, live: false);
+        for (var n = 0; n < 21; n++)
+        {
+            var row = new MovieFile { Id = Guid.NewGuid(), Path = $"/media/Movies/{n}.mkv" };
+            l.Items[row.Id] = row; l.Parents[row.Id] = new() { l.HdRoot };
+            rows.Add(row); rows.Add(row);
+        }
+        var copies = l.View.Copies(Matrix, StatusViewer.Library, Enumerable.Range(604, 5).Select(n => TitleKey.Parse("movie:tmdb:" + n)!).ToArray());
+        Assert.Equal(20, copies.Count); Assert.Equal(20, copies.Select(c => c.ItemId).Distinct().Count());
+        l.Manager.Verify(m => m.GetItemList(It.IsAny<InternalItemsQuery>()), Times.AtMost(10));
+    }
+
+    [Theory]
+    [InlineData(100)]
+    [InlineData(120)]
+    public void AFullFilteredNativePageRequiresAnotherPage(int orphans)
+    {
+        using var l = new Library();
+        var rows = PagedRows(l, orphans, false);
+        Assert.Equal(rows.Last().Id, Assert.Single(l.View.Copies(Matrix, StatusViewer.Library)).ItemId);
+        var queries = l.Manager.Invocations.Where(i => i.Method.Name == "GetItemList").Select(i => (InternalItemsQuery)i.Arguments[0]).ToList();
+        Assert.Equal(new[] { 0, 100 }, queries.Select(q => q.StartIndex ?? 0));
+        Assert.All(queries, q => Assert.Equal(new[] { (ItemSortBy.SortName, SortOrder.Ascending), (ItemSortBy.DateCreated, SortOrder.Ascending) }, q.OrderBy));
+    }
+
+    [Fact]
+    public void AnExactlyFullOrphanPageRequiresAnEmptyPageBeforeAbsence()
+    {
+        using var l = new Library();
+        PagedRows(l, 100, false, live: false);
+        Assert.Empty(l.View.Copies(Matrix, StatusViewer.Library));
+        l.Manager.Verify(m => m.GetItemList(It.IsAny<InternalItemsQuery>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public void UnsearchedProviderAliasesAreUnknownRatherThanAbsent()
+    {
+        using var l = new Library();
+        l.Manager.Setup(m => m.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
+            q.HasAnyProviderId?.GetValueOrDefault("Tmdb") == "608" ? new List<BaseItem> { l.Uhd } : new());
+        var aliases = Enumerable.Range(604, 5).Select(n => TitleKey.Parse("movie:tmdb:" + n)!).ToArray();
+        Assert.ThrowsAny<InvalidOperationException>(() => l.View.Copies(Matrix, StatusViewer.Library, aliases));
+        l.Manager.Verify(m => m.GetItemList(It.IsAny<InternalItemsQuery>()), Times.AtMost(40));
+    }
+
 }

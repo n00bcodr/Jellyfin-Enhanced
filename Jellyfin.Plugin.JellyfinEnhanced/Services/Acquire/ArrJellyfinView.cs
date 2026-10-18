@@ -18,6 +18,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
@@ -29,13 +30,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     {
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
+        private readonly ILogger<ArrJellyfinView>? _logger;
         private long _revision;
 
+        /// <summary>Native rows per copy-query page; the eligible copy budget is separate.</summary>
+        internal const int CopyPageSize = 100;
+
+        /// <summary>At most 1000 native rows per provider query (at most four queries).</summary>
+        internal const int CopyScanPages = 10;
+
+        private const int CopyBudget = 20;
+        private const int CopyProviderQueries = 4;
+
         /// <summary>Creates the view and starts following library changes.</summary>
-        public ArrJellyfinView(ILibraryManager libraryManager, IUserManager userManager)
+        public ArrJellyfinView(ILibraryManager libraryManager, IUserManager userManager, ILogger<ArrJellyfinView>? logger = null)
         {
             _libraryManager = libraryManager;
             _userManager = userManager;
+            _logger = logger;
             _libraryManager.ItemAdded += OnItemChanged;
             _libraryManager.ItemUpdated += OnItemChanged;
             _libraryManager.ItemRemoved += OnItemChanged;
@@ -192,22 +204,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // The key and its aliases of the same kind, one query per set of distinct providers
             // (Jellyfin matches any of the ids a query names; an item is listed once).
             var libraries = LiveLibraries(viewer);
-            var queries = TitleAliases.ProviderQueries(titleKey, aliases ?? Array.Empty<TitleKey>());
+            var queries = TitleAliases.ProviderQueries(titleKey, aliases ?? Array.Empty<TitleKey>(), maxQueries: null);
             var items = new List<BaseItem>();
             var found = new HashSet<Guid>();
-            foreach (var providers in queries)
+            foreach (var providers in queries.Take(CopyProviderQueries))
             {
-                foreach (var item in _libraryManager.GetItemList(new InternalItemsQuery
+                if (items.Count == CopyBudget) break;
+                var exhausted = false;
+                for (var page = 0; page < CopyScanPages; page++)
                 {
-                    IncludeItemTypes = new[] { titleKey.IsMovie ? BaseItemKind.Movie : BaseItemKind.Series },
-                    HasAnyProviderId = providers,
-                    Recursive = true,
-                    Limit = 20,
-                    DtoOptions = new DtoOptions(false),
-                }))
-                {
-                    if (items.Count < 20 && LibraryOf(item, viewer, libraries, includeHidden: true) != null && found.Add(item.Id)) items.Add(item);
+                    // A native limit precedes LibraryOf. Retained or duplicate rows must not spend the
+                    // eligible budget. Explicit, unchanged ordering keeps offsets stable between pages.
+                    var rows = _libraryManager.GetItemList(new InternalItemsQuery
+                    {
+                        IncludeItemTypes = new[] { titleKey.IsMovie ? BaseItemKind.Movie : BaseItemKind.Series },
+                        HasAnyProviderId = providers,
+                        Recursive = true,
+                        StartIndex = page * CopyPageSize,
+                        Limit = CopyPageSize,
+                        OrderBy = new[] { (ItemSortBy.SortName, SortOrder.Ascending), (ItemSortBy.DateCreated, SortOrder.Ascending) },
+                        DtoOptions = new DtoOptions(false),
+                    });
+                    foreach (var item in rows)
+                    {
+                        if (LibraryOf(item, viewer, libraries, includeHidden: true) == null || !found.Add(item.Id)) continue;
+                        items.Add(item);
+                        if (items.Count == CopyBudget) break;
+                    }
+                    exhausted = rows.Count < CopyPageSize;
+                    if (exhausted || items.Count == CopyBudget) break;
                 }
+                if (!exhausted && items.Count < CopyBudget)
+                {
+                    // A full last page is not evidence of absence, even when every row was filtered.
+                    // Propagate uncertainty before any caller can compose/cache absence or fulfil a request.
+                    _logger?.LogWarning("Jellyfin copy lookup reached its {Rows}-row scan bound with {Copies} eligible copies; availability is unknown.", CopyPageSize * CopyScanPages, items.Count);
+                    throw new IncompleteLibraryScanException();
+                }
+            }
+            if (items.Count < CopyBudget && queries.Count > CopyProviderQueries)
+            {
+                _logger?.LogWarning("Jellyfin copy lookup reached its {Queries}-provider-query bound with {Copies} eligible copies; availability is unknown.", CopyProviderQueries, items.Count);
+                throw new IncompleteLibraryScanException();
             }
             var copies = new List<JfCopy>(items.Count);
             foreach (var item in items)

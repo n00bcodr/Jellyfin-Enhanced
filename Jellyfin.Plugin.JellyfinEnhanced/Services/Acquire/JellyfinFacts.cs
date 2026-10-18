@@ -4,6 +4,16 @@ using System.Collections.Generic;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
     /// <summary>
+    /// A bounded native lookup ended before exhaustion or the eligible budget. Availability is unknown:
+    /// callers must retry later, never cache absence or grant Ready/fulfilment credit from this lookup.
+    /// </summary>
+    public sealed class IncompleteLibraryScanException : InvalidOperationException
+    {
+        /// <summary>Creates a lookup failure without disclosing title, library, path or viewer details.</summary>
+        public IncompleteLibraryScanException() : base("Jellyfin copy availability is unknown because a native lookup bound was reached.") { }
+    }
+
+    /// <summary>
     /// Who is asking for a status: the Jellyfin user and everything about them that changes what
     /// they may see (role, library access, parental limits, "show missing episodes"), condensed
     /// into <see cref="PolicyRevision"/> for the per-user status cache.
@@ -232,8 +242,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// Every Jellyfin movie (or series) carrying the key's provider id, or any of its
         /// <paramref name="aliases"/> (the title's other ids, <see cref="TitleAliases"/>), in any
-        /// library: the key's kind only, once per item.
+        /// current library: the key's kind only, once per item, up to twenty eligible copies. Native
+        /// query limits apply after current-library membership, with bounded paging.
         /// </summary>
+        /// <exception cref="IncompleteLibraryScanException">The scan bound prevented a conclusive lookup; never an absent result.</exception>
         IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null);
 
         /// <summary>

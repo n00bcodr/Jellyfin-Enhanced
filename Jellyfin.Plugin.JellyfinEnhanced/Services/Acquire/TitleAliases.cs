@@ -108,9 +108,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// Jellyfin's provider queries for a title and its aliases: one value of each provider per
-        /// query, at most four queries, shared by copy lookup and the feed's batched privacy checks.
+        /// query. Privacy checks default to at most four queries. Copy lookup asks for the complete set
+        /// (<paramref name="maxQueries"/> null) so an unsearched alias cannot be mistaken for absence.
         /// </summary>
-        internal static IReadOnlyList<Dictionary<string, string>> ProviderQueries(TitleKey key, IEnumerable<TitleKey> aliases)
+        internal static IReadOnlyList<Dictionary<string, string>> ProviderQueries(TitleKey key, IEnumerable<TitleKey> aliases, int? maxQueries = 4)
         {
             var queries = new List<Dictionary<string, string>>();
             foreach (var id in new[] { key.Title }.Concat(aliases).Where(k => k.IsMovie == key.IsMovie)
@@ -120,7 +121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (into == null) queries.Add(into = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
                 into[id.Provider] = id.Id;
             }
-            return queries.Take(4).ToList();
+            return maxQueries is int max ? queries.Take(max).ToList() : queries;
         }
 
         /// <summary>The provider name Jellyfin's library queries use for a title key.</summary>
