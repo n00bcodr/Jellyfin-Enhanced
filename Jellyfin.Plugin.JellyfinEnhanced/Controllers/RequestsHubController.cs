@@ -104,6 +104,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (_manage.Resolve(viewer, id, key) is not { } target) return NotFound(new { code = "not_found" });
             using var scope = _manage.Status.Store.BeginRequest("arr/admin/manage");
             var overview = await _manage.OverviewAsync(viewer, target.Key, target.Item, cancellationToken).ConfigureAwait(false);
+            // The final gate: still an administrator, with the same access, once everything was read.
+            if (Viewer(_manage.Status) is not { IsAdmin: true } now || now.PolicyRevision != viewer.PolicyRevision) return Forbid();
             return File(JsonSerializer.SerializeToUtf8Bytes(overview, CamelCase), "application/json; charset=utf-8");
         }
 

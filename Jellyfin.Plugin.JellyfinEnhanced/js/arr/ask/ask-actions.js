@@ -243,7 +243,7 @@
             let box = status.kind === 'series' ? await seriesActions(page, status, ctx, caps, gen)
                 : status.kind === 'episode' ? episodeActions(status, caps)
                     : status.kind === 'season' ? await seasonActions(status, caps, gen)
-                        : await movieActions(page, status, caps, gen);
+                        : movieActions(page, status, caps, gen);
             if (gen !== generation) return;
             // Asks (and a family Search, which is an ask or a search on the title's own folder) are checked for this
             // title first: refused right now, the page says why instead of offering a button that can't work. An
@@ -763,17 +763,17 @@
 
     /**
      * A movie in the library: Get 4K for people who may ask for 4K when no 4K copy is here: neither a version of
-     * this item nor a copy elsewhere they can open (the status' `fourK`, from the server's edition check).
+     * this item nor a copy elsewhere they can open (the status' `fourK`, from the server's edition check). Only the
+     * server's answer counts: Jellyfin 10.11 also lists a version from a library the viewer can't open (or above
+     * their parental limit) among the item's media sources, and that one isn't theirs.
      * @param {HTMLElement} page Page.
      * @param {Object} status Movie status.
      * @param {Object} caps Capabilities.
      * @param {number} gen Generation.
-     * @returns {Promise<HTMLElement|null>} Box.
+     * @returns {HTMLElement|null} Box.
      */
-    async function movieActions(page, status, caps, gen) {
-        if (!caps.can4kMovies || !status.itemId || status.fourK === true) return null;
-        const item = await loadItem(status.itemId);
-        if (gen !== generation || !item || has4k(item)) return null;
+    function movieActions(page, status, caps, gen) {
+        if (!caps.can4kMovies || !status.itemId || status.fourK === true || gen !== generation) return null;
         const box = actionsBox(caps);
         const contact = JE.arrAsk.contact(caps);
         const key = status.key;
@@ -783,16 +783,6 @@
         box.dataset.jeAskVariant = '4k';
         box.dataset.sig = signature(box);
         return box;
-    }
-
-    /**
-     * True when any version of the item has a 4K video stream.
-     * @param {Object} item Jellyfin item.
-     * @returns {boolean} Has 4K.
-     */
-    function has4k(item) {
-        const sources = Array.isArray(item?.MediaSources) ? item.MediaSources : [];
-        return sources.some(source => (source.MediaStreams || []).some(s => s.Type === 'Video' && ((s.Width || 0) >= 3200 || (s.Height || 0) >= 2000)));
     }
 
     /**
@@ -822,5 +812,5 @@
     });
 
     JE.internals = JE.internals || {};
-    JE.internals.arrAskActions = { attachDetails, clear, seriesPlan, has4k, missingInput, tmdbSeasons, runSearch };
+    JE.internals.arrAskActions = { attachDetails, clear, seriesPlan, missingInput, tmdbSeasons, runSearch };
 })(window.JellyfinEnhanced);

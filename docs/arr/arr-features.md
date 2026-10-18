@@ -510,7 +510,11 @@ Every title speaks one status language, for family members and administrators al
 *Waiting for Dad to OK it → OK'd! Getting started → Not out yet → Looking for it →
 Downloading · 42% · about 12 min → Almost ready → Ready to watch*. "Ready" means a Jellyfin item *you* can open.
 Family members see these sentences only; administrators also see which Sonarr/Radarr holds each copy, the app's
-own message ("Manual Import required") and what would fix it.
+own message ("Manual Import required") and what would fix it. A page of one copy of a series (a 4K folder, the series
+in another library, or one folder of a grouped series) reads only the Sonarr that owns that copy's folder (by its path
+mapping, else the folder names); when no Sonarr provably does, it reads none rather than another Sonarr's files,
+downloads or upgrades. Every answer is judged by what you may see when it is sent: if your access, parental limit or
+role changes while it is being prepared, it is prepared again for you as you are now.
 
 ??? info "Where the status shows"
     - **Details pages**: a pill under the title (tap it for the journey: asked, OK'd, downloading, … with dates);
@@ -543,10 +547,13 @@ own message ("Manual Import required") and what would fix it.
       **Ready** (what arrived in the last two weeks, with Play). Each request follows what it asked for: a request
       for Season 3 of a show you already have waits for Season 3, and a 4K request for the 4K copy. A 4K request has
       arrived only once a copy you can open has a playable 4K version (each version of an item counts on its own, in
-      any library and in any folder of a grouped series, every requested episode by its own files); a 4K Sonarr/Radarr
-      holding the title, sharing its folder or library with the standard copy, or Seerr saying it is available is never
-      enough on its own. A standard request has arrived once any copy plays, a 4K one included, unless the
-      administrator turns on *Standard requests need a non-4K copy*. **Play** on a request opens a copy with that
+      any library and in any folder of a grouped series, every requested episode by its own files, and only a version
+      whose own item you can open: one in a library you can't open, or above your parental limit, isn't yours); a 4K
+      Sonarr/Radarr holding the title, sharing its folder or library with the standard copy, or Seerr saying it is
+      available is never enough on its own. A standard request has arrived once any copy plays, a 4K one included (a
+      disc placeholder or a missing item doesn't), unless the administrator turns on *Standard requests need a non-4K
+      copy* (a request for a whole series then waits for non-4K episodes of every season the standard Sonarr
+      monitors). **Play** on a request opens a copy with that
       edition (Seerr's own item first when it has it), never the other edition's. Nobody sees anyone else's requests here, and
       someone else's request for the same title doesn't change how yours shows. Titles you hid with
       **Hidden Content** (when it filters requests) don't show here either. Release dates are calendar days: a
@@ -1032,7 +1039,8 @@ profiles, folders or tags.
       (Search still offers them once their episodes are missing for a long while). Once one has arrived your ask is done:
       if that season is deleted again later, it is offered again.
     - **Movies in the library** get **Get 4K** for people who may ask for 4K, when no 4K copy is there yet: neither a
-  4K version of the movie on the page nor a 4K copy in another library they can open.
+  4K version of the movie on the page nor a 4K copy in another library that they can open (a version in a library
+  they can't open, or above their parental limit, doesn't count, even where Jellyfin 10.11 lists it).
     - **Collection pages** say "You have 4 of 6." and offer **Get the 2 missing** with a cost preview ("Uses 2 of your 5
       this week; 1 need {contact}'s OK"). Movies that aren't out yet are listed but not asked for; movies someone has
       already asked for show that instead; movies that can't be asked for now say *Paused: storage full* and are left
