@@ -36,10 +36,24 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     getCurrentUserId: () => 'user-a', accessToken: () => 'test-token', serverId: () => 'server-a',
     getUrl: path => `http://jellyfin.test${path.startsWith('/') ? '' : '/'}${path}`, ...apiClient
   };
+  // Legacy-helper unit fixtures keep their ajax mock; transport tests load the real core below.
+  JE.core = JE.core || {};
+  JE.core.api = JE.core.api || {};
+  JE.core.api.ajax = JE.core.api.ajax || (options => window.ApiClient.ajax(options));
   window.fetch = fetch || ((url) => {
     const error = new Error(`Unexpected network request: ${url}; provide a fetch fixture`);
     errors.push(error);
     throw error;
+  });
+  // Request-surface fixtures provide raw HTTP responses; preserve the core status/body contract.
+  JE.core.api.pluginResponse = JE.core.api.pluginResponse || (async (path, options = {}) => {
+    const response = await window.fetch(window.ApiClient.getUrl('/JellyfinEnhanced' + path), {
+      method: options.method || 'GET', signal: options.signal,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body)
+    });
+    let body = null;
+    try { const text = await response.text(); body = text ? JSON.parse(text) : null; } catch (_) { /* malformed fixture body */ }
+    return { status: response.status, body };
   });
   window.structuredClone = structuredClone;
   Object.assign(window, globals);

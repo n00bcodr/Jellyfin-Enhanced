@@ -78,7 +78,7 @@ for(const kind of ['Movie','Series']) test(`real ${kind} detail page opens as Un
   const debounced={};
   h.JE.helpers={debounce:(fn,ms)=>{debounced[ms]=fn;return ()=>{};},createObserver(){},onViewPage(){},
     getItemCached:async id=>({Id:id,Type:kind,Name:'Arrived title',ProviderIds:{Tmdb:'42'}})};
-  h.JE.core={ui:{placeDetailAction:(row,button)=>row.appendChild(button)},navigation:{onViewPage(){},onNavigate(){}}};
+  h.JE.core={...h.JE.core,ui:{placeDetailAction:(row,button)=>row.appendChild(button)},navigation:{onViewPage(){},onNavigate(){}}};
   h.document.body.innerHTML='<div id="itemDetailPage"><h1 class="itemName">Arrived title</h1><div class="itemMiscInfo itemMiscInfo-primary"></div><div class="detailButtons"></div></div>';
   h.window.history.replaceState(null,'','#/details?id=reimport');
   h.load('enhanced/itemdetails/features-details-page.js');
@@ -91,7 +91,7 @@ for(const kind of ['Movie','Series']) test(`real ${kind} detail page opens as Un
 
 for(const kind of ['movie','series','collection']) test(`native ${kind} guard confirmation cannot write after switch`,async t=>{
   const h=setup(t);const pending=deferred();
-  h.JE.core={ui:{placeDetailAction:(row,button)=>row.appendChild(button)}};
+  h.JE.core={...h.JE.core,ui:{placeDetailAction:(row,button)=>row.appendChild(button)}};
   h.load('enhanced/spoilerguard/detail-button.js');
   Object.assign(h.JE.internals.spoilerGuard,{isStateLoaded:()=>true,kindOf:()=>kind,isEnabledForKind:()=>true,
     confirmDisableSpoiler:()=>pending.promise,

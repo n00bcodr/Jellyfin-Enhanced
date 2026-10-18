@@ -129,13 +129,13 @@ Both modes run server-side: every native client and every browser sees the same 
 
 ## After toggling — what happens on your screen
 
-By default Spoiler Guard does a **soft refresh**: it immediately rewrites every `<img>` URL on the current page so you see the new blur/clear state instantly, without a full-page flash. Page-rendered text (Overview, episode titles, ratings) continues to show whatever was on screen until your next navigation, at which point everything will be in sync with the new state.
+Spoiler Guard immediately rewrites image URLs after adopting the server's updated state. Native library detail buttons also reload the page so Jellyfin's Overview, episode titles and ratings reflect the new policy. Provider title pages, cards and the More Info window refresh through the shared policy event; replies started under the previous policy are discarded.
 
 | Before toggle | After toggle (soft) |
 |---|---|
 | ![Before](web-refresh-after-toggle-off.png) | ![After ON](web-refresh-after-toggle-on.png) |
 
-If your admin enables **Strict refresh mode**, the page also auto-reloads after every toggle so the text updates immediately — at the cost of a brief page flash.
+Native library detail toggles reload even when **Strict refresh mode** is off. The compatibility setting remains available, but these buttons always refresh the fields owned by Jellyfin.
 
 ---
 
@@ -265,3 +265,9 @@ This should no longer happen in normal operation. Spoiler Guard identifies image
 If it still happens, the affected client is probably fetching images from old cached URLs minted before this feature. Those URLs carry no marker, so the server falls back to IP matching and fails closed on a shared IP. Clear the client's image cache once so it refetches fresh marker-carrying URLs, or configure the proxy to send `X-Forwarded-For` and add it to **Dashboard → Networking → Known proxies** so the fallback path can see real client IPs too. Identity tags are automatic whenever Spoiler Guard is enabled.
 
 On Requests & downloads pages, guarding a title keeps its request status, cancellation and approval controls, quota warnings and parental-rating assessment. The review-rating preference suppresses review scores independently of parental ratings. Calendar episode names are protected while season and episode numbers and the Available filter remain usable.
+
+Every Spoiler Guard control refreshes from the server after saving. Disabling an arrived title also updates its provider intent and all library copies in the client. Native detail pages refresh immediately, and replies started under the previous policy are discarded. Queued requests and retries remain bound to the viewer who submitted them.
+
+Release-date chips also discard lookups and cached answers from the previous viewer or policy. Reads cancelled by a page refresh finish quietly; active network failures still report their diagnostic.
+
+Native refresh cancellation also leaves watch-progress and file-size chips uncached and quiet; current transport failures still report errors.

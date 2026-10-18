@@ -53,6 +53,7 @@
             return;
         }
         try {
+            const action = JE.createSessionAction();
             const userId = ApiClient.getCurrentUserId();
             if (!userId) {
                 if (throwOnError) throw new Error('User ID not available');
@@ -76,12 +77,13 @@
             const cacheKey = `${userId}:${fileName}`;
 
             const post = async () => {
+                if (!action.current()) throw new DOMException('Session changed', 'AbortError');
                 // Skip the POST if nothing has changed since the last save this session.
                 if (_lastSavedJson[cacheKey] === serialized) {
                     return; // no-op — identical to last save
                 }
 
-                await ApiClient.ajax({
+                await JE.core.api.ajax({
                     type: 'POST',
                     url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`),
                     data: serialized,

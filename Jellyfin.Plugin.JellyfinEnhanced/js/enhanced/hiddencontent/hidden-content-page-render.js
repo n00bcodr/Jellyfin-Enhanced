@@ -461,9 +461,11 @@
     const unhideBtn = card.querySelector('.je-hidden-item-unhide');
     if (unhideBtn) {
       unhideBtn.addEventListener('click', () => {
+        const action = JE.createSessionAction();
         showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
           card.classList.add('je-hidden-item-removing');
           setTimeout(() => {
+            if (!action.current()) return;
             handleUnhide(item._key || item.itemId);
           }, 300);
         }, item.name || 'this item');

@@ -693,7 +693,7 @@
     function trackUsage(key) {
         try {
             if (!JE.pluginConfig?.AnalyticsEnabled || !JE.pluginConfig?.AnalyticsShareUsageCounts) return;
-            ApiClient.ajax({
+            JE.core.api.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl('/JellyfinEnhanced/usage/track'),
                 data: JSON.stringify({ key }),

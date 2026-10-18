@@ -75,18 +75,13 @@
                         if (!await internal.confirmDisableSpoiler()) return;
                         if (!action.current()) return;
                         await internal.disableForTmdb(mediaType, tmdbId);
-                        JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
+                        if (action.current()) JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
                     } else {
                         await internal.enableForTmdb(mediaType, tmdbId, displayName);
-                        JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
+                        if (action.current()) JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
                     }
-                    if (!action.current()) return;
-                    window.dispatchEvent(new CustomEvent('je-spoiler-policy-changed', { detail: {
-                        type: mediaType, tmdbId: Number(tmdbId), enabled: !wasEnabled, userId: ApiClient.getCurrentUserId()
-                    } }));
-                    document.querySelectorAll('.je-spoiler-pending-btn, .je-spoiler-pending-detail').forEach(node => node.jeSpoilerRefresh?.());
-                    internal.refreshSpoilerableImages?.();
                 } catch (e) {
+                    if (!action.current()) return;
                     console.warn(`${logPrefix} Seerr toggle failed:`, e);
                     JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));
                 } finally {

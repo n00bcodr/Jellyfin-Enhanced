@@ -44,8 +44,8 @@
 
         operation.then(function() {
             if (!action.current()) return;
-            renderButton(button, enable);
-            button.setAttribute('data-je-spoiler-state', enable ? 'on' : 'off');
+            renderButton(button, internal.isEnabledForKind(kind, itemId));
+            button.setAttribute('data-je-spoiler-state', internal.isEnabledForKind(kind, itemId) ? 'on' : 'off');
             // Keep separate per-kind keys so translators can tailor the
             // wording later; all enabled messages are deliberately
             // mode-neutral because images may be hidden or blurred.
@@ -61,9 +61,6 @@
             }
             JE.toast?.(JE.t(key));
 
-            try { void JE.tagPipeline?.invalidateServerCache?.(); }
-            catch (e) { console.warn(`${logPrefix} tag cache invalidation failed:`, e); }
-
             try {
                 if (enable && JE.pluginConfig?.SpoilerStripReviews !== false
                     && internal.getUserPrefs().HideReviews !== false) {
@@ -75,10 +72,9 @@
                 console.warn(`${logPrefix} reviews cleanup failed:`, e);
             }
 
-            try { internal.refreshSpoilerableImages(); }
-            catch (e) { console.warn(`${logPrefix} image refresh failed:`, e); }
-            if (JE.pluginConfig?.SpoilerBlurStrictRefresh === true) internal.scheduleFullReload();
+            internal.scheduleFullReload();
         }).catch(function(err) {
+            if (!action.current()) return;
             console.error(`${logPrefix} toggle failed:`, err);
             JE.toast?.(JE.t('spoiler_blur_error_toast'));
         }).finally(function() {

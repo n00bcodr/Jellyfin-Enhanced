@@ -94,7 +94,7 @@
             const beforeRules = JSON.parse(JSON.stringify(getHiddenData().items || {}));
             const item = { itemId: '', seriesId: '', type: title.type, tmdbId: title.tmdbId,
                 name: title.name || title.title || '', posterPath: title.posterPath || '', hideScope: 'global', hiddenAt: new Date().toISOString() };
-            const reply = await ApiClient.ajax({ type: hidden ? 'PUT' : 'DELETE', dataType: 'json',
+            const reply = await JE.core.api.ajax({ type: hidden ? 'PUT' : 'DELETE', dataType: 'json',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${user}/hidden-content/rule/${encodeURIComponent(title.key)}`),
                 ...(hidden ? { data: JSON.stringify(item), contentType: 'application/json' } : {}) });
             if (!action.current()) return false;
@@ -289,7 +289,7 @@
         try {
             const userId = ApiClient.getCurrentUserId();
             if (!userId) return false;
-            const fresh = await ApiClient.ajax({
+            const fresh = await JE.core.api.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
                 dataType: 'json'

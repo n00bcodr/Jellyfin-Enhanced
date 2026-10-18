@@ -192,7 +192,7 @@ for(const operation of ['update','deleteAll','backfill']){
 /** Loads the replacement modal and migrates `group` to the single offered item. */
 async function migrate(h,group){
   const replacement={Id:'new-item-0000000000000000',Name:'New cut',Type:'Movie',ProviderIds:{Tmdb:'42'}};
-  h.JE.core={api:{fetch:async()=>({Items:[replacement]})}};h.JE.helpers={getItemCached:async()=>replacement};h.window.ApiClient.getImageUrl=()=>'';
+  h.JE.core={...h.JE.core,api:{...h.JE.core.api,fetch:async()=>({Items:[replacement]})}};h.JE.helpers={getItemCached:async()=>replacement};h.window.ApiClient.getImageUrl=()=>'';
   h.load('enhanced/bookmarks/bookmarks-library-replacements.js');
   await h.JE.internals.bookmarksLibrary.findAndOfferReplacement(group,h.document.createElement('button'));
   h.document.querySelector('.replacement-option').click();

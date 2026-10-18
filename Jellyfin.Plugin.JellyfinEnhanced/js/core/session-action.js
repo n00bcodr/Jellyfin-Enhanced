@@ -11,9 +11,12 @@
     JE.createSessionAction = function () {
         const user = ApiClient.getCurrentUserId();
         const epoch = JE.session?.getEpoch?.();
+        const serverId = () => typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId;
+        const server = serverId();
+        const token = ApiClient.accessToken();
         /** Checks both live identity and epoch, including hosts with delayed session detection. */
-        const current = () => ApiClient.getCurrentUserId() === user &&
-            JE.session?.isCurrent?.(epoch) !== false;
+        const current = () => ApiClient.getCurrentUserId() === user && serverId() === server &&
+            ApiClient.accessToken() === token && JE.session?.isCurrent?.(epoch) !== false;
         return {
             current,
             /** Rejects a deferred callback after either identity or epoch changes. */

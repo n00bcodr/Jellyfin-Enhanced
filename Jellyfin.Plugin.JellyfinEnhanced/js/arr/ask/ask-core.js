@@ -62,24 +62,7 @@
      * @returns {Promise<{status: number, body: Object|null}>} The answer.
      */
     async function call(path, options) {
-        const method = options?.method || 'GET';
-        const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
-        if (options?.body) headers['Content-Type'] = 'application/json';
-        const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced${path}`), {
-            method,
-            headers,
-            body: options?.body ? JSON.stringify(options.body) : undefined,
-            signal: options?.signal,
-            cache: 'no-store'
-        });
-        let body = null;
-        try {
-            const text = await response.text();
-            body = text ? JSON.parse(text) : null;
-        } catch {
-            body = null;
-        }
-        return { status: response.status, body };
+        return JE.core.api.pluginResponse(path, options);
     }
 
     /**

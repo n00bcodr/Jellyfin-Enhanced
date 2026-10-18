@@ -8,7 +8,9 @@ In production the server concatenates the manifest into one script, `GET /Jellyf
 
 `plugin.js` also fetches everything it needs before the component stage in one request, `GET /JellyfinEnhanced/bootstrap` (version, public config, admin-only private config, the Custom Tabs / Plugin Pages presence flags, the five per-user documents and the manifest), falling back to the individual endpoints if that fails. Its `Prefetched` block also carries the small answers modules ask for on every page load (the user's Spoiler Guard state, the Seerr user status and reachability when no Seerr call is needed, the active-streams session list under that endpoint's gate), each exactly the body of its standalone endpoint; modules take them once through `JE.takePrefetched(name)` shortly after the page load and otherwise call the endpoint as before.
 
-`core/session-action.js` captures the viewer and session epoch for deferred Hidden Content and Spoiler Guard actions. It rejects stale callbacks and dismisses owned confirmations on user changes.
+`core/api-client.js` binds requests to the submitting viewer and session, checking after a queue slot is released and before every transport attempt. Legacy JE JSON write helpers use its `ajax` adapter. Request submission uses `pluginResponse`, which retains HTTP status/body outcomes through the same transport without automatic retries. Native read-only POST batches and the change-feed long poll retain their existing transports.
+
+`core/session-action.js` captures the viewer, server, session epoch and token for deferred Hidden Content and Spoiler Guard actions. It rejects stale callbacks and dismisses owned confirmations on user changes.
 
 Three client scripts are **not** in the manifest and are loaded by their own dedicated loaders: `others/splashscreen.js` and `extras/login-image.js` (both injected early, before the component stage, so they can affect the login screen) and `enhanced/translations.js` (loaded at the start of `initialize()`, in parallel with the bootstrap request, ahead of the component stage).
 
@@ -459,3 +461,7 @@ The generic native provider source, access policy and feed controller are shared
 `Services/TitlePresentationGate.cs` re-reads the viewer’s Hidden Content and Spoiler Guard policies at delivery. Its result filter covers native DTOs and known provider/feed envelopes after asynchronous work, including facade short circuits; personalized cache inserts and hits use the same gate. Conditional responses validate the final projected body and policy revision.
 
 `Services/ProviderPresentationSchema.cs` declares runtime resource schemas, node roles and field dispositions shared by Hidden Content and Spoiler Guard. Credits contain people; filmographies contain titles. Guarded nodes remove unknown fields recursively, while supported translations, artwork and rating resources use explicit adapters. The raw TMDB proxy rejects unsupported resources before fetching them.
+
+The shared transport and `createSessionAction` capture the submitting user, server, epoch and token. Requests recheck after queue release, each retry, response and body awaits, and before publication; delayed actions preserve that context without tying same-user writes to a view lifetime. An unobserved live identity change also discards outgoing transport caches and dedup entries.
+
+Discovery genre/network/people reads and linked-Seerr window ratings also use the common JSON transport; they no longer assemble an independent limiter/retry/body pipeline. Personalized native discovery feeds remain uncached.

@@ -1442,7 +1442,7 @@
         document.addEventListener('contextmenu', guard, true);
         window.addEventListener('je-spoiler-policy-changed', event => {
             const state = current;
-            if (!state || Number(event.detail?.tmdbId) !== state.parts.tmdbId || event.detail?.type !== state.mediaType) return;
+            if (!state || event.detail?.type && (Number(event.detail?.tmdbId) !== state.parts.tmdbId || event.detail.type !== state.mediaType)) return;
             // Native fields are owned by jellyfin-web. Drop their old DOM before its fresh page read.
             state.page.replaceChildren();
             dispose();

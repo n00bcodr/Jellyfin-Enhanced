@@ -60,7 +60,7 @@
      */
     async function fetchHiddenContentUsers() {
         try {
-            const res = await ApiClient.ajax({
+            const res = await JE.core.api.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/JellyfinEnhanced/admin/hidden-content-users'),
                 dataType: 'json'
@@ -83,7 +83,7 @@
     async function fetchUserHiddenItemsForAdmin(targetUserId) {
         if (!targetUserId) return [];
         try {
-            const res = await ApiClient.ajax({
+            const res = await JE.core.api.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/admin/hidden-content/${targetUserId}`),
                 dataType: 'json'
@@ -112,7 +112,7 @@
     async function adminUnhideForUser(targetUserId, keys) {
         if (!targetUserId || !Array.isArray(keys) || keys.length === 0) return false;
         try {
-            await ApiClient.ajax({
+            await JE.core.api.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/admin/hidden-content/${targetUserId}/unhide`),
                 data: JSON.stringify(keys),
@@ -135,7 +135,7 @@
     async function adminHideForUser(targetUserId, items) {
         if (!targetUserId || !Array.isArray(items) || items.length === 0) return false;
         try {
-            const res = await ApiClient.ajax({
+            const res = await JE.core.api.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/admin/hidden-content/${targetUserId}/hide`),
                 data: JSON.stringify(items),
@@ -158,7 +158,7 @@
             if (!action.current()) throw new Error('user changed');
             if (!userId) throw new Error('no current user');
             const snapshot = JSON.stringify(getHiddenData());
-            const reply = await ApiClient.ajax({
+            const reply = await JE.core.api.ajax({
                 type: 'POST',
                 dataType: 'json',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),

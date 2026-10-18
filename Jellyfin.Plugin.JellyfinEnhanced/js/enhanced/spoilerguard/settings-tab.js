@@ -95,6 +95,7 @@
                 prefs[key] = key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false);
                 await internal.setUserPrefs(prefs);
             } catch (e) {
+                if (!action.current()) return;
                 console.error(`${logPrefix} preference save failed:`, e);
                 changed.checked = previousChecked;
                 JE.toast?.(JE.t('spoiler_blur_error_toast'));

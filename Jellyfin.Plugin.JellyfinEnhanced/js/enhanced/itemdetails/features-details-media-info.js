@@ -24,6 +24,12 @@
     // `visit` and `ctl` are only kept until a chip takes it over: the entry
     // outlives the visit, and the visit holds its view and item.
     const itemStatsRequests = new Map();
+    // A real document reload cancels transport without changing the user epoch.
+    let pageUnloading = false;
+    window.addEventListener('beforeunload', () => { pageUnloading = true; });
+    window.addEventListener('pagehide', () => { pageUnloading = true; });
+    window.addEventListener('pageshow', () => { pageUnloading = false; });
+
 
     // Watch progress is per-user (and item metadata is fetched with the
     // signed-in user's access) — never carry it across a user switch.
@@ -367,8 +373,8 @@
 
                 watchProgressCache.set(itemId, watchProgress);
             } catch (error) {
+                if (!isCurrent() || pageUnloading || error?.name === 'AbortError') return;
                 console.error('🪼 Jellyfin Enhanced: Error fetching watch progress for ID %s:', itemId, error);
-                if (!isCurrent()) return;
                 // Keep placeholder with 0 to prevent repeated calls
                 renderUnavailable();
                 watchProgressCache.set(itemId, { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now });
@@ -449,7 +455,7 @@
                     fileSizeCache.set(cacheKey, { size: null, unavailable: true, ts: now });
                 }
             } catch (error) {
-                if (!isCurrent()) return;
+                if (!isCurrent() || pageUnloading || error?.name === 'AbortError') return;
                 console.error('🪼 Jellyfin Enhanced: Error fetching item size for ID %s:', itemId, error);
                 // Keep placeholder with dash to prevent repeated calls
                 renderUnavailable();

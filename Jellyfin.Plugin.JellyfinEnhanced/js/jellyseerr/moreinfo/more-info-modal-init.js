@@ -256,7 +256,7 @@ function closeCurrentModal() {
         if (!modal || modal._isClosing) return;
         const type = modal.dataset.mediaType;
         const id = Number(modal.dataset.tmdbId);
-        if (type !== event.detail?.type || id !== Number(event.detail?.tmdbId)) return;
+        if (event.detail?.type && (type !== event.detail.type || id !== Number(event.detail.tmdbId))) return;
         modal.replaceChildren();
         moreInfoModal.close();
         void moreInfoModal.open(id, type);

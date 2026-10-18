@@ -133,23 +133,22 @@ test('a taken-over prefetch a user switch cut short is not retried as the previo
  signedOut=false;h.api.displayReleaseDate('movie',h.container);await h.settle();
  assert.equal(h.container.querySelectorAll('.mediaInfoItem-releaseDate').length,2,'the next user gets the dates');assert.deepEqual(h.counts(),{itemCalls:1,fetchCalls:1});
 });
-test('the chip\'s own lookup failing after a user switch is logged and cached as no dates, as before',async t=>{
+test('a chip lookup that outlives its user is quiet and cannot poison the next session',async t=>{
  // No prefetch (a restored view, or an item the details page already knew): the chip looks up itself.
  const item=deferred();const own=sessionStub();let lookup=()=>item.promise;
- const chip=setup(t,{data:releases,getItem:()=>lookup(),JE:{session:own.session}});chip.expectConsoleError(/Error fetching release info for movie/);
+ const chip=setup(t,{data:releases,getItem:()=>lookup(),JE:{session:own.session}});
  chip.api.displayReleaseDate('movie',chip.container);await chip.settle();own.switchUser();item.reject(new Error('401 Unauthorized'));await chip.settle();
  assert.equal(chip.container.children.length,0);
  lookup=async()=>movie;chip.api.displayReleaseDate('movie',chip.container);await chip.settle();
- assert.equal(chip.container.children.length,0,'the empty answer was cached');assert.deepEqual(chip.counts(),{itemCalls:1,fetchCalls:0});
- // A prefetch that failed before the switch is looked up again; that lookup failing after it is cached too.
- const queued=deferred(),retry=deferred(),{session,switchUser}=sessionStub();
- const h=setup(t,{data:releases,getItem:()=>retry.promise,JE:{core:{api:{manager:{withConcurrencyLimit:()=>queued.promise}}},session}});
- h.expectConsoleError(/Error fetching release info for movie/);
+ assert.equal(chip.container.children.length,2,'the next session starts its own lookup');assert.deepEqual(chip.counts(),{itemCalls:2,fetchCalls:1});
+ // The same applies to a chip retry that took over a failed prefetch.
+ const queued=deferred(),retry=deferred(),{session,switchUser}=sessionStub();let retryLookup=()=>retry.promise;
+ const h=setup(t,{data:releases,getItem:()=>retryLookup(),JE:{core:{api:{manager:{withConcurrencyLimit:()=>queued.promise}}},session}});
  h.api.prefetchReleaseDate('movie',movie,{});h.api.displayReleaseDate('movie',h.container);queued.reject(new Error('Request queue full - too many pending requests'));await h.settle();
  assert.equal(h.counts().itemCalls,1,'looked up again under the same session');
  switchUser();retry.reject(new Error('401 Unauthorized'));await h.settle();
- h.api.displayReleaseDate('movie',h.container);await h.settle();
- assert.equal(h.container.children.length,0);assert.deepEqual(h.counts(),{itemCalls:1,fetchCalls:0},'cached: no new lookup');
+ retryLookup=async()=>movie;h.api.displayReleaseDate('movie',h.container);await h.settle();
+ assert.equal(h.container.children.length,2);assert.deepEqual(h.counts(),{itemCalls:2,fetchCalls:1},'not cached: the next user gets their own lookup');
 });
 // Spoiler Guard: a date the server stripped is not printed back from TMDB.
 const guardedSeries=(over={})=>({pluginConfig:{DEFAULT_REGION:'AU',SpoilerBlurEnabled:true,...(over.config||{})},spoilerBlur:{isEnabledFor:id=>id==='series',whenLoaded:async()=>{},isLoadOk:()=>over.loadOk!==false,getUserPrefs:()=>over.prefs||{}}});
@@ -183,4 +182,28 @@ test('guarded synthetic series cannot regain date chips from TMDB',async t=>{
  const h=setup(t,{item:{Id:'synthetic',Type:'Series',PremiereDate:'2022-09-21',ProviderIds:{Tmdb:'42',JeSpoilerGuarded:'true'}},data:{last_air_date:'2025-05-13'},JE:{pluginConfig:{SpoilerBlurEnabled:true,SpoilerStripPremiereDate:true},spoilerBlur:{isEnabledFor:()=>false,isTmdbEnabled:()=>true,whenLoaded:async()=>{},getUserPrefs:()=>({})},titleDetails:{parse:()=>({kind:'series',tmdbId:42})}}});
  h.api.displayReleaseDate('synthetic',h.container);await h.settle();
  assert.equal(h.container.children.length,0);assert.equal(h.counts().fetchCalls,0);
+});
+for(const mode of ['session','policy','core'])test(`release date cache cannot cross ${mode} changes`,async t=>{
+ let epoch=0,generation=0,user='user-a',protectedNow=false;const handlers=[];
+ const h=setup(t,{fetch:async()=>jsonResponse(protectedNow?{results:[]}:releases),JE:{session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(_k,fn)=>handlers.push(fn)},core:{api:{manager:{getPresentationGeneration:()=>generation}}}}});
+ h.window.ApiClient.getCurrentUserId=()=>user;
+ h.api.displayReleaseDate('movie',h.container);await h.settle();assert.ok(h.container.textContent.includes('2025'));
+ protectedNow=true;
+ if(mode==='session'){user='user-b';epoch++;handlers.forEach(fn=>fn());}
+ else if(mode==='policy')h.window.dispatchEvent(new h.window.CustomEvent('je-spoiler-policy-changed'));
+ else generation++;
+ h.container.replaceChildren();h.api.displayReleaseDate('movie',h.container);await h.settle();
+ assert.equal(h.container.children.length,0,'previous projected dates are not reused');assert.equal(h.counts().fetchCalls,2);
+});
+test('release reply started before a policy change cannot render or poison its cache',async t=>{
+ const pending=deferred();let calls=0;const h=setup(t,{fetch:()=>++calls===1?pending.promise:Promise.resolve(jsonResponse({results:[]}))});
+ h.api.displayReleaseDate('movie',h.container);await h.settle();h.window.dispatchEvent(new h.window.CustomEvent('je-spoiler-policy-changed'));
+ pending.resolve(jsonResponse(releases));await h.settle();assert.equal(h.container.children.length,0);
+ h.api.displayReleaseDate('movie',h.container);await h.settle();assert.equal(calls,2);assert.equal(h.container.children.length,0);
+});
+test('expected reload cancellation of release metadata is quiet and is not cached as failure',async t=>{
+ const pending=deferred();let calls=0;const h=setup(t,{fetch:()=>++calls===1?pending.promise:Promise.resolve(jsonResponse(releases))});
+ h.api.displayReleaseDate('movie',h.container);await h.settle();h.window.dispatchEvent(new h.window.Event('beforeunload'));
+ pending.reject(new TypeError('Failed to fetch'));await h.settle();assert.equal(h.container.children.length,0);
+ h.api.displayReleaseDate('movie',h.container);await h.settle();assert.equal(calls,2);assert.ok(h.container.textContent.includes('2025'));
 });
