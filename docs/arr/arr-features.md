@@ -777,7 +777,9 @@ TMDB id) and asked for again once Sonarr has it (its TVDB id), or a movie asked 
 it, is held as one title under one key, from the moment it comes in (an ask, a preview, a batch, an approval, an automatic
 decision): the title's facts for household rules, the rules and every check use that key, so a rule such as "English titles
 go ahead" answers the same whichever id the title was asked by. Dedup, coverage, following, the decline cooldown, approvals,
-imports and My requests all see it once. Requests a former version held apart for one title are merged soon after start: everyone's
+imports and My requests all see it once. Mutually covering uncertain retries use their persisted charge order (then job
+id) to break a wait cycle: one resumes through the guarded read-before-write path while the others wait. Requests a
+former version held apart for one title are merged soon after start: everyone's
 request is kept with its history; one that another request of the title already covers follows it and gets its charge
 back; nothing that went out is sent again. When the ids are learned while one of the requests is being sent (or its
 send isn't confirmed yet), the merge is finished once that settles: a request whose part already went out (or is going
@@ -810,7 +812,8 @@ owner of what nobody else is asking for, waiting for an OK. Whether someone may 
 depends on its routing still fitting (a Seerr server choice that stopped fitting, or an arr that's gone, is often why it
 waits), but only someone who can see where it goes may decline it (or approve it, or see it in the list): its library
 folder, which for an administrator's Seerr server choice is the root folder chosen on that Seerr server (read through the
-Sonarr/Radarr instance imported from that Seerr server, else the default one), not the title's usual folder. An uncertain outgoing action keeps its reservation until a fresh read of the original
+unique usable Sonarr/Radarr instance linked to that Seerr server with a matching connection; unknown or ambiguous
+links require access to every library, or administrator authority), not the title's usual folder. An uncertain outgoing action keeps its reservation until a fresh read of the original
 connection resolves it, even after authority changes. Deleting an approver anonymizes retained job contexts and preserves
 send certainty; only known-unsent queued approvals return to review, refunding just their own scope's charges. Charges
 for surviving jobs still count toward count, estimated GB and episode allowances. Deleting a requester anonymizes
@@ -1061,7 +1064,7 @@ lists requests made through Jellyfin Enhanced.
   A Manager sees only the requests, seasons and episodes they could see themselves. Admins can also set each person's role and request limit, the house rules
   (who needs an OK, the role for everyone else, the household limit and per-role limits) and see who may ask for 4K.
   **Save** asks for a confirmation first. Jellyfin administrators are always Admin; nobody can be made Admin here.
-- **My requests** adds your own requests to the list, one row per title, grouped like the existing rows. Requests not
+- **My requests** adds your own requests to the list, one row per title and edition, grouped like the existing rows. Cancel withdraws only that edition's unsent requests. Requests not
   sent yet have **Cancel**. In JE mode each row follows where exactly the part you asked for is, the way Seerr
   requests do in Seerr mode: *Waiting for OK*, *OK'd*, *Looking*, *Downloading 45%*, *Almost ready*, then **Ready**
   with **Play** (and under Ready for two weeks), judged by that movie or edition, those seasons or those episodes only
@@ -1071,8 +1074,9 @@ lists requests made through Jellyfin Enhanced.
   **Ask Dad again**; *Paused: storage full* while new titles of its kind are paused) to ask for the same part once
   more. Removed from Jellyfin only (Sonarr/Radarr still has it), it reads where Sonarr/Radarr has it, such as *Missing*
   with **Search**. A title asked for in both editions
-  follows one at a time, in either mode: the edition still waited for (the standard one first), so a 4K request after
-  the standard copy arrived reads (and is labelled) where the 4K copy is, not Ready. **Coming soon** lists them too. Rows update live.
+  has a separate row for each, in either mode. A Ready standard copy never hides an outstanding 4K request; each row
+  follows its own requested scope and the 4K row is labelled. A 4K request held only in the ledger never borrows a
+  standard copy's Play link. **Coming soon** lists them too. Rows update live.
 - **Arrival**: once what a request asks for is in Jellyfin (for the person who asked, with their library access and
   parental limits), the request is marked fulfilled, so it reads Ready everywhere and is never marked stale; a
   request whose part arrives another way while it still waits for an OK is closed the same way and gives its allowance
