@@ -379,6 +379,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 public bool Virtual { get; init; }
                 public bool Abstract { get; init; }
                 public bool NewSlot { get; init; }
+                public bool Overrides { get; set; }
                 public List<int> Calls { get; } = new();
                 public string? Reaches { get; set; }
                 public string? PersonReaches { get; set; }
@@ -498,6 +499,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         _nodeOf[(m, MetadataTokens.GetToken(methodHandle))] = _nodes.Count;
                         info.Methods.Add(_nodes.Count);
                         _nodes.Add(node);
+                    }
+
+                    // Round 12: a covariant-return override is emitted as a NEW slot plus an explicit `.override` of the
+                    // base method in this type's MethodImpl table; it still fills the base's slot. A same-named body
+                    // there marks it (an explicit interface implementation's body carries the interface's name, so it
+                    // doesn't match); a method that only hides its base's (`new virtual`) has no entry.
+                    foreach (var implHandle in type.GetMethodImplementations())
+                    {
+                        var impl = md.GetMethodImplementation(implHandle);
+                        if (impl.MethodBody.Kind != HandleKind.MethodDefinition) continue;
+                        var declared = impl.MethodDeclaration.Kind switch
+                        {
+                            HandleKind.MethodDefinition => md.GetString(md.GetMethodDefinition((MethodDefinitionHandle)impl.MethodDeclaration).Name),
+                            HandleKind.MemberReference => md.GetString(md.GetMemberReference((MemberReferenceHandle)impl.MethodDeclaration).Name),
+                            _ => null,
+                        };
+                        if (_nodeOf.TryGetValue((m, MetadataTokens.GetToken(impl.MethodBody)), out var bodyNode) && _nodes[bodyNode].Method == declared)
+                            _nodes[bodyNode].Overrides = true;
                     }
                 }
             }
@@ -722,8 +741,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             }
 
             // Where a virtual call of target can go: every implementation of an interface method, every override of a
-            // virtual one (in the code read), sealed overrides included. An abstract or interface member nothing implements
-            // is unresolved.
+            // virtual one (in the code read), sealed and covariant-return overrides included. An abstract or interface
+            // member nothing implements is unresolved.
             private IEnumerable<int> Dispatch(int target)
             {
                 var node = _nodes[target];
@@ -738,7 +757,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         var other = _nodes[n];
                         if (other.Params != node.Params || other.Abstract) continue;
                         var matches = other.Method == node.Method || other.Method.EndsWith("." + node.Method, StringComparison.Ordinal);
-                        if (!matches || (!type.Interface && (!other.Virtual && !other.Abstract || other.NewSlot))) continue;
+                        if (!matches || (!type.Interface && (!other.Virtual && !other.Abstract || other.NewSlot && !other.Overrides))) continue;
                         found++;
                         yield return n;
                     }

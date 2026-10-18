@@ -1373,8 +1373,8 @@ either is off, the automatic requests above behave exactly as described there. W
   sent; the request goes back to waiting for an OK. The person it is for is checked the same way (still an enabled
   user who may ask and sees the title). A migrated Manager's eligibility grant counts only while they are a Manager.
   Jellyfin's actions are followed into Jellyfin's own server code (an interface to its implementation, an override to
-  every class that replaces it, sealed ones included, a stored callback to what was stored), so a change made several
-  calls deep, such as a session's activity save, counts too. A callback Jellyfin's code hands control to without
+  every class that replaces it, sealed and covariant-return ones included, a stored callback to what was stored), so a
+  change made several calls deep, such as a session's activity save, counts too. A callback Jellyfin's code hands control to without
   showing what it runs (an event another plugin can listen to) counts as a possible change for the person the action
   is for (its user, else whoever is signed in; everyone when nobody is). It also counts the
   budgets again with their limits as they are at that moment (the write's own place counted once): a limit lowered to
@@ -1392,8 +1392,8 @@ Jellyfin Enhanced finds the actions that can change or sign in a user by reading
 (the code is read, not run). What that guarantees:
 
 - Every action of Jellyfin's own server code that reaches a user change or a sign-in, by direct calls, interfaces,
-  overrides (sealed ones included), stored callbacks or events Jellyfin's own code subscribes to, runs inside the check's
-  bracket. For each supported Jellyfin release (12.2 and 10.11.11) the full list is pinned in the tests, and a test
+  overrides (sealed and covariant-return ones included), stored callbacks or events Jellyfin's own code subscribes to,
+  runs inside the check's bracket. For each supported Jellyfin release (12.2 and 10.11.11) the full list is pinned in the tests, and a test
   runner checks the newest Jellyfin image the same way, so a Jellyfin update that adds or changes such an action fails
   the tests until it has been reviewed.
 - An action that hands control to code the reading can't see (an event another plugin listens to, a callback passed in

@@ -202,6 +202,87 @@ public class IntegrationJellyfinUserDispatchTests
         Assert.NotEqual(JellyfinUserKey.None, Find(JellyfinUserActions.Scan(probe.Path("SealedProbe")), "SealedController", "Disable").Key);
     }
 
+    // 4a review round 12 (4a-security-r12-1): a covariant-return override is an override too. C# emits it as a NEW slot
+    // (newslot) plus an explicit `.override` of the base method in its type's MethodImpl table; round 11 left every newslot
+    // method out of the base slot's dispatch, so the reviewer's sealed covariant override disabling a user reached nothing
+    // (Key None). Sealed and open, through a concrete and an abstract base. A method that only HIDES its base's (`new
+    // virtual`, no MethodImpl) is never reached through the base slot, at run time or here: the control.
+    private const string CovariantProbes = Usings + """
+
+        public class Receipt { }
+        public sealed class PolicyReceipt : Receipt { }
+        public class CovariantChanges { public virtual Receipt Apply(Guid userId) => new Receipt(); }
+        public class SealedCovariantChanges(IUserManager users) : CovariantChanges {
+          public sealed override PolicyReceipt Apply(Guid userId) { _ = users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true }); return new PolicyReceipt(); }
+        }
+        public sealed class SealedCovariantController(CovariantChanges changes) : ControllerBase {
+          [HttpPost] public object Disable(Guid userId) => changes.Apply(userId);
+        }
+        public class OpenBase { public virtual Receipt Apply(Guid userId) => new Receipt(); }
+        public class OpenCovariantChanges(IUserManager users) : OpenBase {
+          public override PolicyReceipt Apply(Guid userId) { _ = users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true }); return new PolicyReceipt(); }
+        }
+        public sealed class OpenCovariantController(OpenBase changes) : ControllerBase {
+          [HttpPost] public object Disable(Guid userId) => changes.Apply(userId);
+        }
+        public abstract class AbstractBase { public abstract Receipt Apply(Guid userId); }
+        public class AbstractCovariantChanges(IUserManager users) : AbstractBase {
+          public override PolicyReceipt Apply(Guid userId) { _ = users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true }); return new PolicyReceipt(); }
+        }
+        public sealed class AbstractCovariantController(AbstractBase changes) : ControllerBase {
+          [HttpPost] public object Disable(Guid userId) => changes.Apply(userId);
+        }
+        public class HiddenBase { public virtual Receipt Apply(Guid userId) => new Receipt(); }
+        public class HidingChanges(IUserManager users) : HiddenBase {
+          public new virtual PolicyReceipt Apply(Guid userId) { _ = users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true }); return new PolicyReceipt(); }
+        }
+        public sealed class HiddenController(HiddenBase changes) : ControllerBase {
+          [HttpPost] public object Disable(Guid userId) => changes.Apply(userId);
+        }
+        """;
+
+    [Theory]
+    [InlineData("SealedCovariantController", "Disable")]
+    [InlineData("OpenCovariantController", "Disable")]
+    [InlineData("AbstractCovariantController", "Disable")]
+    public void ACovariantReturnOverrideIsReachedThroughItsBaseSlot(string controller, string action)
+    {
+        using var probe = Probe.Build(("CovariantProbe", CovariantProbes, Array.Empty<string>()));
+        var found = Find(JellyfinUserActions.Scan(probe.Path("CovariantProbe")), controller, action);
+        Assert.Equal(JellyfinUserKey.User, found.Key);
+        Assert.Equal("IUserManager.UpdatePolicyAsync", found.Reaches);
+    }
+
+    // The control, run for real first: a hiding method isn't what the base slot calls, so the person stays enabled.
+    [Fact]
+    public void AMethodThatOnlyHidesItsBaseIsNotReachedThroughTheBaseSlot()
+    {
+        using var probe = Probe.Build(("CovariantProbe", CovariantProbes, Array.Empty<string>()));
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var assembly = probe.Load("CovariantProbe");
+        var changes = Activator.CreateInstance(assembly.GetType("HidingChanges")!, users)!;
+        var controller = Activator.CreateInstance(assembly.GetType("HiddenController")!, changes)!;
+        controller.GetType().GetMethod("Disable")!.Invoke(controller, new object[] { person });
+        Assert.Equal(0, disabled());
+        Assert.Equal(JellyfinUserKey.None, Find(JellyfinUserActions.Scan(probe.Path("CovariantProbe")), "HiddenController", "Disable").Key);
+    }
+
+    // The reviewer's probe, run for real: the compiled controller does disable the person through the covariant override.
+    [Fact]
+    public void TheCovariantOverrideProbeReallyDisablesThePerson()
+    {
+        using var probe = Probe.Build(("CovariantProbe", CovariantProbes, Array.Empty<string>()));
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var assembly = probe.Load("CovariantProbe");
+        var changes = Activator.CreateInstance(assembly.GetType("SealedCovariantChanges")!, users)!;
+        var controller = Activator.CreateInstance(assembly.GetType("SealedCovariantController")!, changes)!;
+        controller.GetType().GetMethod("Disable")!.Invoke(controller, new object[] { person });
+        Assert.Equal(1, disabled());
+        Assert.NotEqual(JellyfinUserKey.None, Find(JellyfinUserActions.Scan(probe.Path("CovariantProbe")), "SealedCovariantController", "Disable").Key);
+    }
+
     // 4a review round 11 (4a-security-r11-2): a callback the code read can't resolve is judged by what it can do, not by
     // its signature. A Func<Task> handed in by DI carries no user type, yet its closure can hold IUserManager and a user id
     // (the reviewer's probe disables that user). Round 10 counted an unresolved delegate only when its type could carry a
