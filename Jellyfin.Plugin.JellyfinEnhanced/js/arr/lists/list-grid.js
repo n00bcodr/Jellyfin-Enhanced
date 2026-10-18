@@ -44,6 +44,8 @@
     const inflight = new Set();
     /** @type {Map<string, number>} pending retries per id */
     const retries = new Map();
+    /** Invalidations during a request get exactly one subsequent refresh, never the old answer. */
+    const dirty = new Set();
     let timer = null;
     let observing = false;
     let generation = 0;
@@ -205,7 +207,14 @@
             return;
         } finally {
             // A reset since cleared what was in flight (and may have asked for the same ids again).
-            if (started === generation) ids.forEach(id => inflight.delete(id));
+            if (started === generation) {
+                ids.forEach(id => inflight.delete(id));
+                const again = ids.filter(id => dirty.has(id));
+                again.forEach(id => { dirty.delete(id); queue.add(id); });
+                // Remove invalidated ids from this response before processing it below.
+                again.forEach(id => ids.splice(ids.indexOf(id), 1));
+                if (queue.size && !timer) timer = setTimeout(flush, BATCH_MS);
+            }
         }
         if (!answer) return;
         const now = Date.now();
@@ -299,6 +308,7 @@
         queue.clear();
         inflight.clear();
         retries.clear();
+        dirty.clear();
         clearTimeout(timer);
         timer = null;
         paintTicket?.revoke();
@@ -306,12 +316,21 @@
     }
 
     /**
-     * A list changed (its entries or who sees them): ask about it again next time its card is looked at.
+     * A list changed (its entries or who sees them): refresh its visible cards, including changes during a batch.
      * @param {string} listId List id.
      */
     function invalidate(listId) {
         const id = lp.render.normalizeId(listId);
-        if (id) known.delete(id);
+        if (!id) return;
+        known.delete(id);
+        retries.delete(id);
+        if (!observing) return;
+        const visible = [...document.querySelectorAll(CARD_SELECTOR)].filter(card => lp.render.normalizeId(card.getAttribute('data-id')) === id);
+        if (!visible.length) return;
+        visible.forEach(unmark);
+        if (inflight.has(id)) dirty.add(id);
+        else queue.add(id);
+        if (queue.size && !timer) timer = setTimeout(flush, BATCH_MS);
     }
 
     lp.grid = { start, stop, scan, reset, invalidate, decorate, unmark, unmarkAll, onMutations, onIdentity, known, MAX_IDS };

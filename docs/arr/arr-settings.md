@@ -534,7 +534,7 @@ All off by default. Lists need phase 4 and *Ask for it*; each switch below also 
 | Swap in titles that arrive (`ArrPhase4ListSwapInEnabled`) | off | Arrivals take their entry's place, on lists whose editor turned it on and agreed in their own settings. |
 | Daily list maintenance (`ArrPhase4ListMaintenanceEnabled`) | off | Daily refresh of release dates and episode lists, and arrivals nobody looked at. |
 | Show request status on list entries (`ArrPhase4ListStatusEnabled`) | off | The shared request status on entries. |
-| Show list entries on playlist pages (`ArrPhase4ListPlaylistUiEnabled`) | off | Entries drawn in list order on playlist pages (also with no real items), and the *N not in your library* mark instead of Jellyfin's *played* check on the Playlists page. Each person can hide it. |
+| Show list entries on playlist pages (`ArrPhase4ListPlaylistUiEnabled`) | off | Entries drawn in list order on playlist pages (also with no real items), and the automatically refreshed *N not in your library* mark instead of Jellyfin's *played* check on the Playlists page. Each person can hide it. |
 | Show list entries on collection pages (`ArrPhase4ListCollectionUiEnabled`) | off | The *Not in your library* section on collection pages. Each person can hide it. |
 
 Per person (Jellyfin Enhanced panel, *Lists*, shown while lists are on): *Show titles not in the library on lists* and

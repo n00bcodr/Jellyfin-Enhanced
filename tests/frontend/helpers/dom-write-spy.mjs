@@ -23,6 +23,7 @@ const INSERTS = new Set([
   'toggleAttribute', 'setAttributeNode'
 ]);
 const PROTOTYPES = /^(Node|Element|CharacterData|Text|Document|DocumentFragment|DOMTokenList|HTML\w*Element)$/;
+const SHEET_FRAME = /\/js\/arr\/ask\/ask-(sheet|sheet-styles)\.js/;
 const LIST_FRAME = /\/js\/arr\/lists\/[\w-]+\.js/;
 const MAX_VIOLATIONS = 50;
 const MAX_WRITES = 2_000_000;
@@ -41,6 +42,7 @@ export function installDomWriteSpy(window) {
   let allWrites = 0;
   let overflow = 0;
   let checking = false;
+  let listSheets = 0;
   const scope = () => {
     try {
       return window.JellyfinEnhanced?.internals?.arrListPages?.gate?.scope?.() || '';
@@ -61,7 +63,7 @@ export function installDomWriteSpy(window) {
       const stack = new Error().stack || '';
       Error.stackTraceLimit = previous;
       // Synchronous frames only: an awaiting caller ("at async …") isn't the writer.
-      const frame = stack.split('\n').slice(1).find(line => !/^\s*at async /.test(line) && LIST_FRAME.test(line));
+      const frame = stack.split('\n').slice(1).find(line => !/^\s*at async /.test(line) && (LIST_FRAME.test(line) || (listSheets > 0 && SHEET_FRAME.test(line))));
       if (!frame) return;
       listWrites += 1;
       if (where === 'erase' && !INSERTS.has(op)) return;
@@ -110,7 +112,17 @@ export function installDomWriteSpy(window) {
     overflow = 0;
     return Object.assign(taken, { overflow: more });
   };
-  const spy = { violations, writes: () => listWrites, overflow: () => overflow, take };
+  /** Tracks list-origin sheets across their awaits, even without a list-module frame on the writer's stack. */
+  const watchSheet = (JE) => {
+    const original = JE.arrAskSheet;
+    JE.arrAskSheet = { ...original, open: async (title, options) => {
+      const tracked = !!options?.fixed;
+      if (tracked) listSheets++;
+      try { return await original.open(title, options); }
+      finally { if (tracked) listSheets--; }
+    } };
+  };
+  const spy = { watchSheet, violations, writes: () => listWrites, overflow: () => overflow, take };
   window[INSTALLED] = spy;
   return spy;
 }
