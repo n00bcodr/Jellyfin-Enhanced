@@ -968,21 +968,26 @@
     // to be provided by the UI. Keep logic in `api.reportIssue` that
     // parses the numeric value and forwards it to Seerr.
 
+    /** The authorized Seerr record needed for reporting; absent files may still have a request record. */
+    api.reportContext = async function(mediaId, mediaType) {
+        if (!['movie', 'tv'].includes(mediaType) || !Number.isInteger(Number(mediaId)) || Number(mediaId) <= 0 || Number(mediaId) > 2147483647) throw new TypeError('Invalid provider title');
+        const action = JE.createSessionAction();
+        const data = await get(`/${mediaType === 'movie' ? 'movie' : 'tv'}/${mediaId}`);
+        if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
+        return { mediaId: data?.mediaInfo?.id || null };
+    };
+
     api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0) {
+        const action = JE.createSessionAction();
         try {
             // problemType is now a numeric issue type (1, 2, 3, or 4) from the form
             const issueType = parseInt(problemType) || 4;
 
             // Fetch the correct internal media id from Seerr
 
-            let apiResult = null;
-            if (mediaType === 'movie') {
-                apiResult = await get(`/movie/${mediaId}`);
-            } else if (mediaType === 'tv') {
-                apiResult = await get(`/tv/${mediaId}`);
-            }
-
-            const internalId = apiResult && apiResult.mediaInfo && apiResult.mediaInfo.id;
+            const context = await api.reportContext(mediaId, mediaType);
+            if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
+            const internalId = context.mediaId;
             if (!internalId) {
                 throw new Error(`Could not find Jellyseerr media id (mediaInfo.id) for TMDB id ${mediaId} (${mediaType})`);
             }
@@ -997,11 +1002,14 @@
             };
 
             console.debug(`${logPrefix} Sending issue report with body:`, body);
+            if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
             const result = await post('/issue', body);
+            if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
+            JE.requestManager?.clearCacheMatching?.('jellyseerr:/issue');
             console.debug(`${logPrefix} Issue reported for Seerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
             return result;
         } catch (error) {
-            console.error(`${logPrefix} Failed to report issue for TMDB ID ${mediaId}:`, error);
+            if (action.current() && error?.name !== 'AbortError') console.error(`${logPrefix} Failed to report issue for TMDB ID ${mediaId}:`, error);
             throw error;
         }
     };

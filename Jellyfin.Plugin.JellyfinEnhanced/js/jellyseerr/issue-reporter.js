@@ -36,7 +36,7 @@
         try {
             // Check Jellyseerr status first
             const statusUrl = ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/status');
-            const statusRes = await ApiClient.ajax({ type: 'GET', url: statusUrl, dataType: 'json' });
+            const statusRes = await JE.core.api.ajax({ type: 'GET', url: statusUrl, dataType: 'json' });
             const jellyseerrActive = statusRes && statusRes.active === true;
 
             // Resolve TMDB ID: direct, parent (for Season/Episode), or fallback search
@@ -78,13 +78,17 @@
                 return 'no-account';
             }
 
+            if (userStatus?.canReportIssues === false) return 'no-permissions';
+            if (JE.jellyseerrAPI?.reportContext) {
+                const record = await JE.jellyseerrAPI.reportContext(tmdbId, ['Series', 'Season', 'Episode'].includes(type) ? 'tv' : 'movie');
+                if (!record?.mediaId) return 'no-record';
+            }
             // Both available
             return 'available';
         } catch (error) {
             console.debug(`${logPrefix} Error checking reporting availability:`, error);
-            // On error, assume available and let the actual request fail if needed
-            cachedUserCanReport = 'available';
-            return 'available';
+            cachedUserCanReport = 'no-jellyseerr';
+            return 'no-jellyseerr';
         }
     };
 
@@ -96,8 +100,10 @@
      * @param {string} backdropUrl - Optional backdrop image URL (full URL from Jellyfin or TMDB)
      */
     issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropUrl = null, item = null) {
-        // Create the form HTML
-        const ISSUE_TYPES = getIssueTypes();
+        const action = JE.createSessionAction();
+        // Absent titles can report catalogue/acquisition issues, not problems with a nonexistent file.
+        const absent = item?.jeAbsent === true || !!JE.titleDetails?.parse?.(item?.Id);
+        const ISSUE_TYPES = getIssueTypes().filter(type => !absent || type.value === '4');
         const formHtml = `
             <style>
                 .jellyseerr-issues-container { margin-top: 12px; }
@@ -151,13 +157,16 @@
         `;
 
         // Create modal using the existing modal system
-        const { modalElement, show } = JE.jellyseerrModal.create({
+        let releaseAction;
+        const { modalElement, show, close } = JE.jellyseerrModal.create({
             title: JE.t('jellyseerr_report_issue_title'),
             subtitle: itemName,
             bodyHtml: formHtml,
             backdropUrl: backdropUrl,
             buttonText: JE.t('jellyseerr_report_issue_submit'),
+            onClose: () => releaseAction?.(),
             onSave: async (modalEl, button, closeModal) => {
+                if (!action.current()) return;
                 const issueType = modalEl.querySelector('input[name="issue-type"]:checked')?.value;
                 const message = modalEl.querySelector('#issue-message').value;
 
@@ -186,14 +195,20 @@
                     // Pass only the contents of the description box to the API
                     const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode);
 
+                    if (!action.current()) return;
                     if (result) {
                         JE.toast(JE.t('jellyseerr_report_issue_success'), 3000);
                         console.log(`${logPrefix} Issue successfully reported for ${itemName}`);
+                        document.querySelectorAll('.jellyseerr-report-issue-icon').forEach(source => {
+                            if (source.dataset.jeReportTmdbId === String(tmdbId) && source.dataset.jeReportMediaType === mediaType)
+                                issueReporter.applyIssueIndicator(source, tmdbId, mediaType);
+                        });
                         closeModal();
                     } else {
                         throw new Error('No response from API');
                     }
                 } catch (error) {
+                    if (!action.current()) return;
                     console.error(`${logPrefix} Error reporting issue:`, error);
                     const errorMsg = error?.message || error?.toString() || '';
                     if (error?.status === 403) {
@@ -209,6 +224,8 @@
             }
         });
 
+        releaseAction = action.onCancel(() => { modalElement.inert = true; close(); });
+        modalElement.addEventListener('click', e => { if (!action.current()) { e.stopImmediatePropagation(); close(); } }, true);
         show();
 
         // Load existing issues/comments for this item
@@ -245,7 +262,9 @@
 
             try {
                 if (loadingEl) loadingEl.textContent = JE.t('jellyseerr_loading_issues');
+                if (!action.current()) return;
                 const res = await JE.jellyseerrAPI.fetchIssuesForMedia(tmdbId, mediaType, { take: 50, filter: 'all' });
+                if (!action.current()) return;
                 let issues = res?.results || [];
 
                 if (!issues.length) {
@@ -255,7 +274,9 @@
 
                 const enriched = await Promise.all(issues.map(async (issue) => {
                     try {
+                        if (!action.current()) return issue;
                         const full = await JE.jellyseerrAPI.fetchIssueById(issue.id);
+                        if (!action.current()) return issue;
                         return full || issue;
                     } catch (_) { return issue; }
                 }));
@@ -334,7 +355,7 @@
 
             } catch (err) {
                 console.error(`${logPrefix} Failed to load existing issues:`, err);
-                renderEmpty(JE.t('jellyseerr_load_issues_error'));
+                if (action.current()) renderEmpty(JE.t('jellyseerr_load_issues_error'));
             }
         })();
 
@@ -388,7 +409,8 @@
                         if (seriesId) {
                             // Fetch seasons present on the Jellyfin server
                             const userId = ApiClient.getCurrentUserId();
-                            const seasonsRes = await ApiClient.ajax({
+                            if (!action.current()) return;
+                            const seasonsRes = await JE.core.api.ajax({
                                 type: 'GET',
                                 url: ApiClient.getUrl('/Items', {
                                     ParentId: seriesId,
@@ -401,6 +423,7 @@
                                 dataType: 'json'
                             });
 
+                            if (!action.current()) return;
                             const seasonsList = seasonsRes?.Items || [];
                             normalized = seasonsList.map(s => ({
                                 seasonNumber: parseInt(s.IndexNumber || s.SeasonNumber || s.ParentIndexNumber || 0) || 0,
@@ -411,7 +434,8 @@
                             // For each season, fetch episodes (only titles and numbers)
                             for (const s of normalized) {
                                 try {
-                                    const epsRes = await ApiClient.ajax({
+                                    if (!action.current()) return;
+                                    const epsRes = await JE.core.api.ajax({
                                         type: 'GET',
                                         url: ApiClient.getUrl('/Items', {
                                             ParentId: s.id,
@@ -423,6 +447,7 @@
                                         }),
                                         dataType: 'json'
                                     });
+                                    if (!action.current()) return;
                                     const eps = epsRes?.Items || [];
                                     s.episodes = eps.map(ep => ({ episodeNumber: parseInt(ep.IndexNumber || ep.ParentIndexNumber || ep.Index || 0) || 0, title: ep.Name || ep.Title || '' }));
                                 } catch (e) {
@@ -567,6 +592,8 @@
         button.setAttribute('is', 'emby-button');
         button.className = 'button-flat detailButton emby-button jellyseerr-report-issue-icon';
         button.type = 'button';
+        button.dataset.jeReportTmdbId = String(tmdbId);
+        button.dataset.jeReportMediaType = mediaType;
         button.setAttribute('aria-label', JE.t('jellyseerr_report_issue_button'));
         button.title = JE.t('jellyseerr_report_issue_button');
         button.innerHTML = `
@@ -612,6 +639,9 @@
         } else if (reason === 'no-both') {
             ariaLabel = 'Reporting services unavailable';
             title = 'TMDB ID not found and Jellyseerr is not available';
+        } else if (reason === 'no-record') {
+            ariaLabel = JE.t('title_actions_report_no_record');
+            title = ariaLabel;
         } else if (reason === 'no-permissions') {
             ariaLabel = 'Not enough permissions';
             title = 'Not enough permissions to report';
@@ -636,6 +666,8 @@
                 JE.toast(JE.t('jellyseerr_report_unavailable_seerr_down'), 4000);
             } else if (reason === 'no-both') {
                 JE.toast('TMDB ID not found and Jellyseerr is not available', 4000);
+            } else if (reason === 'no-record') {
+                JE.toast(JE.t('title_actions_report_no_record'), 4000);
             } else if (reason === 'no-permissions') {
                 JE.toast('You do not have permissions to report issues', 4000);
             } else {
@@ -765,10 +797,16 @@
      */
     issueReporter.applyIssueIndicator = async function (button, tmdbId, mediaType) {
         if (!JE.pluginConfig?.JellyseerrShowIssueIndicator) return;
+        const action = JE.createSessionAction();
         try {
             const result = await JE.jellyseerrAPI.fetchIssuesForMedia(tmdbId, mediaType, { take: 50, filter: 'open' });
+            if (!action.current() || !button.isConnected) return;
             const openIssues = result?.results || [];
-            if (openIssues.length === 0) return;
+            button.querySelectorAll('.jellyseerr-issue-count-badge').forEach(badge => badge.remove());
+            button.classList.toggle('has-open-issues', openIssues.length > 0);
+            if (openIssues.length === 0) {
+                button.title = JE.t('jellyseerr_report_issue_button'); button.setAttribute('aria-label', button.title); return;
+            }
 
             // Inject CSS once per page load
             if (!document.getElementById('je-issue-indicator-style')) {
@@ -1166,7 +1204,7 @@
             // is one (same body as the endpoint); handed out once.
             const statusUrl = ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/status');
             const statusRes = JE.takePrefetched?.('SeerrStatus')
-                || await ApiClient.ajax({ type: 'GET', url: statusUrl, dataType: 'json' });
+                || await JE.core.api.ajax({ type: 'GET', url: statusUrl, dataType: 'json' });
             if (!statusRes || !statusRes.active) {
                 console.debug(`${logPrefix} Jellyseerr status check returned inactive, skipping reporter init`);
                 return;

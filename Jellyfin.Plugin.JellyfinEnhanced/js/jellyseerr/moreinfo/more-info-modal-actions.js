@@ -372,26 +372,65 @@ function fourKRequestable(data) {
  * @param {number} token The render the controls belong to (a newer render wins).
  * @returns {Promise<void>}
  */
-async function showPaused(actionMount, data, mediaType, token) {
+const pauseContexts = new WeakMap();
+const pauseVerdicts = new WeakMap();
+
+/** Ordinary host passes share a bounded attempt owned by the original render and session. */
+function reconcilePaused(actionMount) {
+    const context = pauseContexts.get(actionMount);
+    if (!context || !context.current()) return Promise.resolve();
+    if (context.pending) return context.pending;
+    if (context.attempts >= 3 || Date.now() < context.nextAttempt || ![...actionMount.children].some(n =>
+        n.matches('.je-more-info-actions-row, .jellyseerr-request-button') && pauseVerdicts.get(n) !== context)) return Promise.resolve();
+    context.attempts++;
+    context.pending = checkPaused(actionMount, context).finally(() => {
+        context.pending = null;
+        context.nextAttempt = Date.now() + Math.min(30000, 1000 * (2 ** (context.attempts - 1)));
+    });
+    return context.pending;
+}
+
+function showPaused(actionMount, data, mediaType, token) {
+    if (!actionMount) return Promise.resolve();
+    let context = pauseContexts.get(actionMount);
+    if (!context || context.token !== token || context.data !== data || context.mediaType !== mediaType) {
+        const action = JE.createSessionAction();
+        const modal = state.currentModal;
+        context = { data, mediaType, token, attempts: 0, nextAttempt: 0, pending: null,
+            current: () => action.current() && token === _renderActionsToken && actionMount.isConnected && state.currentModal === modal && !modal?._isClosing };
+        pauseContexts.set(actionMount, context);
+    }
+    return reconcilePaused(actionMount);
+}
+
+async function checkPaused(actionMount, context) {
+    const { data, mediaType, current } = context;
     const ask = JE.arrAsk;
-    if (!actionMount || JE.internals?.arrAskSeerr?.jeMode?.() !== true || typeof ask?.check !== 'function'
+    if (!current() || JE.internals?.arrAskSeerr?.jeMode?.() !== true || typeof ask?.check !== 'function'
         || typeof ask.blockWords !== 'function' || typeof ask.pausedNote !== 'function') return;
     const id = Number.parseInt(String(data?.id ?? ''), 10);
     if (!Number.isInteger(id) || id <= 0) return;
-    const controls = [...actionMount.children].filter(n => n.matches('.je-more-info-actions-row, .jellyseerr-request-button') && !n.dataset.jePauseChecked);
+    const controls = [...actionMount.children].filter(n => n.matches('.je-more-info-actions-row, .jellyseerr-request-button') && pauseVerdicts.get(n) !== context);
     if (!controls.length) return;
-    controls.forEach(n => { n.dataset.jePauseChecked = '1'; });
+    // DOM clones do not inherit this session's private verdict ownership.
+    controls.forEach(control => { delete control.dataset.jePauseChecked; });
     const movie = mediaType === 'movie';
-    const current = () => token === _renderActionsToken && actionMount.isConnected;
     const caps = await ask.me();
-    if (!current() || !ask.canAsk(caps, movie ? 'movie' : 'series')) return;
+    if (!current() || !caps) return;
+    const finish = control => { pauseVerdicts.set(control, context); control.dataset.jePauseChecked = '1'; };
+    if (!ask.canAsk(caps, movie ? 'movie' : 'series')) {
+        controls.forEach(finish); // A definitive capability denial is a final decision too.
+        return;
+    }
     const key = `${movie ? 'movie' : 'tv'}:tmdb:${id}`;
     let added = false;
     for (const control of controls) {
         const variant = control.dataset.jeEdition === '4k' ? '4k' : 'standard';
         const check = await ask.check(key, variant);
         if (!current()) return;
-        if (!control.isConnected || !check || check.canRequest || !check.blocked) continue;
+        if (!control.isConnected || !check) continue;
+        finish(control);
+        if (check.canRequest || !check.blocked) continue;
         const words = ask.blockWords(check.blocked, caps);
         if (!words) continue;
         JE.internals?.arrAskStyles?.ensure?.();
@@ -401,15 +440,12 @@ async function showPaused(actionMount, data, mediaType, token) {
         const replacement = [note];
         if (variant === 'standard' && control.querySelector('.jellyseerr-split-arrow') && fourKRequestable(data)) {
             const fourK = movie ? buildSingle4kButton(data) : internal.buildSingleTv4kButton?.(data);
-            if (fourK) {
-                replacement.push(fourK);
-                added = true;
-            }
+            if (fourK) { replacement.push(fourK); added = true; }
         }
         control.replaceWith(...replacement);
     }
-    // A 4K button that took a paused row's place is checked as well.
-    if (added) await showPaused(actionMount, data, mediaType, token);
+    // A new 4K control belongs to this same attempt, never a fresh session capture.
+    if (added && current()) await checkPaused(actionMount, context);
 }
 
 /**
@@ -595,5 +631,6 @@ function drawActions(data, mediaType) {
     internal.mountRequestedChip = mountRequestedChip;
     internal.maybeRenderMoreInfoQuotaChip = maybeRenderMoreInfoQuotaChip;
     internal.renderActions = renderActions;
+    internal.reconcilePaused = reconcilePaused;
 
 })(window.JellyfinEnhanced);

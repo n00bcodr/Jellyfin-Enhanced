@@ -44,7 +44,11 @@
         const year = /^\d{4}/.test(date) ? Number(date.slice(0, 4)) : undefined;
         const name = String(item?.title || item?.name || item?.originalTitle || item?.originalName || fallbackName || '').trim();
         const poster = typeof item?.posterPath === 'string' && /^\/[A-Za-z0-9_.-]{1,80}$/.test(item.posterPath) ? item.posterPath : undefined;
-        return { key: `${movie ? 'movie' : 'tv'}:tmdb:${id}`, kind: movie ? 'movie' : 'series', name, year, poster, tmdbId: id };
+        const scope = !movie && item?.jeActionScope;
+        const scoped = scope && Number.isInteger(scope.season) && scope.season >= 0 && scope.season <= 65535 &&
+            (scope.episode == null || Number.isInteger(scope.episode) && scope.episode >= 0 && scope.episode <= 65535);
+        return { key: `${movie ? 'movie' : 'tv'}:tmdb:${id}`, kind: movie ? 'movie' : 'series', name, year, poster, tmdbId: id,
+            ...(scoped ? { initialSeason: scope.season, ...(scope.episode != null ? { initialEpisode: scope.episode } : {}) } : {}) };
     }
 
     /**

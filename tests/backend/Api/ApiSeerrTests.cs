@@ -636,6 +636,8 @@ public class ApiSeerrTests
             var status = Body(JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(await f.Controller.GetJellyseerrUserStatus()).Value));
             Assert.True(status.GetProperty("userFound").GetBoolean(), round);
             Assert.Equal(canView, status.GetProperty("canViewIssues").GetBoolean());
+            var canReport = jellyfinAdmin || (permissions & (JellyseerrPermission.CREATE_ISSUES | JellyseerrPermission.MANAGE_ISSUES | JellyseerrPermission.ADMIN)) != 0;
+            Assert.Equal(canReport, status.GetProperty("canReportIssues").GetBoolean());
         }
         // And the proxy agrees: an issue read is refused exactly when the status says so.
         var read = await f.Controller.GetJellyseerrIssues(null);

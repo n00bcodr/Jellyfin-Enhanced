@@ -1347,3 +1347,11 @@ asked from Seerr, so people who asked long ago aren't missed.
 Hidden Content and Spoiler Guard also apply when a preference changes while a request is loading. Provider episode fields and artwork are projected before delivery, including cached answers. Hidden Content saves reject stale replacements so another tab’s newer rules survive. If Undo fails, its translated error and Undo button remain available for another attempt. More Like This uses the recommendations filter preference independently of the library preference.
 
 Spoiler Guard preserves request controls, quota warnings and parental-rating assessments. Calendar entries keep their source, season and episode numbers and availability state, so filtering to **Available** still works while episode names are protected. Precise dates follow your Spoiler Guard date preference.
+
+### Title actions and sharing
+
+Request-mode titles have a **More actions** menu on their details page, More Info window and cards. Use the visible ⋯ button, right-click, long press, or Shift+F10. The menu offers enabled Hide, Spoiler Guard, Follow, Request, Report and administrator Manage controls through the same services as their existing buttons. File actions become available on the actual library copy; an absent title never offers Play, Played, Download or file management.
+
+Where the details action row would overflow, a compact row keeps the primary Play or Request control, Favourite (Follow for an absent title), Report when available, and More. The grouped sheet proxies Jellyfin's original buttons, including Trailer, Played and its own More options. Other plugins' library-item controls appear in the last group. Keyboard and TV remote arrows stay within the sheet; Close, Escape and Back restore focus.
+
+**Share** copies a link containing only the provider title and optional season/episode scope. The recipient signs in to the same server and opens the title under their own library access, Hidden Content and Spoiler Guard settings. A shared link grants no access and carries none of the sender's private view. Hidden titles remain directly openable so the recipient can Unhide them.

@@ -1155,8 +1155,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         // POST /api/v1/issue — report an issue
                         if (method == HttpMethod.Post && apiPath.StartsWith("/api/v1/issue", StringComparison.OrdinalIgnoreCase))
                         {
-                            if (!JellyseerrPermissionHelper.HasAnyPermission(perms,
-                                JellyseerrPermission.CREATE_ISSUES | JellyseerrPermission.MANAGE_ISSUES))
+                            if (!CanReportIssues(false, seerrUser))
                                 return StatusCode(403, new { code = "no_issue_permission", message = "You do not have permission to report issues in Seerr." });
                         }
 
@@ -1619,7 +1618,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!string.IsNullOrEmpty(jellyseerrUserId))
             {
                 var seerrUser = await GetJellyseerrUser(jellyfinUserId!);
-                return Ok(LinkedSeerrUserStatus(jellyseerrUserId, CanRequestAdvanced(IsAdminUser(), seerrUser), CanViewIssues(IsAdminUser(), seerrUser)));
+                return Ok(LinkedSeerrUserStatus(jellyseerrUserId, CanRequestAdvanced(IsAdminUser(), seerrUser), CanViewIssues(IsAdminUser(), seerrUser), CanReportIssues(IsAdminUser(), seerrUser)));
             }
 
             // User not found — could be server unreachable, HTML challenge from
@@ -1675,15 +1674,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // canRequestAdvanced and canViewIssues: an admin always may; anyone
             // else needs their Seerr user (permissions), which must already be in
             // the user cache for this answer to need no Seerr round trip.
-            if (isAdmin) return LinkedSeerrUserStatus(cachedId, true, true);
+            if (isAdmin) return LinkedSeerrUserStatus(cachedId, true, true, true);
             return TryGetCachedJellyseerrUser(jellyfinUserId, out var seerrUser)
-                ? LinkedSeerrUserStatus(cachedId, CanRequestAdvanced(false, seerrUser), CanViewIssues(false, seerrUser))
+                ? LinkedSeerrUserStatus(cachedId, CanRequestAdvanced(false, seerrUser), CanViewIssues(false, seerrUser), CanReportIssues(false, seerrUser))
                 : null;
         }
 
         /// <summary>The <c>jellyseerr/user-status</c> answer for a linked user.</summary>
-        private static object LinkedSeerrUserStatus(string jellyseerrUserId, bool canRequestAdvanced, bool canViewIssues)
-            => new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked", canRequestAdvanced, canViewIssues };
+        private static object LinkedSeerrUserStatus(string jellyseerrUserId, bool canRequestAdvanced, bool canViewIssues, bool canReportIssues)
+            => new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked", canRequestAdvanced, canViewIssues, canReportIssues };
+
+        // D46 action capabilities: reporting and reading issues are independent Seerr permissions.
+        /// <summary>The exact write permission used by the issue proxy and its client capability.</summary>
+        private static bool CanReportIssues(bool isAdmin, JellyseerrUser? seerrUser)
+            => isAdmin || seerrUser == null
+                || JellyseerrPermissionHelper.HasPermission(seerrUser.Permissions, JellyseerrPermission.ADMIN)
+                || JellyseerrPermissionHelper.HasAnyPermission(seerrUser.Permissions, JellyseerrPermission.CREATE_ISSUES | JellyseerrPermission.MANAGE_ISSUES);
 
         /// <summary>
         /// Whether the issue list and issues may be read through the Seerr proxy

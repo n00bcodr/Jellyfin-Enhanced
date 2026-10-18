@@ -1824,3 +1824,17 @@ test('Seerr with partial requests off: one "Get the whole series" on the series 
   same(h.posts.at(-1).body.input.seasons, [1, 2, 3]);
   await pending;
 });
+
+test('provider season entry starts with exactly that season selected', async t => {
+  const h = setup(t); h.Sheet.open({ ...SERIES, initialSeason: 2 }); await settle();
+  assert.equal(card(h, 'pick').getAttribute('aria-pressed'), 'true');
+  click(h, primary(h)); await settle();
+  assert.deepEqual([...h.posts[0].body.input.seasons], [2]);
+});
+
+test('provider episode entry starts with exactly that episode selected', async t => {
+  const h = setup(t); h.Sheet.open({ ...SERIES, initialSeason: 2, initialEpisode: 4 }); await settle();
+  assert.equal(card(h, 'episodes').getAttribute('aria-pressed'), 'true');
+  click(h, primary(h)); await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.posts[0].body.input.episodes)), [{ season: 2, episode: 4 }]);
+});

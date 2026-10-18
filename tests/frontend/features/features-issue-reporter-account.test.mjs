@@ -227,3 +227,11 @@ test('an item the server refuses (an HTTP answer) gets no button and no warning;
   assert.equal(await broken.reporter.tryAddButton(), false);
   assert.equal(broken.warnings.filter(w => w.includes('Issue Reporter: Error adding button')).length, 1);
 });
+
+test('reporting never chains its Seerr metadata read into a write under another session', async t => {
+  const { api, calls, take, switchUser, tick } = switchingApi(t);
+  const pending = api.reportIssue(603, 'movie', 4, 'Catalogue issue');
+  await tick(); switchUser(); take('/movie/603').resolve({ mediaInfo: { id: 99 } });
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.equal(calls.some(url => /\/issue(?:\?|$)/.test(url)), false);
+});

@@ -135,6 +135,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/TitleActionsController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ActivityPlaybackConsumer.cs",
       "category": "EventHandlers"
     },
@@ -1201,6 +1205,18 @@
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WikidataAwardsService.cs",
       "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/actions/title-actions-hosts.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/actions/title-actions-sheet.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/actions/title-actions.js",
+      "category": "js"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/admin/admin-render.js",
@@ -4528,6 +4544,15 @@
         "Authorize",
         "PrivateResponse",
         "BodyLimit"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/title-actions/{type}/{tmdbId}",
+      "method": "Read",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/TitleActionsController.cs",
+      "following_attributes": [
+        "Authorize"
       ]
     }
   ],
@@ -9678,8 +9703,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 538,
-    "routes": 257,
+    "files": 542,
+    "routes": 258,
     "configuration_properties": 579,
     "storage_references": 84,
     "scheduled_tasks": 14,

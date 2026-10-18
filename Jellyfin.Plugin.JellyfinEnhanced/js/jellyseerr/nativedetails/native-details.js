@@ -263,10 +263,11 @@
      * @param {string} mediaType "movie" or "tv".
      * @returns {boolean} True when the modal was asked to open.
      */
-    function openModal(tmdbId, mediaType) {
+    function openModal(tmdbId, mediaType, scope) {
         const tmdb = Number(tmdbId);
         if (!(tmdb > 0) || (mediaType !== 'movie' && mediaType !== 'tv') || typeof JE.jellyseerrMoreInfo?.open !== 'function') return false;
-        JE.jellyseerrMoreInfo.open(tmdb, mediaType);
+        if (scope?.season != null) JE.jellyseerrMoreInfo.open(tmdb, mediaType, { season: scope.season, ...(scope.episode != null ? { episode: scope.episode } : {}) });
+        else JE.jellyseerrMoreInfo.open(tmdb, mediaType);
         return true;
     }
 
@@ -280,7 +281,7 @@
      */
     function show(tmdbId, mediaType, scope) {
         if (open(tmdbId, mediaType, scope)) return true;
-        return openModal(tmdbId, mediaType);
+        return openModal(tmdbId, mediaType, scope);
     }
 
     /**
@@ -320,9 +321,13 @@
      * @returns {Promise<boolean>} True when something opened.
      */
     async function openKey(key, options = {}) {
+        const action = JE.createSessionAction();
+        const child = /:s(\d+)(?::e(\d+))?$/.exec(String(key || ''));
+        options = { ...options, ...(child ? { season: Number(child[1]), ...(child[2] != null ? { episode: Number(child[2]) } : {}) } : {}) };
         const mediaType = options.mediaType || (String(key || '').startsWith('movie:') ? 'movie' : 'tv');
         if (available() && key) {
             const answer = await resolve({ key, season: options.season, episode: options.episode });
+            if (!action.current()) return false;
             if (answer?.itemId && /^[0-9a-f-]{32,36}$/i.test(answer.itemId)) {
                 go(answer.itemId);
                 return true;
@@ -333,7 +338,7 @@
             }
         }
         if (options.modal === false) return false;
-        return openModal(options.tmdbId || tmdbOfKey(key), mediaType);
+        return action.current() && openModal(options.tmdbId || tmdbOfKey(key), mediaType, options);
     }
 
     // ------------------------------------------------------------------ page adapter
@@ -1451,7 +1456,7 @@
         JE.session?.onUserChange?.('native-details', () => { cancelPendingModal(); dispose(); });
     }
 
-    JE.titleDetails = Object.freeze({ available, open, show, openKey, openModal, syntheticId, parse, isSynthetic });
+    JE.titleDetails = Object.freeze({ available, open, show, openKey, openModal, openItem: go, syntheticId, parse, isSynthetic });
     JE.internals = JE.internals || {};
     JE.internals.nativeDetails = { start, onView, dispose, guard, statusShown, placeActions, resolve, adaptListPage, current: () => current };
     start();

@@ -49,6 +49,14 @@
     let generation = 0;
     let refocusing = false;
 
+    /** Sends through the core binding only while this drawer's opening identity remains current. */
+    async function boundApi(state, path, options) {
+        if (current !== state || !state.action.current()) throw new DOMException('Cancelled', 'AbortError');
+        const result = await JE.core.api.plugin(path, options);
+        if (current !== state || !state.action.current()) throw new DOMException('Cancelled', 'AbortError');
+        return result;
+    }
+
     /**
      * Translates through the shared status helper.
      * @param {string} key en.json key.
@@ -177,7 +185,10 @@
         root.addEventListener('keydown', onKey);
         document.body.appendChild(overlay);
         document.addEventListener('focusin', keepFocus, true);
-        current = { target, overlay, root, opener, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
+        current = { target, overlay, root, opener, action: JE.createSessionAction(), unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
+        const opening = current;
+        root.addEventListener('click', event => { if (current !== opening || !opening.action.current()) event.stopImmediatePropagation(); }, true);
+        current.releaseAction = current.action.onCancel(close);
         JE.internals.arrManage.injectStyles?.();
         renderShell(root, null);
         root.focus();
@@ -243,8 +254,8 @@
         const q = state.target.itemId ? `itemId=${encodeURIComponent(state.target.itemId)}` : `key=${encodeURIComponent(state.target.key)}`;
         try {
             const since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : null;
-            const data = await JE.core.api.plugin(`/arr/admin/manage?${q}`, { skipRetry: true });
-            if (current !== state || state.generation !== mine) return;
+            const data = await boundApi(state, `/arr/admin/manage?${q}`, { skipRetry: true });
+            if (current !== state || !state.action.current() || state.generation !== mine) return;
             if (!data || typeof data !== 'object') throw new Error('empty answer');
             state.data = data;
             state.okAt = Date.now();
@@ -253,7 +264,7 @@
             renderShell(state.root, data);
             follow(state, data, since);
         } catch (err) {
-            if (current !== state || state.generation !== mine) return;
+            if (current !== state || !state.action.current() || state.generation !== mine) return;
             console.warn(`${logPrefix} could not load (${err?.status || err?.message || err})`);
             if (!state.data) {
                 renderShell(state.root, null, true);
@@ -313,6 +324,7 @@
         if (!current) return;
         const state = current;
         current = null;
+        state.releaseAction?.();
         generation++;
         if (state.unsubscribe) state.unsubscribe();
         if (state.reloadTimer) clearTimeout(state.reloadTimer);
@@ -489,14 +501,14 @@
         const key = `${instance.id}|${download.downloadId}`;
         if (!state || state.queueBusy[key]) return;
         const send = async (body) => {
-            if (current !== state || state.queueBusy[key]) return;
+            if (current !== state || !state.action.current() || state.queueBusy[key]) return;
             state.queueBusy[key] = true;
             renderShell(state.root, state.data || data);
             const idempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
             let message;
             let failed = false;
             try {
-                const outcome = await JE.core.api.plugin('/arr/admin/queue/action', { method: 'POST', body: { ...body, idempotencyKey }, skipRetry: true });
+                const outcome = await boundApi(state, '/arr/admin/queue/action', { method: 'POST', body: { ...body, idempotencyKey }, skipRetry: true });
                 failed = outcome?.status === 'Failed' || outcome?.status === 'Rejected';
                 message = failed ? tr('arr_ops_action_failed', { message: outcome?.message || '' }) : [outcome?.message, outcome?.readBack].filter(Boolean).join(' ');
             } catch (err) {
@@ -504,7 +516,7 @@
                 message = tr('arr_ops_action_failed', { message: err?.message || String(err) });
             }
             delete state.queueBusy[key];
-            if (current !== state) return;
+            if (current !== state || !state.action.current()) return;
             state.result = { message: message || '', failed };
             renderShell(state.root, state.data || data);
             setTimeout(() => { if (current === state) load(state.generation); }, 1500);
@@ -548,8 +560,8 @@
         renderShell(state.root, state.data || data);
         focusOn(`add-cancel-${instance.id}`);
         try {
-            const options = await JE.core.api.plugin(`/arr/admin/manage/add-options?instanceId=${encodeURIComponent(instance.id)}&key=${encodeURIComponent(titleKey(data.key))}`, { skipRetry: true });
-            if (current !== state || state.adding[instance.id] !== sheet) return;
+            const options = await boundApi(state, `/arr/admin/manage/add-options?instanceId=${encodeURIComponent(instance.id)}&key=${encodeURIComponent(titleKey(data.key))}`, { skipRetry: true });
+            if (current !== state || !state.action.current() || state.adding[instance.id] !== sheet) return;
             sheet.options = options || {};
             if (!options?.direct) {
                 sheet.phase = 'unavailable';
@@ -563,7 +575,7 @@
                 sheet.phase = 'form';
             }
         } catch (err) {
-            if (current !== state || state.adding[instance.id] !== sheet) return;
+            if (current !== state || !state.action.current() || state.adding[instance.id] !== sheet) return;
             sheet.phase = 'unavailable';
             sheet.message = tr('arr_manage_add_failed', { message: err?.responseJSON?.message || err?.message || String(err) });
         }
@@ -737,7 +749,7 @@
         focusOn(`add-submit-${instance.id}`);
         let outcome;
         try {
-            outcome = await JE.core.api.plugin('/arr/admin/manage/add', {
+            outcome = await boundApi(state, '/arr/admin/manage/add', {
                 method: 'POST',
                 body: {
                     instanceId: instance.id,
@@ -750,7 +762,7 @@
                 skipRetry: true
             });
         } catch (err) {
-            if (current !== state || state.adding[instance.id] !== sheet) return;
+            if (current !== state || !state.action.current() || state.adding[instance.id] !== sheet) return;
             sheet.phase = 'form';
             sheet.failed = true;
             sheet.message = tr('arr_manage_add_failed', { message: addReason(err?.responseJSON?.reason, err?.responseJSON?.message || err?.message, instance) });
@@ -758,7 +770,7 @@
             focusOn(`add-submit-${instance.id}`);
             return;
         }
-        if (current !== state || state.adding[instance.id] !== sheet) return;
+        if (current !== state || !state.action.current() || state.adding[instance.id] !== sheet) return;
         await followAdd(state, sheet, instance, data, outcome?.requestId);
     }
 
@@ -776,9 +788,9 @@
         let settled = null;
         for (let i = 0; requestId && i < ADD_POLL_TRIES && !settled; i++) {
             await new Promise(r => setTimeout(r, i === 0 ? 300 : ADD_POLL_MS));
-            if (current !== state || state.adding[instance.id] !== sheet) return;
+            if (current !== state || !state.action.current() || state.adding[instance.id] !== sheet) return;
             try {
-                const mine = await JE.core.api.plugin('/acquire/requests?view=mine', { skipRetry: true });
+                const mine = await boundApi(state, '/acquire/requests?view=mine', { skipRetry: true });
                 // A row stands for every open request of one title edition: follow this request, which may be one of its members.
                 const item = (mine?.items || []).flatMap(x => [...(Array.isArray(x.members) ? x.members : []), x]).find(x => x.id === requestId);
                 const job = (item?.jobs || []).slice(-1)[0];
@@ -792,7 +804,7 @@
                 // The next poll tries again; the outcome is also on the Requests page.
             }
         }
-        if (current !== state || state.adding[instance.id] !== sheet) return;
+        if (current !== state || !state.action.current() || state.adding[instance.id] !== sheet) return;
         sheet.phase = 'done';
         sheet.failed = settled?.failed === true;
         sheet.message = settled?.message || tr('arr_manage_add_waiting', { instance: instance.name });
@@ -989,7 +1001,7 @@
         let message;
         let failed = false;
         try {
-            const outcome = await JE.core.api.plugin('/arr/admin/manage/search', {
+            const outcome = await boundApi(state, '/arr/admin/manage/search', {
                 method: 'POST',
                 body: { instanceId: instance.id, key: data.key, idempotencyKey },
                 skipRetry: true
@@ -1002,7 +1014,7 @@
             message = tr('arr_manage_search_failed', { message: err?.message || String(err) });
         }
         delete state.searching[instance.id];
-        if (current !== state) return;
+        if (current !== state || !state.action.current()) return;
         state.result = { message: message || '', failed };
         renderShell(state.root, state.data || data);
         // What changed comes through the change feed; read once more in any case.

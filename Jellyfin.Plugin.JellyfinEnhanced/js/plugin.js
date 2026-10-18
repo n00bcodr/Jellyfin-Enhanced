@@ -1405,6 +1405,8 @@
                 JE.initializeHiddenContentPage();
             }
 
+            if (typeof JE.initializeTitleActions === 'function') JE.initializeTitleActions();
+
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
 
             // Programmatic boot-complete marker: every component script has executed

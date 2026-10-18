@@ -265,13 +265,15 @@
      * @returns {Promise<{ok: boolean, code?: string}>} Outcome.
      */
     async function setFollow(key, on) {
+        const action = JE.createSessionAction();
         try {
             await api('/acquire/follows', { method: 'PUT', body: { key, on } });
         } catch (err) {
             return { ok: false, code: err?.responseJSON?.code || (err?.status === 403 ? 'not_allowed' : 'failed') };
         }
+        if (!action.current()) return { ok: false, code: 'cancelled' };
         await loadFollows(true);
-        return { ok: true };
+        return action.current() ? { ok: true } : { ok: false, code: 'cancelled' };
     }
 
     /**
