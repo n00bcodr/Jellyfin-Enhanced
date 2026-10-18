@@ -188,9 +188,6 @@ ON CONFLICT(server_id,user_id,interest,part) DO UPDATE SET logical_id=excluded.l
                 return true;
             }, false).Result;
 
-        /// <summary>Forgets a person's entries on this server (a renewed opt-in after a deletion starts afresh).</summary>
-        public void ClearEntries(string server, Guid user) => _db.Write((c, t) => Exec(c, t, "DELETE FROM ready_entries WHERE server_id=$s AND user_id=$u", ("$s", server), ("$u", Id(user))));
-
         // ------------------------------------------------------------------ native message attempts
 
         /// <summary>The attempt recorded for a delivery (its state), or null when none was.</summary>
