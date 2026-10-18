@@ -327,12 +327,12 @@ public class ApiNativeDetailsTests
             Artwork = new NativeDetailsArtwork(Images, _stateDir);
             Policy = new NativeDetailsPolicy(_parental, Source, Libraries, null, _stateDir, new NativeDetailsLibrary(Library.Object, null, LibraryRevision));
             Filter = new NativeDetailsFacadeFilter(Callers.Users.Object, Library.Object, Dto.Object, _host.Object, _server.Object, Source, Policy, Artwork, _parental, Plugin.Core.Manager, _strip, _spoilerUsers,
-                new NativeDetailsLinks(Library.Object, ImageTags.Object, LibraryRevision));
-            Feeds = new NativeDetailsFeeds(Source, Policy, _parental, Library.Object);
+                new NativeDetailsLinks(Library.Object, ImageTags.Object, LibraryRevision), new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object), new ImageBlurService(Plugin.Core.Logger));
+            Feeds = new NativeDetailsFeeds(Source, Policy, _parental, Library.Object, Plugin.Core.Manager, new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object));
         }
 
         /// <summary>The feeds over another source (the policy still admits titles from <see cref="Source"/>).</summary>
-        public NativeDetailsFeeds FeedsOver(INativeDetailsSource source) => new(source, Policy, _parental, Library.Object);
+        public NativeDetailsFeeds FeedsOver(INativeDetailsSource source) => new(source, Policy, _parental, Library.Object, Plugin.Core.Manager, new SpoilerPresentation(Plugin.Core.Manager, Library.Object, Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object));
 
         /// <summary>The id Jellyfin derives for a genre or studio name (a stand-in: stable per kind and name).</summary>
         public static Guid NameId(string kind, string name)
@@ -1216,6 +1216,61 @@ public class ApiNativeDetailsTests
         Assert.Equal(404, await Item(SyntheticId.Series(83867)));
         Assert.Equal(404, Status((await Call(rig, "Image", "GetItemImage", null, new(seriesPoster))).Result));
         Assert.Equal(AbsentLookup.Refused, (await pages.ResolveAsync(viewer.Id, series, CancellationToken.None)).Outcome);
+    }
+
+    [Fact]
+    public async Task PendingGuardProjectsRawPublicDetailsAndEachRelatedTitleIndependently()
+    {
+        using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.SpoilerBlurEnabled = true;
+        rig.Source.Related["movie:693134:recommendations:1"] = RecsJson;
+        var viewer = rig.Person(); var other = rig.Person();
+        var state = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur();
+        state.PendingTmdb["movie:693134"] = new();
+        state.PendingTmdb["movie:438631"] = new();
+        rig.Plugin.Core.Manager.SaveUserConfiguration(viewer.Id.ToString("N"), "spoilerblur.json", state);
+        SpoilerUserResolver.InvalidateUser(viewer.Id.ToString("N"));
+        var raw = Body(await rig.Feeds.TitleAsync(viewer, true, 693134, CancellationToken.None));
+        Assert.False(raw.TryGetProperty("overview", out var overview) && !string.IsNullOrEmpty(overview.GetString()));
+        Assert.False(raw.TryGetProperty("voteAverage", out var rating) && rating.ValueKind == JsonValueKind.Number);
+        Assert.True(raw.GetProperty("jeSpoiler").GetProperty("guarded").GetBoolean());
+        Assert.False(string.IsNullOrEmpty(Body(await rig.Feeds.TitleAsync(other, true, 693134, CancellationToken.None)).GetProperty("overview").GetString()));
+        var cards = Body(await rig.Feeds.RelatedAsync(viewer, true, 693134, "recommendations", 1, CancellationToken.None)).GetProperty("results");
+        Assert.False(cards[0].TryGetProperty("voteAverage", out var score) && score.ValueKind == JsonValueKind.Number);
+        Assert.True(cards[0].GetProperty("jeSpoiler").GetProperty("guarded").GetBoolean());
+        Assert.False(cards[1].GetProperty("jeSpoiler").GetProperty("guarded").GetBoolean());
+        // A shared raw source remains unchanged when another viewer reads it afterwards.
+        Assert.Equal(7.8, Body(await rig.Feeds.RelatedAsync(other, true, 693134, "recommendations", 1, CancellationToken.None)).GetProperty("results")[0].GetProperty("voteAverage").GetDouble());
+    }
+
+    [Fact]
+    public async Task ProviderGuardProtectsMissingRowsUnderAnExistingLibrarySeasonAndOldMovieArtUrls()
+    {
+        using var rig = new Rig();
+        using var requests = new IntegrationRequestLedgerTests.Rig();
+        rig.Plugin.Plugin.Configuration.SpoilerBlurEnabled = true;
+        rig.Plugin.Plugin.Configuration.SpoilerKeepMoviePosters = false;
+        var viewer = rig.Person();
+        var before = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result);
+        var art = new Dictionary<string, object?> { ["itemId"] = before.Id, ["imageType"] = ImageType.Primary, ["tag"] = before.ImageTags[ImageType.Primary] };
+        var original = Assert.IsType<FileContentResult>((await Call(rig, "Image", "GetItemImage", null, art)).Result).FileContents;
+        var seasonId = Guid.NewGuid(); var seriesId = Guid.NewGuid();
+        var title = TitleKey.Parse("tv:tmdb:83867")!;
+        requests.View.AddItem(new JfItemRef { ItemId = seasonId, Kind = "season", Key = title.WithSeason(2), SeriesId = seriesId, Season = 2, TmdbId = 83867 });
+        var state = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur();
+        state.ProviderTitles["tv:tmdb:83867"] = new(); state.PendingTmdb["movie:693134"] = new();
+        rig.Plugin.Core.Manager.SaveUserConfiguration(requests.Member.ToString("N"), "spoilerblur.json", state);
+        rig.Plugin.Core.Manager.SaveUserConfiguration(viewer.Id.ToString("N"), "spoilerblur.json", state);
+        var presentation = new SpoilerPresentation(rig.Plugin.Core.Manager, rig.Library.Object, rig.Callers.Users.Object, new Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object);
+        var rows = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.SeasonRowsService(requests.View, requests.Ledger, requests.Policy, null,
+            (_, _, _, _) => Task.FromResult<string?>("""{"episodes":[{"episode_number":1,"name":"Secret title","overview":"Secret plot","air_date":"2030-01-02","still_path":"/secret.jpg"}]}"""), () => requests.Now, presentation);
+        var answer = await rows.ForSeasonAsync(requests.View.Users[requests.Member], seasonId, null, CancellationToken.None);
+        var episode = Assert.Single(answer!.Episodes);
+        Assert.Null(episode.Title); Assert.Null(episode.Overview); Assert.Null(episode.AirDate); Assert.Null(episode.Still);
+        var protectedArt = Assert.IsType<FileContentResult>((await Call(rig, "Image", "GetItemImage", null, new(art))).Result);
+        Assert.NotEqual(original, protectedArt.FileContents);
+        var after = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = before.Id })).Result);
+        Assert.NotEqual(before.ImageTags[ImageType.Primary], after.ImageTags[ImageType.Primary]);
     }
 
     [Fact]

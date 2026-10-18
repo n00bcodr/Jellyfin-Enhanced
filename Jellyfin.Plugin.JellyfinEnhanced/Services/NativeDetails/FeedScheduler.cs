@@ -1,4 +1,3 @@
-#if JF12
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -144,4 +143,3 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
     }
 }
-#endif

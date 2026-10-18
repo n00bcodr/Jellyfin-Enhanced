@@ -274,3 +274,24 @@ test("JE's toasts sit above every window, sheet and panel JE opens, and below Je
   // Jellyfin's dialogs (999999) stay under every toast; Jellyfin's own toasts (9999999) stay on top.
   assert.ok(layer > 999999 && layer < 9999999);
 });
+
+test('policy invalidation rejects an old feed and keeps a new read independent',async t=>{
+ const first=deferred(),second=deferred();let calls=0;
+ const h=setup(t,{fetch:()=>++calls===1?first.promise:second.promise});
+ const old=h.JE.core.api.plugin('/native-details/title/movie/42');
+ const oldResult=old.then(()=> 'leaked',error=>error.name);
+ await new Promise(r=>setImmediate(r));
+ h.window.dispatchEvent(new h.window.CustomEvent('je-spoiler-policy-changed',{detail:{type:'movie',tmdbId:42,enabled:true}}));
+ const fresh=h.JE.core.api.plugin('/native-details/title/movie/42');
+ await new Promise(r=>setImmediate(r));
+ assert.equal(calls,2);
+ first.resolve(jsonResponse({overview:'secret'}));second.resolve(jsonResponse({jeSpoiler:{guarded:true}}));
+ assert.equal(await oldResult,'AbortError');assert.equal((await fresh).jeSpoiler.guarded,true);
+});
+
+test('personalized reads bypass browser HTTP caches after a guard change',async t=>{
+ let options;
+ const h=setup(t,{fetch:(_url,init)=>{options=init;return Promise.resolve(jsonResponse({}));}});
+ await h.JE.core.api.plugin('/awards/tv/42');
+ assert.equal(options.cache,'no-store');
+});

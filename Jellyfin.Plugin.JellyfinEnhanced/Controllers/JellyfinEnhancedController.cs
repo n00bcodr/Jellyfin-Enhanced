@@ -79,6 +79,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.SpoilerExistingTitlesApplier _spoilerExistingApplier;
         private readonly MediaBrowser.Model.Tasks.ITaskManager _taskManager;
         private readonly IPluginManager _pluginManager;
+        private readonly Services.SpoilerPresentation? _presentation;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -226,8 +227,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.Arr.ArrStateStore arrState,
             Services.Arr.Live.IArrFeedAudience feedAudience,
             Services.Acquire.ArrInstanceLibraries instanceLibraries,
-            Services.Acquire.TitleAliases titleAliases)
+            Services.Acquire.TitleAliases titleAliases, Services.SpoilerPresentation? presentation = null)
         {
+            _presentation = presentation;
             _instanceLibraries = instanceLibraries;
             _titleAliases = titleAliases ?? (arrState != null ? new Services.Acquire.TitleAliases(arrState, null) : null);
             _arrClientFactory = arrClientFactory;
@@ -807,6 +809,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var projected = Services.TitleFeedProjection.Hidden(result.Body,
                     Services.HiddenContentPolicy.Load(_userConfigurationManager, Guid.Parse(jellyfinUserId), HttpContext, _libraryManager), surface, kind);
                 Response.Headers["Cache-Control"] = "private, no-store";
+                var segments = apiPath.Split('?', 2)[0].Split('/', StringSplitOptions.RemoveEmptyEntries);
+                var title = segments.Length >= 4 && segments[2] is "movie" or "tv"
+                    ? Services.HiddenContentPolicy.TitleIdentity(segments[2], segments[3]) : null;
+                var seasonIndex = Array.IndexOf(segments, "season");
+                var seasonNumber = seasonIndex >= 0 && seasonIndex + 1 < segments.Length && int.TryParse(segments[seasonIndex + 1], out var seasonValue) ? seasonValue : 0;
+                projected = _presentation?.Load(Guid.Parse(jellyfinUserId), HttpContext).ProjectResource(projected, title, segments.LastOrDefault() ?? "", kind,
+                    scopeKind: seasonIndex >= 0 ? "season" : null, season: seasonNumber) ?? projected;
                 return ProjectForCaller(projected);
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
@@ -4472,6 +4481,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Services.HiddenContentPolicy.Load(_userConfigurationManager, UserHelper.GetCurrentUserId(User)!.Value, HttpContext, _libraryManager),
                         apiPath.StartsWith("search/", StringComparison.Ordinal) ? "search" : apiPath.Contains("/recommendations", StringComparison.Ordinal) || apiPath.Contains("/similar", StringComparison.Ordinal) ? "recommendations" : "discovery",
                         apiPath.StartsWith("movie/", StringComparison.Ordinal) || apiPath == "discover/movie" ? "movie" : apiPath.StartsWith("tv/", StringComparison.Ordinal) || apiPath == "discover/tv" ? "tv" : null);
+                    var pathParts = apiPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                    var title = pathParts.Length >= 2 ? Services.HiddenContentPolicy.TitleIdentity(pathParts[0], pathParts[1]) : null;
+                    var seasonIndex = Array.IndexOf(pathParts, "season");
+                    var episodeIndex = Array.IndexOf(pathParts, "episode");
+                    var seasonNumber = seasonIndex >= 0 && seasonIndex + 1 < pathParts.Length && int.TryParse(pathParts[seasonIndex + 1], out var seasonValue) ? seasonValue : 0;
+                    var episodeNumber = episodeIndex >= 0 && episodeIndex + 1 < pathParts.Length && int.TryParse(pathParts[episodeIndex + 1], out var episodeValue) ? episodeValue : 0;
+                    projected = _presentation?.Load(UserHelper.GetCurrentUserId(User)!.Value, HttpContext).ProjectResource(projected, title,
+                        pathParts.LastOrDefault() ?? "", apiPath == "discover/movie" ? "movie" : apiPath == "discover/tv" ? "tv" : null,
+                        scopeKind: episodeIndex >= 0 ? "episode" : seasonIndex >= 0 ? "season" : null, season: seasonNumber, episode: episodeNumber) ?? projected;
                     var etag = "\"" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(projected))) + "\"";
                     Response.Headers["ETag"] = etag;
                     if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], etag))
@@ -4749,7 +4767,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private void SetExternalDataCacheHeaders()
         {
-            Response.Headers["Cache-Control"] = "private, max-age=1800";
+            Response.Headers["Cache-Control"] = "private, no-store";
             Response.Headers["Vary"] = "Authorization, X-Emby-Token, X-Jellyfin-User-Id";
         }
 
@@ -4807,6 +4825,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest("tmdbId must be a positive integer.");
             }
 
+            var presentation = _presentation?.Load(UserHelper.GetCurrentUserId(User) ?? Guid.Empty, HttpContext);
+            if (presentation?.HidesRatings(Services.HiddenContentPolicy.TitleIdentity(mediaType, tmdbId)) == true)
+            {
+                Response.Headers["Cache-Control"] = "private, no-store";
+                return Ok(new { confirmed = true, ratings = Array.Empty<object>(), awards = Array.Empty<object>() });
+            }
+
             try
             {
                 var result = await _wikidataAwardsService.GetAwardsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
@@ -4847,6 +4872,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (string.IsNullOrWhiteSpace(tmdbId) || !tmdbId.All(char.IsDigit))
             {
                 return BadRequest("tmdbId must be a positive integer.");
+            }
+
+            var presentation = _presentation?.Load(UserHelper.GetCurrentUserId(User) ?? Guid.Empty, HttpContext);
+            if (presentation?.HidesRatings(Services.HiddenContentPolicy.TitleIdentity(mediaType, tmdbId)) == true)
+            {
+                Response.Headers["Cache-Control"] = "private, no-store";
+                return Ok(new { confirmed = true, ratings = Array.Empty<object>(), awards = Array.Empty<object>() });
             }
 
             try
@@ -5852,11 +5884,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (userConfiguration.Series.Count > MaxSpoilerEntriesPerDict
                 || userConfiguration.Movies.Count > MaxSpoilerEntriesPerDict
                 || userConfiguration.Collections.Count > MaxSpoilerEntriesPerDict
-                || userConfiguration.PendingTmdb.Count > MaxSpoilerEntriesPerDict)
+                || userConfiguration.PendingTmdb.Count > MaxSpoilerEntriesPerDict
+                || userConfiguration.ProviderTitles.Count > MaxSpoilerEntriesPerDict)
             {
                 _logger.Warning($"Rejecting oversized Spoiler Guard payload for {ResolveUserDisplay(authorizedUserId)} (series={userConfiguration.Series.Count}, movies={userConfiguration.Movies.Count}, collections={userConfiguration.Collections.Count}, pending={userConfiguration.PendingTmdb.Count}; cap {MaxSpoilerEntriesPerDict}).");
                 return StatusCode(413, new { success = false, message = $"Spoiler Guard list exceeds the maximum of {MaxSpoilerEntriesPerDict} entries per category." });
             }
+
+            if (userConfiguration.ProviderTitles.Keys.Any(key => Services.HiddenContentPolicy.CanonicalTitle(key) == null))
+                return BadRequest(new { success = false, message = "Invalid provider title rule." });
 
             var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
             // Snapshot pre-write pending keys to diff the promoter gate after save:
@@ -5865,7 +5901,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var prior = _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(authorizedUserId, fileName);
-                priorPending = new HashSet<string>(prior.PendingTmdb.Keys, StringComparer.OrdinalIgnoreCase);
+                priorPending = new HashSet<string>(prior.PendingTmdb.Keys.Concat(prior.ProviderTitles.Keys.Select(key => key.ToLowerInvariant().Replace(":tmdb:", ":", StringComparison.Ordinal))), StringComparer.OrdinalIgnoreCase);
             }
             catch
             {
@@ -5903,13 +5939,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Registration is idempotent, so re-registering survivors is harmless.
                 if (Guid.TryParseExact(authorizedUserId, "N", out var gateUserId))
                 {
-                    foreach (var key in userConfiguration.PendingTmdb.Keys)
+                    foreach (var key in userConfiguration.PendingTmdb.Keys.Concat(userConfiguration.ProviderTitles.Keys.Select(key => key.ToLowerInvariant().Replace(":tmdb:", ":", StringComparison.Ordinal))))
                     {
                         Services.SpoilerSeerrPendingPromoter.RegisterPending(key, gateUserId);
                     }
                     foreach (var stale in priorPending)
                     {
-                        if (!userConfiguration.PendingTmdb.ContainsKey(stale))
+                        if (!userConfiguration.PendingTmdb.ContainsKey(stale) && !userConfiguration.ProviderTitles.ContainsKey(stale.Replace(":", ":tmdb:", StringComparison.Ordinal)))
                         {
                             Services.SpoilerSeerrPendingPromoter.UnregisterPending(stale, gateUserId);
                         }
@@ -6641,6 +6677,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     userKey, fileName, state =>
                 {
                     removed = state.Series.Remove(key);
+                    removed |= RemoveDurableSpoilerForLibraryItem(state, seriesGuid);
                     return removed ? 1 : 0;
                 });
                 if (!removed)
@@ -6800,6 +6837,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     userKey, fileName, state =>
                 {
                     removed = state.Movies.Remove(key);
+                    removed |= RemoveDurableSpoilerForLibraryItem(state, movieGuid);
                     return removed ? 1 : 0;
                 });
                 if (!removed)
@@ -7082,6 +7120,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     userKey, fileName, state =>
                     {
                         var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                        var typed = pendingKey.Replace(":", ":tmdb:", StringComparison.Ordinal);
+                        if (!state.ProviderTitles.ContainsKey(typed))
+                        {
+                            state.ProviderTitles[typed] = new SpoilerBlurPendingEntry { MediaType = pendingKey.Split(':')[0], TmdbId = pendingKey.Split(':')[1], RequestedAt = DateTime.UtcNow.ToString("O") };
+                            pendingRemoved = true;
+                        }
                         if (state.Series.ContainsKey(seriesKey)) return pendingRemoved ? 1 : 0;
                         state.Series[seriesKey] = new SpoilerBlurSeriesEntry
                         {
@@ -7093,7 +7137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     });
                 // The pending row (if any) was just consumed — keep the
                 // promoter's gate consistent so it stops sweeping this user.
-                Services.SpoilerSeerrPendingPromoter.UnregisterPending(pendingKey, userId);
+                Services.SpoilerSeerrPendingPromoter.RegisterPending(pendingKey, userId);
                 _logger.Info($"Spoiler Guard pending resolved to existing series '{existingSeries.Name}' ({seriesKey}) for {ResolveUserDisplay(userKey)}");
                 return new SpoilerBlurPendingResult("series", seriesKey, existingSeries.Name, changed > 0);
             }
@@ -7104,6 +7148,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     userKey, fileName, state =>
                     {
                         var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                        var typed = pendingKey.Replace(":", ":tmdb:", StringComparison.Ordinal);
+                        if (!state.ProviderTitles.ContainsKey(typed))
+                        {
+                            state.ProviderTitles[typed] = new SpoilerBlurPendingEntry { MediaType = pendingKey.Split(':')[0], TmdbId = pendingKey.Split(':')[1], RequestedAt = DateTime.UtcNow.ToString("O") };
+                            pendingRemoved = true;
+                        }
                         if (state.Movies.ContainsKey(movieKey)) return pendingRemoved ? 1 : 0;
                         state.Movies[movieKey] = new SpoilerBlurMovieEntry
                         {
@@ -7113,7 +7163,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         };
                         return 1;
                     });
-                Services.SpoilerSeerrPendingPromoter.UnregisterPending(pendingKey, userId);
+                Services.SpoilerSeerrPendingPromoter.RegisterPending(pendingKey, userId);
                 _logger.Info($"Spoiler Guard pending resolved to existing movie '{existingMovie.Name}' ({movieKey}) for {ResolveUserDisplay(userKey)}");
                 return new SpoilerBlurPendingResult("movie", movieKey, existingMovie.Name, changed > 0);
             }
@@ -7190,6 +7240,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 userKey, fileName, state =>
                 {
                     var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                        var typed = pendingKey.Replace(":", ":tmdb:", StringComparison.Ordinal);
+                        if (!state.ProviderTitles.ContainsKey(typed))
+                        {
+                            state.ProviderTitles[typed] = new SpoilerBlurPendingEntry { MediaType = pendingKey.Split(':')[0], TmdbId = pendingKey.Split(':')[1], RequestedAt = DateTime.UtcNow.ToString("O") };
+                            pendingRemoved = true;
+                        }
                     if (state.Series.ContainsKey(seriesKey)) return pendingRemoved ? 1 : 0;
                     state.Series[seriesKey] = new SpoilerBlurSeriesEntry
                     {
@@ -7203,7 +7259,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // this user (harmless no-op if it was never registered).
             if (Guid.TryParseExact(userKey, "N", out var promotedSeriesUserId))
             {
-                Services.SpoilerSeerrPendingPromoter.UnregisterPending(pendingKey, promotedSeriesUserId);
+                Services.SpoilerSeerrPendingPromoter.RegisterPending(pendingKey, promotedSeriesUserId);
             }
             _logger.Info($"Spoiler Guard pending TOCTOU-promoted to series '{series.Name}' ({seriesKey}) for {ResolveUserDisplay(userKey)}");
             return new SpoilerBlurPendingResult("series", seriesKey, series.Name, true);
@@ -7218,6 +7274,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 userKey, fileName, state =>
                 {
                     var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                        var typed = pendingKey.Replace(":", ":tmdb:", StringComparison.Ordinal);
+                        if (!state.ProviderTitles.ContainsKey(typed))
+                        {
+                            state.ProviderTitles[typed] = new SpoilerBlurPendingEntry { MediaType = pendingKey.Split(':')[0], TmdbId = pendingKey.Split(':')[1], RequestedAt = DateTime.UtcNow.ToString("O") };
+                            pendingRemoved = true;
+                        }
                     if (state.Movies.ContainsKey(movieKey)) return pendingRemoved ? 1 : 0;
                     state.Movies[movieKey] = new SpoilerBlurMovieEntry
                     {
@@ -7229,7 +7291,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 });
             if (Guid.TryParseExact(userKey, "N", out var promotedMovieUserId))
             {
-                Services.SpoilerSeerrPendingPromoter.UnregisterPending(pendingKey, promotedMovieUserId);
+                Services.SpoilerSeerrPendingPromoter.RegisterPending(pendingKey, promotedMovieUserId);
             }
             _logger.Info($"Spoiler Guard pending TOCTOU-promoted to movie '{movie.Name}' ({movieKey}) for {ResolveUserDisplay(userKey)}");
             return new SpoilerBlurPendingResult("movie", movieKey, movie.Name, true);
@@ -7274,11 +7336,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     : null;
                 var seriesKeyToRemove = (existingItem as MediaBrowser.Controller.Entities.TV.Series)?.Id.ToString("N");
                 var movieKeyToRemove = (existingItem as MediaBrowser.Controller.Entities.Movies.Movie)?.Id.ToString("N");
+                var copyIds = jUser == null ? Array.Empty<string>() : _libraryManager.GetItemList(new InternalItemsQuery(jUser) {
+                    IncludeItemTypes = new[] { normalizedType == "movie" ? BaseItemKind.Movie : BaseItemKind.Series },
+                    HasAnyProviderId = new Dictionary<string, string> { ["Tmdb"] = canonicalTmdb }, Recursive = true,
+                }).Select(copy => copy.Id.ToString("N")).ToArray();
                 var resultBox = new[] { (Removed: false, From: "none", JellyfinId: (string?)null) };
                 _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
                     userKey, fileName, state =>
                     {
                         bool pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                        pendingRemoved |= state.ProviderTitles.Remove(normalizedType + ":tmdb:" + canonicalTmdb);
+                        foreach (var copy in copyIds) pendingRemoved |= normalizedType == "movie" ? state.Movies.Remove(copy) : state.Series.Remove(copy);
                         bool seriesRemoved = seriesKeyToRemove != null && state.Series.Remove(seriesKeyToRemove);
                         bool movieRemoved = movieKeyToRemove != null && state.Movies.Remove(movieKeyToRemove);
                         if (seriesRemoved) resultBox[0] = (true, "series", seriesKeyToRemove);
@@ -7314,6 +7382,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Error($"Failed to remove spoiler-blur pending {pendingKey}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save spoiler-blur pending state." });
             }
+        }
+
+        // A provider toggle applies to the title across copies. Library controls must remove that
+        // same intent as the provider control, otherwise arrival/reimport would silently re-enable it.
+        private bool RemoveDurableSpoilerForLibraryItem(UserSpoilerBlur state, Guid itemId)
+        {
+            var item = _libraryManager?.GetItemById(itemId);
+            var type = item is MediaBrowser.Controller.Entities.Movies.Movie ? "movie" : item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : null;
+            var provider = item?.GetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Tmdb);
+            var typed = Services.HiddenContentPolicy.TitleIdentity(type, provider);
+            if (typed == null || !state.ProviderTitles.Remove(typed)) return false;
+            state.PendingTmdb.Remove(type + ":" + provider);
+            foreach (var copy in _libraryManager!.GetItemList(new InternalItemsQuery {
+                IncludeItemTypes = new[] { type == "movie" ? BaseItemKind.Movie : BaseItemKind.Series },
+                HasAnyProviderId = new Dictionary<string, string> { ["Tmdb"] = provider! }, Recursive = true }))
+            {
+                if (type == "movie") state.Movies.Remove(copy.Id.ToString("N"));
+                else state.Series.Remove(copy.Id.ToString("N"));
+            }
+            return true;
         }
 
         // Returns the library item matching the TMDB id + media type, filtered by
@@ -7757,6 +7845,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!IsValidTmdbKey(tmdbId))
                 return BadRequest(new { message = "Invalid TmdbId." });
 
+            var spoilerPresentation = _presentation?.Load(UserHelper.GetCurrentUserId(User) ?? Guid.Empty, HttpContext);
+            if (spoilerPresentation?.HidesReviews(Services.HiddenContentPolicy.TitleIdentity(mediaType, tmdbId.Split(':')[0])) == true)
+            {
+                Response.Headers["Cache-Control"] = "private, no-store";
+                return Ok(new { reviews = Array.Empty<object>(), averageRating = (double?)null, totalReviews = 0 });
+            }
             var itemLabel = $"{mediaType}:{tmdbId}";
             var ctx = CreateReviewVisibilityContext(nameof(GetItemReviews), itemLabel);
 
@@ -7851,7 +7945,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             foreach (var key in order)
             {
                 var (sum, count) = requested[key];
-                ratings[key] = count == 0 ? null : new { average = sum / count, count };
+                var parts = key.Split(':');
+                var guard = _presentation?.Load(UserHelper.GetCurrentUserId(User) ?? Guid.Empty, HttpContext);
+                ratings[key] = count == 0 || guard?.HidesRatings(Services.HiddenContentPolicy.TitleIdentity(parts[0], parts[1])) == true ? null : new { average = sum / count, count };
             }
 
             return Ok(new { ratings });
@@ -8711,7 +8807,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ? _userConfigurationManager.GetAllReviews().Reviews.Values.AsEnumerable()
                 : Enumerable.Empty<UserReview>();
 
-            var builder = new Services.ActivityFeedBuilder(_libraryManager, _userManager, _itemRepository, _logger, Services.HiddenContentPolicy.Load(_userConfigurationManager, viewer.Id, HttpContext, _libraryManager));
+            var builder = new Services.ActivityFeedBuilder(_libraryManager, _userManager, _itemRepository, _logger, Services.HiddenContentPolicy.Load(_userConfigurationManager, viewer.Id, HttpContext, _libraryManager), _presentation?.Load(viewer.Id, HttpContext));
             var items = builder.Build(activity, reviews, viewer, IsAdminUser(), config, limit, cancellationToken);
             return Ok(new { items });
         }
@@ -11061,13 +11157,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
                 );
 
-                return Ok(new
-                {
-                    requests = requests,
-                    totalPages = totalPages,
-                    totalResults = totalResults,
-                    canApproveRequests = canApproveRequests
-                });
+                var requestBody = new { requests, totalPages, totalResults, canApproveRequests };
+                var spoiler = _presentation?.Load(Guid.Parse(jellyfinUserId), HttpContext);
+                return spoiler == null ? Ok(requestBody) : Content(spoiler.Project(JsonSerializer.Serialize(requestBody)), "application/json");
             }
             catch (Exception ex)
             {
@@ -11529,6 +11621,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var hiddenCalendar = Services.HiddenContentPolicy.Load(_userConfigurationManager, calendarUser.Id, HttpContext, _libraryManager);
                 events = events.Where(e => !hiddenCalendar.IsHidden(Services.HiddenContentPolicy.TitleIdentity(
                     e.Source == nameof(ArrType.Radarr) ? "movie" : "tv", e.TmdbId?.ToString()), null, null, "calendar")).ToList();
+            }
+            var calendarPresentation = _presentation?.Load(UserHelper.GetCurrentUserId(User) ?? Guid.Empty, HttpContext);
+            if (calendarPresentation != null)
+            {
+                var json = JsonSerializer.Serialize(new { events, errors }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                return Content(calendarPresentation.Project(json), "application/json");
             }
             return Ok(new { events, errors });
         }

@@ -25,6 +25,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly string _serverId;
         private readonly Guid _viewer;
         private readonly string _revision;
+        private readonly string? _spoilerRevision;
         private readonly NativeDetailsArtwork _artwork;
         private readonly string _region;
         private readonly ITitleLinks _links;
@@ -36,8 +37,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="artwork">Artwork grants.</param>
         /// <param name="region">Certification region.</param>
         /// <param name="links">Where the page's people, genres, studios and tags lead for the viewer.</param>
-        public NativeDetailsDtos(string serverId, Guid viewer, string revision, NativeDetailsArtwork artwork, string region, ITitleLinks links)
+        public NativeDetailsDtos(string serverId, Guid viewer, string revision, NativeDetailsArtwork artwork, string region, ITitleLinks links, string? spoilerRevision = null)
         {
+            _spoilerRevision = spoilerRevision;
             _serverId = serverId;
             _viewer = viewer;
             _revision = revision;
@@ -293,7 +295,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             };
 
         private string? Grant(Guid owner, ImageType type, int index, string? path, Guid? context = null)
-            => _artwork.Mint(owner, type, index, TmdbPath(path), _viewer, _revision, context);
+            => _artwork.Mint(owner, type, index, TmdbPath(path), _viewer, _revision, context, _spoilerRevision);
 
         /// <summary>
         /// A TMDB file path ("/abc.jpg"). Seerr gives some images as full TMDB URLs

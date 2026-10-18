@@ -6,6 +6,8 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Model.Entities;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
@@ -74,6 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal static bool IsUserStateCachedForTest(string userIdN)
             => !string.IsNullOrEmpty(userIdN) && _userStateCache.ContainsKey(userIdN);
 
+        private readonly ConcurrentDictionary<Guid, (string? Key, DateTime At)> _providerTitles = new();
         private readonly UserConfigurationManager _userConfigManager;
         private readonly ILibraryManager _libraryManager;
         private readonly RequestIdentityService _identity;
@@ -88,6 +91,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _userConfigManager = userConfigManager;
             _libraryManager = libraryManager;
             _identity = identity;
+            libraryManager.ItemAdded += (sender, e) => _providerTitles.TryRemove(e.Item.Id, out _);
+            libraryManager.ItemUpdated += (sender, e) => _providerTitles.TryRemove(e.Item.Id, out _);
+            libraryManager.ItemRemoved += (sender, e) => _providerTitles.TryRemove(e.Item.Id, out _);
             _logger = logger;
         }
 
@@ -167,11 +173,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // True when the movie is opted in directly OR is a member of an opted-in
         // collection. The single source of truth for movie spoiler scope.
-        public bool IsMovieInSpoilerScope(UserSpoilerBlur userState, Guid movieId)
+        public bool IsMovieInSpoilerScope(UserSpoilerBlur userState, Guid movieId, IEnumerable<KeyValuePair<string, string>>? providers = null)
         {
             if (movieId == Guid.Empty) return false;
-            return userState.Movies.ContainsKey(movieId.ToString("N"))
+            return userState.Movies.ContainsKey(movieId.ToString("N")) || ProviderScope(userState, movieId, "movie", providers)
                 || FindOptedInCollectionForMovie(userState, movieId).HasValue;
+        }
+
+        /// <summary>Provider intent is independent of a library copy and remains effective before promotion settles.</summary>
+        public static bool ProviderGuarded(UserSpoilerBlur state, string? type, string? tmdb)
+        {
+            var key = HiddenContentPolicy.TitleIdentity(type, tmdb);
+            return key != null && (state.ProviderTitles.ContainsKey(key) || state.PendingTmdb.ContainsKey(key.Replace(":tmdb:", ":", StringComparison.Ordinal)));
+        }
+
+        /// <summary>Series membership shared by native DTO, image and tag owners, including durable provider intent.</summary>
+        public bool IsSeriesInSpoilerScope(UserSpoilerBlur state, Guid series, IEnumerable<KeyValuePair<string, string>>? providers = null)
+            => state.Series.ContainsKey(series.ToString("N")) || ProviderScope(state, series, "tv", providers);
+
+        private bool ProviderScope(UserSpoilerBlur state, Guid id, string kind, IEnumerable<KeyValuePair<string, string>>? providers)
+        {
+            if (state.ProviderTitles.Count + state.PendingTmdb.Count == 0) return false;
+            if (providers != null) return ProviderGuarded(state, kind, providers.FirstOrDefault(p => p.Key.Equals("Tmdb", StringComparison.OrdinalIgnoreCase)).Value);
+            if (!_providerTitles.TryGetValue(id, out var hit) || DateTime.UtcNow - hit.At > TimeSpan.FromSeconds(30))
+            {
+                var item = _libraryManager.GetItemById(id);
+                hit = (HiddenContentPolicy.TitleIdentity(kind, item?.GetProviderId(MetadataProvider.Tmdb)), DateTime.UtcNow);
+                if (_providerTitles.Count >= 8192) _providerTitles.Clear();
+                _providerTitles[id] = hit;
+            }
+            return hit.Key != null && (state.ProviderTitles.ContainsKey(hit.Key) || state.PendingTmdb.ContainsKey(hit.Key.Replace(":tmdb:", ":", StringComparison.Ordinal)));
         }
 
         // Resolves the requesting user's GUID via the plugin-wide identity

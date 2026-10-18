@@ -193,7 +193,7 @@ function getContentRating(data, mediaType) {
     // Resolve region: prefer Elsewhere user setting → plugin fallback → US
     const region = (JE?.userConfig?.elsewhere?.Region || JE?.pluginConfig?.DEFAULT_REGION || 'US')?.toUpperCase();
 
-    if (mediaType === 'movie') {
+    if (mediaType === 'movie' && Array.isArray(data.releases?.results)) {
         // For movies: releases.results[].release_dates[].certification
         const releases = data.releases?.results;
         if (!Array.isArray(releases)) return 'N/A';

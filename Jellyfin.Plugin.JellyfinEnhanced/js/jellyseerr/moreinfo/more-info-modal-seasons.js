@@ -43,9 +43,9 @@ async function backfillSeasonMetadata(tmdbId, data) {
             : Promise.resolve(null);
 
         // Public details (the viewer has no Seerr account): Seerr's season reads would be refused; TMDB's answer does.
-        const episodePromises = (api?.fetchTvSeasonDetails && data.jePublicDetails !== true)
+        const episodePromises = (api?.fetchTvSeasonDetails)
             ? seasonsMissingData.map(s =>
-                api.fetchTvSeasonDetails(tmdbId, s.seasonNumber)
+                api.fetchTvSeasonDetails(tmdbId, s.seasonNumber, { publicDetails: data.jePublicDetails === true })
                     .then(detail => ({ seasonNumber: s.seasonNumber, firstEpDate: detail?.episodes?.[0]?.airDate || '' }))
                     .catch(() => ({ seasonNumber: s.seasonNumber, firstEpDate: '' }))
             )

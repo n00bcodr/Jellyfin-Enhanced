@@ -45,6 +45,7 @@
                 Object.keys(value.Series || {}).forEach(key => enabledSeries.add(internal.normalizeId(key)));
                 Object.keys(value.Movies || {}).forEach(key => enabledMovies.add(internal.normalizeId(key)));
                 Object.keys(value.Collections || {}).forEach(key => enabledCollections.add(internal.normalizeId(key)));
+                Object.keys(value.ProviderTitles || {}).forEach(key => enabledPendingTmdb.add(String(key).replace(':tmdb:', ':').toLowerCase()));
                 Object.keys(value.PendingTmdb || {}).forEach(key => enabledPendingTmdb.add(String(key).toLowerCase()));
                 userPrefs = value.Prefs || {};
                 loaded = true;
@@ -187,11 +188,11 @@
                 } else if (response?.promoted === 'series' && response.jellyfinId) {
                     const jellyfinId = internal.normalizeId(response.jellyfinId);
                     enabledSeries.add(jellyfinId);
-                    if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.set(key, jellyfinId); }
+                    if (key) { enabledPendingTmdb.add(key); tmdbToJellyfin.set(key, jellyfinId); }
                 } else if (response?.promoted === 'movie' && response.jellyfinId) {
                     const jellyfinId = internal.normalizeId(response.jellyfinId);
                     enabledMovies.add(jellyfinId);
-                    if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.set(key, jellyfinId); }
+                    if (key) { enabledPendingTmdb.add(key); tmdbToJellyfin.set(key, jellyfinId); }
                 }
                 return response;
             });

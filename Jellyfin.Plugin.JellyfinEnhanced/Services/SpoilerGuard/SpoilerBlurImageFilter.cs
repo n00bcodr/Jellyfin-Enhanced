@@ -391,7 +391,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var candidateState = _resolver.LoadUserState(context.HttpContext, candidate);
                 if (candidateState.Series.Count == 0
                     && candidateState.Movies.Count == 0
-                    && candidateState.Collections.Count == 0)
+                    && candidateState.Collections.Count == 0 && candidateState.ProviderTitles.Count == 0 && candidateState.PendingTmdb.Count == 0)
                 {
                     continue; // this candidate protects nothing
                 }
@@ -427,7 +427,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             else if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
             {
-                if (!_resolver.IsMovieInSpoilerScope(userState, movie.Id))
+                if (!_resolver.IsMovieInSpoilerScope(userState, movie.Id, movie.ProviderIds))
                 {
                     await next().ConfigureAwait(false);
                     return;
@@ -527,7 +527,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 if (seriesId == Guid.Empty
-                    || !userState.Series.ContainsKey(seriesId.ToString("N")))
+                    || !_resolver.IsSeriesInSpoilerScope(userState, seriesId))
                 {
                     await next().ConfigureAwait(false);
                     return;
@@ -960,12 +960,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 case Episode ep:
                     return ep.SeriesId != Guid.Empty
-                        && userState.Series.ContainsKey(ep.SeriesId.ToString("N"));
+                        && _resolver.IsSeriesInSpoilerScope(userState, ep.SeriesId);
                 case Season season:
                     return season.SeriesId != Guid.Empty
-                        && userState.Series.ContainsKey(season.SeriesId.ToString("N"));
+                        && _resolver.IsSeriesInSpoilerScope(userState, season.SeriesId);
                 case MediaBrowser.Controller.Entities.Movies.Movie movie:
-                    return _resolver.IsMovieInSpoilerScope(userState, movie.Id);
+                    return _resolver.IsMovieInSpoilerScope(userState, movie.Id, movie.ProviderIds);
                 default:
                     return false;
             }

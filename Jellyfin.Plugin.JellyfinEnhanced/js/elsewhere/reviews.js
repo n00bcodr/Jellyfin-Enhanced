@@ -48,6 +48,10 @@
                     var userPrefs = JE.spoilerBlur.getUserPrefs() || {};
                     if (userPrefs.HideReviews === false) return false;
                 }
+                const parts = JE.titleDetails?.parse?.(item?.Id);
+                const provider = parts?.tmdbId || item?.ProviderIds?.Tmdb;
+                const kind = parts?.kind === 'movie' || mediaType === 'Movie' ? 'movie' : 'tv';
+                if (item?.ProviderIds?.JeSpoilerGuarded === 'true' || provider && JE.spoilerBlur.isTmdbEnabled?.(kind, provider)) return true;
                 if (mediaType === 'Movie') {
                     return !!(JE.spoilerBlur.isMovieEnabledFor && JE.spoilerBlur.isMovieEnabledFor(item?.Id || ''));
                 }

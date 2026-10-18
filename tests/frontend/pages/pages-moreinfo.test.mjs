@@ -105,3 +105,11 @@ test('a title the modal can\'t load says so in a toast, never a blocking browser
   assert.deepEqual(toasts, [['t:jellyseerr_modal_load_failed', 5000]]);
   assert.deepEqual(alerts, []);
 });
+test('guard toggle clears old modal content synchronously and reopens from fresh metadata',async t=>{
+ let calls=0;const fresh=deferred();const h=setup(t,{details:id=>++calls===1?Promise.resolve({id}):fresh.promise});
+ await h.P.open(42,'movie');const old=h.state.currentModal;old.append('secret');
+ h.window.dispatchEvent(new h.window.CustomEvent('je-spoiler-policy-changed',{detail:{type:'movie',tmdbId:42,enabled:true}}));
+ assert.equal(old.textContent,'');assert.equal(old._isClosing,true);assert.equal(calls,2);
+ fresh.resolve({id:42,jeSpoiler:{guarded:true}});await nextTurn();h.runClosing();
+ assert.notEqual(h.state.currentModal,old);assert.equal(h.state.currentModal.dataset.tmdbId,'42');
+});

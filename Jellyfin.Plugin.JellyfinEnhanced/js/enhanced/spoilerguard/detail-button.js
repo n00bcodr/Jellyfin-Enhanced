@@ -107,6 +107,10 @@
 
     internal.addSpoilerBlurButton = function(itemId, visiblePage, itemType) {
         if (JE.pluginConfig?.SpoilerBlurEnabled !== true || !itemId || !visiblePage) return;
+        if (JE.titleDetails?.isSynthetic?.(itemId)) {
+            visiblePage.querySelectorAll('.je-spoiler-blur-btn').forEach(button => button.remove());
+            return;
+        }
         if (!internal.isStateLoaded()) return;
         const kind = internal.kindOf(itemType);
         const container = ['.detailButtons', '.itemActionsBottom', '.mainDetailButtons', '.detailButtonsContainer']

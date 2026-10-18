@@ -26,7 +26,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
     /// is served while that title is still the viewer's, not just while the person is.
     /// </param>
     /// <param name="IssuedHour">The hour the grant was minted in (hours since the Unix epoch).</param>
-    public sealed record ArtworkGrant(Guid Owner, ImageType Type, int Index, string Path, Guid Viewer, string PolicyRevision, Guid Context, long IssuedHour);
+    public sealed record ArtworkGrant(Guid Owner, ImageType Type, int Index, string Path, Guid Viewer, string PolicyRevision, Guid Context, long IssuedHour, string SpoilerRevision = "");
 
     /// <summary>
     /// Signed artwork grants and the TMDB image fetch behind them. A synthetic page's image tags are
@@ -164,12 +164,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="policyRevision">The viewer's policy revision.</param>
         /// <param name="context">The page it is minted for (a title or a person's page); null: the owner itself.</param>
         /// <returns>The tag, or null.</returns>
-        public string? Mint(Guid owner, ImageType type, int index, string? tmdbPath, Guid viewer, string policyRevision, Guid? context = null)
+        public string? Mint(Guid owner, ImageType type, int index, string? tmdbPath, Guid viewer, string policyRevision, Guid? context = null, string? spoilerRevision = null)
         {
             if (!IsSafeTmdbPath(tmdbPath)) return null;
-            var payload = string.Join('|', "2", owner.ToString("N"), ((int)type).ToString(CultureInfo.InvariantCulture),
+            var payload = string.Join('|', "3", owner.ToString("N"), ((int)type).ToString(CultureInfo.InvariantCulture),
                 index.ToString(CultureInfo.InvariantCulture), tmdbPath, viewer.ToString("N"), policyRevision,
-                (context ?? owner).ToString("N"), Hour().ToString(CultureInfo.InvariantCulture));
+                (context ?? owner).ToString("N"), Hour().ToString(CultureInfo.InvariantCulture), spoilerRevision ?? "");
             var bytes = Encoding.UTF8.GetBytes(payload);
             return Prefix + Convert.ToHexStringLower(bytes) + "." + Sign(bytes);
         }
@@ -198,7 +198,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var given = Encoding.ASCII.GetBytes(tag.Substring(dot + 1).ToLowerInvariant());
             if (!CryptographicOperations.FixedTimeEquals(expected, given)) return false;
             var parts = Encoding.UTF8.GetString(payload).Split('|');
-            if (parts.Length != 9 || parts[0] != "2"
+            if (!((parts.Length == 9 && parts[0] == "2") || (parts.Length == 10 && parts[0] == "3"))
                 || !Guid.TryParseExact(parts[1], "N", out var owner)
                 || !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var type)
                 || !int.TryParse(parts[3], NumberStyles.None, CultureInfo.InvariantCulture, out var index)
@@ -213,7 +213,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             // Expired, or minted in the future (a clock that went back is no reason to accept one).
             var now = Hour();
             if (issued > now + 1 || now - issued >= GrantLifetimeHours) return false;
-            grant = new ArtworkGrant(owner, (ImageType)type, index, parts[4], viewer, parts[6], context, issued);
+            grant = new ArtworkGrant(owner, (ImageType)type, index, parts[4], viewer, parts[6], context, issued, parts.Length == 10 ? parts[9] : "");
             return true;
         }
 

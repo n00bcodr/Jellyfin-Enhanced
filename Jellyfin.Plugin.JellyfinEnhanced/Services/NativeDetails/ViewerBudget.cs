@@ -1,4 +1,3 @@
-#if JF12
 using System;
 using System.Collections.Concurrent;
 
@@ -61,4 +60,3 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             => _budgets.AddOrUpdate(viewer, _ => (Burst, _now()), (_, b) => (Math.Min(Burst, b.Tokens + 1), b.At));
     }
 }
-#endif

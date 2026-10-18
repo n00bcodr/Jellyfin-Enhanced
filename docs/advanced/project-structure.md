@@ -352,6 +352,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`SpoilerLibraryAddAutoEnabler.cs`**: Implements "Auto-enable when new titles are added to the library" — batches a scan's `ItemAdded` burst and arms every new Series/Movie for every user with access to its library, one file write per user.
     * **`SpoilerExistingTitlesApplier.cs`**: Applies the saved auto-enable scope to titles already in the library on demand (dry-run preview for the config page, skips titles a user already has or has fully watched). Run by `ScheduledTasks/SpoilerApplyExistingTitlesTask.cs` ("Spoiler Guard: apply to existing titles", no default triggers).
     * **`SpoilerSeerrPendingPromoter.cs`**: Promotes pending pre-acquisition entries (registered from the Seerr More Info modal or auto-enable on request) into real per-item protection when the content lands in the library.
+    * **`SpoilerPresentation.cs`**: Immutable per-viewer provider-aware presentation context for request feeds, public details, decorators, missing rows and native image grants; its policy revision separates personalized artwork and projected caches.
     * **`SpoilerUserResolver.cs`**: Loads per-user Spoiler Guard state for the requesting user identified by `RequestIdentityService`.
 
 * **`/Services/Secrets/`**: Credentials kept out of the plugin configuration.
@@ -449,3 +450,5 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   library hides from the caller are left out.
 
 The shared `Services/HiddenContentPolicy.cs` matches viewer rules by typed TMDB title identity or existing library/series IDs. `TitleFeedProjection.cs` adapts known provider, request and discovery JSON shapes after access filtering and raw caches. Provider hide controls use atomic per-rule routes.
+
+The generic native provider source, access policy and feed controller are shared with Jellyfin 10.11; synthetic page routing remains Jellyfin 12 only. `NativeDetails/ProviderMetadata.cs` supplies schema-safe metadata/art-path reads. Durable `ProviderTitles` retain Spoiler Guard intent across arrival, editions and reimports.

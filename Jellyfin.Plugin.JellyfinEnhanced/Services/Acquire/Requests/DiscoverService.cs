@@ -44,6 +44,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Plain-text overview, at most <see cref="DiscoverService.MaxOverview"/> characters.</summary>
         [JsonPropertyName("overview")] public string? Overview { get; init; }
 
+        /// <summary>Effective viewer projection flags; no private rule lists.</summary>
+        [JsonPropertyName("jeSpoiler")] public System.Text.Json.Nodes.JsonObject? Spoiler { get; init; }
+
         /// <summary>The caller can open a Jellyfin copy of it.</summary>
         [JsonPropertyName("inLibrary")] public bool InLibrary { get; init; }
 
@@ -173,6 +176,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static readonly SemaphoreSlim ParentalSlots = new(8);
 
         private readonly RequestService _requests;
+        private SpoilerPresentation? _presentation;
         private readonly TitleAliases? _aliases;
         private readonly Func<string, int, Guid, CancellationToken, Task<bool>> _maySeeAbsent;
         private readonly Func<string, string, CancellationToken, Task<string?>> _tmdb;
@@ -182,7 +186,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly ConcurrentDictionary<string, (DateTimeOffset At, DiscoverAnswer Answer)> _cache = new(StringComparer.Ordinal);
 
         /// <summary>Creates the service over the shared TMDB cache, the parental filter and Jellyfin.</summary>
-        public DiscoverService(RequestService requests, TitleAliases aliases, SeerrParentalFilter parental, TmdbResponseCache tmdb, ILibraryManager library, UserConfigurationManager userConfig)
+        public DiscoverService(RequestService requests, TitleAliases aliases, SeerrParentalFilter parental, TmdbResponseCache tmdb, ILibraryManager library, UserConfigurationManager userConfig, SpoilerPresentation? presentation = null)
             : this(requests, aliases,
                 (kind, id, user, ct) => parental.MaySeeAbsentAsync(kind, id, user.ToString("N", CultureInfo.InvariantCulture), ct),
                 (path, query, ct) => TmdbAsync(tmdb, path, query, ct),
@@ -190,7 +194,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 user => ReadHidden(userConfig, library, user),
                 () => DateTimeOffset.UtcNow)
         {
-
+            _presentation = presentation;
         }
 
         /// <summary>Creates the service with explicit readers (tests).</summary>
@@ -289,6 +293,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         private async Task<DiscoverAnswer> WithPausesAsync(StatusViewer viewer, DiscoverAnswer answer, CancellationToken ct)
         {
+            var spoiler = _presentation?.Load(viewer.UserId);
+            if (spoiler != null)
+            {
+                DiscoverCard Project(DiscoverCard card)
+                {
+                    var flags = spoiler.Flags(card.Key);
+                    return card with { Overview = flags["overview"]?.GetValue<bool>() == true ? null : card.Overview,
+                        Poster = spoiler.ProtectArtwork(card.Key, card.Kind, "Primary") ? null : card.Poster, Spoiler = flags };
+                }
+                answer = answer with { Results = answer.Results.Select(Project).ToArray(),
+                    Groups = answer.Groups?.Select(group => group with { Results = group.Results.Select(Project).ToArray() }).ToArray() };
+            }
             var cards = answer.Results.Concat(answer.Groups?.SelectMany(g => g.Results) ?? Enumerable.Empty<DiscoverCard>());
             var paused = await _requests.StoragePausesAsync(viewer.UserId, cards.Select(c => c.Key), false, ct).ConfigureAwait(false);
             if (paused.Count == 0) return answer;

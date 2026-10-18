@@ -485,8 +485,9 @@
      * @param {number} seasonNumber - The season number.
      * @returns {Promise<object|null>}
      */
-    api.fetchTvSeasonDetails = async function(tmdbId, seasonNumber) {
+    api.fetchTvSeasonDetails = async function(tmdbId, seasonNumber, options = {}) {
         try {
+            if (options.publicDetails) return await api.fetchPublic(`/title/tv/${tmdbId}/season/${seasonNumber}`);
             return await get(`/tv/${tmdbId}/season/${seasonNumber}`);
         } catch (error) {
             console.debug(`${logPrefix} Failed to fetch season ${seasonNumber} for TMDB ID ${tmdbId}:`, error);

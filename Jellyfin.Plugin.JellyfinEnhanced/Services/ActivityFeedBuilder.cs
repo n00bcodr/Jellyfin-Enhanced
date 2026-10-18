@@ -34,11 +34,11 @@ internal sealed class ActivityFeedBuilder(
     IUserManager userManager,
     IItemRepository itemRepository,
     Logger logger,
-    HiddenContentPolicy? hidden = null)
+    HiddenContentPolicy? hidden = null, SpoilerPresentationContext? spoilers = null)
 {
     private const int CandidatePageSize = 64;
 
-    private sealed record Candidate(ActivityFeedItem Row, Guid ItemId, Guid AuthorId, string? TmdbId = null);
+    private sealed record Candidate(ActivityFeedItem Row, Guid ItemId, Guid AuthorId, string? TmdbId = null, string? MediaType = null);
 
     /// <summary>
     /// Merges lightweight records in stable timestamp order, checking access in
@@ -95,7 +95,7 @@ internal sealed class ActivityFeedBuilder(
                     Timestamp = occurred.ToUnixTimeMilliseconds(),
                     Rating = review.Rating,
                     Content = review.Content
-                }, Guid.Empty, authorId, review.TmdbId.Split(':')[0]));
+                }, Guid.Empty, authorId, review.TmdbId.Split(':')[0], review.MediaType));
             }
         }
 
@@ -141,7 +141,7 @@ internal sealed class ActivityFeedBuilder(
                         continue;
 
                     var itemId = candidate.ItemId;
-                    if (candidate.TmdbId != null && !providerItems.TryGetValue(candidate.TmdbId, out itemId))
+                    if (candidate.TmdbId != null && !providerItems.TryGetValue(candidate.MediaType + ":" + candidate.TmdbId, out itemId))
                     {
                         // Keep existing provider resolution: episode/season reviews
                         // use the parent TMDB id and the first repository match.
@@ -149,7 +149,10 @@ internal sealed class ActivityFeedBuilder(
                         {
                             ["Tmdb"] = candidate.TmdbId
                         });
-                        providerItems[candidate.TmdbId] = itemId = matches?.FirstOrDefault() ?? Guid.Empty;
+                        var providerMatches = matches?.ToArray() ?? Array.Empty<Guid>();
+                        providerItems[candidate.MediaType + ":" + candidate.TmdbId] = itemId = candidate.MediaType is "movie" or "tv"
+                            ? providerMatches.FirstOrDefault(id => GetItem(id)?.GetBaseItemKind().ToString() == (candidate.MediaType == "movie" ? "Movie" : "Series"))
+                            : providerMatches.Length == 1 ? providerMatches[0] : Guid.Empty;
                     }
                     if (itemId != Guid.Empty) page.Add((candidate, itemId, author));
                 }
@@ -191,8 +194,11 @@ internal sealed class ActivityFeedBuilder(
                     {
                         var item = GetItem(itemId);
                         if (item == null) continue;
-                        summaries[itemId] = summary = BuildSummary(item, GetItem);
+                        summaries[itemId] = summary = BuildSummary(item, GetItem, spoilers);
                     }
+                    var titleKey = HiddenContentPolicy.TitleIdentity(parent?.GetBaseItemKind().ToString(), parent?.GetProviderId(MetadataProvider.Tmdb));
+                    if (spoilers?.HidesReviews(titleKey) == true) candidate.Row.Content = null;
+                    if (spoilers?.HidesRatings(titleKey) == true) candidate.Row.Rating = null;
                     candidate.Row.UserName = author?.Username ?? candidate.Row.UserId;
                     candidate.Row.UserHasPrimaryImage = author?.ProfileImage != null;
                     candidate.Row.Item = summary;
@@ -219,22 +225,26 @@ internal sealed class ActivityFeedBuilder(
     }
 
     /// <summary>Hydrates only emitted cards; episode series lookups share the request's item cache.</summary>
-    private static object BuildSummary(BaseItem item, Func<Guid, BaseItem?> getItem)
+    private static object BuildSummary(BaseItem item, Func<Guid, BaseItem?> getItem, SpoilerPresentationContext? spoilers)
     {
         var episode = item as MediaBrowser.Controller.Entities.TV.Episode;
         var series = episode != null && episode.SeriesId != Guid.Empty ? getItem(episode.SeriesId) : null;
+        var title = series ?? item;
+        var key = HiddenContentPolicy.TitleIdentity(title.GetBaseItemKind().ToString(), title.GetProviderId(MetadataProvider.Tmdb));
+        var strip = spoilers?.MissingRow(key) ?? (Title: false, Overview: false, AirDate: false);
+        var protectedArt = spoilers?.ProtectArtwork(key, episode != null ? "episode" : item.GetBaseItemKind().ToString().ToLowerInvariant(), "Primary") == true;
         return new
         {
             Id = item.Id.ToString("N"),
-            Name = item.Name,
+            Name = episode != null && strip.Title ? null : item.Name,
             Type = item.GetBaseItemKind().ToString(),
             ProductionYear = item.ProductionYear,
             SeriesName = episode?.SeriesName,
             SeriesId = episode != null && episode.SeriesId != Guid.Empty ? episode.SeriesId.ToString("N") : null,
             SeasonNumber = episode?.ParentIndexNumber,
             EpisodeNumber = episode?.IndexNumber,
-            HasPrimaryImage = item.HasImage(ImageType.Primary, 0),
-            HasThumbImage = item.HasImage(ImageType.Thumb, 0),
+            HasPrimaryImage = !protectedArt && item.HasImage(ImageType.Primary, 0),
+            HasThumbImage = !protectedArt && item.HasImage(ImageType.Thumb, 0),
             SeriesHasPrimaryImage = series?.HasImage(ImageType.Primary, 0) == true,
             SeriesHasThumbImage = series?.HasImage(ImageType.Thumb, 0) == true
         };

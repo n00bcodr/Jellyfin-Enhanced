@@ -57,6 +57,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly SpoilerFieldStripFilter? _spoilerStrip;
         private readonly SpoilerUserResolver? _spoilerUsers;
         private readonly NativeDetailsLinks _links;
+        private readonly SpoilerPresentation? _presentation;
+        private readonly ImageBlurService? _imageBlur;
 
         /// <summary>Creates the facade.</summary>
         public NativeDetailsFacadeFilter(
@@ -72,8 +74,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             Configuration.UserConfigurationManager? userConfig = null,
             SpoilerFieldStripFilter? spoilerStrip = null,
             SpoilerUserResolver? spoilerUsers = null,
-            NativeDetailsLinks? links = null)
+            NativeDetailsLinks? links = null, SpoilerPresentation? presentation = null, ImageBlurService? imageBlur = null)
         {
+            _presentation = presentation;
+            _imageBlur = imageBlur;
             _users = users;
             _library = library;
             _dto = dto;
@@ -238,7 +242,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
             var guid = title.ToGuid(serverId);
             // The DTO builder (and where its names lead) only for the answers that draw items.
-            Task<NativeDetailsDtos> Dtos() => DtosAsync(viewer, serverId, ct);
+            Task<NativeDetailsDtos> Dtos() => DtosAsync(viewer, serverId, ct, http);
             // Spoiler Guard composes here: JE's own strip and image filters never see these answers.
             Configuration.UserSpoilerBlur? Spoilers() => title.IsTitle ? Guarded(http, viewer, title) : null;
             switch (route.Answer)
@@ -295,13 +299,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return viewer == null || viewer.HasPermission(PermissionKind.IsDisabled) ? (null, new NotFoundResult()) : (viewer, null);
         }
 
-        private async Task<NativeDetailsDtos> DtosAsync(User viewer, string serverId, CancellationToken ct)
+        private async Task<NativeDetailsDtos> DtosAsync(User viewer, string serverId, CancellationToken ct, HttpContext http)
         {
             var code = _serverConfig.Configuration?.MetadataCountryCode;
             var region = string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
             var revision = _policy.Revision(viewer);
             var links = _links.For(viewer, revision, serverId, await DiscoveryAsync(viewer, ct).ConfigureAwait(false));
-            return new NativeDetailsDtos(serverId, viewer.Id, revision, _artwork, region, links);
+            return new NativeDetailsDtos(serverId, viewer.Id, revision, _artwork, region, links, _presentation?.Load(viewer.Id, http).Revision);
         }
 
         /// <summary>
@@ -637,7 +641,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
             // An episode still or a later season's poster of a title the viewer guards with Spoiler Guard:
             // never served (a page drawn before they guarded it still holds the URL).
+            var spoiler = _presentation?.Load(viewer.Id, context.HttpContext);
             if (HidesArtwork(owner, grant.Type) && Guarded(context.HttpContext, viewer, owner) != null) return new NotFoundResult();
+            var pageKey = HiddenContentPolicy.TitleIdentity(page.IsMovie ? "movie" : "tv", page.TmdbId.ToString());
+            if (owner.Kind == SyntheticKind.Person && spoiler?.Flags(pageKey ?? "")["cast"]?.GetValue<bool>() == true) return new NotFoundResult();
+            var protectedArt = spoiler?.ProtectArtwork(HiddenContentPolicy.TitleIdentity(owner.IsMovie ? "movie" : "tv", owner.TmdbId.ToString()),
+                owner.Kind.ToString().ToLowerInvariant(), grant.Type.ToString(), owner.Season) == true;
             var width = Arg<int?>(context, "maxWidth") ?? Arg<int?>(context, "fillWidth") ?? Arg<int?>(context, "width");
             var height = Arg<int?>(context, "fillHeight") ?? Arg<int?>(context, "maxHeight") ?? Arg<int?>(context, "height");
             if (width == null && height is int h) width = grant.Type == ImageType.Backdrop ? h * 16 / 9 : grant.Type == ImageType.Logo ? h * 4 : h * 2 / 3;
@@ -649,12 +658,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var headers = context.HttpContext.Response.Headers;
             headers.CacheControl = "private, no-store";
             headers["X-Content-Type-Options"] = "nosniff";
+            if (protectedArt)
+            {
+                if (_imageBlur == null) return new NotFoundResult();
+                var config = JellyfinEnhanced.Instance!.Configuration;
+                var cacheKey = grant.Viewer.ToString("N") + "|" + grant.Path + "|" + size + "|" + spoiler!.Revision;
+                var projected = config.SpoilerBlurMode == "hide" ? _imageBlur.StockCard(bytes.Bytes, cacheKey)
+                    : _imageBlur.Blur(bytes.Bytes, config.SpoilerBlurIntensity, cacheKey);
+                return new FileContentResult(projected ?? _imageBlur.HardcodedFallbackJpeg, "image/jpeg");
+            }
             return new FileContentResult(bytes.Bytes, bytes.ContentType);
         }
 
         /// <summary>The viewer's Spoiler Guard state when they guard this title (see <see cref="NativeDetailsSpoilers"/>); else null.</summary>
         private Configuration.UserSpoilerBlur? Guarded(HttpContext http, User viewer, SyntheticId title)
-            => _spoilerStrip == null ? null : NativeDetailsSpoilers.Guarded(_spoilerUsers, _policy, http, viewer, title);
+        {
+            if (!title.IsTitle) return null;
+            if (_presentation != null)
+            {
+                var context = _presentation.Load(viewer.Id, http);
+                var key = HiddenContentPolicy.TitleIdentity(title.IsMovie ? "movie" : "tv", title.TmdbId.ToString());
+                if (context.Guarded(key)) return context.State;
+                if (context.KnowsTitle(key)) return null;
+            }
+            return _spoilerStrip == null ? null : NativeDetailsSpoilers.Guarded(_spoilerUsers, _policy, http, viewer, title);
+        }
 
         /// <summary>True for the plot-specific artwork Spoiler Guard hides on a guarded title: an episode's still, a later season's poster.</summary>
         private static bool HidesArtwork(SyntheticId owner, ImageType type)
@@ -688,6 +716,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 }).ToArray();
                 ok.Value = new QueryResult<BaseItemDto>(query.StartIndex, Math.Max(0, query.TotalRecordCount - query.Items.Count + kept.Length), kept);
             }
+            if (result is OkObjectResult cards && cards.Value is QueryResult<BaseItemDto> page)
+                foreach (var dto in page.Items)
+                    if (SyntheticId.TryParse(dto.Id, _host.SystemId, out var title) && title.IsTitle)
+                        Guard(new OkObjectResult(dto), Guarded(context.HttpContext, viewer, title), viewer);
             _spoilerStrip?.StripLibraryItems(result, context, viewer.Id);
             return result;
         }
@@ -695,7 +727,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private IActionResult Guard(IActionResult result, Configuration.UserSpoilerBlur? state, User viewer)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (state == null || _spoilerStrip == null || config == null || result is not OkObjectResult ok) return result;
+            if (config == null || result is not OkObjectResult ok) return result;
             IEnumerable<BaseItemDto> items = ok.Value switch
             {
                 BaseItemDto one => new[] { one },
@@ -706,6 +738,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             // Library items in the list are stripped by Spoiler Guard's own rules (Library), by watched state.
             foreach (var dto in items.Where(d => SyntheticId.HasNamespace(d.Id)))
             {
+                dto.ProviderIds ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                dto.ProviderIds["JeSpoilerGuarded"] = state != null ? "true" : "false";
+                if (state == null || _spoilerStrip == null) continue;
                 _spoilerStrip.StripAbsent(dto, state, config, viewer.Id);
                 if (!HidesArtwork(dto.Type, dto.IndexNumber ?? 0, ImageType.Primary)) continue;
                 dto.ImageTags?.Remove(ImageType.Primary);

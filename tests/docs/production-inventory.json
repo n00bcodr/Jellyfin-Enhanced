@@ -923,6 +923,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ProviderMetadata.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/SyntheticId.cs",
       "category": "Services"
     },
@@ -1116,6 +1120,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerNextUnwatchedService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerPresentation.cs",
       "category": "Services"
     },
     {
@@ -4279,6 +4287,15 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/native-details/title/{type}/{tmdbId}/ratings",
       "method": "Ratings",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/native-details/title/tv/{tmdbId}/season/{season}",
+      "method": "Season",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
       "following_attributes": [
         "Authorize"
@@ -9629,8 +9646,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 532,
-    "routes": 256,
+    "files": 534,
+    "routes": 257,
     "configuration_properties": 578,
     "storage_references": 82,
     "scheduled_tasks": 14,

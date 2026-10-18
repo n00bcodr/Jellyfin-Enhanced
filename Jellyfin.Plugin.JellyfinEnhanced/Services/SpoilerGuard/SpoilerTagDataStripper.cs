@@ -106,7 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!IsConfigured(cfg)) return null;
             // Empty lists = nothing to strip; check all three dicts, not just
             // Series.Count, so a movies-only user isn't short-circuited.
-            if (state == null || (state.Series.Count == 0 && state.Movies.Count == 0 && state.Collections.Count == 0))
+            if (state == null || (state.Series.Count == 0 && state.Movies.Count == 0 && state.Collections.Count == 0 && state.ProviderTitles.Count == 0 && state.PendingTmdb.Count == 0))
             {
                 return null;
             }
@@ -128,6 +128,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public string? GetGuardedKind(UserSpoilerBlur state, string key, TagCacheEntry? e)
         {
             if (e == null) return null;
+            if (SpoilerUserResolver.ProviderGuarded(state, e.Type == "Movie" ? "movie" : "tv", e.Type is "Episode" or "Season" ? e.SeriesTmdbId : e.TmdbId)) return e.Type;
             switch (e.Type)
             {
                 case "Movie":
@@ -154,7 +155,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public bool IsGuarded(UserSpoilerBlur state, Guid ownerId, string ownerType, string? ownerSeriesIdN)
         {
-            if (state.Series.Count == 0 && state.Movies.Count == 0 && state.Collections.Count == 0) return false;
+            if (state.Series.Count == 0 && state.Movies.Count == 0 && state.Collections.Count == 0 && state.ProviderTitles.Count == 0 && state.PendingTmdb.Count == 0) return false;
             var probe = new TagCacheEntry { Type = ownerType, SeriesId = ownerSeriesIdN };
             return GetGuardedKind(state, ownerId.ToString("N"), probe) != null;
         }
@@ -352,7 +353,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Unwatched Episode of a guarded series.
             if (item is Episode spEp
                 && spEp.SeriesId != Guid.Empty
-                && spoilerState.Series.ContainsKey(spEp.SeriesId.ToString("N")))
+                && (spoilerState.Series.ContainsKey(spEp.SeriesId.ToString("N")) || _spoilerResolver.IsSeriesInSpoilerScope(spoilerState, spEp.SeriesId)))
             {
                 var spUd = _userDataManager.GetUserData(user, spEp);
                 return spUd?.Played != true ? SpoilerTagDataStub.Episode : SpoilerTagDataStub.None;
@@ -362,7 +363,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // to seriesId — e.g. NextUp / Continue Watching with "Use episode
             // images" OFF, where cards show the series poster.
             if (item is Series spSeries
-                && spoilerState.Series.ContainsKey(spSeries.Id.ToString("N")))
+                && (spoilerState.Series.ContainsKey(spSeries.Id.ToString("N")) || _spoilerResolver.IsSeriesInSpoilerScope(spoilerState, spSeries.Id, spSeries.ProviderIds)))
             {
                 return SpoilerTagDataStub.Series;
             }
@@ -385,7 +386,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // HasWatchedAnyEpisodeInSeason gate.
             if (item is Season spSeason
                 && spSeason.SeriesId != Guid.Empty
-                && spoilerState.Series.ContainsKey(spSeason.SeriesId.ToString("N")))
+                && (spoilerState.Series.ContainsKey(spSeason.SeriesId.ToString("N")) || _spoilerResolver.IsSeriesInSpoilerScope(spoilerState, spSeason.SeriesId)))
             {
                 var sNum = spSeason.IndexNumber.GetValueOrDefault(int.MaxValue);
                 if (sNum > 1 && !HasWatchedAnyEpisode(spSeason, user, "tagdata-season-probe:"))

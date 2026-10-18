@@ -178,3 +178,9 @@ test('Spoiler Guard: while its state cannot be read the stripped date stays hidd
  const h=setup(t,{getItem:seriesThen({Type:'Episode',SeriesId:'series',ParentIndexNumber:2,IndexNumber:3}),data:{air_date:'2025-02-03'},JE:guardedSeries({loadOk:false})});
  h.api.displayReleaseDate('episode',h.container);await h.settle();assert.equal(h.container.children.length,0);assert.equal(h.counts().fetchCalls,0);
 });
+
+test('guarded synthetic series cannot regain date chips from TMDB',async t=>{
+ const h=setup(t,{item:{Id:'synthetic',Type:'Series',PremiereDate:'2022-09-21',ProviderIds:{Tmdb:'42',JeSpoilerGuarded:'true'}},data:{last_air_date:'2025-05-13'},JE:{pluginConfig:{SpoilerBlurEnabled:true,SpoilerStripPremiereDate:true},spoilerBlur:{isEnabledFor:()=>false,isTmdbEnabled:()=>true,whenLoaded:async()=>{},getUserPrefs:()=>({})},titleDetails:{parse:()=>({kind:'series',tmdbId:42})}}});
+ h.api.displayReleaseDate('synthetic',h.container);await h.settle();
+ assert.equal(h.container.children.length,0);assert.equal(h.counts().fetchCalls,0);
+});

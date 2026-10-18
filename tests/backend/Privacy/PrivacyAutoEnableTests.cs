@@ -127,6 +127,9 @@ public class PrivacyAutoEnableTests
         var savedAlice = p.Saved(p.Alice); var savedBob = p.Saved(p.Bob);
         Assert.Empty(savedAlice.PendingTmdb); Assert.Equal("Acquired series", savedAlice.Series[p.Series.Id.ToString("N")].SeriesName);
         Assert.Contains(p.PendingKey, savedBob.PendingTmdb.Keys); Assert.Empty(savedBob.Series);
+        Assert.Contains(p.PendingKey.Replace(":", ":tmdb:"), savedAlice.ProviderTitles.Keys);
+        Assert.True(SpoilerUserResolver.ProviderGuarded(savedAlice, "tv", p.PendingKey.Split(':')[1]));
+        Assert.Empty(savedBob.ProviderTitles);
     }
 
     [Fact]

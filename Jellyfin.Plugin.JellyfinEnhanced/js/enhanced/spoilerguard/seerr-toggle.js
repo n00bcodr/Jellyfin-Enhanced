@@ -48,7 +48,8 @@
         }
 
         function refresh() {
-            const enabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
+            const enabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId)
+                || internal.isLoaded?.() !== true && data.jeSpoiler?.guarded === true;
             const text = JE.t(enabled ? 'spoiler_blur_pending_button_on' : 'spoiler_blur_pending_button_off');
             button.classList.toggle('je-spoiler-pending-on', enabled);
             button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
@@ -58,6 +59,7 @@
             label.textContent = text;
         }
 
+        button.jeSpoilerRefresh = refresh;
         refresh();
         internal.whenLoaded().then(refresh).catch(function() {});
         button.addEventListener('click', function(event) {
@@ -65,6 +67,7 @@
             event.stopPropagation();
             if (button.disabled) return;
             button.disabled = true;
+            const epoch = JE.session?.getEpoch?.();
             const wasEnabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
             void (async function() {
                 try {
@@ -76,6 +79,12 @@
                         await internal.enableForTmdb(mediaType, tmdbId, displayName);
                         JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
                     }
+                    if (JE.session?.isCurrent?.(epoch) === false) return;
+                    window.dispatchEvent(new CustomEvent('je-spoiler-policy-changed', { detail: {
+                        type: mediaType, tmdbId: Number(tmdbId), enabled: !wasEnabled, userId: ApiClient.getCurrentUserId()
+                    } }));
+                    document.querySelectorAll('.je-spoiler-pending-btn, .je-spoiler-pending-detail').forEach(node => node.jeSpoilerRefresh?.());
+                    internal.refreshSpoilerableImages?.();
                 } catch (e) {
                     console.warn(`${logPrefix} Seerr toggle failed:`, e);
                     JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));

@@ -772,7 +772,7 @@
         if (!row || typeof build !== 'function') return;
         let button = null;
         try {
-            button = build({ id: parts.tmdbId, title: item?.Name || '', name: item?.Name || '', mediaInfo: null }, state.mediaType, { detail: true });
+            button = build({ id: parts.tmdbId, title: item?.Name || '', name: item?.Name || '', mediaInfo: null, jeSpoiler: { guarded: item?.ProviderIds?.JeSpoilerGuarded === 'true' } }, state.mediaType, { detail: true });
         } catch {
             button = null;
         }
@@ -1440,6 +1440,14 @@
             dispose();
         });
         document.addEventListener('contextmenu', guard, true);
+        window.addEventListener('je-spoiler-policy-changed', event => {
+            const state = current;
+            if (!state || Number(event.detail?.tmdbId) !== state.parts.tmdbId || event.detail?.type !== state.mediaType) return;
+            // Native fields are owned by jellyfin-web. Drop their old DOM before its fresh page read.
+            state.page.replaceChildren();
+            dispose();
+            JE.internals.spoilerGuard?.scheduleFullReload?.();
+        });
         JE.session?.onUserChange?.('native-details', () => { cancelPendingModal(); dispose(); });
     }
 

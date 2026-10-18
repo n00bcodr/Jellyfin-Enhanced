@@ -219,6 +219,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 : new Dictionary<string, SpoilerBlurPendingEntry>(value, StringComparer.OrdinalIgnoreCase);
         }
 
+        /// <summary>Durable typed provider intent after a pending title arrives; protects later copies and reimports.</summary>
+        private Dictionary<string, SpoilerBlurPendingEntry> _providerTitles = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, SpoilerBlurPendingEntry> ProviderTitles
+        {
+            get => _providerTitles;
+            set => _providerTitles = value == null ? new(StringComparer.OrdinalIgnoreCase) : new(value, StringComparer.OrdinalIgnoreCase);
+        }
+
         // Per-user override of admin strip policy. A fresh user state has an
         // empty Prefs object (all nullable bools = null), so unmigrated
         // spoilerblur.json files continue to honor admin policy unchanged.

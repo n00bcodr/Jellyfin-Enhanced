@@ -152,17 +152,27 @@
         if (item?.Type === 'Season' && !(Number(item.IndexNumber) > 1)) return false;
         if (item?.Type === 'Episode' && item.UserData?.Played === true) return false;
         const sg = JE.spoilerBlur;
-        if (!sg || typeof sg.isEnabledFor !== 'function' || !item?.SeriesId) return false;
+        if (!sg || typeof sg.isEnabledFor !== 'function') return false;
         try {
             await sg.whenLoaded?.();
         } catch { /* judged below as not loaded */ }
         if (typeof sg.isLoadOk === 'function' && sg.isLoadOk() !== true) return true;
         if (sg.getUserPrefs?.()?.HideAirDate === false) return false;
+        const parts = JE.titleDetails?.parse?.(item.Id);
+        if (item.ProviderIds?.JeSpoilerGuarded === 'true' || parts && sg.isTmdbEnabled?.(parts.kind === 'movie' ? 'movie' : 'tv', parts.tmdbId)) return true;
         return sg.isEnabledFor(item.SeriesId) === true;
     }
 
     async function resolveReleaseInfo(item, userId) {
         const mediaType = item?.Type;
+        const parts = JE.titleDetails?.parse?.(item?.Id);
+        if (parts && JE.pluginConfig?.SpoilerBlurEnabled === true && JE.pluginConfig?.SpoilerStripPremiereDate !== false) {
+            const sg = JE.spoilerBlur;
+            await sg?.whenLoaded?.();
+            if (sg?.getUserPrefs?.()?.HideAirDate !== false
+                && !(parts.kind === 'season' && parts.season <= 1)
+                && (item.ProviderIds?.JeSpoilerGuarded === 'true' || sg?.isTmdbEnabled?.(parts.kind === 'movie' ? 'movie' : 'tv', parts.tmdbId))) return [];
+        }
 
         if (mediaType === 'Movie') {
             const tmdbId = item?.ProviderIds?.Tmdb;

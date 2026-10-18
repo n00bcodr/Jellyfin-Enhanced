@@ -1,4 +1,3 @@
-#if JF12
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
@@ -104,6 +103,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Caller(out var refusal, details: true) is not { } viewer) return refusal!;
             if (type is not ("movie" or "tv")) return BadRequest(new { code = "invalid_feed" });
             return Answer(await _feeds.RatingsAsync(viewer, type == "movie", tmdbId, ct).ConfigureAwait(false));
+        }
+
+        /// <summary>Public season/episode metadata for the More Info host on either Jellyfin version.</summary>
+        [HttpGet("native-details/title/tv/{tmdbId}/season/{season}")]
+        [Authorize]
+        public async Task<IActionResult> Season([FromRoute] int tmdbId, [FromRoute] int season, CancellationToken ct)
+        {
+            if (Caller(out var refusal, details: true) is not { } viewer) return refusal!;
+            return Answer(await _feeds.SeasonAsync(viewer, tmdbId, season, ct).ConfigureAwait(false));
         }
 
         /// <summary>
@@ -212,4 +220,3 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
     }
 }
-#endif

@@ -1,4 +1,3 @@
-#if JF12
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -520,4 +519,3 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
     }
 }
-#endif

@@ -250,6 +250,18 @@ function closeCurrentModal() {
         closeCurrentModal();
     };
 
+    // Remove rendered metadata synchronously, then reopen from the current server projection.
+    window.addEventListener('je-spoiler-policy-changed', event => {
+        const modal = state.currentModal;
+        if (!modal || modal._isClosing) return;
+        const type = modal.dataset.mediaType;
+        const id = Number(modal.dataset.tmdbId);
+        if (type !== event.detail?.type || id !== Number(event.detail?.tmdbId)) return;
+        modal.replaceChildren();
+        moreInfoModal.close();
+        void moreInfoModal.open(id, type);
+    });
+
     // Request permissions and details belong to the active account. Invalidate
     // pending opens immediately on identity changes, before navigation arrives.
     JE.session?.onUserChange('jellyseerr-more-info', () => moreInfoModal.close());

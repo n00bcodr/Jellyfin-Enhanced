@@ -40,7 +40,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             var pending = (title.IsMovie ? "movie:" : "tv:") + title.TmdbId.ToString(CultureInfo.InvariantCulture);
-            if (state.PendingTmdb.ContainsKey(pending)) return state;
+            if (state.PendingTmdb.ContainsKey(pending) || SpoilerUserResolver.ProviderGuarded(state, title.IsMovie ? "movie" : "tv", title.TmdbId.ToString(CultureInfo.InvariantCulture))) return state;
             if (state.Series.Count == 0 && state.Movies.Count == 0 && state.Collections.Count == 0) return null;
             foreach (var copy in policy.Physical(viewer, title.IsMovie, title.TmdbId, null).Copies)
             {

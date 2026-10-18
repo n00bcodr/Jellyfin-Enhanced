@@ -79,6 +79,15 @@
     // In-flight request deduplication
     /** @type {Map<string, {promise: Promise<any>, signal: AbortSignal|null, limit: ConcurrencyOptions|null}>} */
     const inFlightRequests = new Map();
+    let presentationGeneration = 0;
+    /** Invalidates personalized reads without cancelling writes or starting a retry loop. */
+    function presentationChanged() {
+        presentationGeneration++;
+        responseCache.clear();
+        inFlightRequests.clear();
+    }
+    window.addEventListener('je-spoiler-policy-changed', presentationChanged);
+    window.addEventListener('je-hidden-content-changed', presentationChanged);
 
     // Response cache with TTL
     /** @type {Map<string, {data: any, timestamp: number}>} */
@@ -804,6 +813,12 @@
         } = options;
 
         const isGet = method.toUpperCase() === 'GET';
+        const presentation = presentationGeneration;
+        const sensitive = isGet && /(?:JellyfinEnhanced\/(?:native-details|jellyseerr|acquire|arr|tmdb|awards|mdblist-ratings|reviews|activity)|\/Items(?:\/|\?))/.test(url);
+        /** A response started under a previous policy cannot repopulate a feed or its cache. */
+        function assertPresentation() {
+            if (sensitive && presentation !== presentationGeneration) throw new DOMException('Presentation policy changed', 'AbortError');
+        }
 
         // One object per request: the limiter reads it while queued, and the
         // dedup entry keeps it so a normal joiner can promote a queued low request.
@@ -817,6 +832,7 @@
         }
 
         const fetchFn = async () => {
+            assertPresentation();
             /** @type {Record<string, string>} */
             const requestHeaders = {
                 ...(auth ? authHeaders() : { 'Accept': 'application/json' }),
@@ -825,6 +841,8 @@
 
             /** @type {RequestInit} */
             const init = { method, headers: requestHeaders };
+            // Earlier unguarded responses may still be fresh in the browser's HTTP cache.
+            if (sensitive) init.cache = 'no-store';
             // Fetch Priority hint; ignored by browsers without support. Read at
             // start time so a promoted request goes out at normal priority.
             if (limit.priority === 'low') init.priority = 'low';
@@ -878,6 +896,7 @@
                 // Tolerant JSON parse: some endpoints reply with empty bodies.
                 const text = await response.text();
                 const data = text ? JSON.parse(text) : {};
+                assertPresentation();
 
                 if (isGet && cacheKey && (!JE.session || JE.session.isCurrent(requestEpoch))) {
                     setCache(cacheKey, data);

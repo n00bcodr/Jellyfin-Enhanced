@@ -82,16 +82,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly ArrStatusService? _status;
         private Configuration.UserConfigurationManager? _hidden;
         private MediaBrowser.Controller.Library.ILibraryManager? _library;
+        private SpoilerPresentation? _presentation;
 
         /// <summary>Most requests in one answer that get the status of their part (the rest show their request state).</summary>
         public const int MaxPartStatuses = 60;
 
         /// <summary>Creates the projection over the shared TMDB cache (DI).</summary>
-        public RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases aliases, TmdbResponseCache tmdb, IServerConfigurationManager serverConfig, IRequestPlaces places, ArrStatusService status, Configuration.UserConfigurationManager? hidden = null, MediaBrowser.Controller.Library.ILibraryManager? library = null)
+        public RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases aliases, TmdbResponseCache tmdb, IServerConfigurationManager serverConfig, IRequestPlaces places, ArrStatusService status, Configuration.UserConfigurationManager? hidden = null, MediaBrowser.Controller.Library.ILibraryManager? library = null, SpoilerPresentation? presentation = null)
             : this(service, directory, aliases, (media, id, ct) => TmdbTitleAsync(tmdb, Region(serverConfig), media, id, ct), () => DateTimeOffset.UtcNow, places, status, (title, ct) => TmdbIdOfAsync(tmdb, title, ct))
         {
             _hidden = hidden;
             _library = library;
+            _presentation = presentation;
         }
 
         /// <summary>Creates the projection with an explicit TMDB reader, clock, place facts and status service (tests; without one, no part statuses).</summary>
@@ -244,6 +246,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 };
             }).ToArray();
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "approvals", certainty = "Succeeded", message = "Requests waiting for an OK", more, items }, Json);
+            var json = System.Text.Encoding.UTF8.GetString(bytes);
+            bytes = System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(caller.UserId).Project(json) ?? json);
             return Body(caller.UserId, viewer, "approvals", bytes);
         }
 
@@ -297,6 +301,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 };
             }).ToArray();
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "mine", certainty = "Succeeded", message = "Your requests", more, items }, Json);
+            var json = System.Text.Encoding.UTF8.GetString(bytes);
+            bytes = System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(caller.UserId).Project(json) ?? json);
             return Body(caller.UserId, viewer, "mine", bytes);
         }
 
