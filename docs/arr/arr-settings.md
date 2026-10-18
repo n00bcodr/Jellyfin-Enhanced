@@ -559,7 +559,7 @@ Per person (Jellyfin Enhanced panel, *Poster badges*, shown while the badges are
 takes effect immediately; showing them refreshes the cards once the choice has saved. Both controls keep your latest
 choices while they save. Once saving finishes, the controls and cards match the last successful save, including when
 quick web and native changes have mixed save outcomes. Saved notifications follow the settings document that actually commits, including choices carried by a later save after an earlier failure. Closing the panel lets submitted saves finish their session-bound follow-ups; switching users or sessions discards outgoing follow-ups. Reopening the panel while saving keeps those choices and
-earlier successful saves. Language and translation-cache reloads wait for queued saves to finish. Full or disabled browser storage cannot turn a successful save into a failure or leave the consent control out of step with the server. A user switch clears pending unsent saves; old responses cannot change the next person’s
+earlier successful saves. Language and translation-cache reloads wait for queued saves to finish. Full or disabled browser storage, a failed tag renderer, or a failed panel update cannot interrupt the other save updates or leave a save pending. The consent control still follows the server. A user switch clears pending unsent saves; old responses cannot change the next person’s
 settings. Live acquisition badges work independently of the phase-1
 poster status switch.
 

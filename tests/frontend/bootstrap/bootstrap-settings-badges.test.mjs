@@ -970,3 +970,156 @@ test('language controls wire from the document even when the storage accessor th
   assert.doesNotThrow(() => h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} }));
   await tick(); assert.equal(h.document.getElementById('displayLanguageSelect').value, 'fr');
 });
+
+// Round 11: a publication failure must never become a queue/commit failure.
+for (const fault of ['disabled storage', 'clear timestamp quota']) test(`real Quality Tags ${fault} cannot orphan a queued save`, async t => {
+  const h = await reloadPanel(t);
+  h.JE.session.onUserChange = () => {};
+  h.JE.session.getUserId = () => 'user-a';
+  h.JE.pluginConfig.TagCacheServerMode = false;
+  h.JE.pluginConfig.ClearLocalStorageTimestamp = 1000;
+  const renderers = new Map();
+  h.JE.tagPipeline = { registerRenderer: (name, renderer) => renderers.set(name, renderer) };
+  h.load('core/ui-kit.js'); h.load('core/tag-renderer-base.js'); h.load('tags/qualitytags.js');
+  const descriptor = Object.getOwnPropertyDescriptor(h.window, 'localStorage');
+  const storage = h.window.localStorage, prototype = Object.getPrototypeOf(storage), setItem = prototype.setItem;
+  if (fault === 'disabled storage') Object.defineProperty(h.window, 'localStorage', { configurable: true, get() { throw new Error('storage disabled'); } });
+  else prototype.setItem = function(key, value) {
+    if (key.endsWith('Timestamp')) throw new h.window.DOMException('full', 'QuotaExceededError');
+    return setItem.call(this, key, value);
+  };
+  t.after(() => { Object.defineProperty(h.window, 'localStorage', descriptor); prototype.setItem = setItem; });
+  const first = h.JE.updateSettings({ qualityTagsEnabled: true }, { throwOnError: true });
+  // Attach immediately so the broken baseline rejection is observed, not an unhandled test promise.
+  const settled = first.then(() => 'saved', error => error.message);
+  await tick(); h.held[0].resolve(); await tick();
+  assert.equal(await settled, 'saved', 'a renderer failure cannot reject a successful POST');
+  assert.ok(renderers.has('quality'), 'cache failure must still register the real renderer');
+  const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true });
+  h.JE.internals.scheduleReloadWhenIdle(h.JE.internals.settingsSessionScope(), 0);
+  await tick(); h.clock.advance(0); assert.equal(h.clock.reloads, 0);
+  h.held[1].resolve(); await later;
+  assert.equal(h.JE.currentSettings.showFileSizes, true);
+  assert.equal(h.document.getElementById('showFileSizesToggle').checked, true);
+  h.clock.advance(0); assert.equal(h.clock.reloads, 1, 'all pending entries were removed');
+});
+
+/** Capture every observer installed by the actual main/misc/language panels; inject before its body. */
+async function faultPanel(t) {
+  const h = panel(t, { config: { ...badges, ArrListsEnabled: true, ArrListSwapInEnabled: true }, settings: { displayLanguage: 'en-US', listSwapIn: false } });
+  const clock = reloadClock(h), observers = new Map(), observe = h.JE.internals.observeSettingsDocument;
+  let fault, warnings = 0;
+  h.window.console.warn = () => warnings++;
+  h.JE.internals.observeSettingsDocument = (name, observer) => {
+    observers.set(name, observer);
+    observe(name, (shown, reason) => {
+      if (fault?.name === name && fault.reason === reason) { fault.hits++; throw new Error('injected observer ' + name); }
+      return observer(shown, reason);
+    });
+  };
+  h.window.fetch = async () => ({ ok: false });
+  h.window.ApiClient.ajax = async request => request.url.includes('/locales') ? ['en-US', 'fr'] : [];
+  h.wire();
+  const ctx = { help: h.document.body, primaryAccentColor: '#123456', panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} };
+  h.JE.internals.enhancedUi.wireMiscSettingsControls(ctx);
+  h.load('enhanced/settingspanel/ui-panel-language.js'); h.JE.internals.enhancedUi.wireLanguageControls(ctx);
+  await tick();
+  return { ...h, clock, observers, arm(value) { fault = value; }, get warnings() { return warnings; } };
+}
+
+/** One bounded real-transport cycle for every publication reason; no orphan may outlive its save. */
+async function publicationFault(h, reason) {
+  const held = [], persisted = { ...h.JE.userConfig.settings };
+  let published = 0;
+  h.JE.internals.observeSettingsDocument('r11-tail', () => published++);
+  h.window.ApiClient.ajax = request => {
+    if (request.type === 'GET') return Promise.resolve({ ...persisted });
+    const response = deferred(); held.push({ ...response, request });
+    return response.promise.then(() => {
+      if (request.type === 'PATCH') {
+        const patch = JSON.parse(request.data); persisted[patch.Field[0].toLowerCase() + patch.Field.slice(1)] = patch.Value;
+      } else Object.assign(persisted, JSON.parse(request.data));
+      return { Consents: { ListSwapIn: persisted.listSwapIn } };
+    });
+  };
+  h.JE.internals.scheduleReloadWhenIdle(h.JE.internals.settingsSessionScope(), 0);
+  // A held legacy save plus an unsent PATCH exercise the shared queue on every injected publication.
+  const first = h.JE.saveUserSettings('settings.json', { ...h.JE.currentSettings, acquisitionBadges: false }, { throwOnError: true });
+  const outcome = first.then(() => 'saved', () => 'failed');
+  const consent = h.JE.setPersonalConsent('listSwapIn', true, { throwOnError: true });
+  const consentOutcome = consent.then(() => 'saved', () => 'failed');
+  await tick(); h.clock.advance(0); assert.equal(h.clock.reloads, 0);
+  assert.equal(held.length, 1);
+  if (reason === 'failed') held[0].reject(new Error('transport rejected')); else held[0].resolve();
+  assert.equal(await outcome, reason === 'failed' ? 'failed' : 'saved', 'effect failures cannot alter transport outcome');
+  await tick(); assert.equal(held.length, 2); held[1].resolve();
+  assert.equal(await consentOutcome, 'saved');
+  if (reason === 'read') { persisted.showAudioLanguages = false; assert.equal(await h.JE.readUserSettings('settings.json'), true); }
+  const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true });
+  await tick(); assert.equal(held.length, 3); held[2].resolve(); await later;
+  assert.equal(h.JE.currentSettings.showFileSizes, persisted.showFileSizes);
+  assert.equal(h.JE.userConfig.settings.listSwapIn, persisted.listSwapIn);
+  assert.equal(h.JE.currentSettings.acquisitionBadges, persisted.acquisitionBadges);
+  // The tail observer runs even if an earlier projector or panel observer fails.
+  assert.ok(published >= 7);
+  h.clock.advance(0); h.clock.advance(5000); assert.equal(h.clock.reloads, 1);
+}
+
+for (const reason of ['queued', 'saved', 'failed', 'read']) test(`generic observer fault injection preserves store invariants on ${reason}`, async t => {
+  const probe = await faultPanel(t);
+  assert.ok(probe.observers.size >= 10, 'enumerate actual main/misc panel registrations');
+  for (const name of probe.observers.keys()) await t.test(name, async tt => {
+    const h = await faultPanel(tt), fault = { name, reason, hits: 0 };
+    h.arm(fault); await publicationFault(h, reason);
+    assert.ok(fault.hits > 0); assert.equal(h.warnings, 1, 'warn once for a repeatedly failing observer');
+  });
+});
+
+// The effect registry is populated by production config.js, rather than a copied list of projectors.
+for (const reason of ['queued', 'saved', 'failed', 'read']) test(`generic registered effect fault injection preserves store invariants on ${reason}`, async t => {
+  const probe = await faultPanel(t), effects = probe.JE.internals.settingsDocumentEffects;
+  assert.ok(effects?.size >= 20, 'all independently fallible projectors/mirrors/toasts are registered');
+  for (const name of effects.keys()) await t.test(name, async tt => {
+    const h = await faultPanel(tt), original = h.JE.internals.settingsDocumentEffects.get(name);
+    let hits = 0;
+    h.JE.internals.settingsDocumentEffects.set(name, context => {
+      if (context.reason === reason) { hits++; throw new Error('injected effect ' + name); }
+      return original(context);
+    });
+    await publicationFault(h, reason);
+    assert.ok(hits > 0); assert.equal(h.warnings, 1, 'warn once per effect kind');
+  });
+});
+
+for (const phase of ['initialize', 'reinitialize']) test(`async Quality Tags ${phase} rejection is isolated at the real settings boundary`, async t => {
+  const h = panel(t, { settings: { qualityTagsEnabled: phase === 'reinitialize', qualityTagsPreferredAudioLanguage: 'auto' } });
+  h.load('core/ui-kit.js'); h.load('core/tag-renderer-base.js'); h.load('tags/qualitytags.js');
+  h.window.ApiClient.getUser = async () => ({ Configuration: { AudioLanguagePreference: 'eng' } });
+  let hits = 0, warnings = 0;
+  h.window.console.warn = () => warnings++;
+  h.JE.core.tagRenderer[phase === 'initialize' ? 'register' : 'reinitialize'] = () => { hits++; throw Error('injected deferred renderer'); };
+  await h.JE.updateSettings(phase === 'initialize' ? { qualityTagsEnabled: true } : { qualityTagsPosition: 'bottom-right' }, { throwOnError: true });
+  await tick(); await tick();
+  assert.equal(hits, 1); assert.equal(warnings, 1);
+  await h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true });
+  assert.equal(h.JE.currentSettings.showFileSizes, true);
+});
+
+for (const consumer of ['effect', 'observer']) test(`rejected async ${consumer} is caught without blocking later publications`, async t => {
+  const h = await faultPanel(t); let hits = 0;
+  const fail = () => { hits++; return h.window.Promise.reject(Error('injected async consumer')); };
+  if (consumer === 'effect') h.JE.internals.settingsDocumentEffects.set('pause-delay', fail);
+  else h.JE.internals.observeSettingsDocument('async-proof', fail);
+  await publicationFault(h, 'saved'); await tick();
+  assert.ok(hits > 1); assert.equal(h.warnings, 1);
+});
+
+test('a throwing language toast cannot skip its reload, other notifications or panel observers', async t => {
+  const h = await faultPanel(t), original = h.JE.toast;
+  h.JE.toast = message => { if (message === tr('toast_language_changed')) throw Error('toast unavailable'); return original(message); };
+  await h.JE.updateSettings({ displayLanguage: 'fr', acquisitionBadges: false }, { throwOnError: true });
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+  assert.ok(h.toasts.includes(tr('toast_badge_settings_saved')));
+  assert.equal(h.document.getElementById('acquisitionBadgesSelect').value, 'off');
+  h.clock.advance(1500); assert.equal(h.clock.reloads, 1); assert.equal(h.warnings, 1);
+});

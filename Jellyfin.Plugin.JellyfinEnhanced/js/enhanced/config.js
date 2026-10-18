@@ -101,7 +101,7 @@
             const own = JE.userConfig?.[fileName.replace(/\.json$/, '')];
             const persisted = copyDocument(own);
             state = { fileName, identity, persisted, shown: copyDocument(persisted), pending: [],
-                revision: 0, readRevision: 0, serialized: undefined, chain: Promise.resolve(), observers: new Map() };
+                revision: 0, readRevision: 0, serialized: undefined, chain: Promise.resolve(), observers: new Map(), effectWarnings: new Set() };
             documents.set(fileName, state);
         }
         return state;
@@ -146,17 +146,18 @@
         request.timer = setTimeout(() => runScheduledReload(request), delay);
     };
 
-    /** Best-effort changed-value browser mirror; failures never interrupt publication and retry next commit/read. */
-    const mirrorLanguage = (state, language) => {
+    /** Isolate one effect, including rejected async work; diagnostics cannot interrupt store settlement. */
+    const runEffect = (state, kind, effect) => {
+        /** Report each failing kind once in this document/session, retrying the effect on later publications. */
+        const warn = error => {
+            if (state.effectWarnings.has(kind)) return;
+            state.effectWarnings.add(kind);
+            try { console.warn(`🪼 Jellyfin Enhanced: Settings effect ${kind} failed; will retry.`, error); } catch { /* Best effort. */ }
+        };
         try {
-            const key = `${ApiClient.getCurrentUserId()}-language`;
-            if (localStorage.getItem(key) !== language) localStorage.setItem(key, language);
-        } catch (error) {
-            if (!state.languageMirrorWarned) {
-                state.languageMirrorWarned = true;
-                console.warn('🪼 Jellyfin Enhanced: Could not mirror the saved language; will retry.', error);
-            }
-        }
+            const result = effect();
+            if (result && typeof result.then === 'function') Promise.resolve(result).catch(warn);
+        } catch (error) { warn(error); }
     };
 
     /** Replace a compatibility view in place, including deletion of fields absent from the document. */
@@ -171,82 +172,114 @@
         return parts.length === 2 ? `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}` : (code || '').toLowerCase();
     };
 
-    /**
-     * Reconcile effects from the committed document, including choices carried by another control's save.
-     * Pending/shown choices never supply a browser-language mirror or a saved notification.
-     * @param {object} state Active session's settings document.
-     * @param {object} previousPersisted Document before this commit.
-     * @param {string} reason Publication reason; accepted reads mirror without interrupting the page.
-     */
-    const reconcilePersistedSettings = (state, previousPersisted, reason) => {
-        if (reason !== 'saved' && reason !== 'read') return;
-        const before = resolveSettings(previousPersisted), after = resolveSettings(state.persisted);
-        const language = normalizeLanguage(after.displayLanguage);
-        mirrorLanguage(state, language);
-        if (reason !== 'saved') return;
-        if (language !== normalizeLanguage(before.displayLanguage)) {
-            JE.toast?.(JE.t('toast_language_changed'));
-            JE.internals.scheduleReloadWhenIdle(JE.internals.settingsSessionScope());
-        }
-        for (const [keys, toastKey] of [
-            [['acquisitionBadges', 'nativeAcquisitionStamps'], 'toast_badge_settings_saved'],
-            [['listPlaceholders', 'listStatus', 'listSwapIn'], 'toast_list_settings_saved'],
-            [['useNativePosterTags'], 'toast_native_poster_tags_saved'],
-            [['autoSeasonRequests', 'autoMovieRequests'], 'toast_auto_requests_saved']
-        ]) {
-            if (keys.some(key => (before[key] ?? null) !== (after[key] ?? null))) JE.toast?.(JE.t(toastKey));
-        }
-    };
-
-    /**
-     * Project reversible runtime effects from the document view on queue, commit, rollback and read.
-     * Input handlers submit patches; none owns an applied-style or cached-surface baseline.
-     * @param {object} previousShown Previous document view (before this publication).
-     */
-    const projectSettingsEffects = previousShown => {
-        const before = resolveSettings(previousShown), after = JE.currentSettings;
-        const changed = keys => keys.some(key => before[key] !== after[key]);
-        let restack = false;
-        for (const [key, name, selectors, options] of [
-            ['qualityTagsEnabled', 'Quality', '.quality-overlay-container', ['qualityTagsPosition', 'qualityTagsPreferredAudioLanguage',
-                'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag',
-                'resolutionTagOrder', 'sourceTagOrder', 'dynamicRangeTagOrder', 'specialFormatTagOrder', 'videoCodecTagOrder', 'audioInfoTagOrder']],
-            ['genreTagsEnabled', 'Genre', '.genre-overlay-container', ['genreTagsPosition']],
-            ['languageTagsEnabled', 'Language', '.language-overlay-container', ['languageTagsPosition']],
-            ['ratingTagsEnabled', 'Rating', '.rating-overlay-container', ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries',
-                'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp']],
-            ['ageRatingTagsEnabled', 'AgeRating', '.age-rating-overlay-container', ['ageRatingTagsPosition']],
-            ['peopleTagsEnabled', 'People', '.je-people-place-banner, .je-people-age-container', []]
-        ]) {
+    // Every independently fallible publication effect has its own registration. Observers use the same isolation.
+    // Kept under internals so additional settings surfaces can share the boundary instead of adding handler effects.
+    const settingsEffects = JE.internals.settingsDocumentEffects = new Map();
+    for (const [key, name, selectors, options] of [
+        ['qualityTagsEnabled', 'Quality', '.quality-overlay-container', ['qualityTagsPosition', 'qualityTagsPreferredAudioLanguage',
+            'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag',
+            'resolutionTagOrder', 'sourceTagOrder', 'dynamicRangeTagOrder', 'specialFormatTagOrder', 'videoCodecTagOrder', 'audioInfoTagOrder']],
+        ['genreTagsEnabled', 'Genre', '.genre-overlay-container', ['genreTagsPosition']],
+        ['languageTagsEnabled', 'Language', '.language-overlay-container', ['languageTagsPosition']],
+        ['ratingTagsEnabled', 'Rating', '.rating-overlay-container', ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries',
+            'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp']],
+        ['ageRatingTagsEnabled', 'AgeRating', '.age-rating-overlay-container', ['ageRatingTagsPosition']],
+        ['peopleTagsEnabled', 'People', '.je-people-place-banner, .je-people-age-container', []]
+    ]) {
+        settingsEffects.set(`tags-${name}`, ({ before, after, changed }) => {
             if (before[key] !== after[key]) {
-                if (after[key]) JE[`initialize${name}Tags`]?.();
-                else {
-                    document.querySelectorAll(selectors).forEach(el => el.remove());
-                    if (name === 'People') document.querySelectorAll('.je-deceased-poster').forEach(el => el.classList.remove('je-deceased-poster'));
-                    restack = true;
-                }
-            } else if (after[key] && changed(options)) JE[`reinitialize${name}Tags`]?.();
-        }
-        if (restack) {
-            const hosts = new Set();
-            document.querySelectorAll('[data-je-corner]').forEach(el => { if (el.parentElement) hosts.add(el.parentElement); });
-            hosts.forEach(host => JE.core?.tagRenderer?.applyCornerStacking?.(host));
-        }
+                if (after[key]) return JE[`initialize${name}Tags`]?.();
+                document.querySelectorAll(selectors).forEach(el => el.remove());
+                if (name === 'People') document.querySelectorAll('.je-deceased-poster').forEach(el => el.classList.remove('je-deceased-poster'));
+            } else if (after[key] && changed(options)) return JE[`reinitialize${name}Tags`]?.();
+        });
+    }
+    settingsEffects.set('tag-stacking', ({ state, before, after }) => {
+        if (!['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'peopleTagsEnabled']
+            .some(key => before[key] && !after[key])) return;
+        const hosts = new Set();
+        document.querySelectorAll('[data-je-corner]').forEach(el => { if (el.parentElement) hosts.add(el.parentElement); });
+        hosts.forEach(host => runEffect(state, 'tag-stacking-host', () => JE.core?.tagRenderer?.applyCornerStacking?.(host)));
+    });
+    settingsEffects.set('tag-hover', ({ after, changed }) => {
         if (changed(['tagsHideOnHover'])) document.body.classList.toggle('je-tags-hide-on-hover', !!after.tagsHideOnHover);
-        if (changed(['randomButtonEnabled'])) JE.addRandomButton?.();
-        for (const [key, selector] of [['showWatchProgress', '.mediaInfoItem-watchProgress'], ['showFileSizes', '.mediaInfoItem-fileSize'],
-            ['showAudioLanguages', '.mediaInfoItem-audioLanguage']]) {
+    });
+    settingsEffects.set('random-button', ({ changed }) => { if (changed(['randomButtonEnabled'])) return JE.addRandomButton?.(); });
+    for (const [key, selector] of [['showWatchProgress', '.mediaInfoItem-watchProgress'], ['showFileSizes', '.mediaInfoItem-fileSize'],
+        ['showAudioLanguages', '.mediaInfoItem-audioLanguage']]) {
+        settingsEffects.set(`details-${key}`, ({ after, changed }) => {
             if (changed([key]) && !after[key]) document.querySelectorAll(selector).forEach(el => el.remove());
-        }
+        });
+    }
+    settingsEffects.set('details-refresh', ({ changed }) => {
         if (changed(['showWatchProgress', 'showFileSizes', 'showAudioLanguages', 'watchProgressMode', 'watchProgressTimeFormat'])) {
-            JE.internals.features?.refreshDetailsSettings?.();
+            return JE.internals.features?.refreshDetailsSettings?.();
         }
+    });
+    settingsEffects.set('pause-delay', ({ after }) => {
         if (JE.pauseScreenInstance) JE.pauseScreenInstance.pauseScreenDelayMs = after.pauseScreenDelaySeconds * 1000;
+    });
+    settingsEffects.set('subtitle-styles', ({ changed }) => {
         if (changed(['disableCustomSubtitleStyles', 'customSubtitleTextColor', 'customSubtitleBgColor', 'usingCustomColors',
             'selectedStylePresetIndex', 'selectedFontSizePresetIndex', 'selectedFontFamilyPresetIndex', 'selectedTextEffectPresetIndex'])) {
-            JE.applySavedStylesWhenReady?.();
+            return JE.applySavedStylesWhenReady?.();
         }
-        if (changed(['subtitleHorizontalPosition', 'subtitleVerticalPosition', 'disableCustomSubtitleStyles'])) JE.applySubtitlePosition?.();
+    });
+    settingsEffects.set('subtitle-position', ({ changed }) => {
+        if (changed(['subtitleHorizontalPosition', 'subtitleVerticalPosition', 'disableCustomSubtitleStyles'])) return JE.applySubtitlePosition?.();
+    });
+    settingsEffects.set('acquisition-cards', ({ state, previousShown, previousPersisted, reason }) => {
+        // Hide is immediate. Show reads again after persistence; failures restore the surface too.
+        const before = previousShown.acquisitionBadges, after = state.shown.acquisitionBadges;
+        if ((reason === 'queued' ? after === false && before !== false : before !== after)
+            || (reason === 'saved' && state.persisted.acquisitionBadges !== previousPersisted.acquisitionBadges
+                && state.persisted.acquisitionBadges === after && after !== false)) return JE.internals.arrStatusCards?.reset?.();
+    });
+    settingsEffects.set('language-mirror', ({ state, reason }) => {
+        if (reason !== 'saved' && reason !== 'read') return;
+        const language = normalizeLanguage(resolveSettings(state.persisted).displayLanguage);
+        const key = `${ApiClient.getCurrentUserId()}-language`;
+        if (localStorage.getItem(key) !== language) localStorage.setItem(key, language);
+    });
+    for (const [kind, effect] of [
+        ['language-toast', () => JE.toast?.(JE.t('toast_language_changed'))],
+        ['language-reload', () => JE.internals.scheduleReloadWhenIdle(JE.internals.settingsSessionScope())]
+    ]) {
+        settingsEffects.set(kind, ({ state, previousPersisted, reason }) => {
+            if (reason === 'saved' && normalizeLanguage(resolveSettings(state.persisted).displayLanguage)
+                !== normalizeLanguage(resolveSettings(previousPersisted).displayLanguage)) return effect();
+        });
+    }
+    for (const [keys, toastKey] of [
+        [['acquisitionBadges', 'nativeAcquisitionStamps'], 'toast_badge_settings_saved'],
+        [['listPlaceholders', 'listStatus', 'listSwapIn'], 'toast_list_settings_saved'],
+        [['useNativePosterTags'], 'toast_native_poster_tags_saved'],
+        [['autoSeasonRequests', 'autoMovieRequests'], 'toast_auto_requests_saved']
+    ]) {
+        settingsEffects.set(toastKey, ({ state, previousPersisted, reason }) => {
+            if (reason !== 'saved') return;
+            const before = resolveSettings(previousPersisted), after = resolveSettings(state.persisted);
+            if (keys.some(key => (before[key] ?? null) !== (after[key] ?? null))) return JE.toast?.(JE.t(toastKey));
+        });
+    }
+
+    /** Run effects only after the derived state and compatibility views agree; isolate every subscriber. */
+    const runEffects = (state, previousShown, previousPersisted, reason) => {
+        if (state.fileName === 'settings.json') {
+            const before = resolveSettings(previousShown), after = resolveSettings(state.shown);
+            const context = { state, previousShown, previousPersisted, reason, before, after,
+                changed: keys => keys.some(key => before[key] !== after[key]) };
+            for (const [kind, effect] of [...settingsEffects]) {
+                if (!isActiveDocument(state)) break;
+                runEffect(state, kind, () => effect(context));
+            }
+        }
+        for (const [name, observer] of [...state.observers]) {
+            if (!isActiveDocument(state)) break;
+            runEffect(state, `observer-${name}`, () => observer(copyDocument(state.shown), reason));
+        }
+        // Queue settlement must wake reloads even when every consumer fails. The timer rechecks identity/work.
+        resumeScheduledReload();
     };
 
     /** Recompute from persisted + pending documents; views never supply rollback snapshots. */
@@ -268,25 +301,15 @@
             replaceView(JE.userConfig.settings, state.shown);
             JE.currentSettings = JE.currentSettings || {};
             replaceView(JE.currentSettings, resolveSettings(state.shown));
-            projectSettingsEffects(previousShown);
-            // Hide is immediate. Show reads again after persistence; failures restore the surface too.
-            const before = previousShown.acquisitionBadges, after = state.shown.acquisitionBadges;
-            if ((reason === 'queued' ? after === false && before !== false : before !== after)
-                || (reason === 'saved' && state.persisted.acquisitionBadges !== previousPersisted.acquisitionBadges
-                    && state.persisted.acquisitionBadges === after && after !== false)) {
-                JE.internals.arrStatusCards?.reset?.();
-            }
         }
-        if (state.fileName === 'settings.json') reconcilePersistedSettings(state, previousPersisted, reason);
-        for (const observer of state.observers.values()) observer(state.shown, reason);
-        resumeScheduledReload();
+        runEffects(state, previousShown, previousPersisted, reason);
     };
 
     /** Subscribe a named pure view; replacement panels replace their observer without replacing state. */
     JE.internals.observeSettingsDocument = (name, observer) => {
         const state = settingsDocument('settings.json');
         state.observers.set(name, observer);
-        observer(state.shown);
+        runEffect(state, `observer-${name}`, () => observer(copyDocument(state.shown)));
     };
 
     /**
@@ -349,24 +372,27 @@
             const serialized = JSON.stringify(wire);
             const client = ApiClient;
             const url = client.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${entry.consentKey ? 'consent' : fileName}`);
-            state.revision++;
-            state.pending.push(entry);
-            const save = state.chain.then(async () => {
-                // A queued old-session write must never run under incoming credentials.
-                if (!isActiveDocument(state)) throw new Error('Settings session changed');
-                if (!entry.consentKey && state.serialized === serialized) return;
-                const response = await client.ajax({ type: entry.consentKey ? 'PATCH' : 'POST', url, dataType: 'json',
-                    data: entry.consentKey ? JSON.stringify({ Field: entry.consentKey[0].toUpperCase() + entry.consentKey.slice(1), Value: entry.document[entry.consentKey] }) : serialized,
-                    contentType: 'application/json' });
-                entry.consents = response?.consents || response?.Consents;
-                if (isActiveDocument(state)) state.serialized = entry.consentKey ? undefined : serialized;
-            });
-            state.chain = save.catch(() => {});
-            publishDocument(state, state.persisted, 'queued');
             let succeeded = false;
-            try { await save; succeeded = true; }
+            try {
+                state.revision++;
+                state.pending.push(entry);
+                const save = state.chain.then(async () => {
+                    // A queued old-session write must never run under incoming credentials.
+                    if (!isActiveDocument(state)) throw new Error('Settings session changed');
+                    if (!entry.consentKey && state.serialized === serialized) return;
+                    const response = await client.ajax({ type: entry.consentKey ? 'PATCH' : 'POST', url, dataType: 'json',
+                        data: entry.consentKey ? JSON.stringify({ Field: entry.consentKey[0].toUpperCase() + entry.consentKey.slice(1), Value: entry.document[entry.consentKey] }) : serialized,
+                        contentType: 'application/json' });
+                    entry.consents = response?.consents || response?.Consents;
+                    if (isActiveDocument(state)) state.serialized = entry.consentKey ? undefined : serialized;
+                });
+                state.chain = save.catch(() => {});
+                publishDocument(state, state.persisted, 'queued');
+                await save; succeeded = true;
+            }
             finally {
-                state.pending.splice(state.pending.indexOf(entry), 1);
+                const index = state.pending.indexOf(entry);
+                if (index !== -1) state.pending.splice(index, 1);
                 const previousPersisted = state.persisted;
                 if (succeeded) {
                     state.persisted = entry.consentKey ? { ...previousPersisted, [entry.consentKey]: entry.document[entry.consentKey] } : entry.document;
