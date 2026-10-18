@@ -1361,7 +1361,7 @@ follows Jellyfin's own rights and the household's request rules:
   again needs a new request. This also holds when the server stopped before it recorded the new list, and when
   Jellyfin re-adds the deleted folder with the same id. If the creator loses access while Jellyfin writes, the create
   answers without the list's id, kind or name. A failed save of JE's chosen name keeps a name the person changed while
-  it was pending.
+  it was pending, including a rename made while the failed save is being handled.
 - **Order.** Entries keep their place among the real items, also when the same item is in a playlist twice. Dragging an
   entry moves it; dragging a real item moves it in Jellyfin too (only the first copy of a duplicated item can move).
   Collections list their entries by release date, undated (TBA) ones last.
@@ -1385,7 +1385,9 @@ follows Jellyfin's own rights and the household's request rules:
   A 4K series entry filled that way works like a season: each 4K episode goes in as it arrives, one Jellyfin refused is
   tried again on the next pass, and the entry stays until the series is complete.
   If the server stops in the middle of putting an item in, the next start finishes or undoes it by what is actually in
-  the list, so an item never goes in twice.
+  the list, so an item never goes in twice. A 4K series keeps its episode links even if Jellyfin promotes the first
+  inserted alternate to the main version before recovery, including when the promotion clears its episode numbers:
+  the pending swap remembers the coordinates verified before the insert.
 - **Status** (*Show request status on list entries*). Each entry shows where its request stands, the same status as
   everywhere else in Requests & downloads (a season entry shows that season's, an episodes entry only its own episodes';
   a 4K entry follows the 4K copy and the 4K asks, so it isn't Ready while only the standard copy is in; in Seerr mode

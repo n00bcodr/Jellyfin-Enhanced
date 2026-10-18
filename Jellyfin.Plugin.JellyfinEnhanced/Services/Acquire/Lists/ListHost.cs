@@ -489,19 +489,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             write.Spend(write.ListId, ListWriteKind.FinishCreate);
             // Always saved, also when the cached item already shows the name: Jellyfin changes the cached item before it
-            // saves it, so an earlier failed save can leave the name showing with nothing kept. When the save fails, the
-            // cached item gets its old name back.
+            // saves it, so an earlier failed save can leave the name showing with nothing kept. On failure reload the
+            // stored item into the cache; never roll back Name on the shared object, which a native rename may be using.
             switch (_libraryManager.GetItemById(write.ListId))
             {
                 case Playlist playlist:
-                    var playlistName = playlist.Name;
                     try
                     {
                         await ListContinuation.Await(() => _playlistManager.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlist.Id, UserId = write.ActAs, Name = name })).ConfigureAwait(false);
                     }
                     catch
                     {
-                        if (string.Equals(playlist.Name, name, StringComparison.Ordinal)) playlist.Name = playlistName;
+                        ReloadFailedRename(playlist.Id);
                         throw;
                     }
 
@@ -509,7 +508,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 case BoxSet boxSet:
                     // BaseItem.UpdateToRepositoryAsync, with the parent read through the library manager: saved with its
                     // metadata (collection.xml), so the name stays through scans and refreshes.
-                    var boxSetName = boxSet.Name;
                     boxSet.Name = name;
                     try
                     {
@@ -518,11 +516,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
                     catch
                     {
-                        if (string.Equals(boxSet.Name, name, StringComparison.Ordinal)) boxSet.Name = boxSetName;
+                        ReloadFailedRename(boxSet.Id);
                         throw;
                     }
 
                     break;
+            }
+        }
+
+        private void ReloadFailedRename(Guid id)
+        {
+            // RetrieveItem reads the repository, bypassing GetItemById's mutable cache. Register that separate instance
+            // instead of copying any property onto the object a native request may still hold. This never saves a name.
+            if (_libraryManager.RetrieveItem(id) is { } stored)
+            {
+                _libraryManager.RegisterItem(stored);
             }
         }
 

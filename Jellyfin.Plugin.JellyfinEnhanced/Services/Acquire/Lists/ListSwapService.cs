@@ -806,7 +806,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     return true;
                 }
 
-                var landed = await ListContinuation.Await(() => InsertRunAsync(context, placeholderId, run.Select(e => e.ItemId).ToList(), index)).ConfigureAwait(false);
+                var landed = await ListContinuation.Await(() => InsertRunAsync(context, placeholderId, run.Select(e => e.ItemId).ToList(), index, run)).ConfigureAwait(false);
                 if (landed == null)
                 {
                     return false;
@@ -911,7 +911,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// counts. Returns the items that landed (empty when Jellyfin dropped them all) or null when Jellyfin threw;
         /// in both cases the intent is cleared and the order re-reconciled in the context's document.
         /// </summary>
-        private async Task<HashSet<Guid>?> InsertRunAsync(PassContext context, string placeholderId, IReadOnlyList<Guid> items, int index)
+        private async Task<HashSet<Guid>?> InsertRunAsync(PassContext context, string placeholderId, IReadOnlyList<Guid> items, int index, IReadOnlyList<ResolvedItem>? episodes = null)
         {
             var listId = context.List.Id;
             var before = OccurrenceCounts(_host.GetRawEntries(listId));
@@ -922,6 +922,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 PhId = placeholderId,
                 ItemIds = items.Select(N).ToList(),
+                Episodes = PlannedEpisodes(episodes ?? Array.Empty<ResolvedItem>(), items),
                 Anchor = anchor,
                 Index = index,
                 OccurrenceCountsBefore = items.Distinct().ToDictionary(N, id => before.TryGetValue(id, out var count) ? count : 0, StringComparer.Ordinal),
@@ -1060,6 +1061,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     PhId = placeholderId,
                     ItemIds = toAdd.Select(N).ToList(),
+                    Episodes = PlannedEpisodes(resolution.Items, toAdd),
                     OccurrenceCountsBefore = toAdd.ToDictionary(N, _ => 0, StringComparer.Ordinal),
                     CreatedAt = IntentStamp(),
                 };
@@ -1368,6 +1370,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
+        // Save the resolver's coordinates before the native write: promotion can leave an alternate unnumbered, so
+        // reading that item's facts after a crash is not enough. Only exact Episode links carry coordinates here.
+        private static List<FilledEpisode> PlannedEpisodes(IReadOnlyList<ResolvedItem> resolved, IReadOnlyList<Guid> itemIds)
+        {
+            var inserting = itemIds.ToHashSet();
+            return resolved.Where(i => i.Kind == BaseItemKind.Episode && inserting.Contains(i.ItemId))
+                .SelectMany(i => i.Coords.Select(c => new FilledEpisode { ItemId = N(i.ItemId), S = c.S, E = c.E }))
+                .ToList();
+        }
+
         // A6: intents left by a crash (or a throw) are completed for the items whose occurrence count went up and
         // rolled back (dropped) for the rest; the next pass retries those. Completed playlist items take the spot the
         // intent planned (F8); collection items JE added become sync-owned (F9).
@@ -1404,6 +1416,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var container = placeholder.Kind == PlaceholderKinds.Movie
                     || (placeholder.Kind == PlaceholderKinds.Series && landed.All(id => _host.GetItem(id)?.Kind == BaseItemKind.Series));
                 RecordEvent(context, placeholder, landed, complete: container);
+                // Recover the verified landed episodes BEFORE resolving the scope again. Jellyfin may have promoted
+                // the first exact alternate to primary after the crash: its durable fill keeps a 4K series on episodes
+                // even when there are no alternates left for the resolver to discover.
+                foreach (var itemId in landed)
+                {
+                    var facts = _host.GetItemFacts(itemId);
+                    if (facts is { Kind: BaseItemKind.Episode, IsVirtual: false })
+                    {
+                        var coords = facts.Season is int season && facts.Episode is int episode
+                            ? PlaceholderProgress.CoordsInScope(placeholder, season, episode, facts.EpisodeEnd)
+                            : (intent.Episodes ?? new List<FilledEpisode>())
+                                .Where(e => string.Equals(e.ItemId, N(itemId), StringComparison.Ordinal))
+                                .Select(e => new EpisodeCoord(e.S, e.E)).Where(c => PlaceholderProgress.InScope(placeholder, c)).Distinct().ToList();
+                        if (coords.Count > 0)
+                        {
+                            Fill(context, placeholder, new ResolvedItem(itemId, BaseItemKind.Episode, coords), itemId);
+                        }
+                    }
+                }
+
                 if (context.List.Kind == ListKinds.Collection)
                 {
                     if (container)
@@ -1437,19 +1469,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     Retire(context, placeholder, landed.Select(N).ToList());
                     continue;
-                }
-
-                foreach (var itemId in landed)
-                {
-                    var facts = _host.GetItemFacts(itemId);
-                    if (facts?.Season is int season && facts.Episode is int episode)
-                    {
-                        var coords = PlaceholderProgress.CoordsInScope(placeholder, season, episode, facts.EpisodeEnd);
-                        if (coords.Count > 0)
-                        {
-                            Fill(context, placeholder, new ResolvedItem(itemId, BaseItemKind.Episode, coords), itemId);
-                        }
-                    }
                 }
             }
         }

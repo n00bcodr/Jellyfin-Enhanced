@@ -435,6 +435,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("itemIds")]
         public List<string> ItemIds { get; set; } = new();
 
+        /// <summary>
+        /// Planned coordinates of exact Episode items, verified by the resolver before the insert. These are not fills:
+        /// recovery credits only items whose occurrence count increased. Older intents fall back to native item facts.
+        /// </summary>
+        [JsonPropertyName("episodes")]
+        public List<FilledEpisode> Episodes { get; set; } = new();
+
         /// <summary>The real token the items go after (null = list start).</summary>
         [JsonPropertyName("anchor")]
         public string? Anchor { get; set; }

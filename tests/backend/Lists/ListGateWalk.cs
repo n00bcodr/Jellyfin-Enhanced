@@ -58,7 +58,7 @@ internal sealed class ListGateWalk
 
     private INamedTypeSymbol View => Type("Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders.ListViewDto");
 
-    private static CSharpCompilation Load()
+    internal static CSharpCompilation Load(bool unwrapContinuations = true)
     {
         var root = Path.Combine(Root(), "Jellyfin.Plugin.JellyfinEnhanced");
         // The test runs on the runtime of the target it was built for: .NET 10 is the Jellyfin 12 build, .NET 9 the 10.11 one.
@@ -66,7 +66,7 @@ internal sealed class ListGateWalk
         var trees = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f[root.Length..].Split(Path.DirectorySeparatorChar).Any(d => d is "obj" or "bin"))
             .OrderBy(f => f, StringComparer.Ordinal)
-            .Select(f => CSharpSyntaxTree.ParseText(SourceText.From(Unwrap(File.ReadAllText(f))), options, f))
+            .Select(f => CSharpSyntaxTree.ParseText(SourceText.From(unwrapContinuations ? Unwrap(File.ReadAllText(f)) : File.ReadAllText(f)), options, f))
             .Append(CSharpSyntaxTree.ParseText("global using System; global using System.Collections.Generic; global using System.IO; global using System.Linq; global using System.Net.Http; global using System.Threading; global using System.Threading.Tasks;", options, "ImplicitUsings.cs"));
         var paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator).Concat(Directory.EnumerateFiles(AppContext.BaseDirectory, "*.dll")))

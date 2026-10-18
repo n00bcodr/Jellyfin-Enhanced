@@ -44,6 +44,7 @@ internal sealed class FakeListHost : IListHost
     public Dictionary<string, Guid> MoviesByImdb { get; } = new();
     public Dictionary<Guid, FakeSeries> Series { get; } = new();
     public List<FakeEpisode> Episodes { get; } = new();
+    public HashSet<Guid> EpisodeCoordinatesMissing { get; } = new();
     /// <summary>Season items: (series, season) → (id, virtual).</summary>
     public Dictionary<(Guid Series, int Season), (Guid Id, bool Virtual)> Seasons { get; } = new();
     /// <summary>Throws from AddToPlaylistAsync / AddToCollectionAsync when set (after optionally mutating).</summary>
@@ -563,9 +564,11 @@ internal sealed class FakeListHost : IListHost
                 var series = Series[itemId];
                 return new LibraryItemFacts(itemId, kind, Ids(series.Tmdb, series.Tvdb, series.Imdb), null, null, null, null, null, false);
             case BaseItemKind.Episode:
-                var episode = Episodes.First(e => e.Id == itemId);
+                // Alternate items remain individually readable although Jellyfin's episode query lists only primaries.
+                var episode = Episodes.FirstOrDefault(e => e.Id == itemId)
+                    ?? Episodes.First(e => MediaSources.TryGetValue(e.Id, out var sources) && sources.Any(s => s.ItemId == itemId));
                 var parent = Series[episode.SeriesId];
-                return new LibraryItemFacts(itemId, kind, Ids(episode.OwnTmdb), parent.Id, Ids(parent.Tmdb, parent.Tvdb, parent.Imdb), episode.Season, episode.Episode, episode.EpisodeEnd, episode.Virtual);
+                return new LibraryItemFacts(itemId, kind, Ids(episode.OwnTmdb), parent.Id, Ids(parent.Tmdb, parent.Tvdb, parent.Imdb), EpisodeCoordinatesMissing.Contains(itemId) ? null : episode.Season, EpisodeCoordinatesMissing.Contains(itemId) ? null : episode.Episode, episode.EpisodeEnd, episode.Virtual);
             case BaseItemKind.Season:
                 var season = Seasons.First(p => p.Value.Id == itemId);
                 var owner = Series[season.Key.Series];
@@ -609,7 +612,7 @@ internal sealed class FakeListHost : IListHost
     {
         LibraryQueries++;
         return Episodes
-            .Where(e => e.SeriesId == seriesId && !e.Virtual && (seasonNumber == null || e.Season == seasonNumber))
+            .Where(e => e.SeriesId == seriesId && !e.Virtual && !EpisodeCoordinatesMissing.Contains(e.Id) && (seasonNumber == null || e.Season == seasonNumber))
             .Where(e => user == null || CanAccessItem(e.Id, user))
             .Select(e => new LibraryEpisode(e.Id, seriesId, e.Season, e.Episode, e.EpisodeEnd))
             .ToList();

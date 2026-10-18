@@ -6,6 +6,7 @@ using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
 using MediaBrowser.Controller.Library;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Moq;
@@ -141,14 +142,58 @@ public class ListsContinuationTests
             ["ListContinuation.Await"] = "the seam itself",
             ["ListContinuation.AcquireAsync"] = "the seam itself",
         };
-        var root = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(SourcePath())!, "../../.."));
-        var dir = Path.Combine(root, "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists");
+        var compilation = ListGateWalk.Load(unwrapContinuations: false);
+        var (violations, count, used) = AwaitBoundaries(compilation, exempt);
+        _output.WriteLine($"{count} awaits in the create/swap closure, all through ListContinuation; exempt: {string.Join(", ", used)}");
+        Assert.Empty(violations);
+        Assert.Equal(exempt.Keys.OrderBy(k => k), used.OrderBy(k => k));
+    }
+
+    [Fact]
+    public void AwaitGuardRejectsACompilingUncheckedHelper()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
+            static class ListContinuation
+            {
+                public static Task Await(Task task) => task;
+                public static Task AwaitLock(Task task) => task;
+                public static Task AwaitUnchecked(Task task) => task;
+            }
+            class ListService
+            {
+                public async Task Run()
+                {
+                    await ListContinuation.Await(Task.CompletedTask).ConfigureAwait(false);
+                    await ListContinuation.AwaitLock(Task.CompletedTask);
+                    await ListContinuation.AwaitUnchecked(Task.CompletedTask).ConfigureAwait(false);
+                }
+            }
+            """;
+        var refs = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator).Select(p => MetadataReference.CreateFromFile(p));
+        var compilation = CSharpCompilation.Create("Planted", new[] { CSharpSyntaxTree.ParseText(source, path: "ListService.cs") }, refs,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        Assert.DoesNotContain(compilation.GetDiagnostics(), d => d.Severity == DiagnosticSeverity.Error);
+        var (violations, count, _) = AwaitBoundaries(compilation, new Dictionary<string, string>());
+        Assert.Equal(3, count);
+        Assert.Single(violations);
+    }
+
+    private static (List<string> Violations, int Count, HashSet<string> Used) AwaitBoundaries(CSharpCompilation compilation, IReadOnlyDictionary<string, string> exempt)
+    {
+        var continuation = compilation.GetTypeByMetadataName("Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListContinuation");
+        var allowed = (continuation?.GetMembers().OfType<IMethodSymbol>() ?? Enumerable.Empty<IMethodSymbol>())
+            .Where(m => m.Name is "Await" or "AwaitLock").Select(m => m.OriginalDefinition)
+            .ToHashSet(SymbolEqualityComparer.Default);
         var violations = new List<string>();
         var count = 0;
         var used = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var file in new[] { "ListService.cs", "ListSwapService.cs", "ListPlaylistPlacement.cs", "ListGate.cs", "ListHost.cs", "ListAccess.cs", "ListMetadata.cs", "ListContinuation.cs" })
+        var files = new[] { "ListService.cs", "ListSwapService.cs", "ListPlaylistPlacement.cs", "ListGate.cs", "ListHost.cs", "ListAccess.cs", "ListMetadata.cs", "ListContinuation.cs" };
+        foreach (var tree in compilation.SyntaxTrees.Where(t => files.Contains(Path.GetFileName(t.FilePath))))
         {
-            var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(Path.Combine(dir, file)));
+            var file = Path.GetFileName(tree.FilePath);
+            var model = compilation.GetSemanticModel(tree);
             foreach (var node in tree.GetRoot().DescendantNodes().OfType<AwaitExpressionSyntax>())
             {
                 var type = node.Ancestors().OfType<ClassDeclarationSyntax>().FirstOrDefault()?.Identifier.ValueText;
@@ -165,19 +210,16 @@ public class ListsContinuationTests
                 var awaited = node.Expression is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.ValueText: "ConfigureAwait" } configured }
                     ? configured.Expression
                     : node.Expression;
-                if (!awaited.ToString().StartsWith("ListContinuation.Await", StringComparison.Ordinal))
+                var symbol = awaited is InvocationExpressionSyntax invocation ? model.GetSymbolInfo(invocation).Symbol as IMethodSymbol : null;
+                if (symbol == null || !allowed.Contains(symbol.OriginalDefinition))
                 {
                     violations.Add($"{file}:{node.GetLocation().GetLineSpan().StartLinePosition.Line + 1}: {key}");
                 }
             }
         }
 
-        _output.WriteLine($"{count} awaits in the create/swap closure, all through ListContinuation; exempt: {string.Join(", ", used)}");
-        Assert.Empty(violations);
-        Assert.Equal(exempt.Keys.OrderBy(k => k), used.OrderBy(k => k));
+        return (violations, count, used);
     }
-
-    private static string SourcePath([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
 
     private sealed class Rig : IDisposable
     {
