@@ -168,6 +168,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ? BackendResults.HoldAfterWrite(run.Job.WantId, refusal, $"{run.Instance.Name} has part of the change; the rest was stopped ({refusal}).")
                 : RequestBackendResult.Hold(refusal);
 
+        // Refused inside the transport: a budget that no longer admits the write waits for its next free slot, as when the
+        // admission refuses; any other hold is the gate's.
+        private static RequestBackendResult Refused(Run run, bool wrote, AutomationHold hold)
+            => hold.Reason is AutomationHolds.BudgetExhausted or AutomationHolds.AccountingUnavailable
+                ? BackendResults.Held(run.Job.WantId, wrote, hold.Reason, $"{run.Instance.Name}: {hold.Message}", hold.Wait)
+                : Refused(run, wrote, hold.Reason);
+
         // A write or search. The guard is asked once more after the client's wait for a free connection slot, right
         // before the call leaves (slow calls can hold every slot for a while): refused there, this call sends nothing.
         // Automatic work then admits the write against its budgets (admit: what it counts as), the guard is asked once
@@ -200,7 +207,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 admitted.Clear();
                 return false;
             }
-            var result = await run.Client.SendCheckedAsync<T>(method, path, body, Proceed, run.Ct).ConfigureAwait(false);
+            ArrResult<T> result;
+            try
+            {
+                result = await run.Client.SendCheckedAsync<T>(method, path, body, Proceed, run.Ct).ConfigureAwait(false);
+            }
+            catch (AutomationTransportRefusedException refused)
+            {
+                // Refused by the transport's own check, the last one before the request is handed on: this call sent
+                // nothing, and the reservations it made are released already.
+                return (ArrResult<T>.Failure(ArrErrorKind.NotConfigured, refused.Hold.Message), Refused(run, wrote, refused.Hold));
+            }
             if (run.Admission != null && admitted.Count > 0)
             {
                 // As WriteFailure reads it: a lost answer, a server error or a conflict may have written. A title already

@@ -111,9 +111,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// change, search, tag and refresh of the Direct backend (after the wait for a connection slot), the Seerr backend's
     /// POST, and the old recipes' own POST to Seerr at each address. It re-reads every gate from the live configuration
     /// and state on every call, in <see cref="Gates"/> order, and returns the first hold (null: the write may go). Nothing
-    /// a write site decided before an await is trusted here. Budgets are admitted per write by the site right after this
-    /// gate (<see cref="ISendAdmission"/>); the preliminary budget check runs before any transport only. A read-back is
-    /// never gated.
+    /// a write site decided before an await is trusted here. The last call is made inside the HTTP transport
+    /// (<see cref="AutomationTransportHandler"/>, D41): every write made in an automation context is checked there as it
+    /// is handed on, after its budgets are checked again with the limits as they are then. That is the guarantee; the
+    /// write sites' own calls (budgets admitted per write right after them, <see cref="ISendAdmission"/>) stay as defence
+    /// in depth. The preliminary budget check runs before any transport only. A read-back is never gated.
     /// </summary>
     public sealed class AutomationWriteGate
     {

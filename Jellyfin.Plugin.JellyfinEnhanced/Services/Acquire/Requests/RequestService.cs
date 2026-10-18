@@ -73,14 +73,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var pending in _ledger.ForTitle(input.Key).Where(w => w.Status == "pending" && w.Input.Variant == input.Variant))
                     await _policy.PrepareAsync(pending.UserId, pending.Input, ct).ConfigureAwait(false);
             }
-            // The caller's own recheck first: a recipe whose settings changed during the reads above starts over under the
-            // current ones (so a kill flipped meanwhile is recorded the way it would have been had it been on already).
-            if (recheck?.Invoke() is { } changed) return RequestOutcome.Refused(changed, 409, "blocked");
-            // Automatic work under the engine: a kill switch on now (checked after the reads above, against the target the
-            // request would go to) records nothing, so killed work never piles up to go out when the switch is released.
+            // Automatic work under the engine: a kill switch on now (against the target the request would go to) records
+            // nothing, so killed work never piles up to go out when the switch is released. Evaluated first: it can read
+            // and call out, and the caller's own recheck below is then the last thing before the ledger write (a recipe
+            // whose settings changed during the reads above, the kills included, starts over under the current ones).
             var config = _policy.Configuration;
-            if (origin?.Automatic == true && AutomationFlags.Engine(config) && AutomationSendGuard.Killed(config, origin.Recipe, AutomationSendGuard.Target(_policy.Evaluate(user, input))))
-                return RequestOutcome.Refused(AutomationHolds.Killed, 409, "blocked");
+            var killed = origin?.Automatic == true && AutomationFlags.Engine(config)
+                && AutomationSendGuard.Killed(config, origin.Recipe, AutomationSendGuard.Target(_policy.Evaluate(user, input)));
+            if (recheck?.Invoke() is { } changed) return RequestOutcome.Refused(changed, 409, "blocked");
+            if (killed) return RequestOutcome.Refused(AutomationHolds.Killed, 409, "blocked");
             var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin);
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(user), ArrTitleKey.RequestsState });
             if (outcome.Reason == "queued_outage") Signal?.Pulse();

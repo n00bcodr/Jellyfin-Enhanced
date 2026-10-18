@@ -53,6 +53,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="detail">What makes it unique inside the job (the command and its ids).</param>
         SendRefusal? Admit(SendWriteKind kind, string detail);
 
+        /// <summary>
+        /// Asked inside the transport (<see cref="AutomationTransportHandler"/>): the writes admitted and not settled yet,
+        /// checked again against each budget's limits as they are now, each counting its own row once (null: they still fit).
+        /// </summary>
+        SendRefusal? Recheck();
+
+        /// <summary>
+        /// The transport refused the write: what this attempt reserved and hasn't settled is released (not sent). Rows
+        /// counted earlier (a write sent, or replayed from an earlier one) stay counted.
+        /// </summary>
+        void Release();
+
         /// <summary>How the write admitted last for <paramref name="kind"/> and <paramref name="detail"/> ended.</summary>
         /// <param name="kind">The write.</param>
         /// <param name="detail">Its detail as admitted.</param>
@@ -257,7 +269,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private readonly RequestJob _job;
             private readonly string? _recipe;
             private readonly Func<DateTimeOffset> _now;
+            // What this attempt reserved and hasn't settled (it settles them), and every admitted write not settled yet,
+            // replays included (the transport checks those again).
             private readonly Dictionary<string, string> _reserved = new(StringComparer.Ordinal);
+            private readonly Dictionary<string, (string Category, string Scope, string Id)> _active = new(StringComparer.Ordinal);
 
             public JobAdmission(AutomationBudgets budgets, RequestJob job, string? recipe, Func<DateTimeOffset> now) { _budgets = budgets; _job = job; _recipe = recipe; _now = now; }
 
@@ -275,10 +290,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 if (admission.Admitted)
                 {
                     // Only a write that reserved here settles the row: a replayed add (an earlier write of this job) stays as it was.
-                    if (!admission.Replayed && admission.Id != null) _reserved[kind + "|" + detail] = admission.Id;
+                    if (admission.Id != null)
+                    {
+                        _active[kind + "|" + detail] = (category, scope, admission.Id);
+                        if (!admission.Replayed) _reserved[kind + "|" + detail] = admission.Id;
+                    }
                     return null;
                 }
 
+                return Refusal(category, admission);
+            }
+
+            public SendRefusal? Recheck()
+            {
+                foreach (var slot in _active.Values)
+                {
+                    var now = _budgets.Recheck(slot.Category, slot.Scope, slot.Id);
+                    if (!now.Admitted) return Refusal(slot.Category, now);
+                }
+                return null;
+            }
+
+            private SendRefusal Refusal(string category, BudgetAdmission admission)
+            {
                 var wait = admission.RetryAt is { } at ? at - _now() : AutomationHolds.WaitFor(admission.Reason ?? AutomationHolds.AccountingUnavailable);
                 if (wait < TimeSpan.FromSeconds(30)) wait = TimeSpan.FromSeconds(30);
                 return admission.Reason == "budget_exhausted"
@@ -286,8 +320,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     : new SendRefusal(AutomationHolds.AccountingUnavailable, "Automatic sends can't be counted right now (" + admission.Reason + "); nothing was sent.", wait);
             }
 
+            public void Release()
+            {
+                foreach (var id in _reserved.Values) _budgets.Settle(id, BudgetOutcome.NotSent);
+                _reserved.Clear();
+                _active.Clear();
+            }
+
             public void Settled(SendWriteKind kind, string detail, SendWriteResult result)
             {
+                _active.Remove(kind + "|" + detail);
                 if (!_reserved.Remove(kind + "|" + detail, out var id)) return;
                 _budgets.Settle(id, result switch
                 {

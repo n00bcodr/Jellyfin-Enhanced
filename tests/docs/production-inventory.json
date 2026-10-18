@@ -483,6 +483,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationTransportHandler.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationWriteGate.cs",
       "category": "Services"
     },
@@ -9809,7 +9813,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 544,
+    "files": 545,
     "routes": 255,
     "configuration_properties": 595,
     "storage_references": 83,
