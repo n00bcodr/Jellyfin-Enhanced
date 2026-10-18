@@ -379,7 +379,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var library = memo == null
                     ? _host.GetEpisodes(seriesId, season, primary)
                     : Memoized(memo.Episodes, (seriesId, season, primary?.Id), () => _host.GetEpisodes(seriesId, season, primary));
-                foreach (var episode in library.OrderBy(e => e.Season).ThenBy(e => e.Episode))
+                // Prefer existing qualifying copies before ownCovered discards duplicate coordinates in this series.
+                foreach (var episode in library.OrderBy(e => present?.Contains(e.Id) == true ? 0 : 1).ThenBy(e => e.Season).ThenBy(e => e.Episode))
                 {
                     var coords = PlaceholderProgress.CoordsInScope(scope, episode.Season, episode.Episode, episode.EpisodeEnd)
                         .Where(c => !ownCovered.Contains(c))
