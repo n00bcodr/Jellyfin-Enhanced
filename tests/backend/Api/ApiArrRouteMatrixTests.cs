@@ -158,6 +158,7 @@ public class ApiArrRouteMatrixTests
                 new JeBackupController(Backup, users, logger),
                 new ArrAddController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.ArrAddService(N.Store, N.Arr.Factory, new ServicesForRequests(N).Service, () => N.Config)),
                 Stamps(),
+                Ready(),
                 new ArrAdminAutomationController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationStatusService(
                     new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationStore(N.Db),
                     new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationBudgets(N.Db, () => N.Config, () => N.Arr.Now),
@@ -180,6 +181,16 @@ public class ApiArrRouteMatrixTests
             var resolver = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.AcquisitionStampResolver(library,
                 new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.AcquisitionStampStore(N.Db, () => N.Arr.Now), () => N.Config, () => N.Arr.Now);
             return new AcquisitionStampsController(resolver, library, N.View, new NoBadgePreferences()) { Config = () => N.Config };
+        }
+
+        /// <summary>The Ready settings (phase 4f) over the rig's database, Jellyfin's playlists in memory and no interests.</summary>
+        private AcquireReadyController Ready()
+        {
+            var store = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready.ReadyPlaylistStore(N.Db);
+            var editions = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.EditionAvailability(N.View, () => N.Config, (k, v) => N.View.Copies(k, v));
+            var service = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready.ReadyPlaylistService(store, new FakeReadyPlaylistHost(), new FakeReadyInterests(),
+                new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready.ReadyCopySelector(editions, new FakeReadyLibrary(), null), new FakeReadyPrivacy(), N.View, () => N.Config, () => N.Arr.Now, "server-a", null);
+            return new AcquireReadyController(service, store, N.NotifyStore, N.View) { Config = () => N.Config, Now = () => N.Arr.Now };
         }
 
         private sealed class NoBadgePreferences : Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.IAcquisitionBadgePreferences

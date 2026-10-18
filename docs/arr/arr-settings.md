@@ -836,6 +836,20 @@ Per person (Jellyfin Enhanced panel, *Home rows*, shown while home rows are on):
 and *Just arrived for you* each follow the household (default) or are hidden; administrators also choose whether to see
 the strip.
 
+#### Ready playlist and TV messages (phase 4)
+
+Both off by default, and off for each person until they turn them on. See
+[Ready playlist and TV messages](arr-features.md#ready-playlist-and-tv-messages-phase-4).
+
+| Setting | Default | What it does |
+|---|---|---|
+| Ready playlist (`ArrPhase4ReadyPlaylistEnabled`) | off | Each person who turns it on gets a private *Ready to watch* playlist. Needs phase 4 and *Ask for it* (not notifications). Off: no playlist is changed; existing ones stay as they are. |
+| Days a title stays in a Ready playlist (`ArrReadyRetentionDays`) | 30 | 1–90. A title also leaves as soon as the person watches it. |
+| Ready messages on TVs and apps (`ArrPhase4ReadyMessagesEnabled`) | off | A short on-screen message on one idle app signed in as the person. Needs phase 4 and notifications. Off: none is sent, and pending ones are dropped. |
+
+Per person (Jellyfin Enhanced panel, *Ready to watch*): *Keep a private "Ready to watch" playlist* (with *Remove the
+playlist*) and *Show a message on my TV or app when something is ready*, both off until the person turns them on.
+
 #### Household tab
 
 Admins can edit the preset, default role, quota limit, per-role limits, and each person's role and limit from the Household tab of the Requests page instead of the JSON fields.
