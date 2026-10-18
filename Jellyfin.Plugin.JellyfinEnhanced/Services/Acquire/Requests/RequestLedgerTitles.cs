@@ -241,7 +241,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // A request has work that may have gone out and isn't settled: being sent, waiting for a read-back, or written with its
         // certainty unknown (held after the write included).
         private static bool InFlight(SqliteConnection c, SqliteTransaction? t, string wantId)
-            => Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND (state IN ('sending','maybe_sent') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$w", wantId)) != null;
+            => Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND (state IN ('sending','maybe_sent') OR (state NOT IN ('cancelled','succeeded') AND json_extract(outcome,'$.certainty')='Unknown')) LIMIT 1", ("$w", wantId)) != null;
 
         /// <summary>
         /// Finishes the merges that met work in flight (review round 5, 4b-B13): for each noted title whose requests' work has

@@ -219,7 +219,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static bool Active(RequestWant w) => w.Status is "pending" or "queued" or "sent" or "stale";
         private static bool Deleted(SqliteConnection c, SqliteTransaction t, Guid user)
             => Scalar(c, t, "SELECT user_hash FROM request_deleted_users WHERE user_hash=$u", ("$u", MutationInput.Hash("deleted:" + Id(user)))) != null;
-        private const string LiveJobs = "(state IN ('queued','retry','sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown')";
+        private const string LiveJobs = "(state IN ('queued','retry','sending','maybe_sent','succeeded') OR (state!='cancelled' AND json_extract(outcome,'$.certainty')='Unknown'))";
         private const string KnownUnsent = "COALESCE(json_extract(outcome,'$.certainty'),'Rejected') NOT IN ('Unknown','Succeeded')";
         private static bool Anonymous(SqliteConnection c, SqliteTransaction t, Guid user)
             => Scalar(c, t, "SELECT user_hash FROM request_deleted_users WHERE lower(substr(user_hash,1,32))=$u", ("$u", Id(user))) != null;
@@ -1141,13 +1141,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var work in Jobs(c, t, "want_id=$w AND id<>$j", ("$w", other.Id), ("$j", job.Id)).Where(j => RequestDestination.Serves(job.Input, target, j.Input, TargetKey(j.Authorization))))
                 {
                     if (work.State == "succeeded") sent.Add(work.Input);
-                    else if (work.State is "sending" or "maybe_sent" || work.Uncertain) going.Add(work.Input);
+                    else if (work.State is "sending" or "maybe_sent" || work.Uncertain && work.State != "cancelled") going.Add(work.Input);
                 }
                 if (LinkedScope(c, t, other) is { } linked && RequestDestination.Serves(job.Input, target, linked, other.TargetKey)) sent.Add(linked);
             }
             if (job.Input.Extra(sent) != null)
             {
                 if (job.Input.Extra(sent.Concat(going)) != null) return null;
+                if (job.State == "retry" && job.Uncertain && LeadsRetryCycle(c, t, job, title)) return null;
                 // Covered only with work in flight: it waits for that to settle (a merge noted it, and SettleMerges finishes it).
                 return Exec(c, t, "UPDATE jobs SET next_attempt=$next WHERE id=$j AND state=$s", ("$next", Ms(now + InFlightWait)), ("$j", job.Id), ("$s", job.State)) == 1 ? DispatchClaim.Waits : DispatchClaim.Lost;
             }
@@ -1171,6 +1172,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Record(c, t, want.Id, job.Id, null, "merged", "accepted", "looking", want.Input.Key, now);
             return DispatchClaim.Served;
         }
+        // Only resumable uncertain retries can break a wait-for cycle. Ordinary unsent jobs, active sends and
+        // read-backs cannot lead one: unsent duplicates still wait, sends finish, and read-backs are always claimed.
+        private static bool LeadsRetryCycle(SqliteConnection c, SqliteTransaction t, RequestJob job, IReadOnlyList<RequestWant> title)
+        {
+            var work = title.SelectMany(w => Jobs(c, t, "want_id=$w", ("$w", w.Id))).ToList();
+            var edges = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (var candidate in work.Where(j => j.State == "retry" && j.Uncertain))
+            {
+                var target = TargetKey(candidate.Authorization);
+                var others = work.Where(j => j.Id != candidate.Id && RequestDestination.Serves(candidate.Input, target, j.Input, TargetKey(j.Authorization))).ToList();
+                var sent = others.Where(j => j.State == "succeeded").Select(j => j.Input).ToList();
+                sent.AddRange(title.Select(w => (Want: w, Input: LinkedScope(c, t, w)))
+                    .Where(x => x.Input != null && RequestDestination.Serves(candidate.Input, target, x.Input, x.Want.TargetKey)).Select(x => x.Input!));
+                var going = others.Where(j => j.State is "sending" or "maybe_sent" || j.Uncertain && j.State != "cancelled").ToList();
+                if (candidate.Input.Extra(sent) != null && candidate.Input.Extra(sent.Concat(going.Select(j => j.Input))) == null)
+                    edges[candidate.Id] = going.Select(j => j.Id).ToList();
+            }
+            HashSet<string> Reach(string start, bool backwards)
+            {
+                var seen = new HashSet<string>(StringComparer.Ordinal) { start };
+                var pending = new Stack<string>();
+                pending.Push(start);
+                while (pending.Count > 0)
+                {
+                    var at = pending.Pop();
+                    var next = backwards ? edges.Where(e => e.Value.Contains(at)).Select(e => e.Key)
+                        : edges.TryGetValue(at, out var following) ? following : Enumerable.Empty<string>();
+                    foreach (var id in next) if (seen.Add(id)) pending.Push(id);
+                }
+                return seen;
+            }
+            // Intersection of forward and reverse reachability is this job's strongly connected component.
+            var cycle = Reach(job.Id, false);
+            cycle.IntersectWith(Reach(job.Id, true));
+            if (cycle.Count < 2) return false;
+            // Persistent charge order survives equal timestamps and recovery; the job id resolves a remaining tie.
+            long Charge(RequestJob j)
+            {
+                var value = Scalar(c, t, "SELECT MIN(charge_seq) FROM reservations WHERE want_id=$w AND (job_id=$j OR scope='initial') AND charge_seq>0", ("$w", j.WantId), ("$j", j.Id));
+                return long.TryParse(value, out var sequence) ? sequence : long.MaxValue;
+            }
+            return work.Where(j => cycle.Contains(j.Id)).OrderBy(Charge).ThenBy(j => j.Id, StringComparer.Ordinal).First().Id == job.Id;
+        }
+
         /// <summary>Commits a job outcome, its intent state, audit, event and notification together.</summary>
         public bool Complete(RequestJob job, long generation, RequestBackendResult result, DateTimeOffset now)
         {

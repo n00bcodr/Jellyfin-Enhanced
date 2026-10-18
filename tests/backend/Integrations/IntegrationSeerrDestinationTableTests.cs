@@ -598,6 +598,7 @@ public class IntegrationSeerrDestinationTableTests
         ["RequestLedger.WithdrawFollowers"] = (new[] { "Extra", "Extra" }, "a cancel's followers withdrawn"),
         ["RequestLedger.FollowFutureSeason"] = (new[] { "SameTarget" }, "a new season followed on the request's own Seerr"),
         ["RequestLedger.Complete"] = (new[] { "Extra", "Extra", "Extra", "Extra", "SameTarget" }, "shared dispatch: who a send serves"),
+        ["RequestLedger.LeadsRetryCycle"] = (new[] { "Extra", "Extra", "Serves", "Serves" }, "retry wait cycles include only work at the same title, edition and destination"),
         ["RequestLedger.Redundancy"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Serves", "Serves" }, "the send-time check: what went out (or is going out) for the title is never sent again"),
         ["RequestLedger.PurgeUser"] = (new[] { "Extra", "SameTarget" }, "a deleted person's requests kept while others follow them"),
         ["RequestLedger.ImportSeerr"] = (new[] { "Extra", "SameTarget", "SameTarget" }, "the Seerr import's dedup"),

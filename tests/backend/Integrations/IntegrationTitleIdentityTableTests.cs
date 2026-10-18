@@ -569,6 +569,82 @@ public class IntegrationTitleIdentityTableTests
         Assert.Equal(settled, Settled(rig, older, newer));
     }
 
+    /// <summary>Two partial Seerr writes must progress after merging, including after reopening and Recover.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MutuallyCoveringResumableJobsProgressAndRefundExactlyOnceAfterRecovery(bool reverse)
+    {
+        using var rig = new Rig();
+        rig.WithoutIdentity();
+        var older = (await rig.Ask(rig.Admin, Input(SeriesTmdb, 1, 2, 3))).RequestId!;
+        var newer = (await rig.Ask(rig.Admin2, Input(SeriesTvdb, 1, 2, 3))).RequestId!;
+        var requests = new JsonArray();
+        rig.Fake.Shows[Tmdb]["mediaInfo"] = new JsonObject { ["requests"] = requests };
+        // Both people have partially written upstream. Read-back through the production Seerr backend returns Resume.
+        foreach (var id in new[] { older, newer })
+        {
+            var job = Assert.Single(rig.Ledger.ForWant(id));
+            Assert.Equal(RequestLedger.DispatchClaim.Claimed, rig.Ledger.ClaimForDispatch(job, rig.Db.Generation, rig.Lab.Now));
+            requests.Add(new JsonObject { ["id"] = requests.Count + 1, ["status"] = 2, ["is4k"] = false,
+                ["requestedBy"] = new JsonObject { ["id"] = job.Authorization.SeerrUser },
+                ["seasons"] = new JsonArray(new JsonObject { ["seasonNumber"] = 1, ["status"] = 2 }) });
+            var resume = await rig.Seerr.ReadBackAsync(job, default);
+            Assert.True(resume.Resumes);
+            Assert.True(rig.Ledger.Complete(job, rig.Db.Generation, resume, rig.Lab.Now));
+        }
+        await rig.Series(true);
+        Assert.Equal(1, rig.Identity().Reconcile());
+        var ids = reverse ? new[] { newer, older } : new[] { older, newer };
+        // Several due passes: hold the winning job uncertain, so arbitration must be stable and only it proceeds.
+        for (var pass = 0; pass < 3; pass++)
+        {
+            rig.Lab.Now = rig.Lab.Now.AddMinutes(1);
+            foreach (var id in ids)
+            {
+                var job = Assert.Single(rig.Ledger.ForWant(id));
+                var claim = rig.Ledger.ClaimForDispatch(job, rig.Db.Generation, rig.Lab.Now);
+                Assert.Equal(id == older ? RequestLedger.DispatchClaim.Claimed : RequestLedger.DispatchClaim.Waits, claim);
+                if (claim == RequestLedger.DispatchClaim.Claimed)
+                    Assert.True(rig.Ledger.Complete(job, rig.Db.Generation, RequestBackendResult.Resume(id), rig.Lab.Now));
+            }
+        }
+        // Reopen the same persisted DB, as a process restart does. Recover keeps uncertainty and ordering.
+        var path = rig.Db.FilePath;
+        rig.Db.Dispose();
+        using var reopened = new AcquireDatabase(path);
+        var ledger = new RequestLedger(reopened);
+        rig.Lab.Now = rig.Lab.Now.AddMinutes(1);
+        ledger.Recover(rig.Lab.Now);
+        var winner = Assert.Single(ledger.ForWant(older));
+        Assert.Equal(RequestLedger.DispatchClaim.Claimed, ledger.ClaimForDispatch(winner, reopened.Generation, rig.Lab.Now));
+        // The guarded resume settles; the sibling now has confirmed coverage and its charge is refunded once.
+        requests[0]!["seasons"] = new JsonArray(Enumerable.Range(1, 3).Select(n => (JsonNode)new JsonObject { ["seasonNumber"] = n, ["status"] = 2 }).ToArray());
+        var confirmed = await rig.Seerr.ReadBackAsync(winner, default);
+        Assert.True(confirmed.Confirmed);
+        Assert.True(ledger.Complete(winner, reopened.Generation, confirmed, rig.Lab.Now));
+        for (var pass = 0; pass < 3; pass++)
+        {
+            ledger.SettleMerges(rig.Policy, rig.Lab.Now);
+            foreach (var job in ledger.Due(rig.Lab.Now)) ledger.ClaimForDispatch(job, reopened.Generation, rig.Lab.Now);
+            rig.Lab.Now = rig.Lab.Now.AddMinutes(1);
+        }
+        Assert.Equal(("sent", "sent"), (ledger.Find(older)!.Status, ledger.Find(newer)!.Status));
+        Assert.True(ledger.Find(newer)!.Follower);
+        Assert.Equal(0, ledger.Find(newer)!.Cost);
+        reopened.Read(c =>
+        {
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM title_reconcile";
+            Assert.Equal(0L, (long)cmd.ExecuteScalar()!);
+            cmd.CommandText = "SELECT COUNT(*) FROM reservations WHERE state='refunded'";
+            Assert.Equal(1L, (long)cmd.ExecuteScalar()!);
+            cmd.CommandText = "SELECT SUM(cost) FROM reservations WHERE state='charged'";
+            Assert.Equal(3L, (long)cmd.ExecuteScalar()!);
+            return 0;
+        });
+    }
+
     // ------------------------------------------------------------------ one key from the entry on (review round 5, 4b-B14)
 
     /// <summary>How the title's other id is known when it is asked for by its IMDb id.</summary>
