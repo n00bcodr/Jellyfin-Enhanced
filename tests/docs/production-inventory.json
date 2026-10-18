@@ -9318,6 +9318,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
+    {
       "literal": "Jellyfin.Plugin.JellyfinEnhanced.js.locales.{baseLang}.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
     },
@@ -9816,7 +9820,7 @@
     "files": 545,
     "routes": 255,
     "configuration_properties": 595,
-    "storage_references": 83,
+    "storage_references": 84,
     "scheduled_tasks": 14,
     "locales": 33
   }
