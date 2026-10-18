@@ -517,6 +517,105 @@ public class IntegrationJellyfinUserDispatchTests
         Assert.Equal(0, disabled());
     }
 
+    // 4a review round 15 (4a-security-r15-1/-2): every way compiled code hands control to other code is followed, the
+    // implicit ones included. A function pointer (`delegate*`) stored in a field and invoked with calli is tracked like a
+    // stored delegate; an indirect call through a pointer the reading didn't see being made counts as a possible change.
+    // The runtime runs a type's static constructor before the type's first use (a static call, a static field, newobj),
+    // so a use reaches it. Round 14 followed neither: the reviewer's stored-pointer controller and cold-type controller
+    // disabled the person with Key None.
+    private const string IndirectProbes = Usings + """
+
+        public static class PolicyCalls {
+          public static Task Disable(IUserManager users, Guid userId) => users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true });
+          public static Task Quiet(IUserManager users, Guid userId) => Task.CompletedTask;
+        }
+        public sealed unsafe class StoredPointerController : ControllerBase {
+          private readonly IUserManager _users; private readonly delegate* managed<IUserManager, Guid, Task> _apply;
+          public StoredPointerController(IUserManager users) { _users = users; _apply = &PolicyCalls.Disable; }
+          [HttpPost] public Task Disable(Guid userId) => _apply(_users, userId);
+        }
+        public sealed unsafe class LocalPointerController(IUserManager users) : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId) { delegate* managed<IUserManager, Guid, Task> apply = &PolicyCalls.Disable; return apply(users, userId); }
+        }
+        public sealed unsafe class QuietPointerController : ControllerBase {
+          private readonly IUserManager _users; private readonly delegate* managed<IUserManager, Guid, Task> _apply;
+          public QuietPointerController(IUserManager users) { _users = users; _apply = &PolicyCalls.Quiet; }
+          [HttpPost] public Task Note(Guid userId) => _apply(_users, userId);
+        }
+        public static class LazySetup { public static IUserManager? Users; public static Guid Person; }
+        public static class LazyCall {
+          static LazyCall() { LazySetup.Users?.UpdatePolicyAsync(LazySetup.Person, new UserPolicy { IsDisabled = true }); }
+          public static void Touch() { }
+        }
+        public static class LazyField {
+          public static readonly int Value;
+          static LazyField() { LazySetup.Users?.UpdatePolicyAsync(LazySetup.Person, new UserPolicy { IsDisabled = true }); Value = 1; }
+        }
+        public sealed class LazyObject {
+          static LazyObject() { LazySetup.Users?.UpdatePolicyAsync(LazySetup.Person, new UserPolicy { IsDisabled = true }); }
+        }
+        public static class QuietLazy { static QuietLazy() { LazySetup.Person = LazySetup.Person; } public static void Touch() { } }
+        public sealed class ColdCallController : ControllerBase { [HttpPost] public void Disable() => LazyCall.Touch(); }
+        public sealed class ColdFieldController : ControllerBase { [HttpPost] public int Disable() => LazyField.Value; }
+        public sealed class ColdObjectController : ControllerBase { [HttpPost] public object Disable() => new LazyObject(); }
+        public sealed class QuietColdController : ControllerBase { [HttpPost] public void Note() => QuietLazy.Touch(); }
+        """;
+
+    [Theory]
+    [InlineData("StoredPointerController", "Disable")]
+    [InlineData("LocalPointerController", "Disable")]
+    [InlineData("ColdCallController", "Disable")]
+    [InlineData("ColdFieldController", "Disable")]
+    [InlineData("ColdObjectController", "Disable")]
+    public void FunctionPointersAndTypeInitializersAreFollowed(string controller, string action)
+    {
+        using var probe = Probe.Build(("IndirectProbe", IndirectProbes, Array.Empty<string>()));
+        var found = Find(JellyfinUserActions.Scan(probe.Path("IndirectProbe")), controller, action);
+        Assert.NotEqual(JellyfinUserKey.None, found.Key);
+        Assert.Equal("IUserManager.UpdatePolicyAsync", found.Reaches);
+    }
+
+    // The controls: a harmless static constructor stays unbracketed; ANY indirect call (calli) is bracketed, even one whose
+    // pointer happens to be harmless (fail closed: Jellyfin 12.2 and 10.11.11 have none).
+    [Fact]
+    public void AHarmlessTypeInitializerStaysUnbracketedAndAnyIndirectCallIsBracketed()
+    {
+        using var probe = Probe.Build(("IndirectProbe", IndirectProbes, Array.Empty<string>()));
+        var scanned = JellyfinUserActions.Scan(probe.Path("IndirectProbe"));
+        Assert.Equal(JellyfinUserKey.None, Find(scanned, "QuietColdController", "Note").Key);
+        var quietPointer = Find(scanned, "QuietPointerController", "Note");
+        Assert.NotEqual(JellyfinUserKey.None, quietPointer.Key);
+        Assert.Null(quietPointer.Reaches);
+    }
+
+    // Run for real: each one disables the person once (the static constructor on the type's first use); the controls don't.
+    // Whatever really disables the person is bracketed; the harmless indirect call is bracketed too (fail closed).
+    [Theory]
+    [InlineData("StoredPointerController", "Disable", true, 1, true)]
+    [InlineData("LocalPointerController", "Disable", true, 1, true)]
+    [InlineData("QuietPointerController", "Note", true, 0, true)]
+    [InlineData("ColdCallController", "Disable", false, 1, true)]
+    [InlineData("ColdFieldController", "Disable", false, 1, true)]
+    [InlineData("ColdObjectController", "Disable", false, 1, true)]
+    [InlineData("QuietColdController", "Note", false, 0, false)]
+    public async Task TheIndirectProbesReallyDoWhatTheScanSays(string controller, string action, bool takesUsers, int disables, bool bracketed)
+    {
+        using var probe = Probe.Build(("IndirectProbe", IndirectProbes, Array.Empty<string>()));
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var assembly = probe.Load("IndirectProbe");
+        var setup = assembly.GetType("LazySetup")!;
+        setup.GetField("Users")!.SetValue(null, users);
+        setup.GetField("Person")!.SetValue(null, person);
+        var instance = takesUsers ? Activator.CreateInstance(assembly.GetType(controller)!, users)! : Activator.CreateInstance(assembly.GetType(controller)!)!;
+        var method = instance.GetType().GetMethod(action)!;
+        var result = method.Invoke(instance, method.GetParameters().Length == 1 ? new object[] { person } : null);
+        if (result is Task task) await task;
+        Assert.Equal(disables, disabled());
+        var key = Find(JellyfinUserActions.Scan(probe.Path("IndirectProbe")), controller, action).Key;
+        Assert.Equal(bracketed, key != JellyfinUserKey.None);
+    }
+
     // 4a review round 11 (4a-security-r11-2): a callback the code read can't resolve is judged by what it can do, not by
     // its signature. A Func<Task> handed in by DI carries no user type, yet its closure can hold IUserManager and a user id
     // (the reviewer's probe disables that user). Round 10 counted an unresolved delegate only when its type could carry a
@@ -655,7 +754,7 @@ public class IntegrationJellyfinUserDispatchTests
             {
                 var compilation = CSharpCompilation.Create(name, new[] { CSharpSyntaxTree.ParseText(source) },
                     platform.Concat(references.Select(r => MetadataReference.CreateFromFile(probe.Path(r)))),
-                    new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+                    new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable, allowUnsafe: true));
                 using var output = File.Create(probe.Path(name));
                 var emitted = compilation.Emit(output);
                 if (!emitted.Success) throw new Xunit.Sdk.XunitException(name + ":\n" + string.Join("\n", emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)));

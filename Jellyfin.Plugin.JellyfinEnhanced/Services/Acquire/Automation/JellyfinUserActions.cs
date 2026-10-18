@@ -287,6 +287,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 _implementers = null;
                 _derived = null;
                 _explicit.Clear();
+                _moduleInitializers.Clear();
             }
 
             private static bool Writes(JellyfinUserAction action) => action.Verbs.Any(v => v is not ("GET" or "HEAD"));
@@ -423,6 +424,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             // MethodImpl entry maps to it.
             private readonly Dictionary<(string Type, string Method, int Params), List<int>> _explicit = new();
 
+            // Each module's initializer (`<Module>`'s .cctor): the runtime runs it before any of the module's code.
+            private readonly Dictionary<int, int> _moduleInitializers = new();
+
             public static CodeSet Read(string path) => Read(path, null);
 
             // With member: also everything that member's own code reaches (a Mutates member, a reviewed person's change, a
@@ -505,6 +509,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         _nodes.Add(node);
                     }
 
+                    if (info.Name == "<Module>")
+                        foreach (var n in info.Methods)
+                            if (_nodes[n].Method == ".cctor") _moduleInitializers[m] = n;
+
                     // Rounds 12–13: an explicit override. A type's MethodImpl table maps a body to the slot it fills (an
                     // `.override`), whatever the body is called: C# uses it for covariant returns and explicit interface
                     // implementations, other .NET languages for any override under any name. Each entry becomes an edge
@@ -544,6 +552,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private void Body(MetadataReader md, int m, MethodBodyBlock body, int node)
             {
                 var il = body.GetILReader();
+                // Round 15: the module's initializer runs before any of its code (once, at the first use).
+                if (_moduleInitializers.TryGetValue(m, out var initializer) && initializer != node) _nodes[node].Calls.Add(initializer);
                 // Every delegate the body made (a method pointer) or loaded from a delegate field, in order: what a call made
                 // after them can be handed (a prefix of it).
                 var made = new List<Ref>();
@@ -563,6 +573,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             var pointer = value == OpCodes.Ldftn.Value || value == OpCodes.Ldvirtftn.Value;
                             var targets = Targets(md, m, handle, virtualCall);
                             _nodes[node].Calls.AddRange(targets);
+                            // Round 15: the runtime runs a type's static constructor before the type's first use (a
+                            // static call, newobj, a method pointer to it); a use reaches it.
+                            _nodes[node].Calls.AddRange(TypeInitializers(MethodOwner(md, m, handle)).Where(i => i != node));
                             if (pointer)
                             {
                                 made.AddRange(targets.Select(t => new Ref(t, null)));
@@ -590,6 +603,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         case OperandType.InlineField:
                         {
                             var handle = MetadataTokens.EntityHandle(il.ReadInt32());
+                            if (value == OpCodes.Ldsfld.Value || value == OpCodes.Stsfld.Value || value == OpCodes.Ldsflda.Value)
+                                _nodes[node].Calls.AddRange(TypeInitializers(FieldOwner(md, handle)).Where(i => i != node));
                             if (DelegateField(md, handle) is not { } field)
                             {
                                 pushed = Pushed.Other;
@@ -643,6 +658,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             pushed = Pushed.Other;
                             il.Offset += 8;
                             break;
+                        case OperandType.InlineSig:
+                        {
+                            var handle = MetadataTokens.EntityHandle(il.ReadInt32());
+                            // Round 15: an indirect call (calli) always counts as a possible change, judged by its
+                            // signature like an unresolved callback: the pointer can come from anywhere (a temporary, a
+                            // parameter, a return value). The pointers the reading saw being made (ldftn, a tracked
+                            // pointer field) are followed too, so what they reach is still reported. Jellyfin 12.2 and
+                            // 10.11.11 have no calli.
+                            if (value == OpCodes.Calli.Value)
+                            {
+                                var contract = handle.Kind == HandleKind.StandaloneSignature
+                                    && UserContract(MethodTypes(md, md.GetStandaloneSignature((StandaloneSignatureHandle)handle).DecodeMethodSignature(Names.Instance, null)), null);
+                                _nodes[node].Calls.Add(Unresolved("indirect call in " + _nodes[node].Name + " (a pointer the reading didn't see being made)", true, callback: !contract));
+                            }
+
+                            pushed = Pushed.Other;
+                            break;
+                        }
                         case OperandType.InlineSwitch:
                             // The count, then that many branch targets (read the count first: it moves the offset).
                             var count = il.ReadInt32();
@@ -1226,10 +1259,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     code = blob.ReadSignatureTypeCode();
                 }
 
-                if (code == SignatureTypeCode.GenericTypeInstance) code = blob.ReadSignatureTypeCode();
-                if (code is not (SignatureTypeCode.TypeHandle or (SignatureTypeCode)0x12 or (SignatureTypeCode)0x11)) return null;
-                var typeName = ParentName(md, blob.ReadTypeHandle());
-                if (typeName == null || !DelegateType(typeName)) return null;
+                // Round 15: a function pointer (`delegate*`) is stored and invoked (calli) like a delegate.
+                if (code != SignatureTypeCode.FunctionPointer)
+                {
+                    if (code == SignatureTypeCode.GenericTypeInstance) code = blob.ReadSignatureTypeCode();
+                    if (code is not (SignatureTypeCode.TypeHandle or (SignatureTypeCode)0x12 or (SignatureTypeCode)0x11)) return null;
+                    var typeName = ParentName(md, blob.ReadTypeHandle());
+                    if (typeName == null || !DelegateType(typeName)) return null;
+                }
                 var key = owner + "::" + name;
                 if (!_fieldTypes.ContainsKey(key))
                     _fieldTypes[key] = handle.Kind == HandleKind.FieldDefinition
@@ -1292,6 +1329,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     _ => null,
                 };
             }
+
+            // A type's static constructors in the code read (the runtime runs one before the type's first use).
+            private IEnumerable<int> TypeInitializers(string? type)
+            {
+                if (type == null || !_typesByName.TryGetValue(type, out var ids)) yield break;
+                foreach (var t in ids)
+                    foreach (var n in _types[t].Methods)
+                        if (_nodes[n].Method == ".cctor") yield return n;
+            }
+
+            // The type a called method or method pointer belongs to.
+            private string? MethodOwner(MetadataReader md, int m, EntityHandle handle) => handle.Kind switch
+            {
+                HandleKind.MethodSpecification => MethodOwner(md, m, md.GetMethodSpecification((MethodSpecificationHandle)handle).Method),
+                HandleKind.MethodDefinition => _nodeOf.TryGetValue((m, MetadataTokens.GetToken(handle)), out var n) && _nodes[n].Type >= 0 ? _types[_nodes[n].Type].Name : null,
+                HandleKind.MemberReference => ParentName(md, md.GetMemberReference((MemberReferenceHandle)handle).Parent),
+                _ => null,
+            };
+
+            // The type a static field belongs to.
+            private static string? FieldOwner(MetadataReader md, EntityHandle handle) => handle.Kind switch
+            {
+                HandleKind.FieldDefinition => FullName(md, md.GetFieldDefinition((FieldDefinitionHandle)handle).GetDeclaringType()),
+                HandleKind.MemberReference => ParentName(md, md.GetMemberReference((MemberReferenceHandle)handle).Parent),
+                _ => null,
+            };
 
             // The slot a MethodImpl entry names: its declaring type, name and parameter count, as a call to it names them.
             private static (string Type, string Method, int Params)? Declaration(MetadataReader md, EntityHandle declaration)

@@ -1392,10 +1392,13 @@ either is off, the automatic requests above behave exactly as described there. W
 Jellyfin Enhanced finds the actions that can change or sign in a user by reading Jellyfin's code when the server starts
 (the code is read, not run). What that guarantees:
 
-- Every action of Jellyfin's own server code that reaches a user change or a sign-in, by direct calls, interfaces
-  (static interface members included), overrides (sealed, covariant-return and explicit ones, whatever the replacing
-  method is called), stored callbacks or events Jellyfin's own code subscribes to, runs inside the check's bracket. For
-  each supported Jellyfin release (12.2 and 10.11.11) the full list is pinned in the tests, and a test runner checks the
+- Every action of Jellyfin's own server code that reaches a user change or a sign-in runs inside the check's bracket,
+  whichever way the compiled code hands control on: a direct call; a virtual or interface call (static interface members
+  included) to every implementation and override (sealed, covariant-return and explicit ones, whatever the replacing
+  method is called); a delegate or function pointer to what was stored in it, events Jellyfin's own code subscribes to
+  included; and the static constructors and module initializers the runtime runs on a type's or module's first use. An
+  indirect call through a pointer, and a callback the reading can't see into, count as a possible change. For each
+  supported Jellyfin release (12.2 and 10.11.11) the full list is pinned in the tests, and a test runner checks the
   newest Jellyfin image the same way, so a Jellyfin update that adds or changes such an action fails the tests until it
   has been reviewed.
 - The reading errs towards bracketing: a call through an interface or a base class counts every implementation the
