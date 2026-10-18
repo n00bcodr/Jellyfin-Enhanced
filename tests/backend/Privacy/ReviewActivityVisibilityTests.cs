@@ -106,6 +106,31 @@ public class ReviewActivityVisibilityTests
     }
 
     [Theory]
+    [InlineData(false, false, 2)]
+    [InlineData(true, false, 1)]
+    [InlineData(true, true, 2)]
+    public void OwnEntriesOnlyLimitsNonAdminsToTheirOwnActivityAndLeavesAdministratorsTheWholeFeed(bool ownOnly, bool admin, int expected)
+    {
+        using var env = new CoreFixture();
+        var viewer = User(); var other = User(); var mine = Guid.NewGuid(); var theirs = Guid.NewGuid();
+        var library = new Mock<ILibraryManager>(); var users = new Mock<IUserManager>(); var repository = new Mock<IItemRepository>();
+        library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(new List<Guid> { mine, theirs });
+        library.Setup(x => x.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => new Movie { Id = id, Name = "Movie" });
+        repository.Setup(x => x.GetItemIdsList(It.IsAny<InternalItemsQuery>())).Returns(new List<Guid> { mine, theirs });
+        users.Setup(x => x.GetUserById(It.IsAny<Guid>())).Returns((Guid id) => id == viewer.Id ? viewer : id == other.Id ? other : null);
+        var builder = new ActivityFeedBuilder(library.Object, users.Object, repository.Object, env.Logger);
+        var config = new PluginConfiguration { ActivityFeedShowWatched = true, ActivityFeedOwnOnlyForNonAdmins = ownOnly };
+        var entries = new[]
+        {
+            new ActivityEntry { UserId = viewer.Id.ToString("N"), ItemId = mine.ToString("N"), ActivityType = "Watched", OccurredAt = "2025-01-01T00:00:00Z" },
+            new ActivityEntry { UserId = other.Id.ToString("N"), ItemId = theirs.ToString("N"), ActivityType = "Watched", OccurredAt = "2025-01-02T00:00:00Z" },
+        };
+        var rows = builder.Build(entries, [], viewer, admin, config, 10);
+        Assert.Equal(expected, rows.Count);
+        if (expected == 1) Assert.Equal(viewer.Id.ToString("N"), Assert.Single(rows).UserId.Replace("-", string.Empty, StringComparison.Ordinal));
+    }
+
+    [Theory]
     [InlineData("Watched", false)] [InlineData("Watched", true)]
     [InlineData("Favorited", false)] [InlineData("Favorited", true)]
     [InlineData("Reviewed", false)] [InlineData("Reviewed", true)]
