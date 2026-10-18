@@ -129,6 +129,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Requests.IRequestPlaces, Services.Acquire.Requests.RequestPlaces>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestHubProjection>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.HouseholdService>();
+            // Phase 4u: native Dashboard user settings.
+            serviceCollection.AddSingleton<Services.Acquire.Users.AdminUserSettingsService>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestService>();
             // Search again for what requests already sent, once it has been missing for a long while (family Search).
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestSearchService>();

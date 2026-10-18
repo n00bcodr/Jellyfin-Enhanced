@@ -514,3 +514,12 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
 * **`/Helpers/Jellyseerr/SeerrLibraryAccessProjector.cs`**: Keeps Seerr's links to Jellyfin items to what the caller
   can open: hidden copies are unlinked, another copy the caller can open takes their place, and list rows of titles the
   library hides from the caller are left out.
+
+### Native Dashboard user settings
+
+- `Controllers/AcquireAdminUsersController.cs`: D19 human-administrator routes, private responses and partial group edits.
+- `Services/Acquire/Users/AdminUserSettingsService.cs`: adapters over existing request policy, quota projection, pools, personal JSON, notification state, automation grants and list attribution; source revisions and audited writes.
+- `js/arr/adminusers/admin-users-api.js`: independent private reads and narrow PATCH/ntfy transport.
+- `js/arr/adminusers/admin-users.js`: both native Users route families, React-safe sibling mounting, retained drafts and batched card decoration.
+- `tests/backend/Users/AdminUserSettingsTests.cs` and `tests/frontend/features/features-arr-admin-users.test.mjs`: administrator boundaries, inheritance/conflicts/unavailability/consent preservation and native-route lifecycle coverage.
+- `Configuration/UserSettingsDefaults.cs`: one in-memory default mapping shared by first access, first administrator display write and reset, keeping unrelated preferences consistent without recording personal consent.

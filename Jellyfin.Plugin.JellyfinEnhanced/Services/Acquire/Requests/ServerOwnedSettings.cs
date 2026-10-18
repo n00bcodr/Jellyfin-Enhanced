@@ -20,6 +20,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             (nameof(PluginConfiguration.ArrRequestRoles), c => c.ArrRequestRoles ?? string.Empty, (to, from) => to.ArrRequestRoles = from.ArrRequestRoles),
             (nameof(PluginConfiguration.ArrRequestUsers), c => c.ArrRequestUsers ?? string.Empty, (to, from) => to.ArrRequestUsers = from.ArrRequestUsers),
             (nameof(PluginConfiguration.ArrRequestQuotaLimit), c => c.ArrRequestQuotaLimit.ToString(CultureInfo.InvariantCulture), (to, from) => to.ArrRequestQuotaLimit = from.ArrRequestQuotaLimit),
+            // Phase 4u: import exclusions are also edited on Dashboard user pages.
+            (nameof(PluginConfiguration.JellyseerrImportBlockedUsers), c => c.JellyseerrImportBlockedUsers ?? string.Empty, (to, from) => to.JellyseerrImportBlockedUsers = from.JellyseerrImportBlockedUsers),
             // Phase 4b: household rules and group pools are edited on the Household tab.
             (nameof(PluginConfiguration.ArrHouseholdRules), c => c.ArrHouseholdRules ?? string.Empty, (to, from) => to.ArrHouseholdRules = from.ArrHouseholdRules),
             (nameof(PluginConfiguration.ArrHouseholdStreamingCountry), c => c.ArrHouseholdStreamingCountry ?? string.Empty, (to, from) => to.ArrHouseholdStreamingCountry = from.ArrHouseholdStreamingCountry),

@@ -150,7 +150,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private sealed record SettingsRead(string Source, SeerrRequestSettings Settings, DateTimeOffset At);
 
         private sealed record Prepared(string Source, int? SeerrUser, long Permissions, SeerrRequestSettings? Settings,
-            QuotaProjection? Movie, int MovieDays, QuotaProjection? Tv, int TvDays, DateTimeOffset At);
+            QuotaProjection? Movie, int MovieDays, QuotaProjection? Tv, int TvDays, DateTimeOffset At, bool LinkPending = false);
 
         private enum Delivery
         {
@@ -172,7 +172,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // ---------------- identity, permissions, quota ----------------
 
         /// <inheritdoc />
-        public async Task PrepareAsync(Guid user, MutationInput input, CancellationToken ct)
+        public Task PrepareAsync(Guid user, MutationInput input, CancellationToken ct) => PrepareCoreAsync(user, input, ct, true);
+
+        /// <summary>Refreshes administrator status through GETs only, without waking request processing or importing users.</summary>
+        public Task PrepareAdminReadAsync(Guid user, CancellationToken ct) => PrepareCoreAsync(user, new MutationInput { Key = "movie:tmdb:1" }, ct, false);
+
+        private async Task PrepareCoreAsync(Guid user, MutationInput input, CancellationToken ct, bool notifyLinked)
         {
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
@@ -227,10 +232,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
             }
             var before = _prepared.TryGetValue(user, out var held) && held.Source == source ? held : null;
-            _prepared[user] = new Prepared(source, id, permissions, settings, movie, movieDays, tv, tvDays, _now());
+            var linkPending = id != null && (before?.SeerrUser != id || before?.LinkPending == true);
+            _prepared[user] = new Prepared(source, id, permissions, settings, movie, movieDays, tv, tvDays, _now(), !notifyLinked && linkPending);
             // Seerr links an account to the person now (it didn't, or nothing was known since a start): requests that
             // were waiting for one are checked at once.
-            if (id != null && before?.SeerrUser == null) _linked?.Invoke(user);
+            if (notifyLinked && linkPending) _linked?.Invoke(user);
         }
 
         /// <inheritdoc />
