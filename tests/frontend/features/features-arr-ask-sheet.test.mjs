@@ -872,6 +872,22 @@ test('a movie in the library: Get 4K only for 4K holders and only without a 4K c
   assert.equal(page.querySelector('.je-ask-actions'), null, 'a 4K copy is here already');
 });
 
+test('a movie in the library: no Get 4K when a 4K copy the viewer can open is in another library', async t => {
+  // This item is the 1080p copy; the status says a copy elsewhere (Movies 4K) already has a 4K source.
+  const hd = { Id: 'm1', MediaSources: [{ MediaStreams: [{ Type: 'Video', Width: 1920, Height: 1080 }] }] };
+  const h = setup(t, { html: PAGE, hash: '#/details?id=m1', item: () => hd });
+  h.state.me = { ...MEMBER, can4kMovies: true };
+  await h.JE.arrAsk.me(true);
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, { key: 'movie:tmdb:605', itemId: 'm1', kind: 'movie', stage: 'ready', reason: { code: 'ready' }, quiet: true, fourK: true }, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-actions'), null, 'a 4K copy is elsewhere already');
+  // Without it, Get 4K is offered as before.
+  h.JE.internals.arrAskActions.attachDetails(page, { key: 'movie:tmdb:606', itemId: 'm1', kind: 'movie', stage: 'ready', reason: { code: 'ready' }, quiet: true }, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-action')?.textContent, '4kGet 4K');
+});
+
 // ------------------------------------------------------------------ Search (missing for a long while)
 
 const ADMIN = { ...MEMBER, role: 'admin', canApprove: true };

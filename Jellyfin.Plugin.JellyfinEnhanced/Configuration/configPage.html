@@ -2638,6 +2638,7 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="arrRequest4kMoviesEnabled" is="emby-checkbox" type="checkbox"/><span>Allow 4K movie requests</span></label></div>
                             <div class="checkboxContainer"><label><input id="arrRequest4kSeriesEnabled" is="emby-checkbox" type="checkbox"/><span>Allow 4K series requests</span></label></div>
+                            <div class="checkboxContainer"><label><input id="arrStandardNeedsNonFourK" is="emby-checkbox" type="checkbox"/><span>Standard requests need a non-4K copy</span></label><div class="fieldDescription">Off (default): a standard request has arrived once any copy plays, a 4K one included. On: it waits for a copy that isn't 4K. A 4K request always waits for a 4K copy, wherever it is and whichever Sonarr or Radarr brought it.</div></div>
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestPreset">House rules</label><select id="arrRequestPreset" is="emby-select"><option value="ask_first">Ask first</option><option value="open_house">Open house</option><option value="approve_everything">Approve everything</option></select></div>
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestDefaultRole">Default role for new users</label><select id="arrRequestDefaultRole" is="emby-select"><option value="Watcher">Watcher (status only)</option><option value="Kid">Kid (always approval)</option><option value="Member">Member</option><option value="Manager">Manager</option></select></div>
                             <div class="inputContainer"><label class="inputLabel" for="arrRequestRoles">Per-role quota and 4K defaults (JSON)</label><textarea id="arrRequestRoles" is="emby-textarea"></textarea></div>
@@ -6262,6 +6263,7 @@
             document.querySelector('#arrRequestBackend').value = config.ArrRequestBackend;
             document.querySelector('#arrRequest4kMoviesEnabled').checked = config.ArrRequest4kMoviesEnabled === true;
             document.querySelector('#arrRequest4kSeriesEnabled').checked = config.ArrRequest4kSeriesEnabled === true;
+            document.querySelector('#arrStandardNeedsNonFourK').checked = config.ArrStandardNeedsNonFourK === true;
             document.querySelector('#arrRequestPreset').value = config.ArrRequestPreset;
             document.querySelector('#arrRequestDefaultRole').value = config.ArrRequestDefaultRole;
             document.querySelector('#arrRequestRoles').value = config.ArrRequestRoles;
@@ -6343,6 +6345,7 @@
             config.ArrRequestBackend = jeArrServerOwned(config, '#arrRequestBackend', 'ArrRequestBackend');
             config.ArrRequest4kMoviesEnabled = document.querySelector('#arrRequest4kMoviesEnabled').checked;
             config.ArrRequest4kSeriesEnabled = document.querySelector('#arrRequest4kSeriesEnabled').checked;
+            config.ArrStandardNeedsNonFourK = document.querySelector('#arrStandardNeedsNonFourK').checked;
             config.ArrRequestPreset = jeArrServerOwned(config, '#arrRequestPreset', 'ArrRequestPreset');
             config.ArrRequestDefaultRole = jeArrServerOwned(config, '#arrRequestDefaultRole', 'ArrRequestDefaultRole');
             config.ArrRequestRoles = jeArrServerOwned(config, '#arrRequestRoles', 'ArrRequestRoles');
@@ -10224,7 +10227,7 @@
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
             { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrRequestsHubEnabled', 'arrManageDrawerEnabled', 'arrSeerrModalStatus', 'arrSeerrRefreshMinutes', 'arrWebhookJellyfinUrl', 'arrPhase2Enabled', 'arrPhase3Enabled'] },
-            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrSeerrMigrationBtn', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch'] },
+            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrSeerrMigrationBtn', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrStandardNeedsNonFourK', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },

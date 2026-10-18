@@ -828,6 +828,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Allow 4K series requests in phase 3, subject to target and user capabilities.</summary>
         public bool ArrRequest4kSeriesEnabled { get; set; }
 
+        /// <summary>
+        /// A standard (non-4K) request counts as arrived only with a playable copy that isn't 4K. Off (default): any
+        /// playable copy satisfies it, a 4K one included. A 4K request always needs a 4K copy.
+        /// </summary>
+        public bool ArrStandardNeedsNonFourK { get; set; }
+
         /// <summary>Household preset: ask_first, open_house, or approve_everything.</summary>
         public string ArrRequestPreset { get; set; } = "ask_first";
 

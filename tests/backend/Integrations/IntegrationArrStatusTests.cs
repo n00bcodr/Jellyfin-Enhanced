@@ -603,13 +603,14 @@ public class IntegrationArrStatusTests
         var hd = new JfCopy { ItemId = Guid.NewGuid(), Visible = true, Path = "/media/movies/Dune Part Two (2024)/Dune.mkv", DateCreated = Now.AddDays(-2) };
         var facts = MovieFacts(Copy(Movie(hasFile: true, path: "/movies4k/Dune Part Two (2024)"), Radarr4k));
         var placeholder = new TitleStatus { Key = MovieKey.ToString(), Kind = "movie" };
-        var (status, arrived, shown) = StatusComposer.Requested4k(facts, placeholder, new[] { hd }, Ctx());
+        // The caller hands over the copies holding a 4K source (EditionAvailability): none, the HD copy isn't one.
+        var (status, arrived, shown) = StatusComposer.Requested4k(facts, placeholder, Array.Empty<JfCopy>(), Ctx());
         Assert.NotEqual(StatusStage.Ready, status.Stage);
         Assert.Null(arrived);
         Assert.Null(shown);
-        // Seerr's own 4K item, when the viewer can open it, is the 4K copy.
+        // A copy with a 4K source the viewer can open (wherever it is, whichever arr brought it) is the 4K copy.
         var uhd = new JfCopy { ItemId = Guid.NewGuid(), Visible = true, Path = "/srv/uhd/Dune.mkv", DateCreated = Now.AddDays(-1) };
-        var (seerr, seerrArrived, seerrShown) = StatusComposer.Requested4k(facts, placeholder, new[] { hd, uhd }, Ctx(), uhd);
+        var (seerr, seerrArrived, seerrShown) = StatusComposer.Requested4k(facts, placeholder, new[] { uhd }, Ctx());
         Assert.Equal((StatusStage.Ready, uhd.ItemId), (seerr.Stage, seerrShown!.ItemId));
         Assert.Equal(uhd.DateCreated, seerrArrived);
         // The whole title still counts the HD copy (it is there).
@@ -794,10 +795,14 @@ public class IntegrationArrStatusTests
         var hd = new JfCopy { ItemId = Guid.NewGuid(), Visible = true, Path = "/movies/Dune Part Two (2024)/Dune.mkv", DateCreated = Now.AddDays(-2) };
         var facts = MovieFacts(Copy(Movie(hasFile: true, path: "/movies/Dune Part Two (2024)")), Copy(Movie(path: "/movies/Dune Part Two (2024)"), Radarr4k));
         var placeholder = new TitleStatus { Key = MovieKey.ToString(), Kind = "movie" };
-        var (status, arrived, shown) = StatusComposer.Requested4k(facts, placeholder, new[] { hd }, Ctx());
+        // The HD copy holds no 4K source, so it is never handed over as a 4K copy (EditionAvailability decides).
+        Assert.False(EditionAvailability.IsFourK(1920, 1080));
+        var (status, arrived, shown) = StatusComposer.Requested4k(facts, placeholder, Array.Empty<JfCopy>(), Ctx());
         Assert.NotEqual(StatusStage.Ready, status.Stage);
         Assert.Null(arrived);
         Assert.Null(shown);
+        // The whole title still counts the HD copy (it is there).
+        Assert.Equal(StatusStage.Ready, StatusComposer.Movie(facts, null, new[] { hd }, Ctx(), false).Stage);
     }
 
     [Fact]

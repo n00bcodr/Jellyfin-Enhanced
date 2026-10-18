@@ -443,6 +443,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/EditionAvailability.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/EpisodeRange.cs",
       "category": "Services"
     },
@@ -6013,6 +6017,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrStandardNeedsNonFourK",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrRequestPreset",
       "type": "string",
       "initializer": "\"ask_first\"",
@@ -9725,9 +9737,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 533,
+    "files": 534,
     "routes": 258,
-    "configuration_properties": 585,
+    "configuration_properties": 586,
     "storage_references": 86,
     "scheduled_tasks": 14,
     "locales": 33

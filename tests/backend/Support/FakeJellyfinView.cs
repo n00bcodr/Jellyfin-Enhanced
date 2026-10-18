@@ -143,7 +143,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
             foreach (var c in list)
             {
                 if (!seen.Add(c.Copy.ItemId)) continue;
-                result.Add(new JfCopy { ItemId = c.Copy.ItemId, LibraryId = c.Copy.LibraryId, LibraryName = c.Copy.LibraryName, Path = c.Copy.Path, DateCreated = c.Copy.DateCreated, Visible = c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId) });
+                result.Add(new JfCopy { ItemId = c.Copy.ItemId, LibraryId = c.Copy.LibraryId, LibraryName = c.Copy.LibraryName, Path = c.Copy.Path, DateCreated = c.Copy.DateCreated, Visible = viewer.IsLibraryContext || c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId) });
             }
         }
         return result;
@@ -200,6 +200,99 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
             ? seasons.Where(s => s.Season.ItemId != Guid.Empty && s.Season.Season == season).Select(s => s.Season.ItemId).ToList()
             : new List<Guid>();
     }
+
+    // ------------------------------------------------------------------ media sources (versions)
+
+    /// <summary>
+    /// The media sources of movie and episode items, the way Jellyfin's GetMediaSources lists them: one per version
+    /// (file), each with its own id and video dimensions. An item with a file but no registered source has one
+    /// source whose dimensions Jellyfin hasn't read (the fake's default, so older tests keep a playable copy).
+    /// </summary>
+    public Dictionary<Guid, List<JfSource>> SourcesByItem { get; } = new();
+
+    /// <summary>
+    /// True when this build's Jellyfin keeps an episode's second file as a version of the first episode item (12.x:
+    /// supportMultiEditions); false on 10.11, which lists it as a second episode item of the same number.
+    /// </summary>
+#if JF12
+    public static bool EpisodeVersionsOnOneItem => true;
+#else
+    public static bool EpisodeVersionsOnOneItem => false;
+#endif
+
+    /// <summary>Adds a version (one file) to a movie or episode item: its own source id, dimensions and path.</summary>
+    public JfSource AddSource(Guid itemId, int? width, int? height, string? path = null, DateTime? created = null)
+    {
+        if (!SourcesByItem.TryGetValue(itemId, out var list)) SourcesByItem[itemId] = list = new();
+        // The first file is the item's own; another is a version with its own item (Jellyfin's alternate version).
+        var id = list.Count == 0 ? itemId : Guid.NewGuid();
+        var source = new JfSource { SourceId = id, ItemId = itemId, BackingItemId = id, Width = width, Height = height, Path = path, DateCreated = created };
+        list.Add(source);
+        Rev++;
+        return source;
+    }
+
+    /// <summary>
+    /// A file of one episode imported into exactly one series item's folder, as Jellyfin adds it: the first file
+    /// is a new episode item; another file of the same number in the same series item is a version of that item on
+    /// 12.x and a second episode item on 10.11. Returns the episode item the file is listed under.
+    /// </summary>
+    public Guid AddEpisodeFile(Guid seriesId, TitleKey seriesKey, int season, int episode, int? width, int? height, DateTime? created = null, int? episodeEnd = null)
+    {
+        var path = $"/media/{seriesId:N}/S{season:00}E{episode:00} {width}x{height}.mkv";
+        if (EpisodeVersionsOnOneItem && EpisodesBySeries.TryGetValue(seriesId, out var existing)
+            && existing.FirstOrDefault(e => !e.Episode.Virtual && e.Episode.ItemId != Guid.Empty && e.Episode.Season == season && e.Episode.Episode == episode) is { Episode: { } primary })
+        {
+            AddSource(primary.ItemId, width, height, path, created);
+            return primary.ItemId;
+        }
+        var id = Guid.NewGuid();
+        AddItem(new JfItemRef { ItemId = id, Kind = "episode", Key = seriesKey.WithEpisode(season, episode), SeriesId = seriesId, Season = season, Episode = episode, EpisodeEnd = episodeEnd, Path = path, DateCreated = created });
+        AddEpisode(seriesId, new JfEpisode { ItemId = id, Season = season, Episode = episode, EpisodeEnd = episodeEnd, DateCreated = created });
+        AddSource(id, width, height, path, created);
+        return id;
+    }
+
+    /// <summary>The item's sources: the registered ones, else one unread source for an item with a file.</summary>
+    private IReadOnlyList<JfSource> SourcesOf(Guid itemId, DateTime? created)
+        => SourcesByItem.TryGetValue(itemId, out var list) ? list : new[] { new JfSource { SourceId = itemId, ItemId = itemId, BackingItemId = itemId, DateCreated = created } };
+
+    /// <summary>Like Jellyfin: the sources of a movie or episode with a file the viewer can open.</summary>
+    public IReadOnlyList<JfSource> Sources(Guid itemId, StatusViewer viewer)
+    {
+        bool Sees(HashSet<Guid>? to) => viewer.IsLibraryContext || to == null || to.Contains(viewer.UserId);
+        if (Items.TryGetValue(itemId, out var item))
+        {
+            if (!Sees(item.VisibleTo) || item.Ref.Virtual || item.Ref.Kind is not ("movie" or "episode")) return Array.Empty<JfSource>();
+            if (item.Ref.SeriesId is Guid series && !viewer.IsLibraryContext && !SeesSeries(series, viewer)) return Array.Empty<JfSource>();
+            return SourcesOf(itemId, item.Ref.DateCreated);
+        }
+        foreach (var list in CopiesByKey.Values)
+        {
+            foreach (var (copy, to) in list)
+            {
+                if (copy.ItemId == itemId && Sees(to)) return SourcesOf(itemId, copy.DateCreated);
+            }
+        }
+        return Array.Empty<JfSource>();
+    }
+
+    /// <summary>Like Jellyfin's ancestry query: exactly this series item's episodes with a file the viewer can open, with their sources.</summary>
+    public IReadOnlyList<JfEpisodeSources> EpisodeSources(Guid seriesItemId, int? season, StatusViewer viewer, bool readDimensions = true)
+    {
+        bool Sees(HashSet<Guid>? to) => viewer.IsLibraryContext || to == null || to.Contains(viewer.UserId);
+        if ((!viewer.IsLibraryContext && !SeesSeries(seriesItemId, viewer)) || !EpisodesBySeries.TryGetValue(seriesItemId, out var list)) return Array.Empty<JfEpisodeSources>();
+        return list.Where(e => !e.Episode.Virtual && !e.Episode.Hidden && e.Episode.ItemId != Guid.Empty && (season == null || e.Episode.Season == season)
+                && Sees(e.VisibleTo) && (!Items.TryGetValue(e.Episode.ItemId, out var item) || Sees(item.VisibleTo)))
+            .Select(e => new JfEpisodeSources { ItemId = e.Episode.ItemId, Season = e.Episode.Season, Episode = e.Episode.Episode, EpisodeEnd = e.Episode.EpisodeEnd, Sources = SourcesOf(e.Episode.ItemId, e.Episode.DateCreated) })
+            .ToList();
+    }
+
+    /// <summary>Like Jellyfin's presentation key: the other series items grouped with this one that the viewer can open.</summary>
+    public IReadOnlyList<Guid> GroupedSeries(Guid seriesItemId, StatusViewer viewer)
+        => PresentationGroups.FirstOrDefault(g => g.Contains(seriesItemId)) is { } group
+            ? group.Where(id => id != seriesItemId && SeesSeries(id, viewer)).ToList()
+            : new List<Guid>();
 
     /// <summary>Movie or episode items and the ids of items whose files Jellyfin now keeps as their versions.</summary>
     public Dictionary<Guid, HashSet<Guid>> FormerItemsOf { get; } = new();

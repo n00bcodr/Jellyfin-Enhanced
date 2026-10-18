@@ -619,6 +619,7 @@ The advanced fields are server-owned. Quota and preset settings govern JE mode; 
 | Setting | Default | What it does |
 |---|---|---|
 | `ArrRequest4kMoviesEnabled` / `ArrRequest4kSeriesEnabled` | false | Phase-3 edition switches; work with Seerr disabled in JE mode |
+| `ArrStandardNeedsNonFourK` | false | *Standard requests need a non-4K copy*: a standard request (Requests page, arrival) waits for a playable copy that isn't 4K; off, any playable copy satisfies it. A 4K request always needs a playable 4K version (3200 px wide or 2000 px tall) in a copy the requester can open |
 | `ArrRequestQuotaLimit` | 0 | Preset limit: 7 for Ask first, 15 for Open house; negative means unlimited |
 | `ArrRequestQuotaWindowDays` | 7 | Rolling window, bounded to 1–365 days |
 | `ArrRequestSeriesThreshold` | 4 | Cumulative seasons before a Member needs approval |

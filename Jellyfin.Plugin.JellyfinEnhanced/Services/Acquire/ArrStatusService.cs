@@ -67,7 +67,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _feed = feed;
             _libraries = libraries ?? new ArrInstanceLibraries(store, () => Array.Empty<JfLibraryRoot>(), _now);
             _aliases = new TitleAliases(store, requests as SeerrRequestReadModel);
+            Editions = new EditionAvailability(view, _config, CopiesOf);
         }
+
+        /// <summary>
+        /// Edition availability over this service's Jellyfin view and title aliases: the one source-level answer to
+        /// "does the viewer have edition E of this scope" (see <see cref="EditionAvailability"/>).
+        /// </summary>
+        public EditionAvailability Editions { get; }
 
         /// <summary>The per-user body cache.</summary>
         public ArrStatusCache Cache { get; } = new();
@@ -206,23 +213,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             ApplyRequests(gather, viewer);
             var c = Context(viewer);
             var facts = gather.Facts[title];
-            // Admins see every Sonarr holding a series; its Jellyfin copies tell which are in the library.
-            var seriesCopies = viewer.IsAdmin && item.Kind != "movie" && facts.Copies.Count(x => x.Series != null) > 1 ? CopiesOf(title, viewer) : null;
+            // With several Sonarr copies (4K, anime), the Jellyfin copies tell which one the page's own series copy
+            // is (its arr facts are that copy's), and admins see every Sonarr holding it and which are in the library.
+            var seriesCopies = item.Kind != "movie" && facts.Copies.Count(x => x.Series != null) > 1 ? CopiesOf(title, viewer) : null;
+            var page = item.Kind == "series" ? item.ItemId : item.SeriesId;
             TitleStatus status;
             switch (item.Kind)
             {
                 case "movie":
-                    status = StatusComposer.Movie(facts, item, CopiesOf(title, viewer), c, detail: true);
+                {
+                    var copies = CopiesOf(title, viewer);
+                    status = StatusComposer.Movie(facts, item, copies, c, detail: true);
+                    // Get 4K is pointless when a copy the viewer can open (this one or another library's) has a 4K source.
+                    if (Editions.Movie(viewer, copies, Edition.FourK).Count > 0) status.FourK = true;
                     break;
+                }
                 case "series":
-                    status = StatusComposer.Series(facts, item, _view.Episodes(item.ItemId, null, viewer, includeVirtual: false), _view.Seasons(item.ItemId, viewer), c, detail: true, seriesCopies);
+                    status = StatusComposer.Series(facts, item, _view.Episodes(item.ItemId, null, viewer, includeVirtual: false), _view.Seasons(item.ItemId, viewer), c, detail: true, seriesCopies, page);
                     status.AskedSeasons = AskedSeasons(facts);
                     break;
                 case "season":
-                    status = StatusComposer.Season(facts, item, item.SeriesId is Guid sid ? _view.Episodes(sid, item.Season, viewer, includeVirtual: viewer.DisplayMissingEpisodes) : Array.Empty<JfEpisode>(), c, detail: true, seriesCopies);
+                    status = StatusComposer.Season(facts, item, item.SeriesId is Guid sid ? _view.Episodes(sid, item.Season, viewer, includeVirtual: viewer.DisplayMissingEpisodes) : Array.Empty<JfEpisode>(), c, detail: true, seriesCopies, page);
                     break;
                 default:
-                    status = StatusComposer.Episode(facts, item, c, detail: true, seriesCopies);
+                    status = StatusComposer.Episode(facts, item, c, detail: true, seriesCopies, page);
                     break;
             }
             return WithLiveKey(status, facts);
@@ -386,23 +400,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// The Jellyfin season or episode item a season/episode key names, when the viewer can see the
         /// series (a virtual episode included); null otherwise or for movie/series keys. In the series item
         /// <paramref name="seriesId"/> when given (a page's own copy: a 4K copy, or the series in another
-        /// library, is another series item; never swapped for one), else the first copy the viewer can open.
+        /// library, is another series item; never swapped for one). Unpinned (no series named), every copy the
+        /// viewer can open is searched: the first copy's item with the file, else the first missing item.
         /// </summary>
         internal JfItemRef? ScopeItem(StatusViewer viewer, TitleKey key, Guid? seriesId = null)
         {
             if (key.IsMovie || key.Season is not int season) return null;
             var copies = CopiesOf(key.Title, viewer);
-            if ((seriesId is Guid shown ? copies.FirstOrDefault(x => x.Visible && x.ItemId == shown) : copies.FirstOrDefault(x => x.Visible)) is not { } series) return null;
+            if (seriesId is Guid shown)
+                return copies.Any(x => x.Visible && x.ItemId == shown) ? ScopeItemIn(viewer, key, shown, season) : null;
+            JfItemRef? first = null;
+            foreach (var copy in copies.Where(x => x.Visible).DistinctBy(x => x.ItemId))
+            {
+                var item = ScopeItemIn(viewer, key, copy.ItemId, season);
+                if (item is { Virtual: false }) return item;
+                first ??= item;
+            }
+            return first;
+        }
+
+        /// <summary>The season or episode item of a key in exactly one series item (see <see cref="ScopeItem"/>).</summary>
+        private JfItemRef? ScopeItemIn(StatusViewer viewer, TitleKey key, Guid seriesItemId, int season)
+        {
             // Only that series item's own season or episodes: with automatic series grouping Jellyfin lists another
             // folder's (a 4K copy in the same library) with them, which is never this copy's item.
             var kind = key.Episode != null ? "episode" : "season";
-            var ids = _view.SeriesParts(series.ItemId, season, key.Episode, viewer);
+            var ids = _view.SeriesParts(seriesItemId, season, key.Episode, viewer);
             // Jellyfin can list a missing (virtual) item and the one its file brought for the same slot
             // until its next series refresh: the one with the file is the scope's item.
             JfItemRef? first = null;
             foreach (var id in ids)
             {
-                if (_view.Resolve(id, viewer) is not { } item || item.Kind != kind || item.SeriesId != series.ItemId) continue;
+                if (_view.Resolve(id, viewer) is not { } item || item.Kind != kind || item.SeriesId != seriesItemId) continue;
                 if (!item.Virtual) return item;
                 first ??= item;
             }
@@ -415,8 +444,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// season, or the episode with a file (a multi-episode file covering it included; a missing
         /// one is no arrival). A series, season or episode stays in the series copy the page showed: the
         /// shown item's own series while Jellyfin still has it, else <paramref name="seriesId"/> (the page
-        /// names it once the item is gone); never another copy then. Null when the viewer can open none.
-        /// Never calls an arr.
+        /// names it once the item is gone); never another copy then, except one: once Jellyfin deleted the
+        /// shown item and its own copy has nothing for the scope, a series item automatic grouping presents as the
+        /// same show (Jellyfin itself deletes a folder's missing episode when another grouped folder has the file).
+        /// Null when the viewer can open none. Never calls an arr.
         /// </summary>
         internal Guid? ArrivedItem(StatusViewer viewer, TitleKey key, Guid? shown, Guid? seriesId = null)
         {
@@ -435,9 +466,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (!key.IsMovie && seriesId is Guid copy) return visible.Contains(copy) ? copy : null;
                 return visible[0];
             }
-            var series = shown is Guid page && _view.Resolve(page, viewer) is { SeriesId: Guid of } ? of : seriesId;
-            var scope = ScopeItem(viewer, key, series);
-            return scope == null || (key.Episode != null && scope.Virtual) ? null : scope.ItemId;
+            var shownItem = shown is Guid page ? _view.Resolve(page, viewer) : null;
+            var series = shownItem is { SeriesId: Guid of } ? of : seriesId;
+            if (Arrival(ScopeItem(viewer, key, series)) is Guid own) return own;
+            if (shown is Guid && shownItem == null && series is Guid ownSeries)
+            {
+                foreach (var sibling in _view.GroupedSeries(ownSeries, viewer))
+                {
+                    if (Arrival(ScopeItem(viewer, key, sibling)) is Guid other) return other;
+                }
+            }
+            return null;
+
+            Guid? Arrival(JfItemRef? scope) => scope == null || (key.Episode != null && scope.Virtual) ? null : scope.ItemId;
         }
 
         /// <summary>
@@ -632,71 +673,111 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
-        /// The status of the part of a title that was asked for (requested seasons; the 4K copy),
-        /// when that differs from the whole title. Jellyfin and memory only.
+        /// The status of the part of a title that was asked for (requested seasons and episodes; the edition), when
+        /// that differs from the whole title. The edition is judged by <see cref="Editions"/>: a 4K request is Ready
+        /// only with a playable 4K source in a copy the viewer can open, a standard one with any playable copy (or a
+        /// non-4K one with the administrator's switch), across every copy they can open; arr ownership, a shared
+        /// folder or library, or Seerr's word alone never is. Jellyfin and memory only.
         /// </summary>
         private KeyedStatus Scoped(StatusViewer viewer, Gathered gather, KeyedStatus whole, RequestScope scope)
         {
             var whose = gather.Facts[whole.Key];
             var c = Context(viewer);
             var copies = CopiesOf(whole.Key, viewer);
-            if (scope.Only4k && !_store.Instances(whole.Key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr).Any(i => i.Role == "4k"))
-            {
-                // No 4K instance set up in Jellyfin Enhanced: the standard copy says nothing about the
-                // 4K one, so the request (and Seerr's word that the 4K copy is available) is all there is.
-                var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, scope.Available, scope.AvailableAt);
-                // Never the standard copy: Play opens the 4K copy Seerr names, when the viewer can open it.
-                return whole with { Status = WithLiveKey(only, whose), Visible = SeerrCopy(scope, copies), Scoped = true, ArrivedAt = at };
-            }
+            var edition = EditionAvailability.Of(scope.Only4k);
+            // A standard request is satisfied by any playable copy unless the administrator says it needs a non-4K one.
+            var anyCopy = !scope.Only4k && !Editions.StandardNeedsNonFourK;
+            var noFourKArr = scope.Only4k && !_store.Instances(whole.Key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr).Any(i => i.Role == "4k");
             var facts = new TitleFacts(whose.Key) { Request = scope.Request, LiveKey = whose.LiveKey };
             facts.Copies.AddRange(whose.Copies);
             facts.Unreadable.AddRange(whose.Unreadable);
             facts.Stale.AddRange(whose.Stale);
             facts.Checked.AddRange(whose.Checked);
-            if (whole.Key.IsMovie && scope.Only4k)
+
+            if (whole.Key.IsMovie)
             {
-                var (status, arrived, shown) = StatusComposer.Requested4k(facts, whole.Status, copies, c, SeerrCopy(scope, copies));
-                return whole with { Status = WithLiveKey(status, facts), Visible = shown ?? SeerrCopy(scope, copies), Scoped = true, ArrivedAt = arrived };
+                if (anyCopy) return whole;
+                var hits = Editions.Movie(viewer, copies, edition);
+                var held = HeldCopies(hits.Select(h => h.CopyId), copies, scope.JellyfinItemId);
+                if (noFourKArr)
+                {
+                    // No 4K instance set up in Jellyfin Enhanced: the standard copy says nothing about the 4K one, so
+                    // the request says where it is, and a 4K source in a copy the viewer can open says it arrived
+                    // (Seerr's word that it is available is not enough on its own).
+                    var arrivedAt = hits.Select(h => h.Source.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max();
+                    var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, held.Count > 0, held.Count > 0 ? arrivedAt ?? scope.AvailableAt : null);
+                    return whole with { Status = WithLiveKey(only, whose), Visible = held.FirstOrDefault(), Scoped = true, ArrivedAt = at };
+                }
+                var (status, arrived, shown) = StatusComposer.RequestedEdition(facts, whole.Status, held, hits, c, scope.Only4k);
+                return whole with { Status = WithLiveKey(status, facts), Visible = shown, Scoped = true, ArrivedAt = arrived };
             }
+
             var seasons = scope.Seasons;
             var picked = scope.Episodes ?? Array.Empty<(int Season, int Episode)>();
-            if (!whole.Key.IsMovie && scope.Only4k && seasons.Count == 0 && picked.Count == 0)
+            if (scope.Only4k && seasons.Count == 0 && picked.Count == 0)
             {
                 seasons = StatusComposer.FourKOnly(facts).Copies.Where(x => x.Series != null)
                     .SelectMany(x => x.Series!.Seasons).Where(s => s.Monitored && s.SeasonNumber > 0)
                     .Select(s => s.SeasonNumber).Distinct().OrderBy(n => n).ToList();
                 if (seasons.Count == 0)
                 {
-                    var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, scope.Available, scope.AvailableAt);
-                    return whole with { Status = WithLiveKey(only, facts), Visible = SeerrCopy(scope, copies), Scoped = true, ArrivedAt = at };
+                    // No 4K seasons to follow: the request says where it is; it arrived once Seerr says so and a copy
+                    // the viewer can open has 4K episodes.
+                    var any = Editions.Episodes(viewer, copies, Edition.FourK, null, readDimensions: true);
+                    var held = HeldCopies(any.Hits.Select(h => h.CopyId), copies, scope.JellyfinItemId);
+                    var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, scope.Available && held.Count > 0, scope.AvailableAt);
+                    return whole with { Status = WithLiveKey(only, facts), Visible = held.FirstOrDefault(), Scoped = true, ArrivedAt = at };
                 }
             }
-            if (!whole.Key.IsMovie && (seasons.Count > 0 || picked.Count > 0))
+            if (seasons.Count > 0 || picked.Count > 0)
             {
                 // A 4K request is followed (and "no 4K Sonarr has it" judged) through the 4K Sonarrs only.
                 if (scope.Only4k) facts = StatusComposer.FourKOnly(facts);
-                var shown = whole.Visible;
                 var mine = copies;
                 if (scope.Only4k)
                 {
-                    // The Jellyfin copies matched to the 4K Sonarr copies: their episodes, not the standard copy's.
+                    // The Jellyfin copies matched to the 4K Sonarr copies, for which Sonarr copy a family member follows.
                     var siblings = StatusComposer.SeriesCopies(whose);
                     // Positive matches only (never "the only copy there is": it may be the standard one).
                     mine = facts.Copies.Where(x => x.Series != null).SelectMany(x => StatusComposer.MatchCopies(x, copies, siblings, soleFallback: false)).Distinct().ToList();
-                    shown = mine.FirstOrDefault(x => x.Visible) ?? SeerrCopy(scope, copies);
-                    if (mine.Count == 0 && shown != null) mine = new List<JfCopy> { shown };
                 }
-                var episodes = shown != null ? _view.Episodes(shown.ItemId, null, viewer, includeVirtual: false) : null;
+                // The requested parts' episodes that have a playable source of the edition, in any copy the viewer can
+                // open (each episode by its own sources, in its own series item): never a grouped folder's HD episode
+                // for a 4K request. Read per requested season, with dimensions only when the edition needs them.
+                var parts = seasons.Concat(picked.Select(p => p.Season)).Distinct().OrderBy(n => n).ToList();
+                var hits = parts.SelectMany(n => Editions.Episodes(viewer, copies, edition, n, readDimensions: !anyCopy).Hits).ToList();
+                var available = new EpisodeEditions(hits);
+                var wanted = new HashSet<int>(seasons);
+                var asked = hits.Where(h => (h.Season is int n && wanted.Contains(n)) || picked.Any(p => h.Covers(p.Season, p.Episode))).ToList();
+                // Play opens a copy holding the edition's episodes asked for; a 4K scope never falls back to the standard copy.
+                var shown = HeldCopies(asked.Select(h => h.CopyId), copies, null).FirstOrDefault()
+                    ?? (scope.Only4k ? mine.FirstOrDefault(x => x.Visible) ?? SeerrCopy(scope, copies) : whole.Visible);
+                if (scope.Only4k && mine.Count == 0 && shown != null) mine = new List<JfCopy> { shown };
+                var episodes = available.AsEpisodes().ToList();
+                // What the library hides from a viewer with parental limits goes in as hidden markers (numbers only).
+                if (!viewer.IsAdmin && viewer.HasParentalLimit && (shown ?? whole.Visible) is { } basis)
+                    episodes.AddRange(_view.Episodes(basis.ItemId, null, viewer, includeVirtual: false).Where(e => e.Hidden));
                 var (status, arrived) = StatusComposer.RequestedSeasons(facts, whole.Status, seasons, episodes, mine, c, scope.Only4k, picked);
                 // A requested season read Ready without Sonarr's episode list: with no Sonarr copy while a Sonarr (that
                 // may hold it) couldn't be read ("one episode of each requested season is here"), or from a copy whose
                 // list couldn't be read (its season counts, which miss episodes it doesn't monitor yet).
                 var guessed = status.Stage == StatusStage.Ready && seasons.Count > 0
                     && ((facts.Unreadable.Count > 0 && !facts.Copies.Any(x => x.Series != null)) || facts.Copies.Any(x => x.Series != null && x.Episodes == null));
-                // A 4K scope never falls back to the standard copy (Play would open the HD item).
-                return whole with { Status = WithLiveKey(status, facts), Visible = scope.Only4k ? shown : shown ?? whole.Visible, Scoped = true, ArrivedAt = arrived, Guessed = guessed };
+                return whole with { Status = WithLiveKey(status, facts), Visible = shown, Scoped = true, ArrivedAt = arrived, Guessed = guessed };
             }
             return whole;
+        }
+
+        /// <summary>
+        /// The copies (movie items or series items) the viewer can open among <paramref name="ids"/>, in the order of
+        /// <paramref name="ids"/> (the edition's preferred hits first), the one Seerr matched first when it is among them.
+        /// </summary>
+        private static List<JfCopy> HeldCopies(IEnumerable<Guid> ids, IReadOnlyList<JfCopy> copies, Guid? seerr)
+        {
+            var order = new Dictionary<Guid, int>();
+            foreach (var id in ids) order.TryAdd(id, order.Count);
+            return copies.Where(x => x.Visible && order.ContainsKey(x.ItemId)).DistinctBy(x => x.ItemId)
+                .OrderBy(x => seerr is Guid id && x.ItemId == id ? 0 : 1).ThenBy(x => order[x.ItemId]).ToList();
         }
 
         /// <summary>The household contact name and "still looking" hours, as the status responses carry them.</summary>
