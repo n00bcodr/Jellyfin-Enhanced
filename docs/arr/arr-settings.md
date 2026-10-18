@@ -556,6 +556,20 @@ All off by default; they need phase 4 (not *Ask for it*). See
 
 Per person (Jellyfin Enhanced panel, *Poster badges*, shown while the badges are on): *Badges on poster cards* and
 *Badges drawn into posters on TV and phone apps* follow the household (default) or are hidden / off.
+#### Home rows (phase 4)
+
+All off by default. See [Home rows](arr-features.md#home-rows-phase-4).
+
+| Setting | Default | What it does |
+|---|---|---|
+| Home rows: Your requests, Coming soon for you, Just arrived for you (`ArrPhase4HomeRowsEnabled`) | off | The three rows on each person's home screen. Needs phase 4 and *Ask for it*. |
+| Use Home Screen Sections for the home rows (`ArrPhase4HssSectionsEnabled`) | off | With the Home Screen Sections plugin installed, the rows are its sections instead of added rows. Needs *Home rows* and, for titles not in the library, *Native pages for titles not in the library* (Jellyfin 12). |
+| Administrators: a strip of what needs doing above the rows (`ArrPhase4HomeOpsStripEnabled`) | off | Downloads, blocked imports and nearly full disks, only when something needs doing. Needs *Home rows* and phase 2. |
+| Collection gaps: leave out titles the collection's list already holds (`ArrPhase4CollectionGapsEnabled`) | off | See [Collection gaps](arr-features.md#asking-for-titles). Needs phase 4 and *Ask for it*. |
+
+Per person (Jellyfin Enhanced panel, *Home rows*, shown while home rows are on): *Your requests*, *Coming soon for you*
+and *Just arrived for you* each follow the household (default) or are hidden; administrators also choose whether to see
+the strip.
 
 #### Household tab
 
@@ -568,3 +582,6 @@ never applied automatically. Managers can read the tab but not change it. The co
 *Request handling*, which a move from Seerr switches) as the server has them when it is saved, unless they were changed
 on that page: a page left open before a Household edit or a move doesn't put the older values back, even when the edit
 lands while the page is saving.
+
+HSS sections also require the native absent-title pages and their configured Seerr metadata source. When either is
+unavailable in configuration, JE uses native home injection. The request backend may still be Jellyfin Enhanced.

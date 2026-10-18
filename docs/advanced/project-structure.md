@@ -490,3 +490,24 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
 * **`/Helpers/Jellyseerr/SeerrLibraryAccessProjector.cs`**: Keeps Seerr's links to Jellyfin items to what the caller
   can open: hidden copies are unlinked, another copy the caller can open takes their place, and list rows of titles the
   library hides from the caller are left out.
+
+### Personal home rows and collection coverage (phase 4d)
+
+`Controllers/AcquireHomeController.cs` serves the caller's home rows and the administrator's actionable ops strip.
+`Services/Acquire/Home/HomeProjection.cs` projects ledger/Seerr requests and notification follows into independent
+30-day coming-soon and 7-day first-arrival windows. `HomeFlags.cs` owns the effective switches and tri-state display
+preferences. `HomeArrivals.cs` records library events outside the scan thread; `Services/Acquire/ContentArrivalHistory.cs`
+is the permanent first-content-arrival store shared with acquisition stamps. `AcquireDatabase.Initialize` repairs an
+empty schema-6 slot at every supported startup, including schema-7 restores, without resetting versions or dates.
+
+`FollowDates.cs` reads missing followed-title dates through the bounded, shared TMDB cache. `HssSectionsAdapter.cs`
+registers three optional Home Screen Sections providers and verifies successful registration before advertising HSS.
+Its authenticated results use real items and native absent-title pages on Jellyfin 12. Jellyfin 10.11 uses native
+injection. `CollectionCoverage.cs` publishes `ICollectionCoverage.CoveredAsync`: viewer-filtered movie keys, projected
+through `ListGate` after parental checks with fresh access, preferences and list membership. A list renderer may replace
+that DI seam; hidden entries must never affect the visible gap count.
+
+`js/arr/home/home-{styles,render,hss,rows}.js` provides cards, HSS decoration and one abortable lifecycle with the existing
+change feed. It mounts once, clears on navigation or account changes, and adds no status poller. Home tests live in
+`tests/backend/Home/`, collection integration tests in `IntegrationCollectionGapsPhase4Tests.cs`, and browser-module tests
+in `features-arr-home.test.mjs`, `features-arr-collection-gaps-p4.test.mjs` and `bootstrap-settings-home.test.mjs`.
