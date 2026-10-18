@@ -397,6 +397,73 @@ public class IntegrationArrBridgeTests
     }
 
     [Fact]
+    public void TheCleanupNeverTouchesAnotherGroupedFolderOrAnyVersionWithAFile()
+    {
+        // Automatic series grouping: the "4K" folder of the same series is another series item with the same
+        // presentation key (Jellyfin's grouped lists show both). Its missing episode is never the file's twin.
+        var series = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        const string presentation = "78874-en-library";
+        var file = new Episode { Id = Guid.NewGuid(), SeriesId = series, SeriesPresentationUniqueKey = presentation, ParentIndexNumber = 1, IndexNumber = 3, Path = "/media/tv/Firefly/Season 01/S01E03 - 1080p.mkv" };
+        var ownMissing = new Episode { Id = Guid.NewGuid(), SeriesId = series, SeriesPresentationUniqueKey = presentation, ParentIndexNumber = 1, IndexNumber = 3, IsVirtualItem = true };
+        var otherMissing = new Episode { Id = Guid.NewGuid(), SeriesId = other, SeriesPresentationUniqueKey = presentation, ParentIndexNumber = 1, IndexNumber = 3, IsVirtualItem = true };
+        Assert.True(JellyfinLibraryAccess.IsMissingTwin(file, series, ownMissing));
+        Assert.False(JellyfinLibraryAccess.IsMissingTwin(file, series, otherMissing));
+        Assert.False(JellyfinLibraryAccess.IsMissingTwin(file, other, otherMissing), "never with another series item than the file's own");
+
+        // Multiple versions: a second file of the same episode (Jellyfin 12 groups it as a version of the first,
+        // owned by it), and the first file itself, have paths; neither is ever removed, by either file.
+        var version = new Episode { Id = Guid.NewGuid(), SeriesId = series, ParentIndexNumber = 1, IndexNumber = 3, Path = "/media/tv/Firefly/Season 01/S01E03 - 2160p.mkv", OwnerId = file.Id };
+#if NET10_0_OR_GREATER
+        version.PrimaryVersionId = file.Id;
+#else
+        version.PrimaryVersionId = file.Id.ToString("N");
+#endif
+        Assert.False(JellyfinLibraryAccess.IsMissingTwin(file, series, version));
+        Assert.False(JellyfinLibraryAccess.IsMissingTwin(version, series, file));
+        Assert.True(JellyfinLibraryAccess.IsMissingTwin(version, series, ownMissing));
+        // Even a version Jellyfin flags missing keeps its file.
+        var flagged = new Episode { Id = Guid.NewGuid(), SeriesId = series, ParentIndexNumber = 1, IndexNumber = 3, Path = "/media/tv/Firefly/Season 01/S01E03 - 720p.mkv", IsVirtualItem = true };
+        Assert.False(JellyfinLibraryAccess.IsMissingTwin(file, series, flagged));
+    }
+
+    [Fact]
+    public void ASeriesPartIsOnlyEverOneOfThatSeriesItemsOwnPrimaryItems()
+    {
+        // The production filter behind arrival successors (ArrJellyfinView.SeriesParts), on Jellyfin's own items:
+        // the series item's own season or episodes covering the number, never another grouped folder's (same
+        // presentation key, another SeriesId), never a second version of an episode, never another kind.
+        var series = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        const string presentation = "78874-en-library";
+        Episode Ep(Guid of, int season, int number, int? end = null, bool missing = false)
+            => new() { Id = Guid.NewGuid(), SeriesId = of, SeriesPresentationUniqueKey = presentation, ParentIndexNumber = season, IndexNumber = number, IndexNumberEnd = end, IsVirtualItem = missing, Path = missing ? null : $"/media/{of:N}/S{season}E{number}.mkv" };
+        var otherFile = Ep(other, 1, 3);
+        var ownMissing = Ep(series, 1, 3, missing: true);
+        var ownFile = Ep(series, 1, 3);
+        var double45 = Ep(series, 1, 4, 5);
+        var version = Ep(series, 1, 3);
+        version.OwnerId = ownFile.Id;
+#if NET10_0_OR_GREATER
+        version.PrimaryVersionId = ownFile.Id;
+#else
+        version.PrimaryVersionId = ownFile.Id.ToString("N");
+#endif
+        var otherSeason = new Season { Id = Guid.NewGuid(), SeriesId = other, SeriesPresentationUniqueKey = presentation, IndexNumber = 1 };
+        var ownSeason = new Season { Id = Guid.NewGuid(), SeriesId = series, SeriesPresentationUniqueKey = presentation, IndexNumber = 1 };
+        var ownSeason2 = new Season { Id = Guid.NewGuid(), SeriesId = series, IndexNumber = 2 };
+        BaseItem[] items = [otherFile, otherSeason, ownMissing, version, ownFile, double45, ownSeason, ownSeason2, Ep(series, 2, 3)];
+
+        Assert.Equal(new[] { ownMissing.Id, ownFile.Id }, ArrJellyfinView.SeriesPartIds(items, series, 1, 3));
+        Assert.Equal(new[] { double45.Id }, ArrJellyfinView.SeriesPartIds(items, series, 1, 5));
+        Assert.Equal(new[] { ownSeason.Id }, ArrJellyfinView.SeriesPartIds(items, series, 1, null));
+        Assert.Equal(new[] { otherFile.Id }, ArrJellyfinView.SeriesPartIds(items, other, 1, 3));
+        Assert.Equal(new[] { otherSeason.Id }, ArrJellyfinView.SeriesPartIds(items, other, 1, null));
+        Assert.Empty(ArrJellyfinView.SeriesPartIds(items, series, 1, 9));
+        Assert.Empty(ArrJellyfinView.SeriesPartIds(items, Guid.Empty, 1, 3));
+    }
+
+    [Fact]
     public async Task AnEpisodeJellyfinHasntNumberedYetHasItsMissingTwinRemovedOnceItIs()
     {
         using var rig = new Rig();

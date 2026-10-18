@@ -1163,4 +1163,190 @@ public class ApiArrStatusTests
         // A series id of another title is no copy of this one.
         Assert.Null(ArrivedId(await Arrival(rig, rig.Member, key.ToString(), null, rig.Sintel)));
     }
+    /// <summary>
+    /// Firefly as two series items in one library with automatic series grouping on: the rig's copy and a
+    /// "4K" folder of the same series, sharing Jellyfin's presentation key. Jellyfin's own season and episode
+    /// lists of either hold both folders' children (the other copy's first). Each copy has its own missing S1E3.
+    /// </summary>
+    private static (Guid Series, Guid Missing) GroupedFirefly(Rig rig)
+    {
+        var fireflyKey = TitleKey.Parse("tv:tvdb:78874")!;
+        var copy = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = copy, Kind = "series", Key = fireflyKey });
+        rig.View.AddCopy(fireflyKey, new JfCopy { ItemId = copy, Path = "/media/tv/Firefly 4K", LibraryName = "TV", LibraryId = "TV" });
+        var missing = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = missing, Kind = "episode", Key = fireflyKey.WithEpisode(1, 3), SeriesId = copy, Season = 1, Episode = 3, Virtual = true });
+        rig.View.AddEpisode(copy, new JfEpisode { ItemId = missing, Season = 1, Episode = 3, Virtual = true });
+        rig.View.GroupSeries(rig.Firefly, copy);
+        rig.View.Rev++;
+        return (copy, missing);
+    }
+
+    private static Guid AddEpisodeFile(Rig rig, Guid series, int season, int episode)
+    {
+        var id = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = id, Kind = "episode", Key = TitleKey.Parse("tv:tvdb:78874")!.WithEpisode(season, episode), SeriesId = series, Season = season, Episode = episode, Path = $"/media/{series:N}/S{season:00}E{episode:00}.mkv" });
+        rig.View.AddEpisode(series, new JfEpisode { ItemId = id, Season = season, Episode = episode });
+        rig.View.Rev++;
+        return id;
+    }
+
+    [Fact]
+    public async Task UnderSeriesGroupingAMissingEpisodeNeverMovesToTheOtherFoldersFile()
+    {
+        // Only the other copy (the 4K folder) gets S1E3; Jellyfin's grouped lists of the rig's copy hold it.
+        using var rig = new Rig();
+        var (copy, missing) = GroupedFirefly(rig);
+        var key = "tv:tvdb:78874:s1:e3";
+        var other = AddEpisodeFile(rig, copy, 1, 3);
+
+        var page = Items(await Item(rig, rig.Member, rig.Episode3))[0];
+        Assert.False(page.TryGetProperty("openItemId", out _), "the rig copy's missing S1E3 stays: the file is the 4K folder's");
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, key, rig.Episode3)));
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, key, null, rig.Firefly)));
+        // The other copy's own page does move to its file.
+        Assert.Equal(other.ToString("N"), Items(await Item(rig, rig.Member, missing))[0].GetProperty("openItemId").GetString());
+        Assert.Equal(other.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key, null, copy)));
+
+        // A season only the other folder has: never the rig copy's successor.
+        var season2 = Guid.NewGuid();
+        rig.View.AddSeason(copy, new JfSeason { ItemId = season2, Season = 2 });
+        rig.View.AddItem(new JfItemRef { ItemId = season2, Kind = "season", Key = TitleKey.Parse("tv:tvdb:78874:s2"), SeriesId = copy, Season = 2 });
+        rig.View.Rev++;
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s2", null, rig.Firefly)));
+        Assert.Equal(season2.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s2", null, copy)));
+    }
+
+    [Fact]
+    public async Task UnderSeriesGroupingEachFoldersMissingEpisodeMovesToItsOwnFile()
+    {
+        // Both copies get S1E3, the 4K folder's first; Jellyfin lists the 4K one first for either copy.
+        using var rig = new Rig();
+        var (copy, missing) = GroupedFirefly(rig);
+        var key = "tv:tvdb:78874:s1:e3";
+        var other = AddEpisodeFile(rig, copy, 1, 3);
+        var own = AddEpisodeFile(rig, rig.Firefly, 1, 3);
+
+        Assert.Equal(own.ToString("N"), Items(await Item(rig, rig.Member, rig.Episode3))[0].GetProperty("openItemId").GetString());
+        Assert.Equal(other.ToString("N"), Items(await Item(rig, rig.Member, missing))[0].GetProperty("openItemId").GetString());
+        Assert.Equal(own.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key, rig.Episode3)));
+        Assert.Equal(other.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key, missing)));
+        // Jellyfin deleted both missing episodes: by series alone, each copy keeps its own.
+        rig.View.Items.Remove(rig.Episode3);
+        rig.View.Items.Remove(missing);
+        rig.View.Rev++;
+        Assert.Equal(own.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key, rig.Episode3, rig.Firefly)));
+        Assert.Equal(other.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key, missing, copy)));
+        // Season pages too.
+        var season1b = Guid.NewGuid();
+        rig.View.AddSeason(copy, new JfSeason { ItemId = season1b, Season = 1 });
+        rig.View.AddItem(new JfItemRef { ItemId = season1b, Kind = "season", Key = TitleKey.Parse("tv:tvdb:78874:s1"), SeriesId = copy, Season = 1 });
+        rig.View.AddSeason(rig.Firefly, new JfSeason { ItemId = rig.Season1, Season = 1 });
+        rig.View.Rev++;
+        Assert.Equal(rig.Season1.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s1", null, rig.Firefly)));
+        Assert.Equal(season1b.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s1", null, copy)));
+    }
+
+    [Fact]
+    public async Task AnEpisodeListedUnderASeriesThatBelongsToAnotherSeriesItemIsNeverItsSuccessor()
+    {
+        // Jellyfin lists an episode under the rig's copy whose own series is another item (an episode outside
+        // a season folder can carry another grouped copy's season): its SeriesId says whose it is.
+        using var rig = new Rig();
+        var (copy, _) = GroupedFirefly(rig);
+        var stray = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = stray, Kind = "episode", Key = TitleKey.Parse("tv:tvdb:78874:s1:e3"), SeriesId = copy, Season = 1, Episode = 3, Path = "/media/tv/Firefly 4K/x.mkv" });
+        rig.View.AddEpisode(rig.Firefly, new JfEpisode { ItemId = stray, Season = 1, Episode = 3 });
+        rig.View.Rev++;
+        Assert.False(Items(await Item(rig, rig.Member, rig.Episode3))[0].TryGetProperty("openItemId", out _));
+        Assert.Null(ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s1:e3", rig.Episode3)));
+    }
+    [Fact]
+    public async Task AMovieOrEpisodeStatusSaysHowManyVersionsJellyfinPlaysItFrom()
+    {
+        using var rig = new Rig();
+        var sintel = rig.View.Items[rig.Sintel].Ref;
+        rig.View.AddItem(new JfItemRef { ItemId = rig.Sintel, Kind = "movie", Key = sintel.Key, Path = sintel.Path, DateCreated = sintel.DateCreated, Versions = 1 });
+        rig.View.Rev++;
+        Assert.Equal(1, Items(await Item(rig, rig.Member, rig.Sintel))[0].GetProperty("versions").GetInt32());
+        // Jellyfin adds a second file of the movie to the same item (its version picker).
+        rig.View.AddItem(new JfItemRef { ItemId = rig.Sintel, Kind = "movie", Key = sintel.Key, Path = sintel.Path, DateCreated = sintel.DateCreated, Versions = 2 });
+        rig.View.Rev++;
+        Assert.Equal(2, Items(await Item(rig, rig.Member, rig.Sintel))[0].GetProperty("versions").GetInt32());
+        // An episode too; never a season or series, a missing episode, or an item Jellyfin gave no count.
+        var e1 = rig.View.Items[rig.Episode1].Ref;
+        rig.View.AddItem(new JfItemRef { ItemId = rig.Episode1, Kind = "episode", Key = e1.Key, SeriesId = e1.SeriesId, Season = 1, Episode = 1, Versions = 3 });
+        rig.View.Rev++;
+        Assert.Equal(3, Items(await Item(rig, rig.Admin, rig.Episode1))[0].GetProperty("versions").GetInt32());
+        Assert.False(Items(await Item(rig, rig.Member, rig.Firefly))[0].TryGetProperty("versions", out _));
+        Assert.False(Items(await Item(rig, rig.Member, rig.Episode3))[0].TryGetProperty("versions", out _));
+        rig.View.AddItem(new JfItemRef { ItemId = rig.Sintel, Kind = "movie", Key = sintel.Key, Path = sintel.Path, DateCreated = sintel.DateCreated });
+        rig.View.Rev++;
+        Assert.False(Items(await Item(rig, rig.Member, rig.Sintel))[0].TryGetProperty("versions", out _));
+    }
+
+    [Fact]
+    public async Task AMovieWhoseFileJellyfinNowKeepsAsAVersionOfANewItemNamesThatItem()
+    {
+        // Jellyfin 12: a 2160p file lands next to the 1080p one; the 2160p file becomes the movie item (a new id)
+        // and the 1080p item stays as its version (owned by it; Jellyfin's lists no longer show it).
+        using var rig = new Rig();
+        var key = TitleKey.Parse("movie:tmdb:45745")!;
+        var uhd = Guid.NewGuid();
+        var old = rig.View.Items[rig.Sintel].Ref;
+        rig.View.AddItem(new JfItemRef { ItemId = uhd, Kind = "movie", Key = key, Path = "/media/movies/Sintel (2010)/Sintel (2010) - 2160p.mkv", Versions = 2 });
+        rig.View.AddItem(new JfItemRef { ItemId = rig.Sintel, Kind = "movie", Key = key, Path = old.Path, Versions = 2, PrimaryId = uhd });
+        rig.View.CopiesByKey[key.ToString()].Clear();
+        rig.View.AddCopy(key, new JfCopy { ItemId = uhd, Path = "/media/movies/Sintel (2010)/Sintel (2010) - 2160p.mkv", LibraryName = "Movies" });
+        rig.View.Rev++;
+
+        var page = Items(await Item(rig, rig.Member, rig.Sintel))[0];
+        Assert.Equal(uhd.ToString("N"), page.GetProperty("openItemId").GetString());
+        Assert.Equal("ready", page.GetProperty("stage").GetString());
+        Assert.Equal(2, page.GetProperty("versions").GetInt32());
+        Assert.Equal(uhd.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key.ToString(), rig.Sintel)));
+        // The new item's own page names nothing to move to.
+        Assert.False(Items(await Item(rig, rig.Member, uhd))[0].TryGetProperty("openItemId", out _));
+
+        // An episode the same way (Jellyfin 12 groups an episode's files in its season folder): the page moves to
+        // the episode item of the same series that keeps its file now.
+        var e1 = rig.View.Items[rig.Episode1].Ref;
+        var e1uhd = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = e1uhd, Kind = "episode", Key = e1.Key, SeriesId = rig.Firefly, Season = 1, Episode = 1, Versions = 2, Path = "/media/tv/Firefly/S01E01 - 2160p.mkv" });
+        rig.View.AddItem(new JfItemRef { ItemId = rig.Episode1, Kind = "episode", Key = e1.Key, SeriesId = rig.Firefly, Season = 1, Episode = 1, Versions = 2, PrimaryId = e1uhd });
+        rig.View.EpisodesBySeries[rig.Firefly].RemoveAll(x => x.Episode.ItemId == rig.Episode1);
+        rig.View.AddEpisode(rig.Firefly, new JfEpisode { ItemId = e1uhd, Season = 1, Episode = 1 });
+        rig.View.Rev++;
+        Assert.Equal(e1uhd.ToString("N"), Items(await Item(rig, rig.Member, rig.Episode1))[0].GetProperty("openItemId").GetString());
+        Assert.Equal(e1uhd.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s1:e1", rig.Episode1)));
+
+        // A viewer who can't open the new item is never sent there.
+        var hidden = Guid.NewGuid();
+        rig.View.AddItem(new JfItemRef { ItemId = hidden, Kind = "movie", Key = key, Versions = 2 }, rig.Admin.UserId);
+        rig.View.AddItem(new JfItemRef { ItemId = rig.Sintel, Kind = "movie", Key = key, Path = old.Path, Versions = 2, PrimaryId = hidden });
+        rig.View.Rev++;
+        Assert.False(Items(await Item(rig, rig.Member, rig.Sintel))[0].TryGetProperty("openItemId", out _));
+    }
+
+    [Fact]
+    public async Task AMovieItemJellyfinDeletedWhenItsFileBecameAVersionIsFollowedToTheItemThatKeepsItNotAnotherCopy()
+    {
+        // Jellyfin 10.11 deletes the 1080p movie item once a 2160p file joins it (the new item keeps it as a version
+        // under another id). The same movie is also in a "Movies 4K" library, listed first.
+        using var rig = new Rig();
+        var key = TitleKey.Parse("movie:tmdb:45745")!;
+        var copy4k = Guid.NewGuid();
+        var uhd = Guid.NewGuid();
+        rig.View.CopiesByKey[key.ToString()].Clear();
+        rig.View.AddItem(new JfItemRef { ItemId = copy4k, Kind = "movie", Key = key, Versions = 1 });
+        rig.View.AddCopy(key, new JfCopy { ItemId = copy4k, Path = "/media/movies4k/Sintel (2010)/Sintel (2010) - 2160p.mkv", LibraryName = "Movies 4K" });
+        rig.View.AddItem(new JfItemRef { ItemId = uhd, Kind = "movie", Key = key, Versions = 2 });
+        rig.View.AddCopy(key, new JfCopy { ItemId = uhd, Path = "/media/movies/Sintel (2010)/Sintel (2010) - 2160p.mkv", LibraryName = "Movies" });
+        rig.View.Items.Remove(rig.Sintel);
+        rig.View.FormerItemsOf[uhd] = new HashSet<Guid> { rig.Sintel };
+        rig.View.Rev++;
+        Assert.Equal(uhd.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key.ToString(), rig.Sintel)));
+        // With nothing keeping it, the first copy as before.
+        Assert.Equal(copy4k.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key.ToString(), Guid.NewGuid())));
+    }
 }

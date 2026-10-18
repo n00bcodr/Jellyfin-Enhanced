@@ -324,7 +324,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <c>SeriesMetadataService.RemoveObsoleteEpisodes</c>): a virtual or missing episode of the same season whose
         /// number the file's episode contains (<see cref="Episode.ContainsEpisodeNumber"/>, so an S01E04-E05 file fills
         /// E04 and E05). Narrower than Jellyfin's on purpose: the same series item, numbered, and never an item with a
-        /// path (an episode with a file is never removed). <paramref name="seriesId"/> is the file's series item.
+        /// path (an episode with a file is never removed). <paramref name="seriesId"/> is the file's series item (its
+        /// own folder's: with automatic series grouping another folder of the series is another series item, whose
+        /// missing episodes stay).
         /// </summary>
         internal static bool IsMissingTwin(Episode file, Guid seriesId, BaseItem candidate)
             => candidate is Episode e
@@ -333,6 +335,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 && (e.IsVirtualItem || e.IsMissingEpisode)
                 && !string.IsNullOrEmpty(file.Path)
                 && !seriesId.Equals(Guid.Empty)
+                && (file.SeriesId.Equals(Guid.Empty) || file.SeriesId.Equals(seriesId))
                 && e.SeriesId.Equals(seriesId)
                 && e.ParentIndexNumber is int season && season == file.ParentIndexNumber
                 && e.IndexNumber is int number && file.ContainsEpisodeNumber(number);

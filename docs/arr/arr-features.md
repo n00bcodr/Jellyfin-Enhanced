@@ -56,7 +56,11 @@ own message ("Manual Import required") and what would fix it.
   menu or sheet open, or play something, and happens once the page is yours again; a page reloaded in place keeps
   your scroll position. Before the page moves to another item, Jellyfin is asked again whether you can still open it
   (your library access or parental limits may have changed while it waited). The page stays in the copy of the series
-  it showed (a 4K copy, or the series in another library, is its own copy). A season or series page you come back to
+  it showed (a 4K copy, the series in another library, or another folder of the series that Jellyfin's automatic
+  series grouping shows as one series, is its own copy). Jellyfin's multiple versions are followed too: a version
+  added to the movie or episode you're looking at redraws the page, so Jellyfin's version picker and media info show
+  it; when a higher resolution file joins it, Jellyfin makes that file the item (a new id) and the page moves there.
+  A copy in another library is a separate item, and the page stays on the one it shows. A season or series page you come back to
   catches up on episodes that arrived while you were elsewhere, and while a season pack arrives file by file it is
   redrawn once things settle (at most 30 seconds after the first arrival).
 - **Posters**: a small badge while something downloads, is almost ready or takes longer than usual.
@@ -187,8 +191,10 @@ still shows up. On Windows, folders that differ only in upper/lower case are the
 When Jellyfin shows missing episodes, it keeps listing the missing (virtual) episode of a slot next to the one
 the file brought until its next refresh of the series; Jellyfin Enhanced removes it as soon as Jellyfin has
 numbered the new episode (same series and season, and an episode number the file covers, so a two-episode file
-replaces both missing episodes: Jellyfin's own rule at its series refresh; only missing episodes, no file is
-touched), so the season lists the episode once, ready to play.
+replaces both missing episodes: Jellyfin's own rule at its series refresh; only missing episodes of the file's own
+series item, never an episode with a file or one of its versions), so the season lists the episode once, ready to
+play. With automatic series grouping, another folder of the series is another series item, whose missing episodes
+Jellyfin Enhanced leaves alone (Jellyfin's own refresh of a grouped series removes them, as it lists the folders as one).
 
 **OK'd in Seerr, but nothing happens.** When Seerr has OK'd a request and, after 15 minutes, no Sonarr/Radarr
 has the title, administrators see "OK'd in Seerr 20 min ago, but none of the Sonarr/Radarr Jellyfin Enhanced

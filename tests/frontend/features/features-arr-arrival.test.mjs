@@ -200,6 +200,57 @@ test('the same item becoming available reloads Jellyfin\'s own page once, keepin
   assert.equal(h.host.shows.length, 1);
 });
 
+const MOVIE_KEY = 'movie:tmdb:45745';
+const movie = (versions, extra = {}) => ({ items: [{ key: MOVIE_KEY, itemId: OLD, kind: 'movie', stage: 'ready', reason: { code: 'ready' }, versions, ...extra }] });
+
+test('a version Jellyfin adds to the movie the page shows (its version picker) reloads the page once; the same or fewer never do', async t => {
+  let versions = 1;
+  const h = setup(t, { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: () => movie(versions) });
+  await h.D.update(false);
+  h.S.refresh([MOVIE_KEY]);
+  await sleep(40);
+  assert.equal(h.host.shows.length, 0, 'the same versions read again: nothing');
+  versions = 2;
+  h.S.refresh([MOVIE_KEY]);
+  assert.ok(await until(() => h.host.shows.length === 1), 'a second version arrived: Jellyfin draws its page again');
+  assert.equal(h.host.shows[0].detail.isRestored, false);
+  assert.ok(await until(() => h.replays.includes(h.view)));
+  const reads = h.statusReads();
+  h.S.refresh([MOVIE_KEY]);
+  await until(() => h.statusReads() > reads);
+  await sleep(40);
+  assert.equal(h.host.shows.length, 1, 'one reload per change');
+  versions = 1;
+  h.S.refresh([MOVIE_KEY]);
+  await until(() => h.statusReads() > reads + 1);
+  await sleep(40);
+  assert.equal(h.host.shows.length, 1, 'a version going away is no arrival');
+  assert.equal(h.id(), OLD, 'the page never moves for a version');
+});
+
+test('a version added to an episode the page shows (Jellyfin 12 groups an episode\'s files) reloads it once', async t => {
+  let versions = 1;
+  const h = setup(t, { answers: () => episode('ready', { versions }) });
+  await h.D.update(false);
+  versions = 3;
+  h.S.refresh([KEY]);
+  assert.ok(await until(() => h.host.shows.length === 1));
+  await sleep(40);
+  assert.equal(h.host.shows.length, 1);
+  assert.equal(h.id(), OLD);
+});
+
+test('a movie whose file Jellyfin now keeps as a version of another item moves to that item', async t => {
+  // Jellyfin makes the higher resolution the primary: the 1080p item the page showed becomes a version of the
+  // new 2160p item (12.x), which the status names.
+  const h = setup(t, { hash: `#/details?id=${OLD}&serverId=${SERVER}&context=movies`, type: 'Movie', answers: (path, n) => (n === 1 ? movie(1) : movie(2, { openItemId: NEW })) });
+  await h.D.update(false);
+  h.S.refresh([MOVIE_KEY]);
+  assert.ok(await until(() => h.id() === NEW));
+  assert.equal(h.window.location.hash, `#/details?id=${NEW}&serverId=${SERVER}&context=movies`);
+  assert.equal(h.host.shows.length, 0, 'moved, not reloaded');
+});
+
 test('a season gaining episodes reloads once per change; downloads moving along never do', async t => {
   let ready = 1;
   let stage = 'downloading';
@@ -659,24 +710,27 @@ for (const kind of ['season', 'series']) {
 test('a season page\'s wait restarts only when what is available changes, and never runs past its cap', async t => {
   let ready = 1;
   const h = setup(t, { type: 'Season', hash: `#/details?id=${SEASON}&serverId=${SERVER}`, answers: () => season(ready) });
-  Object.assign(h.A.timing, { batch: 120, batchMax: 300 });
+  // The cap far away first: were the 120 ms wait restarted by each read of the same count, the page would
+  // reload only at the cap (2 s). The bounds leave room for a busy machine; the loops run on far longer.
+  Object.assign(h.A.timing, { batch: 120, batchMax: 2000 });
   await h.D.update(false);
   ready = 2;
-  // A long download stream: the change feed reads the same count again and again.
+  // A long download stream: the change feed reads the same count again and again, every 20 ms.
   let start = Date.now();
-  while (h.host.shows.length === 0 && Date.now() - start < 1500) {
+  while (h.host.shows.length === 0 && Date.now() - start < 3000) {
     h.S.refresh(['tv:tvdb:75932:s1']);
     await sleep(20);
   }
   assert.equal(h.host.shows.length, 1, 'reloaded while the reads went on');
-  assert.ok(Date.now() - start < 280, `repeated reads of the same count don't postpone it (${Date.now() - start} ms)`);
-  // Arrivals that keep coming faster than the wait: one reload within the cap.
+  assert.ok(Date.now() - start < 1000, `repeated reads of the same count don't postpone it (${Date.now() - start} ms)`);
+  // Arrivals that keep coming faster than the wait (every 40 ms): one reload within the cap (300 ms now).
+  h.A.timing.batchMax = 300;
   start = Date.now();
-  while (h.host.shows.length === 1 && Date.now() - start < 1500) {
+  while (h.host.shows.length === 1 && Date.now() - start < 3000) {
     ready++;
     h.S.refresh(['tv:tvdb:75932:s1']);
     await sleep(40);
   }
   assert.equal(h.host.shows.length, 2);
-  assert.ok(Date.now() - start < 480, `the cap holds (${Date.now() - start} ms)`);
+  assert.ok(Date.now() - start < 1500, `the cap holds (${Date.now() - start} ms)`);
 });

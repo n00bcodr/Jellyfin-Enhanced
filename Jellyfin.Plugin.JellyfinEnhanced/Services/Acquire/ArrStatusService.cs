@@ -175,12 +175,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // the virtual item reads as the arrived one and names it, so the page can move there.
             if (item.Virtual && item.Kind is "episode" or "season" && ScopeItem(viewer, item.Key, item.SeriesId) is { Virtual: false } arrived && arrived.ItemId != item.ItemId)
             {
-                var status = ComposeItem(viewer, arrived, gather);
+                var status = WithVersions(ComposeItem(viewer, arrived, gather), arrived);
                 status.OpenItemId = arrived.ItemId.ToString("N", CultureInfo.InvariantCulture);
                 return Cache.Put(cacheKey, Serialize(new[] { status }));
             }
 
-            return Cache.Put(cacheKey, Serialize(new[] { ComposeItem(viewer, item, gather) }));
+            // A movie or episode whose file Jellyfin now keeps as a version of another item (a higher resolution
+            // file joined it and became the item): the page reads as that item and names it.
+            if (item.PrimaryId is Guid primaryId && _view.Resolve(primaryId, viewer) is { Key: not null } primary && primary.Key.Title.Equals(title) && primary.Kind == item.Kind)
+            {
+                var status = WithVersions(ComposeItem(viewer, primary, gather), primary);
+                status.OpenItemId = primary.ItemId.ToString("N", CultureInfo.InvariantCulture);
+                return Cache.Put(cacheKey, Serialize(new[] { status }));
+            }
+
+            return Cache.Put(cacheKey, Serialize(new[] { WithVersions(ComposeItem(viewer, item, gather), item) }));
+        }
+
+        /// <summary>A movie or episode status with how many versions Jellyfin plays its item from (none for a missing one).</summary>
+        private static TitleStatus WithVersions(TitleStatus status, JfItemRef item)
+        {
+            if (item.Kind is "movie" or "episode" && !item.Virtual && item.Versions > 0) status.Versions = item.Versions;
+            return status;
         }
 
         /// <summary>The details-page status of one resolved item from gathered facts (no caching).</summary>
@@ -405,16 +421,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (key.IsMovie || key.Season is not int season) return null;
             var copies = CopiesOf(key.Title, viewer);
             if ((seriesId is Guid shown ? copies.FirstOrDefault(x => x.Visible && x.ItemId == shown) : copies.FirstOrDefault(x => x.Visible)) is not { } series) return null;
-            var ids = key.Episode is int e
-                ? _view.Episodes(series.ItemId, season, viewer, includeVirtual: true)
-                    .Where(x => !x.Hidden && x.Season == season && new EpisodeRange(x.Episode, x.EpisodeEnd).Contains(e)).Select(x => x.ItemId)
-                : _view.Seasons(series.ItemId, viewer).Where(x => !x.Hidden && x.Season == season).Select(x => x.ItemId);
+            // Only that series item's own season or episodes: with automatic series grouping Jellyfin lists another
+            // folder's (a 4K copy in the same library) with them, which is never this copy's item.
+            var kind = key.Episode != null ? "episode" : "season";
+            var ids = _view.SeriesParts(series.ItemId, season, key.Episode, viewer);
             // Jellyfin can list a missing (virtual) item and the one its file brought for the same slot
             // until its next series refresh: the one with the file is the scope's item.
             JfItemRef? first = null;
             foreach (var id in ids)
             {
-                if (_view.Resolve(id, viewer) is not { } item) continue;
+                if (_view.Resolve(id, viewer) is not { } item || item.Kind != kind || item.SeriesId != series.ItemId) continue;
                 if (!item.Virtual) return item;
                 first ??= item;
             }
@@ -437,6 +453,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var visible = CopiesOf(key.Title, viewer).Where(x => x.Visible).Select(x => x.ItemId).ToList();
                 if (visible.Count == 0) return null;
                 if (shown is Guid id && visible.Contains(id)) return id;
+                if (key.IsMovie && shown is Guid gone)
+                {
+                    // The movie item whose file became a version of a new item (another resolution joined it): that
+                    // item, never another copy (12.x keeps the old item as its version; 10.11 deletes it).
+                    if (_view.Resolve(gone, viewer) is { PrimaryId: Guid primary }) return visible.Contains(primary) ? primary : null;
+                    if (_view.VersionHolder(gone, visible, viewer) is Guid holder) return holder;
+                }
                 if (!key.IsMovie && seriesId is Guid copy) return visible.Contains(copy) ? copy : null;
                 return visible[0];
             }
