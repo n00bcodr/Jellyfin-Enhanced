@@ -52,7 +52,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             ["generation"] = "AcquireDatabase.Generation: a restore replaced the database (the write is held at once)",
             ["automation"] = "AcquireDatabase.Automation: every write of automation_budget, automation_breakers and automation_grants (WriteAutomation), and a restore",
             ["person_settings"] = "IAutomationConsents.Version: the person's settings.json put in place or removed, and every person's at once (restore, quarantine, start-up migration)",
-            ["jellyfin_user"] = "IRequestPolicy.PermissionVersion: JellyfinUserVersions (the person's and every person's), bracketed around every Jellyfin action that can change or authenticate a user (JellyfinUserActions) and JE's own user changes, and moved by Jellyfin's user events",
+            ["jellyfin_user"] = "IRequestPolicy.PermissionVersion, for the requester and for the approver: JellyfinUserVersions (the person's and every person's), bracketed around every Jellyfin action that can change or authenticate a user (JellyfinUserActions) and JE's own user changes, and moved by Jellyfin's user events",
             ["secrets"] = "SecretsStore.Version: every change of the stored credentials (Seerr's API key among them)",
         };
 
@@ -78,6 +78,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             // Jellyfin reads its database for it (IUserManager.GetUserById has no in-memory cache on 12.2).
             new("jellyfin_admin", AutomationFactRead.Versioned, new[] { "IRequestPolicy.IsAdmin" }, "jellyfin_user", "Admin"),
             new("consent", AutomationFactRead.Versioned, new[] { "AutomationConsent.Allows" }, "person_settings", "Consented"),
+            // 4a review round 10: the requester's and the approver's policy facts (whether they are still enabled Jellyfin
+            // users, their household role and rights, whether they see the title), as the outbox's checks read them. Jellyfin
+            // reads its database for them; each person's Jellyfin user version is stamped.
+            new("authority", AutomationFactRead.Versioned, new[] { "IRequestPolicy.Evaluate" }, "jellyfin_user", "Authority"),
         };
 
         /// <summary>What is wrong with <paramref name="facts"/> as a registry (empty: nothing).</summary>

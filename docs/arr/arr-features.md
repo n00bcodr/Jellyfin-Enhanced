@@ -1355,7 +1355,8 @@ either is off, the automatic requests above behave exactly as described there. W
   the send was being counted against its budget. The last check is made inside the connection itself, as each
   automatic write is handed over to be sent, so nothing can wait between its answer and the send. It first reads
   everything it needs from storage (budgets, the instance's breaker, eligibility grants, whether the person is a
-  Jellyfin administrator, the person's opt-out, whether Seerr's key is stored); those reads can wait, for example while
+  Jellyfin administrator, the person's opt-out, whether Seerr's key is stored, and the requester's and the approver's
+  current rights); those reads can wait, for example while
   a backup is being restored. Only then does it read the settings, and whatever is in memory (free space and whether it
   is known, both from the same reading of the instance's disk facts; the person's household role), and decide. Every
   change to something it read from storage is marked as under way before it can be seen and as done after, even when
@@ -1366,7 +1367,13 @@ either is off, the automatic requests above behave exactly as described there. W
   Jellyfin's own code when the server starts, so an action a Jellyfin update adds is covered as well. If any such change was
   under way or happened while the check was reading, it reads again, or the request waits a moment and is checked
   again. A kill switch, budget, opt-out or administrator change made while the check was reading therefore still stops
-  the send, as does low disk space reported meanwhile. It also counts the
+  the send, as does low disk space reported meanwhile. An OK is only as good as the person who gave it is now: if
+  whoever approved an automatic request has since been demoted, lost the Manager role, been disabled, locked out or
+  deleted, or can no longer see the title (or, for a request they edited, is no longer an administrator), nothing is
+  sent; the request goes back to waiting for an OK. The person it is for is checked the same way (still an enabled
+  user who may ask and sees the title). A migrated Manager's eligibility grant counts only while they are a Manager.
+  Jellyfin's actions are followed into Jellyfin's own server code (an interface to its implementation, a stored
+  callback to what was stored), so a change made several calls deep, such as a session's activity save, counts too. It also counts the
   budgets again with their limits as they are at that moment (the write's own place counted once): a limit lowered to
   0 while a request was on its way stops it, and the place it had taken is given back. A request held by a full
   budget waits until every full window has room again (when the hourly and the daily window are both full, until the

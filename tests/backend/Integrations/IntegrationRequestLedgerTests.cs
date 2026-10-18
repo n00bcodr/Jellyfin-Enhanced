@@ -60,7 +60,27 @@ public class IntegrationRequestLedgerTests
         public void Demote(Guid user, string role)
         {
             Interlocked.Increment(ref _permissions);
-            try { People[user] = People[user] with { Role = role, CanApprove = role is "Manager" or "Admin", Can4k = role == "Admin" }; }
+            try { People[user] = People[user] with { Role = role, CanCreate = role != "Watcher", CanApprove = role is "Manager" or "Admin", Can4k = role == "Admin" }; }
+            finally { Interlocked.Increment(ref _permissions); }
+        }
+        /// <summary>
+        /// Disables a person (or Jellyfin locks them out) inside the permission version's bracket. Like production, they
+        /// have no viewer any more (user_required), aren't a Jellyfin administrator, and keep their household role.
+        /// </summary>
+        public void Disable(Guid user)
+        {
+            Interlocked.Increment(ref _permissions);
+            try { People[user] = Disabled(People[user]); }
+            finally { Interlocked.Increment(ref _permissions); }
+        }
+        /// <summary>A person's facts once they are disabled (no viewer: user_required; an administrator falls back to the default role).</summary>
+        public static RequestPolicyFacts Disabled(RequestPolicyFacts facts)
+            => facts with { Refusal = "user_required", Visible = false, Role = facts.Role == "Admin" ? "Member" : facts.Role, CanApprove = facts.Role == "Manager", Can4k = false };
+        /// <summary>Deletes a person inside the permission version's bracket.</summary>
+        public void Delete(Guid user)
+        {
+            Interlocked.Increment(ref _permissions);
+            try { People.Remove(user); }
             finally { Interlocked.Increment(ref _permissions); }
         }
         // The household role from memory: an administrator by Jellyfin's permission, else the role stored for them.

@@ -36,19 +36,40 @@ namespace JE.Tests
             // The password change reaches the sign-in that can lock the account out, and the policy change its update.
             Assert.Contains(scanned, a => a is { Controller: "UserController", Action: "UpdateUserPassword", Reaches: "IUserManager.ResetPassword" or "IUserManager.AuthenticateUser" or "IUserManager.ChangePassword" });
             Assert.Contains(scanned, a => a is { Controller: "UserController", Action: "AuthenticateUserByName", Reaches: "ISessionManager.AuthenticateNewSession" });
-            // GET actions don't change users, except the wizard's first-user read, which creates them.
-            problems.AddRange(scanned.Where(a => a.Reaches != null && a.Verbs.All(v => v is "GET" or "HEAD") && a.Action != "GetFirstUser").Select(a => a.Controller + "." + a.Action + ": a GET that reaches " + a.Reaches));
+            // GET actions don't change users, except the wizard's first-user read, which creates them, and (round 10) the GETs
+            // that log the request's person's session activity (a reviewed person-scoped save).
+            problems.AddRange(scanned.Where(a => a.Reaches != null && a.Verbs.All(v => v is "GET" or "HEAD") && a.Action != "GetFirstUser" && !JellyfinUserActions.PersonScoped.ContainsKey(a.Reaches)).Select(a => a.Controller + "." + a.Action + ": a GET that reaches " + a.Reaches));
+            // Round 10: nothing stays unresolved with a user contract in Jellyfin's own code (each would bracket a write for everyone).
+            problems.AddRange(scanned.Where(a => a.Why?.StartsWith("unresolved ", StringComparison.Ordinal) == true).Select(a => a.Controller + "." + a.Action + ": " + a.Why));
             if (problems.Count > 0) throw new Xunit.Sdk.XunitException(string.Join("\n", problems));
         }
 
-        // Reading the assembly is a one-time cost per process, done in the background before the first request.
+        // Reading the assemblies is a one-time cost per process, done in the background before the first request. Round 10:
+        // the code read is Jellyfin.Api and the server assemblies next to it (where its interfaces are implemented).
         [Fact]
         public void ReadingJellyfinsAssemblyIsCheap()
         {
             using var api = JellyfinApiAssembly.Load();
+            var files = JellyfinUserActions.CodeOf(api.Path).Select(Path.GetFileName).ToList();
+            Assert.Equal("Jellyfin.Api.dll", files[0]);
+            Assert.Contains("MediaBrowser.Controller.dll", files);
+            Assert.Contains("Emby.Server.Implementations.dll", files);
+            Assert.Contains("Jellyfin.Server.Implementations.dll", files);
+            Assert.DoesNotContain(files, f => f!.StartsWith("System.", StringComparison.Ordinal) || f.StartsWith("Microsoft.", StringComparison.Ordinal));
             var timer = System.Diagnostics.Stopwatch.StartNew();
             Assert.True(JellyfinUserActions.Scan(api.Path).Count > 300);
-            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), "read in " + timer.Elapsed);
+            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(10), "read in " + timer.Elapsed);
+        }
+
+        // Round 10: a reviewed person-scoped member (JellyfinUserActions.PersonScoped) is held to what it was reviewed for:
+        // in Jellyfin's own code, GetSession's calls reach only LogSessionActivity's save of that user (its activity date
+        // moved, then the user saved whole). Anything more (another change, a sign-in, an unresolved call) fails here.
+        [Fact]
+        public void APersonScopedMemberReachesOnlyTheReviewedChange()
+        {
+            using var api = JellyfinApiAssembly.Load();
+            Assert.Equal(new[] { "IUserManager.UpdateUserAsync", "User.set_LastActivityDate" }, JellyfinUserActions.ReachedFrom(api.Path, "RequestHelpers.GetSession"));
+            Assert.Equal(new[] { "RequestHelpers.GetSession" }, JellyfinUserActions.PersonScoped.Keys);
         }
 
         // Deny by default: a member of IUserManager this JE doesn't know (a Jellyfin update) counts as a change; only the

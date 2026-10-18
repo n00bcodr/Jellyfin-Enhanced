@@ -43,8 +43,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <summary>The person it is for.</summary>
         public Guid Requester { get; init; }
 
-        /// <summary>Who approved it (null: nobody).</summary>
+        /// <summary>Who approved it (null: nobody). Only who: whether they can still approve is read again at every check.</summary>
         public Guid? Approver { get; init; }
+
+        /// <summary>The approval changed the request (an administrator's edits): it needs an administrator's OK still.</summary>
+        public bool Edited { get; init; }
 
         /// <summary>je or seerr (queued work); seerr for the old recipes' own POST.</summary>
         public string Backend { get; init; } = "seerr";
@@ -85,6 +88,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 Phase4Only = RequestOrigin.IsPhase4Only(want.OriginKind, want.OriginSource),
                 Requester = job.Authorization.Requester,
                 Approver = job.Authorization.Approver,
+                Edited = job.Authorization.Edited,
                 Backend = job.Authorization.Backend,
                 Target = AutomationSendGuard.Target(job),
                 Input = job.Input,
@@ -114,7 +118,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// POST, and the old recipes' own POST to Seerr at each address. Nothing a write site decided before an await is
     /// trusted here: every call reads it all again, in two steps. First the facts the gates read from storage are
     /// gathered (breaker, budgets, the eligibility grant, whether the person is a Jellyfin administrator, their consent,
-    /// whether Seerr's key is stored); those reads may wait. Then the live configuration is read and every gate is judged
+    /// whether Seerr's key is stored, and at the send the requester's and the approver's policy facts: a recorded approver
+    /// never stands in for their current authority); those reads may wait. Then the live configuration is read and every gate is judged
     /// on it and those facts, in <see cref="Gates"/> order, with nothing that waits (no I/O, lock, wait or await) before
     /// the answer: the first hold, or null when the write may go. What can be read from memory is read in that decision
     /// (the published disk snapshots, the household role, Trusted). Every fact is registered in
@@ -201,19 +206,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
             /// <summary>What the job's admitted writes count (at the transport).</summary>
             public IReadOnlyList<BudgetRows>? Admission { get; init; }
+
+            /// <summary>The requester's and the approver's policy facts now (a queued write at the send).</summary>
+            public People? Authority { get; init; }
         }
+
+        /// <summary>The policy facts of the people a queued write is for and from, as the outbox's own checks read them.</summary>
+        /// <param name="Requester">The person it is for.</param>
+        /// <param name="Approver">Who approved it (null: nobody).</param>
+        internal sealed record People(RequestPolicyFacts Requester, RequestPolicyFacts? Approver);
 
         // The version sources of the gathered facts (AutomationFacts.Versions), sampled without waiting: the configuration
         // (the object, and what it holds, as a save may change it in place), the database's generation (a restore) and its
         // automation version (budgets, breakers, grants), the person's settings version (their consents), their Jellyfin
-        // permission version, and the secrets store's version (Seerr's key).
-        private readonly record struct Stamp(PluginConfiguration Config, string Settings, long Generation, long Automation, long Person, long Jellyfin, long Secrets)
+        // permission version, the secrets store's version (Seerr's key), and the approver's Jellyfin permission version
+        // (round 10: whether they can still approve is gathered too).
+        private readonly record struct Stamp(PluginConfiguration Config, string Settings, long Generation, long Automation, long Person, long Jellyfin, long Secrets, long ApproverJellyfin)
         {
             // No change was in flight as it was sampled.
-            public bool Settled => FactVersion.Settled(Automation) && FactVersion.Settled(Person) && FactVersion.Settled(Jellyfin) && FactVersion.Settled(Secrets);
+            public bool Settled => FactVersion.Settled(Automation) && FactVersion.Settled(Person) && FactVersion.Settled(Jellyfin) && FactVersion.Settled(Secrets)
+                && FactVersion.Settled(ApproverJellyfin);
 
             public bool Same(Stamp other) => ReferenceEquals(Config, other.Config) && Settings == other.Settings && Generation == other.Generation
-                && Automation == other.Automation && Person == other.Person && Jellyfin == other.Jellyfin && Secrets == other.Secrets;
+                && Automation == other.Automation && Person == other.Person && Jellyfin == other.Jellyfin && Secrets == other.Secrets && ApproverJellyfin == other.ApproverJellyfin;
         }
 
         private sealed record Gate(string Id, bool EngineOnly = false);
@@ -233,6 +248,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             new("recipe_mode", EngineOnly: true),
             new("consent", EngineOnly: true),
             new("seerr_unsupported", EngineOnly: true),
+            new("authority"),
             new("approval", EngineOnly: true),
             new("breaker", EngineOnly: true),
             new("low_disk", EngineOnly: true),
@@ -334,7 +350,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         {
             var db = _store?.Database ?? _budgets?.Database;
             return new(config, JsonSerializer.Serialize(config), db?.Generation ?? 0, db?.Automation.Sample() ?? 0, _consents?.Version(write.Requester) ?? 0,
-                _policy?.PermissionVersion(write.Requester) ?? 0, _secrets());
+                _policy?.PermissionVersion(write.Requester) ?? 0, _secrets(), write.Approver is { } approver ? _policy?.PermissionVersion(approver) ?? 0 : 0);
         }
 
         // The versioned facts (AutomationFacts), each only where a gate needs it. The engine-only gates' facts are read
@@ -347,6 +363,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 // At the transport: what the job's admitted writes count.
                 Admission = admission?.Rows(),
             };
+            // Who the queued write is for and who approved it, as they are now: the same facts the outbox's own checks read
+            // (whatever the engine; not before any transport, which runs before the outbox prepares them).
+            if (w.Path == AutomationWritePath.Queued && w.Input != null && _policy != null && (every || !w.PreTransport))
+                facts = facts with { Authority = new(_policy.Evaluate(w.Requester, w.Input), w.Approver is { } approver ? _policy.Evaluate(approver, w.Input) : null) };
             if (!every && !Engine(w, config)) return facts;
             facts = facts with { EngineFacts = true };
             if (w.PreTransport && _budgets != null)
@@ -382,6 +402,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 ? Hold(AutomationHolds.UserOptedOut, "The person turned this automatic request off for themselves: it waits until they turn it back on.") : null,
             "seerr_unsupported" => w.Backend == "seerr" && AutomationRecipes.RequiresDirect(w.Recipe)
                 ? Park(AutomationHolds.SeerrUnsupported, "This recipe needs Sonarr/Radarr handling; Seerr handles requests now.") : null,
+            "authority" => Authority(w, f),
             "approval" => Approval(w, c, f),
             "breaker" => Breaker(w, f),
             // Seerr handling included: the policy measures the drive Seerr's default server would fill (as before).
@@ -409,6 +430,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             if (!on || c.ArrRequestBackend != w.Backend || (w.Backend == "seerr" && !SeerrRequestReadModel.IsActive(c, f.SeerrKey == true)))
                 return Park(ConfigurationChanged, "Request handling changed after this automatic request was queued.");
             return null;
+        }
+
+        // 4a review round 10: a recorded approver never stands in for current authority. The people a queued write is for
+        // and from, as they are now, judged by the outbox's own rules on the facts gathered for them (each person's Jellyfin
+        // version stamped): the requester is still an enabled Jellyfin user (not deleted, disabled or locked out), may ask
+        // and sees the title; a Kid's request needs an OK; an approver can still approve it (an administrator, or a Manager),
+        // is enabled and sees the title, holds the 4K right for a 4K copy, and is an administrator for a request they
+        // edited. A lost approval parks the job as approval_required: the want waits for a new OK, and the old one is void.
+        private static AutomationHold? Authority(AutomationWrite w, Facts f)
+        {
+            if (w.Path != AutomationWritePath.Queued || w.Input == null || w.PreTransport) return null;
+            if (f.Authority is not { } people) return Unchecked();
+            var (requester, approver) = (people.Requester, people.Approver);
+            // The policy's own reads kept changing under it (the facts are gathered again shortly).
+            if (requester.Refusal == "authorization_changed" || approver?.Refusal == "authorization_changed")
+                return Changed("The people this automatic request is for and from kept changing while it was checked; it is checked again shortly.");
+            if (requester.Refusal == "user_required")
+                return Park("identity_changed", "The person this automatic request is for is no longer an enabled Jellyfin user.");
+            if (!requester.CanCreate || !requester.Visible)
+                return Park("authorization_changed", "The person this automatic request is for can't ask for it any more.");
+            var fourK = w.Input.Variant == "4k";
+            if (w.Approver == null)
+            {
+                if (requester.Role == "Kid") return Park(AutomationHolds.ApprovalRequired, "A Kid's automatic request needs an OK.");
+                return fourK && !requester.Can4k ? Park("authorization_changed", "The person this automatic request is for can't ask for 4K any more.") : null;
+            }
+            var edited = w.Edited && (w.Input.ProfileId != null || w.Input.RootFolder != null || w.Input.InstanceId != null);
+            return approver is null || approver.Refusal == "user_required" || !approver.Visible || !approver.CanApprove || (fourK && !approver.Can4k) || (edited && approver.Role != "Admin")
+                ? Park(AutomationHolds.ApprovalRequired, "Whoever approved this automatic request can't approve it now: it waits for a new OK.")
+                : null;
         }
 
         // Ask mode, or a person who isn't eligible (any more): an OK is required now. Their role and Trusted are read here

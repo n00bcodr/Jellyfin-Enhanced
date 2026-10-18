@@ -16,6 +16,13 @@ import uuid
 import wave
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+def server_assembly(name):
+    """Jellyfin's own server assemblies in /jellyfin, as tests/backend/jellyfin_api.py keeps them."""
+    return (name.endswith(".dll") and (name.startswith(("Jellyfin.", "MediaBrowser.", "Emby.")) or name == "jellyfin.dll")
+            and not name.startswith("Jellyfin.Plugin."))
+
 # Floating tags: each run pulls the newest release of its compatibility line and
 # records the digest and server version it actually tested in report.json.
 # Never use `latest`, which would move to the next major line.
@@ -178,15 +185,23 @@ def pull(image):
 
 def user_actions(target, image, temp, output, name):
     """Runs the backend's Jellyfin user-action coverage tests against this image's own Jellyfin.Api.dll (the newest release
-    of the line, not the pinned one): a Jellyfin update that adds or renames an action that can change or authenticate a
-    user fails here until it is reviewed. The assembly is copied out of a created, never started, labelled container."""
+    of the line, not the pinned one) and the server assemblies its calls go into: a Jellyfin update that adds or renames
+    an action that can change or authenticate a user fails here until it is reviewed. The assemblies are copied out of a
+    created, never started, labelled container."""
     api = temp / "jellyfin-api"
+    staging = temp / "jellyfin-image"
     api.mkdir()
+    staging.mkdir()
     container = command("docker", "create", "--label", f"{LABEL}={name}", image)
     try:
-        command("docker", "cp", container + ":/jellyfin/Jellyfin.Api.dll", str(api / "Jellyfin.Api.dll"))
+        command("docker", "cp", container + ":/jellyfin/.", str(staging))
     finally:
         owned("docker", "rm", "-f", container)
+    # The same server assemblies the pinned cache keeps (tests/backend/jellyfin_api.py).
+    for entry in staging.iterdir():
+        if entry.is_file() and server_assembly(entry.name):
+            entry.replace(api / entry.name)
+    shutil.rmtree(staging, ignore_errors=True)
     result = subprocess.run(["dotnet", "test", str(ROOT / "tests/backend/JE.Tests.csproj"), "-c", "Release", f"-p:JellyfinTarget={target}",
         "--artifacts-path", str(temp / "user-actions"), "--filter", "FullyQualifiedName~IntegrationJellyfinApiUserActionTests|FullyQualifiedName~IntegrationJellyfinUserActionScanTests"],
         text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=dict(os.environ, JE_JELLYFIN_API=str(api / "Jellyfin.Api.dll")))

@@ -429,9 +429,12 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   `Helpers/FactVersion.cs` is that version, a seqlock: every change runs inside its bracket, odd before it can
   be seen and even after, also when it throws),
   `JellyfinUserActions.cs` which actions those are, deny by default: every non-GET action of Jellyfin's user, Quick
-  Connect and start-up controllers, and every action whose code (read from its assembly's metadata, once) reaches a user
-  change or a sign-in (`tests/backend/Integrations/IntegrationJellyfinApiUserActionTests.cs` runs the filter over
-  Jellyfin's own `Jellyfin.Api.dll`, which `tests/backend/jellyfin_api.py` copies out of the pinned images),
+  Connect and start-up controllers, and every action whose code reaches a user change or a sign-in, followed across the
+  Jellyfin server assemblies next to it (metadata only, read once: interface and virtual calls to their implementations,
+  delegate fields and events to what is stored in them; a non-GET action reaching a call that can't be followed and whose
+  contract carries a user is bracketed for everyone; `PersonScoped` lists reviewed changes to the request's own person)
+  (`tests/backend/Integrations/IntegrationJellyfinApiUserActionTests.cs` runs the filter over Jellyfin's own
+  `Jellyfin.Api.dll` and server assemblies, which `tests/backend/jellyfin_api.py` copies out of the pinned images),
   `AutomationTransportHandler.cs` the guarantee behind it: the HTTP handler on the arr, Seerr
   and default clients that checks every write made in an automation context (an `AsyncLocal` the outbox and the old
   recipes set) synchronously as it is handed on, the job's budget reservations among the gate's facts and judged with

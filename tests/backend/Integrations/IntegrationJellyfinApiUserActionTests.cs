@@ -56,19 +56,83 @@ public class IntegrationJellyfinApiUserActionTests
         ["ImageController.DeleteUserImageByIndexLegacy"] = "user",
     };
 
+    // 4a review round 10: the actions that save the request's person through RequestHelpers.GetSession (its userId
+    // argument, else the signed-in person): ISessionManager.LogSessionActivity saves that user whole, with its activity date
+    // moved, from the object read at the start of the request (JellyfinUserActions.PersonScoped). Round 9 read
+    // Jellyfin.Api alone and stopped at the session manager's interface; following it into Emby.Server.Implementations
+    // finds the save. Bracketed for that person only.
+    private static readonly string[] SessionActivity =
+    {
+        "PlaystateController.MarkPlayedItem",
+        "PlaystateController.MarkPlayedItemLegacy",
+        "PlaystateController.MarkUnplayedItem",
+        "PlaystateController.MarkUnplayedItemLegacy",
+        "PlaystateController.OnPlaybackProgress",
+        "PlaystateController.OnPlaybackProgressLegacy",
+        "PlaystateController.OnPlaybackStart",
+        "PlaystateController.OnPlaybackStartLegacy",
+        "PlaystateController.OnPlaybackStopped",
+        "PlaystateController.OnPlaybackStoppedLegacy",
+        "PlaystateController.ReportPlaybackProgress",
+        "PlaystateController.ReportPlaybackStart",
+        "PlaystateController.ReportPlaybackStopped",
+        "SessionController.DisplayContent",
+        "SessionController.Play",
+        "SessionController.PostCapabilities",
+        "SessionController.PostFullCapabilities",
+        "SessionController.ReportViewing",
+        "SessionController.SendFullGeneralCommand",
+        "SessionController.SendGeneralCommand",
+        "SessionController.SendMessageCommand",
+        "SessionController.SendPlaystateCommand",
+        "SessionController.SendSystemCommand",
+        "SyncPlayController.SyncPlayBuffering",
+        "SyncPlayController.SyncPlayCreateGroup",
+        "SyncPlayController.SyncPlayGetGroup",
+        "SyncPlayController.SyncPlayGetGroups",
+        "SyncPlayController.SyncPlayJoinGroup",
+        "SyncPlayController.SyncPlayLeaveGroup",
+        "SyncPlayController.SyncPlayMovePlaylistItem",
+        "SyncPlayController.SyncPlayNextItem",
+        "SyncPlayController.SyncPlayPause",
+        "SyncPlayController.SyncPlayPing",
+        "SyncPlayController.SyncPlayPreviousItem",
+        "SyncPlayController.SyncPlayQueue",
+        "SyncPlayController.SyncPlayReady",
+        "SyncPlayController.SyncPlayRemoveFromPlaylist",
+        "SyncPlayController.SyncPlaySeek",
+        "SyncPlayController.SyncPlaySetIgnoreWait",
+        "SyncPlayController.SyncPlaySetNewQueue",
+        "SyncPlayController.SyncPlaySetPlaylistItem",
+        "SyncPlayController.SyncPlaySetRepeatMode",
+        "SyncPlayController.SyncPlaySetShuffleMode",
+        "SyncPlayController.SyncPlayStop",
+        "SyncPlayController.SyncPlayUnpause",
+    };
+
     private static readonly Dictionary<string, Dictionary<string, string>> Reviewed = new(StringComparer.Ordinal)
     {
-        // 12.2: renaming a library rewrites every user's library preferences (IUserManager.UpdateUserAsync).
-        ["jf12"] = new(Common, StringComparer.Ordinal) { ["LibraryStructureController.RenameVirtualFolder"] = "global" },
+        // 12.2: renaming a library rewrites every user's library preferences (IUserManager.UpdateUserAsync); adding a user
+        // to a session and removing one log the session's activity too.
+        ["jf12"] = With(SessionActivity.Concat(new[] { "SessionController.AddUserToSession", "SessionController.RemoveUserFromSession" }), ("LibraryStructureController.RenameVirtualFolder", "global")),
         // 10.11: the easy (PIN) password still exists.
-        ["jf10"] = new(Common, StringComparer.Ordinal) { ["UserController.UpdateUserEasyPassword"] = "user" },
+        ["jf10"] = With(SessionActivity, ("UserController.UpdateUserEasyPassword", "user")),
     };
+
+    private static Dictionary<string, string> With(IEnumerable<string> person, params (string Action, string Key)[] more)
+    {
+        var all = new Dictionary<string, string>(Common, StringComparer.Ordinal);
+        foreach (var action in person) all.Add(action, "user");
+        foreach (var (action, key) in more) all.Add(action, key);
+        return all;
+    }
 
     // A non-GET action whose name or controller suggests it touches users or signs someone in.
     private static readonly Regex LooksLikeAUserAction = new(@"Authenticat|Password|Policy|Login|Logon|Lockout|QuickConnect|Startup|User(?!Data|Item|View|Library|Rating|Played|Favorite)|Account|Permission", RegexOptions.CultureInvariant);
 
     // Reviewed non-GET actions (12.2 and 10.11.11) whose name matches but that change no user: a playlist's shares
-    // (IPlaylistManager), and the extra users of a playback session (ISessionManager's session state).
+    // (IPlaylistManager), and on 10.11 the extra users of a playback session (ISessionManager's session state; 12.2 also
+    // logs the session's activity, so it is bracketed there).
     private static readonly HashSet<string> NotUserChanges = new(StringComparer.Ordinal)
     {
         "PlaylistsController.UpdatePlaylistUser", "PlaylistsController.RemoveUserFromPlaylist",
@@ -89,7 +153,8 @@ public class IntegrationJellyfinApiUserActionTests
             var other = Guid.NewGuid();
             var args = new Dictionary<string, object?>();
             if (action.HasUserId) args["userId"] = person;
-            var context = JellyfinUserBracketHarness.Context(action.Controller, action.Method, action.Verbs[0] == "*" ? "POST" : action.Verbs[0], args);
+            // Signed in as someone else when the action names its person (the userId argument decides), else as the person.
+            var context = JellyfinUserBracketHarness.Context(action.Controller, action.Method, action.Verbs[0] == "*" ? "POST" : action.Verbs[0], args, action.HasUserId ? Guid.NewGuid() : person);
             var seen = await JellyfinUserBracketHarness.Observe(context, person, other);
             var expected = reviewed.GetValueOrDefault(action.Name, "none");
             if (seen != expected) problems.Add(action.Name + " [" + string.Join(",", action.Verbs) + "]: bracket " + seen + ", reviewed " + expected);

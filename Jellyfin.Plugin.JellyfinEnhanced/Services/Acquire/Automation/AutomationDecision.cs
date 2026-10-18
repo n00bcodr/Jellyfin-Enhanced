@@ -80,8 +80,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
     /// <summary>
     /// Who may have automatic requests go ahead without an OK while the engine is on: administrators by role, a Trusted
-    /// person (the 4b seam), or someone with a recorded grant (Managers whose automatic requests went ahead before the
-    /// migration). Anyone else's automatic requests wait for an OK; Kids always do, Watchers never ask.
+    /// person (the 4b seam), or a Manager with a recorded grant (Managers whose automatic requests went ahead before the
+    /// migration). The grant stands for the Manager role it was recorded for: once its holder is a Member, it no longer
+    /// counts (4a review round 10). Anyone else's automatic requests wait for an OK; Kids always do, Watchers never ask.
     /// </summary>
     public sealed class AutomationEligibility
     {
@@ -94,13 +95,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <summary>True when the person is eligible, and how: admin, trusted, grant; null when not.</summary>
         /// <param name="user">The person.</param>
         /// <param name="role">Their household role (Admin from Jellyfin).</param>
-        public string? Why(Guid user, string role) => role == "Admin" ? "admin" : role is "Kid" or "Watcher" ? null : _trust.IsTrusted(user) ? "trusted" : _store.HasGrant(user) ? "grant" : null;
+        public string? Why(Guid user, string role) => role == "Admin" ? "admin" : role is "Kid" or "Watcher" ? null : _trust.IsTrusted(user) ? "trusted" : role == "Manager" && _store.HasGrant(user) ? "grant" : null;
 
         /// <summary>The same rule on facts already read (the automatic-write check's decision).</summary>
         /// <param name="role">Their household role.</param>
         /// <param name="trusted">Whether they are Trusted (<see cref="Trusted"/>).</param>
         /// <param name="granted">Whether they hold a grant (<see cref="Granted"/>).</param>
-        public static string? Why(string role, bool trusted, bool granted) => role == "Admin" ? "admin" : role is "Kid" or "Watcher" ? null : trusted ? "trusted" : granted ? "grant" : null;
+        public static string? Why(string role, bool trusted, bool granted) => role == "Admin" ? "admin" : role is "Kid" or "Watcher" ? null : trusted ? "trusted" : granted && role == "Manager" ? "grant" : null;
 
         /// <summary>Whether the person is Trusted (the 4b seam; its implementations read memory only).</summary>
         /// <param name="user">The person.</param>
