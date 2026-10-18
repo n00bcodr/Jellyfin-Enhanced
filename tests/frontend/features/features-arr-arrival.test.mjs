@@ -306,7 +306,11 @@ test('a season page waits for a burst of arrivals (and Jellyfin tidying up after
 test('reloads of one page are spaced out: a burst of arrivals gets one more reload after the gap', async t => {
   let ready = 1;
   const h = setup(t, { type: 'Season', hash: `#/details?id=${SEASON}&serverId=${SERVER}`, answers: () => season(ready) });
-  h.A.timing.gap = 150;
+  // The gap is measured between the reloads themselves, not from when the test notices the first one: on a busy
+  // host the poll can notice late, and a reload after a gap that has truly passed is correct.
+  const at = [];
+  h.view.addEventListener('viewshow', () => at.push(performance.now()));
+  h.A.timing.gap = 300;
   await h.D.update(false);
   ready = 2;
   h.S.refresh(['tv:tvdb:75932:s1']);
@@ -316,10 +320,9 @@ test('reloads of one page are spaced out: a burst of arrivals gets one more relo
   ready = 4;
   await sleep(10);
   h.S.refresh(['tv:tvdb:75932:s1']);
-  await sleep(60);
-  assert.equal(h.host.shows.length, 1, 'not again within the gap');
-  assert.ok(await until(() => h.host.shows.length === 2, 1500));
-  await sleep(200);
+  assert.ok(await until(() => h.host.shows.length === 2, 3000), 'the burst reloads once more');
+  assert.ok(at[1] - at[0] >= 295, `not again within the gap (${Math.round(at[1] - at[0])} ms apart)`);
+  await sleep(400);
   assert.equal(h.host.shows.length, 2, 'the burst is one more reload');
 });
 
