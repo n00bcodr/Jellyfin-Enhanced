@@ -589,6 +589,24 @@ public class ApiSeerrTests
     }
 
     [Theory]
+    [InlineData(true, false, true)]     // the filter on: a viewer allowed to see everyone's requests in Seerr sees only their own
+    [InlineData(false, false, false)]   // off: the list follows Seerr's permission (everyone's)
+    [InlineData(true, true, false)]     // administrators always see every request
+    public async Task FilterDownloadsByUserRequestsAlsoScopesTheRequestListToTheCallersOwnRequests(bool filter, bool admin, bool ownOnly)
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST | JellyseerrPermission.REQUEST_VIEW };
+        f.SetUser(f.UserId, admin);
+        f.Plugin.Plugin.Configuration.DownloadsPageEnabled = true;
+        f.Plugin.Plugin.Configuration.DownloadsFilterByUserRequests = filter;
+        f.Reply = request => request.RequestUri!.AbsolutePath == "/api/v1/request"
+            ? IntegrationTransport.Response("{\"pageInfo\":{\"pages\":0,\"results\":0},\"results\":[]}")
+            : IntegrationTransport.Response("{}");
+        Assert.IsType<OkObjectResult>(await f.Controller.GetRequests());
+        var read = Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/request?", StringComparison.Ordinal));
+        Assert.Equal(ownOnly, read.Path.Contains("requestedBy=27", StringComparison.Ordinal));
+    }
+
+    [Theory]
     [InlineData(JellyseerrPermission.NONE, false, false)]
     [InlineData(JellyseerrPermission.REQUEST, false, false)]
     [InlineData(JellyseerrPermission.REQUEST | JellyseerrPermission.CREATE_ISSUES, false, false)]
