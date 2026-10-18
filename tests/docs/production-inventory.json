@@ -87,6 +87,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminAutomationController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminController.cs",
       "category": "Controllers"
     },
@@ -184,6 +188,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/BuildAttestation.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/FactVersion.cs",
       "category": "Helpers"
     },
     {
@@ -439,6 +447,66 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationAdmission.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationBudgets.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationConsents.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationDecision.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationFacts.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationFlags.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationMigration.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationModes.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationRecordSnapshot.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationRisk.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationStatus.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationStore.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationTransportHandler.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationWriteGate.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/JellyfinUserActions.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/BridgePaths.cs",
       "category": "Services"
     },
@@ -560,6 +628,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestModels.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestOperations.cs",
       "category": "Services"
     },
     {
@@ -1185,6 +1257,10 @@
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WikidataAwardsService.cs",
       "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/admin/admin-automation.js",
+      "category": "js"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/admin/admin-render.js",
@@ -2367,6 +2443,44 @@
       "following_attributes": [
         "Authorize",
         "PrivateResponse",
+        "BodyLimit"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/automation/status",
+      "method": "Status",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminAutomationController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/automation/decisions",
+      "method": "Decisions",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminAutomationController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/automation/notice/dismiss",
+      "method": "DismissNotice",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminAutomationController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/automation/breakers/reset",
+      "method": "ResetBreaker",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminAutomationController.cs",
+      "following_attributes": [
+        "Authorize",
         "BodyLimit"
       ]
     },
@@ -6145,6 +6259,126 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrPhase4Enabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4AutomationEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationShadowOverride",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationKillAll",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationKilledInstances",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationRecipes",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationHouseholdAddsPerDay",
+      "type": "int",
+      "initializer": "20",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationSearchesPerHour",
+      "type": "int",
+      "initializer": "30",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationSearchesPerDay",
+      "type": "int",
+      "initializer": "300",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationSeerrPostsPerDay",
+      "type": "int",
+      "initializer": "20",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationBackfillPerHour",
+      "type": "int",
+      "initializer": "10",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationSourceFetchesPerHour",
+      "type": "int",
+      "initializer": "60",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationDeltaWorkPerHour",
+      "type": "int",
+      "initializer": "500",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationFree",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAutomationMigration",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrPhase1Enabled",
       "type": "bool",
       "initializer": null,
@@ -8113,6 +8347,22 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "AutoSeasonRequests",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "AutoMovieRequests",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "QualityTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -9230,6 +9480,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
+    {
       "literal": "Jellyfin.Plugin.JellyfinEnhanced.js.locales.{baseLang}.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
     },
@@ -9320,6 +9574,10 @@
     {
       "literal": "acquire.db",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/AcquireDatabase.cs"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationConsents.cs"
     },
     {
       "literal": "hidden-content.json",
@@ -9737,10 +9995,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 534,
-    "routes": 258,
-    "configuration_properties": 586,
-    "storage_references": 86,
+    "files": 553,
+    "routes": 262,
+    "configuration_properties": 603,
+    "storage_references": 88,
     "scheduled_tasks": 14,
     "locales": 33
   }

@@ -387,6 +387,8 @@ The bookmark GET/POST pair is listed in [Bookmarks API endpoints](#bookmarks-api
 
 Settings, shortcuts, Elsewhere, and bookmark whole-file saves do not strict-read the previous document.
 
+A save of `settings.json` replaces the whole file. An administrator may save another person's, but that save keeps the person's own consents (automatic season and movie requests) as they stored them; only the person changes those.
+
 Hidden Content and raw Spoiler Guard saves lock and strict-read first: corruption returns `503` with backup/retry guidance, temporary I/O failures `500`.
 
 Raw Spoiler Guard POST has a **2 MiB** request limit and at most **1000 entries in each** of `Series`, `Movies`, `Collections`, `PendingTmdb`; exceeding the dictionary cap returns `413`.
@@ -1640,6 +1642,17 @@ Administrators move Seerr's requests into Jellyfin Enhanced with a check, a move
 | POST | `acquire/migration/seerr/commit` | `{"digest": "…", "confirmRequestsDisabled": false}`; 409 when Seerr changed or its address was changed during the move (`seerr_changed`), the read was incomplete, requesting is still on or Jellyfin Enhanced's own Seerr writes didn't finish in time (`seerr_writes_in_flight`); 503 `switch_failed` when the switch couldn't be saved (nothing moved) |
 | POST | `acquire/migration/seerr/rollback` | `{"batchId": "…"}`; within 14 days; 503 `switch_failed` (nothing rolled back) or `rollback_failed` (switched back; roll back again) |
 
+### Automation (phase 4)
+
+The automation engine's state, its recent decisions, and its admin actions.
+
+| Method | Path | Access and contract |
+|---|---|---|
+| GET | `arr/admin/automation/status` | Admin, integration and phase 1 on: the phase-4 automation engine (switches as they apply, the rollout Shadow guard, kill switches, each recipe's stored and effective mode with the reason, budget windows with `used`/`limit`/`uncertain` and `nextSlotAt` when full, breakers per target, automatic requests waiting at send by reason, the request backend's guarantees and the one-time migration with its notice). Private, never cached |
+| GET | `arr/admin/automation/decisions?recipe=&limit=` | Admin, integration and phase 1 on: recent automation decisions, newest first (one per trigger; `repeats` counts the same trigger again). `400 invalid_request` for an unknown recipe |
+| POST | `arr/admin/automation/notice/dismiss` | Admin, integration and phase 1 on: hides the one-time migration notice (`{"dismissed":true}` when it was showing) |
+| POST | `arr/admin/automation/breakers/reset` | Admin, integration and phase 1 on: body `{"target":"<instance id>"}` (or `"seerr"`); closes that target's breaker so the next automatic send is tried at once (`400 invalid_request` for a malformed target) |
+
 ### Discover, household, and approvals
 
 Routes for JE mode's Discover tab and search row, and for approvals and the household. API keys and unknown users get `403 user_required`; Watchers `requests_create_required`; Seerr mode and phase 3 off `feature_disabled`.
@@ -1970,6 +1983,8 @@ curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" "$JE_URL/bookmarksPage"
 ```
 
 Reset enumerates existing canonical user configuration directories and replaces Enhanced settings using copied server defaults, with model-default exceptions. `WatchProgressMode` resets to `"percentage"` and `WatchProgressTimeFormat` to `"hours"`, even when the saved server defaults differ.
+
+Each person's own consents (automatic season and movie requests) are kept by the reset.
 
 Reset also resets Hidden Content settings while retaining items, and preferences in existing Spoiler Guard files while retaining protection lists. It does not reset bookmarks, reviews, shortcuts, or Elsewhere.
 

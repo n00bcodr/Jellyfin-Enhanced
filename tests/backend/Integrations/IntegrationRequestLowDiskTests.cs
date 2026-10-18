@@ -570,4 +570,64 @@ public class IntegrationRequestLowDiskTests
         Assert.All((await discover.SearchAsync(lab.Member, "show", 1, null, default))!.Results, c => Assert.Null(c.Blocked));
         Assert.All((await discover.DiscoverAsync(lab.Member, "because", "all", 1, null, default))!.Groups!.Single().Results, c => Assert.Null(c.Blocked));
     }
+
+    // 4a review round 8 (4a-security-r8-1): the automatic-write check reads both disk answers in its final decision, from
+    // one read of each published snapshot, without the snapshot slot's lock. They agree with the guard's own answers.
+    [Fact]
+    public async Task TheDecisionsDiskReadGivesBothAnswersFromTheSnapshotsWithoutTheirLocks()
+    {
+        using var lab = new Lab();
+        await lab.LoadSystemAsync();
+        var held = new MutationInput { Key = Firefly, Scope = "seasons", Seasons = new[] { 1 } };
+        // The library index isn't read yet: no verdict.
+        Assert.False(lab.Policy.Disk(held, lab.Config).Known);
+        await lab.LoadAsync();
+        foreach (var input in new[] { held, new MutationInput { Key = OldShow, Scope = "seasons", Seasons = new[] { 1 } }, new MutationInput { Key = NewShow, Scope = "seasons", Seasons = new[] { 1 } }, new MutationInput { Key = "movie:tmdb:603" } })
+        {
+            var (pause, known) = lab.Policy.Disk(input, lab.Config);
+            Assert.Equal(lab.Policy.TitlePause(input), pause);
+            Assert.Equal(lab.Policy.DiskKnown(input), known);
+            Assert.True(known);
+        }
+        Assert.NotNull(lab.Policy.Disk(held, lab.Config).Pause);
+        Assert.Null(lab.Policy.Disk(new MutationInput { Key = OldShow, Scope = "seasons", Seasons = new[] { 1 } }, lab.Config).Pause);
+        // The configuration given decides (the decision's live one): the guard off, no pause and nothing to know.
+        var off = new PluginConfiguration { SonarrInstances = lab.Config.SonarrInstances, RadarrInstances = lab.Config.RadarrInstances, ArrRequestBackend = "je", ArrLowDiskPercent = 0 };
+        var guardOff = lab.Policy.Disk(held, off);
+        Assert.Null(guardOff.Pause);
+        Assert.True(guardOff.Known);
+
+        // While a refresh holds the system and library slots' locks, the decision's read still answers at once.
+        var states = typeof(ArrStateStore).GetField("_states", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(lab.Store)!;
+        var state = states.GetType().GetMethod("get_Item")!.Invoke(states, new object[] { lab.Arr.Instance("Sonarr").Id })!;
+        object Lock(string slot)
+        {
+            var value = state.GetType().GetProperty(slot)!.GetValue(state)!;
+            return value.GetType().GetField("_lock", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(value)!;
+        }
+        using var holding = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var holder = new Thread(() =>
+        {
+            lock (Lock("System"))
+            lock (Lock("Library"))
+            {
+                holding.Set();
+                release.Wait(TimeSpan.FromSeconds(20));
+            }
+        });
+        holder.Start();
+        try
+        {
+            Assert.True(holding.Wait(TimeSpan.FromSeconds(10)));
+            // A TimeoutException here: the decision's disk read waited for a snapshot slot's lock.
+            var read = await Task.Run(() => lab.Policy.Disk(held, lab.Config)).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.NotNull(read.Pause);
+        }
+        finally
+        {
+            release.Set();
+            holder.Join(TimeSpan.FromSeconds(20));
+        }
+    }
 }

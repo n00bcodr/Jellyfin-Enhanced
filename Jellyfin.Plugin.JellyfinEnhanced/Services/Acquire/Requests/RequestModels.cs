@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
+using AutomationRecipes = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationRecipes;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 {
@@ -78,18 +79,118 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return seasons.Length == 0 ? null : this with { Seasons = seasons };
         }
     }
-    /// <summary>Where a want came from: a person's ask (the default), a recipe, or an import from Seerr.</summary>
-    /// <param name="Kind">interactive, automation, or seerr_import.</param>
-    /// <param name="Source">The recipe name, or the JE-assigned Seerr source id for imports.</param>
+    /// <summary>
+    /// Where a want came from. Only the server builds an origin (after checking the list, link or recipe it names); no
+    /// request body carries one. Persisted with the want: the kind, its source, and the provenance as JSON.
+    /// </summary>
+    /// <param name="Kind">interactive, automation, list, import, sync or seerr_import.</param>
+    /// <param name="Source">The recipe id, the list id (<c>list:{id}</c>), or the JE-assigned Seerr source id for imports.</param>
     public sealed record RequestOrigin(string Kind, string? Source = null)
     {
-        /// <summary>A recipe acting on a person's behalf (auto season, auto movie).</summary>
+        /// <summary>A person's own ask (the default).</summary>
+        public const string InteractiveKind = "interactive";
+        /// <summary>A recipe acting on a person's behalf (auto season, auto movie, and the phase-4 recipes).</summary>
         public const string AutomationKind = "automation";
+        /// <summary>A person's ask from a list (Request one / Request all missing): deliberate, never automatic.</summary>
+        public const string ListKind = "list";
+        /// <summary>A person's reviewed ask for titles missing after a list import: deliberate, never automatic.</summary>
+        public const string ImportKind = "import";
+        /// <summary>An ask for titles a linked list's sync added (scheduled, on a person's recorded consent): automatic.</summary>
+        public const string SyncKind = "sync";
         /// <summary>A request imported from Seerr during the authority transfer.</summary>
         public const string SeerrImportKind = "seerr_import";
+
+        /// <summary>Server-built provenance (list, entry, revision, generation, trigger); null for a plain ask.</summary>
+        public RequestProvenance? Provenance { get; init; }
+
+        /// <summary>Ask mode (or automation the person isn't eligible for): the want always waits for an OK.</summary>
+        public bool RequireApproval { get; init; }
+
+        /// <summary>The household made automatic requests free: this want costs nobody's allowance.</summary>
+        public bool Free { get; init; }
+
+        /// <summary>True for origins that act without a person pressing anything (recipes, list sync): budgets and kills apply.</summary>
+        public bool Automatic => IsAutomatic(Kind);
+
+        /// <summary>True for automatic origin kinds (recipes, list sync).</summary>
+        /// <param name="kind">Origin kind.</param>
+        public static bool IsAutomatic(string? kind) => kind is AutomationKind or SyncKind;
+
+        /// <summary>
+        /// True when only phase 4 creates work of this origin, so it is never sent while phase 4 is off: lists, imports
+        /// and sync, and every recipe other than the existing next-season and next-movie ones.
+        /// </summary>
+        /// <param name="kind">Origin kind.</param>
+        /// <param name="source">Origin source (the recipe id for automation).</param>
+        public static bool IsPhase4Only(string? kind, string? source)
+            => kind is ListKind or ImportKind or SyncKind || (kind == AutomationKind && !AutomationRecipes.IsLegacy(source));
+
         /// <summary>An automation origin for one recipe.</summary>
+        /// <param name="recipe">Recipe id.</param>
         public static RequestOrigin Automation(string recipe) => new(AutomationKind, recipe);
+
+        /// <summary>A person's ask from a list (<c>source=list:{id}</c>), with the entry and operation it belongs to.</summary>
+        /// <param name="listId">The list (already checked by the caller).</param>
+        /// <param name="provenance">Entry, revision and operation.</param>
+        public static RequestOrigin List(string listId, RequestProvenance provenance) => new(ListKind, "list:" + listId) { Provenance = provenance with { ListId = listId } };
+
+        /// <summary>A reviewed ask after a list import.</summary>
+        /// <param name="listId">The list imported into.</param>
+        /// <param name="provenance">Source kind, revision and operation.</param>
+        public static RequestOrigin Import(string listId, RequestProvenance provenance) => new(ImportKind, "list:" + listId) { Provenance = provenance with { ListId = listId } };
+
+        /// <summary>An ask for a linked list's sync addition, on the linker's consent.</summary>
+        /// <param name="listId">The list.</param>
+        /// <param name="provenance">Link source kind, generation, triggering user and operation.</param>
+        public static RequestOrigin Sync(string listId, RequestProvenance provenance) => new(SyncKind, "list:" + listId) { Provenance = provenance with { ListId = listId, Recipe = provenance.Recipe ?? AutomationRecipes.ListSyncRequests } };
+
+        /// <summary>The recipe this origin answers to for modes and kill switches (null: none).</summary>
+        public string? Recipe => Kind == AutomationKind ? Source : Kind == SyncKind ? Provenance?.Recipe ?? AutomationRecipes.ListSyncRequests : null;
+
+        /// <summary>The persisted detail (provenance and flags) as JSON, or null when there is none.</summary>
+        public string? Detail => Provenance == null && !RequireApproval && !Free ? null
+            : JsonSerializer.Serialize(new RequestOriginDetail(Provenance, RequireApproval, Free));
     }
+
+    /// <summary>
+    /// Server-built provenance of a want: which list and entry, at which list revision or source generation, who or
+    /// what triggered it, and the durable operation it belongs to. Internal: never projected to a Family response.
+    /// </summary>
+    /// <param name="ListId">The list.</param>
+    /// <param name="EntryId">The list entry.</param>
+    /// <param name="ListRevision">The list revision the ask was made against.</param>
+    /// <param name="SourceGeneration">A linked source's generation (sync) or the import's source digest.</param>
+    /// <param name="TriggeringUser">The person whose action (or playback) triggered it, when not the requester.</param>
+    /// <param name="Recipe">The recipe (automation and sync).</param>
+    /// <param name="SourceKind">The source provider kind (mdblist, tmdb, …) for imports and sync.</param>
+    /// <param name="OperationId">The durable batch/confirmation operation (see <see cref="RequestOperations"/>).</param>
+    /// <param name="TriggerIdentity">An automatic trigger's identity (recipe + user + scope + session/item or event).</param>
+    public sealed record RequestProvenance(string? ListId = null, string? EntryId = null, long? ListRevision = null, string? SourceGeneration = null,
+        Guid? TriggeringUser = null, string? Recipe = null, string? SourceKind = null, string? OperationId = null, string? TriggerIdentity = null);
+
+    /// <summary>The stored form of an origin's detail.</summary>
+    /// <param name="Provenance">Provenance.</param>
+    /// <param name="RequireApproval">Created to wait for an OK (Ask).</param>
+    /// <param name="Free">Created without a charge (free automation).</param>
+    public sealed record RequestOriginDetail(RequestProvenance? Provenance, bool RequireApproval, bool Free)
+    {
+        /// <summary>Reads a stored detail; null when absent or unreadable.</summary>
+        /// <param name="json">Stored JSON.</param>
+        public static RequestOriginDetail? Read(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return null;
+            try { return JsonSerializer.Deserialize<RequestOriginDetail>(json); }
+            catch (JsonException) { return null; }
+        }
+    }
+    /// <summary>
+    /// What an ask would do now, worked out without writing anything (<see cref="RequestLedger.Preview"/>): the outcome
+    /// it would get; for a request it would record (or the person's existing one it would replay), its status, reason,
+    /// cost, estimated GB, whether it would only follow scope already asked for, whether it would go out (a job), whether
+    /// it would be a new request, the scope it would own and the instance it would go to.
+    /// </summary>
+    public sealed record RequestPreview(RequestOutcome Outcome, string? Status = null, string? Reason = null, int Cost = 0, double EstimatedGb = 0,
+        bool Follower = false, bool WouldSend = false, bool New = false, MutationInput? Owned = null, string? InstanceId = null);
     /// <summary>A single episode coordinate.</summary>
     public sealed record RequestEpisode(int Season, int Episode);
     /// <summary>Family Search payload: the title key in scope (a movie, or a series alone, with a season, or with a season and an episode) and one idempotency key per press.</summary>
@@ -103,9 +204,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>Bulk approval is bounded and each row is independently authorized.</summary>
     public sealed record BulkApproveRequest(string[] Ids);
     /// <summary>A durable request and its private backend context. API responses project this record.</summary>
-    /// <remarks><c>OriginKind</c> is where the intent came from (interactive, automation or seerr_import).</remarks>
+    /// <remarks>
+    /// <c>OriginKind</c> is where the intent came from (see <see cref="RequestOrigin"/>); <c>OriginSource</c> its recipe,
+    /// list or Seerr source; <c>OriginDetail</c> the stored provenance JSON (<see cref="RequestOriginDetail"/>);
+    /// <c>OperationId</c> the durable operation it belongs to.
+    /// </remarks>
     public sealed record RequestWant(string Id, string AcquisitionId, Guid UserId, string ClientRequestId, string Fingerprint,
-        MutationInput Input, string Status, string Reason, int Cost, string ParentalSignature, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, bool Follower = false, MutationInput? OwnedInput = null, string TargetKey = "", string OriginKind = "interactive");
+        MutationInput Input, string Status, string Reason, int Cost, string ParentalSignature, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, bool Follower = false, MutationInput? OwnedInput = null, string TargetKey = "", string OriginKind = "interactive",
+        string? OriginSource = null, string? OriginDetail = null, string? OperationId = null);
     /// <summary>
     /// Authorization facts captured at approval, never returned to a browser. <c>SeerrSeasons</c> (and <c>SeerrUser</c>
     /// when approval didn't know it) are bound right before a Seerr request is sent: the exact seasons and account it

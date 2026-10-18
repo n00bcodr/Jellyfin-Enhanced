@@ -1,0 +1,10 @@
+{
+  "jf12": {
+    "version": "12.2",
+    "image": "jellyfin/jellyfin:12.2@sha256:357724bf0ae27a672c7cbaa899db2d9abeb13dbd8657ccce750258a4c059d037"
+  },
+  "jf10": {
+    "version": "10.11.11",
+    "image": "jellyfin/jellyfin:10.11.11@sha256:aefb67e6a7ff1debdd154a78a7bbb780fd0c873d8639210a7f6a2016ad2b35db"
+  }
+}

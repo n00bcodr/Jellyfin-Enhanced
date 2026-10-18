@@ -2394,6 +2394,14 @@ div#bazarrMappingsValidationResult {
 .je-arr-check-row.je-arr-check-ok { border-left-color: #52b54b; }
 .je-arr-check-row.je-arr-check-bad { border-left-color: #dc3545; }
 .je-arr-check-title { font-weight: 600; }
+/* Phase 4: automation recipes and kill-switch targets */
+.je-arr-automation-recipes { display: flex; flex-direction: column; gap: 0.5em; }
+.je-arr-automation-recipe { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75em; }
+.je-arr-automation-recipe-name { flex: 1 1 18em; }
+.je-arr-automation-recipe select { min-width: 8em; min-height: 2.4em; }
+.je-arr-automation-kill, .je-arr-automation-target { display: inline-flex; align-items: center; gap: 0.35em; min-height: 2.4em; cursor: pointer; }
+.je-arr-automation-targets { display: flex; flex-wrap: wrap; gap: 0.25em 1.25em; }
+.je-arr-automation-override > label > span { font-weight: 600; }
 /* Phase 1 live updates (status of each instance's live connection and webhook). */
 .je-arr-live-settings { margin-top: 1.5em; padding-top: 1em; border-top: 1px solid rgba(128, 128, 128, 0.25); }
 .je-arr-live-note { margin-top: 0.35em; overflow-wrap: anywhere; }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Threading;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Data.Sqlite;
 
@@ -177,6 +178,37 @@ CREATE TABLE request_notices (
 CREATE TABLE request_deleted_users (user_hash TEXT PRIMARY KEY);
 " + Phase3dTables + @"
 ",
+            // 3: phase 4 foundation. Request origins and their server-built provenance; durable batch/confirmation
+            // operations; automation budgets (durable admission), decisions (Shadow and every other mode), recorded
+            // eligibility grants and per-target circuit breakers.
+            @"
+ALTER TABLE wants ADD COLUMN origin_detail TEXT;
+ALTER TABLE wants ADD COLUMN operation_id TEXT;
+CREATE INDEX wants_operation ON wants(operation_id);
+CREATE TABLE request_operations (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, client_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL, subject TEXT, size INTEGER NOT NULL, state TEXT NOT NULL, payload TEXT,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+    UNIQUE(user_id,kind,client_id));
+CREATE TABLE automation_budget (
+    id TEXT PRIMARY KEY, category TEXT NOT NULL, scope TEXT NOT NULL, unique_key TEXT NOT NULL,
+    job_id TEXT, recipe TEXT, state TEXT NOT NULL, outcome TEXT,
+    reserved_at INTEGER NOT NULL, settled_at INTEGER,
+    UNIQUE(category,scope,unique_key));
+CREATE INDEX automation_budget_window ON automation_budget(category,scope,reserved_at);
+CREATE INDEX automation_budget_job ON automation_budget(job_id);
+CREATE TABLE automation_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, decision_key TEXT NOT NULL UNIQUE, recipe TEXT NOT NULL,
+    user_id TEXT, title_key TEXT, mode TEXT NOT NULL, outcome TEXT NOT NULL, reason TEXT NOT NULL,
+    backend TEXT, detail TEXT, repeats INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE INDEX automation_decisions_at ON automation_decisions(updated_at);
+CREATE INDEX automation_decisions_user ON automation_decisions(user_id);
+CREATE TABLE automation_grants (
+    user_id TEXT PRIMARY KEY, source TEXT NOT NULL, detail TEXT, granted_at INTEGER NOT NULL);
+CREATE TABLE automation_breakers (
+    target TEXT PRIMARY KEY, failures INTEGER NOT NULL, opened_until INTEGER, last_reason TEXT, updated_at INTEGER NOT NULL);
+",
         };
 
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
@@ -265,6 +297,18 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
         /// </summary>
         public long Generation => Interlocked.Read(ref _generation);
 
+        /// <summary>
+        /// The version of what the automatic-write check reads from this database: budget admissions and their settling
+        /// (<c>automation_budget</c>), breakers (<c>automation_breakers</c>) and eligibility grants
+        /// (<c>automation_grants</c>). Every write of those tables is made through <see cref="WriteAutomation{T}"/> (a source
+        /// scan checks it), and a restore replaces them inside it too: the version is odd before the change commits and
+        /// even after. The check samples it before it gathers those facts and again when it decides.
+        /// </summary>
+        public FactVersion Automation { get; } = new();
+
+        /// <summary>Tests: runs on the writer's thread as a write has committed (other readers see it), before it returns.</summary>
+        internal Action? Committed { get; set; }
+
         /// <summary>Runs a read (any number at once). Throws <see cref="InvalidOperationException"/> when unavailable.</summary>
         public T Read<T>(Func<SqliteConnection, T> read)
         {
@@ -294,6 +338,17 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
         /// when a restore replaced it since.
         /// </summary>
         public (bool Done, T Result) WriteIf<T>(long? generation, Func<SqliteConnection, SqliteTransaction, T> write, T otherwise)
+            => WriteCore(generation, write, otherwise, null);
+
+        /// <summary>
+        /// Runs a write like <see cref="Write{T}"/> that changes what the automatic-write check reads (budget admissions,
+        /// breakers, grants): inside <see cref="Automation"/>'s bracket, from the moment this write is the writer until it
+        /// has committed or failed. The only way to write those tables.
+        /// </summary>
+        public T WriteAutomation<T>(Func<SqliteConnection, SqliteTransaction, T> write)
+            => WriteCore(null, write, default!, Automation).Result;
+
+        private (bool Done, T Result) WriteCore<T>(long? generation, Func<SqliteConnection, SqliteTransaction, T> write, T otherwise, FactVersion? version)
         {
             ThrowIfUnavailable();
             _writer.Wait();
@@ -303,11 +358,7 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                 try
                 {
                     if (generation.HasValue && generation.Value != Generation) return (false, otherwise);
-                    using var connection = Open();
-                    using var transaction = connection.BeginTransaction(deferred: false);
-                    var result = write(connection, transaction);
-                    transaction.Commit();
-                    return (true, result);
+                    return version == null ? Commit(write) : version.Mutate(() => Commit(write));
                 }
                 finally
                 {
@@ -318,6 +369,16 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
             {
                 _writer.Release();
             }
+        }
+
+        private (bool Done, T Result) Commit<T>(Func<SqliteConnection, SqliteTransaction, T> write)
+        {
+            using var connection = Open();
+            using var transaction = connection.BeginTransaction(deferred: false);
+            var result = write(connection, transaction);
+            transaction.Commit();
+            Committed?.Invoke();
+            return (true, result);
         }
 
         /// <summary>A consistent copy of the database (SQLite's online backup), for JE's backup zip; null when there is none.</summary>
@@ -370,9 +431,13 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                             // A file that isn't a database fails here, before the live one is touched.
                             UserVersion(source);
                             using var live = Open();
-                            source.BackupDatabase(live);
+                            // Every automation table is replaced: inside its version's bracket, like any other write of them.
+                            Automation.Mutate(() =>
+                            {
+                                source.BackupDatabase(live);
+                                Interlocked.Increment(ref _generation);
+                            });
                         }
-                        Interlocked.Increment(ref _generation);
                         lock (_initLock)
                         {
                             _initialized = false;
@@ -480,9 +545,12 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                     _logger?.Error("Requests & downloads: " + _unavailable);
                     return;
                 }
+                // One copy per start: the schema-2 extensions below don't take a second one after a migration took it.
+                var backedUp = false;
                 if (version < Migrations.Count && existed && version > 0)
                 {
                     BackupBeforeMigration(connection, version);
+                    backedUp = true;
                 }
                 for (var v = version; v < Migrations.Count; v++)
                 {
@@ -496,14 +564,14 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                     transaction.Commit();
                     _logger?.Info($"Requests & downloads: database migrated to schema {v + 1}.");
                 }
-                var extensionBackedUp = false;
+                var extensionBackedUp = backedUp;
                 // Earlier phase-3a installations already have schema 2. Extend that migration idempotently.
                 using (var columns = connection.CreateCommand())
                 {
                     columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('reservations') WHERE name='episode_count'";
                     if (Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
                     {
-                        if (existed && version == 2) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
+                        if (existed && version == 2 && !extensionBackedUp) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
                         using var transaction = connection.BeginTransaction(deferred: false);
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;

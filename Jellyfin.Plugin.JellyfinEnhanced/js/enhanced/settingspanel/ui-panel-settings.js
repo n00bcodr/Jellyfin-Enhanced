@@ -173,6 +173,20 @@
             JE.toast(JE.t('toast_native_poster_tags_saved'));
             resetAutoCloseTimer();
         });
+        // Automatic requests per person: "" follows the household (null), "on" / "off" are explicit.
+        for (const [id, key] of [['autoSeasonRequestsSelect', 'autoSeasonRequests'], ['autoMovieRequestsSelect', 'autoMovieRequests']]) {
+            document.getElementById(id)?.addEventListener('change', (event) => {
+                if (JE.pluginConfig?.ArrAutomationEngineEnabled !== true) return;
+                const value = event.target.value === 'on' ? true : event.target.value === 'off' ? false : null;
+                JE.userConfig = JE.userConfig || {};
+                JE.userConfig.settings = JE.userConfig.settings || {};
+                JE.userConfig.settings[key] = value;
+                JE.currentSettings[key] = value;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.toast(JE.t('toast_auto_requests_saved'));
+                resetAutoCloseTimer();
+            });
+        }
         addSettingToggleListener('qualityTagsToggle', 'qualityTagsEnabled', 'feature_quality_tags', true);
         // Show or hide the nested category section when the master quality-tags toggle changes
         const qualityMasterToggle = document.getElementById('qualityTagsToggle');

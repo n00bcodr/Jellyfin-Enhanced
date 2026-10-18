@@ -27,6 +27,10 @@
     {"method": "GET", "route": "acquire/migration/seerr", "access": "admin", "capability": "Jellyfin Admin; request handling and import batches", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a"},
     {"method": "POST", "route": "acquire/migration/seerr/preview", "access": "admin", "capability": "Jellyfin Admin; dry run, reads Seerr only", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a"},
     {"method": "POST", "route": "acquire/migration/seerr/commit", "access": "admin", "capability": "Jellyfin Admin and phase 3; digest match, Seerr requesting off", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a"},
+    {"method": "GET", "route": "arr/admin/automation/status", "access": "admin", "capability": "Jellyfin administrator; integration and phase 1 on (the rollout Shadow override can be on before phase 4)", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a"},
+    {"method": "GET", "route": "arr/admin/automation/decisions", "access": "admin", "capability": "Jellyfin administrator; integration and phase 1 on", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a"},
+    {"method": "POST", "route": "arr/admin/automation/notice/dismiss", "access": "admin", "capability": "Jellyfin administrator; integration and phase 1 on", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a"},
+    {"method": "POST", "route": "arr/admin/automation/breakers/reset", "access": "admin", "capability": "Jellyfin administrator; integration and phase 1 on", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a"},
     {"method": "POST", "route": "acquire/migration/seerr/rollback", "access": "admin", "capability": "Jellyfin Admin; batch within 14 days", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a"},
 
     {"method": "GET", "route": "acquire/status", "access": "user", "Member": "yes; existing visibility and ownership checks", "Manager": "yes; existing visibility and ownership checks", "Kid": "yes; existing visibility and ownership checks", "requests.4k": "n/a", "capability": "status.view / own preferences; existing route checks"},

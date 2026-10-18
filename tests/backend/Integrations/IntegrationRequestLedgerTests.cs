@@ -23,19 +23,82 @@ public class IntegrationRequestLedgerTests
         public Func<Guid, MutationInput, RequestPolicyFacts, RequestPolicyFacts>? Adjust { get; set; }
         public Func<bool, bool?>? FourK { get; set; }
         public bool? Has4kTarget(bool movie) => FourK?.Invoke(movie);
+        // The disk facts in memory, published as one reference (as ArrStateStore publishes each snapshot): the drive
+        // the request would land on (non-null: below the low-disk threshold) and whether the destination's facts are known.
+        private volatile DiskSnapshot _disk = new(null, true);
+        internal sealed record DiskSnapshot(RequestDiskFacts? Pause, bool Known);
+        /// <summary>The destination's disk facts are in memory (as <see cref="RequestPolicy.DiskKnown"/> reads them).</summary>
+        public bool DiskFacts { get => _disk.Known; set => _disk = _disk with { Known = value }; }
+        /// <summary>Non-null: the drive the request would land on is below the low-disk threshold.</summary>
+        public RequestDiskFacts? Pause { get => _disk.Pause; set => _disk = _disk with { Pause = value }; }
+        /// <summary>A snapshot refresh: new disk facts published in one step.</summary>
+        public void Publish(RequestDiskFacts? pause, bool known) => _disk = new(pause, known);
+        /// <summary>Runs as a read returns (evaluate, is_admin, title_pause, disk_known, warm_disk): a change made then is one the read missed.</summary>
+        public Action<string>? Reading { get; set; }
+        public RequestDiskFacts? TitlePause(MutationInput input) => Read("title_pause", _disk.Pause);
+        // Like production: known when the guard is off or Seerr handles requests; else when the facts are in memory.
+        public bool DiskKnown(MutationInput input) => Read("disk_known", Configuration.ArrLowDiskPercent <= 0 || Configuration.ArrRequestBackend != "je" || _disk.Known);
+        // Both answers from one read of the published reference, on the configuration given: memory only, no hook (it is
+        // read in the write gate's final decision, where nothing may wait).
+        public (RequestDiskFacts? Pause, bool Known) Disk(MutationInput input, PluginConfiguration config)
+        {
+            var disk = _disk;
+            return (disk.Pause, config.ArrLowDiskPercent <= 0 || config.ArrRequestBackend != "je" || disk.Known);
+        }
+        public void WarmDisk(MutationInput input) => Reading?.Invoke("warm_disk");
+        private T Read<T>(string what, T value)
+        {
+            Reading?.Invoke(what);
+            return value;
+        }
+        // Like Jellyfin's user permissions: a change moves the version odd before it is visible and even after.
+        private long _permissions;
+        /// <summary>Set: the permission version comes from here (the production JellyfinUserVersions, say).</summary>
+        public Func<Guid, long>? Permissions { get; set; }
+        public long PermissionVersion(Guid user) => Permissions?.Invoke(user) ?? Interlocked.Read(ref _permissions);
+        /// <summary>Changes a person's role (an administrator demoted, say) inside the permission version's bracket.</summary>
+        public void Demote(Guid user, string role)
+        {
+            Interlocked.Increment(ref _permissions);
+            try { People[user] = People[user] with { Role = role, CanCreate = role != "Watcher", CanApprove = role is "Manager" or "Admin", Can4k = role == "Admin" }; }
+            finally { Interlocked.Increment(ref _permissions); }
+        }
+        /// <summary>
+        /// Disables a person (or Jellyfin locks them out) inside the permission version's bracket. Like production, they
+        /// have no viewer any more (user_required), aren't a Jellyfin administrator, and keep their household role.
+        /// </summary>
+        public void Disable(Guid user)
+        {
+            Interlocked.Increment(ref _permissions);
+            try { People[user] = Disabled(People[user]); }
+            finally { Interlocked.Increment(ref _permissions); }
+        }
+        /// <summary>A person's facts once they are disabled (no viewer: user_required; an administrator falls back to the default role).</summary>
+        public static RequestPolicyFacts Disabled(RequestPolicyFacts facts)
+            => facts with { Refusal = "user_required", Visible = false, Role = facts.Role == "Admin" ? "Member" : facts.Role, CanApprove = facts.Role == "Manager", Can4k = false };
+        /// <summary>Deletes a person inside the permission version's bracket.</summary>
+        public void Delete(Guid user)
+        {
+            Interlocked.Increment(ref _permissions);
+            try { People.Remove(user); }
+            finally { Interlocked.Increment(ref _permissions); }
+        }
+        // The household role from memory: an administrator by Jellyfin's permission, else the role stored for them.
+        public string RoleOf(Guid user, bool admin, PluginConfiguration config)
+            => admin ? "Admin" : People.GetValueOrDefault(user)?.Role is { } role && role != "Admin" ? role : "Watcher";
         public Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct) => Task.CompletedTask;
         public Task PrepareAsync(Guid user, MutationInput input, CancellationToken ct) => Before?.Invoke(user, input) ?? Task.CompletedTask;
         /// <summary>Runs when the rating facts a person's visibility needs are loaded (tests make visibility depend on it).</summary>
         public Func<Guid, MutationInput, Task>? Visibility { get; set; }
         public Task PrepareVisibilityAsync(Guid user, MutationInput input, CancellationToken ct) => Visibility?.Invoke(user, input) ?? Task.CompletedTask;
-        public bool IsAdmin(Guid user) => People.GetValueOrDefault(user)?.Role == "Admin";
+        public bool IsAdmin(Guid user) => Read("is_admin", People.GetValueOrDefault(user)?.Role == "Admin");
         public string AuthorizationStamp(Guid user, MutationInput input) => JsonSerializer.Serialize(People.GetValueOrDefault(user)) + JsonSerializer.Serialize(Configuration);
         public RequestPolicyFacts Evaluate(Guid user, MutationInput input)
         {
             var person = People.TryGetValue(user, out var known) ? known : new(user, "Watcher", false, false, false, false, "missing", "je", "r1", "g1", 7, 7, 0, "null", "user_required");
             person = person with { Backend = Configuration.ArrRequestBackend };
             if (!(Configuration.ArrIntegrationEnabled && Configuration.ArrPhase1Enabled && Configuration.ArrPhase3Enabled)) person = person with { Refusal = "feature_disabled" };
-            return Adjust?.Invoke(user, input, person) ?? person;
+            return Read("evaluate", Adjust?.Invoke(user, input, person) ?? person);
         }
         // Like production: the JE target doesn't depend on who handles requests now (Seerr-mode facts carry no instance).
         public (string InstanceId, string ConnectionGeneration) JeTarget(Guid user, MutationInput input)
@@ -542,9 +605,9 @@ public class IntegrationRequestLedgerTests
         {
             c.Open(); using var command = c.CreateCommand(); command.CommandText = AcquireDatabase.Migrations[0] + " PRAGMA user_version=1;"; command.ExecuteNonQuery();
         }
-        using (var old = new AcquireDatabase(path)) { Assert.True(old.Available); Assert.Equal(2, old.Version); }
+        using (var old = new AcquireDatabase(path)) { Assert.True(old.Available); Assert.Equal(AcquireDatabase.Migrations.Count, old.Version); }
         Assert.Single(Directory.GetFiles(r.Root, "old.db.pre-v1.*"));
-        using var reopened = new AcquireDatabase(path); Assert.Equal(2, reopened.Version);
+        using var reopened = new AcquireDatabase(path); Assert.Equal(AcquireDatabase.Migrations.Count, reopened.Version);
         Assert.Single(Directory.GetFiles(r.Root, "old.db.pre-v1.*"));
     }
 
@@ -947,11 +1010,15 @@ public class IntegrationRequestLedgerTests
     private static string ThisFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
 
     [Fact]
-    public void NoProductionCSharpDeclaresAsyncVoid()
+    public void NoProductionCSharpDeclaresAsyncVoid() => NoAsyncVoid();
+
+    private static void NoAsyncVoid([System.Runtime.CompilerServices.CallerFilePath] string here = "")
     {
         // From this source file: an output folder outside the repository (--artifacts-path) has it neither as
         // an ancestor nor as the test host's working directory.
         var root = new DirectoryInfo(Path.GetDirectoryName(ThisFile())!);
+        while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
+        root ??= string.IsNullOrEmpty(here) ? null : new FileInfo(here).Directory;
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         Assert.NotNull(root);
         var files = Directory.EnumerateFiles(Path.Combine(root!.FullName, "Jellyfin.Plugin.JellyfinEnhanced"), "*.cs", SearchOption.AllDirectories).Where(f => !f.Contains("/obj/") && !f.Contains("/bin/"));

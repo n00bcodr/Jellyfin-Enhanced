@@ -655,6 +655,42 @@ Discover and the search row need request handling set to Jellyfin Enhanced and a
 Seerr's (Seerr's **Show search results** setting no longer adds a second row), and Seerr's request buttons open
 Jellyfin Enhanced's request sheet.
 
+### Everywhere and gentle automation (phase 4)
+
+`ArrPhase4Enabled` (off) needs the integration and phase 1 switches; each phase-4 feature has its own switch under it.
+`ArrPhase4AutomationEnabled` (off) is the automation engine and also needs phase 3. With either off, phase 3 and the
+existing automatic requests work as before, and nothing only phase 4 creates (list, import or sync requests, new
+recipes) is ever sent. What the settings do is described in
+[Automation with phase 4](arr-features.md#automation-with-phase-4-modes-budgets-and-kill-switches).
+
+| Setting | Default | What it does |
+|---|---|---|
+| Rollout guard: Shadow only (`ArrAutomationShadowOverride`) | off | Every automatic request only records what it would have done (also the existing ones, with phase 4 off); waiting automatic requests are held. Independent of every other switch. |
+| Recipes (`ArrAutomationRecipes`) | Shadow | Mode (Off, Shadow, Ask, Auto) and kill switch per recipe. Written once by the first start of this version: new installs Shadow; upgrades map the old Auto Season/Auto Movie switches to Auto (on) or Off (off). |
+| Kill switch: stop every automatic request (`ArrAutomationKillAll`) | off | Nothing automatic is asked for or sent. |
+| Kill switches per Sonarr/Radarr (`ArrAutomationKilledInstances`) | none | Instance ids, and `seerr` for Jellyfin Enhanced's requests to Seerr. |
+| Titles added per 24 hours (`ArrAutomationHouseholdAddsPerDay`) | 20 | Household-wide, Sonarr/Radarr handling. |
+| Searches per hour / per 24 hours (`ArrAutomationSearchesPerHour`, `ArrAutomationSearchesPerDay`) | 30 / 300 | Each Sonarr/Radarr instance. |
+| Requests sent to Seerr per 24 hours (`ArrAutomationSeerrPostsPerDay`) | 20 | Seerr handling; counts only what Jellyfin Enhanced sends. |
+| Linked-list source reads / changes per hour (`ArrAutomationSourceFetchesPerHour`, `ArrAutomationDeltaWorkPerHour`) | 60 / 500 | For linked lists (later in phase 4). |
+| Automatic requests are free (`ArrAutomationFree`) | off | Off: an automatic request counts against the allowance of the person it is for. A hard GB limit applies either way. |
+
+Budgets accept 0 to 100000 (0 allows none). `ArrAutomationBackfillPerHour` (10) is reserved for backfill in a later
+phase and not used yet. `ArrAutomationMigration` records the one-time setup and is never edited on the page.
+
+Per person (Jellyfin Enhanced panel, *Automatic requests*, shown while the engine is on): the next-season keeper and the
+collection completer may each be set to *Household setting* (the default, follows the administrator), *On* or *Off*.
+
+A person's **Automatic season requests** and **Automatic movie requests** consents belong to them. An administrator
+saving someone else's JE settings keeps those consents as stored, and **Reset all users' settings** leaves them alone.
+The person can still change either consent through their own settings.
+
+**Show automation status** (with the integration and phase 1 on; administrators only) reads
+`GET /JellyfinEnhanced/arr/admin/automation/status`: switches as they apply, each recipe's mode in effect and why, every
+budget window with what is used, what is waiting for a read-back and when it has room again, kill switches and breakers
+per target (with *Try again now*), automatic requests waiting at send by reason, the request backend's boundary and the
+one-time setup with its notice (*Got it* hides it).
+
 #### Household tab
 
 Admins can edit the preset, default role, quota limit, per-role limits, and each person's role and limit from the Household tab of the Requests page instead of the JSON fields.

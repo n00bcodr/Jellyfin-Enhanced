@@ -147,6 +147,10 @@ public class ApiArrRouteMatrixTests
                 new ArrLiveController(N.Feed, new ArrFeedLimits(), new ApiArrRoutesTests.KeyAudience(), Receiver, Provisioner, Live, Router, N.Store, Audit, users, logger, N.Requests) { Config = () => N.Config },
                 new JeBackupController(Backup, users, logger),
                 new ArrAddController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.ArrAddService(N.Store, N.Arr.Factory, new ServicesForRequests(N).Service, () => N.Config)),
+                new ArrAdminAutomationController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationStatusService(
+                    new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationStore(N.Db),
+                    new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationBudgets(N.Db, () => N.Config, () => N.Arr.Now),
+                    N.Store, new IntegrationRequestHouseholdTests.FakeDirectory(), () => N.Config, () => N.Arr.Now), N.View),
             };
             foreach (var controller in all)
             {

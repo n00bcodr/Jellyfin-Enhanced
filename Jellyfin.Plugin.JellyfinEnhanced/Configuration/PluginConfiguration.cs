@@ -887,6 +887,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Lab-only cleanup route; default off, never shown on the config page.</summary>
         public bool ArrRequestLabEnabled { get; set; }
 
+        // ---- Requests & downloads, phase 4: everywhere and gentle automation (4a foundation) ----
+
+        /// <summary>
+        /// Phase 4 of "Requests &amp; downloads (new)": its features each have their own switch under this one. Needs
+        /// <see cref="ArrIntegrationEnabled"/> and <see cref="ArrPhase1Enabled"/>. Off by default; while off, phase 3 and
+        /// the existing auto-request features behave as before, and work only phase 4 creates is never sent.
+        /// </summary>
+        public bool ArrPhase4Enabled { get; set; }
+
+        /// <summary>
+        /// The automation engine: recipe modes (Off / Shadow / Ask / Auto), budgets, kill switches and the send guard
+        /// for automatic requests. Needs <see cref="ArrPhase4Enabled"/> and <see cref="ArrPhase3Enabled"/>. Off by default.
+        /// </summary>
+        public bool ArrPhase4AutomationEnabled { get; set; }
+
+        /// <summary>
+        /// Rollout guard: every automatic request (the existing next-season and next-movie features too, with or
+        /// without phase 4, and automatic requests already queued) only records what it would have done, and nothing
+        /// automatic is sent. Independent of every other switch here. Off by default.
+        /// </summary>
+        public bool ArrAutomationShadowOverride { get; set; }
+
+        /// <summary>Kill switch: no automatic request is sent (reading back an earlier uncertain send still runs). Off (not killed) by default.</summary>
+        public bool ArrAutomationKillAll { get; set; }
+
+        /// <summary>Per-instance kill switches: comma-separated Sonarr/Radarr instance ids, and <c>seerr</c> for Jellyfin Enhanced's sends to Seerr.</summary>
+        public string ArrAutomationKilledInstances { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Per-recipe mode and kill switch as a JSON object keyed by recipe id, e.g.
+        /// <c>{"auto_season":{"mode":"shadow","killed":false}}</c>. A recipe not listed is in Shadow and not killed.
+        /// </summary>
+        public string ArrAutomationRecipes { get; set; } = string.Empty;
+
+        /// <summary>Household budget: titles automatic requests may add or start monitoring per rolling 24 hours (Sonarr/Radarr handling).</summary>
+        public int ArrAutomationHouseholdAddsPerDay { get; set; } = 20;
+
+        /// <summary>Per-instance budget: automatic searches per rolling hour.</summary>
+        public int ArrAutomationSearchesPerHour { get; set; } = 30;
+
+        /// <summary>Per-instance budget: automatic searches per rolling 24 hours.</summary>
+        public int ArrAutomationSearchesPerDay { get; set; } = 300;
+
+        /// <summary>Seerr handling: automatic requests Jellyfin Enhanced may send to Seerr per rolling 24 hours (what Seerr then does is Seerr's).</summary>
+        public int ArrAutomationSeerrPostsPerDay { get; set; } = 20;
+
+        /// <summary>Reserved for backfill (a later phase): searches per rolling hour. Nothing uses it yet.</summary>
+        public int ArrAutomationBackfillPerHour { get; set; } = 10;
+
+        /// <summary>Linked lists: source reads per rolling hour (scheduled and manual together).</summary>
+        public int ArrAutomationSourceFetchesPerHour { get; set; } = 60;
+
+        /// <summary>Linked lists: list changes applied per rolling hour.</summary>
+        public int ArrAutomationDeltaWorkPerHour { get; set; } = 500;
+
+        /// <summary>Automatic requests cost nobody's allowance (by default they count against the person they are made for).</summary>
+        public bool ArrAutomationFree { get; set; }
+
+        /// <summary>Server-owned record of the one-time automation migration (empty until it ran). Never shown or edited on the page.</summary>
+        public string ArrAutomationMigration { get; set; } = string.Empty;
+
         // ---- Requests & downloads, phase 1: status on pages and live updates ----
 
         /// <summary>

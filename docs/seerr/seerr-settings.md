@@ -114,7 +114,7 @@ Let JE create missing Seerr accounts automatically, or import users when you cho
 
     **Import Users Now** is an administrator action. It works with automatic import off, but the saved integration must be enabled and saved URLs/key must be nonempty. Importing an account does not grant all request permissions. **Blocked Users** is not a universal gate on direct server automations; see [automation limits](seerr-features.md#auto-request-settings).
 
-The **Import Jellyfin Users to Seerr** scheduled task runs every six hours by default when automatic import is enabled. Change its trigger under **Dashboard** → **Scheduled Tasks**.
+The **Import Jellyfin Users to Seerr** scheduled task runs every six hours by default when automatic import is enabled. It checks the switch and the blocklist again before trying the next Seerr address, so turning auto import off or blocking someone during a run counts. Change its trigger under **Dashboard** → **Scheduled Tasks**.
 
 ??? note "Details"
 
@@ -373,11 +373,11 @@ Request the next collection movie based on playback.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Enable Auto Movie Requests** | Off | Considers the immediately following movie in Seerr's returned collection entries. |
+| **Enable Auto Movie Requests** | Off | Considers the next movie released in the collection after the watched one, whatever order Seerr or TMDB lists the collection in. |
 | **When movie starts** | Off | Checks near the start of playback. |
 | **After X minutes watched** | On | Checks after playback reaches the position threshold. Seeking or resuming can meet it. |
 | **Minutes Watched Threshold:** | 20 | Playback-position threshold in minutes; input range 1–180. |
-| **Only request if released** | On | Skips a movie with a valid future release date. Missing/unparseable dates do not block a request. |
+| **Only request if released** | On | Skips a movie with a future release date; a movie with no release date yet counts as not released. |
 | **Quality Profile Mode:** | **Default** | **Default** lets Seerr choose. **Original** copies settings from the watched movie's first Seerr request. **Custom** sends the configured selections below. |
 | **Use default instead of 4K fallback** | On | In **Original**, falls back to Seerr defaults when the copied request was 4K. Turn off to preserve those 4K settings. |
 | **Radarr Server:** | Unset | Destination used only in **Custom**. |
@@ -390,7 +390,7 @@ Request the next collection movie based on playback.
 
 ??? info "How it works"
 
-    **Original** uses Seerr request records, not the watched file's measured quality. It falls back to **Default** without usable original settings. **Custom** also falls back if no custom value is set. The service does not sort collection entries locally or search farther ahead when the next entry is already available/requested or is skipped by release checking.
+    **Original** uses Seerr request records, not the watched file's measured quality. It falls back to **Default** without usable original settings. **Custom** also falls back if no custom value is set. The service orders the collection by release itself and does not search farther ahead when the next movie is already available/requested or is skipped by release checking.
 
     Start-only stores `OnStart`; both trigger choices store `Both`. The default trigger mode is `OnMinutesWatched`.
 

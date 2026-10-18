@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 using Microsoft.Extensions.Hosting;
@@ -41,6 +42,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         RequestBackendBinding Binding(Guid user, MutationInput input);
         /// <summary>Dispatches canonical input. A guard refusal contacts no upstream service.</summary>
         Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, CancellationToken ct);
+        /// <summary>
+        /// Dispatches automatic work: like <see cref="SendAsync(RequestJob, Func{string?}, CancellationToken)"/>, and each
+        /// add, search or POST is admitted by <paramref name="admission"/> right before it leaves (null: none needed).
+        /// </summary>
+        Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, ISendAdmission? admission, CancellationToken ct) => SendAsync(job, finalGuard, ct);
         /// <summary>Fresh scoped read using the original connection identity; never sends a write.</summary>
         Task<RequestBackendResult> ReadBackAsync(RequestJob job, CancellationToken ct);
         /// <summary>
@@ -58,7 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public RequestBackendBinding Binding(Guid user, MutationInput input) => new();
         /// <inheritdoc />
         public Task<RequestBackendResult> SendAsync(RequestJob job, Func<string?> finalGuard, CancellationToken ct)
-            => Task.FromResult(finalGuard() is { } refusal ? RequestBackendResult.Hold(refusal) :
+            => Task.FromResult(finalGuard() is { } refusal ? AutomationHolds.IsWait(refusal) ? BackendResults.Later(refusal, "Automatic requests are held.", AutomationHolds.WaitFor(refusal)) : RequestBackendResult.Hold(refusal) :
                 new RequestBackendResult(RequestOutcome.Refused("backend_unavailable", 503, "unavailable"), Retryable: true, VerifiedNotSent: true));
         /// <inheritdoc />
         public Task<RequestBackendResult> ReadBackAsync(RequestJob job, CancellationToken ct) => Task.FromResult(RequestBackendResult.Uncertain(job.WantId));
@@ -115,6 +121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly RequestOutboxSignal _signal;
         private readonly RequestOutboxEvents? _events;
         private readonly SeerrRequestWriteFence? _seerrWrites;
+        private readonly AutomationSendGuard? _automation;
         /// <summary>Creates the worker on its five-second timer only.</summary>
         public RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit)
             : this(ledger, policy, backend, locks, feed, audit, () => DateTimeOffset.UtcNow) { }
@@ -122,10 +129,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// Creates the worker (DI), woken early by <paramref name="signal"/> when work is queued; <paramref name="events"/>
         /// hears about confirmed jobs and <paramref name="seerrWrites"/> holds Seerr sends off while a move from Seerr runs.
         /// </summary>
-        public RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, RequestOutboxSignal signal, RequestOutboxEvents? events = null, SeerrRequestWriteFence? seerrWrites = null)
-            : this(ledger, policy, backend, locks, feed, audit, () => DateTimeOffset.UtcNow, events, seerrWrites, signal) { }
-        internal RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, Func<DateTimeOffset> now, RequestOutboxEvents? events = null, SeerrRequestWriteFence? seerrWrites = null, RequestOutboxSignal? signal = null)
-        { _ledger = ledger; _policy = policy; _backend = backend; _locks = locks; _feed = feed; _audit = audit; _now = now; _events = events; _seerrWrites = seerrWrites; _signal = signal ?? new RequestOutboxSignal(); }
+        /// <remarks><paramref name="automation"/> holds and budgets automatic work (recipes, list sync) at send.</remarks>
+        public RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, RequestOutboxSignal signal, RequestOutboxEvents? events = null, SeerrRequestWriteFence? seerrWrites = null, AutomationSendGuard? automation = null)
+            : this(ledger, policy, backend, locks, feed, audit, () => DateTimeOffset.UtcNow, events, seerrWrites, signal, automation) { }
+        internal RequestOutbox(RequestLedger ledger, IRequestPolicy policy, IRequestBackend backend, RequestTitleLocks locks, ArrChangeFeed feed, ArrAuditLog audit, Func<DateTimeOffset> now, RequestOutboxEvents? events = null, SeerrRequestWriteFence? seerrWrites = null, RequestOutboxSignal? signal = null, AutomationSendGuard? automation = null)
+        { _ledger = ledger; _policy = policy; _backend = backend; _locks = locks; _feed = feed; _audit = audit; _now = now; _events = events; _seerrWrites = seerrWrites; _signal = signal ?? new RequestOutboxSignal(); _automation = automation; }
         /// <summary>Processes due work once; tests and diagnostics may drive this without a timer.</summary>
         public async Task TickAsync(CancellationToken ct)
         {
@@ -145,78 +153,100 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 RequestBackendResult result;
                 var transportStarted = false;
                 var settledByRead = false;
+                // Automatic work (recipes, list sync) and work only phase 4 creates: the write gate before any transport
+                // (and again immediately before every write, in Guard below). A read-back is never held.
+                var want = _automation == null ? null : _ledger.Find(job.WantId);
+                var hold = job.State == "maybe_sent" ? null : _automation?.Hold(job, want);
+                var admission = job.State == "maybe_sent" ? null : _automation?.Admission(job, want);
                 try
                 {
-                    if (job.State != "maybe_sent")
+                    if (hold != null)
                     {
-                        await _policy.PrepareAsync(job.Authorization.Requester, job.Input, ct).ConfigureAwait(false);
-                        if (job.Authorization.Approver is Guid actor) await _policy.PrepareAsync(actor, job.Input, ct).ConfigureAwait(false);
+                        result = hold.Park ? BackendResults.Hold(hold.Reason, hold.Message) : BackendResults.Later(hold.Reason, hold.Message, hold.Wait);
                     }
-                    string? Guard()
-                    {
-                        if (job.Input.Fingerprint != job.Fingerprint || job.Input.Scope != job.Authorization.Scope || job.Input.Variant != job.Authorization.Variant) return "idempotency_conflict";
-                        if (_ledger.Database.Generation != generation) return "configuration_changed";
-                        RequestPolicyFacts? requester = null;
-                        RequestPolicyFacts? approver = null;
-                        var stable = false;
-                        for (var attempt = 0; attempt < 3; attempt++)
-                        {
-                            var requesterStamp = _policy.AuthorizationStamp(job.Authorization.Requester, job.Input);
-                            var approverStamp = job.Authorization.Approver is Guid beforeActor ? _policy.AuthorizationStamp(beforeActor, job.Input) : null;
-                            requester = _policy.Evaluate(job.Authorization.Requester, job.Input);
-                            approver = job.Authorization.Approver is Guid approverId ? _policy.Evaluate(approverId, job.Input) : null;
-                            stable = requesterStamp == _policy.AuthorizationStamp(job.Authorization.Requester, job.Input) &&
-                                approverStamp == (job.Authorization.Approver is Guid afterActor ? _policy.AuthorizationStamp(afterActor, job.Input) : null);
-                            if (stable) break;
-                        }
-                        if (!stable || requester == null) return "authorization_changed";
-                        if (requester.Refusal == "user_required" || approver?.Refusal == "user_required") return "identity_changed";
-                        if (requester.Backend != job.Authorization.Backend || requester.Refusal == "feature_disabled") return "configuration_changed";
-                        // Nothing can take the 4K copy now (no usable 4K instance, or no 4K server in Seerr): held for an administrator.
-                        if (job.Input.Variant == "4k" && _policy.Has4kTarget(TitleKey.Parse(job.Input.Key)?.IsMovie != false) == false) return RequestLedger.No4k;
-                        // Seerr picks its own server: a Seerr-mode job is bound to the Seerr identity below, not to an arr connection.
-                        if (job.Authorization.Backend != "seerr" && (requester.ConnectionGeneration != job.Authorization.ConnectionGeneration || requester.InstanceId != job.Authorization.InstanceId)) return "instance_changed";
-                        // An unknown current Seerr account (Seerr not answering) waits below; only a known different one is a change.
-                        // A job approved while the person's Seerr account wasn't known is sent as the account Seerr links to them
-                        // now, after every check here has been made again with that account's permissions.
-                        if (requester.SeerrSource != job.Authorization.SeerrSource || (job.Authorization.SeerrUser != null && requester.SeerrUser != null && requester.SeerrUser != job.Authorization.SeerrUser)) return "identity_changed";
-                        if (_ledger.ExceedsGbCapAtSend(requester, _now())) return "quota_exceeded";
-                        if (RequestPolicy.Check(requester, approver, job.Input, approver != null) != null || _ledger.NeedsApprovalAtSend(job, requester, _policy, _now())) return "authorization_changed";
-                        if (job.Authorization.Edited && approver?.Role != "Admin" && (job.Input.ProfileId != null || job.Input.RootFolder != null || job.Input.InstanceId != null)) return "authorization_changed";
-                        // Seerr answered that no Seerr account is linked to the person (not "Seerr didn't answer"): nothing can be
-                        // sent as them, so the request is held with that reason and checked again now and then, not every pass.
-                        if (requester.Backend == "seerr" && requester.SeerrUser == null && requester.SeerrUnlinked) return "seerr_user_unlinked";
-                        if (requester.Backend == "seerr" && requester.BackendQuota?.Available != true && job.State != "maybe_sent") return "backend_unavailable";
-                        if (requester.Backend == "seerr" && (requester.SeerrUser == null || requester.SeerrSource == null)) return "backend_unavailable";
-                        // A changed revision is evaluated above; it is not itself a refusal.
-                        return null;
-                    }
-                    // Read-back is a read of the original target, even if authority or configuration changed.
-                    if (job.State == "maybe_sent")
-                    {
-                        result = await _backend.ReadBackAsync(job, ct).ConfigureAwait(false);
-                        settledByRead = true;
-                        if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes) result = RequestBackendResult.Uncertain(job.WantId);
-                        else if (result.VerifiedNotSent && !result.Confirmed)
-                            result = result with { Retryable = true, Parked = false };
-                    }
-                    else if (Guard() is { } refusal) result = refusal switch
-                    {
-                        "backend_unavailable" => new RequestBackendResult(RequestOutcome.Refused(refusal, 503, "unavailable"), Retryable: true, VerifiedNotSent: true),
-                        "seerr_user_unlinked" => BackendResults.Later(refusal, "The person has no Seerr account linked; the request goes out once they have one.", UnlinkedRecheck),
-                        _ => RequestBackendResult.Hold(refusal),
-                    };
                     else
                     {
-                        transportStarted = true;
-                        result = await _backend.SendAsync(job, Guard, ct).ConfigureAwait(false);
-                        // A hold after a partial write and a resume are already settled by the backend: no read-back.
-                        if (!result.Confirmed && !result.Parked && !result.Resumes && result.Outcome.Certainty is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
+                        if (job.State != "maybe_sent")
                         {
-                            // As stored now: the send may have bound what it went out with (Seerr's account and seasons).
-                            result = await _backend.ReadBackAsync(_ledger.Job(job.Id) ?? job, ct).ConfigureAwait(false);
+                            await _policy.PrepareAsync(job.Authorization.Requester, job.Input, ct).ConfigureAwait(false);
+                            if (job.Authorization.Approver is Guid actor) await _policy.PrepareAsync(actor, job.Input, ct).ConfigureAwait(false);
+                        }
+                        string? Guard()
+                        {
+                            if (job.Input.Fingerprint != job.Fingerprint || job.Input.Scope != job.Authorization.Scope || job.Input.Variant != job.Authorization.Variant) return "idempotency_conflict";
+                            if (_ledger.Database.Generation != generation) return "configuration_changed";
+                            RequestPolicyFacts? requester = null;
+                            RequestPolicyFacts? approver = null;
+                            var stable = false;
+                            for (var attempt = 0; attempt < 3; attempt++)
+                            {
+                                var requesterStamp = _policy.AuthorizationStamp(job.Authorization.Requester, job.Input);
+                                var approverStamp = job.Authorization.Approver is Guid beforeActor ? _policy.AuthorizationStamp(beforeActor, job.Input) : null;
+                                requester = _policy.Evaluate(job.Authorization.Requester, job.Input);
+                                approver = job.Authorization.Approver is Guid approverId ? _policy.Evaluate(approverId, job.Input) : null;
+                                stable = requesterStamp == _policy.AuthorizationStamp(job.Authorization.Requester, job.Input) &&
+                                    approverStamp == (job.Authorization.Approver is Guid afterActor ? _policy.AuthorizationStamp(afterActor, job.Input) : null);
+                                if (stable) break;
+                            }
+                            if (!stable || requester == null) return "authorization_changed";
+                            if (requester.Refusal == "user_required" || approver?.Refusal == "user_required") return "identity_changed";
+                            if (requester.Backend != job.Authorization.Backend || requester.Refusal == "feature_disabled") return "configuration_changed";
+                            // Nothing can take the 4K copy now (no usable 4K instance, or no 4K server in Seerr): held for an administrator.
+                            if (job.Input.Variant == "4k" && _policy.Has4kTarget(TitleKey.Parse(job.Input.Key)?.IsMovie != false) == false) return RequestLedger.No4k;
+                            // Seerr picks its own server: a Seerr-mode job is bound to the Seerr identity below, not to an arr connection.
+                            if (job.Authorization.Backend != "seerr" && (requester.ConnectionGeneration != job.Authorization.ConnectionGeneration || requester.InstanceId != job.Authorization.InstanceId)) return "instance_changed";
+                            // An unknown current Seerr account (Seerr not answering) waits below; only a known different one is a change.
+                            // A job approved while the person's Seerr account wasn't known is sent as the account Seerr links to them
+                            // now, after every check here has been made again with that account's permissions.
+                            if (requester.SeerrSource != job.Authorization.SeerrSource || (job.Authorization.SeerrUser != null && requester.SeerrUser != null && requester.SeerrUser != job.Authorization.SeerrUser)) return "identity_changed";
+                            if (_ledger.ExceedsGbCapAtSend(requester, _now())) return "quota_exceeded";
+                            if (RequestPolicy.Check(requester, approver, job.Input, approver != null) != null || _ledger.NeedsApprovalAtSend(job, requester, _policy, _now())) return "authorization_changed";
+                            if (job.Authorization.Edited && approver?.Role != "Admin" && (job.Input.ProfileId != null || job.Input.RootFolder != null || job.Input.InstanceId != null)) return "authorization_changed";
+                            // Seerr answered that no Seerr account is linked to the person (not "Seerr didn't answer"): nothing can be
+                            // sent as them, so the request is held with that reason and checked again now and then, not every pass.
+                            if (requester.Backend == "seerr" && requester.SeerrUser == null && requester.SeerrUnlinked) return "seerr_user_unlinked";
+                            if (requester.Backend == "seerr" && requester.BackendQuota?.Available != true && job.State != "maybe_sent") return "backend_unavailable";
+                            if (requester.Backend == "seerr" && (requester.SeerrUser == null || requester.SeerrSource == null)) return "backend_unavailable";
+                            // The write gate, read live right before this write: every automation gate (switches, engine change
+                            // since this attempt chose its budget admission, kills, mode, consent, override, eligibility,
+                            // breaker, disk). Each write's budget is admitted by the backend right after this.
+                            if (_automation?.Hold(job, want, budgetedAtStart: admission != null) is { } late) return late.Reason;
+                            // A changed revision is evaluated above; it is not itself a refusal.
+                            return null;
+                        }
+                        // Read-back is a read of the original target, even if authority or configuration changed.
+                        if (job.State == "maybe_sent")
+                        {
+                            result = await _backend.ReadBackAsync(job, ct).ConfigureAwait(false);
                             settledByRead = true;
                             if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes) result = RequestBackendResult.Uncertain(job.WantId);
+                            else if (result.VerifiedNotSent && !result.Confirmed)
+                                result = result with { Retryable = true, Parked = false };
+                        }
+                        else if (Guard() is { } refusal) result = refusal switch
+                        {
+                            "backend_unavailable" => new RequestBackendResult(RequestOutcome.Refused(refusal, 503, "unavailable"), Retryable: true, VerifiedNotSent: true),
+                            "seerr_user_unlinked" => BackendResults.Later(refusal, "The person has no Seerr account linked; the request goes out once they have one.", UnlinkedRecheck),
+                            _ when AutomationHolds.IsWait(refusal) => BackendResults.Later(refusal, "Automatic requests are held (" + refusal + ").", AutomationHolds.WaitFor(refusal)),
+                            _ => RequestBackendResult.Hold(refusal),
+                        };
+                        else
+                        {
+                            transportStarted = true;
+                            // The send's writes are this job's: automatic work is checked again inside the transport, at
+                            // each write (D41); a person's own job enters as no automation, whatever the flow carried.
+                            using (_automation == null ? null : AutomationTransportContext.Enter(_automation.Gate, AutomationWrite.ForJob(job, want, admission != null), admission))
+                            {
+                                result = await _backend.SendAsync(job, Guard, admission, ct).ConfigureAwait(false);
+                            }
+                            // A hold after a partial write and a resume are already settled by the backend: no read-back.
+                            if (!result.Confirmed && !result.Parked && !result.Resumes && result.Outcome.Certainty is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
+                            {
+                                // As stored now: the send may have bound what it went out with (Seerr's account and seasons).
+                                result = await _backend.ReadBackAsync(_ledger.Job(job.Id) ?? job, ct).ConfigureAwait(false);
+                                settledByRead = true;
+                                if (!result.Confirmed && !result.VerifiedNotSent && !result.Resumes) result = RequestBackendResult.Uncertain(job.WantId);
+                            }
                         }
                     }
                 }
@@ -232,6 +262,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (job.Uncertain && !settledByRead && !result.Confirmed && result.Outcome.Certainty != ArrActionStatus.Unknown)
                     result = result with { Outcome = result.Outcome with { Certainty = ArrActionStatus.Unknown }, VerifiedNotSent = false, Parked = result.Parked || !result.Retryable };
                 var completed = _ledger.Complete(job, generation, result, _now());
+                if (completed) _automation?.Observe(job, want, result, transportStarted, settledByRead);
                 if (completed) _feed.Bump(new[] { job.Input.Key, ArrTitleKey.UserRequests(job.Authorization.Requester), ArrTitleKey.RequestsState });
                 if (completed && result.Confirmed) _events?.RaiseConfirmed(job);
                 if (!completed && !transportStarted && job.State != "maybe_sent") continue;

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Common.Configuration;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -21,6 +23,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // One presence warning per person, file and error kind per hour: an unreadable folder is checked on every request.
         private static readonly TimeSpan PresenceWarnInterval = TimeSpan.FromHours(1);
         private static readonly ConcurrentDictionary<string, DateTime> _presenceWarnedAt = new();
+        // The versions of each person's settings.json (normalized id) and of every person's at once (a restore, a quarantine,
+        // the start-up migration): see SettingsVersion. Per-user files the automatic-write check doesn't read are put in
+        // place inside a bracket nobody samples.
+        private static readonly FactVersions _settingsVersions = new FactVersions();
+        private static readonly FactVersion _allSettingsVersion = new FactVersion();
+        private static readonly FactVersion _otherFiles = new FactVersion();
 
         public UserConfigurationManager(IApplicationPaths appPaths, Logger logger)
         {
@@ -33,7 +41,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // {abcd...}, {ABCD...}, AND {abcd-...} folders. Different request paths
             // hit different folders, so per-user settings appeared to "drift" — see
             // PR #573 thread. Idempotent; cheap when there's nothing to migrate.
-            try { MigrateCaseVariantUserDirs(); }
+            try { _allSettingsVersion.Mutate(MigrateCaseVariantUserDirs); }
             catch (Exception ex) { _logger.Error($"Per-user dir case-variant migration failed: {ex}"); }
         }
 
@@ -52,6 +60,123 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             var normalized = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
             var key = normalized + "|" + (fileName ?? string.Empty);
             return _userFileLocks.GetOrAdd(key, _ => new object());
+        }
+
+        /// <summary>A person's own settings (<see cref="JellyfinEnhancedUserSettings"/>).</summary>
+        public const string SettingsFileName = "settings.json";
+
+        /// <summary>
+        /// The lock every writer of a person's settings.json holds while it reads, decides and saves
+        /// (<see cref="GetUserFileLock"/> of <see cref="SettingsFileName"/>).
+        /// </summary>
+        public object UserSettingsLock(string userId) => GetUserFileLock(userId, SettingsFileName);
+
+        /// <summary>
+        /// The version of the person's settings.json (a <see cref="FactVersion"/> sample): odd from before their file is put in
+        /// place, or their folder removed, until after (each writer holds <see cref="UserSettingsLock"/>), and likewise
+        /// while every person's files change at once (a restore, a corrupt file quarantined, the start-up migration).
+        /// A reader that takes it before reading the file and finds it settled and the same later knows that what it read
+        /// is still what is stored. Memory only, never waits, never takes the lock. (The sum of the person's version and
+        /// every person's: each change moves it up from a settled sample, so a settled sum that is the same twice means
+        /// neither moved.)
+        /// </summary>
+        public static long SettingsVersion(string userId) => _settingsVersions.Sample(Normalized(userId)) + _allSettingsVersion.Sample();
+
+        /// <summary>The version every person's settings.json moves with at once (a JE backup restore writes them).</summary>
+        public static FactVersion AllSettingsVersion => _allSettingsVersion;
+
+        private static string Normalized(string? userId) => (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
+
+        // The bracket a per-user file is put in place inside: the person's settings version for settings.json.
+        private static FactVersion VersionOf(string userId, string fileName)
+            => string.Equals(fileName, SettingsFileName, StringComparison.OrdinalIgnoreCase) ? _settingsVersions.For(Normalized(userId)) : _otherFiles;
+
+        /// <summary>Tests: runs at the start of every <see cref="SaveUserConfiguration"/> (normalized user id, file name).</summary>
+        internal Action<string, string>? Saving { get; set; }
+
+        /// <summary>Tests: runs as <see cref="SaveUserConfiguration"/> has put the file in place (readers see it), before it returns.</summary>
+        internal Action<string, string>? Moved { get; set; }
+
+        /// <summary>
+        /// The fields of a person's settings that are their own consents (Phase 4: what JE may request or do on their
+        /// behalf). Only the person sets or clears them: every other writer (an administrator's save of their settings, the
+        /// reset of everyone's) keeps them as stored. Copies them from <paramref name="stored"/> (null: no file yet).
+        /// </summary>
+        public static void KeepPersonalConsents(JellyfinEnhancedUserSettings settings, JellyfinEnhancedUserSettings? stored)
+        {
+            // Phase 4a: requests on the person's behalf.
+            settings.AutoSeasonRequests = stored?.AutoSeasonRequests;
+            settings.AutoMovieRequests = stored?.AutoMovieRequests;
+        }
+
+        /// <summary>
+        /// Replaces a person's settings.json with <paramref name="settings"/>, atomically under <see cref="UserSettingsLock"/>:
+        /// the stored settings are read, the person's consents are kept from them unless the save is the person's own
+        /// (<see cref="KeepPersonalConsents"/>), and the file is written when anything differs.
+        /// </summary>
+        /// <returns>Whether the file was written, and what changed ("Name: old → new").</returns>
+        public (bool Saved, IReadOnlyList<string> Changes) SaveUserSettings(string userId, JellyfinEnhancedUserSettings settings, bool byThePerson)
+        {
+            lock (UserSettingsLock(userId))
+            {
+                var existing = GetUserConfiguration<JellyfinEnhancedUserSettings>(userId, SettingsFileName);
+                if (!byThePerson)
+                {
+                    KeepPersonalConsents(settings, existing);
+                }
+
+                var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
+                var newJson = System.Text.Json.JsonSerializer.Serialize(settings);
+                if (existingJson == newJson)
+                {
+                    return (false, Array.Empty<string>());
+                }
+
+                var changes = new List<string>();
+                var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson).RootElement;
+                var newDoc = System.Text.Json.JsonDocument.Parse(newJson).RootElement;
+                foreach (var prop in newDoc.EnumerateObject())
+                {
+                    if (!existingDoc.TryGetProperty(prop.Name, out var oldVal) || oldVal.ToString() != prop.Value.ToString())
+                    {
+                        changes.Add($"{prop.Name}: {(existingDoc.TryGetProperty(prop.Name, out var ov) ? ov.ToString() : "—")} → {prop.Value}");
+                    }
+                }
+
+                SaveUserConfiguration(userId, SettingsFileName, settings);
+                return (true, changes);
+            }
+        }
+
+        /// <summary>Writes a person's first settings.json (<paramref name="defaults"/>) when they have none yet, under <see cref="UserSettingsLock"/>.</summary>
+        /// <returns>Whether it was written (false: they have settings already).</returns>
+        public bool SeedUserSettings(string userId, JellyfinEnhancedUserSettings defaults)
+        {
+            lock (UserSettingsLock(userId))
+            {
+                if (UserConfigurationExists(userId, SettingsFileName))
+                {
+                    return false;
+                }
+
+                SaveUserConfiguration(userId, SettingsFileName, defaults);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Resets a person's settings.json to <paramref name="defaults"/> (not changed: each person gets a copy), under
+        /// <see cref="UserSettingsLock"/>, keeping their consents (<see cref="KeepPersonalConsents"/>).
+        /// </summary>
+        public void ResetUserSettings(string userId, JellyfinEnhancedUserSettings defaults)
+        {
+            lock (UserSettingsLock(userId))
+            {
+                var stored = UserConfigurationExists(userId, SettingsFileName) ? GetUserConfiguration<JellyfinEnhancedUserSettings>(userId, SettingsFileName) : null;
+                var reset = JToken.FromObject(defaults).ToObject<JellyfinEnhancedUserSettings>() ?? new JellyfinEnhancedUserSettings();
+                KeepPersonalConsents(reset, stored);
+                SaveUserConfiguration(userId, SettingsFileName, reset);
+            }
         }
 
         private string GetUserConfigDir(string userId)
@@ -260,6 +385,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             try
             {
                 configPath = ResolveUserFile(userId, fileName);
+                Saving?.Invoke(userId.Replace("-", "").ToLowerInvariant(), fileName);
                 // Per-call random suffix avoids collisions between concurrent non-RMW writers on a shared .tmp.
                 tempPath = configPath + ".tmp." + Guid.NewGuid().ToString("N");
 
@@ -277,7 +403,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var jsonToSave = JsonConvert.SerializeObject(token, Formatting.Indented);
 
                 File.WriteAllText(tempPath, jsonToSave);
-                File.Move(tempPath, configPath, overwrite: true);
+                // In place inside the version's bracket: settings.json is what the automatic-write check reads consents from.
+                VersionOf(userId, fileName).Mutate(() =>
+                {
+                    File.Move(tempPath, configPath, overwrite: true);
+                    Moved?.Invoke(Normalized(userId), fileName);
+                });
                 if (string.Equals(fileName, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase))
                 {
                     Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(userId);
@@ -371,7 +502,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var backupPath = filePath + ".corrupt-"
                     + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
                     + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
-                File.Move(filePath, backupPath);
+                _allSettingsVersion.Mutate(() => File.Move(filePath, backupPath));
                 _logger.Warning($"Corrupt config quarantined to {backupPath} (store will reset to defaults on next read)");
             }
             catch (Exception ex)
@@ -380,7 +511,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 // Last resort: if the move failed, delete the unreadable file so
                 // the 503-per-request loop still breaks. The content is already
                 // unparseable, and the failure is logged above for forensics.
-                try { File.Delete(filePath); }
+                try { _allSettingsVersion.Mutate(() => File.Delete(filePath)); }
                 catch (Exception delEx)
                 {
                     _logger.Error($"Also failed to delete corrupt config '{filePath}': {delEx.Message}");
@@ -552,7 +683,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             try
             {
                 if (!Directory.Exists(userDir)) return false;
-                Directory.Delete(userDir, recursive: true);
+                _settingsVersions.For(userId.ToString("N")).Mutate(() => Directory.Delete(userDir, recursive: true));
                 return true;
             }
             catch (Exception ex)

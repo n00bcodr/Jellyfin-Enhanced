@@ -95,6 +95,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         public ArrSnapshotKind Kind { get; }
 
+        /// <summary>
+        /// The last good value as published (one reference, read without the lock: a refresh replaces it whole). What the
+        /// automatic-write check's decision reads.
+        /// </summary>
+        public T? Current => Volatile.Read(ref _value);
+
         /// <summary>Last good value, when it was read, and the error of the latest attempt if that failed afterwards.</summary>
         public (T? Value, DateTimeOffset LoadedAt, ArrError? Error) Peek()
         {

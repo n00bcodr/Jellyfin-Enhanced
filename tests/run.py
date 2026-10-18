@@ -88,6 +88,8 @@ def main():
                 results_path = artifacts / "backend" / target
                 if results_path.exists():
                     shutil.rmtree(results_path)
+                # Jellyfin's own server assemblies (Jellyfin.Api.dll and those its calls go into) of the pinned release, for the user-action coverage tests (they fail without them).
+                execute("jellyfin-api-" + target, [sys.executable, "tests/backend/jellyfin_api.py", "--target", target])
                 if execute("backend-" + target, ["dotnet", "test", "tests/backend/JE.Tests.csproj", "-c", "Release", "-p:JellyfinTarget=" + target, "-p:RestoreLockedMode=true", "--artifacts-path", artifacts / "build" / target, "--results-directory", results_path, "--logger", "trx", "--collect:XPlat Code Coverage"]):
                     execute("coverage-" + target, [sys.executable, "tests/runner/coverage.py", results_path])
         elif suite == "frontend":

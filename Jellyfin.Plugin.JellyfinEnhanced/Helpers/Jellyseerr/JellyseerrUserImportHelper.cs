@@ -38,17 +38,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             string apiKey,
             IHttpClientFactory httpClientFactory,
             Logger logger,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            Func<List<string>, List<string>?>? recheck = null)
         {
             var result = new BulkImportResult();
             var httpClient = SeerrHttpHelper.CreateClient(httpClientFactory);
             httpClient.Timeout = TimeSpan.FromSeconds(30);
 
-            var requestBody = JsonSerializer.Serialize(new { jellyfinUserIds = userIds });
-
             foreach (var url in urls)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                // An automatic run asks again before every address (the next one after a failure included): the ids
+                // still allowed now, or null to stop.
+                if (recheck != null && (userIds = recheck(userIds) ?? new List<string>()).Count == 0)
+                {
+                    logger.Info("[Jellyseerr User Import] Auto-import was turned off (or everyone left is blocked) during the run; stopping");
+                    result.Errors.Add("Stopped: auto-import was turned off or everyone left is blocked.");
+                    break;
+                }
+                var requestBody = JsonSerializer.Serialize(new { jellyfinUserIds = userIds });
                 var trimmedUrl = url.Trim();
                 var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/user/import-from-jellyfin";
 

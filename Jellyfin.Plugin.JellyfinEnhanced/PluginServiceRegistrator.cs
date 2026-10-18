@@ -34,7 +34,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<IStartupFilter, ScriptInjectionStartupFilter>();
             serviceCollection.AddSingleton<IStartupFilter, BrandingAssetStartupFilter>();
 
-            serviceCollection.AddHttpClient();
+            // Phase 4a (D41): the transport check of every automatic write, on each client a Sonarr/Radarr or Seerr
+            // request can leave through (the arr and Seerr clients below, and the default one Seerr falls back to). It
+            // only acts on writes made in an automation context (AutomationTransportContext); everything else passes.
+            serviceCollection.AddTransient<Services.Acquire.Automation.AutomationTransportHandler>();
+            serviceCollection.AddHttpClient(string.Empty)
+                .AddHttpMessageHandler<Services.Acquire.Automation.AutomationTransportHandler>();
 
             // a named HttpClient with AllowAutoRedirect=false so
             // forward-auth proxies (Authelia / Pangolin / Authentik) returning
@@ -43,6 +48,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // SeerrHttpHelper.UseClientName(name) selects this for outbound
             // Seerr/TMDB calls.
             serviceCollection.AddHttpClient(Helpers.Jellyseerr.SeerrHttpHelper.NamedClient)
+                .AddHttpMessageHandler<Services.Acquire.Automation.AutomationTransportHandler>()
                 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
                 {
                     AllowAutoRedirect = false
@@ -50,6 +56,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Sonarr/Radarr transport: no redirects, no proxy, target address checked and pinned
             // at connect time (see ArrHttp). Per-call budgets live in ArrClient, so no HttpClient timeout.
             serviceCollection.AddHttpClient(Services.Arr.ArrHttp.ClientName)
+                .AddHttpMessageHandler<Services.Acquire.Automation.AutomationTransportHandler>()
                 .ConfigureHttpClient(c => c.Timeout = System.Threading.Timeout.InfiniteTimeSpan)
                 .ConfigurePrimaryHttpMessageHandler(Services.Arr.ArrHttp.CreateHandler);
             // "Requests & downloads (new)" foundations: the instance registry (v2), one client per
@@ -139,6 +146,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Who asked for what, for the watchlist features (ledger or Seerr read model, with completeness).
             serviceCollection.AddSingleton<Services.Acquire.Requests.SharedRequestFacts>();
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestOutboxEvents>();
+            // Phase 4a (inert while off): the automation engine's shared state (recipe modes, durable budgets, decisions,
+            // eligibility grants, breakers), the send guard the outbox applies to automatic work, the no-write decision
+            // seam, durable batch/confirmation operations, and the one-time migration at start-up (before the outbox).
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationStore>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationBudgets>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.IAutomationTrust, Services.Acquire.Automation.NoAutomationTrust>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.IAutomationConsents, Services.Acquire.Automation.UserSettingsConsents>();
+            // Rounds 8-9: the version of each person's Jellyfin permissions (the automatic-write check reads them from Jellyfin's
+            // database): bracketed around every Jellyfin action that can change or authenticate a user (deny by default:
+            // JellyfinUserActions), and moved by its user events.
+            serviceCollection.AddSingleton<Services.Acquire.Automation.JellyfinUserChangeBracket>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.Acquire.Automation.JellyfinUserChangeBracket>());
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserUpdatedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserLockedOutEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationEligibility>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationDecider>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationSendGuard>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.RequestOperations>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationStatusService>();
+            serviceCollection.AddHostedService<Services.Acquire.Automation.AutomationStartup>();
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             // "Keep getting new episodes": charges each new season once when a Sonarr library read shows it started.
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();

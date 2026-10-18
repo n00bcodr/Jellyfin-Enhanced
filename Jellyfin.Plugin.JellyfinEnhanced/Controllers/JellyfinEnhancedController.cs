@@ -4055,6 +4055,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ArrRequestsJeMode = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend == "je",
                 // Kids don't get the JE-mode search row (the search route refuses them too).
                 config.ArrKidsHideSearch,
+                // Phase 4 automation engine in effect: each person's automatic-request preferences show only then.
+                ArrAutomationEngineEnabled = Services.Acquire.Automation.AutomationFlags.Engine(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
@@ -5452,8 +5454,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         LastOpenedTab = "shortcuts"
                     };
 
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
-                    _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                    // Under the person's settings lock, and only while they still have none (their own first save may
+                    // have landed since the check above).
+                    if (_userConfigurationManager.SeedUserSettings(authorizedUserId, defaultUserSettings))
+                    {
+                        _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                    }
                 }
             }
 
@@ -5517,36 +5523,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                // Diff against the existing config so the log shows what actually changed
-                var existing = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
-                var changes = new System.Collections.Generic.List<string>();
-                var isIdentical = false;
-                if (existing != null)
+                // Phase 4: the person's consents are their own. An administrator saving someone else's settings (this save
+                // replaces the whole file) keeps them as stored. Read, kept, compared and saved under the person's settings
+                // lock, so an overlapping save of the person's own can't be undone.
+                var byThePerson = UserHelper.GetCurrentUserId(User)?.ToString("N") == authorizedUserId;
+                var (saved, changes) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration, byThePerson);
+                if (saved && changes.Count > 0)
                 {
-                    var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
-                    var newJson      = System.Text.Json.JsonSerializer.Serialize(userConfiguration);
-                    isIdentical = existingJson == newJson;
-                    if (!isIdentical)
-                    {
-                        var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson).RootElement;
-                        var newDoc      = System.Text.Json.JsonDocument.Parse(newJson).RootElement;
-                        foreach (var prop in newDoc.EnumerateObject())
-                        {
-                            if (!existingDoc.TryGetProperty(prop.Name, out var oldVal) ||
-                                oldVal.ToString() != prop.Value.ToString())
-                            {
-                                changes.Add($"{prop.Name}: {(existingDoc.TryGetProperty(prop.Name, out var ov) ? ov.ToString() : "—")} → {prop.Value}");
-                            }
-                        }
-                    }
-                }
-
-                if (!isIdentical)
-                {
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
-
-                    if (changes.Count > 0)
-                        _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
+                    _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
                 }
 
                 return Ok(new { success = true, file = "settings.json" });
@@ -8448,7 +8432,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 try
                 {
-                    _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
+                    // Phase 4: a reset never sets or clears a person's own consents (under their settings lock).
+                    _userConfigurationManager.ResetUserSettings(userId, defaultUserSettings);
                     userCount++;
                 }
                 catch (Exception ex)

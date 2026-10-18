@@ -237,6 +237,8 @@
             return state.loading[tab];
         }
         delete state.again[tab];
+        // The Overview's Automation card (admin-automation.js) is read with it and redraws only when it changed.
+        if (tab === 'overview') A.refreshAutomation?.(() => { if (state.tab === 'overview') draw(); });
         const generation = state.generation;
         const intent = intentOf(tab);
         const token = intent.next();

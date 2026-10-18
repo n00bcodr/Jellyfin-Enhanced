@@ -196,6 +196,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                             continue;
                         }
 
+                        // An administrator's save since the run began is read right before each add: sync turned off
+                        // stops the run, a person blocked since is skipped.
+                        var stop = LiveStop(jellyfinUser.Id);
+                        if (stop == "off")
+                        {
+                            _logger.Info("[Jellyfin→Seerr Watchlist Sync] Sync was turned off during the run; stopping");
+                            progress?.Report(100);
+                            return;
+                        }
+                        if (stop == "blocked")
+                        {
+                            _logger.Info($"[Jellyfin→Seerr Watchlist Sync] {jellyfinUser.Username} was blocked during the run; skipping");
+                            break;
+                        }
+
                         var result = await AddToSeerrWatchlist(
                             httpClient, jellyseerrUrl, jellyseerrUserId, config.GetJellyseerrApiKey(),
                             tmdbId, mediaType, item.Name ?? "");
@@ -293,14 +308,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         private async Task<List<SeerrWatchlistItem>> GetSeerrWatchlist(HttpClient httpClient, string jellyseerrUrl, string jellyseerrUserId, string apiKey)
         {
             var items = new List<SeerrWatchlistItem>();
-            const int pageSize = 100;
             int page = 1;
 
             try
             {
                 while (true)
                 {
-                    var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user/{jellyseerrUserId}/watchlist?take={pageSize}&page={page}";
+                    // Seerr sets the page size itself (20) and rejects query parameters it doesn't know, such as take.
+                    var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/user/{jellyseerrUserId}/watchlist?page={page}";
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, apiKey, jellyseerrUserId);
                     using var response = await httpClient.SendAsync(request);
                     var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
@@ -324,7 +339,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                             items.Add(new SeerrWatchlistItem { TmdbId = tmdbId, MediaType = mediaType });
                     }
 
-                    if (pageCount < pageSize) break;
+                    var totalPages = watchlistResponse.TryGetProperty("totalPages", out var pages) && pages.ValueKind == JsonValueKind.Number ? pages.GetInt32() : page;
+                    if (pageCount == 0 || page >= totalPages) break;
                     page++;
                     if (page > 1000) { _logger.Warning("[Jellyfin→Seerr Watchlist Sync] Watchlist pagination safety cap hit"); break; }
                 }
@@ -335,6 +351,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             }
 
             return items;
+        }
+
+        // Why nothing more may be added now, from the live configuration: "off" (sync or Seerr turned off), "blocked"
+        // (the person is blocked), or null.
+        private static string? LiveStop(Guid userId)
+        {
+            var live = JellyfinEnhanced.Instance?.Configuration;
+            if (live is not { SyncJellyfinWatchlistToSeerr: true, JellyseerrEnabled: true }) return "off";
+            return Helpers.Jellyseerr.JellyseerrUserImportHelper.GetBlockedUserIds(live.JellyseerrImportBlockedUsers)
+                .Contains(userId.ToString().Replace("-", ""), StringComparer.OrdinalIgnoreCase) ? "blocked" : null;
         }
 
         // Returns: 1 = added, 0 = already present, -1 = error

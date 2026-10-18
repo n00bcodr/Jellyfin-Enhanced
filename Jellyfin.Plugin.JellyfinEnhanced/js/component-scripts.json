@@ -236,6 +236,7 @@
     "arr/hub/hub-discover.js",
     "arr/admin/admin-styles.js",
     "arr/admin/admin-render.js",
+    "arr/admin/admin-automation.js",
     "arr/admin/admin-tabs.js",
     "// Phase 3 hub: household tabs (Approvals, Household), ledger rows of My requests and the home chip bar; before hub-page.js, which reads their registrations.",
     "arr/hub/hub-extra-core.js",

@@ -124,6 +124,7 @@ public class IntegrationRequestReviewRound3Tests
         Sql(r, "UPDATE jobs SET state=$s WHERE id=$j; UPDATE wants SET target_key='' WHERE id=$w; DELETE FROM meta WHERE key='request_target_repair_v3';",
             ("$s", fixture == "ambiguous_live" ? "queued" : "parked"), ("$j", old.Id), ("$w", want.RequestId!));
         var path = Path.Combine(r.Root, "v2.db"); File.WriteAllBytes(path, r.Db.Snapshot()!);
+        AcquireSchemaFixtures.ToSchemaTwo(path);
         if (fixture == "missing_columns")
         {
             using var c = new SqliteConnection("Data Source=" + path + ";Pooling=False"); c.Open(); using var cmd = c.CreateCommand();
@@ -131,7 +132,7 @@ public class IntegrationRequestReviewRound3Tests
         }
         for (var pass = 0; pass < 2; pass++)
         {
-            using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(2, db.Version);
+            using var db = new AcquireDatabase(path); Assert.True(db.Available); Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
             var ledger = new RequestLedger(db); var stored = ledger.Find(want.RequestId!)!;
             Assert.NotEmpty(stored.TargetKey);
             if (fixture == "ambiguous_live")

@@ -792,7 +792,7 @@ Bring Jellyfin movie and series watchlist entries into Seerr.
 
 ??? info "How it works"
 
-    It uses the first configured URL, linked accounts, and TMDB-identified movie/series watchlist items. It skips entries already on Seerr's watchlist and excludes blocked users. Removals are not mirrored.
+    It uses the first configured URL, linked accounts, and TMDB-identified movie/series watchlist items. It skips entries already on Seerr's watchlist and excludes blocked users. Removals are not mirrored. Turning the sync off during a run stops it before the next item; a user blocked during a run is skipped from then on.
 
 #### Retention and access limits
 
@@ -956,12 +956,12 @@ Admin trigger settings ([complete trigger and destination reference](seerr-setti
 | **When movie starts** | Off | Checks at most five minutes in and below 5% playback. |
 | **After X minutes watched** | On | Checks when playback position reaches the threshold. Seeking or resuming can satisfy it. |
 | **Minutes Watched Threshold:** | 20 | Position threshold in minutes; input range 1–180. |
-| **Only request if released** | On | A valid future release date prevents submission; missing/unparseable dates do not. |
+| **Only request if released** | On | A future release date prevents submission; a movie with no release date yet counts as not released. |
 | **Quality Profile Mode:** | **Default** | Uses Seerr defaults, copies the first existing request with **Original**, or sends configured choices with **Custom**. |
 
 ??? info "How it works"
 
-    JE considers the entry immediately after the watched movie in Seerr's returned collection parts. It does not locally sort that array or search farther ahead if that next entry is already available/pending/processing or skipped by release checking.
+    JE considers the next movie released in the collection after the watched one, whatever order Seerr or TMDB lists the collection in. It does not search farther ahead if that next movie is already available/pending/processing or skipped by release checking.
 
     User/movie checks are throttled to about once per hour. **Original** copies Seerr request settings rather than the watched file's quality. Unusable original settings and an empty **Custom** configuration fall back to **Default**. The default **Use default instead of 4K fallback** behavior also falls back when original settings were 4K.
 
