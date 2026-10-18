@@ -15,7 +15,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <param name="ClientId">The caller's request id.</param>
     /// <param name="Kind">add, apply, patch, delete, order, swap_in or create.</param>
     /// <param name="Fingerprint">What was asked for (server digest of the normalized request).</param>
-    /// <param name="State">open, completed or failed.</param>
+    /// <param name="State">open, completed, failed, or deleted (a create whose list was removed; terminal until expiry).</param>
     /// <param name="Status">HTTP status of the finished operation.</param>
     /// <param name="ListId">Create: the list it made (a retry goes to that list).</param>
     /// <param name="Result">Bounded result identity (ids added/skipped; never a projected view).</param>
@@ -101,7 +101,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="listId">The new list ("N").</param>
         /// <param name="now">Now.</param>
         public void SetList(string id, string listId, DateTimeOffset now)
-            => _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE list_operations SET list_id=$l,updated_at=$at WHERE id=$id", ("$l", listId), ("$at", RequestLedger.Ms(now)), ("$id", id)));
+            => _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE list_operations SET list_id=$l,updated_at=$at WHERE id=$id AND state<>'deleted'", ("$l", listId), ("$at", RequestLedger.Ms(now)), ("$id", id)));
 
         /// <summary>
         /// Records the list a create operation made, atomically: only when the operation has no list yet (or this one) and
@@ -113,7 +113,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>Whether the operation now records this list.</returns>
         public bool ClaimList(string id, string listId, DateTimeOffset now)
             => _db.Write((c, t) => RequestLedger.Exec(c, t,
-                "UPDATE list_operations SET list_id=$l,updated_at=$at WHERE id=$id AND (list_id IS NULL OR list_id=$l) AND NOT EXISTS (SELECT 1 FROM list_operations o WHERE o.list_id=$l AND o.id<>$id)",
+                "UPDATE list_operations SET list_id=$l,updated_at=$at WHERE id=$id AND state<>'deleted' AND (list_id IS NULL OR list_id=$l) AND NOT EXISTS (SELECT 1 FROM list_operations o WHERE o.list_id=$l AND o.id<>$id)",
                 ("$l", listId), ("$at", RequestLedger.Ms(now)), ("$id", id)) == 1);
 
         /// <summary>Whether any operation recorded this list as the one it created.</summary>
@@ -133,12 +133,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="result">Bounded result JSON, or null.</param>
         /// <param name="now">Now.</param>
         public void Finish(string id, bool completed, int status, string? result, DateTimeOffset now)
-            => _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE list_operations SET state=$s,status=$st,result=$r,updated_at=$at WHERE id=$id",
+            => _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE list_operations SET state=$s,status=$st,result=$r,updated_at=$at WHERE id=$id AND state<>'deleted'",
                 ("$s", completed ? "completed" : "failed"), ("$st", status), ("$r", result), ("$at", RequestLedger.Ms(now)), ("$id", id)));
 
-        /// <summary>Removes finished operations older than <see cref="Retention"/>, and every operation of a removed list.</summary>
+        /// <summary>Removes expired/non-create operations and marks removed creates deleted for the retry retention period.</summary>
         /// <param name="now">Now.</param>
-        /// <param name="removedLists">List ids whose operations go regardless of age.</param>
+        /// <param name="removedLists">List ids whose non-create operations go regardless of age.</param>
         /// <returns>Rows removed.</returns>
         public int Purge(DateTimeOffset now, IReadOnlyCollection<string>? removedLists = null)
         {
@@ -149,7 +149,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 removed += RequestLedger.Exec(c, t, "DELETE FROM list_operations WHERE updated_at < $cut", ("$cut", RequestLedger.Ms(now - Retention - Retention)));
                 foreach (var list in removedLists ?? Array.Empty<string>())
                 {
-                    removed += RequestLedger.Exec(c, t, "DELETE FROM list_operations WHERE scope=$l OR list_id=$l", ("$l", list));
+                    // Jellyfin may re-use a deleted folder's item id. Keep a durable tombstone, not just its id: a late
+                    // completion and a scan that re-adds the folder must never revive this create. Repeated cleanup does
+                    // not extend retention; deleted rows expire like other finished operations, after 30 days.
+                    RequestLedger.Exec(c, t, "UPDATE list_operations SET state='deleted',status=404,result=NULL,updated_at=$at WHERE kind='create' AND list_id=$l AND state<>'deleted'",
+                        ("$at", RequestLedger.Ms(now)), ("$l", list));
+                    removed += RequestLedger.Exec(c, t, "DELETE FROM list_operations WHERE kind<>'create' AND (scope=$l OR list_id=$l)", ("$l", list));
                 }
 
                 return removed;

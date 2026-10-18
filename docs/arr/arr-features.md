@@ -1356,7 +1356,9 @@ follows Jellyfin's own rights and the household's request rules:
   same name. A new list never replaces another one: two people creating the same collection name at once get one
   collection and a `name taken` answer, and a collection someone makes in Jellyfin itself meanwhile is left alone. A
   collection name the server's collections folder already has is refused; a `[boxset]` folder of the same name in a
-  library doesn't count. JE never adds a share to a list it creates, so deleting its owner hands it to nobody.
+  library doesn't count. JE never adds a share to a list it creates, so deleting its owner hands it to nobody. If the
+  list is deleted, retrying the same create answers "not found" for the retry retention period (30 days); making it
+  again needs a new request. A failed save of JE's chosen name keeps a name the person changed while it was pending.
 - **Order.** Entries keep their place among the real items, also when the same item is in a playlist twice. Dragging an
   entry moves it; dragging a real item moves it in Jellyfin too (only the first copy of a duplicated item can move).
   Collections list their entries by release date, undated (TBA) ones last.
@@ -1373,7 +1375,10 @@ follows Jellyfin's own rights and the household's request rules:
 - **Arrivals** (*Swap in titles that arrive*). When a title arrives, it takes its entry's place: a movie replaces it;
   episodes go in one by one in episode order and the entry keeps standing for the rest until the season (or the listed
   episodes) is complete. This happens only on lists whose editor turned swap-in on for the list *and* agreed in their
-  own Jellyfin Enhanced settings, and only while that person can still edit the list. A 4K entry only takes a 4K copy.
+  own Jellyfin Enhanced settings, and only while that person can still edit the list. A 4K entry needs an accessible,
+  playable 4K source, including alternate versions of the same movie or episode; its real item plays that version.
+  A standard entry accepts any playable copy, preferring non-4K. Grouped series include episodes from every accessible
+  folder. A 4K TV collection uses episode items when a Series or Season link would lose an alternate version's identity.
   If the server stops in the middle of putting an item in, the next start finishes or undoes it by what is actually in
   the list, so an item never goes in twice.
 - **Status** (*Show request status on list entries*). Each entry shows where its request stands, the same status as

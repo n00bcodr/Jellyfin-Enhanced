@@ -1763,6 +1763,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
 
                     operation = start.Operation;
+                    if (operation?.State == "deleted")
+                    {
+                        return ListOutcome.Error(404, "not_found", "List not found.");
+                    }
+
                     if (operation?.ListId != null && Guid.TryParseExact(operation.ListId, "N", out var createdId))
                     {
                         // A retry goes to the list the first attempt created (B10), and a completed one is answered from it.
@@ -1870,8 +1875,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     // The list exists but its entries didn't (all) apply: report the failure with the list to reload; the
                     // operation stays retryable, so a retry with the same request id re-applies to this same list.
                     var error = applied.Value as ListErrorDto ?? new ListErrorDto { Code = "list_update_failed", Message = "Jellyfin could not update the list." };
-                    error.ListId = listIdN;
-                    error.ListKind = kind;
+                    // Validation awaits external metadata: access may have been revoked while it ran. An access-denied
+                    // 404 never identifies the recovered list, even if access was restored since the refusal.
+                    var visible = _gate.Current(access)?.Permissions.CanView == true;
+                    error.ListId = applied.StatusCode != 404 && visible ? listIdN : null;
+                    error.ListKind = applied.StatusCode != 404 && visible ? kind : null;
                     return Finished(operation, new ListOutcome { StatusCode = applied.StatusCode >= 300 ? applied.StatusCode : 500, Value = error });
                 }
 

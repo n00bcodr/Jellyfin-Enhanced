@@ -14,6 +14,34 @@ namespace JE.Tests;
 // The production Jellyfin seam (JellyfinListHost) over mocked managers.
 public class ListsHostTests
 {
+    [Theory]
+    [InlineData(ListKinds.Playlist)]
+    [InlineData(ListKinds.Collection)]
+    public async Task AFailedRenameKeepsANameThePersonChangedWhileTheSaveWasPending(string kind)
+    {
+        var owner = Guid.NewGuid();
+        BaseItem item = kind == ListKinds.Playlist
+            ? new Playlist { Id = Guid.NewGuid(), OwnerUserId = owner, Name = "Marked" }
+            : new BoxSet { Id = Guid.NewGuid(), Name = "Marked" };
+        var saving = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(item.Id)).Returns(item);
+        library.Setup(l => l.UpdateItemAsync(item, It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>())).Returns(saving.Task);
+        var playlists = new Mock<IPlaylistManager>();
+        playlists.Setup(p => p.UpdatePlaylist(It.IsAny<PlaylistUpdateRequest>()))
+            .Callback((PlaylistUpdateRequest r) => item.Name = r.Name).Returns(saving.Task);
+        var host = new JellyfinListHost(library.Object, playlists.Object, Mock.Of<ICollectionManager>(), Mock.Of<MediaBrowser.Model.IO.IFileSystem>());
+
+        var finish = host.FinishCreateAsync(new ListWrite(item.Id, owner, ListWriteKind.FinishCreate), "JE name");
+        Assert.False(finish.IsCompleted);
+        Assert.Equal("JE name", item.Name);
+        item.Name = "The person's name";
+        saving.SetException(new IOException("save failed"));
+        await Assert.ThrowsAsync<IOException>(() => finish);
+
+        Assert.Equal("The person's name", item.Name);
+    }
+
     [Fact]
     public void FindMovieByTmdbChecksEveryCopyUntilOneIsVisibleToAllUsers()
     {

@@ -540,7 +540,9 @@ Per person (Jellyfin Enhanced panel, *Lists*, shown while lists are on): *Show t
 their place in lists I turned this on for* is *No* until the person chooses *Yes*.
 
 The scheduled task *Requests & downloads: list maintenance* (daily, 04:30) removes the data of deleted lists and old
-list records; with *Daily list maintenance* on it also refreshes entries and runs a full pass.
+list records; with *Daily list maintenance* on it also refreshes entries and runs a full pass. Deleted creates keep a
+30-day retry marker, so retrying the old request cannot recreate the list. A 4K entry uses an accessible, playable 4K
+source, including alternate versions; a standard entry accepts any playable copy.
 
 #### Household tab
 

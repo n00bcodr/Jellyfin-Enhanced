@@ -535,6 +535,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListEditionAvailability.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListFlags.cs",
       "category": "Services"
     },
@@ -10141,7 +10145,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 567,
+    "files": 568,
     "routes": 269,
     "configuration_properties": 605,
     "storage_references": 87,

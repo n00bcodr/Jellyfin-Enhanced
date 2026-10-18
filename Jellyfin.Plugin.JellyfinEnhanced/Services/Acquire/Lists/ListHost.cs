@@ -40,6 +40,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <param name="Kind">Jellyfin item kind.</param>
     public sealed record LibraryItemInfo(Guid Id, BaseItemKind Kind);
 
+    /// <summary>A physical video source and the library item that plays that exact file (never its HD representative).</summary>
+    /// <param name="ItemId">Backing playable item id.</param>
+    /// <param name="SourceId">Jellyfin media-source id.</param>
+    /// <param name="Width">Source video width.</param>
+    /// <param name="Height">Source video height.</param>
+    /// <param name="Playable">A real source with video and a playable backing item.</param>
+    public sealed record ListMediaSource(Guid ItemId, string SourceId, int? Width, int? Height, bool Playable);
+
     /// <summary>A real (non-virtual) library episode and its coordinates.</summary>
     /// <param name="Id">Episode item id.</param>
     /// <param name="SeriesId">The series it belongs to.</param>
@@ -113,12 +121,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         bool CanAccessItem(Guid itemId, User user);
 
         /// <summary>
-        /// Whether a library item is a 4K copy (its video is at least 3200 pixels wide or 2000 high). A list entry in the
-        /// 4K edition only takes 4K copies; a standard entry prefers other copies.
+        /// Whether a library item has a playable 4K source (at least 3200 pixels wide or 2000 high), including alternates.
+        /// Availability for a viewer and a scope goes through <see cref="ListEditionAvailability"/> instead.
         /// </summary>
         /// <param name="itemId">Item.</param>
         /// <returns>Whether it is a 4K copy.</returns>
         bool IsFourK(Guid itemId);
+
+        /// <summary>Physical video sources, including alternate versions, with their exact playable backing item ids.</summary>
+        /// <param name="itemId">Movie or episode (may be a presentation representative).</param>
+        /// <returns>Sources; no source is inferred from a folder, arr ownership or a virtual item.</returns>
+        IReadOnlyList<ListMediaSource> GetMediaSources(Guid itemId);
 
         /// <summary>Basic facts of a library item.</summary>
         /// <param name="itemId">Item.</param>
@@ -176,7 +189,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>
         /// Gives a list JE created its chosen name (it was created under the one carrying its marker); the list keeps its
         /// folder. As the grant's user (a playlist's owner). Saves every time it is called, whatever the cached item shows;
-        /// when the save fails the cached item keeps its old name.
+        /// when the save fails the cached item gets its old name back only while it still has JE's chosen name.
         /// </summary>
         /// <param name="write">The gate's grant (<see cref="ListWriteKind.FinishCreate"/>).</param>
         /// <param name="name">The chosen name.</param>
@@ -340,7 +353,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public bool CanAccessItem(Guid itemId, User user) => _libraryManager.GetItemById<BaseItem>(itemId, user) != null;
 
         /// <inheritdoc />
-        public bool IsFourK(Guid itemId) => _libraryManager.GetItemById(itemId) is { } item && (item.Width >= 3200 || item.Height >= 2000);
+        public bool IsFourK(Guid itemId) => GetMediaSources(itemId).Any(s => s.Playable && (s.Width >= 3200 || s.Height >= 2000));
+
+        /// <inheritdoc />
+        public IReadOnlyList<ListMediaSource> GetMediaSources(Guid itemId)
+        {
+            if (_libraryManager.GetItemById(itemId) is not Video video || video.IsVirtualItem)
+            {
+                return Array.Empty<ListMediaSource>();
+            }
+
+            var result = new List<ListMediaSource>();
+            foreach (var source in video.GetMediaSources(false))
+            {
+                var backing = Guid.TryParse(source.Id, out var id) ? _libraryManager.GetItemById(id) : null;
+                if (backing == null && !string.IsNullOrEmpty(source.Path))
+                {
+                    backing = string.Equals(source.Path, video.Path, StringComparison.Ordinal)
+                        ? video
+                        : _libraryManager.FindByPath(source.Path, null);
+                }
+
+                // A source's dimensions may never be attributed to a different file. Without its backing item lists
+                // cannot select this edition for playback, so it is unavailable until Jellyfin can resolve it.
+                if (backing is not Video actual || actual.IsVirtualItem || string.IsNullOrEmpty(source.Path)
+                    || !string.Equals(actual.Path, source.Path, StringComparison.Ordinal)) continue;
+                var stream = source.MediaStreams?.FirstOrDefault(s => s.Type == MediaStreamType.Video);
+                result.Add(new ListMediaSource(actual.Id, source.Id, stream?.Width, stream?.Height,
+                    stream != null && (source.SupportsDirectPlay || source.SupportsDirectStream || source.SupportsTranscoding)));
+            }
+
+            return result;
+        }
 
         /// <inheritdoc />
         public LibraryItemInfo? GetItem(Guid itemId)
@@ -457,7 +501,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
                     catch
                     {
-                        playlist.Name = playlistName;
+                        if (string.Equals(playlist.Name, name, StringComparison.Ordinal)) playlist.Name = playlistName;
                         throw;
                     }
 
@@ -474,7 +518,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
                     catch
                     {
-                        boxSet.Name = boxSetName;
+                        if (string.Equals(boxSet.Name, name, StringComparison.Ordinal)) boxSet.Name = boxSetName;
                         throw;
                     }
 
@@ -645,8 +689,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             query.ParentIndexNumber = seasonNumber;
             return _libraryManager.GetItemList(query)
                 .OfType<Episode>()
-                .Where(e => e.ParentIndexNumber.HasValue && e.IndexNumber.HasValue && !e.IsVirtualItem)
-                .Select(e => new LibraryEpisode(e.Id, seriesId, e.ParentIndexNumber!.Value, e.IndexNumber!.Value, e.IndexNumberEnd))
+                .Where(e => e.ParentIndexNumber.HasValue && e.IndexNumber.HasValue && !e.IsVirtualItem && e.SeriesId != Guid.Empty)
+                .Select(e => new LibraryEpisode(e.Id, e.SeriesId, e.ParentIndexNumber!.Value, e.IndexNumber!.Value, e.IndexNumberEnd))
                 .ToList();
         }
 
@@ -665,6 +709,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var query = user == null ? new InternalItemsQuery() : new InternalItemsQuery(user);
             query.IncludeItemTypes = new[] { kind };
             query.Recursive = true;
+            // A presentation representative is not the whole physical show. All sibling folders and their own
+            // episodes must remain candidates; the edition helper deduplicates only after checking every source.
+            query.GroupByPresentationUniqueKey = false;
             return query;
         }
 

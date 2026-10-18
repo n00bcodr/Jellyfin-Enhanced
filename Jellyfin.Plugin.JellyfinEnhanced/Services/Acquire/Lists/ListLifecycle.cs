@@ -46,7 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="host">Jellyfin seam.</param>
         /// <param name="logger">JE logger.</param>
         /// <param name="links">List request links (removed with their list).</param>
-        /// <param name="operations">Durable list operations (removed with their list).</param>
+        /// <param name="operations">Durable list operations (creates retain their identity after list deletion).</param>
         /// <param name="events">Swap-in events (removed with their list).</param>
         /// <param name="swap">Swap service (reconciliation after a restore).</param>
         public ListLifecycle(ILibraryManager libraryManager, ListStore store, IListHost host, Logger logger, ListLinks? links = null, ListOperations? operations = null, ListEventStore? events = null, ListSwapService? swap = null)

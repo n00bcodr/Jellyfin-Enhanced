@@ -835,6 +835,10 @@ carries `hub: true` (the admin tabs).
 exist. Views are `private, no-cache` with an `ETag` bound to the person; every change is `private, no-store`. Changes
 take a `requestId` (`[A-Za-z0-9_-]{1,64}`): the same id with the same body is answered from its durable record (also
 after a restart) with the list as the caller may see it now; the same id with another body is `409 idempotency_conflict`.
+Create records become deletion tombstones during cleanup, retained for 30 days after deletion even if Jellyfin reuses
+the item id: retrying
+the deleted list's create is `404 not_found`, and a new create needs a new request id. An access-denied 404 never carries
+`listId` or `listKind`; other failed-create answers carry them only while the caller can still see the list.
 Edits take the list's `rev`; a stale one is `409 rev_conflict` with the fresh view. The caller's rights, limits and the
 items they and the playlist's owner can open are read again right before every write to Jellyfin and before every
 answer (a person disabled meanwhile has lost it; nothing is written as a disabled playlist owner: `409 owner_missing`):

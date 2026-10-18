@@ -190,7 +190,7 @@ public class ListsLifecycleRestoreTests
     // ── deleted lists and users ───────────────────────────────────────
 
     [Fact]
-    public async Task ADeletedListLosesItsLinksOperationsAndEventsButNotOtherListsRows()
+    public async Task ADeletedListLosesItsRowsButKeepsCreateIdentityAndOtherListsRows()
     {
         using var h = new ListsHarness();
         var owner = h.NewUser("owner");
@@ -225,7 +225,7 @@ public class ListsLifecycleRestoreTests
         Assert.Empty(links.ForList(g));
         Assert.Single(links.ForList(o));
         Assert.False(h.Operations.Begin(owner.Id, g, "c", "add", "f", now).Replayed);
-        Assert.False(h.Operations.Begin(owner.Id, "create-playlist", "create-1", "create", "f", now).Replayed);
+        Assert.True(h.Operations.Begin(owner.Id, "create-playlist", "create-1", "create", "f", now).Replayed);
         Assert.True(h.Operations.Begin(owner.Id, o, "c", "add", "f", now).Replayed);
         Assert.Equal(new[] { o }, h.Events.Pending().Select(e => e.ListId));
 
