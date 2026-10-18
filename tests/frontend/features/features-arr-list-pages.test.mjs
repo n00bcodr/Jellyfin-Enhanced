@@ -1372,17 +1372,20 @@ test('r3 grid: a revoked batch never repaints or queues its dirty cards in the n
 test('r3 Q13: an unanswered Spoiler policy paints fully guarded after eight seconds and ignores a late answer', { timeout: 11000 }, async t => {
   const held = deferred();
   const entry = ph(P(1), { kind: 'episodes', mediaType: 'tv', seasonNumber: 2, episodes: [{ s: 2, e: 1, title: 'SECRET EPISODE', airDate: '2001-05-01' }], note: 'SECRET NOTE' });
-  const h = setup(t, { config: { SpoilerBlurEnabled: true }, spoiler: { whenLoaded: () => held.promise, isLoadOk: () => true, isTmdbEnabled: () => false, guardedIds: () => ({ series: [], movies: [] }), getUserPrefs: () => ({}) }, views: () => [view([entry], [entry.token])], items: { [LIST]: PLAYLIST_ITEM } });
+  const movie = ph(P(2), { kind: 'movie', releaseDate: '1999-05-01', year: 1999, released: true });
+  const h = setup(t, { config: { SpoilerBlurEnabled: true }, spoiler: { whenLoaded: () => held.promise, isLoadOk: () => true, isTmdbEnabled: () => false, guardedIds: () => ({ series: [], movies: [] }), getUserPrefs: () => ({}) }, views: () => [view([entry, movie], [entry.token, movie.token])], items: { [LIST]: PLAYLIST_ITEM } });
   await h.start();
   const { page, container } = h.playlistPage();
   await h.show(page);
   assert.equal(container.querySelectorAll('.je-list-row').length, 0);
   await sleep(8150);
-  assert.equal(container.querySelectorAll('.je-list-row').length, 1);
-  assert.doesNotMatch(container.textContent, /SECRET|2001/);
+  assert.equal(container.querySelectorAll('.je-list-row').length, 2);
+  assert.doesNotMatch(container.textContent, /SECRET|2001|1999/);
+  const lp = h.JE.internals.arrListPages;
+  assert.notEqual(lp.render.signature(movie, { guarded: lp.gate.GUARD_ALL }), lp.render.signature(movie, { guarded: lp.gate.policy(() => true, true) }), 'a later visit with known policy rebuilds the year');
   held.resolve();
   await h.settle();
-  assert.doesNotMatch(container.textContent, /SECRET|2001/);
+  assert.doesNotMatch(container.textContent, /SECRET|2001|1999/);
 });
 
 

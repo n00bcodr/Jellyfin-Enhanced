@@ -275,6 +275,7 @@ button.je-list-card-main { cursor: pointer; }
     function dateLabel(ph, ctx) {
         const m = DATE_RE.exec(ph.releaseDate || '');
         if (airDateHidden(ph, ctx)) {
+            if (ctx.guarded.allDates === true) return '';
             if (ph.kind === 'season' || ph.kind === 'episodes' || !ph.released) return '';
             return m ? m[1] : ph.year ? String(ph.year) : '';
         }
@@ -615,7 +616,7 @@ button.je-list-card-main { cursor: pointer; }
         return [ph.title, ph.note, ph.posterPath, ph.releaseDate, ph.released, ph.filledCount, ph.expectedCount, ph.airedCount,
             ph.inLibraryItemId, (ph.actions || []).join(','), (ph.episodes || []).map(e => `${e?.e}:${e?.title || ''}`).join(','),
             status, ctx?.guarded?.(ph) ? 'g' : '', airDateHidden(ph, ctx) ? 'd' : '', ctx?.swapActive ? 's' : '', ctx?.requests ? 'r' : '',
-            ctx?.tv ? 't' : '', ctx?.handleSpace ? 'h' : ''].join('|');
+            ctx?.tv ? 't' : '', ctx?.handleSpace ? 'h' : '', ctx?.guarded?.allDates === true ? 'a' : ''].join('|');
     }
 
     // ------------------------------------------------------------------ Spoiler Guard
