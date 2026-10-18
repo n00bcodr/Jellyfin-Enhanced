@@ -16,6 +16,9 @@ public static class TitleFeedProjection
         {
             foreach (var field in new[] { "results", "cast", "crew", "parts", "requests", "items", "events", "mine", "soon", "ready" })
                 if (obj[field] is JsonArray rows) Filter(rows, policy, surface, field == "parts" ? "movie" : fallbackKind);
+            foreach (var field in new[] { "recommendations", "similar" })
+                if (obj[field] is JsonObject appended && appended["results"] is JsonArray titles)
+                    Filter(titles, policy, "recommendations", fallbackKind ?? (Identity(obj) is { } owner && owner.StartsWith("movie:", StringComparison.Ordinal) ? "movie" : "tv"));
             if (obj["groups"] is JsonArray groups)
             {
                 for (var i = groups.Count - 1; i >= 0; i--)

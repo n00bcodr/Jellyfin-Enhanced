@@ -57,6 +57,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   │                                 # TagCache*, CdnAsset, WatchlistMonitor,
 │   │                                 # SeerrParentalFilter, MaintenanceMode*,
 │   │                                 # TmdbResponseCache, TmdbCompanyTvDiscover,
+│   │                                 # TmdbAppendProjection (supported provider envelopes),
 │   │                                 # ItemStatsService, ScriptInjectionStartupFilter,
 │   │                                 # ClientScriptBundle, MovieCollectionsBatch, …)
 │   ├── Identity/

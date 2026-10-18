@@ -245,18 +245,26 @@
     // Flush pending debouncedSave so a following server-direct write sees the latest local state.
     // On failure: re-throw so the caller aborts, AND start a bounded background retry so the local mutation isn't lost.
     async function flushPendingSave() {
-        if (!saveTimeout) return;
-        clearTimeout(saveTimeout);
-        saveTimeout = null;
         const generation = saveGeneration;
-        try {
-            const sent = await directSaveHiddenContent();
-            reconcileAfterSave(sent, generation);
-        } catch (e) {
-            console.warn('🪼 Jellyfin Enhanced: flushPendingSave failed; scheduling background retry', e);
-            if (pendingRetryHandle == null) scheduleFlushRetry(0, generation);
-            throw e;
+        // Reconcile edits made during a flush before an atomic write takes its base. Bound churn.
+        for (let attempt = 0; attempt < 3; attempt++) {
+            if (!saveTimeout && pendingRetryHandle == null) return;
+            if (saveTimeout) clearTimeout(saveTimeout);
+            saveTimeout = null;
+            cancelPendingRetry();
+            try {
+                const sent = await directSaveHiddenContent();
+                if (generation !== saveGeneration) throw new Error('user changed');
+                reconcileAfterSave(sent, generation);
+                if (!saveTimeout && pendingRetryHandle == null) return;
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: flushPendingSave failed; scheduling background retry', e);
+                if (generation === saveGeneration && pendingRetryHandle == null) scheduleFlushRetry(0, generation);
+                throw e;
+            }
         }
+        // The pending debounce retains the latest edit; the atomic control stays retryable.
+        throw new Error('hidden-content edits changed during flush');
     }
 
     // Cancel pending retries on tab teardown so a stale snapshot can't overwrite server state after navigation.

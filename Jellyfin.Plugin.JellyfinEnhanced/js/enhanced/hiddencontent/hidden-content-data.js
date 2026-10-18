@@ -80,8 +80,9 @@
         const user = ApiClient.getCurrentUserId();
         const epoch = JE.session?.getEpoch?.();
         const previous = ruleWrites.get(title.key) || Promise.resolve();
-        const task = enqueuePersistence(async () => {
-            await previous.catch(() => {});
+        // Queue the pending debounce before the atomic write; its acknowledgement is our rule base.
+        const flushed = internal.flushPendingSave?.() || Promise.resolve();
+        const task = flushed.then(() => previous.catch(() => {})).then(() => enqueuePersistence(async () => {
             if (ApiClient.getCurrentUserId() !== user || (JE.session?.isCurrent?.(epoch) === false)) return false;
             const beforeRules = JSON.parse(JSON.stringify(getHiddenData().items || {}));
             const item = { itemId: '', seriesId: '', type: title.type, tmdbId: title.tmdbId,
@@ -110,7 +111,7 @@
             refreshNativeCardVisibility();
             if (hidden) showUndoToast(item.name, title.key);
             return true;
-        });
+        }));
         ruleWrites.set(title.key, task);
         task.finally(() => { if (ruleWrites.get(title.key) === task) ruleWrites.delete(title.key); }).catch(() => {});
         return task;

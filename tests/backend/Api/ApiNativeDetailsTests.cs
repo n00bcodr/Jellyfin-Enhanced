@@ -1263,6 +1263,22 @@ public class ApiNativeDetailsTests
     }
 
     [Fact]
+    public async Task OldLogoGrantIsProtectedAfterGuardActivation()
+    {
+        using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.SpoilerBlurEnabled = true;
+        rig.Plugin.Plugin.Configuration.SpoilerBlurArtwork = true;
+        var viewer = rig.Person();
+        var before = Value<BaseItemDto>((await Call(rig, "UserLibrary", "GetItem", Me(viewer), new() { ["itemId"] = Id(SyntheticId.Movie(693134)) })).Result);
+        var art = new Dictionary<string, object?> { ["itemId"] = before.Id, ["imageType"] = ImageType.Logo, ["tag"] = before.ImageTags[ImageType.Logo] };
+        var original = Assert.IsType<FileContentResult>((await Call(rig, "Image", "GetItemImage", null, new(art))).Result).FileContents;
+        rig.Plugin.Core.Manager.SaveUserConfiguration(viewer.Id.ToString("N"), "spoilerblur.json",
+            new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur { PendingTmdb = new() { ["movie:693134"] = new() } });
+        var protectedArt = Assert.IsType<FileContentResult>((await Call(rig, "Image", "GetItemImage", null, new(art))).Result);
+        Assert.NotEqual(original, protectedArt.FileContents);
+    }
+
+    [Fact]
     public async Task ProviderGuardProtectsMissingRowsUnderAnExistingLibrarySeasonAndOldMovieArtUrls()
     {
         using var rig = new Rig();

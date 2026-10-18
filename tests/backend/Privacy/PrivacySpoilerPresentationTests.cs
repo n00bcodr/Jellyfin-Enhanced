@@ -102,6 +102,53 @@ public class PrivacySpoilerPresentationTests
         config.SpoilerBlurEnabled=false;Assert.Equal("{\"overview\":\"raw\"}",new SpoilerPresentationContext(state,config).Project("{\"overview\":\"raw\"}","movie:tmdb:42"));
     }
 
+    [Theory]
+    [InlineData("tv:tmdb:42", "tv")][InlineData("movie:tmdb:42", "movie")]
+    public void LogoPathsAndNativeArtworkUseTheSamePolicy(string title, string kind)
+    {
+        var policy = new SpoilerPresentationContext(new UserSpoilerBlur { ProviderTitles = new() { [title] = new() } }, Config());
+        Assert.True(policy.ProtectArtwork(title, kind, "Logo"));
+        var result = policy.Project("""{"logoPath":"/secret.png","logo_path":"/secret.png","logoUrl":"/secret.png","logo":"/secret.png"}""", title);
+        Assert.DoesNotContain("secret", result);
+    }
+
+    [Theory]
+    [InlineData("events")][InlineData("results")][InlineData("items")]
+    public void CalendarEpisodeUsesSeriesIdentityAndEpisodePreferences(string field)
+    {
+        var state = new UserSpoilerBlur { ProviderTitles = new() { ["tv:tmdb:42"] = new() } };
+        state.Prefs.HideSeriesDescriptions = false;
+        var raw = """{"source":"Sonarr","id":"sonarr|instance|999","type":"Series","tmdbId":42,"title":"Series entry","subtitle":"S02E03 - secret","episodeTitle":"secret","episode_title":"secret","seasonNumber":2,"episodeNumber":3,"overview":"secret","releaseDate":"2030-01-01","releaseDateLocal":"2030-01-01","airDateUtc":"2030-01-01","airDate":"2030-01-01","posterUrl":"/secret.jpg","backdropUrl":"/secret.jpg"}""";
+        var projected = JsonNode.Parse(new SpoilerPresentationContext(state, Config()).Project("{\"" + field + "\":[" + raw + "]}"))![field]![0]!;
+        Assert.DoesNotContain("secret", projected.ToJsonString());
+        Assert.Equal("Series entry", projected["title"]!.ToString());
+        Assert.Equal("S02E03", projected["subtitle"]!.ToString());
+        foreach (var date in new[] { "releaseDate", "releaseDateLocal", "airDateUtc", "airDate" }) Assert.Null(projected[date]);
+        state.Prefs.ReplaceEpisodeTitles = false; state.Prefs.HideAirDate = false;
+        var allowed = new SpoilerPresentationContext(state, Config()).Project("[" + raw + "]");
+        Assert.Contains("secret", allowed); Assert.Contains("releaseDateLocal", allowed);
+    }
+
+    [Fact]
+    public void CalendarMovieStripsEveryPreciseDateAlias()
+    {
+        var raw = """[{"source":"Radarr","type":"Movie","tmdbId":42,"releaseDateLocal":"2030-01-01","physicalRelease":"2030-01-01","digitalRelease":"2030-01-01","inCinemas":"2030-01-01","physical_release":"2030-01-01","digital_release":"2030-01-01","in_cinemas":"2030-01-01"}]""";
+        Assert.DoesNotContain("2030-01-01", new SpoilerPresentationContext(State(), Config()).Project(raw));
+    }
+
+    [Theory]
+    [InlineData("recommendations")][InlineData("similar")]
+    public void AppendedListsUseEachResultsPolicyAndRecommendationSurface(string field)
+    {
+        var raw = "{\"id\":51,\"name\":\"Public seed\",\"" + field + "\":{\"page\":1,\"results\":[{\"id\":42,\"overview\":\"secret\",\"backdrop_path\":\"/secret.jpg\"},{\"id\":43,\"overview\":\"public\"}]}}";
+        var state = new UserSpoilerBlur { ProviderTitles = new() { ["tv:tmdb:42"] = new() } };
+        var result = JsonNode.Parse(new SpoilerPresentationContext(state, Config()).Project(raw, "tv:tmdb:51"))!;
+        Assert.DoesNotContain("secret", result.ToJsonString());
+        Assert.Equal("public", result[field]!["results"]![1]!["overview"]!.ToString());
+        var hidden = HiddenContentPolicy.Build(new UserHiddenContent { Settings = new() { FilterDiscovery=false, FilterRecommendations=true }, Items = new() { ["tv:tmdb:42"] = new() { Type="Series", TmdbId="42" } } }, true);
+        Assert.Single((JsonArray)JsonNode.Parse(TitleFeedProjection.Hidden(raw, hidden, "discovery", "tv"))![field]!["results"]!);
+    }
+
     [Fact]
     public void UnknownPolicySuppressesSensitiveDataWhileUnrelatedViewerRemainsUnchanged()
     {

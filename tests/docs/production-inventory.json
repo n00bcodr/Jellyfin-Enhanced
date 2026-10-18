@@ -1167,6 +1167,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbAppendProjection.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbCompanyTvDiscover.cs",
       "category": "Services"
     },
@@ -9666,7 +9670,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 535,
+    "files": 536,
     "routes": 257,
     "configuration_properties": 579,
     "storage_references": 84,

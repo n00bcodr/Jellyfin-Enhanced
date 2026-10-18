@@ -136,6 +136,12 @@ for (const library of [true,false]) test(`native recommendation cards use their 
  const card=h.document.querySelector('.card');
  h.api.filterNativeCards();h.flush();assert.equal(card.classList.contains('je-hidden'),!library);
  h.api.filterAllNativeCards();h.flush();assert.equal(card.classList.contains('je-hidden'),!library);
+ h.api.getHiddenData().items.native={itemId:'unrelated'};h.api.rebuildSets();
+ h.api.refreshNativeCardVisibility();h.flush();assert.equal(card.classList.contains('je-hidden'),!library,'refresh uses each card surface');
+ const timers=[];let onView;h.window.setTimeout=fn=>{timers.push(fn);return timers.length;};
+ h.JE.helpers={onViewPage:fn=>{onView=fn;}};Object.assign(h.api,{addLibraryHideButtons:()=>{}});
+ h.api.setupNativeObserver();onView();for(const fn of timers)fn();h.flush();
+ assert.equal(card.classList.contains('je-hidden'),!library,'scheduled detail rescans use each card surface');
  h.load('enhanced/hiddencontent/hidden-content-buttons.js');h.api.addLibraryHideButtons();
  Object.assign(h.api,{showUndoToast:()=>{}});await h.api.unhideItem('movie:tmdb:42');h.flush();
  await card.querySelector('.je-hide-btn').onclick({preventDefault(){},stopPropagation(){}});h.flush();
@@ -171,4 +177,74 @@ test('atomic acknowledgement refreshes its full rule base without losing newer l
  assert.equal(h.api.getHiddenData().items.local.itemId,'local');
  h.api.updateSettings({filterSearch:true});await h.api.flushPendingSave();const body=JSON.parse(requests.find(o=>o.type==='POST').data);
  assert.ok(body.items['tv:tmdb:51']);assert.ok(body.items.local);assert.equal(body.revision,'rules');
+});
+
+
+test('atomic write flushes edits made before its debounce starts, including removals',async t=>{
+ const requests=[];let server={native:{itemId:'native',type:'Movie'},kept:{itemId:'kept'}};
+ const h=setup(t,{items:JSON.parse(JSON.stringify(server)),ajax:async o=>{
+  requests.push(o);
+  if(o.type==='POST')server=JSON.parse(o.data).items;
+  else if(o.type==='PUT')server['movie:tmdb:42']=JSON.parse(o.data);
+  return {success:true,revision:String(requests.length),items:JSON.parse(JSON.stringify(server))};
+ }});
+ h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
+ await h.api.unhideItem('native');
+ h.api.getHiddenData().items.added={itemId:'added'};h.api.debouncedSave();
+ await h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true);
+ assert.deepEqual(requests.map(o=>o.type),['POST','PUT']);
+ assert.equal(h.api.getHiddenData().items.native,undefined);
+ assert.ok(h.api.getHiddenData().items.added);assert.ok(server.added);assert.equal(server.native,undefined);
+ await h.api.flushPendingSave();assert.equal(server.native,undefined);
+});
+
+
+test('same-title atomic writes cannot overtake a pending flush and deadlock the queue',async t=>{
+ const bulk=deferred(),requests=[];
+ const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='POST'?bulk.promise:Promise.resolve({success:true});}});
+ h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
+ h.api.debouncedSave();
+ const first=h.api.saveTitleRule({type:'Movie',tmdbId:42},true);
+ const second=h.api.saveTitleRule({type:'Movie',tmdbId:42},false);
+ await new Promise(r=>setImmediate(r));bulk.resolve({success:true});
+ await Promise.race([Promise.all([first,second]),new Promise((_,reject)=>setTimeout(()=>reject(new Error('persistence queue deadlocked')),500))]);
+ assert.deepEqual(requests.map(o=>o.type),['POST','PUT','DELETE']);assert.equal(h.api.isHiddenByTmdbId(42,'movie'),false);
+});
+
+test('edits made while a pending bulk flush awaits are saved before the atomic base',async t=>{
+ const first=deferred(),requests=[];let server={};
+ const h=setup(t,{ajax:async o=>{
+  requests.push(o);
+  if(o.type==='POST'){if(requests.length===1)await first.promise;server=JSON.parse(o.data).items;}
+  else server['movie:tmdb:42']=JSON.parse(o.data);
+  return {revision:String(requests.length),items:JSON.parse(JSON.stringify(server))};
+ }});
+ h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
+ h.api.debouncedSave();const pending=h.api.saveTitleRule({type:'Movie',tmdbId:42},true);
+ await new Promise(r=>setImmediate(r));h.api.getHiddenData().items.late={itemId:'late'};h.api.debouncedSave();first.resolve();
+ await pending;assert.ok(h.api.getHiddenData().items.late);assert.ok(server.late);
+ assert.deepEqual(requests.map(o=>o.type),['POST','POST','PUT']);
+});
+
+test('disabling the master restores provider-only cards and clears scan marks',t=>{
+ const h=setup(t,{items:{'movie:tmdb:42':{type:'Movie',tmdbId:'42'}},html:'<div class="card" data-id="synthetic" data-type="Movie"></div>'});
+ h.JE.titleDetails={parse:()=>({kind:'movie',tmdbId:42})};h.api.filterAllNativeCards();h.flush();
+ const card=h.document.querySelector('.card');assert.ok(card.classList.contains('je-hidden'));
+ h.api.getHiddenData().settings.enabled=false;h.api.refreshNativeCardVisibility();h.flush();
+ assert.equal(card.classList.contains('je-hidden'),false);assert.equal(card.hasAttribute('data-je-hidden-checked'),false);
+});
+
+for(const churn of [false,true]) test(`bounded flush ${churn?'refuses continuing edits':'accepts the final acknowledged base'}`,async t=>{
+ const gates=[deferred(),deferred(),deferred()],requests=[];
+ const h=setup(t,{ajax:async o=>{requests.push(o);if(o.type==='POST')await gates[requests.filter(x=>x.type==='POST').length-1].promise;return {success:true};}});
+ h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
+ h.api.debouncedSave();const outcome=h.api.saveTitleRule({type:'Movie',tmdbId:42},true).then(value=>({value}),error=>({error}));
+ for(let i=0;i<3;i++){
+  await new Promise(r=>setImmediate(r));
+  if(i<2||churn){h.api.getHiddenData().items['late'+i]={itemId:'late'+i};h.api.debouncedSave();}
+  gates[i].resolve();
+ }
+ const result=await outcome;
+ if(churn){assert.ok(result.error);assert.equal(requests.some(o=>o.type==='PUT'),false);}
+ else {assert.equal(result.value,true);assert.deepEqual(requests.map(o=>o.type),['POST','POST','POST','PUT']);}
 });

@@ -22,6 +22,8 @@ A per-user, per-show opt-in protection layer for episodes, seasons, movies, and 
 
 Request-mode title pages and the 10.11 More Info window share Spoiler Guard with library pages. Guarded provider feeds remove sensitive fields and protected artwork before returning JSON; related cards use each title’s own guard state. Missing-episode request rows follow the same title, description and date preferences. Toggling a provider guard refreshes the active page or window immediately, and protection follows the title into the library. The title name, year and age certification remain available for navigation. Season 0 and Season 1 retain their existing entry-point exemption.
 
+Calendar episode rows use their series’ protection and the episode-title, description and date preferences. Protected episode names are removed from subtitles too. Logos follow the artwork setting, including image links issued before protection was enabled. Related titles inside bundled provider responses use each related title’s own policy.
+
 ## What Spoiler Guard protects
 
 Once you turn Spoiler Guard on for a show or movie, the plugin hides every spoiler surface for items you haven't watched yet:

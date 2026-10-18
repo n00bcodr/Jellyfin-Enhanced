@@ -34,6 +34,8 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../fixtures/provider-presentation.json" LogicalName="JE.Tests.ProviderContracts.Public" />
+    <EmbeddedResource Include="Api/ApiNativeDetailsTests.cs" LogicalName="JE.Tests.ProviderContracts.Native" />
     <!-- The route table shared with tests/host/run.py. -->
     <None Include="Api/ArrRoutes.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

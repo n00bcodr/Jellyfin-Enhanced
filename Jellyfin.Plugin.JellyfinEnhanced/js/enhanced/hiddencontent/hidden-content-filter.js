@@ -361,8 +361,13 @@
      * restores any previously-hidden cards instead.
      */
     function refreshNativeCardVisibility() {
-        if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) {
-            restoreNativeCardsForIds(hiddenIdSet);
+        if (!getSettings().enabled || JE.pluginConfig?.HiddenContentEnabled === false) {
+            document.querySelectorAll(CARD_SEL).forEach(card => {
+                card.classList.remove('je-hidden');
+                card.removeAttribute(PROCESSED_ATTR);
+                card.removeAttribute(HIDDEN_PARENT_ATTR);
+                card.removeAttribute(HIDDEN_DIRECT_ATTR);
+            });
             return;
         }
         requestAnimationFrame(() => {

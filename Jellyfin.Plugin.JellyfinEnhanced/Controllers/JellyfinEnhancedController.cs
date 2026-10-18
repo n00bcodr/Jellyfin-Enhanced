@@ -4420,6 +4420,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503, "TMDB API key is not configured.");
             }
 
+            if (!Services.TmdbAppendProjection.IsSupported(apiPath, Request.Query))
+                return BadRequest(new { error = "unsupported_tmdb_append" });
+
             var tmdbCallerId = UserHelper.GetCurrentUserId(User)?.ToString();
             var queryString = HttpContext.Request.QueryString;
             if (_parentalFilter.TryGetRestrictedPolicy(tmdbCallerId, out _))

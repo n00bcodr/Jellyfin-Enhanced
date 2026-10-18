@@ -146,7 +146,25 @@ public sealed class SpoilerPresentationContext
     /// <summary>Known provider subresources have distinct schemas and must not bypass the title strip.</summary>
     public string ProjectResource(string json, string? title, string resource, string? fallbackKind = null, string? scopeKind = null, int season = 0, int episode = 0)
     {
+        if (resource is "content_ratings" or "watch/providers" or "external_ids") return json;
+        if (resource is "credits" or "aggregate_credits")
+        {
+            var credits = JsonNode.Parse(json) as JsonObject ?? new();
+            // These IDs identify people, not titles. Only the owning title selects their cast policy.
+            if (Guarded(title) && Strip(_config.SpoilerStripCast, State.Prefs?.HideCast))
+            {
+                Remove(credits, "guestStars");
+                if (string.Equals(_config.SpoilerStripCastMode, "All", StringComparison.OrdinalIgnoreCase))
+                    Remove(credits, "cast", "crew");
+            }
+            return credits.ToJsonString();
+        }
         if (title != null && ((resource is "release_dates" or "releases" && HidesDates(title)) || (resource == "reviews" && HidesReviews(title)))) return "{\"results\":[]}";
+        if (title != null && Guarded(title))
+        {
+            if (resource == "videos" && Strip(_config.SpoilerStripOverview, State.Prefs?.HideEpisodeDescriptions)) return "{\"results\":[]}";
+            if (resource == "keywords" && Strip(_config.SpoilerStripTags, State.Prefs?.HideTags)) return "{\"results\":[],\"keywords\":[]}";
+        }
         if (resource is "ratings" or "awards" && HidesRatings(title)) return "null";
         if (resource == "images" && title != null)
         {
@@ -164,7 +182,7 @@ public sealed class SpoilerPresentationContext
         return kind == "episode" && imageType is "Primary" or "Thumb" or "Screenshot"
             || kind == "season" && season > 1 && imageType == "Primary"
             || kind == "movie" && !_config.SpoilerKeepMoviePosters && imageType is "Primary" or "Thumb"
-            || _config.SpoilerBlurArtwork && imageType is "Backdrop" or "Art";
+            || _config.SpoilerBlurArtwork && imageType is "Backdrop" or "Art" or "Logo";
     }
 
     /// <summary>Projects known title/list schemas from a private fresh tree; raw shared source/cache bytes stay intact.</summary>
@@ -176,6 +194,7 @@ public sealed class SpoilerPresentationContext
         if (node is JsonObject obj)
         {
             if (title != null) ProjectTitle(obj, title, scopeKind ?? (title.StartsWith("movie:", StringComparison.Ordinal) ? "movie" : "tv"), season, episode);
+            ProjectAppended(obj, title, fallbackKind, scopeKind, season, episode);
             foreach (var field in new[] { "results", "cast", "crew", "parts", "items", "requests", "events", "mine", "soon", "ready" })
                 if (obj[field] is JsonArray rows) ProjectRows(rows, field == "parts" ? "movie" : fallbackKind);
             if (obj["groups"] is JsonArray groups)
@@ -193,7 +212,8 @@ public sealed class SpoilerPresentationContext
             if (title != null)
             {
                 var kind = title.StartsWith("movie:", StringComparison.Ordinal) ? "movie" : "tv";
-                ProjectTitle(row, title, kind);
+                if (CalendarEpisode(row)) ProjectCalendarEpisode(row, title);
+                else ProjectTitle(row, title, kind);
                 if (row["media"] is JsonObject media) ProjectTitle(media, title, kind);
             }
         }
@@ -232,7 +252,7 @@ public sealed class SpoilerPresentationContext
         var reviews = guarded && !exempt && Strip(_config.SpoilerStripReviews, prefs?.HideReviews);
         if (overview) Remove(row, "overview", "description", "summary", "plot", "relatedVideos", "videos");
         if (ratings) Remove(row, "voteAverage", "voteCount", "vote_average", "vote_count", "ratings", "rating", "communityRating", "criticRating", "awards");
-        if (dates) Remove(row, "releaseDate", "release_date", "firstAirDate", "first_air_date", "lastAirDate", "last_air_date", "airDate", "air_date", "nextAirDate", "nextDate", "nextDay", "digitalReleaseDate", "theatricalReleaseDate", "initialAirDate", "releaseDates", "release_dates", "releases");
+        if (dates) Remove(row, "releaseDate", "releaseDateLocal", "airDateUtc", "date", "digitalRelease", "physicalRelease", "inCinemas", "physicalReleaseNote", "release_date", "firstAirDate", "first_air_date", "lastAirDate", "last_air_date", "airDate", "air_date", "nextAirDate", "nextDate", "nextDay", "digitalReleaseDate", "theatricalReleaseDate", "initialAirDate", "releaseDates", "release_dates", "releases");
         if (guarded && Strip(_config.SpoilerStripTaglines, prefs?.HideTaglines)) Remove(row, "tagline", "taglines");
         if (tags) Remove(row, "keywords", "tags");
         if (reviews) Remove(row, "reviews", "review", "content");
@@ -250,6 +270,7 @@ public sealed class SpoilerPresentationContext
         }
         if (ProtectArtwork(title, kind, "Primary", season)) Remove(row, "posterPath", "poster_path", "poster", "posterUrl", "stillPath", "still_path", "still");
         if (ProtectArtwork(title, kind, "Backdrop", season)) Remove(row, "backdropPath", "backdrop_path", "backdrop", "backdropUrl");
+        if (ProtectArtwork(title, kind, "Logo", season)) Remove(row, "logoPath", "logoUrl", "logo");
         ProjectImages(row, title, kind, season);
         if (row["images"] is JsonObject images) ProjectImages(images, title, kind, season);
         foreach (var field in new[] { "last_episode_to_air", "next_episode_to_air", "lastEpisodeToAir", "nextEpisodeToAir" })
@@ -262,11 +283,45 @@ public sealed class SpoilerPresentationContext
             ["dates"] = dates, ["cast"] = allCast, ["tags"] = tags, ["reviews"] = reviews, ["revision"] = Revision };
     }
 
+    // Calendar IDs are arr episode IDs. Only the owning series' provider identity selects policy.
+    private static bool CalendarEpisode(JsonObject row)
+        => (row["episodeNumber"] ?? row["episode_number"]) != null
+            && ((row["source"]?.ToString() is "Sonarr" or "Shoko") || row["episodeTitle"] != null || row["episode_title"] != null || row["releaseType"]?.ToString() == "Episode");
+
+    private void ProjectCalendarEpisode(JsonObject row, string title)
+    {
+        var entryTitle = row["title"]?.DeepClone();
+        ProjectTitle(row, title, "episode", Number(row, "seasonNumber", "season_number"), Number(row, "episodeNumber", "episode_number"));
+        // Calendar title is the series entry point; subtitle and aliases contain episode text.
+        if (entryTitle != null) row["title"] = entryTitle;
+        if (MissingRow(title).Title)
+        {
+            Remove(row, "episodeTitle", "episodeName");
+            row["subtitle"] = string.Create(CultureInfo.InvariantCulture, $"S{Number(row, "seasonNumber", "season_number"):00}E{Number(row, "episodeNumber", "episode_number"):00}");
+        }
+    }
+
+    private void ProjectAppended(JsonObject row, string? title, string? fallback, string? scope, int season, int episode)
+    {
+        foreach (var envelope in TmdbAppendProjection.Envelopes)
+        {
+            if (row[envelope] is not JsonObject child) continue;
+            if (envelope is "recommendations" or "similar")
+            {
+                if (child["results"] is JsonArray results) ProjectRows(results, title == null ? fallback : TitleKind(title));
+            }
+            else if (title != null)
+            {
+                row[envelope] = JsonNode.Parse(ProjectResource(child.ToJsonString(), title, envelope, fallback, scope, season, episode));
+            }
+        }
+    }
+
     private static string TitleKind(string title) => title.StartsWith("movie:", StringComparison.Ordinal) ? "movie" : "tv";
 
     private void ProjectImages(JsonObject images, string title, string kind, int season)
     {
-        foreach (var (field, type) in new[] { ("posters", "Primary"), ("backdrops", "Backdrop"), ("stills", "Screenshot"), ("logos", "Art") })
+        foreach (var (field, type) in new[] { ("posters", "Primary"), ("backdrops", "Backdrop"), ("stills", "Screenshot"), ("logos", "Logo") })
             if (ProtectArtwork(title, kind, type, season) && images[field] != null) images[field] = new JsonArray();
     }
 
