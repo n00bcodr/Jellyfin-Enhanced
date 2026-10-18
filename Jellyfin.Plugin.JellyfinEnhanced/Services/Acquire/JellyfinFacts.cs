@@ -70,6 +70,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>TMDB id of the movie, or of the series a season or episode belongs to (metadata lookups only).</summary>
         public int? TmdbId { get; init; }
+
+        /// <summary>
+        /// How many versions (media sources) Jellyfin plays a movie or episode from: 1 for one file, more when it
+        /// keeps several files as one item (its version picker); 0 when unknown or not a movie or episode.
+        /// </summary>
+        public int Versions { get; init; }
+
+        /// <summary>
+        /// The movie or episode Jellyfin now keeps this one's file under as one of its versions (another item: it
+        /// makes the highest resolution the item and the other files its versions), or null.
+        /// </summary>
+        public Guid? PrimaryId { get; init; }
     }
 
     /// <summary>One Jellyfin copy of a movie or series (any library), with whether the viewer can open it.</summary>
@@ -175,6 +187,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// Jellyfin hides from them, marked <see cref="JfSeason.Hidden"/> (numbers only).
         /// </summary>
         IReadOnlyList<JfSeason> Seasons(Guid seriesItemId, StatusViewer viewer);
+
+        /// <summary>
+        /// The ids of exactly this series item's season <paramref name="season"/> (<paramref name="episode"/> null),
+        /// or of its episodes of that season covering <paramref name="episode"/> (a multi-episode file included),
+        /// missing (virtual) ones included: only items whose own series is this one, never another series item
+        /// Jellyfin's automatic series grouping lists with it (<see cref="Episodes"/> and <see cref="Seasons"/>
+        /// follow Jellyfin's grouped lists), and never a second version of an episode (its primary item stands
+        /// for every version). Empty when the viewer can't open the series. Not filtered further for the viewer:
+        /// resolve each id as them.
+        /// </summary>
+        IReadOnlyList<Guid> SeriesParts(Guid seriesItemId, int season, int? episode, StatusViewer viewer);
+
+        /// <summary>
+        /// Of <paramref name="candidates"/> (movies or episodes), the one the viewer can open that keeps the file of
+        /// <paramref name="itemId"/> as one of its versions: Jellyfin deletes a movie item whose file becomes a
+        /// version of a new item on 10.11 (12.x keeps it as that item's version, see <see cref="JfItemRef.PrimaryId"/>).
+        /// Null when none does.
+        /// </summary>
+        Guid? VersionHolder(Guid itemId, IReadOnlyList<Guid> candidates, StatusViewer viewer);
     }
 
     /// <summary>What a request system knows about a title (Seerr in Seerr mode; filled in by the read model).</summary>

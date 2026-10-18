@@ -418,6 +418,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>movie, series, season or episode.</summary>
         public string Kind { get; init; } = string.Empty;
 
+        /// <summary>
+        /// On a movie or episode details status: how many versions (files) Jellyfin plays the item from, so an
+        /// open page is drawn again when Jellyfin adds one (its version picker). Absent otherwise.
+        /// </summary>
+        public int? Versions { get; set; }
+
         /// <summary>Where it has got to (<see cref="StatusStage"/>).</summary>
         public string Stage { get; init; } = StatusStage.None;
 

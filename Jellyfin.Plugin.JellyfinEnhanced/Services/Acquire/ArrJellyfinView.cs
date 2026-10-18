@@ -118,6 +118,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         DateCreated = Utc(movie.DateCreated),
                         LibraryId = library?.Id.ToString("N", CultureInfo.InvariantCulture),
                         LibraryName = library?.Name,
+                        Versions = movie.MediaSourceCount,
+                        PrimaryId = PrimaryOf(movie),
                     };
                 }
                 case Series series:
@@ -163,6 +165,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         Virtual = episode.IsMissingEpisode,
                         Path = episode.Path,
                         DateCreated = Utc(episode.DateCreated),
+                        Versions = episode.IsMissingEpisode ? 0 : episode.MediaSourceCount,
+                        PrimaryId = PrimaryOf(episode),
                     };
                 }
                 default:
@@ -326,6 +330,78 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (!viewer.IsAdmin && viewer.HasParentalLimit) AddHiddenSeasons(series, user, list);
             return list;
         }
+
+        /// <inheritdoc />
+        public IReadOnlyList<Guid> SeriesParts(Guid seriesItemId, int season, int? episode, StatusViewer viewer)
+        {
+            if (viewer.Handle is not User user) return Array.Empty<Guid>();
+            if (_libraryManager.GetItemById<BaseItem>(seriesItemId, user) is not Series series) return Array.Empty<Guid>();
+            // The series item's own folders (its ancestry), not its presentation key: with automatic series
+            // grouping, Series.GetSeasons and GetEpisodes also list the other folders' items. No user on the
+            // query: the caller resolves each id as the viewer.
+            var items = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { episode.HasValue ? BaseItemKind.Episode : BaseItemKind.Season },
+                AncestorIds = new[] { series.Id },
+                Recursive = true,
+                DtoOptions = new DtoOptions(false),
+            });
+            return SeriesPartIds(items, series.Id, season, episode);
+        }
+
+        /// <summary>
+        /// The filter of <see cref="SeriesParts"/>: of <paramref name="items"/>, the season <paramref name="season"/>
+        /// (<paramref name="episode"/> null) or the episodes of that season containing <paramref name="episode"/>
+        /// (<see cref="Episode.ContainsEpisodeNumber"/>) whose own series is <paramref name="seriesId"/>, leaving out
+        /// an episode that is another item's version (Jellyfin 12 adds a second file of an episode as an item owned
+        /// by the first).
+        /// </summary>
+        internal static List<Guid> SeriesPartIds(IEnumerable<BaseItem> items, Guid seriesId, int season, int? episode)
+        {
+            if (seriesId.Equals(Guid.Empty)) return new List<Guid>();
+            return items.Where(i => i switch
+            {
+                Episode e => episode is int n && e.SeriesId.Equals(seriesId) && e.ParentIndexNumber == season
+                    && e.IndexNumber.HasValue && e.ContainsEpisodeNumber(n) && !IsAnotherItemsVersion(e),
+                Season s => episode == null && s.SeriesId.Equals(seriesId) && s.IndexNumber == season,
+                _ => false,
+            }).Select(i => i.Id).ToList();
+        }
+
+        /// <inheritdoc />
+        public Guid? VersionHolder(Guid itemId, IReadOnlyList<Guid> candidates, StatusViewer viewer)
+        {
+            if (viewer.Handle is not User user || itemId.Equals(Guid.Empty)) return null;
+            foreach (var id in candidates)
+            {
+                // Jellyfin ids an item by its path and type: the deleted item is the one a path the holder keeps
+                // as a version had as an item of the holder's type (10.11 gives the version itself another id, as a Video).
+                if (_libraryManager.GetItemById<BaseItem>(id, user) is not Video video) continue;
+                if (video.LocalAlternateVersions.Any(path => _libraryManager.GetNewItemId(path, video.GetType()).Equals(itemId))
+                    || video.LinkedAlternateVersions.Any(link => link.ItemId is Guid linked && linked.Equals(itemId)))
+                {
+                    return video.Id;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// The item a movie or episode is a version of, when Jellyfin keeps it as another item's alternate version
+        /// (owned by it; 12.x keeps the item a new primary file displaced that way); null for a primary item.
+        /// </summary>
+        internal static Guid? PrimaryOf(Video video)
+        {
+#if JF12
+            if (video.PrimaryVersionId is Guid primary && !primary.Equals(Guid.Empty) && !primary.Equals(video.Id)) return primary;
+#else
+            if (Guid.TryParse(video.PrimaryVersionId, out var primary) && !primary.Equals(Guid.Empty) && !primary.Equals(video.Id)) return primary;
+#endif
+            return video.ExtraType == null && !video.OwnerId.Equals(Guid.Empty) && !video.OwnerId.Equals(video.Id) ? video.OwnerId : null;
+        }
+
+        /// <summary>True for a video Jellyfin keeps as an alternate version of another item (owned by it).</summary>
+        private static bool IsAnotherItemsVersion(Video video) => PrimaryOf(video) != null;
 
         /// <summary>
         /// Adds the seasons Jellyfin hides from this viewer, as numbers only. The user's season list

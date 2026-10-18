@@ -20,6 +20,22 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     public long Rev { get; set; }
     public int EpisodeCalls { get; private set; }
 
+    /// <summary>
+    /// Jellyfin's automatic series grouping: series items of one group share a presentation key, and
+    /// Jellyfin's own season and episode lists of any of them (Series.GetSeasons / GetEpisodes, which query
+    /// by that key) hold every member's children, the other copies' first. Off (no groups) by default.
+    /// </summary>
+    public List<Guid[]> PresentationGroups { get; } = new();
+
+    /// <summary>Groups series items the way automatic series grouping does (one presentation key).</summary>
+    public void GroupSeries(params Guid[] seriesItemIds) => PresentationGroups.Add(seriesItemIds);
+
+    /// <summary>The series items Jellyfin's grouped lists of this one cover: the other copies first, then itself.</summary>
+    private IEnumerable<Guid> Presented(Guid seriesItemId)
+        => PresentationGroups.FirstOrDefault(g => g.Contains(seriesItemId)) is { } group
+            ? group.Where(id => id != seriesItemId).Append(seriesItemId)
+            : new[] { seriesItemId };
+
     public long Revision => Rev;
 
     public StatusViewer AddUser(bool admin, string policy = "p", bool missing = false, bool parental = false)
@@ -91,14 +107,14 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
             foreach (var (episode, to) in list)
             {
                 // An episode is seen when the viewer sees it and a copy of its series.
-                if (episode.ItemId == itemId && Sees(to) && SeesSeries(series, viewer)) return new JfItemRef { ItemId = itemId, Kind = "episode" };
+                if (episode.ItemId == itemId && Sees(to) && SeesSeries(series, viewer)) return new JfItemRef { ItemId = itemId, Kind = "episode", SeriesId = series, Season = episode.Season, Episode = episode.Episode, EpisodeEnd = episode.EpisodeEnd, Virtual = episode.Virtual };
             }
         }
         foreach (var (series, list) in SeasonsBySeries)
         {
             foreach (var (season, to) in list)
             {
-                if (season.ItemId == itemId && Sees(to) && SeesSeries(series, viewer)) return new JfItemRef { ItemId = itemId, Kind = "season" };
+                if (season.ItemId == itemId && Sees(to) && SeesSeries(series, viewer)) return new JfItemRef { ItemId = itemId, Kind = "season", SeriesId = series, Season = season.Season };
             }
         }
         return null;
@@ -144,7 +160,8 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
         EpisodeCalls++;
         OnEpisodes?.Invoke();
         if (FailEpisodesOf == seriesItemId) throw new InvalidOperationException("library query failed");
-        if (!EpisodesBySeries.TryGetValue(seriesItemId, out var list)) return new List<JfEpisode>();
+        var list = Presented(seriesItemId).SelectMany(id => EpisodesBySeries.TryGetValue(id, out var l) ? l : new()).ToList();
+        if (list.Count == 0) return new List<JfEpisode>();
         bool Sees((JfEpisode Episode, HashSet<Guid>? VisibleTo) e) => e.VisibleTo == null || e.VisibleTo.Contains(viewer.UserId);
         var inSeason = list.Where(e => season == null || e.Episode.Season == season).ToList();
         var result = inSeason.Where(e => Sees(e) && (includeVirtual || !e.Episode.Virtual)).Select(e => e.Episode).ToList();
@@ -157,7 +174,8 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
 
     public IReadOnlyList<JfSeason> Seasons(Guid seriesItemId, StatusViewer viewer)
     {
-        if (!SeasonsBySeries.TryGetValue(seriesItemId, out var list)) return new List<JfSeason>();
+        var list = Presented(seriesItemId).SelectMany(id => SeasonsBySeries.TryGetValue(id, out var l) ? l : new()).ToList();
+        if (list.Count == 0) return new List<JfSeason>();
         bool Sees((JfSeason Season, HashSet<Guid>? VisibleTo) s) => s.VisibleTo == null || s.VisibleTo.Contains(viewer.UserId);
         var result = list.Where(Sees).Select(s => s.Season).ToList();
         // Like the real view: seasons hidden from a viewer with parental limits, numbers only.
@@ -165,4 +183,27 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
             result.AddRange(list.Where(s => !Sees(s) && !result.Any(r => r.Season == s.Season.Season)).Select(s => new JfSeason { Season = s.Season.Season, Hidden = true }));
         return result;
     }
+
+    /// <summary>Like Jellyfin's ancestry query: only this series item's own seasons or episodes, whoever may see them.</summary>
+    public IReadOnlyList<Guid> SeriesParts(Guid seriesItemId, int season, int? episode, StatusViewer viewer)
+    {
+        if (episode is int n)
+        {
+            EpisodeCalls++;
+            OnEpisodes?.Invoke();
+            if (FailEpisodesOf == seriesItemId) throw new InvalidOperationException("library query failed");
+            return EpisodesBySeries.TryGetValue(seriesItemId, out var episodes)
+                ? episodes.Where(e => e.Episode.ItemId != Guid.Empty && e.Episode.Season == season && new EpisodeRange(e.Episode.Episode, e.Episode.EpisodeEnd).Contains(n)).Select(e => e.Episode.ItemId).ToList()
+                : new List<Guid>();
+        }
+        return SeasonsBySeries.TryGetValue(seriesItemId, out var seasons)
+            ? seasons.Where(s => s.Season.ItemId != Guid.Empty && s.Season.Season == season).Select(s => s.Season.ItemId).ToList()
+            : new List<Guid>();
+    }
+
+    /// <summary>Movie or episode items and the ids of items whose files Jellyfin now keeps as their versions.</summary>
+    public Dictionary<Guid, HashSet<Guid>> FormerItemsOf { get; } = new();
+
+    public Guid? VersionHolder(Guid itemId, IReadOnlyList<Guid> candidates, StatusViewer viewer)
+        => candidates.FirstOrDefault(c => FormerItemsOf.TryGetValue(c, out var former) && former.Contains(itemId) && Resolve(c, viewer) != null) is var holder && holder != Guid.Empty ? holder : null;
 }

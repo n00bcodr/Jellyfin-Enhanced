@@ -3,9 +3,10 @@
  * itself. One rule for every details page (movie, series, season, episode, and the native page of a
  * title that isn't in the library): once the title shown, or the item Jellyfin replaced it with, is
  * available, the page either moves to that item in its own history entry (Jellyfin gives a missing
- * episode or season a new id once its file is there, and a native page's title gets its library item),
- * or, for the same item, has Jellyfin reload its own page, so Play, badges, media info and versions are
- * Jellyfin's own. It follows the page's status reads (status-details hands each one over; JE's change
+ * episode or season a new id once its file is there, a native page's title gets its library item, and
+ * a movie or episode whose file became a version of a new item moves to that item), or, for the same
+ * item (also when Jellyfin adds a version to it), has Jellyfin reload its own page, so Play, badges,
+ * media info and the version picker are Jellyfin's own. It follows the page's status reads (status-details hands each one over; JE's change
  * feed starts them) and Jellyfin's LibraryChanged message about the page's item, season or series,
  * whichever comes first. A change waits while the viewer types, plays or has a dialog open, is checked
  * again right before it happens (a move reads its destination again as the viewer first), happens once
@@ -149,17 +150,18 @@
     }
 
     /**
-     * What a status says is available: an episode or movie is there or not; a season or series has
-     * so many episodes there.
+     * What a status says is available: an episode or movie is there or not, and in how many versions
+     * (Jellyfin's version picker: files it keeps as one item); a season or series has so many episodes there.
      * @param {Object} status Status.
-     * @returns {{ready: boolean, count: number|null}} Signature.
+     * @returns {{ready: boolean, count: number|null, versions: number|null}} Signature.
      */
     function signature(status) {
         if (status.kind === 'season' || status.kind === 'series') {
             const count = status.summary?.ready;
-            return { ready: false, count: Number.isFinite(count) ? count : null };
+            return { ready: false, count: Number.isFinite(count) ? count : null, versions: null };
         }
-        return { ready: status.stage === 'ready', count: null };
+        const ready = status.stage === 'ready';
+        return { ready, count: null, versions: ready && Number.isFinite(status.versions) ? status.versions : null };
     }
 
     /**
@@ -172,13 +174,15 @@
     }
 
     /**
-     * True when `now` has more of the title available than `before`.
-     * @param {{ready: boolean, count: number|null}} now Signature now.
-     * @param {{ready: boolean, count: number|null}} before Signature the page was drawn with.
+     * True when `now` has more of the title available than `before`: it arrived, more episodes did, or
+     * Jellyfin added a version to the item.
+     * @param {{ready: boolean, count: number|null, versions: number|null}} now Signature now.
+     * @param {{ready: boolean, count: number|null, versions: number|null}} before Signature the page was drawn with.
      * @returns {boolean} More.
      */
     function more(now, before) {
-        return (now.ready && !before.ready) || (now.count != null && before.count != null && now.count > before.count);
+        return (now.ready && !before.ready) || (now.count != null && before.count != null && now.count > before.count)
+            || (now.versions != null && before.versions != null && now.versions > before.versions);
     }
 
     /**
@@ -433,13 +437,14 @@
 
     /**
      * The signature with the most of the title available of two.
-     * @param {{ready: boolean, count: number|null}} a Signature.
-     * @param {{ready: boolean, count: number|null}} b Signature.
-     * @returns {{ready: boolean, count: number|null}} The higher.
+     * @param {{ready: boolean, count: number|null, versions: number|null}} a Signature.
+     * @param {{ready: boolean, count: number|null, versions: number|null}} b Signature.
+     * @returns {{ready: boolean, count: number|null, versions: number|null}} The higher.
      */
     function higher(a, b) {
         const counts = [a.count, b.count].filter(n => n != null);
-        return { ready: a.ready || b.ready, count: counts.length ? Math.max(...counts) : null };
+        const versions = [a.versions, b.versions].filter(n => n != null);
+        return { ready: a.ready || b.ready, count: counts.length ? Math.max(...counts) : null, versions: versions.length ? Math.max(...versions) : null };
     }
 
     /**
@@ -621,7 +626,7 @@
      * redrawn, JE's page handlers run on it again, the status is read again, and the viewer's scroll
      * position and focus stay, unless they moved meanwhile.
      * @param {Object} state Page state.
-     * @param {{ready: boolean, count: number|null}} base What the page shows from now on.
+     * @param {{ready: boolean, count: number|null, versions: number|null}} base What the page shows from now on.
      * @returns {void}
      */
     function reload(state, base) {
