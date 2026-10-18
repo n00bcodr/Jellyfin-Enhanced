@@ -952,29 +952,75 @@
         return JE.session?.getEpoch ? JE.session.getEpoch() : 0;
     }
 
+    /** @returns {string|null} The signed-in user's id, as ApiClient holds it now. */
+    function currentUserId() {
+        try { return ApiClient.getCurrentUserId?.() || null; } catch (_) { return null; }
+    }
+
+    /** @returns {string|null} The server ApiClient talks to now (a property on older builds, a function on 10.11/12). */
+    function currentServerId() {
+        try { return (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || null; } catch (_) { return null; }
+    }
+
+    /** @returns {string|null} The signed-in user's token, as ApiClient holds it now. */
+    function currentToken() {
+        try { return ApiClient.accessToken?.() || null; } catch (_) { return null; }
+    }
+
+    /**
+     * Binds one whole operation (a call, a URL read with its retries, a resolve loop with every chunk) to the session it
+     * starts in: the user, the server, the session epoch and that user's token, read once here. Every request of the operation is
+     * sent with this token, never the current one, and the operation checks `current()` after every await: once the
+     * user, the server, the epoch or the token moved on (a switch JE.session hasn't noticed yet included), it stops with
+     * {stale: true}, sends nothing more and returns or keeps nothing it read.
+     * @returns {{token: string|null, current: function(): boolean}} The binding.
+     */
+    function bindSession() {
+        const bound = { epoch: epoch(), userId: currentUserId(), serverId: currentServerId(), token: currentToken() };
+        return Object.freeze({
+            token: bound.token,
+            current: () => epoch() === bound.epoch && currentUserId() === bound.userId && currentServerId() === bound.serverId && currentToken() === bound.token
+        });
+    }
+
+    /**
+     * Throws {stale: true} when the operation's session ended.
+     * @param {{current: function(): boolean}} session - From bindSession().
+     */
+    function assertCurrent(session) {
+        if (!session.current()) throw { stale: true };
+    }
+
     /**
      * Calls an import route. Resolves with the body of a 2xx answer; rejects with {status, responseJSON, retryAfter} for
-     * any other answer, with {stale: true} when the user changed meanwhile, and with the fetch error (AbortError
-     * included) when no answer arrived.
+     * any other answer, with {stale: true} when the session the call belongs to ended before, during or after it (the
+     * body read included; nothing is sent for an ended session), and with the fetch error (AbortError included) when no
+     * answer arrived.
      * @param {string} path - Path under /JellyfinEnhanced/acquire/lists/import.
-     * @param {{method?: string, body?: Object, signal?: AbortSignal}} [options]
+     * @param {{method?: string, body?: Object, signal?: AbortSignal, session?: Object}} [options] - session: the
+     *   operation's binding (bindSession(); default: a new one for this call alone).
      * @returns {Promise<Object|null>}
      */
     async function call(path, options) {
-        const started = epoch();
+        const session = options?.session || bindSession();
+        assertCurrent(session);
         const method = options?.method || 'GET';
-        const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
+        const headers = { 'Authorization': `MediaBrowser Token="${session.token || ''}"`, 'Accept': 'application/json' };
         if (options?.body) headers['Content-Type'] = 'application/json';
-        const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/acquire/lists/import${path}`), {
-            method,
-            headers,
-            body: options?.body ? JSON.stringify(options.body) : undefined,
-            signal: options?.signal,
-            cache: 'no-store'
-        });
-        if (epoch() !== started) {
-            throw { stale: true };
+        let response;
+        try {
+            response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/acquire/lists/import${path}`), {
+                method,
+                headers,
+                body: options?.body ? JSON.stringify(options.body) : undefined,
+                signal: options?.signal,
+                cache: 'no-store'
+            });
+        } catch (error) {
+            assertCurrent(session);
+            throw error;
         }
+        assertCurrent(session);
 
         let body = null;
         try {
@@ -983,6 +1029,7 @@
         } catch {
             body = null;
         }
+        assertCurrent(session);
 
         if (response.status >= 200 && response.status < 300) return body;
         const retryAfter = Number(response.headers?.get?.('Retry-After'));
@@ -993,42 +1040,46 @@
         /**
          * Resolves up to 25 import entries (toImportEntry) to candidates.
          * @param {Object[]} entries - ImportEntryDto list.
-         * @param {{listId?: string, signal?: AbortSignal}} [options] - Target list (its owner's library view counts too).
+         * @param {{listId?: string, signal?: AbortSignal, session?: Object}} [options] - Target list (its owner's library view counts too); the operation's session.
          * @returns {Promise<Object>} ResolveResponse ({results[], complete, upstreamCalls, metadataProvider}).
          */
-        resolve: (entries, options) => call('/resolve', { method: 'POST', body: { entries, ...(options?.listId ? { listId: options.listId } : {}) }, signal: options?.signal }),
+        resolve: (entries, options) => call('/resolve', { method: 'POST', body: { entries, ...(options?.listId ? { listId: options.listId } : {}) }, signal: options?.signal, session: options?.session }),
         /**
          * Reads a list URL into entries with ids.
          * @param {string} url - List URL.
-         * @param {{listId?: string, useMdblistApi?: boolean, signal?: AbortSignal}} [options] - useMdblistApi: an administrator's deliberate MDBList API read.
+         * @param {{listId?: string, useMdblistApi?: boolean, signal?: AbortSignal, session?: Object}} [options] - useMdblistApi: an administrator's deliberate MDBList API read.
          * @returns {Promise<Object>} SourceFetchResponse ({kind, provider, url, title, unofficial, notice?, entries[], total, truncated, dropped, partial?, grouped, snapshotKeys?, snapshot?, countsHidden?}).
          */
         fetchSource: (url, options) => call('/source', {
             method: 'POST',
             body: { url, ...(options?.listId ? { listId: options.listId } : {}), ...(options?.useMdblistApi ? { useMdblistApi: true } : {}) },
-            signal: options?.signal
+            signal: options?.signal,
+            session: options?.session
         }),
         /**
          * Which sources work on this server (no secrets).
-         * @param {{signal?: AbortSignal}} [options]
+         * @param {{signal?: AbortSignal, session?: Object}} [options]
          * @returns {Promise<Object>} SourceProvidersDto.
          */
-        providers: options => call('/providers', { signal: options?.signal })
+        providers: options => call('/providers', { signal: options?.signal, session: options?.session })
     };
 
     /**
-     * Reads a list URL, retrying while the caller's parental checks are still running.
+     * Reads a list URL, retrying while the caller's parental checks are still running. One session for the whole read:
+     * a switch during a wait sends nothing more (never the previous account's URL with the new account's token).
      * @param {string} url
-     * @param {{listId?: string, useMdblistApi?: boolean, signal?: AbortSignal}} [options]
+     * @param {{listId?: string, useMdblistApi?: boolean, signal?: AbortSignal, session?: Object}} [options]
      * @returns {Promise<Object>} SourceFetchResponse.
      */
     async function fetchWithRetry(url, options) {
+        const session = options?.session || bindSession();
         for (let attempt = 0; ; attempt++) {
             try {
-                return await api.fetchSource(url, options);
+                return await api.fetchSource(url, { ...options, session });
             } catch (error) {
                 if (error?.responseJSON?.code === 'parental_pending' && attempt < MAX_CHUNK_RETRIES) {
                     await sleep(retryDelay(error), options?.signal);
+                    assertCurrent(session);
                     continue;
                 }
                 throw error;
@@ -1075,9 +1126,11 @@
 
     /**
      * Resolves one chunk of rows: retries busy and parental-pending answers, one more try after a network failure, stops
-     * on errors that can't heal (their text on `error.jeImportFatal`). Rows left without an answer are transient.
+     * on errors that can't heal (their text on `error.jeImportFatal`). Rows left without an answer are transient. Every
+     * request and wait belongs to `options.session`; rows are only changed while it is current (else {stale: true}), and
+     * each changed row is recorded in `options.touched`.
      * @param {Object[]} chunk
-     * @param {{listId?: string, listKind: 'playlist'|'collection', signal?: AbortSignal}} options
+     * @param {{listId?: string, listKind: 'playlist'|'collection', signal?: AbortSignal, session: Object, touched: Set<Object>}} options
      * @returns {Promise<void>}
      */
     async function resolveChunk(chunk, options) {
@@ -1086,13 +1139,15 @@
         for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
             let response;
             try {
-                response = await api.resolve(entries, { listId: options.listId, signal: options.signal });
+                response = await api.resolve(entries, { listId: options.listId, signal: options.signal, session: options.session });
             } catch (error) {
                 if (error?.name === 'AbortError' || options.signal?.aborted) throw abortError();
                 if (error?.stale) throw error;
+                assertCurrent(options.session);
                 const code = error?.responseJSON?.code;
                 if (error?.status === 429 || (error?.status === 504 && code === 'parental_pending')) {
                     await sleep(retryDelay(error), options.signal);
+                    assertCurrent(options.session);
                     continue;
                 }
                 const fatal = fatalResolveText(error);
@@ -1103,27 +1158,50 @@
                 }
                 if (networkRetries++ < 1) {
                     await sleep(RETRY_DELAY_MS, options.signal);
+                    assertCurrent(options.session);
                     continue;
                 }
                 break;
             }
+            assertCurrent(options.session);
             const byIndex = new Map((response?.results || []).map(r => [r.index, r]));
-            chunk.forEach(row => applyResult(row, byIndex.get(row.i), options.listKind));
+            chunk.forEach((row) => { options.touched.add(row); applyResult(row, byIndex.get(row.i), options.listKind); });
             return;
         }
-        chunk.forEach((row) => { row.transient = true; });
+        assertCurrent(options.session);
+        chunk.forEach((row) => { options.touched.add(row); row.transient = true; });
+    }
+
+    /**
+     * Puts rows back unresolved (an operation whose session ended keeps nothing it resolved).
+     * @param {Iterable<Object>} rows
+     */
+    function unresolve(rows) {
+        for (const row of rows) {
+            row.result = null;
+            row.cands = [];
+            row.cand = -1;
+            row.action = 'skip';
+            row.failed = false;
+            row.transient = false;
+            row.decided = false;
+            delete row.sameAs;
+            delete row.override;
+        }
     }
 
     /**
      * Resolves every row in sequential chunks of 25, then resubmits transient rows once; rows that still have no answer
      * fail (skipped). Prepared rows (exact sources) are never sent. A fatal error leaves the rows resolved so far and
-     * fails the rest, then rejects with it.
+     * fails the rest, then rejects with it. One session for the whole loop (bindSession): when it ends (a user switch),
+     * nothing more is sent, every row this loop resolved is put back unresolved, `onChunk` isn't called again, and the
+     * loop rejects with {stale: true}.
      * @param {Object[]} rows - Review rows (newRow).
-     * @param {{listId?: string, listKind?: 'playlist'|'collection', signal?: AbortSignal, onChunk?: function(Object[], number): void}} [options]
+     * @param {{listId?: string, listKind?: 'playlist'|'collection', signal?: AbortSignal, session?: Object, onChunk?: function(Object[], number): void}} [options]
      * @returns {Promise<Object[]>} The rows.
      */
     async function resolveRows(rows, options = {}) {
-        const opts = { listKind: 'playlist', ...options };
+        const opts = { listKind: 'playlist', ...options, session: options.session || bindSession(), touched: new Set() };
         let done = 0;
         try {
             for (let start = 0; start < rows.length; start += CHUNK_SIZE) {
@@ -1131,6 +1209,7 @@
                 const pending = chunk.filter(r => !r.result);
                 if (pending.length) await resolveChunk(pending, opts);
                 done += chunk.length;
+                assertCurrent(opts.session);
                 opts.onChunk?.(chunk, done);
             }
             const transient = rows.filter(r => r.transient);
@@ -1138,10 +1217,16 @@
                 const chunk = transient.slice(start, start + CHUNK_SIZE);
                 await resolveChunk(chunk, opts);
                 chunk.forEach(row => { if (row.transient) { row.transient = false; row.failed = true; row.action = 'skip'; } });
+                assertCurrent(opts.session);
                 opts.onChunk?.(chunk, done);
             }
+            assertCurrent(opts.session);
         } catch (error) {
-            if (error?.name !== 'AbortError' && !error?.stale) {
+            if (error?.stale || !opts.session.current()) {
+                unresolve(opts.touched);
+                throw { stale: true };
+            }
+            if (error?.name !== 'AbortError') {
                 rows.filter(r => !r.result).forEach((row) => { row.failed = true; row.transient = false; row.action = 'skip'; });
                 console.warn(logPrefix, 'lookup stopped', error?.jeImportFatal || error?.status || error);
             }
@@ -1156,6 +1241,7 @@
         enabled,
         sourcesEnabled,
         api,
+        bindSession,
         fetchWithRetry,
         resolveRows,
         newRow,
