@@ -236,21 +236,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// The Requests page body for the viewer. Prepared again for the viewer as they are now when their policy
-        /// changed while it was being prepared (see <see cref="ArrStatusService.ViewerChangedException"/>).
+        /// changed while it was being prepared (see <see cref="ArrStatusService.ViewerChangedException"/>), up to
+        /// <see cref="ArrStatusService.GateAttempts"/> times. Null (fail closed: the answer for a viewer who isn't
+        /// there) when they were removed or disabled meanwhile, or still changing after the last attempt.
         /// </summary>
-        public async Task<StatusBody> ForViewerAsync(StatusViewer viewer, CancellationToken cancellationToken)
+        public async Task<StatusBody?> ForViewerAsync(StatusViewer viewer, CancellationToken cancellationToken)
         {
-            for (var attempt = 1; ; attempt++)
+            for (var attempt = 1; attempt <= ArrStatusService.GateAttempts; attempt++)
             {
                 try
                 {
                     return await ForViewerOnceAsync(viewer, cancellationToken).ConfigureAwait(false);
                 }
-                catch (ArrStatusService.ViewerChangedException) when (attempt < ArrStatusService.GateAttempts && _status.View.Viewer(viewer.UserId) is { } changed)
+                catch (ArrStatusService.ViewerChangedException)
                 {
+                    if (_status.View.Viewer(viewer.UserId) is not { } changed) return null;
                     viewer = changed;
                 }
             }
+            return null;
         }
 
         private Task<StatusBody> ForViewerOnceAsync(StatusViewer viewer, CancellationToken cancellationToken)

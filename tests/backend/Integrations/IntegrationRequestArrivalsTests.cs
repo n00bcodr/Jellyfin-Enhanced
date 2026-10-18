@@ -138,7 +138,7 @@ public class IntegrationRequestArrivalsTests
         public async Task<Dictionary<string, JsonElement>> Page(StatusViewer viewer)
         {
             var body = await Hub.ForViewerAsync(viewer, default);
-            using var doc = JsonDocument.Parse(body.Json);
+            using var doc = JsonDocument.Parse(body!.Json);
             var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
             foreach (var list in new[] { "mine", "ready" })
             {

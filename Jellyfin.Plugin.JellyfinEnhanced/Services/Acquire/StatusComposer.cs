@@ -730,11 +730,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// A series poster card: only what the queue says (downloading, almost ready, a problem), so a
         /// library page of series posters costs no per-series episode reads. Quiet otherwise.
         /// Queue rows of episodes or seasons Jellyfin hides from the viewer (<paramref name="hidden"/>)
-        /// don't count.
+        /// don't count. The card is of one series copy (the item, among the title's Jellyfin <paramref name="copies"/>):
+        /// it reads only the Sonarr that owns that copy for sure, as its pages do (<see cref="SeriesCopyFor"/>).
         /// </summary>
-        public static TitleStatus SeriesCard(TitleFacts facts, JfItemRef item, ComposeContext c, HiddenParts? hidden = null)
+        public static TitleStatus SeriesCard(TitleFacts facts, JfItemRef item, ComposeContext c, HiddenParts? hidden = null, IReadOnlyList<JfCopy>? copies = null)
         {
-            var copy = PrimarySeriesCopy(facts);
+            var copy = SeriesCopyFor(facts, item.ItemId, copies);
             var states = copy?.Queue.Where(r => hidden?.Hides(r.SeasonNumber, r.EpisodeNumber) != true).Select(r => (Row: r, State: FromQueue(r, c, copy))).ToList() ?? new List<(ArrQueueEntry Row, CopyState State)>();
             int Count(Func<CopyState, bool> f) => states.Where(x => f(x.State)).Select(x => x.Row.EpisodeId ?? x.Row.Id).Distinct().Count();
             var summary = new StatusSummary
@@ -1651,18 +1652,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             => facts.Copies.Where(c => c.Series != null).OrderBy(c => RoleOrder(c.Instance.Role)).FirstOrDefault();
 
         /// <summary>
-        /// The Sonarr copy a page of one Jellyfin series copy (<paramref name="page"/>, the series item a series,
-        /// season or episode page is in) reads its arr facts from: only one that owns that copy's folder for sure, so
-        /// a 4K copy's page reads the 4K Sonarr and never another instance's files, downloads or upgrades. In order:
+        /// The Sonarr copy a page or card of one Jellyfin series copy (<paramref name="page"/>, the series item a
+        /// series, season or episode is in) reads its arr facts from: only one that owns that copy's folder for sure,
+        /// so a 4K copy reads the 4K Sonarr and never another instance's files, downloads or upgrades. In order:
         /// <list type="number">
-        /// <item><description>a Sonarr whose series folder is the page's folder (by its path mapping, else by the
-        /// root and title folder names); two that share the folder: the standard one first;</description></item>
+        /// <item><description>a Sonarr whose series folder is the copy's folder exactly: by its path mapping, else
+        /// the same path; two that share the folder: the standard one first;</description></item>
         /// <item><description>else the one Sonarr matched to this copy and to no other copy of the title (a linked
         /// library or path mapping that claims every copy in a shared library tells nothing);</description></item>
+        /// <item><description>else by the root and title folder names, only when they pair the copy with one Sonarr
+        /// unambiguously: one unmapped Sonarr whose folder ends like this copy's, and no other copy's that way (a
+        /// standard and a 4K copy both under ".../TV/Firefly" with no mapping: nobody's);</description></item>
         /// <item><description>else, when it is the title's only Jellyfin copy and only Sonarr copy, that one, unless
-        /// its linked library or path mapping leaves the copy out.</description></item>
+        /// its linked library or path mapping leaves the copy out (however its folders are named).</description></item>
         /// </list>
-        /// None (null) when ownership can't be established. The primary copy when the page's copy is unknown.
+        /// None (null) when ownership can't be established. The primary copy when the copy is unknown.
         /// </summary>
         internal static ArrCopyFacts? SeriesCopyFor(TitleFacts facts, Guid? page, IReadOnlyList<JfCopy>? copies)
         {
@@ -1672,21 +1676,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (siblings.Where(x => HoldsFolder(x, shown)).OrderBy(x => RoleOrder(x.Instance.Role)).FirstOrDefault() is { } owner) return owner;
             var only = siblings.Where(x => MatchCopies(x, copies, siblings, soleFallback: false) is var m && m.Any(c => c.ItemId == id) && m.All(c => c.ItemId == id)).ToList();
             if (only.Count == 1) return only[0];
+            bool Leaves(ArrCopyFacts x, JfCopy c) => Claimed(x, copies) is { } claim && claim.All(y => y.ItemId != c.ItemId);
+            var named = siblings.Where(x => !Leaves(x, shown) && EndsLike(x, shown)).ToList();
+            if (named.Count == 1 && !copies.Any(c => c.ItemId != id && EndsLike(named[0], c))) return named[0];
             var sole = copies.All(x => x.ItemId == id) && siblings.Count == 1;
-            return sole && (Claimed(siblings[0], copies) is not { } claim || claim.Any(c => c.ItemId == id)) ? siblings[0] : null;
+            return sole && !Leaves(siblings[0], shown) ? siblings[0] : null;
         }
 
         /// <summary>
-        /// True when an arr copy's own folder is the Jellyfin copy's folder: by the instance's path mapping when one
-        /// applies to it (the mapped folder), else by the last two folder names (root folder and title folder).
+        /// True when an arr copy's own folder is exactly the Jellyfin copy's folder: the mapped folder when the
+        /// instance's path mapping applies to it, else the same path.
         /// </summary>
         private static bool HoldsFolder(ArrCopyFacts copy, JfCopy shown)
         {
             var arrPath = ArrPathOf(copy);
             if (string.IsNullOrWhiteSpace(arrPath) || string.IsNullOrWhiteSpace(shown.Path)) return false;
             var (mapped, mapping) = BridgePaths.Map(arrPath, copy.Instance.PathMappings.ToList());
-            if (mapping != null) return BridgePaths.SamePath(mapped, shown.Path);
-            return Tail(Norm(arrPath), 2) is { } tail && string.Equals(Tail(Norm(shown.Path), 2), tail, StringComparison.OrdinalIgnoreCase);
+            return BridgePaths.SamePath(mapping != null ? mapped : arrPath, shown.Path);
+        }
+
+        /// <summary>
+        /// True when an arr copy with no path mapping for its folder (one that applies says where it is for sure) has
+        /// a folder whose last two names (root folder and title folder) are the Jellyfin copy's.
+        /// </summary>
+        private static bool EndsLike(ArrCopyFacts copy, JfCopy jf)
+        {
+            var arrPath = ArrPathOf(copy);
+            if (string.IsNullOrWhiteSpace(arrPath) || string.IsNullOrWhiteSpace(jf.Path)) return false;
+            if (BridgePaths.Map(arrPath, copy.Instance.PathMappings.ToList()).Mapping != null) return false;
+            return Tail(Norm(arrPath), 2) is { } tail && string.Equals(Tail(Norm(jf.Path), 2), tail, StringComparison.OrdinalIgnoreCase);
         }
 
         private static CopyState NothingKnown(TitleFacts facts)
