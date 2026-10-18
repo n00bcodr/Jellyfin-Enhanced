@@ -399,11 +399,11 @@ public class IntegrationAutoRequestLedgerTests
         release.SetResult();
     }
 
-    private static string Root()
+    private static string Root([System.Runtime.CompilerServices.CallerFilePath] string file = "")
     {
         var root = new DirectoryInfo(ListGateWalk.Root());
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
-        root ??= new DirectoryInfo(Directory.GetCurrentDirectory());
+        root ??= new DirectoryInfo(Path.GetDirectoryName(file)!);
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         Assert.NotNull(root);
         return root!.FullName;
