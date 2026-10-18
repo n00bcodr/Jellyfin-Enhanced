@@ -501,7 +501,8 @@ public class ApiArrRequestsHubTests
     public async Task AFourKListEntryReadsSeerrsAvailabilityLikeTheRequestsPageWithNoFourKInstance()
     {
         // No 4K Radarr in Jellyfin Enhanced; Sam's 4K Sintel request is OK'd and Seerr says the 4K copy is available,
-        // matched to a Jellyfin item Sam can open. The Requests page shows it ready: the 4K list entry must say the same.
+        // matched to a Jellyfin item Sam can open that plays a 4K version (D44: a real 4K source, not the library's name).
+        // The Requests page shows it ready: the 4K list entry must say the same.
         var fourKItem = Guid.NewGuid();
         using var rig = await Ready(r =>
         {
@@ -511,6 +512,7 @@ public class ApiArrRequestsHubTests
             request["media"]!["jellyfinMediaId4k"] = fourKItem.ToString("N");
             r.Seerr.Requests.Add(request);
             r.View.AddCopy(TitleKey.Parse("movie:tmdb:45745")!, new JfCopy { ItemId = fourKItem, Path = "/media/movies4k/Sintel (2010)/Sintel.mkv", LibraryName = "Movies 4K", DateCreated = Asked.AddHours(7) });
+            r.View.AddSource(fourKItem, 3840, 2160, created: Asked.AddHours(7));
         });
         var row = Find(Root(await Hub(rig, rig.Sam)), "ready", "movie:tmdb:45745");
         Assert.NotNull(row);
