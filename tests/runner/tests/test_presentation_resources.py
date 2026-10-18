@@ -12,7 +12,8 @@ def project_calls(source):
     # the actual overload contract; this walk also catches an accidentally restored fallback.
     source = re.sub(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\])*"', ' literal ', source, flags=re.S)
     for match in re.finditer(r'(\b\w+)?\??\.(Project|ProjectResource)\s*\(', source):
-        if match[1] == 'QuotaProjector':
+        # Unrelated APIs that share the name: quota rows, and a list's order filtered to the caller.
+        if match[1] in ('QuotaProjector', 'ListOrder'):
             continue
         depth, args, start = 1, [], match.end()
         for index in range(start, len(source)):
