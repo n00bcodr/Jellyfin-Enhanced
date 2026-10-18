@@ -16,9 +16,9 @@
     const FLUSH_MS = 300;
     const TTL_MS = 60000;
 
-    /** @type {Map<string, {status: Object|null, stamp: string|null, at: number}>} item id -> last answer */
+    /** @type {Map<string, {status: Object|null, stamp: string|null, keys: string[], at: number}>} item id -> last answer */
     const cache = new Map();
-    /** @type {Map<string, {status: Object|null, stamp: string|null}>} what was shown before an entry was dropped for a re-read */
+    /** @type {Map<string, {status: Object|null, stamp: string|null, keys: string[]}>} what was shown before an entry was dropped for a re-read */
     const stale = new Map();
     /** Stops listening to Jellyfin's UserDataChanged messages (phase 4e), or null. */
     let stopUserData = null;
@@ -26,7 +26,6 @@
     const idsByKey = new Map();
     const queued = new Set();
     const inFlight = new Set();
-    let generation = 0;
     const revisions = new Map();
     let seen = new WeakSet();
     let io = null;
@@ -176,10 +175,9 @@
         if (!withStatus && !withStamps) return;
         const ids = [...queued].filter(id => !inFlight.has(id));
         ids.forEach(id => queued.delete(id));
-        const surface = generation;
-        const epoch = JE.session ? JE.session.getEpoch() : 0;
+        const current = JE.arrStatus.responseGuard();
         for (let i = 0; i < ids.length; i += BATCH) {
-            if (!current(surface, epoch)) return;
+            if (!current()) return;
             const batch = ids.slice(i, i + BATCH);
             const versions = new Map(batch.map(id => [id, revisions.get(id) || 0]));
             batch.forEach(id => inFlight.add(id));
@@ -192,12 +190,12 @@
                     withStamps ? JE.arrStatus.fetchStamps(batch) : null
                 ]);
             } finally {
-                batch.forEach(id => inFlight.delete(id));
+                if (current()) batch.forEach(id => inFlight.delete(id));
                 // Invalidations queued during this read must survive and run once it releases the ids.
-                if (queued.size && !flushTimer) flushTimer = setTimeout(flush, FLUSH_MS);
+                if (current() && queued.size && !flushTimer) flushTimer = setTimeout(flush, FLUSH_MS);
             }
-            if (!current(surface, epoch)) return;
-            const valid = batch.filter(id => current(surface, epoch, id, versions.get(id)));
+            if (!current()) return;
+            const valid = batch.filter(id => current() && (revisions.get(id) || 0) === versions.get(id));
             if (!valid.length) continue;
             const now = Date.now();
             const answered = new Map();
@@ -220,16 +218,20 @@
                 continue;
             }
             if (data) noteSince(data.since);
+            if (stampData) noteSince(stampData.since);
+            const subscriptions = new Map((stampData?.subscriptions || []).map(item => [item.itemId, item.keys]));
             for (const id of valid) {
                 const status = answered.get(id);
                 if (status?.key) follow(status.key, id);
                 if (status?.liveKey) follow(status.liveKey, id);
+                for (const key of subscriptions.get(id) || []) follow(key, id);
                 // The half that failed keeps what the card showed; the retry below reads it again.
                 const before = cache.get(id) || stale.get(id);
                 stale.delete(id);
                 cache.set(id, {
                     status: data ? answered.get(id) || null : statusFailed ? before?.status || null : null,
                     stamp: stampData ? stamps.get(id) || null : stampsFailed ? before?.stamp || null : null,
+                    keys: subscriptions.get(id) || before?.keys || [],
                     at: now
                 });
             }
@@ -238,19 +240,6 @@
             else failures = 0;
         }
         prune();
-    }
-
-    /**
-     * The single response rule: only the current surface/session and unchanged item may have effects.
-     * @param {number} surface Surface generation captured before the read.
-     * @param {number} epoch User-session epoch captured before the read.
-     * @param {string} [id] Item being applied.
-     * @param {number} [revision] Item revision captured before the read.
-     * @returns {boolean} Whether the response is still current.
-     */
-    function current(surface, epoch, id, revision) {
-        return surface === generation && (!JE.session || JE.session.isCurrent(epoch))
-            && (id === undefined || (revisions.get(id) || 0) === revision);
     }
 
     /**
@@ -315,7 +304,7 @@
         if (entry && Date.now() - entry.at < TTL_MS) {
             paint(card, entry.status, entry.stamp);
             // Painted from the cache: follow the title again (a prune may have dropped it), once per burst.
-            const followed = [entry.status?.key, entry.status?.liveKey].filter(Boolean).map(key => follow(key, id)).some(Boolean);
+            const followed = [entry.status?.key, entry.status?.liveKey, ...(entry.keys || [])].filter(Boolean).map(key => follow(key, id)).some(Boolean);
             if (followed && !resubscribeTimer) {
                 resubscribeTimer = setTimeout(() => {
                     resubscribeTimer = null;
@@ -431,7 +420,7 @@
     function forget(id) {
         revisions.set(id, (revisions.get(id) || 0) + 1);
         const entry = cache.get(id);
-        if (entry) stale.set(id, { status: entry.status, stamp: entry.stamp || null });
+        if (entry) stale.set(id, { status: entry.status, stamp: entry.stamp || null, keys: entry.keys });
         cache.delete(id);
     }
 
@@ -501,7 +490,8 @@
      * @returns {void}
      */
     function clearAll() {
-        generation++;
+        JE.arrStatus.invalidateResponses();
+        inFlight.clear();
         revisions.clear();
         for (const timer of [flushTimer, retryTimer, resubscribeTimer]) if (timer) clearTimeout(timer);
         flushTimer = retryTimer = resubscribeTimer = null;

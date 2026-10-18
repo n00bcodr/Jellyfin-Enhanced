@@ -39,6 +39,22 @@
     let disabled = false;
     /** The stamps route answered 403 (feature_disabled) in this page load (phase 4e). */
     let stampsDisabled = false;
+    let responseGeneration = 0;
+
+    /** Invalidates pending responses when the badge surface or person changes. */
+    function invalidateResponses() {
+        responseGeneration++;
+    }
+
+    /**
+     * One admission rule for asynchronous response effects, including transport failures.
+     * @returns {() => boolean} True only in the surface generation and session that began the read.
+     */
+    function responseGuard() {
+        const generation = responseGeneration;
+        const epoch = JE.session?.getEpoch?.();
+        return () => generation === responseGeneration && (epoch === undefined || JE.session.isCurrent(epoch));
+    }
     /**
      * Acquisition stamp chips (phase 4e): icon, short word and title per stamp. The fiber_new and 4k
      * glyphs spell their word themselves; only Upgraded's arrow gets one.
@@ -102,8 +118,11 @@
      */
     async function get(path, options) {
         if (!enabled()) return null;
+        const current = responseGuard();
         const since = await feedPosition();
-        const data = await read(path, options);
+        if (!current()) return null;
+        const data = await read(path, options, current);
+        if (!current()) return null;
         if (data && typeof data === 'object') data.since = since;
         return data;
     }
@@ -112,14 +131,16 @@
      * The request behind {@link get}.
      * @param {string} path Path under /JellyfinEnhanced.
      * @param {{priority?: 'low', signal?: AbortSignal}} [options] Fetch options.
+     * @param {() => boolean} current Response admission guard captured before the read.
      * @returns {Promise<Object|null>} The response, or null.
      */
-    async function read(path, options) {
+    async function read(path, options, current) {
         if (!enabled()) return null;
         try {
-            return await send(path, options);
+            const data = await send(path, options);
+            return current() ? data : null;
         } catch (err) {
-            if (err?.name === 'AbortError') return null;
+            if (!current() || err?.name === 'AbortError') return null;
             if (err?.status === 403) disabled = true;
             console.warn(`${logPrefix} status request failed (${err?.status || err?.message || err})`);
             return null;
@@ -136,7 +157,9 @@
     async function send(path, options) {
         const api = JE.core?.api;
         if (api?.plugin) {
-            return await api.plugin(path, { priority: options?.priority, signal: options?.signal, skipRetry: true });
+            // A reset can start the same URL while an older generation is still pending. Explicit
+            // request headers keep core's plain-GET dedup from handing that old answer to a new ticket.
+            return await api.plugin(path, { headers: { Accept: 'application/json' }, priority: options?.priority, signal: options?.signal, skipRetry: true });
         }
         const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced${path}`), {
             headers: { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' },
@@ -166,18 +189,26 @@
      * without touching the status routes.
      * @param {string[]} ids Jellyfin item ids (≤ 100).
      * @param {AbortSignal} [signal] Abort signal.
-     * @returns {Promise<{items: Array<{itemId: string, stamp: string}>}|null>} The response, or null on failure.
+     * @returns {Promise<{items: Array<{itemId: string, stamp: string}>, subscriptions?: Array<{itemId: string, keys: string[]}>, since?: {epoch: string, cursor: number}|null}|null>} The response, or null on failure.
      */
     async function fetchStamps(ids, signal) {
         if (!stampsEnabled()) return null;
         // Titles that aren't in the library have no stamp (same rule as fetchBatch).
         if (ids?.length && JE.titleDetails?.isSynthetic) ids = ids.filter(id => !JE.titleDetails.isSynthetic(id));
         if (!ids?.length) return { items: [] };
+        const current = responseGuard();
+        const since = await feedPosition();
+        if (!current()) return null;
         try {
             const data = await send(`/acquire/stamps?ids=${ids.map(encodeURIComponent).join(',')}`, { priority: 'low', signal });
-            return data && typeof data === 'object' ? data : null;
+            if (!current()) return null;
+            if (data && typeof data === 'object') {
+                data.since = since;
+                return data;
+            }
+            return null;
         } catch (err) {
-            if (err?.name === 'AbortError') return null;
+            if (!current() || err?.name === 'AbortError') return null;
             if (err?.status === 403) stampsDisabled = true;
             console.warn(`${logPrefix} stamps request failed (${err?.status || err?.message || err})`);
             return null;
@@ -916,6 +947,7 @@
     }
 
     JE.session?.onUserChange?.('arr-status', () => {
+        invalidateResponses();
         subscribers.clear();
         disabled = false;
         stampsDisabled = false;
@@ -929,6 +961,8 @@
         fetchStamps,
         fetchKey,
         feedPosition,
+        responseGuard,
+        invalidateResponses,
         familyText,
         searchable,
         summaryPieces,

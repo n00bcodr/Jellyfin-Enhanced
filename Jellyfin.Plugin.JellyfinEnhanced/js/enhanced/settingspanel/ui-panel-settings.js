@@ -10,6 +10,7 @@
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
     const { showReleaseNotesNotification } = internal;
+    const badgeSettingsGenerations = new Map();
 
     // Position-tab preview text ("AaBbCcDd") mirrors the real font family, and
     // its size scaled relative to "Normal" so it stays legible in the small
@@ -201,20 +202,44 @@
                 resetAutoCloseTimer();
             });
         }
-        // Phase 4e: acquisition badges per person ("" = null: follow the household; "off" = false: hide).
+        // Phase 4e: Hide removes badges at once; Show reads only after persistence succeeds.
         for (const [id, key] of [['acquisitionBadgesSelect', 'acquisitionBadges'], ['nativeAcquisitionStampsSelect', 'nativeAcquisitionStamps']]) {
-            document.getElementById(id)?.addEventListener('change', (event) => {
+            document.getElementById(id)?.addEventListener('change', async (event) => {
                 if (JE.pluginConfig?.ArrAcquisitionBadgesEnabled !== true) return;
                 const value = event.target.value === 'off' ? false : null;
+                const generation = (badgeSettingsGenerations.get(key) || 0) + 1;
+                badgeSettingsGenerations.set(key, generation);
+                const current = JE.arrStatus?.responseGuard?.();
+                const epoch = JE.session?.getEpoch?.();
+                const settings = JE.currentSettings;
+                const select = event.target;
+                const previous = settings[key];
                 JE.userConfig = JE.userConfig || {};
                 JE.userConfig.settings = JE.userConfig.settings || {};
-                JE.userConfig.settings[key] = value;
-                JE.currentSettings[key] = value;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                JE.toast(JE.t('toast_badge_settings_saved'));
-                // The web posters follow the new choice without a reload.
-                if (key === 'acquisitionBadges') JE.internals?.arrStatusCards?.reset?.();
+                const userSettings = JE.userConfig.settings;
+                const previousOwn = userSettings[key];
+                userSettings[key] = value;
+                settings[key] = value;
+                const valid = () => badgeSettingsGenerations.get(key) === generation
+                    && settings === JE.currentSettings && settings[key] === value
+                    && (epoch === undefined || JE.session.isCurrent(epoch));
+                if (key === 'acquisitionBadges' && value === false) JE.internals?.arrStatusCards?.reset?.();
                 resetAutoCloseTimer();
+                try {
+                    await JE.saveUserSettings('settings.json', settings, { throwOnError: true });
+                    if (!valid()) return;
+                    // A Hide reset invalidates response tickets intentionally. Show must retain its ticket.
+                    if (key === 'acquisitionBadges' && value !== false && (!current || current())) {
+                        JE.internals?.arrStatusCards?.reset?.();
+                    }
+                    JE.toast(JE.t('toast_badge_settings_saved'));
+                } catch (err) {
+                    if (!valid()) return;
+                    settings[key] = previous;
+                    userSettings[key] = previousOwn;
+                    select.value = previous === false ? 'off' : '';
+                    console.warn('🪼 Jellyfin Enhanced: badge settings save failed', err);
+                }
             });
         }
         addSettingToggleListener('qualityTagsToggle', 'qualityTagsEnabled', 'feature_quality_tags', true);

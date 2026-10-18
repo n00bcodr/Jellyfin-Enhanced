@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { createHarness, jsRoot } from '../helpers/harness.mjs';
+import { createHarness, deferred, jsRoot } from '../helpers/harness.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const tr = key => (key in en ? en[key] : key);
@@ -109,4 +109,29 @@ test('translated badge labels are escaped', t => {
   const h = panel(t, { config: badges, translate: key => (key.startsWith('panel_settings_badges') ? '<img src=x onerror=alert(1)>' : tr(key)) });
   assert.equal(h.document.querySelectorAll('img[src="x"]').length, 0);
   assert.equal(h.document.getElementById('nativeAcquisitionStampsSelect').options[1].textContent, '<img src=x onerror=alert(1)>');
+});
+
+
+for (const outcome of ['saved', 'failed', 'hidden', 'switched']) test(`show badges waits for persistence and ignores obsolete completion: ${outcome}`, async t => {
+  const h = panel(t, { config: badges, settings: { acquisitionBadges: false } });
+  const held = deferred();
+  let epoch = 1;
+  h.JE.session = { getEpoch: () => epoch, isCurrent: captured => captured === epoch };
+  h.JE.saveUserSettings = (_file, _settings, options) => {
+    return options?.throwOnError ? held.promise : held.promise.catch(() => {});
+  };
+  h.wire();
+  await h.choose('acquisitionBadgesSelect', '');
+  assert.deepEqual(h.resets, [], 'no card refresh while the server still has Hide');
+  assert.deepEqual(h.toasts, [], 'no saved toast before persistence');
+  if (outcome === 'hidden') {
+    await h.choose('acquisitionBadgesSelect', 'off');
+    assert.deepEqual(h.resets, [false], 'Hide removes badges immediately, even with a pending save');
+  }
+  if (outcome === 'switched') epoch++;
+  if (outcome === 'failed') held.reject(new Error('save failed'));
+  else held.resolve();
+  await new Promise(done => setImmediate(done));
+  assert.deepEqual(h.resets, outcome === 'saved' ? [null] : outcome === 'hidden' ? [false] : []);
+  if (outcome === 'failed') assert.deepEqual(h.toasts, [], 'failed persistence never claims success');
 });

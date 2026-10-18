@@ -216,7 +216,7 @@ test('stampsEnabled follows the admin switch, the person\'s preference and a ref
 test('fetchStamps: one low-priority read of the stamps route, synthetic ids left out', async t => {
   const h = setup(t, { config: { ArrAcquisitionBadgesEnabled: true }, responses: () => ({ items: [{ itemId: id(1), stamp: 'new' }] }) });
   h.JE.titleDetails = { isSynthetic: x => x.startsWith('je') };
-  same(await h.S.fetchStamps([id(1), 'je-synthetic', id(2)]), { items: [{ itemId: id(1), stamp: 'new' }] });
+  same(await h.S.fetchStamps([id(1), 'je-synthetic', id(2)]), { items: [{ itemId: id(1), stamp: 'new' }], since: null });
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].path, `/acquire/stamps?ids=${id(1)},${id(2)}`);
   assert.equal(h.calls[0].options.priority, 'low');
@@ -247,7 +247,7 @@ test('with the acquisition switch off the cards read statuses only, exactly as b
     const card = h.document.querySelectorAll('.card')[0];
     assert.equal(card.querySelector('.je-arr-badge').outerHTML.includes('je-arr-badge-stamp'), false);
     assert.equal(h.document.querySelectorAll('.je-arr-badge').length, 1);
-    same(h.cards.cache.get(id(0)), { status: { itemId: id(0), ...statuses[id(0)] }, stamp: null, at: h.cards.cache.get(id(0)).at });
+    same(h.cards.cache.get(id(0)), { status: { itemId: id(0), ...statuses[id(0)] }, stamp: null, keys: [], at: h.cards.cache.get(id(0)).at });
   }
   const none = setup(t, { html: cardsHtml(['Movie']), config: { ArrStatusPosterBadges: false } });
   await none.show();
@@ -532,4 +532,98 @@ test('partial playback refreshes season and series cards including a parent whos
     assert.equal(cards[1].querySelector('.je-arr-badge'), null);
     assert.ok(cards[2].querySelector('.je-arr-badge'), 'unrelated movie stays painted');
   }
+});
+
+
+// Review round 2: transport effects obey the same session/surface boundary as paints.
+for (const route of ['stamps', 'status']) {
+  for (const change of ['user', 'reset']) test(`late ${route} 403 after ${change} cannot disable the current surface`, async t => {
+    const held = deferred();
+    let reads = 0;
+    const h = setup(t, { config: { ArrAcquisitionBadgesEnabled: true }, responses: () => ++reads === 1 ? held.promise : { items: [] } });
+    const read = () => route === 'stamps' ? h.S.fetchStamps([id(1)]) : h.S.fetchBatch([id(1)], []);
+    const pending = read();
+    await nextTurn();
+    if (change === 'user') h.userChange.forEach(fn => fn());
+    else h.cards.reset();
+    held.resolve(Object.assign(new Error('HTTP 403'), { status: 403 }));
+    assert.equal(await pending, null);
+    assert.equal(route === 'stamps' ? h.S.stampsEnabled() : h.S.enabled(), true);
+    assert.ok(await read(), 'the current surface still fetches');
+    assert.equal(reads, 2);
+  });
+}
+
+test('an obsolete successful transport response is discarded before returning to consumers', async t => {
+  const held = deferred();
+  const h = setup(t, { config: { ArrAcquisitionBadgesEnabled: true }, responses: () => held.promise });
+  const pending = h.S.fetchStamps([id(1)]);
+  await nextTurn();
+  h.userChange.forEach(fn => fn());
+  held.resolve({ items: [{ itemId: id(1), stamp: 'new' }] });
+  assert.equal(await pending, null);
+});
+
+test('acquisition-only cards follow title keys and the pre-read feed cursor, including unstamped cards', async t => {
+  let upgraded = false;
+  const subscriptions = [];
+  const h = setup(t, {
+    html: cardsHtml(['Movie', 'Movie']),
+    config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+    responses: path => ({
+      ...stampAnswer(path, upgraded ? { [id(0)]: 'upgraded', [id(1)]: 'new' } : { [id(0)]: 'new' }),
+      subscriptions: [0, 1].map(i => ({ itemId: id(i), keys: [`movie:tmdb:${i + 1}`] }))
+    })
+  });
+  h.JE.arr = {
+    live: { position: () => ({ epoch: 'feed', cursor: 7 }) },
+    onStatusChange: (keys, callback, options) => { subscriptions.push({ keys, callback, options }); return () => {}; }
+  };
+  await h.show();
+  assert.equal(h.statusCalls().length, 0);
+  assert.equal(subscriptions.length, 1, 'stamps-only cards have their own subscription');
+  same(subscriptions[0].keys, ['movie:tmdb:1', 'movie:tmdb:2']);
+  same(subscriptions[0].options, { since: { epoch: 'feed', cursor: 7 } });
+  upgraded = true;
+  subscriptions[0].callback(['movie:tmdb:1', 'movie:tmdb:2']);
+  await h.cards.flush();
+  assert.ok(h.document.querySelector(`[data-id="${id(0)}"] .je-arr-tone-upgraded`));
+  assert.ok(h.document.querySelector(`[data-id="${id(1)}"] .je-arr-tone-new`));
+});
+
+
+test('switching people while the feed primes cancels the old read before transport', async t => {
+  const held = deferred();
+  const h = setup(t, { config: { ArrAcquisitionBadgesEnabled: true } });
+  h.JE.arr = { live: { position: () => null, prime: () => held.promise } };
+  const stamps = h.S.fetchStamps([id(1)]);
+  const status = h.S.fetchBatch([id(1)], []);
+  await nextTurn();
+  h.userChange.forEach(fn => fn());
+  held.resolve({ epoch: 'old', cursor: 8 });
+  assert.equal(await stamps, null);
+  assert.equal(await status, null);
+  assert.equal(h.calls.length, 0);
+});
+
+test('a reset starts an independent HTTP read even while the core API holds the previous generation', async t => {
+  const held = [deferred(), deferred()];
+  let reads = 0;
+  const h = setup(t, { html: cardsHtml(['Movie']), config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false } });
+  h.window.fetch = async () => {
+    const answer = await held[reads++].promise;
+    return new Response(JSON.stringify({ items: [{ itemId: id(0), stamp: answer }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  h.load('core/api-client.js');
+  const old = h.show();
+  await nextTurn();
+  h.cards.reset();
+  const fresh = h.show();
+  await nextTurn();
+  const started = reads;
+  held[0].resolve('new');
+  held[1].resolve('upgraded');
+  await Promise.all([old, fresh]);
+  assert.equal(started, 2, 'the new surface must not join the old HTTP response');
+  assert.equal(h.cards.cache.get(id(0)).stamp, 'upgraded');
 });
