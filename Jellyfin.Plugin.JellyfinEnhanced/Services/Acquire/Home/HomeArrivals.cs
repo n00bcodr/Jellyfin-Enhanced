@@ -26,7 +26,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
     /// earlier: a replacement file (a new item with a new creation date) keeps the date the content first came in.
     /// Kept in <c>acquire.db</c> (schema 6). Filled from the library once home rows are on (one background pass at
     /// start-up), then from library events, which only hand the item id to a background worker (no I/O on Jellyfin's
-    /// scan thread). Content first seen while reading home rows is recorded then, at its own creation date.
+    /// scan thread). Content first seen while reading home rows uses the shared source observations, with creation dates only
+    /// as a fallback for legacy items without source facts.
     /// </summary>
     public sealed class HomeArrivals : IHostedService, IDisposable
     {
@@ -175,9 +176,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         /// <summary>Records first-arrival dates; each only ever moves earlier.</summary>
         /// <param name="seen">(content, creation date) pairs.</param>
         public void Record(IReadOnlyCollection<(string Content, DateTime At)> seen)
+            => Record(seen, _db.Generation);
+
+        private void Record(IReadOnlyCollection<(string Content, DateTime At)> seen, long generation)
         {
-            if (seen.Count == 0 || !_db.Available) return;
-            var generation = _db.Generation;
+            if (seen.Count == 0 || !_db.Available || generation != _db.Generation) return;
             Load();
             seen = seen.Select(s => (ContentArrivalHistory.ContentKey(s.Content), s.At)).ToList();
             var changed = seen.Where(s => !_known.TryGetValue(s.Content, out var ms) || Ms(s.At) < ms).ToList();
@@ -239,12 +242,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                         {
                             var generation = _db.Generation;
                             _stamps.ObserveSources(new[] { sourceItem }, null, generation);
-                            foreach (var source in sourceItem.SourceItems())
-                            {
-                                var at = source.SourceId is { } identity ? SourceAt(identity) : source.DateCreated;
-                                if (at is not DateTime known || known == DateTime.MinValue) continue;
-                                foreach (var content in ContentOf(item, key)) batch.Add((content, known));
-                            }
+                            RecordSources(sourceItem, generation);
                         }
                         else foreach (var content in ContentOf(item, key)) batch.Add((content, Utc(item.DateCreated)));
                     }
@@ -324,17 +322,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                 EnsureSeeded();
                 while (await _added.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
                 {
-                    var batch = new List<(string, DateTime)>();
                     var ids = new Dictionary<Guid, (DateTime At, long Generation)>();
                     while (ids.Count < 200 && _added.Reader.TryRead(out var change)) ids.TryAdd(change.Id, (change.At, change.Generation));
                     EnsureSeeded();
                     foreach (var (id, change) in ids)
                     {
-                        if (_sources?.Item(id) is { } sourceItem) _stamps.ObserveSources(new[] { sourceItem }, change.At, change.Generation);
-                        if (_library!.GetItemById(id) is not { } item) continue;
-                        foreach (var content in ContentOf(item)) batch.Add((content, Utc(item.DateCreated)));
+                        if (_sources?.Item(id) is { } sourceItem)
+                        {
+                            _stamps.ObserveSources(new[] { sourceItem }, change.At, change.Generation);
+                            RecordSources(sourceItem, change.Generation);
+                        }
+                        else if (_library!.GetItemById(id) is { } item && change.Generation == _db.Generation)
+                            Record(ContentOf(item).Select(content => (content, Utc(item.DateCreated))).ToList(), change.Generation);
                     }
-                    Record(batch);
                 }
             }
             catch (OperationCanceledException)
@@ -344,6 +344,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
             catch (Exception ex)
             {
                 _logger?.Warning("[Home] First-arrival worker stopped: " + ex.Message);
+            }
+        }
+
+        // Use the same source and edition timestamps as the badge feeder. Never follow an authoritative
+        // observation with the primary item's inherited DateCreated (which would turn a first 4K copy into Upgraded).
+        private void RecordSources(StampItem item, long generation)
+        {
+            foreach (var source in item.SourceItems())
+            {
+                var at = source.SourceId is { } identity ? SourceAt(identity) : source.DateCreated;
+                if (at is DateTime known && known != DateTime.MinValue)
+                    _stamps.NoteArrival(AcquisitionStampStore.PartKeys(source), known, item.Id, generation);
             }
         }
 

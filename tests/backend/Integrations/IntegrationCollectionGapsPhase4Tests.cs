@@ -73,6 +73,46 @@ public class IntegrationCollectionGapsPhase4Tests
             phase4: () => phase4,
             refusals: refusals);
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("invalid json")]
+    [InlineData("{}")]
+    public async Task FailedMetadataAfterRevocationIsIdenticalToNeverHavingAccess(string? metadata)
+    {
+        var view = new FakeJellyfinView();
+        var viewer = view.AddUser(false);
+        var box = Guid.NewGuid();
+        var accessible = true;
+        var calls = 0;
+        var service = new CollectionGapsService(view, (current, id) => accessible && current.UserId == viewer.UserId ? new BoxSetRef(id, 10) : null,
+            null, null, async (_, _, _) => { await Task.Yield(); calls++; accessible = false; return metadata; },
+            (_, _, _) => Task.FromResult(true), () => Today);
+        var revoked = await service.ForCollectionAsync(viewer, box, null, default);
+        var never = await service.ForCollectionAsync(viewer, Guid.NewGuid(), null, default);
+        Assert.Equal("not_found", revoked.Refusal);
+        Assert.Equal(JsonSerializer.Serialize(new { never.Gaps, never.Refusal }), JsonSerializer.Serialize(new { revoked.Gaps, revoked.Refusal }));
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task RevocationAtTheLastPolicyRetryAlsoLooksLikeNeverHavingAccess()
+    {
+        var view = new FakeJellyfinView();
+        var viewer = view.AddUser(false);
+        var calls = 0;
+        var service = new CollectionGapsService(view, (_, id) => calls < 3 ? new BoxSetRef(id, 10) : null,
+            null, null, async (_, _, _) =>
+            {
+                await Task.Yield();
+                calls++;
+                view.Users[viewer.UserId] = new StatusViewer { UserId = viewer.UserId, PolicyRevision = calls.ToString() };
+                return (string?)null;
+            }, (_, _, _) => Task.FromResult(true), () => Today);
+        var result = await service.ForCollectionAsync(viewer, Guid.NewGuid(), null, default);
+        Assert.Equal("not_found", result.Refusal);
+        Assert.Equal(3, calls);
+    }
+
     [Fact]
     public async Task TheRegisteredApplicationSuppliesVisibleCollectionCoverage()
     {

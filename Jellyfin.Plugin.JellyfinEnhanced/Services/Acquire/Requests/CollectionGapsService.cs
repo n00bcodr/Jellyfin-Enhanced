@@ -215,7 +215,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 try { return await PrepareAsync(policy.Viewer, itemId, language, gate, policy, project, ct).ConfigureAwait(false); }
                 catch (AcquireResponseGate.Changed) { ct.ThrowIfCancellationRequested(); }
             }
-            return (null, "authorization_changed");
+            if (gate.Read() is not { } finalPolicy) return (null, "not_found");
+            return gate.Project(finalPolicy, current => ((T?)null, _boxSet(current, itemId) == null ? "not_found" : "authorization_changed"));
         }
 
         private async Task<(T? Gaps, string? Refusal)> PrepareAsync<T>(StatusViewer viewer, Guid itemId, string? language, AcquireResponseGate gate, AcquireResponseGate.Policy policy, Func<CollectionGaps, T> project, CancellationToken ct) where T : class
@@ -224,7 +225,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (set.TmdbCollectionId is not int collectionId || collectionId <= 0) return (null, "collection_unknown");
             var json = await _tmdbCollection(collectionId, language != null && Language.IsMatch(language) ? language : null, ct).ConfigureAwait(false);
             var parts = ParseCollection(json, DateOnly.FromDateTime(_now().UtcDateTime));
-            if (parts == null) return (null, "collection_unknown");
+            if (parts == null) return gate.Project(policy, current =>
+                ((T?)null, _boxSet(current, itemId) is { } finalSet && finalSet.TmdbCollectionId == collectionId
+                    ? "collection_unknown" : "not_found"));
             var covering = _coverage != null && _phase4() ? CoveredAsync(set.ItemId, viewer, ct) : null;
             // Prepare every absent part, including covered titles: a later revoke can make them gaps again.
             var absent = parts.Where(p => _view.Copies(TitleKey.Parse(p.Key)!, viewer, _aliases?.Of(TitleKey.Parse(p.Key)!)).Count == 0).ToList();

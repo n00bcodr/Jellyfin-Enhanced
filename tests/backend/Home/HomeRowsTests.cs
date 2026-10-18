@@ -247,6 +247,47 @@ public class HomeRowsTests
         else Assert.DoesNotContain(rows.Soon ?? new(), c => c.Key == Inception);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task HomeProjectionKeepsTheAuthoritativeFirstSourceArrival(bool episode, bool fourK)
+    {
+        using var home = new Home();
+        await home.Lab.Warm();
+        var key = episode ? Firefly : Matrix;
+        if (episode && fourK)
+        {
+            var instances = JsonNode.Parse(home.Lab.Config.SonarrInstances)!.AsArray();
+            foreach (var instance in instances) instance!["Role"] = "4k";
+            home.Lab.Config.SonarrInstances = instances.ToJsonString();
+        }
+        var want = await home.Lab.Ask(home.Lab.Emma, new MutationInput { Key = key, Variant = fourK ? "4k" : "standard",
+            Scope = episode ? "episodes" : "movie", Episodes = episode ? new[] { new RequestEpisode(1, 2) } : Array.Empty<RequestEpisode>() });
+        await home.Lab.Outbox.TickAsync(default);
+        home.Lab.Arr.Now = home.Lab.Arr.Now.AddHours(1);
+        var observed = home.Now.AddMinutes(-1);
+        var created = observed.AddSeconds(-2);
+        var id = episode ? home.FireflyEpisode(1, 2, created) : home.MovieCopy(Matrix, created, fourK);
+        var source = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.StampSource("first", "/first.mkv", fourK ? 3840 : 1920, fourK ? 2160 : 1080, created);
+        home.Library.Items[id] = home.Library.Items[id] with { FourK = fourK, Sources = new[] { source } };
+        if (episode) home.Library.Items[home.Lab.SeriesItem] = new HomeItem(Array.Empty<string>(), created, false, "Firefly", TitleKey.Parse(Firefly));
+        var store = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.AcquisitionStampStore(home.Lab.Db);
+        var item = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.StampItem { Id = id, Kind = episode ? "episode" : "movie",
+            Keys = new[] { TitleKey.Parse(key)! }, Season = episode ? 1 : null, Episode = episode ? 2 : null,
+            Width = source.Width, Height = source.Height, DateCreated = created, Sources = new[] { source } };
+        store.ObserveSources(new[] { item }, observed, home.Lab.Db.Generation);
+        // The feeder may already have published the first-content fact, or home may be first to consume the observation.
+        if (fourK) store.NoteArrival(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.AcquisitionStampStore.PartKeys(item), observed, id);
+        Assert.True(home.Lab.Ledger.Fulfil(want, home.Lab.Arr.Now));
+        await home.Lab.Warm();
+        var arrived = (await home.Rows(home.Lab.Emma)).Arrived!;
+        Assert.Contains(arrived, c => c.Key == key);
+        Assert.Equal(observed, home.Arrivals.FirstAt(episode ? Firefly + ":s1:e2" : Matrix));
+        Assert.Equal(observed, store.FirstContentArrival(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.AcquisitionStampStore.PartKeys(item)));
+    }
+
     [Fact]
     public async Task AGroupedFourKSourceIsAnUpgradeEvenWhenItsRequestPredatesTheHdArrival()
     {

@@ -417,3 +417,33 @@ for (const change of ['add', 'remove', 'empty', 'opt-out', 'return']) {
     assert.equal(h.document.querySelector('.je-home-rows'), null);
   });
 }
+
+for (const change of ['empty', 'opt-out', 'reorder']) {
+  test(`late HSS sections replace JE's provisional row and reconcile ${change}`, async t => {
+    let data = answer({ hss: true });
+    const h = setup(t, { home: '<div class="verticalSection MyMedia" data-page="1">My Media</div>',
+      config: { ArrHomeHssSections: true }, routes: path => path === '/acquire/home' ? ok(data) : null });
+    await until(() => h.document.querySelector('.je-home-hss-section.JellyfinEnhancedYourRequests'));
+    const provisional = h.document.querySelector('.JellyfinEnhancedYourRequests');
+    const late = h.document.createElement('div');
+    late.className = 'verticalSection JellyfinEnhancedYourRequests';
+    late.dataset.page = '1';
+    late.style.order = '7';
+    late.innerHTML = `<div class="itemsContainer"><div class="card" tabindex="0" data-id="${ID('a')}"><div class="cardBox"><div class="cardScalable"></div></div></div></div>`;
+    h.container().appendChild(late);
+    h.container().appendChild(late.cloneNode(true)); // HSS can redraw more than one native instance too.
+    late.querySelector('.card').focus();
+    await wait(250);
+    assert.equal(h.document.querySelectorAll('.JellyfinEnhancedYourRequests').length, 1);
+    assert.equal(provisional.isConnected, false, 'native HSS owns placement when it arrives');
+    assert.equal(late.style.order, '7');
+    assert.equal(h.document.activeElement.dataset.id, ID('a'));
+    data = { ...data, requests: change === 'empty' ? [] : change === 'opt-out' ? null : [...data.requests].reverse() };
+    await h.JE.arrHome.refresh({ fresh: true });
+    assert.deepEqual([...late.querySelectorAll('.card[data-id]')].map(c => c.dataset.id), (data.requests || []).map(c => c.hssId));
+    assert.equal(late.hidden, change !== 'reorder');
+    await wait(250);
+    assert.equal(h.homeReads().length, 2, 'no observer read loop');
+    assert.equal(h.document.querySelector('.je-home-rows'), null);
+  });
+}

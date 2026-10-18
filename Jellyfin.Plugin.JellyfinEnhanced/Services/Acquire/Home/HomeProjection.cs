@@ -416,7 +416,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
 
         /// <summary>
         /// When a movie first arrived for the viewer: the earliest first-arrival date of the editions they can open
-        /// (only the 4K copies for a 4K request). Content never recorded is recorded at its own creation date.
+        /// (only the 4K copies for a 4K request). Content never recorded uses authoritative source observations before legacy creation dates.
         /// </summary>
         private DateTime? MovieArrival(TitleKey key, StatusViewer viewer, bool only4k, JfCopy visible)
         {
@@ -435,7 +435,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                 if (only4k && !item.FourK) continue;
                 foreach (var content in item.Content)
                 {
-                    var at = _arrivals.FirstAtOrRecord(content, item.Created);
+                    if (FirstContentArrival(item, content) is not DateTime at) continue;
                     var editionAt = EditionArrival(item, content, only4k);
                     if (only4k && (editionAt == null || ContentArrivalHistory.IsLaterVersion(at, editionAt.Value))) continue;
                     if (first == null || at < first) first = at;
@@ -445,6 +445,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                 }
             }
             return first;
+        }
+
+        // Content history is shared with badges: every source contributes to the title's first content,
+        // independently of the edition requested. Unknown source observations must not fall back to DateCreated.
+        private DateTime? FirstContentArrival(HomeItem item, string content)
+        {
+            var arrivals = item.Sources.Select(s => _arrivals.SourceAt(s.Identity)).OfType<DateTime>().ToList();
+            var standard = _arrivals.EditionAt(content, false);
+            var fourK = _arrivals.EditionAt(content, true);
+            if (standard is DateTime hd) arrivals.Add(hd);
+            if (fourK is DateTime uhd) arrivals.Add(uhd);
+            if (arrivals.Count > 0) return _arrivals.FirstAtOrRecord(content, arrivals.Min());
+            return item.Sources.Count == 0 ? _arrivals.FirstAtOrRecord(content, item.Created) : _arrivals.FirstAt(content);
         }
 
         private DateTime? EditionArrival(HomeItem item, string content, bool only4k)
@@ -481,8 +494,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                         var inScope = (seasonSet == null && picked == null) || seasonSet?.Contains(e.Season) == true
                             || picked?.Any(p => p.Season == e.Season && p.Episode == number) == true;
                         if (!inScope) continue;
-                        var first = seriesKey != null ? _arrivals.FirstAtOrRecord(HomeArrivals.EpisodeContent(seriesKey, e.Season, number), created) : created;
-                        var edition = _library.Item(e.ItemId) is { } item ? EditionArrival(item, HomeArrivals.EpisodeContent(seriesKey ?? key, e.Season, number), only4k) : null;
+                        var content = HomeArrivals.EpisodeContent(seriesKey ?? key, e.Season, number);
+                        var item = _library.Item(e.ItemId);
+                        var arrival = item != null ? FirstContentArrival(item, content) : created;
+                        if (arrival is not DateTime first) continue;
+                        var edition = item != null ? EditionArrival(item, content, only4k) : null;
                         if (only4k && (edition == null || ContentArrivalHistory.IsLaterVersion(first, edition.Value)
                             || (askedAt is DateTime interest && !ContentArrivalHistory.InterestPrecedes(interest, first)))) continue;
                         if (now - first > ArrivedWithin || first > now) continue;

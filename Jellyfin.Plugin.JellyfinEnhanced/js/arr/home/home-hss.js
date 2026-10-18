@@ -100,7 +100,14 @@
         try {
             for (const [cls, row] of Object.entries(SECTIONS)) {
                 const entries = Array.isArray(data?.[row]) ? data[row] : [];
-                let section = container.querySelector(`.verticalSection.${cls}`);
+                const matching = [...container.querySelectorAll(`.verticalSection.${cls}`)];
+                // HSS can append its real section after JE filled the gap. Keep HSS's placement and controls;
+                // reconcile exactly one instance even when HSS itself drew the section more than once.
+                let section = matching.find(node => !node.classList.contains('je-home-hss-section')) || matching[0];
+                const activeCard = document.activeElement?.closest('.card[data-id]');
+                const duplicateFocus = activeCard && matching.some(node => node !== section && node.contains(activeCard))
+                    ? R.normalizeId(activeCard.dataset.id) : null;
+                for (const duplicate of matching) if (duplicate !== section) duplicate.remove();
                 if (!section && entries.length) {
                     section = R.buildRow(R.ROWS.find(spec => spec.id === row), []);
                     section.classList.remove('je-home-row', `je-home-row-${row}`);
@@ -122,7 +129,7 @@
                     if (id && !byId.has(id)) byId.set(id, entry);
                 }
                 const active = document.activeElement?.closest('.card[data-id]');
-                const focused = active && section.contains(active) ? R.normalizeId(active.dataset.id) : null;
+                const focused = active && section.contains(active) ? R.normalizeId(active.dataset.id) : duplicateFocus;
                 const existing = new Map();
                 section.querySelectorAll('.card[data-id]').forEach(card => {
                     const id = R.normalizeId(card.dataset.id);
