@@ -50,6 +50,10 @@ USER_PREFERENCE_CLASSES = {
     "UseNativePosterTags": {"class": "display", "unset": "follow-admin"},
     "AutoSeasonRequests": {"class": "consent", "unset": "follow-admin"},
     "AutoMovieRequests": {"class": "consent", "unset": "follow-admin"},
+    # Phase 4c1: lists. Display preferences follow the administrator; swap-in is a consent (unset = no).
+    "ListPlaceholders": {"class": "display", "unset": "follow-admin"},
+    "ListStatus": {"class": "display", "unset": "follow-admin"},
+    "ListSwapIn": {"class": "consent", "unset": "off"},
 }
 
 # "overview-*" fieldsets are read-only dashboard status widgets, not admin

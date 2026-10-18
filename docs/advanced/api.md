@@ -387,7 +387,7 @@ The bookmark GET/POST pair is listed in [Bookmarks API endpoints](#bookmarks-api
 
 Settings, shortcuts, Elsewhere, and bookmark whole-file saves do not strict-read the previous document.
 
-A save of `settings.json` replaces the whole file. An administrator may save another person's, but that save keeps the person's own consents (automatic season and movie requests) as they stored them; only the person changes those.
+A save of `settings.json` replaces the whole file. An administrator may save another person's, but that save keeps the person's own consents (automatic season and movie requests, list swap-in) as they stored them; only the person changes those.
 
 Hidden Content and raw Spoiler Guard saves lock and strict-read first: corruption returns `503` with backup/retry guidance, temporary I/O failures `500`.
 
@@ -1735,6 +1735,60 @@ The native page's own reads (its title, seasons, episodes and parents, a person,
 the same per-account budget as these lists: a read nobody has made yet waits up to 3 seconds for room, then answers
 429 with `Retry-After: 2`. Jellyfin Enhanced's browser code waits at least that long before it asks again.
 
+#### Lists (phase 4)
+
+`/JellyfinEnhanced/acquire/lists/…`, signed-in people only (API keys and unknown or disabled users: `403 user_required`),
+`404 {"code":"disabled"}` while lists are off. A list someone can't see answers `404 not_found` like one that doesn't
+exist. Views are `private, no-cache` with an `ETag` bound to the person; every change is `private, no-store`. Changes
+take a `requestId` (`[A-Za-z0-9_-]{1,64}`): the same id with the same body is answered from its durable record (also
+after a restart) with the list as the caller may see it now; the same id with another body is `409 idempotency_conflict`.
+Create records become deletion tombstones during cleanup, retained for 30 days after deletion even if Jellyfin reuses
+the item id: retrying
+the deleted list's create is `404 not_found`, and a new create needs a new request id. An access-denied 404 never carries
+`listId` or `listKind`; other failed-create answers carry them only while the caller can still see the list.
+Edits take the list's `rev`; a stale one is `409 rev_conflict` with the fresh view. The caller's rights, limits and the
+items they and the playlist's owner can open are read again right before every write to Jellyfin and before every
+answer (a person disabled meanwhile has lost it; nothing is written as a disabled playlist owner: `409 owner_missing`):
+a change that loses the list on the way is `404 not_found` (`403 forbidden` without edit rights) and writes nothing more;
+one that already wrote to Jellyfin answers its results without the list (`view` left out, the caller's new entries
+skipped as `accessLost`); a placeholder their limits hide meanwhile is skipped as `blocked`; a library item
+someone lost meanwhile is `409 access_changed` with the fresh view.
+A create (its retry and recovery included) and a swap-in pass are each one continuation: after every await, and
+right before every write and the answer, the create's operation and the caller's current access (a pass: its list, with
+the agreeing editor's rights checked at every Jellyfin write) are read again, under the same lock deletion takes. Deletion marks the list's create operation and its create marker (the folder name or provider id
+Jellyfin keeps) at once, also when the server stopped before it recorded the new list; a deleted create answers the
+same identity-free `404 not_found`, writes nothing more to Jellyfin, and stays deleted if Jellyfin re-adds the folder
+under the same item id. A create answers `listId`, `listKind` and `name` only while the operation and the caller's
+current access allow it; one that lost access meanwhile answers like one that never had it. A restore stops create and
+swap-in work that started before it; a retry with the same request id continues from the restored state.
+
+| Method and path | Who | Body / answer |
+|---|---|---|
+| `GET /acquire/lists/{listId}` | can see the list | The caller's view: `rev`, `canEdit`, `nativeCanEdit`, `actions` (`edit`, `reorder`, `request`, `requestAll`, `swapIn`), `statusShown`, `swapIn`, `reconciling`, `order` (playlists: real `e:{itemId}:{n}` and entry `p:{id}` tokens the caller may see) and `placeholders` (each with `titleKey`, `edition`, `status` from the shared status, `filledCount`/`expectedCount`/`airedCount`, `actions`). |
+| `POST /acquire/lists/{listId}/items` | can edit (authoring on) | `{requestId, rev?, placeholders: [{kind, mediaType?, tmdbId, tvdbId?, imdbId?, title, year?, releaseDate?, posterPath?, seasonNumber?, episodes?, note?, edition?}], position?: {afterToken \| atStart}}` (1–2000) → `{added, addedAsItems, skipped: [{index, reason, sameAs?}], view}`. |
+| `POST /acquire/lists/{listId}/apply` | can edit | `{requestId, rev?, entries: [{type: "item", itemId} \| {type: "placeholder", placeholder}], position?}` → as above. |
+| `PATCH /acquire/lists/{listId}/items/{id}` | can edit | `{requestId, rev, note?, link?}` (link: custom entries only) → view. |
+| `DELETE /acquire/lists/{listId}/items/{id}?rev=&requestId=` | can edit | → view. |
+| `PUT /acquire/lists/{listId}/order` | can edit (playlists) | `{requestId, rev, order, moved?}` (the caller's projection after a drag; `moved`: the real token that moved) → view, or `409` (`duplicate_copy`, `move_unsupported`, `real_order_changed`, …) with the fresh view. |
+| `PUT /acquire/lists/{listId}/swap-in` | can edit (swap-in on) | `{requestId, rev, enabled}`: the caller becomes the person whose agreement swap-in needs. |
+| `POST /acquire/lists/{listId}/requests/preview` | can see the list (list requests on; several entries: Request all missing on) | `{placeholderIds?, all?}` → `{items: [{placeholderId, title, outcome: request \| follow \| approval \| already \| skip, reason, cost}], askable, cost, maxBatch: 20}`. Writes nothing. |
+| `POST /acquire/lists/{listId}/requests` | as above | `{clientId, placeholderIds}` (1–20) → `{operationId, replayed, results: [{placeholderId, result}], view}`; each `result` is the usual request outcome, and `view` is the list as the caller may see it now (left out when they can no longer see it). The confirmation stores each entry's request (scope and edition), backend target and request id before anything is asked; the same `clientId` with the same entries resumes from them (also after the entries' metadata changed or the backend moved), asks for nothing twice, and before each ask checks again that the caller can see the list and that entry (else `not_found` for it). |
+| `GET /acquire/lists/editable` | authoring on | `{playlists: [{id, name, isOwn, nativeCanEdit, ownerName?}], collections, canManageCollections}`. |
+| `POST /acquire/lists/playlists`, `POST /acquire/lists/collections` | authoring on (collections: administrators and collection managers) | `{requestId, name, isPublic?, entries?}` → `{listId, listKind, name, result}`. A retry with the same `requestId` continues with the list the first attempt created, even when the server stopped right after Jellyfin made it: the create runs under the chosen name plus the attempt's marker, so Jellyfin keeps the marker in the list's own folder (and a provider id on a collection), and the list then gets its chosen name (a retry finishes that too). A list of the same name, anyone's, is never taken for it, and no list ever gets a share for nobody. Collections: one create per destination at a time across people; a name a collection in Jellyfin's collections folder already has (or its folder, compared without case) is `409 name_taken`, a `[boxset]` folder elsewhere isn't; a list another attempt already recorded is `409 create_uncertain`, before any entry is applied. |
+| `GET` / `POST /arr/admin/lists/import` | administrators (lists on) | The experimental-list importer: dry run / import. Report: `documents`, `collageMarkers`, `imported`, `unchanged`, `skipped`, `quarantined` with reasons. |
+
+The current owner or a human administrator also receives `placements: [{state, reason, attempts, at, tokens}]` in the
+list view. Other callers receive an empty array. Tokens name only landed entries the caller can currently see;
+actor ids, anchors and source provenance stay internal. Pending plans have `state: "pending"`; abandonment uses
+`state: "abandoned"` with `actor_revoked`, `actor_deleted`, `actor_disabled` or `placement_retry_limit`. The last 32
+abandoned plans are retained. Recovery checks the original editor's current gate and starts at most three attempts,
+persisting the count before awaiting a move. Abandonment keeps landed membership and provenance at the actual order,
+and is audited. Restored editor access never restarts that plan. Pending plans do not block unrelated applies or
+other placeholder swaps. A write explicitly anchored to a pending entry answers retryable `409 placement_pending`.
+
+
+Bodies are capped at 16 KiB, except `items`, `apply`, `order` and list creation (1 MiB).
+
 ### Backup & restore
 
 Admin only. Jellyfin's own backups don't include plugin data.
@@ -2017,7 +2071,7 @@ curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" "$JE_URL/bookmarksPage"
 
 Reset enumerates existing canonical user configuration directories and replaces Enhanced settings using copied server defaults, with model-default exceptions. `WatchProgressMode` resets to `"percentage"` and `WatchProgressTimeFormat` to `"hours"`, even when the saved server defaults differ.
 
-Each person's own consents (automatic season and movie requests) are kept by the reset.
+Each person's own consents (automatic season and movie requests, list swap-in) are kept by the reset.
 
 Reset also resets Hidden Content settings while retaining items, and preferences in existing Spoiler Guard files while retaining protection lists. It does not reset bookmarks, reviews, shortcuts, or Elsewhere.
 

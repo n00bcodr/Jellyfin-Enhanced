@@ -486,16 +486,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (seasons.Count == 0 && all.Contains(0)) seasons.Add(0);
             }
             var only4k = asked.All(r => r.Is4k);
-            // Seerr's word on the variant asked for (a 4K request holds the 4K state).
-            var available = asked.Where(r => r.Active && r.MediaStatus == 5).ToList();
+            // Seerr's word on the variant asked for (a 4K request holds the 4K state), and its own match of the 4K copy
+            // (a hint for Play: used only when the viewer can open it). A list entry's status reads the same composition.
+            var availability = SeerrRequestReadModel.AvailabilityOf(records);
             return new ArrStatusService.RequestScope(
                 seasons,
                 only4k,
                 SeerrRequestReadModel.FactsOf(records, userId),
-                available.Count > 0,
-                available.Select(r => r.UpdatedAt ?? r.CreatedAt).Where(d => d.HasValue).DefaultIfEmpty(null).Max(),
-                // Seerr's own match of the 4K copy (a hint for Play: used only when the viewer can open it).
-                only4k ? asked.OrderByDescending(r => r.UpdatedAt ?? r.CreatedAt).Select(r => r.JellyfinItemId).FirstOrDefault(id => id.HasValue) : null);
+                availability.Available,
+                availability.AvailableAt,
+                availability.JellyfinItemId);
         }
 
         private byte[] Build(StatusViewer viewer, List<List<SeerrRequestRecord>> entries, IReadOnlyList<ArrStatusService.KeyedStatus> titles, PluginConfiguration? config, SeerrReadModelState state, bool arrDown, bool more)

@@ -44,6 +44,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool? AutoSeasonRequests { get; set; }
         /// <summary>As <see cref="AutoSeasonRequests"/>, for the collection completer (next movie in a collection).</summary>
         public bool? AutoMovieRequests { get; set; }
+        // Phase 4c1 (lists): per-person list preferences.
+        /// <summary>Requests &amp; downloads lists: show "not in your library" entries on playlists and collections. Null follows the administrator; false hides them for this person.</summary>
+        public bool? ListPlaceholders { get; set; }
+        /// <summary>Requests &amp; downloads lists: show request status on list entries. Null follows the administrator; false hides it for this person.</summary>
+        public bool? ListStatus { get; set; }
+        /// <summary>Requests &amp; downloads lists: automatic swap-in may change lists this person turned it on for (their consent). Null and false: no.</summary>
+        public bool? ListSwapIn { get; set; }
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
         public bool ShowSourceTag { get; set; } = true;

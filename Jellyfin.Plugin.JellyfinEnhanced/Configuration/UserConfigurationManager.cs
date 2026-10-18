@@ -107,6 +107,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Phase 4a: requests on the person's behalf.
             settings.AutoSeasonRequests = stored?.AutoSeasonRequests;
             settings.AutoMovieRequests = stored?.AutoMovieRequests;
+            // Phase 4c1: list swap-in.
+            settings.ListSwapIn = stored?.ListSwapIn;
         }
 
         /// <summary>

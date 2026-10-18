@@ -1627,6 +1627,105 @@ configuration page.
 | GET | `acquire/household/streaming-services?country=GB` | Jellyfin administrator; the services TMDB lists for a country |
 | POST | `acquire/requests/preview` | Anyone who may ask (phase 4): what a batch of up to 20 asks would do, nothing written |
 
+### Lists: titles not in the library on playlists and collections (phase 4)
+
+With lists on (*Lists: titles not in the library on playlists and collections*, under phase 4 and *Ask for it*, off by
+default), a playlist or collection can hold movies, whole series, seasons, specific episodes of one season and
+free-text entries that aren't in the library yet, in order with its real items. What a person sees, edits or asks for
+follows Jellyfin's own rights and the household's request rules:
+
+- **Who sees and edits a list.** A playlist is seen by its owner, the people it is shared with, everyone when it is
+  public, and administrators; it is edited by its owner, an edit share and administrators (an administrator editing
+  someone else's playlist adds real items as its owner, and only items the owner can open). A collection is seen by
+  everyone who can open it and edited by administrators and collection managers. Seeing a list never lets anyone edit
+  it, and editing it never lets anyone ask for something the request rules don't allow. Rights are checked again right
+  before every change reaches Jellyfin and before every answer: someone who loses a list (or gets a new limit, or is
+  disabled) while a change or a confirmation is on its way gets nothing more written for them and no look at the list;
+  what Jellyfin already took stays and is reported. Nothing is written as a disabled playlist owner. Request statuses in
+  an answer are the ones for the person's role as it is when the answer is made (an administrator demoted meanwhile
+  doesn't get an administrator's details).
+- **Creating a list.** A create that is sent again (a retry, also after the server stopped in the middle) continues with
+  the list its first attempt made (Jellyfin keeps a mark of it in the list's own folder), never with another list of the
+  same name. A new list never replaces another one: two people creating the same collection name at once get one
+  collection and a `name taken` answer, and a collection someone makes in Jellyfin itself meanwhile is left alone. A
+  collection name the server's collections folder already has is refused; a `[boxset]` folder of the same name in a
+  library doesn't count. JE never adds a share to a list it creates, so deleting its owner hands it to nobody. If the
+  list is deleted, retrying the same create answers "not found" for the retry retention period (30 days); making it
+  again needs a new request. This also holds when the server stopped before it recorded the new list, and when
+  Jellyfin re-adds the deleted folder with the same id. If the creator loses access while Jellyfin writes, the create
+  answers without the list's id, kind or name. A failed save of JE's chosen name keeps a name the person changed while
+  it was pending, including a rename made while the failed save is being handled. Creates, retries and recovery check
+  the saved name directly; a stale cached name never gives JE permission to rename the list again. Entry edits
+  copy the saved name and other editable metadata onto Jellyfin's cached item immediately before changing membership.
+  A native rename therefore stands and edits can continue. Retrying a create finishes naming only while the saved
+  name still carries that create's marker. Interrupted playlist placement verifies its saved position on both Jellyfin
+  versions and retries without inserting another copy. A later reorder through JE or Jellyfin supersedes the old
+  placement: JE keeps the new order and records `superseded_by_reorder`, including a native move away and back.
+  A recovery move requires the list's stored save stamp and order to match the proof of JE's last acknowledged write.
+  Each successful JE save advances both together for matching pending placements, so recovering one plan does not
+  invalidate another. An unattributed later save conservatively retires the plan. Missing anchors (`anchor_removed`) and older misplaced intents without a saved stamp
+  (`placement_evidence_missing`) also retire with a receipt. Failed, cancelled or unknown-outcome saves (including a lost
+  acknowledgement after membership landed) clear that placement's proof and never advance another placement's
+  proof. A misplaced run then retires visibly instead of moving. Proof is read immediately after successful native
+  completion, before any other continuation. Jellyfin provides no atomic save-and-stamp read or versioned save,
+  and native writers do not take JE's list lock: a native save within that observation window cannot be excluded.
+  Queued native refreshes and other later whole-item saves can conservatively retire a plan too. If its editor loses
+  access, is deleted or disabled, JE abandons that placement and keeps the landed entries where they are, with their
+  provenance. Three recovery attempts also bound a repeatedly failing move. Other entries can still be added and
+  swapped meanwhile; a write anchored to an entry still being placed gets a retryable conflict. JE validates the
+  whole addition first, including every placement segment: a refused request adds no real items or placeholders
+  and leaves the stored list unchanged. An anchor the editor cannot see gets the same conflict as a missing anchor.
+  After placement settles or is abandoned, retrying keeps new entries at their requested position. The list API shows
+  the owner or an administrator pending placements and the last 32 abandonment receipts, with visible entry tokens
+  and reason codes. Restoring an editor's access does not restart an abandoned placement. A native rename racing Jellyfin's own asynchronous
+  whole-item save remains a Jellyfin core limitation.
+- **Order.** Entries keep their place among the real items, also when the same item is in a playlist twice. Dragging an
+  entry moves it; dragging a real item moves it in Jellyfin too (only the first copy of a duplicated item can move).
+  Collections list their entries by release date, undated (TBA) ones last.
+- **What is already there goes in as itself.** Adding a title the library has puts the real item in its place; a
+  season or episodes entry puts the episodes that are there in episode order and keeps standing for the rest.
+- **Asking from a list** (*Ask for list entries*, *Request all missing*). Each person asks as themselves, through the
+  usual request rules: their allowance, approvals (Kids always wait), 4K permission, and the request handling in use
+  (Jellyfin Enhanced or Seerr). *Request all missing* shows first what it would ask for and what it would cost, and asks
+  for at most 20 titles per confirmation. A title someone already asked for is followed instead (no second request to
+  Sonarr/Radarr); two people asking for the same entry each keep their own request. Free-text entries, unreleased and
+  undated (TBA) titles are not asked for. A request made from a list remembers the list; removing the entry or the list
+  never cancels it. A confirmation sent again (a retry, also after a restart) asks for nothing twice, and for exactly
+  what was confirmed, even if an entry's details (a series' seasons) changed in between.
+- **Arrivals** (*Swap in titles that arrive*). When a title arrives, it takes its entry's place: a movie replaces it;
+  episodes go in one by one in episode order and the entry keeps standing for the rest until the season (or the listed
+  episodes) is complete. This happens only on lists whose editor turned swap-in on for the list *and* agreed in their
+  own Jellyfin Enhanced settings, and only while that person can still edit the list. A 4K entry needs an accessible,
+  playable 4K source, including alternate versions of the same movie or episode; its real item plays that version.
+  A standard entry accepts any playable copy, preferring non-4K. Grouped series include episodes from every accessible
+  folder. A 4K TV collection uses episode items when a Series or Season link would lose an alternate version's identity.
+  A 4K series entry filled that way works like a season: each 4K episode goes in as it arrives, one Jellyfin refused is
+  tried again on the next pass, and the entry stays until the series is complete.
+  If the server stops in the middle of putting an item in, the next start finishes or undoes it by what is actually in
+  the list, so an item never goes in twice. A 4K series keeps its episode links even if Jellyfin promotes the first
+  inserted alternate to the main version before recovery, including when the promotion clears its episode numbers:
+  the pending swap remembers the coordinates verified before the insert.
+- **Status** (*Show request status on list entries*). Each entry shows where its request stands, the same status as
+  everywhere else in Requests & downloads (a season entry shows that season's, an episodes entry only its own episodes';
+  a 4K entry follows the 4K copy and the 4K asks, so it isn't Ready while only the standard copy is in; in Seerr mode
+  without a 4K Radarr it reads Seerr's word on the 4K copy, as the Requests page does). Everyone can hide it for
+  themselves.
+- **Privacy.** A person with parental limits sees only entries whose rating is verified to be within them (anything
+  that can't be checked is hidden), and only the rows Jellyfin shows them; counts never include what they can't see.
+- **Deleted lists and people.** Deleting a playlist or collection removes its entries; deleting a person removes what
+  lists kept about them (their requests stay).
+- **Backups.** Lists are part of Jellyfin Enhanced backups. After a restore every list is checked against what is
+  really in Jellyfin before anything new goes in.
+
+Each person can, in the Jellyfin Enhanced panel (*Lists*): hide entries, hide their status, and agree that titles that
+arrive may take their place in lists they turned swap-in on for (off until they choose it). That agreement is theirs
+alone: an administrator saving their settings, or resetting everyone's, leaves it as it is.
+
+**Lists from the experimental list feature.** Administrators can bring over the lists of the earlier experimental
+list feature (its `list-placeholders` folder) with `GET /JellyfinEnhanced/arr/admin/lists/import` (a dry run that
+changes nothing) and `POST` (the import). The old files are only read. Lists whose playlist or collection is gone are
+left out, unreadable files are copied aside, and imported lists start with swap-in off and any linked source paused.
+
 ### Privacy and Seerr scans
 
 These rules apply to Seerr answers, the Calendar, and Seerr's scan trigger.

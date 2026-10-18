@@ -398,6 +398,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
         }
 
         /// <summary>
+        /// Raised after a restore wrote data files (on the restoring thread; handlers only queue work and must not throw):
+        /// services that keep data files in memory (lists) read them again and reconcile.
+        /// </summary>
+        public static event Action? DataRestored;
+
+        /// <summary>
         /// Restores a backup: verifies it completely, takes a safety copy of the current state, writes
         /// the data files (files not in the backup are left alone), stores the credentials (encrypted
         /// backups) and replaces the plugin configuration.
@@ -485,6 +491,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
                 // any other placeholder only keeps this install's key if its address is unchanged.
                 var report = ApplyConfiguration(restoredConfig, secrets?.Keys.ToList() ?? new List<string>());
                 if (report != null) missing.AddRange(report.Missing.Concat(report.NeedsReentry).Distinct(StringComparer.Ordinal));
+            }
+
+            if (written > 0)
+            {
+                try
+                {
+                    DataRestored?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    _logger?.Warning("JE backup: a restore listener failed: " + ex.Message);
+                }
             }
 
             _logger?.Info($"JE backup: restored {written} data file(s), {secrets?.Count ?? 0} credential(s), configuration {(restoredConfig != null ? "replaced" : "not in backup")}; safety copy {safety}"

@@ -2699,6 +2699,24 @@
                             <div class="checkboxContainer"><label><input id="arrPhase4SeerrRequestOptionsEnabled" is="emby-checkbox" type="checkbox"/><span>Administrators pick Seerr's server, profile and folder</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase4SeerrRequestOptionsEnabled"><div class="fieldDescription">Needs phase 4 and "Ask for it", with Seerr handling requests. Jellyfin administrators who also have Seerr's advanced request permission choose the Seerr server, quality profile and folder of their own requests; everyone else's requests use Seerr's defaults. Off by default.</div></div>
                             <!-- /Requests & downloads, phase 4b -->
+                            <!-- Phase 4c1: lists -->
+                            <div id="arrListSettings" class="je-arr-list-settings">
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListPlaceholdersEnabled" is="emby-checkbox" type="checkbox"/><span>Lists: titles not in the library on playlists and collections</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListPlaceholdersEnabled"><div class="fieldDescription">Needs phase 4 and "Ask for it". Playlists and collections can hold movies, series, seasons, episodes and free-text entries that aren't in the library yet, in order with the real items. Entries are kept per list in Jellyfin Enhanced's data folder (included in JE backups). Each list feature below has its own switch; with this off nothing about lists is shown or done.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListAuthoringEnabled" is="emby-checkbox" type="checkbox"/><span>Adding and editing list entries</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListAuthoringEnabled"><div class="fieldDescription">People who can edit a playlist (its owner, an edit share, administrators) or manage collections can add, link, reorder and remove entries and create lists. Seeing a list never lets anyone edit it.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListRequestsEnabled" is="emby-checkbox" type="checkbox"/><span>Ask for list entries</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListRequestsEnabled"><div class="fieldDescription">A Request action on entries, through the household's usual request rules: allowances, approvals, 4K permission and request handling (Jellyfin Enhanced or Seerr) apply as for any request, and each person's request counts against their own allowance. Seeing a list is not permission to ask.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListRequestAllEnabled" is="emby-checkbox" type="checkbox"/><span>Request all missing</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListRequestAllEnabled"><div class="fieldDescription">Asks for every entry the person can see and ask for, after a preview of what it would cost, at most 20 titles per confirmation.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListSwapInEnabled" is="emby-checkbox" type="checkbox"/><span>Swap in titles that arrive</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListSwapInEnabled"><div class="fieldDescription">When a title arrives in the library it takes its entry's place in the list (TV episode by episode, in episode order), only on lists whose editor turned it on and who also agreed in their own Jellyfin Enhanced settings. Items are added as the playlist's owner and only when the owner can open them.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListMaintenanceEnabled" is="emby-checkbox" type="checkbox"/><span>Daily list maintenance</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListMaintenanceEnabled"><div class="fieldDescription">Refreshes release dates and episode lists of entries once a day and settles titles that arrived while nobody looked. Deleted lists are cleaned up either way.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListStatusEnabled" is="emby-checkbox" type="checkbox"/><span>Show request status on list entries</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListStatusEnabled"><div class="fieldDescription">Each entry shows where its request stands (the same status as the rest of Requests &amp; downloads). Everyone can hide it for themselves.</div></div>
+                            </div>
+                            <!-- /Phase 4c1: lists -->
                             <!-- /Requests & downloads, phase 4 -->
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
@@ -6728,6 +6746,14 @@
             var num = function(v, d) { return (v !== undefined && v !== null) ? v : d; };
             document.querySelector('#arrPhase4Enabled').checked = config.ArrPhase4Enabled === true;
             document.querySelector('#arrPhase4AutomationEnabled').checked = config.ArrPhase4AutomationEnabled === true;
+            // Phase 4c1: lists
+            document.querySelector('#arrPhase4ListPlaceholdersEnabled').checked = config.ArrPhase4ListPlaceholdersEnabled === true;
+            document.querySelector('#arrPhase4ListAuthoringEnabled').checked = config.ArrPhase4ListAuthoringEnabled === true;
+            document.querySelector('#arrPhase4ListRequestsEnabled').checked = config.ArrPhase4ListRequestsEnabled === true;
+            document.querySelector('#arrPhase4ListRequestAllEnabled').checked = config.ArrPhase4ListRequestAllEnabled === true;
+            document.querySelector('#arrPhase4ListSwapInEnabled').checked = config.ArrPhase4ListSwapInEnabled === true;
+            document.querySelector('#arrPhase4ListMaintenanceEnabled').checked = config.ArrPhase4ListMaintenanceEnabled === true;
+            document.querySelector('#arrPhase4ListStatusEnabled').checked = config.ArrPhase4ListStatusEnabled === true;
             document.querySelector('#arrAutomationShadowOverride').checked = config.ArrAutomationShadowOverride === true;
             document.querySelector('#arrAutomationKillAll').checked = config.ArrAutomationKillAll === true;
             document.querySelector('#arrAutomationFree').checked = config.ArrAutomationFree === true;
@@ -6790,6 +6816,14 @@
             var clamp = function(id, d) { var n = parseInt(document.querySelector(id).value, 10); return isNaN(n) ? d : Math.min(100000, Math.max(0, n)); };
             config.ArrPhase4Enabled = document.querySelector('#arrPhase4Enabled').checked;
             config.ArrPhase4AutomationEnabled = document.querySelector('#arrPhase4AutomationEnabled').checked;
+            // Phase 4c1: lists
+            config.ArrPhase4ListPlaceholdersEnabled = document.querySelector('#arrPhase4ListPlaceholdersEnabled').checked;
+            config.ArrPhase4ListAuthoringEnabled = document.querySelector('#arrPhase4ListAuthoringEnabled').checked;
+            config.ArrPhase4ListRequestsEnabled = document.querySelector('#arrPhase4ListRequestsEnabled').checked;
+            config.ArrPhase4ListRequestAllEnabled = document.querySelector('#arrPhase4ListRequestAllEnabled').checked;
+            config.ArrPhase4ListSwapInEnabled = document.querySelector('#arrPhase4ListSwapInEnabled').checked;
+            config.ArrPhase4ListMaintenanceEnabled = document.querySelector('#arrPhase4ListMaintenanceEnabled').checked;
+            config.ArrPhase4ListStatusEnabled = document.querySelector('#arrPhase4ListStatusEnabled').checked;
             config.ArrAutomationShadowOverride = document.querySelector('#arrAutomationShadowOverride').checked;
             config.ArrAutomationKillAll = document.querySelector('#arrAutomationKillAll').checked;
             config.ArrAutomationFree = document.querySelector('#arrAutomationFree').checked;
@@ -10550,6 +10584,11 @@
             { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrRequestBackend', 'arrSeerrMigrationBtn', 'arrRequest4kMoviesEnabled', 'arrRequest4kSeriesEnabled', 'arrStandardNeedsNonFourK', 'arrRequestPreset', 'arrRequestDefaultRole', 'arrRequestUsers', 'arrRequestRoles', 'arrRequestQuotaLimit', 'arrRequestQuotaWindowDays', 'arrRequestSeriesThreshold', 'arrRequestDeclineCooldownDays', 'arrRequestPendingLimit', 'arrRequestQuotaGb', 'arrRequestStaleDays', 'arrRequestChargeFutureSeasons', 'arrKidsHideSearch', 'arrPhase4AutomationEnabled', 'arrPhase4HouseholdRulesEnabled', 'arrPhase4GroupQuotasEnabled', 'arrPhase4SeerrRequestOptionsEnabled'] },
             { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4AutomationEnabled', 'arrPhase4HouseholdRulesEnabled', 'arrPhase4GroupQuotasEnabled', 'arrPhase4SeerrRequestOptionsEnabled'] },
             { parent: 'arrPhase4HouseholdRulesEnabled', label: 'Household rules', children: ['arrPhase4GroupQuotasEnabled'] },
+            // Phase 4c1: lists
+            { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4ListPlaceholdersEnabled'] },
+            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrPhase4ListPlaceholdersEnabled'] },
+            { parent: 'arrPhase4ListPlaceholdersEnabled', label: 'Lists', children: ['arrPhase4ListAuthoringEnabled', 'arrPhase4ListRequestsEnabled', 'arrPhase4ListSwapInEnabled', 'arrPhase4ListMaintenanceEnabled', 'arrPhase4ListStatusEnabled'] },
+            { parent: 'arrPhase4ListRequestsEnabled', label: 'Ask for list entries', children: ['arrPhase4ListRequestAllEnabled'] },
             { parent: 'arrPhase4AutomationEnabled', label: 'Automation engine', children: ['arrAutomationRecipe_auto_season', 'arrAutomationRecipe_auto_movie', 'arrAutomationRecipe_keep_up', 'arrAutomationRecipe_list_acquire_ahead', 'arrAutomationRecipe_release_day', 'arrAutomationRecipe_list_sync', 'arrAutomationRecipe_list_sync_requests', 'arrAutomationKillAll', 'arrAutomationHouseholdAddsPerDay', 'arrAutomationSearchesPerHour', 'arrAutomationSearchesPerDay', 'arrAutomationSeerrPostsPerDay', 'arrAutomationSourceFetchesPerHour', 'arrAutomationDeltaWorkPerHour', 'arrAutomationFree'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },

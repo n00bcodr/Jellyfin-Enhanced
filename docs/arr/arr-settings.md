@@ -756,6 +756,48 @@ permissions), and Seerr's server list and server details (`jellyseerr/sonarr`, `
 open. With the switch off they behave as before. Family members' request lists and the Requests page never show a
 chosen server, profile or folder.
 
+#### Lists (phase 4)
+
+All off by default. Lists need phase 4 and *Ask for it*; each switch below also needs *Lists*. See
+[Lists](arr-features.md#lists-titles-not-in-the-library-on-playlists-and-collections-phase-4).
+
+| Setting | Default | What it does |
+|---|---|---|
+| Lists: titles not in the library on playlists and collections (`ArrPhase4ListPlaceholdersEnabled`) | off | Lists themselves. Off: nothing about lists is shown or done (deleted lists are still cleaned up). |
+| Adding and editing list entries (`ArrPhase4ListAuthoringEnabled`) | off | People who can edit a list may add, link, reorder and remove entries and create lists. |
+| Ask for list entries (`ArrPhase4ListRequestsEnabled`) | off | A Request action on entries, through the usual request rules. |
+| Request all missing (`ArrPhase4ListRequestAllEnabled`) | off | Asking for several entries at once, after a preview; at most 20 per confirmation. Needs *Ask for list entries*. |
+| Swap in titles that arrive (`ArrPhase4ListSwapInEnabled`) | off | Arrivals take their entry's place, on lists whose editor turned it on and agreed in their own settings. |
+| Daily list maintenance (`ArrPhase4ListMaintenanceEnabled`) | off | Daily refresh of release dates and episode lists, and arrivals nobody looked at. |
+| Show request status on list entries (`ArrPhase4ListStatusEnabled`) | off | The shared request status on entries. |
+
+Per person (Jellyfin Enhanced panel, *Lists*, shown while lists are on): *Show titles not in the library on lists* and
+*Show where each list title's request stands* follow the household (default) or are hidden; *Let titles that arrive take
+their place in lists I turned this on for* is *No* until the person chooses *Yes*.
+
+The scheduled task *Requests & downloads: list maintenance* (daily, 04:30) removes the data of deleted lists and old
+list records; with *Daily list maintenance* on it also refreshes entries and runs a full pass. Deleted creates keep a
+30-day retry marker, so retrying the old request cannot recreate the list. A 4K entry uses an accessible, playable 4K
+source, including alternate versions; a standard entry accepts any playable copy. Entry edits and maintenance swaps
+preserve the saved name and editable metadata even when Jellyfin's cached item is stale. Interrupted placement retries without inserting another copy, for at most three recovery attempts. Lost editor
+access (revoked, deleted or disabled) abandons the placement immediately, retaining landed membership, order and
+provenance. Other writes and arrivals continue; writes anchored to a pending entry get a retryable conflict without
+adding any of the request's real items or placeholders, or consuming a recovery attempt. Hidden anchors are answered
+like missing anchors. Retry after settlement or abandonment preserves the requested position. The list API exposes visible pending/abandoned placement receipts to the current owner or an administrator (last 32 retained).
+Recovery verifies placement on both Jellyfin versions. A later JE or native reorder keeps the person's order and
+records `superseded_by_reorder`, including a native move away and back. A recovery move requires the unchanged
+stored save stamp and verified order from JE's last acknowledged native write. Successful JE saves advance both
+together for matching pending placements; an unattributed later save (including metadata or membership edits)
+conservatively retires the plan. Missing anchors record `anchor_removed`; older misplaced plans without a saved stamp record
+`placement_evidence_missing`.
+Failed, cancelled or unknown-outcome writes clear the active placement's proof and never advance other pending
+placements' proof. This includes writes that landed but lost their acknowledgement. A required move then retires with
+`placement_evidence_missing`; an already verified placement can settle without a move. Successful-save proof is read
+immediately, before another continuation. Jellyfin has no atomic save-and-stamp read or versioned save, and native
+writers do not take JE's lock, so native saves within that window remain a host limitation. A later queued forced
+refresh, scan or metadata save can also conservatively retire a misplaced plan.
+There is no new setting or automatic retry after abandonment.
+
 #### Household tab
 
 Admins can edit the preset, default role, quota limit, per-role limits, and each person's role and limit from the Household tab of the Requests page instead of the JSON fields.

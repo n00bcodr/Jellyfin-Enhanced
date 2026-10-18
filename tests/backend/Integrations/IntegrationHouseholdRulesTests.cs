@@ -1057,9 +1057,9 @@ INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,s
                 });
                 Assert.Equal(new[] { "first:1", "held:-", "late:3", "second:2" }, order);
             }
-            Assert.Single(Directory.GetFiles(root, "acquire.db.pre-v4.*"));
+            Assert.Single(Directory.GetFiles(root, $"acquire.db.pre-v{AcquireDatabase.Migrations.Count}.*"));
             using (var again = new AcquireDatabase(path)) Assert.True(again.Available);
-            Assert.Single(Directory.GetFiles(root, "acquire.db.pre-v4.*"));
+            Assert.Single(Directory.GetFiles(root, $"acquire.db.pre-v{AcquireDatabase.Migrations.Count}.*"));
         }
         finally
         {
@@ -1087,7 +1087,7 @@ INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,s
             using (var db = new AcquireDatabase(path))
             {
                 Assert.True(db.Available);
-                Assert.Equal(4, db.Version);
+                Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
                 Assert.Equal(2L, db.Read(c =>
                 {
                     using var cmd = c.CreateCommand();
@@ -1095,7 +1095,7 @@ INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,s
                     return (long)cmd.ExecuteScalar()!;
                 }));
             }
-            using (var again = new AcquireDatabase(path)) Assert.Equal(4, again.Version);
+            using (var again = new AcquireDatabase(path)) Assert.Equal(AcquireDatabase.Migrations.Count, again.Version);
         }
         finally
         {

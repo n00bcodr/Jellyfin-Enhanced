@@ -465,6 +465,120 @@ public class ApiArrRequestsHubTests
     }
 
     [Fact]
+    public async Task AFourKListEntryFollowsTheFourKCopyNotTheStandardOneJellyfinHas()
+    {
+        // Sintel is in Jellyfin (and the standard Radarr) in standard quality, from Emma's standard request; Radarr 4K
+        // doesn't have it and nobody asked for 4K.
+        using var rig = await Ready();
+        var lists = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ArrListStatusSource(rig.Service, rig.View);
+        var key = TitleKey.Parse("movie:tmdb:45745")!;
+        var fourK = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusPart(key, null, true);
+
+        var standard = await lists.StatusesAsync(rig.Emma.UserId, new[] { key }, default);
+        Assert.Equal("ready", standard[key.ToString()].GetProperty("stage").GetString());
+        var part = (await lists.PartStatusesAsync(rig.Emma.UserId, new[] { fourK }, default))[fourK.Id];
+        Assert.NotEqual(key.ToString(), fourK.Id);
+        Assert.NotEqual("ready", part.GetProperty("stage").GetString());
+        // Her fulfilled standard request says nothing about the 4K copy.
+        Assert.NotEqual("ready", part.GetProperty("reason").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task AFourKListEntryFollowsTheFourKAskOnly()
+    {
+        // Sam asks for Sintel in 4K: the 4K entry waits for its OK; the standard entry stays Ready.
+        using var rig = await Ready(r => r.Seerr.Requests.Add(FakeSeerr.Request(21, "movie", 45745, 1, r.Sam.UserId, Asked.AddHours(6), is4k: true)));
+        var lists = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ArrListStatusSource(rig.Service, rig.View);
+        var key = TitleKey.Parse("movie:tmdb:45745")!;
+        var fourK = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusPart(key, null, true);
+
+        var part = (await lists.PartStatusesAsync(rig.Sam.UserId, new[] { fourK }, default))[fourK.Id];
+        Assert.Equal("asked", part.GetProperty("stage").GetString());
+        Assert.Equal("ready", (await lists.StatusesAsync(rig.Sam.UserId, new[] { key }, default))[key.ToString()].GetProperty("stage").GetString());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AFourKListEntryReadsSeerrsAvailabilityLikeTheRequestsPageWithNoFourKInstance(bool fourKSource)
+    {
+        // No 4K Radarr in Jellyfin Enhanced; Sam's 4K Sintel request is OK'd and Seerr says the 4K copy is available,
+        // matched to a Jellyfin item Sam can open. A 4K copy is one with a 4K source (D44, the edition core): with its
+        // 2160p file the Requests page shows it ready, without one it doesn't. The 4K list entry must say the same.
+        var fourKItem = Guid.NewGuid();
+        using var rig = await Ready(r =>
+        {
+            Roles(r, radarr4k: false, sonarr4k: false);
+            var request = FakeSeerr.Request(21, "movie", 45745, 2, r.Sam.UserId, Asked.AddHours(6), Asked.AddHours(7), is4k: true);
+            request["media"]!["status4k"] = 5;
+            request["media"]!["jellyfinMediaId4k"] = fourKItem.ToString("N");
+            r.Seerr.Requests.Add(request);
+            r.View.AddCopy(TitleKey.Parse("movie:tmdb:45745")!, new JfCopy { ItemId = fourKItem, Path = "/media/movies4k/Sintel (2010)/Sintel.mkv", LibraryName = "Movies 4K", DateCreated = Asked.AddHours(7) });
+            if (fourKSource) r.View.AddSource(fourKItem, 3840, 2160, created: Asked.AddHours(7));
+        });
+        var page = Root(await Hub(rig, rig.Sam));
+        var row = Find(page, "ready", "movie:tmdb:45745");
+        var lists = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ArrListStatusSource(rig.Service, rig.View);
+        var key = TitleKey.Parse("movie:tmdb:45745")!;
+        var fourK = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusPart(key, null, true);
+
+        var part = (await lists.PartStatusesAsync(rig.Sam.UserId, new[] { fourK }, default))[fourK.Id];
+
+        if (fourKSource)
+        {
+            Assert.NotNull(row);
+            Assert.Equal(row!.Value.GetProperty("status").GetProperty("stage").GetString(), part.GetProperty("stage").GetString());
+            Assert.Equal("ready", part.GetProperty("stage").GetString());
+        }
+        else
+        {
+            Assert.Null(row);
+            var mine = Find(page, "mine", "movie:tmdb:45745");
+            Assert.NotNull(mine);
+            Assert.Equal(mine!.Value.GetProperty("status").GetProperty("stage").GetString(), part.GetProperty("stage").GetString());
+            Assert.NotEqual("ready", part.GetProperty("stage").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task AnExactEpisodeListEntryFollowsThoseEpisodesOnly()
+    {
+        // Firefly: S1E1 is in Jellyfin; S1E4 is monitored in Sonarr with no file yet.
+        using var rig = await Ready();
+        var lists = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ArrListStatusSource(rig.Service, rig.View);
+        var key = TitleKey.Parse("tv:tvdb:78874")!;
+        var first = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusPart(key, null, false, new[] { (1, 1) });
+        var fourth = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusPart(key, null, false, new[] { (1, 4) });
+
+        var statuses = await lists.PartStatusesAsync(rig.Admin.UserId, new[] { first, fourth }, default);
+
+        Assert.Equal(("tv:tvdb:78874:s1:e1", "tv:tvdb:78874:s1:e4"), (first.Id, fourth.Id));
+        Assert.Equal("ready", statuses[first.Id].GetProperty("stage").GetString());
+        Assert.NotEqual("ready", statuses[fourth.Id].GetProperty("stage").GetString());
+    }
+
+    [Fact]
+    public async Task AListSeasonEntryOfAShowNoSonarrHoldsIsOutOnceItsEpisodesAired()
+    {
+        // Game of Thrones is in no Sonarr and not in Jellyfin; its first season aired in 2011.
+        using var rig = await Ready();
+        var lists = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ArrListStatusSource(rig.Service, rig.View);
+        var key = TitleKey.Parse("tv:tvdb:121361")!;
+        var aired = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusSeason(key, 1399, 1, new (int, DateTime?)[] { (1, new DateTime(2011, 4, 17)), (2, new DateTime(2011, 4, 24)) }, Released: true);
+        var unknown = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusSeason(key, 1399, 2, Array.Empty<(int, DateTime?)>(), Released: true);
+        var future = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusSeason(key, 1399, 9, new (int, DateTime?)[] { (1, new DateTime(2099, 1, 1)) }, Released: false);
+
+        var statuses = await lists.SeasonStatusesAsync(rig.Admin.UserId, new[] { aired, unknown, future }, default);
+
+        var first = statuses[Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusKeys.SeasonId(key, 1)];
+        Assert.NotEqual("notOut", first.GetProperty("stage").GetString());
+        Assert.Equal(2, first.GetProperty("summary").GetProperty("aired").GetInt32());
+        // A season that premiered but whose episodes aren't known yet has no status rather than "not out yet".
+        Assert.False(statuses.ContainsKey(Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusKeys.SeasonId(key, 2)));
+        Assert.Equal("notOut", statuses[Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.ListStatusKeys.SeasonId(key, 9)].GetProperty("stage").GetString());
+    }
+
+    [Fact]
     public async Task AFourKRequestAfterTheStandardCopyArrivedIsItsOwnEditionNotShownReadyByTheStandardCopy()
     {
         // Emma's standard Sintel is here (Ready); she then asks Seerr for the 4K copy, which Radarr 4K doesn't have.

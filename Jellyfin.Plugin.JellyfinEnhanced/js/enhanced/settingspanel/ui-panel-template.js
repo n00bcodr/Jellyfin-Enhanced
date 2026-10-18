@@ -561,6 +561,28 @@
                                 ${select('autoMovieRequestsSelect', 'autoMovieRequests', 'panel_settings_ui_auto_requests_movie')}
                             </div>`;
                             })() : ''}
+                            ${JE.pluginConfig?.ArrListsEnabled === true ? (() => {
+                                // Phase 4c1: per-person list preferences. Display preferences: "" follows the household
+                                // (null), "off" hides. Swap-in is a consent: only an explicit yes counts.
+                                const pick = (key) => {
+                                    const value = JE.currentSettings?.[key] ?? JE.userConfig?.settings?.[key];
+                                    return value === true ? 'on' : value === false ? 'off' : '';
+                                };
+                                const select = (id, key, labelKey, options) => `
+                                    <label for="${id}" style="display:block; font-size:12px; color:rgba(255,255,255,0.6); margin:10px 0 4px;">${escapeHtml(JE.t(labelKey))}</label>
+                                    <select id="${id}" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
+                                        ${options.map(([value, optionKey]) => `<option value="${value}" ${pick(key) === value ? 'selected' : ''}>${escapeHtml(JE.t(optionKey))}</option>`).join('')}
+                                    </select>`;
+                                const display = [['', 'panel_settings_lists_follow'], ['off', 'panel_settings_lists_hide']];
+                                return `
+                            <div style="margin-top: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <div style="font-weight:500;">${escapeHtml(JE.t('panel_settings_lists'))}</div>
+                                <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_settings_lists_desc'))}</div>
+                                ${select('listPlaceholdersSelect', 'listPlaceholders', 'panel_settings_lists_entries', display)}
+                                ${JE.pluginConfig?.ArrListStatusEnabled === true ? select('listStatusSelect', 'listStatus', 'panel_settings_lists_status', display) : ''}
+                                ${JE.pluginConfig?.ArrListSwapInEnabled === true ? select('listSwapInSelect', 'listSwapIn', 'panel_settings_lists_swapin', [['', 'panel_settings_lists_swapin_no'], ['on', 'panel_settings_lists_swapin_yes']]) : ''}
+                            </div>`;
+                            })() : ''}
                         </div>
                     </section>
                     ${/* Hidden Content settings — only rendered when the module is initialized (controlled by HiddenContentEnabled config) */ ''}

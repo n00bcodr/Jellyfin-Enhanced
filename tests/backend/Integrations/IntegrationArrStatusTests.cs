@@ -308,6 +308,33 @@ public class IntegrationArrStatusTests
     }
 
     [Fact]
+    public void ASeasonWhoseAiredEpisodesAreAllUnmonitoredAndNoneHereIsNeverReady()
+    {
+        // 4c1 (list season entries use the season's status): Sonarr has the show, season 2 aired but unmonitored, nothing
+        // of it on disk or in Jellyfin. The stage is None; the reason must not say "ready".
+        var series = new ArrSeriesEntry { Id = 3, TvdbId = 279121, Title = "Show", Monitored = true, Added = Now.AddHours(-2) };
+        var episodes = new ArrEpisodesSnapshot(3, new[]
+        {
+            new ArrEpisodeEntry { Id = 11, SeasonNumber = 1, EpisodeNumber = 1, AirDateUtc = Now.AddDays(-300), HasFile = true, Monitored = true },
+            new ArrEpisodeEntry { Id = 21, SeasonNumber = 2, EpisodeNumber = 1, AirDateUtc = Now.AddDays(-30), Monitored = false },
+            new ArrEpisodeEntry { Id = 22, SeasonNumber = 2, EpisodeNumber = 2, AirDateUtc = Now.AddDays(-23), Monitored = false },
+        });
+        var facts = new TitleFacts(ShowKey);
+        facts.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = episodes });
+        var jf = new List<JfEpisode> { new() { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = Now.AddDays(-299) } };
+        var season = StatusComposer.Season(facts, new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = ShowKey.WithSeason(2), SeriesId = SeriesItem, Season = 2, Virtual = true }, jf, Ctx(), detail: false);
+        Assert.Equal(StatusStage.None, season.Stage);
+        Assert.Equal(StatusReasonCode.Unmonitored, season.Reason.Code);
+        // An ask for that season waiting for an OK: the season says so (as the Requests page does), not "not fetched".
+        var pending = new RequestFacts { Pending = true, AskedByViewer = true, AskedAt = Now.AddMinutes(-5), ViewerSeasons = new[] { 2 } };
+        var asked = StatusComposer.Season(facts, new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = ShowKey.WithSeason(2), SeriesId = SeriesItem, Season = 2, Virtual = true }, jf, Ctx(), detail: true, request: pending);
+        Assert.Equal((StatusStage.Asked, StatusReasonCode.AwaitingApproval), (asked.Stage, asked.Reason.Code));
+        // The season that is here still reads Ready.
+        var first = StatusComposer.Season(facts, new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = ShowKey.WithSeason(1), SeriesId = SeriesItem, Season = 1 }, jf, Ctx(), detail: false);
+        Assert.Equal((StatusStage.Ready, StatusReasonCode.Ready), (first.Stage, first.Reason.Code));
+    }
+
+    [Fact]
     public void ASeriesSeasonOrRequestWhoseMissingEpisodesAreAllMissingForALongWhileReadsMissing()
     {
         // Season 2's three aired, monitored episodes have had nothing grabbed for weeks (each reads "Missing" on its

@@ -4075,6 +4075,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ArrKidsHideSearch,
                 // Phase 4 automation engine in effect: each person's automatic-request preferences show only then.
                 ArrAutomationEngineEnabled = Services.Acquire.Automation.AutomationFlags.Engine(config),
+                // Phase 4c1: effective list switches (each already includes its parents; per-person preferences are in user settings).
+                ArrListsEnabled = Services.Acquire.Lists.ListFlags.Lists(config),
+                ArrListAuthoringEnabled = Services.Acquire.Lists.ListFlags.Authoring(config),
+                ArrListRequestsEnabled = Services.Acquire.Lists.ListFlags.Requests(config),
+                ArrListRequestAllEnabled = Services.Acquire.Lists.ListFlags.RequestAll(config),
+                ArrListSwapInEnabled = Services.Acquire.Lists.ListFlags.SwapIn(config),
+                ArrListStatusEnabled = Services.Acquire.Lists.ListFlags.Status(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,

@@ -983,6 +983,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Server-owned group quota pools (JSON array, in precedence order). Edited on the Household tab.</summary>
         public string ArrGroupQuotaPools { get; set; } = string.Empty;
+        // ---- Phase 4c1: lists (playlist and collection entries for titles not in the library) ----
+
+        /// <summary>
+        /// Lists: playlists and collections can hold titles that aren't in the library yet (movies, series, seasons,
+        /// episodes, custom entries), in order with the real items. Needs <see cref="ArrPhase4Enabled"/> and
+        /// <see cref="ArrPhase3Enabled"/>. Off by default; each list feature below has its own switch.
+        /// </summary>
+        public bool ArrPhase4ListPlaceholdersEnabled { get; set; }
+
+        /// <summary>Lists: people who can edit a list may add, edit, link, reorder and remove its entries and create lists. Off by default.</summary>
+        public bool ArrPhase4ListAuthoringEnabled { get; set; }
+
+        /// <summary>Lists: ask for a list entry (Request) through the household's normal request rules. Off by default.</summary>
+        public bool ArrPhase4ListRequestsEnabled { get; set; }
+
+        /// <summary>Lists: "Request all missing" (a preview first, at most 20 titles per confirmation). Needs <see cref="ArrPhase4ListRequestsEnabled"/>. Off by default.</summary>
+        public bool ArrPhase4ListRequestAllEnabled { get; set; }
+
+        /// <summary>
+        /// Lists: when a title arrives in the library it takes its entry's place in the list (TV episode by episode), on
+        /// lists whose editor turned it on and who agreed in their own settings. Off by default.
+        /// </summary>
+        public bool ArrPhase4ListSwapInEnabled { get; set; }
+
+        /// <summary>Lists: daily maintenance (release dates and episode lists of entries, removed lists, missed arrivals). Off by default.</summary>
+        public bool ArrPhase4ListMaintenanceEnabled { get; set; }
+
+        /// <summary>Lists: show where each entry's request stands (the shared request status). Off by default.</summary>
+        public bool ArrPhase4ListStatusEnabled { get; set; }
 
         // ---- Requests & downloads, phase 1: status on pages and live updates ----
 

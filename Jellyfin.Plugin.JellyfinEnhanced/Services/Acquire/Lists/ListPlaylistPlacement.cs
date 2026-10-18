@@ -1,0 +1,322 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
+
+namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
+{
+    /// <summary>
+    /// Puts new real items into a playlist at a placeholder-order position (shared by adds/applies and swap-in).
+    /// </summary>
+    internal static class ListPlaylistPlacement
+    {
+        /// <summary>
+        /// Puts a contiguous run of new real items into Jellyfin right after <paramref name="anchor"/>, in the coordinate
+        /// system the Jellyfin version needs (jf12: one positional insert at the raw index; jf10: append, then move each
+        /// into place as the owner with the move(s) that replay to the target order), then verifies Jellyfin's actual
+        /// order (A5): one misplaced item is moved again, anything else falls back to Jellyfin's order with placeholders
+        /// reconciled to their anchors.
+        /// </summary>
+        /// <param name="host">Jellyfin seam.</param>
+        /// <param name="logger">JE logger.</param>
+        /// <param name="listId">Playlist.</param>
+        /// <param name="listIdN">Playlist id ("N", for logs).</param>
+        /// <param name="owner">Playlist owner (whose rows the moves are computed against).</param>
+        /// <param name="items">New items, in order.</param>
+        /// <param name="anchor">Real token the run goes after (null = start).</param>
+        /// <param name="desired">The desired canonical order with the run's tokens inserted.</param>
+        /// <param name="inserted">The tokens the new items carry in <paramref name="desired"/>.</param>
+        /// <param name="write">
+        /// The gate, asked right before each Jellyfin write (the insert, then every move that places it) for that write's
+        /// grant; it throws when the write isn't allowed any more, which stops the placement there.
+        /// </param>
+        /// <param name="saved">Records the verified order and durable stamp together after successful saves; failed or unknown saves supply null.</param>
+        /// <returns>The canonical order after the insert (desired, or Jellyfin's actual order reconciled).</returns>
+        public static async Task<List<string>> PlaceAsync(
+            IListHost host,
+            Logger logger,
+            Guid listId,
+            string listIdN,
+            User owner,
+            IReadOnlyList<Guid> items,
+            string? anchor,
+            List<string> desired,
+            IReadOnlyList<string> inserted,
+            Func<ListWriteKind, IReadOnlyList<Guid>, ListWrite> write,
+            Action<ListPlaylistSave?, ListPlaylistSave?>? saved = null)
+        {
+            var ownerVisible = new Dictionary<Guid, bool>();
+            bool VisibleToOwner(Guid itemId)
+            {
+                if (!ownerVisible.TryGetValue(itemId, out var visible))
+                {
+                    try
+                    {
+                        visible = host.IsEntryVisible(itemId, owner);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.Debug($"[Lists] Visibility check failed for {itemId:N}: {ex.Message}");
+                        visible = false;
+                    }
+
+                    ownerVisible[itemId] = visible;
+                }
+
+                return visible;
+            }
+
+            if (host.SupportsPositionalInsert)
+            {
+                var position = ListOrder.RawInsertPosition(host.GetRawEntries(listId), anchor);
+                await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, position), raw => Insert(raw, items, position, true), saved)).ConfigureAwait(false);
+            }
+            else
+            {
+                await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, null), raw => Insert(raw, items, null, false), saved)).ConfigureAwait(false);
+                var raw = host.GetRawEntries(listId);
+                var current = ListOrder.BuildRealTokens(raw);
+                var previous = anchor;
+                foreach (var token in inserted)
+                {
+                    if (!current.Contains(token))
+                    {
+                        continue; // Jellyfin dropped it; the verification below settles the order
+                    }
+
+                    var target = current.Where(t => t != token).ToList();
+                    target.Insert(previous == null ? 0 : target.IndexOf(previous) + 1, token);
+                    ListOrder.TryParseReal(token, out var itemId, out _);
+                    // No move reaching the target (hidden rows / dangling links in the way): the verification settles it.
+                    var moves = ListOrder.FindMoves(raw, itemId, target, VisibleToOwner) ?? Array.Empty<int>();
+                    foreach (var newIndex in moves)
+                    {
+                        await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex), raw => ListOrder.SimulateMove(raw, itemId, newIndex, VisibleToOwner), saved)).ConfigureAwait(false);
+                    }
+
+                    if (moves.Count > 0)
+                    {
+                        raw = host.GetRawEntries(listId);
+                        current = ListOrder.BuildRealTokens(raw);
+                    }
+
+                    previous = token;
+                }
+            }
+
+            var actualRaw = host.GetRawEntries(listId);
+            var actual = ListOrder.BuildRealTokens(actualRaw);
+            var desiredReal = desired.Where(ListOrder.IsReal).ToList();
+            if (!actual.SequenceEqual(desiredReal, StringComparer.Ordinal) && items.Count == 1 && actual.Contains(inserted[0])
+                && !FollowsAnchor(actual, inserted[0], anchor) && (anchor == null || actual.Contains(anchor)))
+            {
+                // One misplaced item: move it right after its anchor in Jellyfin's CURRENT rows (a native edit may have
+                // landed since the insert, so JE's pre-insert view can't give the index).
+                var target = actual.Where(t => t != inserted[0]).ToList();
+                target.Insert(anchor == null ? 0 : target.IndexOf(anchor) + 1, inserted[0]);
+                var moves = ListOrder.FindMoves(actualRaw, items[0], target, VisibleToOwner) ?? Array.Empty<int>();
+                foreach (var newIndex in moves)
+                {
+                    await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { items[0] }), items[0], newIndex), raw => ListOrder.SimulateMove(raw, items[0], newIndex, VisibleToOwner), saved)).ConfigureAwait(false);
+                }
+
+                if (moves.Count > 0)
+                {
+                    actual = ListOrder.BuildRealTokens(host.GetRawEntries(listId));
+                }
+            }
+
+            if (actual.SequenceEqual(desiredReal, StringComparer.Ordinal))
+            {
+                return desired;
+            }
+
+            if (items.Count == 1 && FollowsAnchor(actual, inserted[0], anchor))
+            {
+                // The item is where asked; the rest of the difference is someone else's edit meanwhile.
+                logger.Debug($"[Lists] List {listIdN} changed while new entries were placed; keeping Jellyfin's order.");
+            }
+            else
+            {
+                logger.Warning($"[Lists] Jellyfin placed new entries of list {listIdN} differently than requested; keeping Jellyfin's order.");
+            }
+
+            return ListOrder.Reconcile(desired, actual, desired.Select(ListOrder.PlaceholderIdOf).OfType<string>().ToList());
+        }
+
+        /// <summary>
+        /// Moves entries already in the playlist after an interrupted or failed placement to right after
+        /// <paramref name="anchor"/>, in order, on either host, using Jellyfin's native move semantics.
+        /// </summary>
+        /// <param name="host">Jellyfin seam.</param>
+        /// <param name="logger">JE logger.</param>
+        /// <param name="listId">Playlist.</param>
+        /// <param name="owner">Playlist owner (whose rows the moves are computed against).</param>
+        /// <param name="anchor">Real token the entries go after (null = start); must still exist.</param>
+        /// <param name="tokens">The entries' real tokens, in order.</param>
+        /// <param name="write">The gate, asked right before each move for its grant (throws when it isn't allowed).</param>
+        /// <param name="saved">Records successful-save proof, or clears active evidence on a failed or unknown save.</param>
+        /// <returns>Jellyfin's real tokens afterwards.</returns>
+        public static async Task<List<string>> MoveAfterAnchorAsync(
+            IListHost host,
+            Logger logger,
+            Guid listId,
+            User owner,
+            string? anchor,
+            IReadOnlyList<string> tokens,
+            Func<ListWriteKind, IReadOnlyList<Guid>, ListWrite> write,
+            Action<ListPlaylistSave?, ListPlaylistSave?>? saved = null)
+        {
+            var raw = host.GetRawEntries(listId);
+            var current = ListOrder.BuildRealTokens(raw);
+            if (anchor != null && !current.Contains(anchor))
+            {
+                return current;
+            }
+
+            var ownerVisible = new Dictionary<Guid, bool>();
+            bool VisibleToOwner(Guid itemId)
+            {
+                if (!ownerVisible.TryGetValue(itemId, out var visible))
+                {
+                    try
+                    {
+                        visible = host.IsEntryVisible(itemId, owner);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.Debug($"[Lists] Visibility check failed for {itemId:N}: {ex.Message}");
+                        visible = false;
+                    }
+
+                    ownerVisible[itemId] = visible;
+                }
+
+                return visible;
+            }
+
+            var previous = anchor;
+            foreach (var token in tokens)
+            {
+                if (!current.Contains(token))
+                {
+                    continue;
+                }
+
+                var target = current.Where(t => t != token).ToList();
+                target.Insert(previous == null ? 0 : target.IndexOf(previous) + 1, token);
+                ListOrder.TryParseReal(token, out var itemId, out _);
+                // The move(s) that replay Jellyfin's MoveItemAsync to the target; none reachable = leave it.
+                var moves = ListOrder.FindMoves(raw, itemId, target, VisibleToOwner) ?? Array.Empty<int>();
+                foreach (var newIndex in moves)
+                {
+                    await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex), raw => ListOrder.SimulateMove(raw, itemId, newIndex, VisibleToOwner), saved)).ConfigureAwait(false);
+                }
+
+                if (moves.Count > 0)
+                {
+                    raw = host.GetRawEntries(listId);
+                    current = ListOrder.BuildRealTokens(raw);
+                }
+
+                previous = token;
+            }
+
+            return current;
+        }
+
+        // A stamp is evidence only after an acknowledged successful native save. Capture it before the
+        // continuation hook/rights check or any other await; the host offers no atomic save+stamp observation.
+        // ListAccessLostException synchronously thrown here comes only from JE's gate/Spend, before native
+        // invocation (Jellyfin cannot throw this internal JE type). That known no-write refusal retains old proof.
+        private static async Task ObserveSaveAsync(IListHost host, Guid listId, Func<Task> write, Func<IReadOnlyList<RawEntry>, IReadOnlyList<RawEntry>?> operation, Action<ListPlaylistSave?, ListPlaylistSave?>? saved)
+        {
+            var before = host.GetStoredPlaylistSave(listId);
+            var expectedRaw = operation(host.GetRawEntries(listId));
+            var expected = expectedRaw == null ? null : ListOrder.BuildRealTokens(expectedRaw);
+            Task pending;
+            try
+            {
+                pending = write();
+            }
+            catch (ListAccessLostException)
+            {
+                throw; // A synchronous JE permission/lifecycle refusal started no native save.
+            }
+            catch
+            {
+                saved?.Invoke(before, null); // A synchronous native failure has an unknown outcome too.
+                throw;
+            }
+
+            var observed = false;
+            try
+            {
+                await ListContinuation.Await(() => pending, observed: success =>
+                {
+                    observed = true;
+                    var after = success ? host.GetStoredPlaylistSave(listId) : null;
+                    // An acknowledgement alone cannot attribute a concurrently changed or cached-only order to JE.
+                    saved?.Invoke(before, after != null && expected != null && after.Order.SequenceEqual(expected, StringComparer.Ordinal) ? after : null);
+                }).ConfigureAwait(false);
+            }
+            finally
+            {
+                // A lifecycle refusal can prevent observation of an already-started native task. Its outcome is
+                // unknown: invalidate the active proof without reading or propagating whatever stamp is there now.
+                if (!observed) saved?.Invoke(before, null);
+            }
+        }
+
+        // The list lock and synchronous outcome observer own this update: no continuation sees a half-tuple.
+        // Only siblings matching BOTH pre-save components inherit JE's verified post-save tuple. Failed/unknown
+        // saves clear both active components and leave siblings untouched, preserving the attribution boundary.
+        internal static void RecordSave(ListDoc doc, SwapIntent active, ListPlaylistSave? before, ListPlaylistSave? after)
+        {
+            if (after != null && before != null)
+            {
+                foreach (var intent in doc.Intents)
+                {
+                    if (!ReferenceEquals(intent, active) && !intent.SupersededByReorder && intent.StoredSaveStamp == before.Stamp
+                        && intent.NativeOrder != null && intent.NativeOrder.SequenceEqual(before.Order, StringComparer.Ordinal))
+                        (intent.StoredSaveStamp, intent.NativeOrder) = (after.Stamp, after.Order.ToList());
+                }
+            }
+
+            (active.StoredSaveStamp, active.NativeOrder) = active.SupersededByReorder || after == null
+                ? ((DateTime?)null, (List<string>?)null) : (after.Stamp, after.Order.ToList());
+        }
+
+        // Replay only JE's requested insert against the pre-write raw slots. Moves use the shared native simulation,
+        // including each intermediate detour; the final desired order is not proof of an intermediate manager save.
+        private static IReadOnlyList<RawEntry> Insert(IReadOnlyList<RawEntry> raw, IReadOnlyList<Guid> items, int? position, bool positional)
+        {
+            var result = raw.ToList();
+            var additions = positional ? items : items.Where(id => !raw.Any(entry => entry.ItemId == id)).Distinct();
+            result.InsertRange(position.HasValue ? Math.Clamp(position.Value, 0, result.Count) : result.Count,
+                additions.Select(id => new RawEntry(id, true)));
+            return result;
+        }
+
+        // Whether `token` directly follows `anchor` in a real-token order (anchor null = first).
+        private static bool FollowsAnchor(IReadOnlyList<string> order, string token, string? anchor)
+        {
+            var index = order.ToList().IndexOf(token);
+            return index >= 0 && (anchor == null ? index == 0 : index > 0 && string.Equals(order[index - 1], anchor, StringComparison.Ordinal));
+        }
+
+        /// <summary>Verifies the entire landed run follows its saved anchor in the current native order.</summary>
+        internal static bool RunFollowsAnchor(IReadOnlyList<string> order, IReadOnlyList<string> tokens, string? anchor)
+        {
+            foreach (var token in tokens)
+            {
+                if (!FollowsAnchor(order, token, anchor)) return false;
+                anchor = token;
+            }
+
+            return true;
+        }
+    }
+}
