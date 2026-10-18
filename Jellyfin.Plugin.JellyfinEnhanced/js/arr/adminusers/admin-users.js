@@ -39,14 +39,15 @@
         const drafts = new Map();
         const api = JE.arrAdminUsersApi;
         const style = el('style');
-        style.textContent = '.je-admin-user{margin:1.5em 0;padding:1em;border:1px solid #7776;border-radius:.5em;max-width:62em}.je-admin-user summary{cursor:pointer;font-size:1.15em}.je-user-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,24em),1fr));gap:1em}.je-admin-user fieldset{margin:.5em 0;padding:1em;border:1px solid #7776;border-radius:.4em}.je-admin-user label{display:block;margin:.65em 0}.je-admin-user input,.je-admin-user select{display:block;box-sizing:border-box;max-width:100%;padding:.45em;background:var(--background-paper,#222);color:inherit;border:1px solid #888;border-radius:.25em}.je-admin-user button{padding:.6em;margin:.5em .5em .5em 0;cursor:pointer}.je-admin-user p{overflow-wrap:anywhere;line-height:1.5}.je-admin-user a{color:inherit;text-decoration:underline;margin-right:1em}.je-user-chip{display:block;font-size:.8em;padding:.3em;pointer-events:none}.je-admin-user [role=status]{min-height:1.3em}@media(max-width:480px){.je-admin-user{padding:.6em}.je-admin-user fieldset{padding:.6em}}';
+        style.textContent = '.je-admin-user{margin:1.5em 0;padding:1em;border:1px solid #7776;border-radius:.5em;max-width:62em}.je-admin-user summary{cursor:pointer;font-size:1.15em}.je-user-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,24em),1fr));gap:1em}.je-admin-user fieldset{min-width:0;margin:.5em 0;padding:1em;border:1px solid #7776;border-radius:.4em}.je-admin-user .inputContainer,.je-admin-user .selectContainer{margin:1em 0}.je-admin-user .emby-button{margin:.5em .5em .5em 0}.je-admin-user p{overflow-wrap:anywhere;line-height:1.5}.je-admin-user a{color:inherit;text-decoration:underline;margin-right:1em}.je-user-chip{display:block;font-size:.8em;padding:.3em;pointer-events:none}.je-admin-user [role=status]{min-height:1.3em}@media(max-width:480px){.je-admin-user{padding:.6em}.je-admin-user fieldset{padding:.6em}}';
         document.head.appendChild(style);
         /** Remove private DOM and cancel pending work. Identity changes clear all drafts. */
-        function clear(identity) {
+        function clear(identity, keepSummary = false) {
             generation++;
             request?.abort(); request = null;
             document.querySelectorAll('[data-je-admin-user],[data-je-user-chip]').forEach(n => n.remove());
-            summary = null; summaryStarted = false;
+            if (!keepSummary) summary = null;
+            summaryStarted = false;
             if (identity) { drafts.clear(); authorized = false; authorization = null; routeKey = ''; }
         }
         /** An async answer must belong to this epoch, route generation and current caller. */
@@ -55,6 +56,8 @@
         }
         /** Check native admin authority at navigation, outside observer-driven scans. */
         async function authorize() {
+            authorized = false;
+            clear(false, true);
             const epoch = JE.session?.getEpoch?.();
             const ticket = {};
             authorization = ticket;
@@ -98,9 +101,11 @@
             if (editable) {
                 const actions = el('div', undefined, fieldset);
                 const save = el('button', t('save'), actions); save.type = 'button'; save.dataset.save = name;
+                save.className = 'emby-button raised button-submit';
                 save.disabled = state.busy.has(name);
                 save.addEventListener('click', () => saveGroup(name, state));
                 const cancel = el('button', t('cancel'), actions); cancel.type = 'button';
+                cancel.className = 'emby-button raised button-cancel';
                 cancel.addEventListener('click', () => { delete state.changes[name]; delete state.messages[name]; request?.abort(); request = null; state.refresh = true; schedule(); });
             }
             const status = el('p', state.messages[name] || (state.changes[name] ? t('unsaved') : ''), fieldset); status.setAttribute('role', 'status');
@@ -116,7 +121,12 @@
         function value(state, name, field, stored) { return Object.hasOwn(state.changes[name] || {}, field) ? state.changes[name][field] : stored; }
         /** Render an editable choice with safely constructed options. */
         function select(parent, state, groupName, field, label, stored, options, disabled) {
-            const wrapper = el('label', t(label), parent), input = el('select', undefined, wrapper);
+            const wrapper = el('div', undefined, parent); wrapper.className = 'selectContainer';
+            const caption = el('label', t(label), wrapper); caption.className = 'selectLabel';
+            const input = el('select', undefined, wrapper); input.className = 'emby-select emby-select-withcolor';
+            input.id = 'je-user-' + groupName + '-' + field; caption.htmlFor = input.id;
+            const arrow = el('div', undefined, wrapper); arrow.className = 'selectArrowContainer'; arrow.setAttribute('aria-hidden', 'true');
+            el('span', 'expand_more', arrow).className = 'selectArrow material-icons';
             input.dataset.field = field; input.disabled = !!disabled;
             for (const [v, text] of options) { const option = el('option', text, input); option.value = v == null ? '' : String(v); }
             input.value = String(value(state, groupName, field, stored) ?? '');
@@ -125,7 +135,10 @@
         }
         /** Numeric overrides use blank for inheritance and reject invalid numbers before writing. */
         function number(parent, state, name, field, label, stored, disabled, min) {
-            const wrapper = el('label', t(label), parent), input = el('input', undefined, wrapper);
+            const wrapper = el('div', undefined, parent); wrapper.className = 'inputContainer';
+            const caption = el('label', t(label), wrapper); caption.className = 'inputLabel inputLabelUnfocused';
+            const input = el('input', undefined, wrapper); input.className = 'emby-input';
+            input.id = 'je-user-' + name + '-' + field; caption.htmlFor = input.id;
             input.type = 'number'; input.min = String(min); input.step = field === 'quotaGb' ? 'any' : '1'; input.disabled = !!disabled;
             input.dataset.field = field; input.value = value(state, name, field, stored) ?? '';
             input.addEventListener('change', () => changed(state, name, field, input.value === '' ? null : Number(input.value), parent));
@@ -153,7 +166,8 @@
             if (!d.policy.available) el('p', t('unavailable'), policy);
             else {
                 const stored = d.policy.stored || {}, effective = d.policy.effective || {};
-                line(policy, 'backend', d.policy.backend); line(policy, 'effectiveRole', effective.role);
+                line(policy, 'backend', d.policy.backend == null ? null : t('backend_' + d.policy.backend));
+                line(policy, 'effectiveRole', effective.role == null ? null : t('role_' + effective.role.toLowerCase()));
                 if (d.jellyfinAdmin) el('p', t('adminLocked'), policy);
                 select(policy, state, 'policy', 'role', 'role', stored.role, [[null, t('defaultRole')], ...(d.policy.roles || []).map(r => [r, t('role_' + r.toLowerCase())])], d.jellyfinAdmin);
                 number(policy, state, 'policy', 'quotaLimit', 'count', stored.quotaLimit, d.policy.backend !== 'je', -1);
@@ -163,7 +177,9 @@
                 line(policy, 'source', d.policy.sources ? [d.policy.sources.count, d.policy.sources.gb].map(s=>t('source_' + s)).join(' / ') : null);
                 line(policy, 'movieRights', effective.canRequestMovies); line(policy, 'seriesRights', effective.canRequestSeries); line(policy, 'approvalRights', effective.canApprove);
                 line(policy, 'fourKMovies', effective.can4kMovies); line(policy, 'fourKSeries', effective.can4kSeries);
-                line(policy, 'blocking', [...new Set([d.policy.fourKMoviesReason, d.policy.fourKSeriesReason].filter(Boolean))].map(reason => t('restriction_' + (['requests_4k_required', 'feature_disabled', 'not_visible_to_user', 'user_required', 'instance_changed'].includes(reason) ? reason : 'other'))).join(' / ') || t('none'));
+                for (const [label, reason] of [['fourKMoviesBlocking', d.policy.fourKMoviesReason], ['fourKSeriesBlocking', d.policy.fourKSeriesReason]]) {
+                    if (reason) line(policy, label, t('restriction_' + (['requests_4k_required', 'feature_disabled', 'not_visible_to_user', 'user_required', 'instance_changed'].includes(reason) ? reason : 'other')));
+                }
                 if (d.usage.quota?.available) { line(policy, 'quota', `${d.usage.quota.used} / ${d.usage.quota.limit ?? t('unlimited')}`); line(policy, 'estimate', d.usage.quota.usedGb); line(policy, 'nextSlot', d.usage.quota.nextSlotAt); }
                 else line(policy, 'quota', null);
                 const grants = select(policy, state, 'policy', 'fourKMode', 'fourK', value(state, 'policy', 'fourKInstances', stored.fourKInstances) == null ? null : 'explicit', [[null, t('inherit')], ['explicit', t('explicit')]], d.policy.backend !== 'je');
@@ -199,7 +215,9 @@
             if (d.notifications.available) {
                 line(notify, 'emailVerified', d.notifications.emailVerified); el('p', t('emailHelp'), notify);
                 line(notify, 'privacy', d.notifications.hideTitles); line(notify, 'quietHours', d.notifications.quietHours ? `${d.notifications.quietFrom}–${d.notifications.quietTo}` : false);
-                const label = el('label', t('topic'), notify), topic = el('input', undefined, label); topic.value = value(state, 'notifications', 'topic', d.notifications.topic) || '';
+                const wrapper = el('div', undefined, notify); wrapper.className = 'inputContainer';
+                const label = el('label', t('topic'), wrapper); label.className = 'inputLabel inputLabelUnfocused'; label.htmlFor = 'je-user-topic';
+                const topic = el('input', undefined, wrapper); topic.id = label.htmlFor; topic.className = 'emby-input'; topic.value = value(state, 'notifications', 'topic', d.notifications.topic) || '';
                 topic.addEventListener('change', () => changed(state, 'notifications', 'topic', topic.value, notify));
                 el('p', t('topicHelp'), notify);
             } else el('p', t('unavailable'), notify);
@@ -218,7 +236,8 @@
                 line(display, 'serverGate', d.display.gates?.[field]); line(display, 'effectiveDisplay', d.display.effective?.[field]);
             } else el('p', t('unavailable'), display);
             const seerr = group(groups, 'seerr', 'seerr-import', state, true);
-            line(seerr, 'linkState', t('state_' + d.seerr.state)); line(seerr, 'account', d.seerr.account); line(seerr, 'quotaSource', d.seerr.quotaSource);
+            line(seerr, 'linkState', t('state_' + d.seerr.state)); line(seerr, 'account', d.seerr.account);
+            line(seerr, 'quotaSource', d.seerr.quotaSource == null ? null : t('backend_' + d.seerr.quotaSource));
             const block = select(seerr, state, 'seerr-import', 'blocked', 'blocked', d.seerr.blocked ? 'true' : 'false', [['false', t('no')], ['true', t('yes')]], false);
             block.addEventListener('change', () => changed(state, 'seerr-import', 'blocked', block.value === 'true', seerr));
             el('p', t('importHelp'), seerr);
@@ -234,7 +253,7 @@
         /** Save one draft. Conflicts retain it until explicit Cancel/reload; other groups stay dirty. */
         async function saveGroup(name, state) {
             const changes = state.changes[name];
-            if (!changes || state.busy.has(name)) return;
+            if (!authorized || !changes || state.busy.has(name)) return;
             const gen = generation, epoch = JE.session?.getEpoch?.(), id = state.data.id;
             const revision = state.data.revisions[name];
             state.busy.add(name); state.messages[name] = t('saving'); render(state);
@@ -247,8 +266,12 @@
                 if (name === 'notifications') state.data = { ...state.data, notifications: {
                     ...state.data.notifications, ...result, topic: result.topic ?? null, assigned: !!result.topic
                 } };
-                else mergeFresh(state, result);
-                state.messages[name] = t('saved');
+                else {
+                    mergeFresh(state, result);
+                    // Our own successful write advances this group even when a newer draft remains.
+                    state.data.revisions[name] = result.revisions[name];
+                }
+                state.messages[name] = t(state.changes[name] ? 'unsaved' : 'saved');
             } catch (error) {
                 if (!current(gen, epoch, id)) return;
                 if (error.status === 403 || error.status === 401) { clear(true); return; }

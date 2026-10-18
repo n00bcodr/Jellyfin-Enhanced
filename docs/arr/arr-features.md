@@ -1565,6 +1565,8 @@ Each person can hide the web badges, or turn off the drawn ones, in the Jellyfin
 
 Administrators can open **Dashboard → Users**, select a person, and expand **Jellyfin Enhanced** below Jellyfin's native form. The section is available on Profile, Access, Parental control and Password in Jellyfin 12 and 10.11. Each editable group has its own **Save Jellyfin Enhanced changes** and **Cancel**. Jellyfin's Save button handles the native form; JE drafts remain separate and survive tab changes.
 
+The section hides while administrator permission is checked again. A refused or failed check clears its private data and drafts. Edits made while a group is saving remain unsaved and can be saved next without reloading; other groups keep their own drafts and conflict checks.
+
 The section uses the same household roles, count and estimated GB limits, 4K grants, quota pools and display preferences as the existing editors. It shows effective request rights and inheritance, notification assignment, personal consent attribution and Seerr identity status. Personal automation and list consents are read-only. Email verification remains the person's own action.
 
 The users list adds role, known quota use and pending-request chips from one batched read. Pending means requests made by that person. Unavailable use is left unknown. These administrator endpoints reject household Managers, Trusted accounts and API keys.

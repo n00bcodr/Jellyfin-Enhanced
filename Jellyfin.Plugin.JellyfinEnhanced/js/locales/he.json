@@ -881,5 +881,10 @@
     "arr_user_restriction_not_visible_to_user": "Jellyfin access or parental restrictions block this action",
     "arr_user_restriction_user_required": "This account cannot act",
     "arr_user_restriction_instance_changed": "The destination instance is unavailable or has changed",
-    "arr_user_restriction_other": "The current request policy blocks this action"
+    "arr_user_restriction_other": "The current request policy blocks this action",
+    "arr_user_backend_je": "Jellyfin Enhanced",
+    "arr_user_backend_seerr": "Seerr",
+    "arr_user_backend_status_only": "Status only",
+    "arr_user_fourKMoviesBlocking": "4K movie restrictions",
+    "arr_user_fourKSeriesBlocking": "4K series restrictions"
 }
