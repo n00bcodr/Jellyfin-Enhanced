@@ -136,7 +136,9 @@ for(const failedBatch of [1,2])test(`parent identity batches release retry work 
   parentCalls++;if(fail&&parentCalls===failedBatch)throw new Error('503');
   return {Items:ids.map(Id=>({Id,Type:'Series',ProviderIds:{Tmdb:'42'}}))};
  });
- const view=()=>{h.document.body.innerHTML='<div class="section">'+Array.from({length:count},(_,i)=>`<div class="card" data-id="e${i}" data-type="Episode"></div>`).join('')+'</div>';h.api.filterNativeCards();};
- view();await h.settle();fail=false;h.later(31000);view();await h.settle();
+ h.document.body.innerHTML='<div class="section">'+Array.from({length:count},(_,i)=>`<div class="card" data-id="e${i}" data-type="Episode"></div>`).join('')+'</div>';
+ const retained=[...h.document.querySelectorAll('.card')];
+ h.api.filterNativeCards();await h.settle();fail=false;h.later(31000);h.api.filterNativeCards();await h.settle();
+ assert.deepEqual([...h.document.querySelectorAll('.card')],retained,'ordinary recovery reuses every retained node');
  assert.equal(h.document.querySelectorAll('.je-hidden').length,count);
 });
