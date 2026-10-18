@@ -90,9 +90,40 @@ public class ListsHostTests
         await host.FinishCreateAsync(new ListWrite(box.Id, owner.Id, ListWriteKind.FinishCreate), "Heist");
         Assert.Equal("Heist", box.Name);
         library.Verify(l => l.UpdateItemAsync(box, It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>()), Times.Once);
-        // A second finish of a list that has its name writes nothing.
+        // Review round 4 (4c1-r4-behaviour-2): a finish always saves, also when the cached item already shows the name (an
+        // earlier save may have failed after Jellyfin changed it); the service asks only until a save succeeded.
         await host.FinishCreateAsync(new ListWrite(box.Id, owner.Id, ListWriteKind.FinishCreate), "Heist");
-        library.Verify(l => l.UpdateItemAsync(box, It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>()), Times.Once);
+        library.Verify(l => l.UpdateItemAsync(box, It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    // Review round 4 (4c1-r4-behaviour-2): Jellyfin's rename changes the cached item, then saves it. When the save fails the
+    // cached item gets its old name back, so nothing shows a name that was never kept.
+    [Fact]
+    public async Task AFailedRenameLeavesTheCachedItemWithItsOldName()
+    {
+        var owner = FakeListHost.MakeUser("owner");
+        var marker = Guid.NewGuid();
+        var playlistName = ListService.CreateName("Mine", marker);
+        var collectionName = ListService.CreateName("Heist", marker);
+        var playlist = new Playlist { Id = Guid.NewGuid(), OwnerUserId = owner.Id, Name = playlistName, Path = "/config/data/playlists/" + playlistName };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = collectionName, Path = "/config/data/collections/" + collectionName + " [boxset]", ParentId = Guid.NewGuid() };
+        var playlists = new Mock<IPlaylistManager>();
+        // PlaylistManager.UpdatePlaylist (10.11 / 12.2): sets the name on the cached playlist, then saves it.
+        playlists.Setup(p => p.UpdatePlaylist(It.IsAny<PlaylistUpdateRequest>()))
+            .Callback((PlaylistUpdateRequest r) => playlist.Name = r.Name)
+            .ThrowsAsync(new IOException("database is locked"));
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(playlist.Id)).Returns(playlist);
+        library.Setup(l => l.GetItemById(box.Id)).Returns(box);
+        library.Setup(l => l.UpdateItemAsync(box, It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("database is locked"));
+        var host = new JellyfinListHost(library.Object, playlists.Object, Mock.Of<ICollectionManager>(), Mock.Of<MediaBrowser.Model.IO.IFileSystem>());
+
+        await Assert.ThrowsAsync<IOException>(() => host.FinishCreateAsync(new ListWrite(playlist.Id, owner.Id, ListWriteKind.FinishCreate), "Mine"));
+        await Assert.ThrowsAsync<IOException>(() => host.FinishCreateAsync(new ListWrite(box.Id, owner.Id, ListWriteKind.FinishCreate), "Heist"));
+
+        Assert.Equal(playlistName, playlist.Name);
+        Assert.Equal(collectionName, box.Name);
     }
 
     // Review round 3 (4c1-r3-behaviour-3): a collection name is taken only by a collection where Jellyfin's create would put

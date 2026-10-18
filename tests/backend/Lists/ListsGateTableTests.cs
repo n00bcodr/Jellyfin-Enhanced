@@ -22,6 +22,9 @@ namespace JE.Tests;
 // - the document gains no placeholder the caller can't see now, and nothing at all after the list was lost.
 // Review round 3 adds: the caller disabled, the playlist's owner disabled (no write may run as them), and two creators of
 // one name racing, the rival starting at every await of the first create.
+// Review round 4 adds "create-recover": the retry of a collection create that died after Jellyfin made the list and before
+// it was recorded. Its Revoke hides that list from the creator (who still manages collections), and the rename that gives
+// the list its name is a write like any other: allowed only while the creator can see and edit the list.
 [Collection("Plugin singleton")]
 public class ListsGateTableTests
 {
@@ -38,6 +41,7 @@ public class ListsGateTableTests
     {
         "add", "apply", "apply-jf10", "apply-collection", "patch-link", "delete", "reorder", "swap-switch", "view",
         "preview", "submit", "create-playlist", "create-collection", "create-replay", "op-replay", "swap-pass", "swap-jf10",
+        "create-recover",
     };
 
     public static IEnumerable<object[]> Rows() =>
@@ -371,7 +375,7 @@ public class ListsGateTableTests
         public bool Swap => _path.StartsWith("swap-", StringComparison.Ordinal) && _path != "swap-switch";
 
         /// <summary>Paths that take the list lock (the lock row injects while they wait for it).</summary>
-        public bool Locks => _path is not ("view" or "preview" or "submit" or "create-playlist" or "create-collection" or "create-replay");
+        public bool Locks => _path is not ("view" or "preview" or "submit" or "create-playlist" or "create-collection" or "create-replay" or "create-recover");
 
         private string? CreatedId { get; set; }
 
@@ -388,6 +392,14 @@ public class ListsGateTableTests
                     if (_path is "create-playlist")
                     {
                         H.Users.Setup(u => u.GetUserById(Caller.Id)).Returns((User?)null);
+                    }
+                    else if (_path is "create-recover")
+                    {
+                        // The recovered collection is hidden from its creator, who still manages collections.
+                        foreach (var id in H.Host.Lists.Keys.Where(id => id != List.Info.Id))
+                        {
+                            Hidden(id);
+                        }
                     }
                     else if (_path is "create-collection" or "create-replay")
                     {
@@ -476,6 +488,8 @@ public class ListsGateTableTests
                     return created;
                 case "create-replay":
                     return await H.Service.CreateListAsync(Caller, ListKinds.Collection, "Replayed", false, new[] { new ApplyEntry(0, null, Movie(911, "2020-01-01")) }, K("create-r"), None);
+                case "create-recover":
+                    return await H.Service.CreateListAsync(Caller, ListKinds.Collection, "Recovered", false, new[] { new ApplyEntry(0, RealB, null), new ApplyEntry(1, null, Movie(913, "2020-01-01")) }, K("create-c"), None);
                 case "op-replay":
                     return await H.Service.AddPlaceholdersAsync(_access, new[] { Movie(913, "2020-01-01") }, null, null, K("replayed"), None, recheckAccess: true);
                 case "swap-pass":
@@ -688,6 +702,24 @@ public class ListsGateTableTests
                 CreatedId = created.ListId;
             }
 
+            if (_path == "create-recover")
+            {
+                // The first attempt died right after Jellyfin made the collection, before it was recorded.
+                H.Host.AfterCreate = _ => throw new IOException("the server stopped");
+                try
+                {
+                    await H.Service.CreateListAsync(Caller, ListKinds.Collection, "Recovered", false, new[] { new ApplyEntry(0, RealB, null), new ApplyEntry(1, null, Movie(913, "2020-01-01")) }, K("create-c"), None);
+                    throw new InvalidOperationException("the first attempt didn't die");
+                }
+                catch (IOException)
+                {
+                }
+                finally
+                {
+                    H.Host.AfterCreate = null;
+                }
+            }
+
             if (_path == "op-replay")
             {
                 Ok<ApplyResultDto>(await H.Service.AddPlaceholdersAsync(_access, new[] { Movie(913, "2020-01-01") }, null, null, K("replayed"), None, recheckAccess: true));
@@ -737,6 +769,7 @@ public class ListsGateTableTests
                 var made = H.Host.GetList(listId);
                 return principal == null ? "the caller is gone"
                     : made == null ? "the list is gone"
+                    : !H.Access.Evaluate(made, principal).Permissions.CanEdit ? "renames a list the caller can't see or edit"
                     : made.Kind == ListKinds.Collection ? (ListAccessService.CanManageCollections(principal) ? null : "the caller can't manage collections")
                     : made.OwnerId == principal.Id && actAs == principal.Id ? null : "renames a playlist that isn't the caller's";
             }

@@ -182,6 +182,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _createLocks = new();
         // One collection create per destination at a time, across people (keyed by the full path, without case).
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _destinationLocks = new(StringComparer.OrdinalIgnoreCase);
+        // Lists JE created whose chosen name isn't known to be saved: a rename failed, maybe after Jellyfin had changed its
+        // cached item, which then shows the name. A retry renames them again until a save succeeds.
+        private readonly ConcurrentDictionary<Guid, byte> _unsavedNames = new();
 
         /// <summary>Creates the service.</summary>
         /// <param name="store">Placeholder store.</param>
@@ -1717,6 +1720,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var scope = "create-" + kind;
             var turn = _createLocks.GetOrAdd(user.Id, _ => new SemaphoreSlim(1, 1));
             await turn.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // Held only once its wait succeeded: a create cancelled (or failing) while it waits releases nothing it never had.
             SemaphoreSlim? destinationTurn = null;
             ListOperation? operation = null;
             try
@@ -1735,8 +1739,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         return ListOutcome.Error(500, "list_update_failed", "Jellyfin could not create the collection.");
                     }
 
-                    destinationTurn = _destinationLocks.GetOrAdd(destination, _ => new SemaphoreSlim(1, 1));
-                    await destinationTurn.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    var waiting = _destinationLocks.GetOrAdd(destination, _ => new SemaphoreSlim(1, 1));
+                    await waiting.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    destinationTurn = waiting;
                 }
 
                 // A create can wait for an earlier one: the person is read again now (not disabled; collections need
@@ -1772,6 +1777,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                             return list == null
                                 ? ListOutcome.Error(404, "not_found", "List not found.")
                                 : await ReplayCreatedAsync(user, list, operation, cancellationToken).ConfigureAwait(false);
+                        }
+
+                        if (list == null)
+                        {
+                            // The list this operation made is gone or isn't the person's any more: nothing is made in its
+                            // place (the operation can't record another list).
+                            return Finished(operation, ListOutcome.Error(404, "not_found", "List not found."));
                         }
                     }
                     else if (operation != null && start.Replayed)
@@ -1824,17 +1836,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     list = _host.GetList(id) ?? new ListInfo(id, kind, markedName, kind == ListKinds.Playlist ? user.Id : Guid.Empty, isPublic, Array.Empty<ListShare>());
                 }
 
-                if (string.Equals(list.Name, markedName, StringComparison.Ordinal))
+                if (string.Equals(list.Name, markedName, StringComparison.Ordinal)
+                    || (_unsavedNames.ContainsKey(id) && string.Equals(list.Name, name, StringComparison.Ordinal)))
                 {
                     // The list still carries the name with its marker (just created, or a retry after a crash right after
-                    // the create): it gets its chosen name. A failure leaves the operation retryable; the retry finishes it.
+                    // the create), or its rename wasn't saved: it gets its chosen name. The name counts once Jellyfin saved
+                    // it, not when its cached item shows it. A failure leaves the operation retryable; the retry renames it.
+                    _unsavedNames[id] = 0;
                     await _host.FinishCreateAsync(_gate.FinishWrite(list, user), name).ConfigureAwait(false);
+                    _unsavedNames.TryRemove(id, out _);
                     list = _host.GetList(id) ?? list;
+                }
+                else
+                {
+                    // Renamed meanwhile (by the person, in Jellyfin): their name stands.
+                    _unsavedNames.TryRemove(id, out _);
                 }
 
                 // Named: the next create of this destination may check it.
-                destinationTurn?.Release();
-                destinationTurn = null;
+                ReleaseDestination(ref destinationTurn);
 
                 // A recovered list (or one Jellyfin changed meanwhile) still needs the person's current right to edit it.
                 var access = _access.Evaluate(list, user);
@@ -1876,9 +1896,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
             finally
             {
-                destinationTurn?.Release();
-                turn.Release();
+                // The person's own turn is released whatever releasing the destination does.
+                try
+                {
+                    ReleaseDestination(ref destinationTurn);
+                }
+                finally
+                {
+                    turn.Release();
+                }
             }
+        }
+
+        /// <summary>Releases a destination lock the create holds, once (it no longer holds it, even when the release throws).</summary>
+        /// <param name="held">The lock held, or null; null afterwards.</param>
+        private static void ReleaseDestination(ref SemaphoreSlim? held)
+        {
+            var release = held;
+            held = null;
+            release?.Release();
         }
 
         /// <summary>

@@ -231,21 +231,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>
         /// Giving a list the person just created its chosen name, allowed now or refused with
-        /// <see cref="ListAccessLostException"/>: they may still create a list of its kind and, for a playlist, still own it
-        /// (the rename runs as them).
+        /// <see cref="ListAccessLostException"/>: they may still create a list of its kind; the list, read again, is one
+        /// they can still see and edit (a create recovered after a crash may find it hidden from them by then: 404); and, for
+        /// a playlist, they still own it (the rename runs as them).
         /// </summary>
-        /// <param name="list">The list as Jellyfin has it now.</param>
+        /// <param name="list">The list the create made.</param>
         /// <param name="user">The person who created it.</param>
         /// <returns>The single-use grant.</returns>
         internal ListWrite FinishWrite(ListInfo list, User user)
         {
             var fresh = Person(user.Id, list.Kind) ?? throw new ListAccessLostException(CreateRefusal(user.Id), "The person can't create this list any more.");
-            if (list.Kind == ListKinds.Playlist && list.OwnerId != fresh.Id)
+            var current = _access.Resolve(list.Id, fresh);
+            if (current is not { Permissions.CanView: true, Permissions.CanEdit: true } || current.List.Kind != list.Kind)
+            {
+                throw new ListAccessLostException(NotFound(), "The person can't see or edit the list any more.");
+            }
+
+            if (current.List.Kind == ListKinds.Playlist && current.List.OwnerId != fresh.Id)
             {
                 throw new ListAccessLostException(NotFound(), "The playlist isn't the person's any more.");
             }
 
-            return new ListWrite(list.Id, fresh.Id, ListWriteKind.FinishCreate);
+            return new ListWrite(current.List.Id, fresh.Id, ListWriteKind.FinishCreate);
         }
 
         /// <summary>

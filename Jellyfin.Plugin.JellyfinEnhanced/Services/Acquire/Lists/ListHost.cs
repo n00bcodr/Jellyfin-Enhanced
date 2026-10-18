@@ -175,7 +175,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>
         /// Gives a list JE created its chosen name (it was created under the one carrying its marker); the list keeps its
-        /// folder. As the grant's user (a playlist's owner).
+        /// folder. As the grant's user (a playlist's owner). Saves every time it is called, whatever the cached item shows;
+        /// when the save fails the cached item keeps its old name.
         /// </summary>
         /// <param name="write">The gate's grant (<see cref="ListWriteKind.FinishCreate"/>).</param>
         /// <param name="name">The chosen name.</param>
@@ -443,17 +444,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public async Task FinishCreateAsync(ListWrite write, string name)
         {
             write.Spend(write.ListId, ListWriteKind.FinishCreate);
+            // Always saved, also when the cached item already shows the name: Jellyfin changes the cached item before it
+            // saves it, so an earlier failed save can leave the name showing with nothing kept. When the save fails, the
+            // cached item gets its old name back.
             switch (_libraryManager.GetItemById(write.ListId))
             {
-                case Playlist playlist when !string.Equals(playlist.Name, name, StringComparison.Ordinal):
-                    await _playlistManager.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlist.Id, UserId = write.ActAs, Name = name }).ConfigureAwait(false);
+                case Playlist playlist:
+                    var playlistName = playlist.Name;
+                    try
+                    {
+                        await _playlistManager.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlist.Id, UserId = write.ActAs, Name = name }).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        playlist.Name = playlistName;
+                        throw;
+                    }
+
                     break;
-                case BoxSet boxSet when !string.Equals(boxSet.Name, name, StringComparison.Ordinal):
+                case BoxSet boxSet:
                     // BaseItem.UpdateToRepositoryAsync, with the parent read through the library manager: saved with its
                     // metadata (collection.xml), so the name stays through scans and refreshes.
+                    var boxSetName = boxSet.Name;
                     boxSet.Name = name;
-                    var parent = boxSet.ParentId.Equals(Guid.Empty) ? null : _libraryManager.GetItemById(boxSet.ParentId);
-                    await _libraryManager.UpdateItemAsync(boxSet, parent!, ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+                    try
+                    {
+                        var parent = boxSet.ParentId.Equals(Guid.Empty) ? null : _libraryManager.GetItemById(boxSet.ParentId);
+                        await _libraryManager.UpdateItemAsync(boxSet, parent!, ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        boxSet.Name = boxSetName;
+                        throw;
+                    }
+
                     break;
             }
         }

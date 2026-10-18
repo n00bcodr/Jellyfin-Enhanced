@@ -20,6 +20,12 @@ internal sealed class FakeListHost : IListHost
         public List<RawEntry> Raw { get; } = new();
         /// <summary>Where Jellyfin keeps the list (its item id is derived from it).</summary>
         public string Path { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The name Jellyfin has saved (database and metadata), as opposed to its cached item's <see cref="Info"/> name;
+        /// null for a list the test made directly.
+        /// </summary>
+        public string? SavedName { get; set; }
     }
 
     /// <summary>Jellyfin's managed collections folder (CollectionManager.GetCollectionsFolderPath).</summary>
@@ -395,6 +401,12 @@ internal sealed class FakeListHost : IListHost
     /// <summary>Throws from the next N FinishCreateAsync calls (before renaming).</summary>
     public int FailFinishes { get; set; }
 
+    /// <summary>
+    /// Throws from the next N FinishCreateAsync calls AFTER the cached item got the new name but before it was saved, as
+    /// Jellyfin's own rename does (it changes the cached item, then saves): the list shows the name, nothing kept it.
+    /// </summary>
+    public int FailFinishesAfterRename { get; set; }
+
     public Task FinishCreateAsync(ListWrite write, string name)
     {
         write.Spend(write.ListId, ListWriteKind.FinishCreate);
@@ -411,6 +423,13 @@ internal sealed class FakeListHost : IListHost
         if (Lists.TryGetValue(write.ListId, out var list))
         {
             list.Info = list.Info with { Name = name };
+            if (FailFinishesAfterRename > 0)
+            {
+                FailFinishesAfterRename--;
+                throw new IOException("Jellyfin could not save the list");
+            }
+
+            list.SavedName = name;
         }
 
         OnAwait?.Invoke("finish:after");
@@ -489,7 +508,7 @@ internal sealed class FakeListHost : IListHost
 
     private Guid MakePlaylist(string name, Guid ownerId, bool isPublic, IReadOnlyList<ListShare> shares)
     {
-        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, name, ownerId, isPublic, shares, CreatedAt: DateTime.UtcNow), Path = PlaylistPath(name) };
+        var list = new FakeList { Info = new ListInfo(Guid.NewGuid(), ListKinds.Playlist, name, ownerId, isPublic, shares, CreatedAt: DateTime.UtcNow), Path = PlaylistPath(name), SavedName = name };
         Lists[list.Info.Id] = list;
         return list.Info.Id;
     }
@@ -501,7 +520,7 @@ internal sealed class FakeListHost : IListHost
         var path = (folder ?? CollectionsRoot) + "/" + ValidFilename(name) + " [boxset]";
         var existing = Lists.Values.FirstOrDefault(l => l.Info.Kind == ListKinds.Collection && string.Equals(l.Path, path, StringComparison.Ordinal));
         var id = existing?.Info.Id ?? Guid.NewGuid();
-        var list = new FakeList { Info = new ListInfo(id, ListKinds.Collection, name, Guid.Empty, false, Array.Empty<ListShare>(), CreatedAt: DateTime.UtcNow), Path = path };
+        var list = new FakeList { Info = new ListInfo(id, ListKinds.Collection, name, Guid.Empty, false, Array.Empty<ListShare>(), CreatedAt: DateTime.UtcNow), Path = path, SavedName = name };
         Lists[id] = list;
         CollectionProviderIds[id] = new Dictionary<string, string>(providerIds ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
         return id;
