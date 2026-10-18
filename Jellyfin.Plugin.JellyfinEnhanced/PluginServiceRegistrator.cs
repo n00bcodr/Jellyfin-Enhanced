@@ -296,6 +296,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<PosterTagImageFilter>();
 
             serviceCollection.AddSingleton<SpoilerPresentation>();
+            serviceCollection.AddSingleton<TitlePresentationResultFilter>();
             // Native details for titles not in the library (experimental, NativeAbsentDetailsEnabled):
             // answers jellyfin-web's details requests for synthetic ids, no library rows. Inert while off
             // (synthetic ids are then refused; every other request passes straight through).
@@ -349,6 +350,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 // First: a synthetic-id request is answered (or refused) before any native action or JE filter runs.
                 o.Filters.AddService<Services.NativeDetails.NativeDetailsFacadeFilter>(Services.NativeDetails.NativeDetailsFacadeFilter.Order);
 #endif
+                o.Filters.AddService<TitlePresentationResultFilter>(int.MaxValue);
                 o.Filters.AddService<HiddenContentResponseFilter>();
                 o.Filters.AddService<SpoilerIdentityTagFilter>();
                 o.Filters.AddService<SpoilerFieldStripFilter>();

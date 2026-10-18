@@ -336,6 +336,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
     public class UserHiddenContent
     {
+        /// <summary>Base rule revision for full-document writes; the server rejects a stale replacement.</summary>
+        public string? Revision { get; set; }
+
         public Dictionary<string, HiddenContentItem> Items { get; set; } = new Dictionary<string, HiddenContentItem>();
         public HiddenContentSettings Settings { get; set; } = new HiddenContentSettings();
     }

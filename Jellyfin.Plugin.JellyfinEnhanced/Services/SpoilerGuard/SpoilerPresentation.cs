@@ -38,25 +38,29 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
             if (plugin.SpoilerBlurEnabled)
             {
                 var ids = state.Series.Keys.Concat(state.Movies.Keys).Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty)
-                    .Where(id => id != Guid.Empty).Distinct().Take(2000).ToArray();
+                    .Where(id => id != Guid.Empty).Distinct().ToArray();
                 var person = users.GetUserById(viewer);
                 if (ids.Length > 0 && person != null)
                 {
-                    var items = library.GetItemList(new InternalItemsQuery { ItemIds = ids,
-                        DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } } });
-                    foreach (var item in items)
+                    foreach (var batch in ids.Chunk(2000))
                     {
-                        if (item is not (Movie or Series)) continue;
-                        var title = HiddenContentPolicy.TitleIdentity(item is Movie ? "movie" : "tv", item.GetProviderId(MetadataProvider.Tmdb));
-                        if (title == null) continue;
-                        var watched = item is Movie && userData.GetUserData(person, item)?.Played == true;
-                        context.AddLibraryTitle(title, watched);
+                        var items = library.GetItemList(new InternalItemsQuery { ItemIds = batch,
+                            DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } } });
+                        foreach (var item in items)
+                        {
+                            if (item is not (Movie or Series)) continue;
+                            var title = HiddenContentPolicy.TitleIdentity(item is Movie ? "movie" : "tv", item.GetProviderId(MetadataProvider.Tmdb));
+                            if (title == null) continue;
+                            var watched = item is Movie && userData.GetUserData(person, item)?.Played == true;
+                            context.AddLibraryTitle(title, watched);
+                        }
                     }
                 }
                 // Collection membership is resolved once for the whole context, never once per result card.
                 var collections = state.Collections.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty).Where(id => id != Guid.Empty).ToArray();
                 if (collections.Length > 0 && person != null)
-                    foreach (var item in library.GetItemList(new InternalItemsQuery { AncestorIds = collections, Recursive = true,
+                    foreach (var batch in collections.Distinct().Chunk(2000))
+                    foreach (var item in library.GetItemList(new InternalItemsQuery { AncestorIds = batch, Recursive = true,
                         IncludeItemTypes = new[] { BaseItemKind.Movie }, DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } } }))
                     {
                         var title = HiddenContentPolicy.TitleIdentity("movie", item.GetProviderId(MetadataProvider.Tmdb));
@@ -78,6 +82,7 @@ public sealed class SpoilerPresentationContext
     private readonly HashSet<string> _watched = new(StringComparer.Ordinal);
     private readonly PluginConfiguration _config;
     private readonly bool _unavailable;
+    internal bool Unavailable => _unavailable;
 
     /// <summary>The viewer's state; callers pass it to the existing native DTO stripper.</summary>
     public UserSpoilerBlur State { get; }
@@ -112,7 +117,7 @@ public sealed class SpoilerPresentationContext
         }))));
     }
 
-    internal void Seal() => Revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Revision + "|" + string.Join(',', _watched.OrderBy(k => k, StringComparer.Ordinal)))));
+    internal void Seal() => Revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Revision + "|" + string.Join(',', _titles.OrderBy(k => k, StringComparer.Ordinal)) + "|" + string.Join(',', _watched.OrderBy(k => k, StringComparer.Ordinal)))));
 
     internal void AddLibraryTitle(string key, bool watched) { if (watched) _watched.Add(key); else _titles.Add(key); }
 
@@ -143,11 +148,10 @@ public sealed class SpoilerPresentationContext
     {
         if (title != null && ((resource is "release_dates" or "releases" && HidesDates(title)) || (resource == "reviews" && HidesReviews(title)))) return "{\"results\":[]}";
         if (resource is "ratings" or "awards" && HidesRatings(title)) return "null";
-        if (resource == "images" && Guarded(title))
+        if (resource == "images" && title != null)
         {
             var images = JsonNode.Parse(json) as JsonObject ?? new();
-            if (ProtectArtwork(title, scopeKind ?? fallbackKind ?? "tv", "Primary", season)) images["posters"] = new JsonArray();
-            if (ProtectArtwork(title, scopeKind ?? fallbackKind ?? "tv", "Backdrop", season)) images["backdrops"] = new JsonArray();
+            ProjectImages(images, title, scopeKind ?? TitleKind(title), season);
             return images.ToJsonString();
         }
         return Project(json, title, resource == "ratings", fallbackKind, scopeKind, season, episode);
@@ -228,7 +232,7 @@ public sealed class SpoilerPresentationContext
         var reviews = guarded && !exempt && Strip(_config.SpoilerStripReviews, prefs?.HideReviews);
         if (overview) Remove(row, "overview", "description", "summary", "plot", "relatedVideos", "videos");
         if (ratings) Remove(row, "voteAverage", "voteCount", "vote_average", "vote_count", "ratings", "rating", "communityRating", "criticRating", "awards");
-        if (dates) Remove(row, "releaseDate", "release_date", "firstAirDate", "first_air_date", "lastAirDate", "airDate", "air_date", "nextAirDate", "nextDate", "nextDay", "digitalReleaseDate", "theatricalReleaseDate", "initialAirDate", "nextEpisodeToAir", "lastEpisodeToAir", "releaseDates", "release_dates", "releases");
+        if (dates) Remove(row, "releaseDate", "release_date", "firstAirDate", "first_air_date", "lastAirDate", "last_air_date", "airDate", "air_date", "nextAirDate", "nextDate", "nextDay", "digitalReleaseDate", "theatricalReleaseDate", "initialAirDate", "releaseDates", "release_dates", "releases");
         if (guarded && Strip(_config.SpoilerStripTaglines, prefs?.HideTaglines)) Remove(row, "tagline", "taglines");
         if (tags) Remove(row, "keywords", "tags");
         if (reviews) Remove(row, "reviews", "review", "content");
@@ -246,11 +250,10 @@ public sealed class SpoilerPresentationContext
         }
         if (ProtectArtwork(title, kind, "Primary", season)) Remove(row, "posterPath", "poster_path", "poster", "posterUrl", "stillPath", "still_path", "still");
         if (ProtectArtwork(title, kind, "Backdrop", season)) Remove(row, "backdropPath", "backdrop_path", "backdrop", "backdropUrl");
-        if (row["images"] is JsonObject images)
-        {
-            if (ProtectArtwork(title, kind, "Primary", season)) images["posters"] = new JsonArray();
-            if (ProtectArtwork(title, kind, "Backdrop", season)) images["backdrops"] = new JsonArray();
-        }
+        ProjectImages(row, title, kind, season);
+        if (row["images"] is JsonObject images) ProjectImages(images, title, kind, season);
+        foreach (var field in new[] { "last_episode_to_air", "next_episode_to_air", "lastEpisodeToAir", "nextEpisodeToAir" })
+            if (row[field] is JsonObject child) ProjectTitle(child, title, "episode", Number(child, "seasonNumber", "season_number", season), Number(child, "episodeNumber", "episode_number"));
         if (row["seasons"] is JsonArray seasons)
             foreach (var child in seasons.OfType<JsonObject>()) ProjectTitle(child, title, "season", Number(child, "seasonNumber", "season_number"));
         if (row["episodes"] is JsonArray episodes)
@@ -259,8 +262,16 @@ public sealed class SpoilerPresentationContext
             ["dates"] = dates, ["cast"] = allCast, ["tags"] = tags, ["reviews"] = reviews, ["revision"] = Revision };
     }
 
+    private static string TitleKind(string title) => title.StartsWith("movie:", StringComparison.Ordinal) ? "movie" : "tv";
+
+    private void ProjectImages(JsonObject images, string title, string kind, int season)
+    {
+        foreach (var (field, type) in new[] { ("posters", "Primary"), ("backdrops", "Backdrop"), ("stills", "Screenshot"), ("logos", "Art") })
+            if (ProtectArtwork(title, kind, type, season) && images[field] != null) images[field] = new JsonArray();
+    }
+
     private static int Number(JsonObject row, string name, string alternate, int fallback = 0)
         => int.TryParse((row[name] ?? row[alternate])?.ToString(), out var n) ? n : fallback;
     private static bool Strip(bool admin, bool? preference) => admin && preference != false;
-    private static void Remove(JsonObject row, params string[] names) { foreach (var name in names) row.Remove(name); }
+    private static void Remove(JsonObject row, params string[] names) { foreach (var name in names) { row.Remove(name); row.Remove(JsonNamingPolicy.SnakeCaseLower.ConvertName(name)); } }
 }

@@ -247,7 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <param name="context">The executing action, for route values and query string.</param>
         /// <param name="routeSurfaces">The route's fixed surfaces, or null when they are request-dependent.</param>
         /// <returns>One or more surface names; never empty.</returns>
-        private static string[] ResolveSurfaces(ActionExecutingContext context, string[]? routeSurfaces)
+        private static string[] ResolveSurfaces(ActionContext context, string[]? routeSurfaces)
         {
             // Home Screen Sections: the row's surface is whichever section was requested.
             if (routeSurfaces is null)
@@ -276,7 +276,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return routeSurfaces;
         }
 
-        private static bool HasSearchTerm(ActionExecutingContext context)
+        private static bool HasSearchTerm(ActionContext context)
         {
             var q = context.HttpContext?.Request?.Query;
             if (q == null) return false;
@@ -286,7 +286,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static bool HasNonEmpty(IQueryCollection q, string key)
             => q.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v.ToString());
 
-        private static bool IsMetadataResolverIdsCall(ActionExecutingContext context)
+        private static bool IsMetadataResolverIdsCall(ActionContext context)
         {
             var q = context.HttpContext?.Request?.Query;
             if (q == null) return false;
@@ -299,7 +299,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static bool IsRecursiveTrue(IQueryCollection q, string key)
             => q.TryGetValue(key, out var v) && string.Equals(v.ToString().Trim(), "true", StringComparison.OrdinalIgnoreCase);
 
-        private static bool TryGetRoute(ActionExecutingContext context, out (string[]? Surfaces, ResponseHandler Handler) route)
+        private static bool TryGetRoute(ActionContext context, out (string[]? Surfaces, ResponseHandler Handler) route)
         {
             route = default;
             var rv = context.RouteData?.Values;
@@ -307,6 +307,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!rv.TryGetValue("controller", out var rawC) || rawC is not string controller) return false;
             if (!rv.TryGetValue("action", out var rawA) || rawA is not string action) return false;
             return _routes.TryGetValue((controller, action), out route);
+        }
+
+        /// <summary>The existing native route policy, reused by the final delivery gate including mixed home rows.</summary>
+        internal static string PresentationSurface(ActionContext context, BaseItemDto item)
+        {
+            if (!TryGetRoute(context, out var route)) return "none";
+            var surfaces = ResolveSurfaces(context, route.Surfaces);
+            if (surfaces.Length == 1 && surfaces[0] == "library" && IsMetadataResolverIdsCall(context)) return "none";
+            return surfaces.Length > 1 ? (item.UserData?.PlaybackPositionTicks ?? 0) > 0 ? "continuewatching" : "nextup" : surfaces[0];
         }
 
         private HiddenContentPolicy LoadHiddenContentPolicy(HttpContext httpContext, Guid userId)

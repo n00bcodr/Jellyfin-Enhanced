@@ -128,3 +128,47 @@ test('a shared card control evaluates its mounted surface and preserves that fil
  await button.onclick({preventDefault(){},stopPropagation(){}});h.flush();
  assert.equal(root.classList.contains('je-hidden'),false);
 });
+
+for (const library of [true,false]) test(`native recommendation cards use their own surface in both passes and control mounting (library=${library})`,async t=>{
+ const h=setup(t,{html:'<div id="itemDetailPage"><div id="similarCollapsible"><div class="card" data-id="synthetic" data-type="Movie"><div class="cardBox"></div></div></div></div>',items:{'movie:tmdb:42':{type:'Movie',tmdbId:'42'}},settings:{filterLibrary:library,filterRecommendations:!library,enabled:true,showHideButtons:true,showButtonJellyseerr:true}});
+ h.window.location.hash='#/details?id=parent';h.JE.t=k=>k;
+ h.JE.titleDetails={parse:id=>id==='synthetic'?{kind:'movie',tmdbId:42}:null,isSynthetic:id=>id==='synthetic'};
+ const card=h.document.querySelector('.card');
+ h.api.filterNativeCards();h.flush();assert.equal(card.classList.contains('je-hidden'),!library);
+ h.api.filterAllNativeCards();h.flush();assert.equal(card.classList.contains('je-hidden'),!library);
+ h.load('enhanced/hiddencontent/hidden-content-buttons.js');h.api.addLibraryHideButtons();
+ Object.assign(h.api,{showUndoToast:()=>{}});await h.api.unhideItem('movie:tmdb:42');h.flush();
+ await card.querySelector('.je-hide-btn').onclick({preventDefault(){},stopPropagation(){}});h.flush();
+ assert.equal(card.classList.contains('je-hidden'),!library);
+});
+test('failed provider Undo keeps translated failure and retry control until confirmed',async t=>{
+ let fail=true;const h=setup(t,{ajax:async()=>{if(fail)throw new Error('rejected');return {success:true};},items:{'movie:tmdb:42':{type:'Movie',tmdbId:'42'}}});
+ h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-dialogs.js');h.api.showUndoToast('Film','movie:tmdb:42');
+ const button=h.document.querySelector('.je-undo-btn');button.click();await new Promise(r=>setImmediate(r));
+ assert.equal(h.document.querySelector('.je-undo-toast-text').textContent,'hidden_content_save_failed_persistent');
+ assert.equal(button.disabled,false);assert.equal(h.api.isHiddenByTmdbId(42,'movie'),true);
+ fail=false;button.click();await new Promise(r=>setImmediate(r));assert.equal(h.api.isHiddenByTmdbId(42,'movie'),false);
+});
+test('bulk save and atomic rule share acknowledgement ordering',async t=>{
+ const bulk=deferred(),put=deferred();const requests=[];
+ const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='POST'?bulk.promise:put.promise;}});
+ h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
+ h.api.debouncedSave();const saving=h.api.flushPendingSave();await new Promise(r=>setImmediate(r));
+ const hiding=h.api.saveTitleRule({mediaType:'movie',tmdbId:42,name:'Film'},true);await new Promise(r=>setImmediate(r));
+ assert.equal(requests.filter(o=>o.type==='PUT').length,0,'rule must wait for pending bulk persistence');
+ bulk.resolve({success:true});await saving;await new Promise(r=>setImmediate(r));
+ assert.equal(requests.filter(o=>o.type==='PUT').length,1);put.resolve({success:true});assert.equal(await hiding,true);
+ assert.equal(requests.find(o=>o.type==='POST').dataType,'json');assert.equal(requests.find(o=>o.type==='PUT').dataType,'json');
+});
+
+test('atomic acknowledgement refreshes its full rule base without losing newer local edits',async t=>{
+ const put=deferred(),requests=[];const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='PUT'?put.promise:Promise.resolve({success:true,revision:'bulk'});}});
+ h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
+ const hiding=h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true);await new Promise(r=>setImmediate(r));
+ h.api.getHiddenData().items.local={itemId:'local',type:'Movie'};
+ put.resolve({success:true,revision:'rules',items:{'movie:tmdb:42':{type:'Movie',tmdbId:'42'},'tv:tmdb:51':{type:'Series',tmdbId:'51'}}});await hiding;
+ assert.equal(h.api.isHiddenByTmdbId(51,'tv'),true,'another tab rule accompanies the new base revision');
+ assert.equal(h.api.getHiddenData().items.local.itemId,'local');
+ h.api.updateSettings({filterSearch:true});await h.api.flushPendingSave();const body=JSON.parse(requests.find(o=>o.type==='POST').data);
+ assert.ok(body.items['tv:tmdb:51']);assert.ok(body.items.local);assert.equal(body.revision,'rules');
+});

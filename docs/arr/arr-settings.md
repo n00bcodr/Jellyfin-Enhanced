@@ -499,3 +499,5 @@ never applied automatically. Managers can read the tab but not change it. The co
 *Request handling*, which a move from Seerr switches) as the server has them when it is saved, unless they were changed
 on that page: a page left open before a Household edit or a move doesn't put the older values back, even when the edit
 lands while the page is saving.
+
+Request-mode title cards use the Hidden Content switch for their surface: recommendations, discovery or search. Full-document Hidden Content saves carry a base rule revision; a stale replacement is rejected so newer rules from another tab remain saved.

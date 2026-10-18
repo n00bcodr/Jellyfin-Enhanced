@@ -80,6 +80,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private IActionResult Send(StatusViewer viewer, DiscoverAnswer? answer, string reason)
         {
             if (answer == null) return Reply(RequestOutcome.Refused("discover_unavailable", 503, "unavailable"));
+            answer = _discover.Present(viewer, answer);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason, certainty = "Succeeded", message = "Discover", answer });
             var etag = "\"" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(viewer.UserId.ToString("N") + "|").Concat(bytes).ToArray()), 0, 16) + "\"";
             Response.Headers["Cache-Control"] = "private, no-cache";

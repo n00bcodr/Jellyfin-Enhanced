@@ -255,7 +255,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // ones, so it never pushes one out of the cap): its "Ready" days count from when it
             // arrived in Jellyfin, which only composing knows (Seerr may mark it available without
             // touching the request).
-            var hidden = _hidden == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_hidden, viewer.UserId, library: _library);
+            var initial = _hidden == null ? null : TitlePresentationGate.Read(_hidden, _presentation, viewer.UserId, _library);
+            var hidden = initial?.Hidden ?? HiddenContentPolicy.Build(null);
             var titles = _requests.ForUser(viewer.UserId).Where(r => !hidden.IsHidden(r.Key, _aliases, "requests"))
                 .GroupBy(r => r.Key!.ToString())
                 .Select(g => g.ToList())
@@ -283,7 +284,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 : string.Empty;
             var arrDown = ArrUnavailable();
             var what = string.Join("|", _presentation?.Load(viewer.UserId).Revision ?? "", _requests.Active ? "on" : "off", _requests.Loaded ? "loaded" : "-", state.LastError == null ? "ok" : "err", arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs);
-            return _status.ForTitlesAsync(viewer, keys, "hub", what, composed => Build(viewer, entries, composed, config, state, arrDown, more), cancellationToken, scopes);
+            return _status.ForTitlesAsync(viewer, keys, "hub", what, composed => Build(viewer, entries, composed, config, state, arrDown, more), cancellationToken, scopes, presentation: _hidden == null ? null : () => TitlePresentationGate.Read(_hidden, _presentation, viewer.UserId, _library), presentationRevision: initial?.Revision);
         }
 
         /// <summary>
@@ -300,7 +301,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var now = _status.Now.UtcDateTime;
             static bool Open(RequestWant w) => w.Status is "pending" or "queued" or "sent" or "stale";
             var mine = ledger.Database.Available ? ledger.List(viewer.UserId, false) : Array.Empty<RequestWant>();
-            var hidden = _hidden == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_hidden, viewer.UserId, library: _library);
+            var initial = _hidden == null ? null : TitlePresentationGate.Read(_hidden, _presentation, viewer.UserId, _library);
+            var hidden = initial?.Hidden ?? HiddenContentPolicy.Build(null);
             var titles = mine.Where(w => !hidden.IsHidden(TitleKey.Parse(w.Input.Key), _aliases, "requests")).Where(w => w.Status != "cancelled" && TitleKey.Parse(w.Input.Key) != null)
                 .GroupBy(w => w.Input.Key, StringComparer.Ordinal)
                 .Select(g => g.ToList())
@@ -328,7 +330,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var arrDown = ArrUnavailable();
             var names = string.Join(",", meta.OrderBy(m => m.Key, StringComparer.Ordinal).Select(m => m.Key + "=" + m.Value.Title + "/" + m.Value.Year + "/" + m.Value.Poster + "/" + m.Value.ItemId));
             var what = string.Join("|", _presentation?.Load(viewer.UserId).Revision ?? "", "je", ledger.Revision.ToString(CultureInfo.InvariantCulture), arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs, MutationInput.Hash(names));
-            return await _status.ForTitlesAsync(viewer, keys, "hub", what, composed => BuildLedger(viewer, entries, composed, meta, config, state, arrDown, more), cancellationToken, scopes, load).ConfigureAwait(false);
+            return await _status.ForTitlesAsync(viewer, keys, "hub", what, composed => BuildLedger(viewer, entries, composed, meta, config, state, arrDown, more), cancellationToken, scopes, load, _hidden == null ? null : () => TitlePresentationGate.Read(_hidden, _presentation, viewer.UserId, _library), initial?.Revision).ConfigureAwait(false);
         }
 
         private byte[] BuildLedger(StatusViewer viewer, List<List<RequestWant>> entries, IReadOnlyList<ArrStatusService.KeyedStatus> titles, Dictionary<string, HubTitleMeta> meta, PluginConfiguration config, SeerrReadModelState state, bool arrDown, bool more)

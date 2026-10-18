@@ -452,3 +452,5 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
 The shared `Services/HiddenContentPolicy.cs` matches viewer rules by typed TMDB title identity or existing library/series IDs. `TitleFeedProjection.cs` adapts known provider, request and discovery JSON shapes after access filtering and raw caches. Provider hide controls use atomic per-rule routes.
 
 The generic native provider source, access policy and feed controller are shared with Jellyfin 10.11; synthetic page routing remains Jellyfin 12 only. `NativeDetails/ProviderMetadata.cs` supplies schema-safe metadata/art-path reads. Durable `ProviderTitles` retain Spoiler Guard intent across arrival, editions and reimports.
+
+`Services/TitlePresentationGate.cs` re-reads the viewer’s Hidden Content and Spoiler Guard policies at delivery. Its result filter covers native DTOs and known provider/feed envelopes after asynchronous work, including facade short circuits; personalized cache inserts and hits use the same gate. Conditional responses validate the final projected body and policy revision.

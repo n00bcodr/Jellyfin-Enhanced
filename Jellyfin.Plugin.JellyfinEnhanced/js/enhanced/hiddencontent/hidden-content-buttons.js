@@ -220,7 +220,7 @@
                 const title = internal.titleData({ itemId, type: card.dataset.type, tmdbId: card.dataset.tmdbId,
                     name: card.querySelector('.cardText')?.textContent || '' });
                 if (title) {
-                    const button = internal.buildTitleControl(title, { onChanged: hidden => card.classList.toggle('je-hidden', hidden) });
+                    const button = internal.buildTitleControl(title, { card, surface: () => internal.getCardSurface(card) || internal.getCurrentNativeSurface() });
                     if (button) cardBox.appendChild(button);
                     continue;
                 }

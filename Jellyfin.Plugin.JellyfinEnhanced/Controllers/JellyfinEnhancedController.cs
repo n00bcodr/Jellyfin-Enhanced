@@ -4835,6 +4835,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var result = await _wikidataAwardsService.GetAwardsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                var final = Services.TitlePresentationGate.Read(_userConfigurationManager, _presentation, UserHelper.GetCurrentUserId(User) ?? Guid.Empty, _libraryManager);
+                if (final.Spoilers?.HidesRatings(Services.HiddenContentPolicy.TitleIdentity(mediaType, tmdbId)) == true)
+                {
+                    Response.Headers["Cache-Control"] = "private, no-store";
+                    return Ok(new { confirmed = true, ratings = Array.Empty<object>(), awards = Array.Empty<object>() });
+                }
                 if (result.Confirmed)
                 {
                     SetExternalDataCacheHeaders();
@@ -4884,6 +4890,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var result = await _mdblistService.GetRatingsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                var final = Services.TitlePresentationGate.Read(_userConfigurationManager, _presentation, UserHelper.GetCurrentUserId(User) ?? Guid.Empty, _libraryManager);
+                if (final.Spoilers?.HidesRatings(Services.HiddenContentPolicy.TitleIdentity(mediaType, tmdbId)) == true)
+                {
+                    Response.Headers["Cache-Control"] = "private, no-store";
+                    return Ok(new { confirmed = true, ratings = Array.Empty<object>(), awards = Array.Empty<object>() });
+                }
                 if (result.Confirmed)
                 {
                     SetExternalDataCacheHeaders();
@@ -5697,7 +5709,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
+            var document = _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
+            document.Revision = Services.HiddenContentPolicy.RulesRevision(document);
+            return document;
         }
 
         private static HiddenContentSettings BuildHcDefaultSettings(PluginConfiguration src)
@@ -5747,8 +5761,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Pre-write strict read so a corrupt existing file 503s + backs up instead of being overwritten.
                     try
                     {
-                        _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
+                        var current = _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
                             authorizedUserId, "hidden-content.json");
+                        var currentRevision = Services.HiddenContentPolicy.RulesRevision(current);
+                        if (userConfiguration.Revision != null ? userConfiguration.Revision != currentRevision
+                            : current.Items.Any(p => !userConfiguration.Items.TryGetValue(p.Key, out var incoming)
+                                || Newtonsoft.Json.JsonConvert.SerializeObject(incoming) != Newtonsoft.Json.JsonConvert.SerializeObject(p.Value)))
+                            return Conflict(new { success = false, code = "hidden_content_changed" });
+                        userConfiguration.Revision = Services.HiddenContentPolicy.RulesRevision(userConfiguration);
                     }
                     catch (Exception strictEx) when (strictEx is InvalidDataException
                                                   || strictEx is Newtonsoft.Json.JsonException)
@@ -5766,7 +5786,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
                 _logger.Info($"Saved hidden content for {ResolveUserDisplay(authorizedUserId)} to hidden-content.json");
-                return Ok(new { success = true, file = "hidden-content.json" });
+                return Ok(new { success = true, file = "hidden-content.json", revision = userConfiguration.Revision });
             }
             catch (Exception ex)
             {
@@ -5817,7 +5837,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", data);
                     Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
                     Response.Headers["Cache-Control"] = "private, no-store";
-                    return Ok(new { success = true, key = canonical, hidden = item != null, item });
+                    return Ok(new { success = true, key = canonical, hidden = item != null, item, items = data.Items, revision = Services.HiddenContentPolicy.RulesRevision(data) });
                 }
             }
             catch (Exception ex) when (ex is IOException or Newtonsoft.Json.JsonException)

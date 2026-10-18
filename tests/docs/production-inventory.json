@@ -1163,6 +1163,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitlePresentationGate.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbCompanyTvDiscover.cs",
       "category": "Services"
     },
@@ -9006,6 +9010,14 @@
     },
     {
       "class": "UserHiddenContent",
+      "name": "Revision",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserHiddenContent",
       "name": "Items",
       "type": "Dictionary<string, HiddenContentItem>",
       "initializer": "new Dictionary<string, HiddenContentItem>()",
@@ -9375,6 +9387,14 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs"
     },
     {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitlePresentationGate.cs"
+    },
+    {
+      "literal": "spoilerblur.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitlePresentationGate.cs"
+    },
+    {
       "literal": "tmdb-cache.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbResponseCache.cs"
     },
@@ -9646,10 +9666,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 534,
+    "files": 535,
     "routes": 257,
-    "configuration_properties": 578,
-    "storage_references": 82,
+    "configuration_properties": 579,
+    "storage_references": 84,
     "scheduled_tasks": 14,
     "locales": 33
   }

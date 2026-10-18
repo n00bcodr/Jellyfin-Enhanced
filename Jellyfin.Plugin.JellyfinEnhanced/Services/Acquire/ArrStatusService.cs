@@ -615,20 +615,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// the status bodies: <paramref name="what"/> names everything else the body depends on.
         /// Titles the viewer may not ask about by key are left out. Never calls an arr.
         /// </summary>
-        internal async Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null)
+        internal async Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null, IReadOnlyCollection<TitleKey>? loadEpisodes = null, Func<TitlePresentationPolicy>? presentation = null, string? presentationRevision = null)
         {
             var titles = keys.Select(k => k.Title).Distinct().ToList();
             var gather = await GatherAsync(viewer, titles, loadEpisodes: loadEpisodes, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
             RequestScope? ScopeOf(TitleKey t) => scopes != null && scopes.TryGetValue(t, out var scope) ? scope : null;
-            var cacheKey = CacheKey(viewer, route, what + "|" + string.Join(",", titles.Select(t => t + (ScopeOf(t) is { } scope ? "@" + scope : string.Empty))), gather.Revision);
-            if (Cache.Get(cacheKey) is { } hit) return hit;
+            var cacheKey = CacheKey(viewer, route, what + "|" + presentationRevision + "|" + string.Join(",", titles.Select(t => t + (ScopeOf(t) is { } scope ? "@" + scope : string.Empty))), gather.Revision);
+            StatusBody Present(byte[] raw, bool insert)
+            {
+                var final = presentation?.Invoke();
+                var bytes = final == null ? raw : System.Text.Encoding.UTF8.GetBytes(final.Project(System.Text.Encoding.UTF8.GetString(raw), "requests"));
+                // A snapshot captured before Gather/build cannot populate a cache after its policy changed.
+                return insert && (final == null || final.Revision == presentationRevision) ? Cache.Put(cacheKey, bytes)
+                    : new StatusBody(bytes, ArrStatusCache.ETagFor(final == null || final.Revision == presentationRevision ? cacheKey : cacheKey + "|" + final.Revision, bytes));
+            }
+            if (Cache.Get(cacheKey) is { } hit) return Present(hit.Json, false);
             var result = new List<KeyedStatus>();
             foreach (var title in titles)
             {
                 if (Compose(viewer, gather, title, detail: false, ScopeOf(title)) is not { } composed) continue;
                 result.Add(ScopeOf(title) is { } asked ? Scoped(viewer, gather, composed, asked) : composed);
             }
-            return Cache.Put(cacheKey, build(result));
+            return Present(build(result), true);
         }
 
         /// <summary>

@@ -71,17 +71,26 @@
             borderColor: accentColor
         });
         undoBtn.textContent = JE.t('hidden_content_undo');
-        undoBtn.addEventListener('click', () => {
-            unhideItem(itemId);
-            toast.classList.remove('je-visible');
-            setTimeout(() => toast.remove(), 300);
+        let dismissTimer;
+        undoBtn.addEventListener('click', async () => {
+            clearTimeout(dismissTimer);
+            undoBtn.disabled = true;
+            try {
+                if (await unhideItem(itemId) === false) throw new Error('Undo failed');
+                toast.classList.remove('je-visible');
+                setTimeout(() => toast.remove(), 300);
+            } catch (_) {
+                textSpan.textContent = JE.t('hidden_content_save_failed_persistent');
+            } finally {
+                undoBtn.disabled = false;
+            }
         });
         toast.appendChild(undoBtn);
 
         document.body.appendChild(toast);
         requestAnimationFrame(() => toast.classList.add('je-visible'));
 
-        setTimeout(() => {
+        dismissTimer = setTimeout(() => {
             if (toast.parentNode) {
                 toast.classList.remove('je-visible');
                 setTimeout(() => toast.remove(), 300);

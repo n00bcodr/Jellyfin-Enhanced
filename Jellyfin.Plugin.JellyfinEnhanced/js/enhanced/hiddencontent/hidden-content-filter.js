@@ -115,6 +115,11 @@
      * @returns {'nextup'|'continuewatching'|null} The detected surface or null.
      */
     function getCardSurface(card) {
+        const explicit = card.closest('[data-je-hide-surface]')?.dataset.jeHideSurface;
+        if (explicit) return explicit;
+        if (card.closest('#similarCollapsible, #recommendationsCollapsible, .je-recommendations-section')) return 'recommendations';
+        if (card.closest('.je-discovery-grid, .je-native-absent-list, [class*="-discovery-section"]')) return 'discovery';
+        if (card.closest('#searchPage, .searchPage')) return 'search';
         if (typeof JE.detectCardRowSurface === 'function') return JE.detectCardRowSurface(card);
 
         // Fallback for the (unsupported) case of the Remove module not being loaded.
@@ -374,7 +379,6 @@
      */
     function filterNativeCards() {
         const nativeSurface = getCurrentNativeSurface();
-        if (!shouldFilterSurface(nativeSurface)) return;
         const settings = getSettings();
         if (!settings.enabled) return;
         if (getHiddenCount() === 0) return;
@@ -394,7 +398,13 @@
             if (!itemId) continue;
 
             // Check scope-aware hiding for cards in Next Up / Continue Watching sections
-            const cardSurface = getCardSurface(card);
+            const cardSurface = getCardSurface(card) || nativeSurface;
+            if (!shouldFilterSurface(cardSurface)) {
+                card.removeAttribute(PROCESSED_ATTR);
+                card.classList.remove('je-hidden');
+                card.removeAttribute(HIDDEN_DIRECT_ATTR);
+                continue;
+            }
             if (cardSurface) {
                 if (shouldFilterSurface(cardSurface) && isHiddenOnSurface(itemId, cardSurface)) {
                     toHide.push(card);
@@ -442,7 +452,6 @@
      */
     function filterAllNativeCards() {
         const nativeSurface = getCurrentNativeSurface();
-        if (!shouldFilterSurface(nativeSurface)) return;
         const settings = getSettings();
         if (!settings.enabled) return;
         const isDetailPage = nativeSurface === 'details';
@@ -458,7 +467,13 @@
             card.removeAttribute(HIDDEN_PARENT_ATTR);
             if (!itemId) continue;
 
-            const cardSurface = getCardSurface(card);
+            const cardSurface = getCardSurface(card) || nativeSurface;
+            if (!shouldFilterSurface(cardSurface)) {
+                card.removeAttribute(PROCESSED_ATTR);
+                card.classList.remove('je-hidden');
+                card.removeAttribute(HIDDEN_DIRECT_ATTR);
+                continue;
+            }
             let hiddenByScope = false;
             if (cardSurface && shouldFilterSurface(cardSurface) && isHiddenOnSurface(itemId, cardSurface)) {
                 toHide.push(card);

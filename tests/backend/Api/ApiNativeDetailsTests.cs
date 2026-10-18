@@ -238,6 +238,8 @@ public class ApiNativeDetailsTests
         public Mock<MediaBrowser.Controller.Library.ILibraryManager> Library { get; } = new(MockBehavior.Strict);
         public Mock<MediaBrowser.Controller.Dto.IDtoService> Dto { get; } = new(MockBehavior.Strict);
         public List<string> Hosts { get; } = new();
+        public TaskCompletionSource? ImageGate { get; set; }
+        public TaskCompletionSource? ImageStarted { get; set; }
         public IntegrationTransport Images { get; }
         public IntegrationTransport Seerr { get; }
         public NativeDetailsArtwork Artwork { get; private set; } = null!;
@@ -282,12 +284,14 @@ public class ApiNativeDetailsTests
             Library.Setup(l => l.GetStudioId(It.IsAny<string>())).Returns((string n) => NameId("studio", n));
             ImageTags.Setup(i => i.GetImageCacheTag(It.IsAny<MediaBrowser.Controller.Entities.BaseItem>(), It.IsAny<MediaBrowser.Controller.Entities.ItemImageInfo>()))
                 .Returns((MediaBrowser.Controller.Entities.BaseItem item, MediaBrowser.Controller.Entities.ItemImageInfo _) => "lib-tag-" + item.Id.ToString("N"));
-            Images = new IntegrationTransport((req, _) =>
+            Images = new IntegrationTransport(async (req, _) =>
             {
                 lock (Hosts) Hosts.Add(req.RequestUri!.Host);
+                ImageStarted?.TrySetResult();
+                if (ImageGate != null) await ImageGate.Task;
                 var r = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[] { 0xff, 0xd8, 0xff, 1, 2, 3 }) };
                 r.Content.Headers.ContentType = new("image/jpeg");
-                return Task.FromResult(r);
+                return r;
             });
             Seerr = new IntegrationTransport(async (req, _) =>
             {
@@ -713,6 +717,21 @@ public class ApiNativeDetailsTests
         var parent = await Call(rig, "Items", "GetItemsByUserIdLegacy", Me(viewer), new() { ["parentId"] = syn });
         Assert.Equal(0, parent.NextCalls);
         Assert.Empty(Value<QueryResult<BaseItemDto>>(parent.Result).Items);
+    }
+
+    [Fact]
+    public async Task GuardEnabledDuringColdArtworkFetchNeverReturnsOriginalBytes()
+    {
+        using var rig = new Rig(); var viewer=rig.Person(); var movie=Id(SyntheticId.Movie(693134));
+        var config=rig.Plugin.Plugin.Configuration; config.SpoilerBlurEnabled=true; config.SpoilerKeepMoviePosters=false;
+        var dto=Value<BaseItemDto>((await Call(rig,"UserLibrary","GetItem",Me(viewer),new() { ["itemId"]=movie })).Result);
+        rig.ImageStarted=new(TaskCreationOptions.RunContinuationsAsynchronously); rig.ImageGate=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending=Call(rig,"Image","GetItemImage",null,new() { ["itemId"]=movie,["imageType"]=ImageType.Primary,["tag"]=dto.ImageTags[ImageType.Primary],["maxWidth"]=300 });
+        await rig.ImageStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        rig.Plugin.Core.Manager.SaveUserConfiguration(viewer.Id.ToString("N"),"spoilerblur.json",new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur { PendingTmdb=new() { ["movie:693134"]=new() } });
+        rig.ImageGate.SetResult(); var result=await pending;
+        if(result.Result is FileContentResult file) Assert.NotEqual(new byte[] { 0xff,0xd8,0xff,1,2,3 },file.FileContents);
+        else Assert.Equal(404,Status(result.Result));
     }
 
     [Fact]

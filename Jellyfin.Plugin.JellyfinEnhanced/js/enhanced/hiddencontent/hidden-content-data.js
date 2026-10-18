@@ -65,6 +65,13 @@
             tmdbId: key.split(':')[2], hideScope: 'global', key };
     }
 
+    let persistence = Promise.resolve();
+    /** Serializes bulk and atomic writes in this tab; each task validates its captured viewer. */
+    function enqueuePersistence(work) {
+        const next = persistence.catch(() => {}).then(work);
+        persistence = next;
+        return next;
+    }
     const ruleWrites = new Map();
     /** Saves a single provider rule. No optimistic success, stale-user writes or full-document replacement. */
     function saveTitleRule(data, hidden) {
@@ -73,21 +80,30 @@
         const user = ApiClient.getCurrentUserId();
         const epoch = JE.session?.getEpoch?.();
         const previous = ruleWrites.get(title.key) || Promise.resolve();
-        const task = previous.catch(() => {}).then(async () => {
+        const task = enqueuePersistence(async () => {
+            await previous.catch(() => {});
             if (ApiClient.getCurrentUserId() !== user || (JE.session?.isCurrent?.(epoch) === false)) return false;
+            const beforeRules = JSON.parse(JSON.stringify(getHiddenData().items || {}));
             const item = { itemId: '', seriesId: '', type: title.type, tmdbId: title.tmdbId,
                 name: title.name || title.title || '', posterPath: title.posterPath || '', hideScope: 'global', hiddenAt: new Date().toISOString() };
-            await ApiClient.ajax({ type: hidden ? 'PUT' : 'DELETE',
+            const reply = await ApiClient.ajax({ type: hidden ? 'PUT' : 'DELETE', dataType: 'json',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${user}/hidden-content/rule/${encodeURIComponent(title.key)}`),
                 ...(hidden ? { data: JSON.stringify(item), contentType: 'application/json' } : {}) });
             if (ApiClient.getCurrentUserId() !== user || (JE.session?.isCurrent?.(epoch) === false)) return false;
             const current = getHiddenData();
-            const items = { ...current.items };
+            const authoritative = reply?.items || reply?.Items;
+            const items = authoritative ? (typeof JE.toCamelCase === 'function' ? JE.toCamelCase(authoritative) : authoritative) : { ...current.items };
+            // A revision describes its complete rule base. Preserve edits made locally while this write awaited.
+            if (authoritative) for (const key of new Set([...Object.keys(beforeRules), ...Object.keys(current.items || {})])) {
+                if (JSON.stringify(beforeRules[key]) === JSON.stringify(current.items?.[key])) continue;
+                if (current.items?.[key]) items[key] = current.items[key];
+                else delete items[key];
+            }
             for (const key of Object.keys(items)) {
                 if (titleKey(items[key].type, items[key].tmdbId) === title.key && (items[key].hideScope || 'global') === 'global') delete items[key];
             }
-            if (hidden) items[title.key] = item;
-            hiddenData = { ...current, items };
+            if (hidden) items[title.key] = typeof JE.toCamelCase === 'function' ? JE.toCamelCase(reply?.item || reply?.Item || item) : item;
+            hiddenData = { ...current, items, revision: authoritative ? reply?.revision || reply?.Revision || current.revision : current.revision };
             JE.userConfig.hiddenContent = hiddenData;
             rebuildSets();
             emitChange();
@@ -630,7 +646,7 @@
 
     Object.assign(internal, {
         hiddenIdSet,
-        titleKey, titleData, saveTitleRule, buildTitleControl,
+        titleKey, titleData, saveTitleRule, buildTitleControl, enqueuePersistence,
         normalizeId,
         getHiddenData,
         getSettings,

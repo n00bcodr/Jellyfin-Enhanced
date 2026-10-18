@@ -34,6 +34,7 @@ public static class TitleFeedProjection
     public static string? Identity(JsonObject row, string? fallbackKind = null)
     {
         if (HiddenContentPolicy.CanonicalTitle(Text(row, "key")) is { } key) return key;
+        if (Acquire.TitleKey.Parse(Text(row, "series") ?? Text(row, "key")) is { } owner) return owner.Title.ToString();
         var media = row["media"] as JsonObject ?? row;
         var kind = Text(media, "mediaType") ?? Text(media, "media_type") ?? Text(media, "kind") ?? Text(media, "type") ?? fallbackKind;
         var id = Text(media, "tmdbId") ?? Text(media, "tmdb_id");

@@ -7,6 +7,7 @@ using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
@@ -193,6 +194,25 @@ public class ApiArrRequestsHubTests
 
     private static List<(string Title, string Group, string Stage)> Entries(JsonElement list)
         => list.EnumerateArray().Select(e => (e.GetProperty("title").GetString()!, e.GetProperty("group").GetString()!, e.GetProperty("status").GetProperty("stage").GetString()!)).ToList();
+
+    [Fact]
+    public async Task FinalPresentationRejectsStaleHubInsertAndReprojectsCachedBytes()
+    {
+        using var rig = new Rig();
+        var open = new TitlePresentationPolicy(HiddenContentPolicy.Build(null), null);
+        var hidden = new TitlePresentationPolicy(HiddenContentPolicy.Build(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserHiddenContent { Items = new() { ["movie:tmdb:42"] = new() { Type="Movie", TmdbId="42" } } }), null);
+        var policy = open;
+        var keys = new[] { TitleKey.Parse("movie:tmdb:42")! };
+        var raw = Encoding.UTF8.GetBytes("""{"mine":[{"key":"movie:tmdb:42","title":"secret"}]}""");
+        var count=rig.Service.Cache.Count;
+        var stale=await rig.Service.ForTitlesAsync(rig.Emma,keys,"hub","stale",_=> { policy=hidden;return raw; },default,presentation:()=>policy,presentationRevision:open.Revision);
+        Assert.DoesNotContain("secret",Encoding.UTF8.GetString(stale.Json));Assert.Equal(count,rig.Service.Cache.Count);
+        policy=open;
+        await rig.Service.ForTitlesAsync(rig.Emma,keys,"hub","hit",_=>raw,default,presentation:()=>policy,presentationRevision:open.Revision);
+        var stored=rig.Service.Cache.Count;policy=hidden;
+        var hit=await rig.Service.ForTitlesAsync(rig.Emma,keys,"hub","hit",_=>throw new Exception("expected hit"),default,presentation:()=>policy,presentationRevision:open.Revision);
+        Assert.DoesNotContain("secret",Encoding.UTF8.GetString(hit.Json));Assert.Equal(stored,rig.Service.Cache.Count);
+    }
 
     [Fact]
     public async Task TheHubIsBehindItsSwitchesAndNeedsAUser()

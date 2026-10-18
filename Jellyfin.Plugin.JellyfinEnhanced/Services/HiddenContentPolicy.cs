@@ -29,6 +29,14 @@ public sealed class HiddenContentPolicy
     private readonly bool _master;
     private readonly bool _remove;
 
+    /// <summary>Fingerprint of the effective rules and surface settings, without exposing private data.</summary>
+    public string Revision { get; }
+
+    /// <summary>Stable base revision used to protect full-document replacements from newer rule writes.</summary>
+    public static string RulesRevision(UserHiddenContent data)
+        => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            Newtonsoft.Json.JsonConvert.SerializeObject(data.Items.OrderBy(p => p.Key, StringComparer.Ordinal)))));
+
     private HiddenContentPolicy(UserHiddenContent? data, bool master, bool remove)
     {
         var settings = data?.Settings ?? new();
@@ -38,6 +46,8 @@ public sealed class HiddenContentPolicy
             FilterNextUp = settings.FilterNextUp, FilterContinueWatching = settings.FilterContinueWatching };
         _master = master;
         _remove = remove;
+        Revision = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            RulesRevision(data ?? new()) + Newtonsoft.Json.JsonConvert.SerializeObject(_settings) + master + remove)));
         foreach (var pair in data?.Items ?? new())
         {
             var entry = pair.Value;

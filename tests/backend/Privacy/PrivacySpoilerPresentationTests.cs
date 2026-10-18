@@ -14,6 +14,41 @@ public class PrivacySpoilerPresentationTests
     private static UserSpoilerBlur State() => new() { PendingTmdb = new() { ["movie:42"] = new() } };
 
     [Theory]
+    [InlineData("last_episode_to_air")][InlineData("next_episode_to_air")]
+    [InlineData("lastEpisodeToAir")][InlineData("nextEpisodeToAir")]
+    public void NestedEpisodePolicyIsIndependentOfDates(string field)
+    {
+        var state = new UserSpoilerBlur { PendingTmdb = new() { ["tv:42"] = new() } };
+        state.Prefs.HideAirDate = false;
+        var raw = new JsonObject { [field] = JsonNode.Parse("""{"name":"secret","overview":"secret","voteAverage":9,"vote_average":9,"stillPath":"/secret.jpg","still_path":"/secret.jpg","air_date":"2030-01-01"}""") }.ToJsonString();
+        var row = JsonNode.Parse(new SpoilerPresentationContext(state, Config()).Project(raw, "tv:tmdb:42"))![field]!;
+        Assert.Equal("", row["name"]!.ToString());
+        foreach (var name in new[] { "overview", "voteAverage", "vote_average", "stillPath", "still_path" }) Assert.Null(row[name]);
+        Assert.Equal("2030-01-01", row["air_date"]!.ToString());
+    }
+
+    [Fact]
+    public void SnakeCaseLastAirDateUsesDatePolicy()
+    {
+        var state = new UserSpoilerBlur { PendingTmdb = new() { ["tv:42"] = new() } };
+        Assert.Null(JsonNode.Parse(new SpoilerPresentationContext(state, Config()).Project("""{"last_air_date":"2030-01-01"}""", "tv:tmdb:42"))!["last_air_date"]);
+    }
+
+    [Theory]
+    [InlineData("movie:tmdb:42", null, "posters")]
+    [InlineData("movie:tmdb:42", null, "logos")]
+    [InlineData("tv:tmdb:42", "episode", "stills")]
+    public void StandaloneAndEmbeddedImageArraysUseTypedRouteScope(string title, string? scope, string array)
+    {
+        var state = new UserSpoilerBlur { ProviderTitles = new() { [title] = new() } };
+        var policy = new SpoilerPresentationContext(state, Config());
+        var raw = new JsonObject { [array] = new JsonArray(new JsonObject { ["file_path"] = "/secret.jpg" }) }.ToJsonString();
+        Assert.Empty((JsonArray)JsonNode.Parse(policy.ProjectResource(raw, title, "images", scopeKind: scope))![array]!);
+        var embedded = JsonNode.Parse(policy.Project("{\"images\":" + raw + "}", title, scopeKind: scope))!;
+        Assert.Empty((JsonArray)embedded["images"]![array]!);
+    }
+
+    [Theory]
     [InlineData("results")][InlineData("cast")][InlineData("crew")][InlineData("parts")]
     [InlineData("items")][InlineData("requests")][InlineData("events")][InlineData("mine")][InlineData("soon")][InlineData("ready")]
     public void EveryKnownFeedStripsEachResultsOwnFieldsWithoutMutatingRawSource(string field)
@@ -106,5 +141,62 @@ public class PrivacySpoilerContextTests
         Assert.Same(context,service.Load(viewer,http));
         for(var i=0;i<300;i++) Assert.DoesNotContain("secret",context.Project("{\"overview\":\"secret\"}","movie:tmdb:42"));
         Assert.Empty(library.Invocations);
+    }
+}
+
+[Collection("Plugin singleton")]
+public class PrivacyD46RoundOneTests
+{
+    [Fact]
+    public void SpoilerLibraryRulesCoverEntryTwoThousandAndOneInBoundedBatches()
+    {
+        using var f = new ApiPluginFixture(); f.Plugin.Configuration.SpoilerBlurEnabled = true;
+        var viewer = Guid.NewGuid(); var person = new Jellyfin.Database.Implementations.Entities.User("viewer", "default", "default") { Id = viewer };
+        var ids = Enumerable.Range(0, 2001).Select(_ => Guid.NewGuid()).ToArray();
+        var state = new UserSpoilerBlur(); foreach (var id in ids) state.Series[id.ToString("N")] = new();
+        f.Core.Manager.SaveUserConfiguration(viewer.ToString("N"), "spoilerblur.json", state);
+        var users = new Moq.Mock<MediaBrowser.Controller.Library.IUserManager>(); users.Setup(u => u.GetUserById(viewer)).Returns(person);
+        var library = new Moq.Mock<MediaBrowser.Controller.Library.ILibraryManager>();
+        library.Setup(l => l.GetItemList(Moq.It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>()))
+            .Returns((MediaBrowser.Controller.Entities.InternalItemsQuery q) => q.ItemIds.Select(id => (MediaBrowser.Controller.Entities.BaseItem)new MediaBrowser.Controller.Entities.TV.Series { Id = id, ProviderIds = new Dictionary<string,string> { ["Tmdb"] = (Array.IndexOf(ids,id)+1).ToString() } }).ToList());
+        var context = new SpoilerPresentation(f.Core.Manager, library.Object, users.Object, Moq.Mock.Of<MediaBrowser.Controller.Library.IUserDataManager>()).Load(viewer);
+        Assert.True(context.Guarded("tv:tmdb:2001")); Assert.Equal(2, library.Invocations.Count);
+        Assert.All(library.Invocations, call => Assert.InRange(((MediaBrowser.Controller.Entities.InternalItemsQuery)call.Arguments[0]).ItemIds.Length, 1, 2000));
+    }
+
+    [Fact]
+    public void StaleFullDocumentCannotEraseNewerAtomicRule()
+    {
+        using var f = new ApiPluginFixture(); var viewer = Guid.NewGuid();
+        var users = new Moq.Mock<MediaBrowser.Controller.Library.IUserManager>();
+        users.Setup(u => u.GetUserById(viewer)).Returns(new Jellyfin.Database.Implementations.Entities.User("viewer","default","default") { Id=viewer });
+        var c = ApiAssetTests.Controller(f.Core, f.Core.Manager, users.Object); c.HttpContext.User = JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(viewer);
+        var stale = new UserHiddenContent();
+        Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(c.PutHiddenContentRule(viewer.ToString("N"), "movie:tmdb:42", new() { Type="Movie", TmdbId="42" }));
+        c.SaveUserHiddenContent(viewer.ToString("N"), stale);
+        Assert.Contains("movie:tmdb:42", f.Core.Manager.GetUserConfiguration<UserHiddenContent>(viewer.ToString("N"), "hidden-content.json").Items.Keys);
+    }
+
+    [Theory]
+    [InlineData(false)][InlineData(true)]
+    public async Task MetadataGateRechecksAfterProviderAwait(bool awards)
+    {
+        using var f = new ApiPluginFixture(); var viewer=Guid.NewGuid();
+        f.Plugin.Configuration.SpoilerBlurEnabled=true; f.Plugin.Configuration.SpoilerStripRatings=true;
+        f.Plugin.Configuration.ShowAwards=true; f.Plugin.Configuration.MdblistRatingsEnabled=true; f.Plugin.Configuration.MdblistApiKey="test";
+        var started=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var transport=new IntegrationTransport(async (_,_) => { started.TrySetResult(); await release.Task; return IntegrationTransport.Response(awards ? """{"results":{"bindings":[]}}""" : """{"ratings":[{"source":"imdb","value":99}]}"""); });
+        using var mdblist=new MdblistService(transport,f.Core.Paths.Object,f.Core.Logger);
+        using var wikidata=new WikidataAwardsService(transport,f.Core.Paths.Object,f.Core.Logger);
+        var presentation=new SpoilerPresentation(f.Core.Manager,Moq.Mock.Of<MediaBrowser.Controller.Library.ILibraryManager>(),Moq.Mock.Of<MediaBrowser.Controller.Library.IUserManager>(),Moq.Mock.Of<MediaBrowser.Controller.Library.IUserDataManager>());
+        var c=ApiAssetTests.Controller(f.Core,f.Core.Manager,mdblist,wikidata,presentation); c.HttpContext.User=JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(viewer);
+        var task=awards ? c.GetAwards("movie","42",default) : c.GetMdblistRatings("movie","42",default);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        f.Core.Manager.SaveUserConfiguration(viewer.ToString("N"),"spoilerblur.json",new UserSpoilerBlur { PendingTmdb=new() { ["movie:42"]=new() } }); release.SetResult();
+        var result=Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(await task);
+        var json=System.Text.Json.JsonSerializer.Serialize(result.Value,new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy=System.Text.Json.JsonNamingPolicy.CamelCase });
+        Assert.Contains("\"ratings\":[]",json); Assert.Contains("\"awards\":[]",json);
+        Assert.Equal("private, no-store",c.Response.Headers.CacheControl.ToString());
     }
 }

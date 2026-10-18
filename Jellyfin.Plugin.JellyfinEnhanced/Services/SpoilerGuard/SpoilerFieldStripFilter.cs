@@ -532,6 +532,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        /// <summary>Applies the native watched/season/category rules with a freshly loaded presentation state.</summary>
+        internal void StripLibraryItem(BaseItemDto item, UserSpoilerBlur state, PluginConfiguration config, Guid viewer)
+            => StripItem(item, state, config, viewer);
+
         // Per-item strip. Mutates `item` in place when applicable; no-op otherwise.
         private void StripItem(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
         {

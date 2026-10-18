@@ -655,6 +655,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (!_artwork.IsCached(grant.Path, size) && !_artwork.TakeUpstream(grant.Viewer)) return new StatusCodeResult(StatusCodes.Status429TooManyRequests);
             var image = await _artwork.FetchAsync(grant.Path, size, ct).ConfigureAwait(false);
             if (image is not { } bytes) return new NotFoundResult();
+            var final = _userConfig == null ? null : TitlePresentationGate.Read(_userConfig, _presentation, viewer.Id, _library);
+            spoiler = final?.Spoilers;
+            if (HidesArtwork(owner, grant.Type) && spoiler?.Guarded(HiddenContentPolicy.TitleIdentity(owner.IsMovie ? "movie" : "tv", owner.TmdbId.ToString())) == true) return new NotFoundResult();
+            if (owner.Kind == SyntheticKind.Person && spoiler?.Flags(pageKey ?? "")["cast"]?.GetValue<bool>() == true) return new NotFoundResult();
+            protectedArt = spoiler?.ProtectArtwork(HiddenContentPolicy.TitleIdentity(owner.IsMovie ? "movie" : "tv", owner.TmdbId.ToString()),
+                owner.Kind.ToString().ToLowerInvariant(), grant.Type.ToString(), owner.Season) == true;
             var headers = context.HttpContext.Response.Headers;
             headers.CacheControl = "private, no-store";
             headers["X-Content-Type-Options"] = "nosniff";

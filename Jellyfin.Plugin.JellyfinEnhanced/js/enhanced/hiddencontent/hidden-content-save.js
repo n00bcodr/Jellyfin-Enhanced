@@ -150,17 +150,28 @@
     // Direct bypass of JE.saveUserSettings (which swallows errors) so callers can react to failure.
     // Returns the JSON snapshot that was sent so the caller can compare it to current state and decide
     // whether the success acknowledgement still represents the latest local intent.
-    async function directSaveHiddenContent() {
+    function directSaveHiddenContent() {
         const userId = ApiClient.getCurrentUserId();
-        if (!userId) throw new Error('no current user');
-        const snapshot = JSON.stringify(getHiddenData());
-        await ApiClient.ajax({
-            type: 'POST',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
-            data: snapshot,
-            contentType: 'application/json'
+        const epoch = JE.session?.getEpoch?.();
+        return internal.enqueuePersistence(async () => {
+            if (ApiClient.getCurrentUserId() !== userId || JE.session?.isCurrent?.(epoch) === false) throw new Error('user changed');
+            if (!userId) throw new Error('no current user');
+            const snapshot = JSON.stringify(getHiddenData());
+            const reply = await ApiClient.ajax({
+                type: 'POST',
+                dataType: 'json',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
+                data: snapshot,
+                contentType: 'application/json'
+            });
+            const revision = reply?.revision || reply?.Revision;
+            const sent = JSON.parse(snapshot);
+            if (revision && ApiClient.getCurrentUserId() === userId && JE.session?.isCurrent?.(epoch) !== false) {
+                getHiddenData().revision = revision;
+                sent.revision = revision;
+            }
+            return JSON.stringify(sent);
         });
-        return snapshot;
     }
 
     // After a successful save, decide whether the server is caught up.

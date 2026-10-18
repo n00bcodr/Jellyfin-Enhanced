@@ -177,6 +177,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private readonly RequestService _requests;
         private SpoilerPresentation? _presentation;
+        private UserConfigurationManager? _userConfig;
+        private ILibraryManager? _library;
         private readonly TitleAliases? _aliases;
         private readonly Func<string, int, Guid, CancellationToken, Task<bool>> _maySeeAbsent;
         private readonly Func<string, string, CancellationToken, Task<string?>> _tmdb;
@@ -194,7 +196,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 user => ReadHidden(userConfig, library, user),
                 () => DateTimeOffset.UtcNow)
         {
-            _presentation = presentation;
+            _presentation = presentation; _userConfig = userConfig; _library = library;
         }
 
         /// <summary>Creates the service with explicit readers (tests).</summary>
@@ -231,7 +233,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var lang = Lang(language);
             var hidden = Hidden(viewer.UserId);
-            var cacheKey = CacheKey(viewer, list + "|" + type + "|" + page + "|" + lang, hidden);
+            var spoilerRevision = _presentation?.Load(viewer.UserId).Revision;
+            var cacheKey = CacheKey(viewer, list + "|" + type + "|" + page + "|" + lang + "|" + spoilerRevision, hidden);
             if (Cached(cacheKey) is { } cached) return await WithPausesAsync(viewer, cached, ct).ConfigureAwait(false);
 
             DiscoverAnswer? answer;
@@ -265,8 +268,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var cards = await ProjectAsync(viewer, rows, hidden.Discovery, ct).ConfigureAwait(false);
                 answer = new DiscoverAnswer { List = list, Type = type, Page = page, TotalPages = Math.Clamp(total, 1, MaxPage), Results = cards };
             }
-            Store(cacheKey, answer);
-            return await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
+            var delivered = await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
+            // The final gate and insertion are synchronous. An in-flight old snapshot never enters this cache.
+            var current = Hidden(viewer.UserId);
+            delivered = Present(viewer, delivered, current);
+            if (current.Stamp == hidden.Stamp && _presentation?.Load(viewer.UserId).Revision == spoilerRevision) Store(cacheKey, delivered);
+            return delivered;
         }
 
         /// <summary>One page of free-text search (movies and series only), or null when TMDB could not answer.</summary>
@@ -274,15 +281,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var lang = Lang(language);
             var hidden = Hidden(viewer.UserId);
-            var cacheKey = CacheKey(viewer, "search|" + page + "|" + lang + "|" + query, hidden);
+            var spoilerRevision = _presentation?.Load(viewer.UserId).Revision;
+            var cacheKey = CacheKey(viewer, "search|" + page + "|" + lang + "|" + query + "|" + spoilerRevision, hidden);
             if (Cached(cacheKey) is { } cached) return await WithPausesAsync(viewer, cached, ct).ConfigureAwait(false);
             var json = await Read("search/multi", Query(page, lang) + "&include_adult=false&query=" + Uri.EscapeDataString(query), ct).ConfigureAwait(false);
             if (json == null) return null;
             var (rows, total) = Parse(json, null);
             var cards = await ProjectAsync(viewer, rows, hidden.Search, ct).ConfigureAwait(false);
             var answer = new DiscoverAnswer { List = "search", Type = "all", Page = page, TotalPages = Math.Clamp(total, 1, MaxPage), Results = cards };
-            Store(cacheKey, answer);
-            return await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
+            var delivered = await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
+            // The final gate and insertion are synchronous. An in-flight old snapshot never enters this cache.
+            var current = Hidden(viewer.UserId);
+            delivered = Present(viewer, delivered, current);
+            if (current.Stamp == hidden.Stamp && _presentation?.Load(viewer.UserId).Revision == spoilerRevision) Store(cacheKey, delivered);
+            return delivered;
         }
 
         /// <summary>
@@ -293,27 +305,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         private async Task<DiscoverAnswer> WithPausesAsync(StatusViewer viewer, DiscoverAnswer answer, CancellationToken ct)
         {
-            var spoiler = _presentation?.Load(viewer.UserId);
-            if (spoiler != null)
-            {
-                DiscoverCard Project(DiscoverCard card)
-                {
-                    var flags = spoiler.Flags(card.Key);
-                    return card with { Overview = flags["overview"]?.GetValue<bool>() == true ? null : card.Overview,
-                        Poster = spoiler.ProtectArtwork(card.Key, card.Kind, "Primary") ? null : card.Poster, Spoiler = flags };
-                }
-                answer = answer with { Results = answer.Results.Select(Project).ToArray(),
-                    Groups = answer.Groups?.Select(group => group with { Results = group.Results.Select(Project).ToArray() }).ToArray() };
-            }
             var cards = answer.Results.Concat(answer.Groups?.SelectMany(g => g.Results) ?? Enumerable.Empty<DiscoverCard>());
             var paused = await _requests.StoragePausesAsync(viewer.UserId, cards.Select(c => c.Key), false, ct).ConfigureAwait(false);
-            if (paused.Count == 0) return answer;
-            DiscoverCard Mark(DiscoverCard card) => paused.TryGetValue(card.Key, out var block) ? card with { Blocked = block } : card;
-            return answer with
+            DiscoverCard Mark(DiscoverCard card) => card with { Blocked = paused.TryGetValue(card.Key, out var block) ? block : null };
+            return Present(viewer, answer with
             {
                 Results = answer.Results.Select(Mark).ToList(),
                 Groups = answer.Groups?.Select(g => g with { Results = g.Results.Select(Mark).ToList() }).ToList(),
-            };
+            }, Hidden(viewer.UserId));
+        }
+
+        /// <summary>Final caller projection for cache hits, inserts and byte serialization; never awaits.</summary>
+        public DiscoverAnswer Present(StatusViewer viewer, DiscoverAnswer answer) => Present(viewer, answer, Hidden(viewer.UserId));
+
+        private DiscoverAnswer Present(StatusViewer viewer, DiscoverAnswer answer, HiddenTitles hidden)
+        {
+            var final = _userConfig == null ? null : TitlePresentationGate.Read(_userConfig, _presentation, viewer.UserId, _library);
+            if (final != null) hidden = new HiddenTitles(final.Hidden.GlobalKeys("discovery"), final.Hidden.GlobalKeys("search"));
+            var keys = answer.List == "search" ? hidden.Search : hidden.Discovery;
+            var spoiler = final?.Spoilers ?? _presentation?.Load(viewer.UserId);
+            bool Keep(DiscoverCard card) => !keys.Contains(card.Key) && (card.ItemId == null || !keys.Contains(card.ItemId));
+            DiscoverCard Project(DiscoverCard card)
+            {
+                if (spoiler == null) return card;
+                var flags = spoiler.Flags(card.Key);
+                return card with { Overview = flags["overview"]?.GetValue<bool>() == true ? null : card.Overview,
+                    Poster = spoiler.ProtectArtwork(card.Key, card.Kind, "Primary") ? null : card.Poster, Spoiler = flags };
+            }
+            return answer with { Results = answer.Results.Where(Keep).Select(Project).ToArray(),
+                Groups = answer.Groups?.Where(g => !keys.Contains(g.Key)).Select(g => g with { Results = g.Results.Where(Keep).Select(Project).ToArray() })
+                    .Where(g => g.Results.Count > 0).ToArray() };
         }
 
         // ------------------------------------------------------------------ projection
