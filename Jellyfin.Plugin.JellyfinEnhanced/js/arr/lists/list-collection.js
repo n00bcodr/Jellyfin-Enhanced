@@ -9,8 +9,10 @@
  * cover the standard copy), plus `tv:…:s<n>` for a season entry. Hidden entries are never in the view, so they never
  * suppress a gap or change a count.
  *
- * Answers go through the one acceptance rule (lp.pages.ticket: session, page show, route, list) plus this controller's
- * newest read, after every await.
+ * The controller's one ticket (lp.pages.issue) is issued when the page is shown and revoked when it is paused or
+ * disposed. Every DOM write (the section, each slice of cards, the header, Jellyfin's card refresh) goes through
+ * lp.gate.paint with it, removals through lp.gate.erase; answers are taken only while the ticket and this controller's
+ * newest read hold.
  */
 (function (JE) {
     'use strict';
@@ -56,7 +58,7 @@
             listId,
             page,
             view: null,
-            guarded: () => true,
+            ticket: null,
             section: null,
             seq: 0,
             abort: null,
@@ -68,8 +70,9 @@
             paused: false,
             disposed: false,
             focusOnRender: null,
-            header: lp.render.headerMark(page)
+            header: null
         };
+        ctrl.header = lp.render.headerMark(page, () => ctrl.ticket);
 
         /** @returns {boolean} The page is still in the document. */
         ctrl.isAlive = () => !ctrl.disposed && page.isConnected;
@@ -91,7 +94,8 @@
             statusContext: {},
             requests: JE.pluginConfig?.ArrListRequestsEnabled === true && (ctrl.view?.actions || []).includes('request'),
             swapActive: ctrl.view?.swapIn === true && ctrl.view?.reconciling !== true,
-            guarded: ctrl.guarded
+            guarded: ctrl.ticket ? ctrl.ticket.policy : lp.gate.FAIL_CLOSED,
+            ticket: ctrl.ticket
         });
 
         /**
@@ -105,7 +109,7 @@
                 if (anchor.nextElementSibling !== ctrl.section) anchor.after(ctrl.section);
                 return ctrl.section;
             }
-            page.querySelectorAll('.je-list-section').forEach(n => n.remove());
+            lp.gate.erase(() => page.querySelectorAll('.je-list-section').forEach(n => n.remove()));
             lp.render.ensureStyles();
             const tr = lp.render.tr;
             const section = lp.render.el('div', 'verticalSection je-list-section');
@@ -125,15 +129,23 @@
         /** Removes the section. */
         ctrl.removeSection = () => {
             ctrl.renderToken++;
-            ctrl.section?.remove();
+            lp.gate.erase(() => {
+                ctrl.section?.remove();
+            });
             ctrl.section = null;
         };
 
-        /** Draws the section (cards in slices; cards whose content didn't change are kept). */
+        /** Draws the section through the gate. */
         ctrl.render = () => {
+            lp.gate.paint(ctrl.ticket, ctrl.draw, 'render');
+        };
+
+        /** Draws the section (cards in slices; cards whose content didn't change are kept). Runs inside paint() only. */
+        ctrl.draw = () => {
             const view = ctrl.view;
             if (!view || !ctrl.isAlive()) return;
             const placeholders = view.placeholders || [];
+            ctrl.header.set(placeholders.length);
             if (!placeholders.length) {
                 ctrl.removeSection();
                 return;
@@ -146,6 +158,8 @@
             const old = new Map();
             cards.querySelectorAll(':scope > .je-list-card').forEach(n => old.set(n.dataset.jeListId, n));
             const token = ++ctrl.renderToken;
+            // Each slice paints with the ticket it was started under: a pause, dispose or newer show drops the rest.
+            const t = ctrl.ticket;
             let index = 0;
             /** Builds the next slice in place. */
             const step = () => {
@@ -164,7 +178,7 @@
                     if (at !== node) cards.insertBefore(node, at || null);
                 }
                 if (index < placeholders.length) {
-                    setTimeout(step, 0);
+                    setTimeout(() => lp.gate.paint(t, step, 'slice'), 0);
                     return;
                 }
                 old.forEach(n => n.remove());
@@ -185,10 +199,11 @@
          */
         ctrl.applyView = (view, options) => {
             if (!view || lp.render.normalizeId(view.listId) !== listId || !ctrl.isAlive() || ctrl.paused) return;
+            // Only for the controller's current ticket (this person, this page show, this route and list).
+            if (!ctrl.ticket || !ctrl.ticket.accepts(view)) return;
             if (lp.playlist.isOlder(view, ctrl.view)) return;
             const swapped = ctrl.swappedSince(ctrl.view, view);
             ctrl.view = view;
-            ctrl.header.set((view.placeholders || []).length);
             ctrl.render();
             ctrl.follow();
             if (swapped) ctrl.refreshNative();
@@ -213,13 +228,13 @@
 
         /** Lets Jellyfin re-render its own collection cards. */
         ctrl.refreshNative = () => {
-            page.querySelectorAll('.collectionItems .itemsContainer').forEach((container) => {
+            lp.gate.paint(ctrl.ticket, () => page.querySelectorAll('.collectionItems .itemsContainer').forEach((container) => {
                 try {
                     container.notifyRefreshNeeded?.(true);
                 } catch {
                     // Not an emby-itemscontainer (older layouts): Jellyfin refreshes it on its own.
                 }
-            });
+            }), 'native');
         };
 
         /** Follows the shared status of the titles shown. */
@@ -244,18 +259,15 @@
             ctrl.abort?.abort();
             const abort = new AbortController();
             ctrl.abort = abort;
-            // The one acceptance rule (session, page show, route, list), plus: this is still the newest read.
+            // The controller's ticket (session, page show, route, list), plus: this is still the newest read. What it
+            // paints waits for the ticket's Spoiler policy (the gate holds it until the policy is read).
             const rule = lp.pages.ticket(ctrl, () => seq === ctrl.seq && !abort.signal.aborted && ctrl.isShown() && !ctrl.paused);
             let answer;
             let since;
-            let guarded;
             try {
                 since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : undefined;
                 if (!rule.current()) return;
-                [answer, guarded] = await Promise.all([
-                    JE.arrLists.getList(listId, { signal: abort.signal, ticket: rule }),
-                    lp.render.spoilerPolicy({ listKind: 'collection', listId })
-                ]);
+                answer = await JE.arrLists.getList(listId, { signal: abort.signal, ticket: rule });
                 if (!rule.current()) return;
             } catch (err) {
                 if (!err?.stale && err?.name !== 'AbortError') console.warn(`${logPrefix} the collection couldn't be read`, err?.message || err);
@@ -272,7 +284,6 @@
             }
             if (answer.status !== 200 || !answer.body || !rule.accepts(answer.body)) return;
             ctrl.since = since;
-            ctrl.guarded = guarded;
             ctrl.applyView(answer.body);
         };
 
@@ -319,7 +330,7 @@
             e.preventDefault();
             e.stopPropagation();
             if (request) {
-                if (!request.disabled) lp.request.open({ listId, ticket: () => lp.pages.ticket(ctrl), onDone: () => ctrl.scheduleRefetch(500) }, ph, request);
+                if (!request.disabled) lp.request.open({ listId, ticket: () => ctrl.ticket, onDone: () => ctrl.scheduleRefetch(500) }, ph, request);
                 return;
             }
             lp.pages.openEntry(ctrl, ph);
@@ -335,6 +346,9 @@
         /** Stops reading and following while the page is hidden. */
         ctrl.pause = () => {
             ctrl.paused = true;
+            ctrl.ticket?.revoke();
+            // Slices still scheduled stop too.
+            ctrl.renderToken++;
             ctrl.seq++;
             ctrl.abort?.abort();
             ctrl.abort = null;
@@ -349,6 +363,8 @@
         ctrl.resume = () => {
             if (ctrl.disposed) return;
             ctrl.paused = false;
+            ctrl.ticket?.revoke();
+            ctrl.ticket = lp.pages.issue(ctrl);
             ctrl.restoreIfLost();
             ctrl.load();
         };

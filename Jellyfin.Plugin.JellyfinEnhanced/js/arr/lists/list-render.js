@@ -8,7 +8,8 @@
  * (JE.arrStatus pills and wording); list completion (filled/expected/aired) is said separately from it, and a status
  * the server didn't send is unknown, never Ready.
  *
- * Spoiler Guard: before the first paint the page waits for the person's Spoiler Guard state (JE.spoilerBlur.whenLoaded).
+ * Spoiler Guard: nothing is painted before the person's Spoiler Guard state is known (JE.spoilerBlur.whenLoaded): each
+ * page's ticket carries its policy, and the paint gate (list-paint.js) paints only with a resolved one.
  * An entry is guarded when Spoiler Guard is on and the person guards its title (a pending guard from Seerr, or the
  * library copy's series/movie, mapped by TMDB id), the collection page it is on, or when the state couldn't be read
  * (fails closed). A guarded entry shows no episode titles and no note (the list editor's free text may give the story
@@ -455,9 +456,10 @@ button.je-list-card-main { cursor: pointer; }
      * The poster of an entry (TMDB) or a neutral icon.
      * @param {Object} ph Entry.
      * @param {string} size TMDB size.
+     * @param {Object} [ctx] Context (its ticket paints the icon of a poster that can't load).
      * @returns {HTMLElement} Image or icon.
      */
-    function poster(ph, size) {
+    function poster(ph, size, ctx) {
         const url = posterUrl(ph.posterPath, size);
         if (!url) return icon(ph.kind === 'custom' ? 'notes' : ph.mediaType === 'tv' ? 'tv' : 'movie');
         const img = /** @type {HTMLImageElement} */ (el('img'));
@@ -465,7 +467,7 @@ button.je-list-card-main { cursor: pointer; }
         img.loading = 'lazy';
         img.decoding = 'async';
         // A poster that can't load (offline, blocked) gives way to the neutral icon, never a broken image.
-        img.addEventListener('error', () => img.replaceWith(icon(ph.mediaType === 'tv' ? 'tv' : 'movie')), { once: true });
+        img.addEventListener('error', () => lp.gate.paint(ctx?.ticket, () => img.replaceWith(icon(ph.mediaType === 'tv' ? 'tv' : 'movie')), 'poster'), { once: true });
         img.src = url;
         return img;
     }
@@ -518,7 +520,7 @@ button.je-list-card-main { cursor: pointer; }
             if (ctx.tv) main.classList.add('focusable');
         }
         const thumb = el('span', 'je-list-thumb');
-        thumb.appendChild(poster(ph, 'w92'));
+        thumb.appendChild(poster(ph, 'w92', ctx));
         main.appendChild(thumb);
         const body = el('span', 'listItemBody je-list-body');
         const title = el('span', 'listItemBodyText je-list-title');
@@ -572,7 +574,7 @@ button.je-list-card-main { cursor: pointer; }
             /** @type {HTMLButtonElement} */ (main).type = 'button';
             if (ctx.tv) main.classList.add('focusable');
         }
-        main.appendChild(poster(ph, 'w185'));
+        main.appendChild(poster(ph, 'w185', ctx));
         if (ph.kind === 'season' || ph.kind === 'episodes' || ph.kind === 'custom') main.appendChild(el('span', 'je-list-chip je-list-chip-kind', kindLabel(ph)));
         const fill = fillParts(ph).join(' · ');
         if (fill) main.appendChild(el('span', 'je-list-chip je-list-chip-fill', fill));
@@ -667,15 +669,21 @@ button.je-list-card-main { cursor: pointer; }
     }
 
     /**
-     * A guard test with whether it hides air dates.
+     * A resolved guard test with whether it hides air dates (the paint gate's).
      * @param {function(Object): boolean} test guarded(entry).
      * @param {boolean} airDates Guarded entries lose their air dates.
-     * @returns {function(Object): boolean & {airDates: boolean}} Policy.
+     * @returns {function(Object): boolean & {airDates: boolean, resolved: boolean}} Policy.
      */
     function policy(test, airDates) {
-        const guarded = (ph) => test(ph);
-        guarded.airDates = airDates;
-        return guarded;
+        return lp.gate.policy(test, airDates);
+    }
+
+    /**
+     * The policy when it is known without waiting: Spoiler Guard off (nothing guarded). Else null (load it).
+     * @returns {(function(Object): boolean & {airDates: boolean, resolved: boolean})|null} Policy.
+     */
+    function knownPolicy() {
+        return JE.pluginConfig?.SpoilerBlurEnabled !== true || !JE.spoilerBlur ? policy(() => false, false) : null;
     }
 
     /**
@@ -684,10 +692,11 @@ button.je-list-card-main { cursor: pointer; }
      * (air dates too). Air dates of guarded entries are hidden as the server strips them: the admin's premiere-date
      * strip on and the person's "hide air dates" not turned off.
      * @param {{listKind: string, listId: string}} list The list.
-     * @returns {Promise<function(Object): boolean & {airDates: boolean}>} guarded(entry), with .airDates.
+     * @returns {Promise<function(Object): boolean & {airDates: boolean, resolved: boolean}>} guarded(entry), with .airDates.
      */
     async function spoilerPolicy(list) {
-        if (JE.pluginConfig?.SpoilerBlurEnabled !== true || !JE.spoilerBlur) return policy(() => false, false);
+        const known = knownPolicy();
+        if (known) return known;
         const sg = JE.spoilerBlur;
         try {
             await sg.whenLoaded?.();
@@ -720,46 +729,59 @@ button.je-list-card-main { cursor: pointer; }
      * Keeps jellyfin-web's played button of a list page from reading as played while the page draws entries (its own
      * state, click and UserData are left alone): the page gets a class (the icon loses the played colour) and a played
      * button's tooltip says how many titles aren't in the library. Follows jellyfin-web setting its state again.
+     * Jellyfin's own title is kept from before JE's first label, through count changes, and put back on clear.
+     * Writes go through the page's ticket (set) or the gate's erase (clear).
      * @param {HTMLElement} page Details page.
+     * @param {function(): Object} ticketOf The controller's current ticket.
      * @returns {{set: function(number): void, clear: function(): void}} Handle.
      */
-    function headerMark(page) {
+    function headerMark(page, ticketOf) {
         let label = '';
         let observer = null;
         /** @param {HTMLElement} button Jellyfin's played button. */
         const relabel = (button) => {
             if (!label || !button.classList.contains('playstatebutton-played')) return;
             if (button.title === label) return;
-            button.__jeListTitle = button.title;
+            // A title JE set (another count) is not Jellyfin's: the one saved before stays.
+            if (!button.__jeListLabel || button.title !== button.__jeListLabel) button.__jeListTitle = button.title;
+            button.__jeListLabel = label;
             button.title = label;
         };
         const buttons = () => Array.from(page.querySelectorAll('.btnPlaystate'));
         const clear = () => {
             observer?.disconnect();
             observer = null;
-            page.classList.remove(HEADER_CLASS);
-            for (const button of buttons()) {
-                if (label && button.title === label) button.title = button.__jeListTitle || '';
-                delete button.__jeListTitle;
-            }
             label = '';
+            lp.gate.erase(() => {
+                page.classList.remove(HEADER_CLASS);
+                for (const button of buttons()) {
+                    if (button.__jeListLabel && button.title === button.__jeListLabel) button.title = button.__jeListTitle || '';
+                    delete button.__jeListTitle;
+                    delete button.__jeListLabel;
+                }
+            });
         };
         const set = (missing) => {
             if (!(missing > 0)) {
                 if (label || page.classList.contains(HEADER_CLASS)) clear();
                 return;
             }
-            ensureStyles();
-            label = tn('arr_lists_header_incomplete', { count: missing });
-            page.classList.add(HEADER_CLASS);
-            const list = buttons();
-            list.forEach(relabel);
-            if (!observer && list.length && typeof MutationObserver !== 'undefined') {
-                observer = new MutationObserver((records) => {
-                    for (const record of records) relabel(/** @type {HTMLElement} */ (record.target));
-                });
-                for (const button of list) observer.observe(button, { attributes: true, attributeFilter: ['class', 'title'] });
-            }
+            lp.gate.paint(ticketOf(), () => {
+                ensureStyles();
+                label = tn('arr_lists_header_incomplete', { count: missing });
+                page.classList.add(HEADER_CLASS);
+                const list = buttons();
+                list.forEach(relabel);
+                if (!observer && list.length && typeof MutationObserver !== 'undefined') {
+                    // Jellyfin setting its state again: relabelled through the gate (a page not current is left alone).
+                    observer = new MutationObserver((records) => {
+                        lp.gate.paint(ticketOf(), () => {
+                            for (const record of records) relabel(/** @type {HTMLElement} */ (record.target));
+                        }, 'header-follow');
+                    });
+                    for (const button of list) observer.observe(button, { attributes: true, attributeFilter: ['class', 'title'] });
+                }
+            }, 'header');
         };
         return { set, clear };
     }
@@ -771,6 +793,6 @@ button.je-list-card-main { cursor: pointer; }
     lp.render = {
         ensureStyles, tr, tn, normalizeId, el, icon, posterUrl, formatDate, episodeLabel, kindLabel, dateLabel, fillParts,
         libraryItemId, addingNow, airDateHidden, statusOf, canRequest, subtitle, statusBlock, statusLine, requestButton, row,
-        card, signature, opensTitle, spoilerPolicy, guardedTmdb, headerMark, STYLE_ID
+        card, signature, opensTitle, spoilerPolicy, knownPolicy, guardedTmdb, headerMark, STYLE_ID
     };
 })(window.JellyfinEnhanced);
