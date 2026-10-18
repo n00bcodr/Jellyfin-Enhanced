@@ -232,7 +232,7 @@ public class ListsImportPhysicalAndTransportTests
     [InlineData("10.1.2.3")]
     [InlineData("172.16.0.1")]
     [InlineData("172.31.255.255")]
-    [InlineData("192.168.0.84")]
+    [InlineData("192.168.1.20")]
     [InlineData("169.254.169.254")]
     [InlineData("100.64.0.1")]
     [InlineData("0.0.0.0")]
