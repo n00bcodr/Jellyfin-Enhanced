@@ -1421,7 +1421,7 @@ for that viewer too. Hiding badges takes effect immediately, including while a b
 Showing them again refreshes cards after the preference saves. Both badge controls keep your latest choices while
 they save. Once saving finishes, the controls and cards match the last successful save, including when quick web and
 native changes have mixed save outcomes. Closing and reopening the panel while a save is pending keeps those
-choices and any earlier successful save. Switching users clears pending unsent saves and prevents old responses
+choices and any earlier successful save. Language and translation-cache reloads wait for pending saves, and browser storage failures cannot prevent saved choices from reaching the controls. Switching users clears pending unsent saves and prevents old responses
 from changing the incoming person’s settings. Acquisition badges follow live title changes even with phase-1 status badges off.
 
 Badges come from what the server already knows (no call to Sonarr, Radarr or Seerr when a page or a poster loads).

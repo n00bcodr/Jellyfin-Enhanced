@@ -21,20 +21,6 @@
         // --- Language Settings ---
         const displayLanguageSelect = document.getElementById('displayLanguageSelect');
         if (displayLanguageSelect) {
-            // Get current user ID for localStorage key
-            const userId = ApiClient.getCurrentUserId();
-            const languageKey = `${userId}-language`;
-
-            // Get saved language from localStorage as well
-            const localStorageLang = localStorage.getItem(languageKey);
-            const savedLanguage = JE.currentSettings.displayLanguage || localStorageLang || '';
-
-            console.log('🪼 Jellyfin Enhanced: Current language setting:', {
-                fromSettings: JE.currentSettings.displayLanguage,
-                fromLocalStorage: localStorageLang,
-                willUse: savedLanguage
-            });
-
             // Populate language options from server-side locale enumeration
             (async () => {
                 const CUSTOM_DISPLAY_NAMES = {
@@ -157,7 +143,7 @@
                 cacheKeys.forEach(key => localStorage.removeItem(key));
 
                 JE.toast(JE.t('toast_translation_cache_cleared', { count: cacheKeys.length }));
-                setTimeout(() => { if (scope.session.isCurrent()) window.location.reload(); }, 2000);
+                JE.internals.scheduleReloadWhenIdle(scope.session, 2000);
                 resetAutoCloseTimer();
             });
         }

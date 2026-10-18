@@ -802,3 +802,171 @@ test('late random-source options render the current document rather than the ope
  await h.JE.updateSettings({randomSourceId:'new'},{throwOnError:true});sources.resolve({Items:[{Id:'old',Name:'Old',Type:'Playlist'},{Id:'new',Name:'New',Type:'Playlist'}]});await tick();
  assert.equal(h.document.getElementById('randomSourceSelect').value,'new');
 });
+
+// Round 10: page destruction waits for all queued work, and storage is never a commit dependency.
+/** Drive real reload timers with bounded virtual time, including timers queued by a completion. */
+function reloadClock(h) {
+  let now = 0, nextId = 0, reloads = 0;
+  const timers = new Map();
+  h.window.setTimeout = (callback, ms = 0) => { const id = ++nextId; timers.set(id, { callback, at: now + ms }); return id; };
+  h.window.clearTimeout = id => timers.delete(id);
+  return {
+    get reloads() { return reloads; },
+    advance(ms) {
+      const until = now + ms;
+      for (let steps = 0; steps < 100; steps++) {
+        const due = [...timers].filter(([, timer]) => timer.at <= until).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) { now = until; return; }
+        const [id, timer] = due; timers.delete(id); now = timer.at;
+        const before = h.errors.length; timer.callback();
+        for (const error of h.errors.splice(before)) {
+          assert.match(error.message, /Not implemented: navigation/); reloads++;
+        }
+      }
+      assert.fail('reload timers must not poll or spin');
+    }
+  };
+}
+async function reloadPanel(t) {
+  const h = panel(t, { config: badges, settings: { displayLanguage: 'en-US' } });
+  const transition = completionSession(h), clock = reloadClock(h);
+  h.window.localStorage.setItem('user-a-language', 'en-US');
+  h.window.fetch = async () => ({ ok: false });
+  h.window.ApiClient.ajax = async request => request.url.includes('/locales') ? ['en-US', 'fr'] : [];
+  h.wire();
+  h.load('enhanced/settingspanel/ui-panel-language.js');
+  h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} });
+  await tick();
+  const held = [];
+  h.window.ApiClient.ajax = request => {
+    if (request.type === 'GET') return Promise.resolve([]);
+    const response = deferred(); h.writes.push(request); held.push(response); return response.promise;
+  };
+  return { ...h, transition, clock, held };
+}
+for (const trigger of ['language', 'cache', 'both']) {
+  for (const switchSession of [false, true]) {
+    test(`${trigger} reload waits for held and unsent saves; session switch=${switchSession}`, async t => {
+      const h = await reloadPanel(t);
+      if (trigger !== 'cache') {
+        await h.choose('displayLanguageSelect', 'fr'); h.held[0].resolve(); await tick();
+      }
+      if (trigger !== 'language') h.document.getElementById('clearTranslationCacheButton').click();
+      const first = h.writes.length;
+      await h.choose('nativeAcquisitionStampsSelect', 'off');
+      await h.choose('acquisitionBadgesSelect', 'off');
+      assert.equal(h.writes.length, first + 1, 'third save is still unsent');
+      h.clock.advance(2500);
+      assert.equal(h.clock.reloads, 0, 'a held POST and unsent save must survive either reload timer');
+      if (switchSession) {
+        h.transition('same-user new epoch');
+        // Establish the incoming session's store while the outgoing transport is still outstanding.
+        h.JE.userConfig.settings = { displayLanguage: 'en-US' }; h.JE.loadSettings();
+      }
+      h.held[first].resolve(); await tick(); h.clock.advance(0);
+      if (switchSession) {
+        assert.equal(h.writes.length, first + 1, 'old unsent save cannot reach the incoming credentials');
+      } else {
+        assert.equal(h.writes.length, first + 2, 'third save transports before any reload');
+        assert.equal(h.clock.reloads, 0);
+        assert.equal(JSON.parse(h.writes.at(-1).data).acquisitionBadges, false);
+        h.held[first + 1].resolve(); await tick(); h.clock.advance(0);
+      }
+      h.clock.advance(10000);
+      assert.equal(h.clock.reloads, switchSession ? 0 : 1, 'one coalesced reload only after draining');
+    });
+  }
+}
+test('language reload also waits for an independent per-user file transport', async t => {
+  const h = await reloadPanel(t);
+  await h.choose('displayLanguageSelect', 'fr'); h.held[0].resolve(); await tick();
+  const other = h.JE.saveUserSettings('bookmark.json', { bookmarks: [] }, { throwOnError: true });
+  await tick(); h.clock.advance(2500); assert.equal(h.clock.reloads, 0);
+  h.held[1].resolve(); await other; h.clock.advance(0); assert.equal(h.clock.reloads, 1);
+});
+test('reload is released after the final queued save fails, retaining committed state', async t => {
+  const h = await reloadPanel(t);
+  await h.choose('displayLanguageSelect', 'fr'); h.held[0].resolve(); await tick();
+  await h.choose('acquisitionBadgesSelect', 'off'); h.clock.advance(2500);
+  assert.equal(h.clock.reloads, 0);
+  h.held[1].reject(new Error('save failed')); await tick(); h.clock.advance(0);
+  assert.equal(h.JE.currentSettings.acquisitionBadges, undefined);
+  assert.equal(h.clock.reloads, 1);
+});
+for (const mode of ['quota', 'setItem', 'accessor']) {
+  test(`language mirror ${mode} failure cannot reject a canonical commit or skip observers and retries next commit`, async t => {
+    const h = panel(t, { config: { ...badges, ArrListsEnabled: true, ArrListSwapInEnabled: true }, settings: { displayLanguage: 'en-US', listSwapIn: true } });
+    h.wire();
+    const storage = h.window.localStorage, original = Object.getOwnPropertyDescriptor(h.window, 'localStorage');
+    storage.setItem('user-a-language', 'de');
+    let attempts = 0, warnings = 0, observed = 0;
+    h.window.console.warn = () => warnings++;
+    if (mode === 'accessor') Object.defineProperty(h.window, 'localStorage', { configurable: true, get() { attempts++; throw new Error('storage disabled'); } });
+    let restore = () => Object.defineProperty(h.window, 'localStorage', original);
+    if (mode !== 'accessor') {
+      // jsdom Storage is exotic: patch the prototype, as a browser quota failure does.
+      const prototype = Object.getPrototypeOf(storage), setItem = prototype.setItem;
+      prototype.setItem = () => { attempts++; throw mode === 'quota' ? new h.window.DOMException('full', 'QuotaExceededError') : new Error('setItem disabled'); };
+      restore = () => { prototype.setItem = setItem; };
+      t.after(restore);
+    }
+    h.JE.internals.observeSettingsDocument('r10-proof', () => observed++);
+    h.window.ApiClient.ajax = async () => ({ Consents: { ListSwapIn: false } });
+    await assert.doesNotReject(h.JE.updateSettings({ acquisitionBadges: false }, { throwOnError: true }));
+    assert.equal(h.JE.currentSettings.listSwapIn, false);
+    assert.equal(h.document.getElementById('listSwapInSelect').value, '');
+    assert.ok(h.toasts.includes(tr('toast_badge_settings_saved')));
+    assert.ok(h.toasts.includes(tr('toast_list_settings_saved')));
+    assert.equal(observed, 3, 'initial, queued and committed publications all run');
+    assert.ok(attempts > 0);
+    const failedAttempts = attempts;
+    await h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true });
+    assert.ok(attempts > failedAttempts, 'retry at the next commit');
+    assert.equal(warnings, 1, 'a failed mirror warns once per session');
+    restore();
+    await h.JE.updateSettings({ showAudioLanguages: false }, { throwOnError: true });
+    assert.equal(storage.getItem('user-a-language'), 'en-US', 'mirror recovers after storage is available');
+  });
+}
+test('unchanged language does not rewrite its mirror on unrelated saves or accepted reads', async t => {
+  const h = panel(t, { settings: { displayLanguage: 'en-US' } });
+  const storage = h.window.localStorage, prototype = Object.getPrototypeOf(storage), setItem = prototype.setItem;
+  storage.setItem('user-a-language', 'en-US');
+  let writes = 0;
+  prototype.setItem = function(...args) { writes++; return setItem.apply(this, args); };
+  t.after(() => { prototype.setItem = setItem; });
+  await h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true });
+  h.window.ApiClient.ajax = async () => ({ displayLanguage: 'en-US', showFileSizes: true });
+  await h.JE.readUserSettings('settings.json');
+  assert.equal(writes, 0);
+});
+
+test('a due reload re-checks work enqueued after the idle wakeup', async t => {
+  const h = await reloadPanel(t);
+  await h.choose('displayLanguageSelect', 'fr'); h.held[0].resolve(); await tick();
+  await h.choose('nativeAcquisitionStampsSelect', 'off'); h.clock.advance(2500);
+  h.held[1].resolve(); await tick(); // schedules the idle wakeup
+  await h.choose('acquisitionBadgesSelect', 'off');
+  h.clock.advance(0); assert.equal(h.clock.reloads, 0, 'new work wins over the already armed wakeup');
+  h.held[2].resolve(); await tick(); h.clock.advance(0); assert.equal(h.clock.reloads, 1);
+});
+test('a canonical settings read still publishes its views when browser storage is unavailable', async t => {
+  const h = panel(t, { config: { ArrListsEnabled: true, ArrListSwapInEnabled: true }, settings: { listSwapIn: true } });
+  h.wire();
+  Object.defineProperty(h.window, 'localStorage', { configurable: true, get() { throw new Error('storage disabled'); } });
+  let observed = 0; h.JE.internals.observeSettingsDocument('r10-read', () => observed++);
+  h.window.ApiClient.ajax = async () => ({ listSwapIn: false });
+  assert.equal(await h.JE.readUserSettings('settings.json'), true);
+  assert.equal(h.JE.currentSettings.listSwapIn, false);
+  assert.equal(h.document.getElementById('listSwapInSelect').value, '');
+  assert.equal(observed, 2);
+});
+test('language controls wire from the document even when the storage accessor throws', async t => {
+  const h = panel(t, { settings: { displayLanguage: 'fr' } });
+  Object.defineProperty(h.window, 'localStorage', { configurable: true, get() { throw new Error('storage disabled'); } });
+  h.window.fetch = async () => ({ ok: false });
+  h.window.ApiClient.ajax = async request => request.url.includes('/locales') ? ['fr', 'en-US'] : [];
+  h.load('enhanced/settingspanel/ui-panel-language.js');
+  assert.doesNotThrow(() => h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} }));
+  await tick(); assert.equal(h.document.getElementById('displayLanguageSelect').value, 'fr');
+});

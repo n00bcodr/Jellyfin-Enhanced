@@ -31,7 +31,7 @@
     const documents = new Map();
     const panelScopes = new Set();
     const consentKeys = ['listSwapIn'];
-    let identity;
+    let identity, reloadRequest;
     JE.internals = JE.internals || {};
 
     /** Copy JSON settings so neither callers nor views can mutate the persisted baseline. */
@@ -46,7 +46,8 @@
     /** Discard observers, deduplication and unsent work on logout, user or server change. */
     const clearDocuments = () => {
         for (const scope of panelScopes) scope.close();
-        for (const state of documents.values()) clearTimeout(state.languageReloadTimer);
+        clearTimeout(reloadRequest?.timer);
+        reloadRequest = undefined;
         documents.clear(); identity = undefined;
     };
     JE.session?.onUserChange?.('settings-store', clearDocuments);
@@ -109,6 +110,55 @@
     /** True only while this document still belongs to the active identity/session. */
     const isActiveDocument = state => currentIdentity() === state.identity && documents.get(state.fileName) === state;
 
+    /** True while any session document has unsent work, an in-flight transport or an unpublished result. */
+    const hasPendingSettings = () => [...documents.values()].some(state => state.pending.length > 0);
+
+    /** Re-check identity and all queues at the instant a destructive page effect would run. */
+    const runScheduledReload = request => {
+        if (reloadRequest !== request) return;
+        request.timer = undefined;
+        request.ready = true;
+        if (!request.session.isCurrent()) { reloadRequest = undefined; return; }
+        if (hasPendingSettings()) return; // Queue settlement wakes this request; never poll.
+        reloadRequest = undefined;
+        window.location.reload();
+    };
+
+    /** Wake a due reload after publication, allowing observers and promise completions to enqueue more work. */
+    const resumeScheduledReload = () => {
+        const request = reloadRequest;
+        if (request?.ready && request.timer === undefined && !hasPendingSettings()) {
+            request.timer = setTimeout(() => runScheduledReload(request), 0);
+        }
+    };
+
+    /**
+     * Coalesce settings-owned page reloads for the captured session. The initial delay is a minimum;
+     * every per-user document queue must be idle before firing, including work queued during the delay.
+     * @param {object} session Captured identity scope; panel close does not invalidate it.
+     * @param {number} delay Minimum delay in milliseconds.
+     */
+    JE.internals.scheduleReloadWhenIdle = (session, delay = 1500) => {
+        if (!session.isCurrent()) return;
+        settingsDocument('settings.json');
+        if (reloadRequest) return;
+        const request = reloadRequest = { session, ready: false, timer: undefined };
+        request.timer = setTimeout(() => runScheduledReload(request), delay);
+    };
+
+    /** Best-effort changed-value browser mirror; failures never interrupt publication and retry next commit/read. */
+    const mirrorLanguage = (state, language) => {
+        try {
+            const key = `${ApiClient.getCurrentUserId()}-language`;
+            if (localStorage.getItem(key) !== language) localStorage.setItem(key, language);
+        } catch (error) {
+            if (!state.languageMirrorWarned) {
+                state.languageMirrorWarned = true;
+                console.warn('🪼 Jellyfin Enhanced: Could not mirror the saved language; will retry.', error);
+            }
+        }
+    };
+
     /** Replace a compatibility view in place, including deletion of fields absent from the document. */
     const replaceView = (view, document) => {
         for (const key of Object.keys(view)) if (!Object.hasOwn(document, key)) delete view[key];
@@ -132,14 +182,11 @@
         if (reason !== 'saved' && reason !== 'read') return;
         const before = resolveSettings(previousPersisted), after = resolveSettings(state.persisted);
         const language = normalizeLanguage(after.displayLanguage);
-        localStorage.setItem(`${ApiClient.getCurrentUserId()}-language`, language);
+        mirrorLanguage(state, language);
         if (reason !== 'saved') return;
         if (language !== normalizeLanguage(before.displayLanguage)) {
             JE.toast?.(JE.t('toast_language_changed'));
-            clearTimeout(state.languageReloadTimer);
-            state.languageReloadTimer = setTimeout(() => {
-                if (isActiveDocument(state)) window.location.reload();
-            }, 1500);
+            JE.internals.scheduleReloadWhenIdle(JE.internals.settingsSessionScope());
         }
         for (const [keys, toastKey] of [
             [['acquisitionBadges', 'nativeAcquisitionStamps'], 'toast_badge_settings_saved'],
@@ -232,6 +279,7 @@
         }
         if (state.fileName === 'settings.json') reconcilePersistedSettings(state, previousPersisted, reason);
         for (const observer of state.observers.values()) observer(state.shown, reason);
+        resumeScheduledReload();
     };
 
     /** Subscribe a named pure view; replacement panels replace their observer without replacing state. */
