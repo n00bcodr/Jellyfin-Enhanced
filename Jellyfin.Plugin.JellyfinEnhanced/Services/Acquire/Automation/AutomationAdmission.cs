@@ -55,7 +55,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
         /// <summary>
         /// Asked inside the transport (<see cref="AutomationTransportHandler"/>): the writes admitted and not settled yet,
-        /// checked again against each budget's limits as they are now, each counting its own row once (null: they still fit).
+        /// checked again against each budget's limits as they are now, each counting its own row once (null: they still fit;
+        /// else the refusal that waits longest).
         /// </summary>
         SendRefusal? Recheck();
 
@@ -303,12 +304,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
             public SendRefusal? Recheck()
             {
+                SendRefusal? longest = null;
                 foreach (var slot in _active.Values)
                 {
                     var now = _budgets.Recheck(slot.Category, slot.Scope, slot.Id);
-                    if (!now.Admitted) return Refusal(slot.Category, now);
+                    if (now.Admitted) continue;
+                    var refusal = Refusal(slot.Category, now);
+                    if (longest == null || refusal.Wait > longest.Wait) longest = refusal;
                 }
-                return null;
+                return longest;
             }
 
             private SendRefusal Refusal(string category, BudgetAdmission admission)

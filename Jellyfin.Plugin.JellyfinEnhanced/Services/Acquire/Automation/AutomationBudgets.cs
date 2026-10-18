@@ -58,7 +58,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// <param name="Reason">Refusal code: budget_exhausted, accounting_unavailable or not_implemented.</param>
     /// <param name="RetryAt">When it may be tried again (budget_exhausted).</param>
     /// <param name="Replayed">The same unique action was admitted before: nothing new was counted.</param>
-    public sealed record BudgetAdmission(bool Admitted, string? Id, string? Reason, DateTimeOffset? RetryAt, bool Replayed = false);
+    /// <param name="Window">The full window that waits longest (budget_exhausted).</param>
+    public sealed record BudgetAdmission(bool Admitted, string? Id, string? Reason, DateTimeOffset? RetryAt, bool Replayed = false, TimeSpan? Window = null);
 
     /// <summary>How an admitted action ended.</summary>
     public enum BudgetOutcome
@@ -157,11 +158,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     }
 
                     if (existing != null && state != "released") return new BudgetAdmission(true, existing, null, null, Replayed: true);
-                    foreach (var window in windows)
-                    {
-                        var usage = Count(c, t, category, scope, window, now);
-                        if (usage.Full) return new BudgetAdmission(false, null, "budget_exhausted", usage.NextSlotAt ?? now + window.Length);
-                    }
+                    if (Full(windows.Select(w => Count(c, t, category, scope, w, now)), now) is { } full) return full;
 
                     var id = existing ?? RequestLedger.NewId();
                     if (existing == null)
@@ -199,13 +196,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     using var own = RequestLedger.Cmd(c, null, "SELECT state FROM automation_budget WHERE id=$id AND category=$c AND scope=$s", ("$id", id), ("$c", category), ("$s", scope));
                     if (own.ExecuteScalar() is not string state || state == "released" || windows.Count == 0)
                         return new BudgetAdmission(false, null, "accounting_unavailable", null);
-                    foreach (var window in windows)
-                    {
-                        // Everything else in the window, then room for this one.
-                        var usage = Count(c, null, category, scope, window, now, id);
-                        if (usage.Full) return new BudgetAdmission(false, null, "budget_exhausted", usage.NextSlotAt ?? now + window.Length);
-                    }
-                    return new BudgetAdmission(true, id, null, null, Replayed: true);
+                    // Everything else in each window, then room for this one.
+                    return Full(windows.Select(w => Count(c, null, category, scope, w, now, id)), now) ?? new BudgetAdmission(true, id, null, null, Replayed: true);
                 });
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
@@ -306,10 +298,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             return scopes.ToList();
         }
 
-        /// <summary>The first window that is full, or null when every window has room (no write).</summary>
+        /// <summary>
+        /// The full window that waits longest for its next free slot, or null when every window has room (no write). The
+        /// same answer an admission's refusal gives.
+        /// </summary>
         /// <param name="category">Budget category.</param>
         /// <param name="scope">Scope.</param>
-        public BudgetUsage? Exhausted(string category, string scope) => Usage(category, scope).FirstOrDefault(u => u.Full);
+        public BudgetUsage? Exhausted(string category, string scope) => Blocking(Usage(category, scope), _now());
+
+        // Every window is counted: the refusal waits for the latest next slot among the full ones (the hourly window can
+        // free up long before the daily one does; 4a-behaviour-r7-1).
+        private static BudgetAdmission? Full(IEnumerable<BudgetUsage> usages, DateTimeOffset now)
+            => Blocking(usages, now) is { } blocking ? new BudgetAdmission(false, null, "budget_exhausted", NextSlot(blocking, now), Window: blocking.Window) : null;
+
+        private static BudgetUsage? Blocking(IEnumerable<BudgetUsage> usages, DateTimeOffset now)
+            => usages.Where(u => u.Full).OrderByDescending(u => NextSlot(u, now)).FirstOrDefault();
+
+        // A window with a limit of 0 never frees a slot: it is checked again after its length.
+        private static DateTimeOffset NextSlot(BudgetUsage usage, DateTimeOffset now) => usage.NextSlotAt ?? now + usage.Window;
 
         private static BudgetUsage Count(SqliteConnection c, SqliteTransaction? t, string category, string scope, BudgetWindow window, DateTimeOffset now, string? ownId = null)
         {

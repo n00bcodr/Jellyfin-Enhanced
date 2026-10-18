@@ -1355,7 +1355,9 @@ either is off, the automatic requests above behave exactly as described there. W
   the send was being counted against its budget. The last check is made inside the connection itself, as each
   automatic write is handed over to be sent, so nothing can wait between its answer and the send. It also counts the
   budgets again with their limits as they are at that moment (the write's own place counted once): a limit lowered to
-  0 while a request was on its way stops it, and the place it had taken is given back. A person's own requests are
+  0 while a request was on its way stops it, and the place it had taken is given back. A request held by a full
+  budget waits until every full window has room again (when the hourly and the daily window are both full, until the
+  later of the two), and that is the time shown. A person's own requests are
   never part of this check: kill switches, budgets and the rollout guard don't stop what someone asks for themselves.
   On the recording side, a recipe compares every setting its request depends on (including *Free automatic requests*, eligibility and
   the instance it would go to) right before it records the request or a *Shadow* decision, and starts over if any
