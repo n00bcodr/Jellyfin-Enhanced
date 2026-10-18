@@ -283,6 +283,144 @@ public class IntegrationJellyfinUserDispatchTests
         Assert.NotEqual(JellyfinUserKey.None, Find(JellyfinUserActions.Scan(probe.Path("CovariantProbe")), "SealedCovariantController", "Disable").Key);
     }
 
+    // 4a review round 13 (4a-security-r13-1): an explicit override is followed whatever its body is called. C# only writes
+    // MethodImpl entries whose body keeps the slot's name (covariant returns) or an interface-qualified one; other .NET
+    // languages, and any compiler, may map a differently named body to a class slot, a base's base or an interface member.
+    // Round 12 matched the body's name, so the reviewer's renamed body (it disables the user when the base slot is called)
+    // reached nothing. The bases and controllers are C#; the bodies are emitted with a MethodImpl entry each
+    // (PersistedAssemblyBuilder), and the control has a renamed method with no entry, which the base slot never calls.
+    private const string ExplicitBases = Usings + """
+
+        public class Result { }
+        public class DirectChanges { public virtual Result Apply(Guid userId) => new Result(); }
+        public sealed class DirectController(DirectChanges changes) : ControllerBase {
+          [HttpPost] public object Disable(Guid userId) => changes.Apply(userId);
+        }
+        public class TopChanges { public virtual Result Apply(Guid userId) => new Result(); }
+        public class MiddleChanges : TopChanges { public override Result Apply(Guid userId) => new Result(); }
+        public sealed class DeepController(TopChanges changes) : ControllerBase {
+          [HttpPost] public object Disable(Guid userId) => changes.Apply(userId);
+        }
+        public interface IRenamedChanges { Result Apply(Guid userId); }
+        public sealed class InterfaceController(IRenamedChanges changes) : ControllerBase {
+          [HttpPost] public object Disable(Guid userId) => changes.Apply(userId);
+        }
+        public class UnmappedChanges { public virtual Result Apply(Guid userId) => new Result(); }
+        public sealed class UnmappedController(UnmappedChanges changes) : ControllerBase {
+          [HttpPost] public object Disable(Guid userId) => changes.Apply(userId);
+        }
+        public abstract class GenericTop<T> { public virtual Result Apply(Guid userId) => new Result(); }
+        public abstract class GenericMiddle<T> : GenericTop<T> { public abstract override Result Apply(Guid userId); }
+        public sealed class GenericController(GenericTop<int> changes) : ControllerBase {
+          [HttpPost] public object Disable(Guid userId) => changes.Apply(userId);
+        }
+        """;
+
+    // The emitted bodies: (type, base or interface, the slot's declaring type, MethodImpl entry?). The generic one (the
+    // behaviour reviewer's shape) maps its body to an abstract middle override of a generic base, instantiated for int,
+    // across the two assemblies (a MemberReference whose parent is a type specification).
+    private static readonly (string Type, string Base, string Slot, bool Mapped)[] ExplicitBodies =
+    {
+        ("ActualDirectChanges", "DirectChanges", "DirectChanges", true),
+        ("ActualDeepChanges", "MiddleChanges", "TopChanges", true),
+        ("ActualInterfaceChanges", "IRenamedChanges", "IRenamedChanges", true),
+        ("ActualUnmappedChanges", "UnmappedChanges", "UnmappedChanges", false),
+        ("ActualGenericChanges", "GenericMiddle`1", "GenericMiddle`1", true),
+    };
+
+    private static Type ProbeType(System.Reflection.Assembly bases, string name)
+        => name.Contains('`') ? bases.GetType(name)!.MakeGenericType(typeof(int)) : bases.GetType(name)!;
+
+    // Each body is `ApplyPolicy(Guid)`: users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true }); return new Result().
+    private static void EmitExplicitBodies(Probe probe, System.Reflection.Assembly bases)
+    {
+        var builder = new System.Reflection.Emit.PersistedAssemblyBuilder(new System.Reflection.AssemblyName("ExplicitBodies"), typeof(object).Assembly);
+        var module = builder.DefineDynamicModule("ExplicitBodies");
+        var result = bases.GetType("Result")!;
+        var update = typeof(IUserManager).GetMethod(nameof(IUserManager.UpdatePolicyAsync), new[] { typeof(Guid), typeof(UserPolicy) })!;
+        foreach (var (name, baseName, slotName, mapped) in ExplicitBodies)
+        {
+            var baseType = ProbeType(bases, baseName);
+            var type = baseType.IsInterface
+                ? module.DefineType(name, System.Reflection.TypeAttributes.Public | System.Reflection.TypeAttributes.Class, typeof(object), new[] { baseType })
+                : module.DefineType(name, System.Reflection.TypeAttributes.Public | System.Reflection.TypeAttributes.Class, baseType);
+            var users = type.DefineField("_users", typeof(IUserManager), System.Reflection.FieldAttributes.Private);
+            var ctor = type.DefineConstructor(System.Reflection.MethodAttributes.Public, System.Reflection.CallingConventions.Standard, new[] { typeof(IUserManager) });
+            var il = ctor.GetILGenerator();
+            il.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+            il.Emit(System.Reflection.Emit.OpCodes.Call, (baseType.IsInterface ? typeof(object) : baseType).GetConstructor(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic, Type.EmptyTypes)!);
+            il.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+            il.Emit(System.Reflection.Emit.OpCodes.Ldarg_1);
+            il.Emit(System.Reflection.Emit.OpCodes.Stfld, users);
+            il.Emit(System.Reflection.Emit.OpCodes.Ret);
+            var attributes = System.Reflection.MethodAttributes.Public | System.Reflection.MethodAttributes.Virtual | System.Reflection.MethodAttributes.HideBySig | System.Reflection.MethodAttributes.NewSlot;
+            var body = type.DefineMethod("ApplyPolicy", mapped ? attributes | System.Reflection.MethodAttributes.Final : attributes, result, new[] { typeof(Guid) });
+            il = body.GetILGenerator();
+            il.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+            il.Emit(System.Reflection.Emit.OpCodes.Ldfld, users);
+            il.Emit(System.Reflection.Emit.OpCodes.Ldarg_1);
+            il.Emit(System.Reflection.Emit.OpCodes.Newobj, typeof(UserPolicy).GetConstructor(Type.EmptyTypes)!);
+            il.Emit(System.Reflection.Emit.OpCodes.Dup);
+            il.Emit(System.Reflection.Emit.OpCodes.Ldc_I4_1);
+            il.Emit(System.Reflection.Emit.OpCodes.Callvirt, typeof(UserPolicy).GetProperty(nameof(UserPolicy.IsDisabled))!.SetMethod!);
+            il.Emit(System.Reflection.Emit.OpCodes.Callvirt, update);
+            il.Emit(System.Reflection.Emit.OpCodes.Pop);
+            il.Emit(System.Reflection.Emit.OpCodes.Newobj, result.GetConstructor(Type.EmptyTypes)!);
+            il.Emit(System.Reflection.Emit.OpCodes.Ret);
+            if (mapped) type.DefineMethodOverride(body, ProbeType(bases, slotName).GetMethod("Apply")!);
+            type.CreateType();
+        }
+
+        builder.Save(probe.Path("ExplicitBodies"));
+    }
+
+    private static Probe ExplicitProbe(out System.Reflection.Assembly bases)
+    {
+        var probe = Probe.Build(("ExplicitBases", ExplicitBases, Array.Empty<string>()));
+        bases = probe.Load("ExplicitBases");
+        EmitExplicitBodies(probe, bases);
+        return probe;
+    }
+
+    [Theory]
+    [InlineData("DirectController", "Disable")]
+    [InlineData("DeepController", "Disable")]
+    [InlineData("InterfaceController", "Disable")]
+    [InlineData("GenericController", "Disable")]
+    public void AnExplicitOverrideIsFollowedWhateverItsBodyIsCalled(string controller, string action)
+    {
+        using var probe = ExplicitProbe(out _);
+        var scanned = JellyfinUserActions.Scan(probe.Path("ExplicitBases"));
+        var found = Find(scanned, controller, action);
+        Assert.Equal(JellyfinUserKey.User, found.Key);
+        Assert.Equal("IUserManager.UpdatePolicyAsync", found.Reaches);
+        Assert.Equal(JellyfinUserKey.None, Find(scanned, "UnmappedController", "Disable").Key);
+    }
+
+    // Run for real: each mapped body is what its slot calls (the person is disabled); the unmapped one is never called.
+    [Theory]
+    [InlineData("ActualDirectChanges", "DirectController", 1)]
+    [InlineData("ActualDeepChanges", "DeepController", 1)]
+    [InlineData("ActualInterfaceChanges", "InterfaceController", 1)]
+    [InlineData("ActualUnmappedChanges", "UnmappedController", 0)]
+    [InlineData("ActualGenericChanges", "GenericController", 1)]
+    public void TheExplicitOverrideProbesReallyDoWhatTheScanSays(string body, string controller, int disables)
+    {
+        using var probe = ExplicitProbe(out _);
+        var context = new System.Runtime.Loader.AssemblyLoadContext("explicit-" + Guid.NewGuid().ToString("N"), isCollectible: true);
+        var bases = context.LoadFromStream(new MemoryStream(File.ReadAllBytes(probe.Path("ExplicitBases"))));
+        context.Resolving += (_, name) => name.Name == "ExplicitBases" ? bases : null;
+        var bodies = context.LoadFromStream(new MemoryStream(File.ReadAllBytes(probe.Path("ExplicitBodies"))));
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var changes = Activator.CreateInstance(bodies.GetType(body)!, users)!;
+        var instance = Activator.CreateInstance(bases.GetType(controller)!, changes)!;
+        instance.GetType().GetMethod("Disable")!.Invoke(instance, new object[] { person });
+        Assert.Equal(disables, disabled());
+        var key = Find(JellyfinUserActions.Scan(probe.Path("ExplicitBases")), controller, "Disable").Key;
+        Assert.Equal(disables == 1, key != JellyfinUserKey.None);
+    }
+
     // 4a review round 11 (4a-security-r11-2): a callback the code read can't resolve is judged by what it can do, not by
     // its signature. A Func<Task> handed in by DI carries no user type, yet its closure can hold IUserManager and a user id
     // (the reviewer's probe disables that user). Round 10 counted an unresolved delegate only when its type could carry a

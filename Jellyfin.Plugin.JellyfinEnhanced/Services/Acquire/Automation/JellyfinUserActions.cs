@@ -286,6 +286,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 _modules.Clear();
                 _implementers = null;
                 _derived = null;
+                _explicit.Clear();
             }
 
             private static bool Writes(JellyfinUserAction action) => action.Verbs.Any(v => v is not ("GET" or "HEAD"));
@@ -379,7 +380,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 public bool Virtual { get; init; }
                 public bool Abstract { get; init; }
                 public bool NewSlot { get; init; }
-                public bool Overrides { get; set; }
                 public List<int> Calls { get; } = new();
                 public string? Reaches { get; set; }
                 public string? PersonReaches { get; set; }
@@ -418,6 +418,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private int _empty = -1;
             private Dictionary<string, List<int>>? _implementers;
             private Dictionary<string, List<int>>? _derived;
+
+            // Explicit overrides: a slot (declaring type, method, parameter count, as a call names it) → the bodies a
+            // MethodImpl entry maps to it.
+            private readonly Dictionary<(string Type, string Method, int Params), List<int>> _explicit = new();
 
             public static CodeSet Read(string path) => Read(path, null);
 
@@ -501,22 +505,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         _nodes.Add(node);
                     }
 
-                    // Round 12: a covariant-return override is emitted as a NEW slot plus an explicit `.override` of the
-                    // base method in this type's MethodImpl table; it still fills the base's slot. A same-named body
-                    // there marks it (an explicit interface implementation's body carries the interface's name, so it
-                    // doesn't match); a method that only hides its base's (`new virtual`) has no entry.
+                    // Rounds 12–13: an explicit override. A type's MethodImpl table maps a body to the slot it fills (an
+                    // `.override`), whatever the body is called: C# uses it for covariant returns and explicit interface
+                    // implementations, other .NET languages for any override under any name. Each entry becomes an edge
+                    // from that slot to the body, which Dispatch follows.
                     foreach (var implHandle in type.GetMethodImplementations())
                     {
                         var impl = md.GetMethodImplementation(implHandle);
-                        if (impl.MethodBody.Kind != HandleKind.MethodDefinition) continue;
-                        var declared = impl.MethodDeclaration.Kind switch
-                        {
-                            HandleKind.MethodDefinition => md.GetString(md.GetMethodDefinition((MethodDefinitionHandle)impl.MethodDeclaration).Name),
-                            HandleKind.MemberReference => md.GetString(md.GetMemberReference((MemberReferenceHandle)impl.MethodDeclaration).Name),
-                            _ => null,
-                        };
-                        if (_nodeOf.TryGetValue((m, MetadataTokens.GetToken(impl.MethodBody)), out var bodyNode) && _nodes[bodyNode].Method == declared)
-                            _nodes[bodyNode].Overrides = true;
+                        if (impl.MethodBody.Kind != HandleKind.MethodDefinition
+                            || !_nodeOf.TryGetValue((m, MetadataTokens.GetToken(impl.MethodBody)), out var body)
+                            || Declaration(md, impl.MethodDeclaration) is not { } slot) continue;
+                        if (!_explicit.TryGetValue(slot, out var bodies)) _explicit[slot] = bodies = new List<int>();
+                        bodies.Add(body);
                     }
                 }
             }
@@ -740,9 +740,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 return new List<int>();
             }
 
-            // Where a virtual call of target can go: every implementation of an interface method, every override of a
-            // virtual one (in the code read), sealed and covariant-return overrides included. An abstract or interface
-            // member nothing implements is unresolved.
+            // Where a virtual call of target can go, by the runtime's two rules for filling a slot: an implicit override (a
+            // virtual method of a derived class that is not a new slot, with the same name and parameter count, sealed or
+            // not) and an explicit one (a MethodImpl entry naming the slot, whatever the body is called). Every method
+            // reached fills its own slot in turn, so an override of an override, an explicit body overridden again and an
+            // explicit entry naming a base's base are followed, up to MaxDepth. An interface member also reaches every
+            // implementation by name (explicit C# implementations included) and one inherited from a base type. An
+            // abstract or interface member nothing implements is unresolved.
             private IEnumerable<int> Dispatch(int target)
             {
                 var node = _nodes[target];
@@ -750,27 +754,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 var type = _types[node.Type];
                 if (!type.Interface && !node.Virtual) yield break;
                 var found = 0;
-                var candidates = type.Interface ? Implementers(type.Name) : Derived(type.Name);
-                foreach (var t in candidates)
-                    foreach (var n in _types[t].Methods)
+                var seen = new HashSet<int> { target };
+                var slots = new Queue<(int Node, int Depth)>();
+                slots.Enqueue((target, 0));
+                if (type.Interface)
+                {
+                    var implementers = Implementers(type.Name);
+                    foreach (var t in implementers)
                     {
-                        var other = _nodes[n];
-                        if (other.Params != node.Params || other.Abstract) continue;
-                        var matches = other.Method == node.Method || other.Method.EndsWith("." + node.Method, StringComparison.Ordinal);
-                        if (!matches || (!type.Interface && (!other.Virtual && !other.Abstract || other.NewSlot && !other.Overrides))) continue;
+                        var own = _types[t].Methods.Where(n => _nodes[n].Params == node.Params
+                            && (_nodes[n].Method == node.Method || _nodes[n].Method.EndsWith("." + node.Method, StringComparison.Ordinal))).ToList();
+                        // Implemented through a base type's method of that name (an interface member inherited, not redeclared).
+                        if (own.Count == 0) own = Resolve(_types[t].Base ?? string.Empty, node.Method, node.Params);
+                        foreach (var n in own)
+                        {
+                            if (!seen.Add(n)) continue;
+                            slots.Enqueue((n, 1));
+                            if (_nodes[n].Abstract) continue;
+                            found++;
+                            yield return n;
+                        }
+                    }
+                }
+
+                while (slots.Count > 0)
+                {
+                    var (s, depth) = slots.Dequeue();
+                    if (depth >= MaxDepth) continue;
+                    var slot = _nodes[s];
+                    if (slot.Type < 0) continue;
+                    var slotType = _types[slot.Type];
+                    var reached = new List<int>();
+                    if (!slotType.Interface && (slot.Virtual || slot.Abstract))
+                        foreach (var t in Derived(slotType.Name))
+                            foreach (var n in _types[t].Methods)
+                            {
+                                var other = _nodes[n];
+                                if (other.Params == slot.Params && other.Method == slot.Method && other.Virtual && !other.NewSlot) reached.Add(n);
+                            }
+
+                    if (_explicit.TryGetValue((slotType.Name, slot.Method, slot.Params), out var bodies)) reached.AddRange(bodies);
+                    foreach (var n in reached)
+                    {
+                        if (!seen.Add(n)) continue;
+                        slots.Enqueue((n, depth + 1));
+                        if (_nodes[n].Abstract) continue;
                         found++;
                         yield return n;
                     }
-
-                // Implemented through a base type's method of that name (an interface member inherited, not redeclared).
-                if (type.Interface)
-                    foreach (var t in candidates)
-                        if (!_types[t].Methods.Any(n => _nodes[n].Params == node.Params && (_nodes[n].Method == node.Method || _nodes[n].Method.EndsWith("." + node.Method, StringComparison.Ordinal))))
-                            foreach (var n in Resolve(_types[t].Base ?? string.Empty, node.Method, node.Params))
-                            {
-                                found++;
-                                yield return n;
-                            }
+                }
 
                 if (found == 0 && (node.Abstract || type.Interface))
                 {
@@ -1256,6 +1288,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     HandleKind.TypeDefinition => md.GetString(md.GetTypeDefinition((TypeDefinitionHandle)type).Name),
                     _ => null,
                 };
+            }
+
+            // The slot a MethodImpl entry names: its declaring type, name and parameter count, as a call to it names them.
+            private static (string Type, string Method, int Params)? Declaration(MetadataReader md, EntityHandle declaration)
+            {
+                switch (declaration.Kind)
+                {
+                    case HandleKind.MethodDefinition:
+                        var definition = md.GetMethodDefinition((MethodDefinitionHandle)declaration);
+                        return (FullName(md, definition.GetDeclaringType()), md.GetString(definition.Name), ParamCount(md, definition.Signature));
+                    case HandleKind.MemberReference:
+                        var member = md.GetMemberReference((MemberReferenceHandle)declaration);
+                        return ParentName(md, member.Parent) is { } parent ? (parent, md.GetString(member.Name), ParamCount(md, member.Signature)) : null;
+                    default:
+                        return null;
+                }
             }
 
             private static string? ParentName(MetadataReader md, EntityHandle parent) => parent.Kind switch
