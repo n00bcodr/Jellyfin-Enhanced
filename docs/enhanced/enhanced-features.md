@@ -37,7 +37,7 @@ Requests & downloads also offers Hide/Unhide on titles that have not arrived yet
 
 Confirmed manager Unhide actions remain valid when you close the manager, but cancel if the signed-in session changes during the fade.
 
-Failed title and parent-series metadata batches retry on the next normal scan after a 30-second wait, including the same cards already on screen and later batches that were never requested. No page reload is needed.
+Failed title and parent-series metadata batches retry on the next normal scan after a 30-second wait, including the same cards already on screen and later batches that were never requested. No page reload is needed. When you return to a view, cards that previously had no provider metadata are checked again, including cards retained on screen. Rule and account changes also recheck those cards; pending and failed reads keep their existing retry wait.
 
 Native movie and series card hides honor your confirmation preference before saving. Cancel leaves the title visible; turning confirmations off, or temporarily suppressing them, saves the hide directly.
 

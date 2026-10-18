@@ -101,8 +101,84 @@ test('overlapping 120-card scans share future child and provider batches by iden
 });
 test('a later view can resolve provider metadata that a successful earlier read omitted',async t=>{
  let arrived=false,onView;const h=setup(t,o=>{const ids=new URL(o.url).searchParams.get('Ids').split(',');return {Items:ids.map(Id=>({Id,Type:'Movie',ProviderIds:arrived?{Tmdb:'42'}:{}}))};});
- h.JE.helpers={onViewPage:fn=>{onView=fn;}};h.api.setupNativeObserver();
+ h.JE.helpers={onViewPage:h.JE.core.navigation.onViewPage};h.api.setupNativeObserver();onView=()=>h.JE.core.navigation.replayViewShow();
  h.api.getHiddenData().items={provider:{type:'Movie',tmdbId:'42'}};h.api.rebuildSets();
  let cards=mount(h,1,'Movie');h.api.filterNativeCards();await h.settle();assert.equal(cards[0].hasAttribute('data-je-hidden-checked'),true);assert.equal(cards[0].classList.contains('je-hidden'),false);
  arrived=true;onView();cards=mount(h,1,'Movie');h.api.filterNativeCards();await h.settle();assert.equal(cards[0].classList.contains('je-hidden'),true,'a new view must not inherit an earlier missing-provider verdict');
+});
+
+// R11: verdicts have lifetimes; boundaries must revisit the same retained node.
+for(const type of ['Episode','Season','Movie','Series'])for(const boundary of ['view','session','rules'])test(`retained ${type} missing-provider verdict expires across ${boundary} with an ordinary scan`,async t=>{
+ let arrived=false,onView;const child=['Episode','Season'].includes(type);
+ const h=setup(t,o=>{const u=new URL(o.url),ids=u.searchParams.get('Ids').split(',');
+  return {Items:ids.map(Id=>u.searchParams.get('Fields')==='SeriesId'?{Id,SeriesId:'s0'}:{Id,Type:child?'Series':type,ProviderIds:arrived?{Tmdb:'42'}:{}})};
+ });
+ h.JE.helpers={onViewPage:h.JE.core.navigation.onViewPage};h.api.setupNativeObserver();onView=()=>h.JE.core.navigation.replayViewShow();
+ h.api.getHiddenData().items={provider:{type:child?'Series':type,tmdbId:'42'}};h.api.rebuildSets();
+ const [card]=mount(h,1,type);h.api.filterNativeCards();await h.settle();
+ assert.equal(card.classList.contains('je-hidden'),false);assert.equal(card.hasAttribute('data-je-hidden-checked'),true);
+ const reads=h.reads.length;arrived=true;
+ if(boundary==='view')onView();
+ if(boundary==='session'){
+  h.switchUser();h.api.getHiddenData().items={provider:{type:child?'Series':type,tmdbId:'42'}};h.api.rebuildSets();
+ }
+ if(boundary==='rules'){
+  h.api.getHiddenData().items.extra={itemId:'unrelated',type:'Movie'};h.api.rebuildSets();
+ }
+ h.api.filterNativeCards();await h.settle();
+ assert.equal(h.document.querySelector('.card'),card,'exact node retained across the boundary');
+ assert.ok(h.reads.length>reads,'expired negative identity is read again');
+ assert.equal(card.classList.contains('je-hidden'),true,'ordinary scan applies arriving metadata');
+});
+for(const stage of ['pending','failed'])for(const field of ['SeriesId','ProviderIds'])test(`${stage} ${field} identity work keeps ownership and backoff across view and rules`,async t=>{
+ const gate=deferred();let onView,attempts=0,fail=true;
+ const h=setup(t,o=>{if(new URL(o.url).searchParams.get('Fields')===field){attempts++;if(fail){if(stage==='pending')return gate.promise;throw Error('503');}}return metadata(o);});
+ h.JE.helpers={onViewPage:h.JE.core.navigation.onViewPage};h.api.setupNativeObserver();onView=()=>h.JE.core.navigation.replayViewShow();
+ const [card]=mount(h,1);h.api.filterNativeCards();await h.settle();assert.equal(attempts,1);
+ onView();h.api.getHiddenData().items.extra={itemId:'unrelated'};h.api.rebuildSets();h.api.filterNativeCards();await h.settle();
+ assert.equal(attempts,1,'boundary never resets pending/failure ownership');assert.equal(card.hasAttribute('data-je-hidden-checked'),false);
+ fail=false;if(stage==='pending'){gate.resolve(metadata({url:`http://jellyfin.test/Items?Ids=${field==='SeriesId'?'e0':'s0'}&Fields=${field}`}));await h.settle();}
+ else h.later();
+ h.api.filterNativeCards();await h.settle();assert.equal(card.classList.contains('je-hidden'),true);
+});
+for(const type of ['Episode','Season','Movie','Series'])test(`retained positive ${type} hide survives view restoration and expires with its rule`,async t=>{
+ let onView;const child=['Episode','Season'].includes(type);const h=setup(t,o=>metadata(o));
+ h.JE.helpers={onViewPage:h.JE.core.navigation.onViewPage};h.api.setupNativeObserver();onView=()=>h.JE.core.navigation.replayViewShow();
+ h.api.getHiddenData().items={provider:{type:child?'Series':type,tmdbId:'42'}};h.api.rebuildSets();
+ const [card]=mount(h,1,type);if(!child)card.dataset.tmdbId='42';h.api.filterNativeCards();await h.settle();assert.equal(card.classList.contains('je-hidden'),true);
+ const reads=h.reads.length;onView();h.api.filterNativeCards();await h.settle();assert.equal(card.classList.contains('je-hidden'),true);assert.equal(h.reads.length,reads,'positive hide needs no view retry');
+ h.api.getHiddenData().items={unrelated:{itemId:'other'}};h.api.rebuildSets();h.api.filterNativeCards();await h.settle();
+ assert.equal(h.document.querySelector('.card'),card);assert.equal(card.classList.contains('je-hidden'),false,'ordinary scan re-decides after Unhide');
+});
+for(const field of ['SeriesId','ProviderIds'])test(`a missing ${field} answer completing after view restoration cannot finalize the incoming view`,async t=>{
+ const gate=deferred();let arrived=false,onView;
+ const h=setup(t,o=>{const u=new URL(o.url);if(!arrived&&u.searchParams.get('Fields')===field)return gate.promise;return metadata(o);});
+ h.JE.helpers={onViewPage:h.JE.core.navigation.onViewPage};h.api.setupNativeObserver();onView=()=>h.JE.core.navigation.replayViewShow();
+ const [card]=mount(h,1);h.api.filterNativeCards();await h.settle();onView();arrived=true;
+ gate.resolve({Items:[{Id:field==='SeriesId'?'e0':'s0',Type:'Series',ProviderIds:{}}]});await h.settle();
+ h.api.filterNativeCards();await h.settle();assert.equal(card.classList.contains('je-hidden'),true);assert.equal(h.document.querySelector('.card'),card);
+});
+for(const type of ['Episode','Season'])test(`retained ${type} successful missing-parent verdict expires on view restoration`,async t=>{
+ let arrived=false,onView;const h=setup(t,o=>new URL(o.url).searchParams.get('Fields')==='SeriesId'&&!arrived?{Items:[]} :metadata(o));
+ h.JE.helpers={onViewPage:h.JE.core.navigation.onViewPage};h.api.setupNativeObserver();onView=()=>h.JE.core.navigation.replayViewShow();
+ const [card]=mount(h,1,type);h.api.filterNativeCards();await h.settle();assert.equal(card.hasAttribute('data-je-hidden-checked'),true);assert.equal(card.classList.contains('je-hidden'),false);
+ arrived=true;onView();h.api.filterNativeCards();await h.settle();assert.equal(card.classList.contains('je-hidden'),true);assert.equal(h.document.querySelector('.card'),card);
+});
+test('retained cards moved between home-row scopes are re-decided by the ordinary scan',async t=>{
+ const h=setup(t,o=>metadata(o));h.JE.detectCardRowSurface=card=>card.parentNode.dataset.surface;
+ h.api.getHiddenData().items={scoped:{itemId:'e0',hideScope:'nextup'}};h.api.rebuildSets();
+ const [card]=mount(h,1,'Movie');card.parentNode.dataset.surface='nextup';h.api.filterNativeCards();await h.settle();assert.equal(card.classList.contains('je-hidden'),true);
+ card.parentNode.dataset.surface='continuewatching';h.api.filterNativeCards();await h.settle();assert.equal(card.classList.contains('je-hidden'),false);
+});
+for(const stage of ['pending','failed'])test(`${stage} title identity work survives view and rule boundaries without resetting backoff`,async t=>{
+ const gate=deferred();let fail=true;
+ const h=setup(t,()=>fail?gate.promise:{Items:[{Id:'e0',Type:'Movie',ProviderIds:{Tmdb:'42'}}]});
+ h.JE.helpers={onViewPage:h.JE.core.navigation.onViewPage};h.api.setupNativeObserver();
+ h.api.getHiddenData().items={provider:{type:'Movie',tmdbId:'42'}};h.api.rebuildSets();
+ const [card]=mount(h,1,'Movie');h.api.filterNativeCards();await h.settle();
+ if(stage==='failed'){gate.reject(Error('503'));await h.settle();}
+ h.JE.core.navigation.replayViewShow();h.api.getHiddenData().items.extra={itemId:'other'};h.api.rebuildSets();h.api.filterNativeCards();await h.settle();
+ assert.equal(h.reads.length,1,'view/rules retain the title identity work or its retry deadline');assert.equal(card.hasAttribute('data-je-hidden-checked'),false);
+ fail=false;if(stage==='pending')gate.resolve({Items:[{Id:'e0',Type:'Movie',ProviderIds:{Tmdb:'42'}}]});else h.later();
+ h.api.filterNativeCards();await h.settle();assert.equal(card.classList.contains('je-hidden'),true);assert.equal(h.document.querySelector('.card'),card);
 });

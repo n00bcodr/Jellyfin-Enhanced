@@ -10,7 +10,7 @@
     const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
 
     const { hiddenIdSet, getSettings, hideItem, unhideItem, getCardSurface, getCardItemId, confirmAndHide } = internal;
-    const checkedTitleIds = new Set();
+    const checkedTitleIds = new Map();
     const titlesRetryAt = new Map();
     /** After a failed identity batch, later passes retry it once this window has passed. */
     const TITLE_RETRY_AFTER_MS = 30000;
@@ -27,7 +27,7 @@
             for (const card of document.querySelectorAll('.card[data-id], .card[data-itemid]')) {
                 const id = getCardItemId(card);
                 const surface = internal.getCardSurface(card) || internal.getCurrentNativeSurface();
-                if (checkedTitleIds.has(id) || (titlesRetryAt.get(id)?.action.current() && Date.now() < titlesRetryAt.get(id).retryAt) || (!card.querySelector('.je-hide-btn') && !internal.shouldFilterSurface(surface)) ||
+                if (internal.nativeDecisionScopeCurrent(checkedTitleIds.get(id)) || (titlesRetryAt.get(id)?.action.current() && Date.now() < titlesRetryAt.get(id).retryAt) || (!card.querySelector('.je-hide-btn') && !internal.shouldFilterSurface(surface)) ||
                     !['movie', 'series'].includes((card.dataset.type || '').toLowerCase()) ||
                     internal.titleData({ itemId: id, type: card.dataset.type, tmdbId: card.dataset.tmdbId }) ||
                     JE.titleDetails?.isSynthetic?.(id)) continue;
@@ -38,11 +38,12 @@
             for (let start = 0; start < ids.length; start += 50) {
                 if (!action.current()) return;
                 const batch = ids.slice(start, start + 50);
+                const scope = internal.captureNativeDecisionScope();
                 try {
                     const reply = await ApiClient.ajax({ type: 'GET', dataType: 'json',
                         url: ApiClient.getUrl(`/Users/${ApiClient.getCurrentUserId()}/Items`, { Ids: batch.join(','), Fields: 'ProviderIds' }) });
                     if (!action.current()) return;
-                    for (const id of batch) { checkedTitleIds.add(id); titlesRetryAt.delete(id); }
+                    for (const id of batch) { checkedTitleIds.set(id, scope); titlesRetryAt.delete(id); }
                     for (const item of reply?.Items || []) {
                         const title = internal.titleData(item);
                         if (!title) continue;
@@ -366,7 +367,7 @@
     }
 
     Object.assign(internal, { addLibraryHideButtons, removeLibraryHideButtons, hydrateCardTitles,
-        isCardTitleResolved: id => checkedTitleIds.has(id),
+        isCardTitleResolved: id => internal.nativeDecisionScopeCurrent(checkedTitleIds.get(id)),
         resetCardTitleVerdicts: () => checkedTitleIds.clear() });
 
 })(window.JellyfinEnhanced);

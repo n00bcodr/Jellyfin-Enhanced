@@ -25,6 +25,7 @@
     const hiddenTmdbIdSet = new Set();
     const knownTitles = new Map();
     let hiddenData = null;
+    let rulesGeneration = 0;
 
     // ============================================================
     // Internal helpers
@@ -227,6 +228,7 @@
      * Must be called after any mutation to `hiddenData.items`.
      */
     function rebuildSets() {
+        rulesGeneration++;
         hiddenIdSet.clear();
         hiddenTmdbIdSet.clear();
         const data = getHiddenData();
@@ -564,6 +566,7 @@
      * @param {Object} partial Key-value pairs to merge into settings.
      */
     function updateSettings(partial) {
+        rulesGeneration++;
         const data = getHiddenData();
         hiddenData = {
             ...data,
@@ -708,6 +711,7 @@
 
     Object.assign(internal, {
         hiddenIdSet,
+        getRulesGeneration: () => rulesGeneration,
         hasProviderRules: () => hiddenTmdbIdSet.size > 0,
         titleKey, titleData, saveTitleRule, buildTitleControl, enqueuePersistence,
         normalizeId,
