@@ -61,6 +61,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var episodes = Memo(memo?.Episodes, (id, season, primary?.Id), () => _host.GetEpisodes(id, season, primary));
                     foreach (var episode in episodes.OrderBy(e => e.Season).ThenBy(e => e.Episode))
                     {
+                        if (pinnedItemId.HasValue && episode.SeriesId != pinnedItemId.Value) continue;
                         var coords = PlaceholderProgress.CoordsInScope(scope, episode.Season, episode.Episode, episode.EpisodeEnd);
                         if (coords.Count > 0 && Accessible(episode.SeriesId, users) && Accessible(episode.Id, users))
                             AddSources(episode.Id, episode.SeriesId, coords, scope, users, sources);
