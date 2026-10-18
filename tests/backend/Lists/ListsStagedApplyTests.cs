@@ -135,7 +135,7 @@ public class ListsStagedApplyTests
         var doc = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Playlist);
         doc.Items.Add(p); doc.Order = new() { E(a), E(b), E(c), P(p.Id), E(d) };
         doc.Intents.Add(new SwapIntent { ByUserId = actor.Id.ToString("N"), ItemIds = new() { c.ToString("N") },
-            Anchor = E(a), Index = 1, CreatedAt = "pending-test", OccurrenceCountsBefore = new() { [c.ToString("N")] = 0 } });
+            Anchor = E(a), Index = 1, CreatedAt = "pending-test", NativeOrder = new() { E(a), E(b), E(c), E(d) }, OccurrenceCountsBefore = new() { [c.ToString("N")] = 0 } });
         h.Store.Save(doc);
         h.Host.FailMoves = 100; h.Host.Calls.Clear();
         return (list, access, a, b, c, d, p);

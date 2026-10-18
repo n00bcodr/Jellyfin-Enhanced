@@ -65,24 +65,31 @@ public class ListsGateRound4Tests
         var first = h.NewUser("first", collections: true);
         var second = h.NewUser("second", collections: true);
         var third = h.NewUser("third", collections: true);
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancel = new CancellationTokenSource();
+        using var stop = new CancellationTokenSource();
+        Task<ListOutcome>? mine = null;
         Task<ListOutcome>? queued = null;
         Task<ListOutcome>? next = null;
         var inside = 0;
         var overlapped = false;
+        h.Host.FinishCreateOverride = async (write, name) =>
+        {
+            if (write.ActAs == first.Id)
+            {
+                held.TrySetResult();
+                await release.Task;
+            }
+
+            h.Host.FinishCreateOverride = null;
+            await h.Host.FinishCreateAsync(write, name);
+        };
         h.Host.OnAwait = where =>
         {
             if (where == "create:before")
             {
                 overlapped |= Interlocked.Increment(ref inside) > 1;
-                if (queued == null)
-                {
-                    using var cancel = new CancellationTokenSource();
-                    queued = h.Service.CreateListAsync(second, ListKinds.Collection, "Heist", false, Entries(h.Host.AddItem()), K("second-1"), cancel.Token);
-                    cancel.Cancel();
-                    ((IAsyncResult)queued).AsyncWaitHandle.WaitOne(Patience);
-                    next = Task.Run(() => h.Service.CreateListAsync(third, ListKinds.Collection, "Heist", false, Entries(h.Host.AddItem()), K("third-1"), None));
-                    next.Wait(TimeSpan.FromMilliseconds(500));
-                }
             }
             else if (where == "finish:after")
             {
@@ -90,13 +97,33 @@ public class ListsGateRound4Tests
             }
         };
 
-        var mine = await h.Service.CreateListAsync(first, ListKinds.Collection, "Heist", false, Entries(h.Host.AddItem()), K("first-1"), None);
-        var theirs = await next!.WaitAsync(Patience);
-        h.Host.OnAwait = null;
-
-        Assert.False(overlapped, "two creates of one destination ran at once");
-        Ok<CreateListResultDto>(mine);
-        Error(theirs, 409, "name_taken");
+        try
+        {
+            mine = h.Service.CreateListAsync(first, ListKinds.Collection, "Heist", false, Entries(h.Host.AddItem()), K("first-1"), stop.Token);
+            await held.Task.WaitAsync(Patience);
+            // Pause outside the synchronous lifecycle/write lock. Cancellation can complete here instead of
+            // depending on a thread-pool continuation blocked by the callback's own WaitOne/Wait calls.
+            queued = h.Service.CreateListAsync(second, ListKinds.Collection, "Heist", false, Entries(h.Host.AddItem()), K("second-1"), cancel.Token);
+            Assert.False(queued.IsCompleted);
+            cancel.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queued.WaitAsync(Patience));
+            next = h.Service.CreateListAsync(third, ListKinds.Collection, "Heist", false, Entries(h.Host.AddItem()), K("third-1"), stop.Token);
+            Assert.False(next.IsCompleted);
+            Assert.Equal(1, Volatile.Read(ref inside));
+            release.TrySetResult();
+            Ok<CreateListResultDto>(await mine.WaitAsync(Patience));
+            Error(await next.WaitAsync(Patience), 409, "name_taken");
+            Assert.False(overlapped, "two creates of one destination ran at once");
+        }
+        finally
+        {
+            cancel.Cancel(); stop.Cancel(); release.TrySetResult();
+            // Every started create finishes before the fixture deletes its files, including an assertion failure.
+            try { await Task.WhenAll(new[] { mine, queued, next }.OfType<Task<ListOutcome>>()); }
+            catch (OperationCanceledException) { }
+            h.Host.OnAwait = null;
+            h.Host.FinishCreateOverride = null;
+        }
     }
 
     // A person's second create waits for their first and is cancelled: the first finishes and the person can create again.

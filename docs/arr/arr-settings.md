@@ -548,6 +548,9 @@ access (revoked, deleted or disabled) abandons the placement immediately, retain
 provenance. Other writes and arrivals continue; writes anchored to a pending entry get a retryable conflict without
 adding any of the request's real items or placeholders, or consuming a recovery attempt. Hidden anchors are answered
 like missing anchors. Retry after settlement or abandonment preserves the requested position. The list API exposes visible pending/abandoned placement receipts to the current owner or an administrator (last 32 retained).
+Recovery verifies placement on both Jellyfin versions. A later JE or native reorder keeps the person's order and
+records `superseded_by_reorder`. Missing anchors record `anchor_removed`; older misplaced plans without order evidence
+record `placement_evidence_missing`. Unrelated additions or removals alone do not count as a reorder.
 There is no new setting or automatic retry after abandonment.
 
 #### Household tab

@@ -885,6 +885,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var standaloneItems = new List<Guid>(); // new real entries of their own (not a TV scope's present episodes)
 
             var applying = false;
+            var placementObserved = false;
             try
             {
                 foreach (var entry in orderedEntries)
@@ -1049,6 +1050,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                                 Anchor = anchor,
                                 Index = at,
                                 OccurrenceCountsBefore = items.Distinct().ToDictionary(id => id.ToString("N", CultureInfo.InvariantCulture), id => counts.GetValueOrDefault(id)),
+                                NativeOrder = _host.SupportsPositionalInsert ? desired.Where(ListOrder.IsReal).ToList()
+                                    : ListOrder.BuildRealTokens(_host.GetRawEntries(access.List.Id)).Concat(inserted).ToList(),
                                 CreatedAt = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
                             };
                             doc.Intents.Add(intent);
@@ -1060,7 +1063,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                             }
 
                             _store.Save(doc); // Durable placement plan BEFORE Jellyfin can append anything.
-                            order = await ListContinuation.Await(() => PlaceRealItemsAsync(access, items, anchor, desired, inserted)).ConfigureAwait(false);
+                            try
+                            {
+                                order = await ListContinuation.Await(() => PlaceRealItemsAsync(access, items, anchor, desired, inserted)).ConfigureAwait(false);
+                            }
+                            catch
+                            {
+                                // This is the result of OUR failed attempt. A later native reorder is compared with
+                                // this observation, not assumed from support for positional inserts or a document rev.
+                                intent.NativeOrder = ListOrder.BuildRealTokens(_host.GetRawEntries(access.List.Id));
+                                placementObserved = true; // Saved below with the gated partial-apply outcome.
+                                throw;
+                            }
                             doc.Intents.Remove(intent);
                             changed = true;
                         }
@@ -1100,7 +1114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     droppedNow = DropAdded(doc, order, result);
                 }
 
-                changed = DropLandedCompleteScopes(doc, accepted, result, order);
+                changed = DropLandedCompleteScopes(doc, accepted, result, order) || placementObserved;
                 if (isPlaylist)
                 {
                     order = Canonical(access, new ListDoc { Order = order, Items = doc.Items });
@@ -1649,6 +1663,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         return await ListContinuation.Await(() => ConflictAsync(access, "move_unsupported", "Jellyfin can't move the entry there without also moving entries that are hidden or missing.", visibility, cancellationToken)).ConfigureAwait(false);
                     }
 
+                    if (SupersedePlacements() is { } reorderDenied) return reorderDenied;
                     try
                     {
                         foreach (var newIndex in moves)
@@ -1694,6 +1709,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 access = current!;
+                if (!final.SequenceEqual(canonical, StringComparer.Ordinal) && SupersedePlacements() is { } finalDenied) return finalDenied;
                 ListDoc? saved = _store.Load(access.ListIdN);
                 if ((saved != null || doc.Items.Count > 0) && !final.SequenceEqual(doc.Order, StringComparer.Ordinal))
                 {
@@ -1710,6 +1726,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return success
                     ? ListOutcome.Ok(view)
                     : ListOutcome.Error(409, "move_mismatch", "Jellyfin placed the entry differently; the list was refreshed.", view);
+
+                ListOutcome? SupersedePlacements()
+                {
+                    if (!doc.Intents.Any(i => !i.SupersededByReorder)) return null;
+                    var (denied, _) = _gate.Edit(access);
+                    if (denied != null) return denied;
+                    foreach (var intent in doc.Intents) intent.SupersededByReorder = true;
+                    _store.Save(doc); // Before an awaited native move; a crash cannot replay an older placement over it.
+                    return null;
+                }
             })).ConfigureAwait(false);
         }
 

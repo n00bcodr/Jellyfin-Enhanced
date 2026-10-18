@@ -144,10 +144,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         }
 
         /// <summary>
-        /// Jellyfin 10.11 (no positional insert): moves entries that are already in the playlist — appended by an
-        /// interrupted or failed placement — to right after <paramref name="anchor"/>, in order, with the move(s)
-        /// that replay Jellyfin's MoveItemAsync to that order. Does nothing on Jellyfin 12, where the positional insert
-        /// put them there in one write.
+        /// Moves entries already in the playlist after an interrupted or failed placement to right after
+        /// <paramref name="anchor"/>, in order, on either host, using Jellyfin's native move semantics.
         /// </summary>
         /// <param name="host">Jellyfin seam.</param>
         /// <param name="logger">JE logger.</param>
@@ -168,7 +166,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             var raw = host.GetRawEntries(listId);
             var current = ListOrder.BuildRealTokens(raw);
-            if (host.SupportsPositionalInsert || (anchor != null && !current.Contains(anchor)))
+            if (anchor != null && !current.Contains(anchor))
             {
                 return current;
             }
@@ -229,6 +227,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             var index = order.ToList().IndexOf(token);
             return index >= 0 && (anchor == null ? index == 0 : index > 0 && string.Equals(order[index - 1], anchor, StringComparison.Ordinal));
+        }
+
+        /// <summary>Verifies the entire landed run follows its saved anchor in the current native order.</summary>
+        internal static bool RunFollowsAnchor(IReadOnlyList<string> order, IReadOnlyList<string> tokens, string? anchor)
+        {
+            foreach (var token in tokens)
+            {
+                if (!FollowsAnchor(order, token, anchor)) return false;
+                anchor = token;
+            }
+
+            return true;
         }
     }
 }

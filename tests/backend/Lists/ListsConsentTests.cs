@@ -197,7 +197,7 @@ public class ListsConsentTests
         using (await h.Store.LockAsync(access.ListIdN))
         {
             var doc = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Playlist);
-            doc.Intents.Add(new SwapIntent { PhId = done.Id, ItemIds = { landed.ToString("N") }, Anchor = E(a), Index = 1, OccurrenceCountsBefore = { [landed.ToString("N")] = 0 }, CreatedAt = "x1" });
+            doc.Intents.Add(new SwapIntent { PhId = done.Id, ItemIds = { landed.ToString("N") }, Anchor = E(a), Index = 1, OccurrenceCountsBefore = { [landed.ToString("N")] = 0 }, CreatedAt = "x1", NativeOrder = new() { E(a), E(b), E(landed) } });
             doc.Intents.Add(new SwapIntent { PhId = notDone.Id, ItemIds = { pending.ToString("N") }, Anchor = E(a), Index = 2, OccurrenceCountsBefore = { [pending.ToString("N")] = 0 }, CreatedAt = "x2" });
             h.Store.Save(doc);
         }

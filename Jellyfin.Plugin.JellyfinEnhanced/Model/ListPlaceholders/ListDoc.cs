@@ -465,6 +465,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("occurrenceCountsBefore")]
         public Dictionary<string, int> OccurrenceCountsBefore { get; set; } = new(StringComparer.Ordinal);
 
+        /// <summary>
+        /// Native order expected immediately after insertion, recorded before the write; replaced by the observed
+        /// native order when a placement attempt throws. Recovery compares surviving tokens to detect later reorders.
+        /// Null on older intents, whose misplaced entries cannot safely be moved without ordering evidence.
+        /// </summary>
+        [JsonPropertyName("nativeOrder")]
+        public List<string>? NativeOrder { get; set; }
+
+        /// <summary>A person's later JE reorder supersedes this plan, including a reorder back to the same native order.</summary>
+        [JsonPropertyName("supersededByReorder")]
+        public bool SupersededByReorder { get; set; }
+
         /// <summary>Recovery attempts started (persisted before awaiting a move; at most three).</summary>
         [JsonPropertyName("attempts")]
         public int Attempts { get; set; }

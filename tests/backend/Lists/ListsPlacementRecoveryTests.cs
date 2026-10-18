@@ -14,6 +14,134 @@ public class ListsPlacementRecoveryTests
 {
     private static readonly CancellationToken None = CancellationToken.None;
 
+    [Theory]
+    [InlineData(false, "displaced")]
+    [InlineData(true, "displaced")]
+    [InlineData(false, "native")]
+    [InlineData(true, "native")]
+    [InlineData(false, "je")]
+    [InlineData(true, "je")]
+    [InlineData(false, "je-back")]
+    [InlineData(true, "je-back")]
+    [InlineData(false, "settled")]
+    [InlineData(true, "settled")]
+    public async Task FailedCompletionVerifiesPlacementAndRespectsLaterReorders(bool positional, string scenario)
+    {
+        using var h = new ListsHarness();
+        h.Host.SupportsPositionalInsert = positional;
+        var owner = h.NewUser("owner"); var editor = h.NewUser("editor");
+        var list = h.Host.AddPlaylist(owner, false, new ListShare(editor.Id, true));
+        var access = h.AccessFor(list, owner);
+        var a = h.Host.AddItem(); var b = h.Host.AddItem(); var c = h.Host.AddItem(); var x = h.Host.AddItem();
+        list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true) });
+        if (scenario == "displaced" && positional)
+        {
+            // Jellyfin receives the previously computed raw index after a concurrent insertion shifts A.
+            h.Host.BeforeAdd = (_, _, _) => { list.Raw.Insert(0, new RawEntry(x, true)); return Task.CompletedTask; };
+        }
+        h.Host.AfterAdd = _ =>
+        {
+            if (scenario != "displaced")
+            {
+                list.Raw.Clear();
+                list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(c, true), new RawEntry(b, true) });
+            }
+            list.Persist();
+            throw new IOException("completion failed after native membership landed");
+        };
+        Assert.Equal(500, (await h.Service.ApplyAsync(h.AccessFor(list, editor), new[] { new ApplyEntry(0, c, null) }, new PositionDto { AfterToken = E(a) }, null, null, None)).StatusCode);
+        Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
+        h.Host.BeforeAdd = null; h.Host.AfterAdd = null;
+        if (scenario == "native")
+        {
+            list.Raw.Clear();
+            list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true), new RawEntry(c, true) });
+            list.Persist();
+        }
+        if (scenario is "je" or "je-back")
+        {
+            var doc = h.Store.Load(access.ListIdN)!;
+            Ok<ListViewDto>(await h.Service.ReorderAsync(access, doc.Rev, new[] { E(a), E(b), E(c) }, E(c), null, None));
+            if (scenario == "je-back")
+                Ok<ListViewDto>(await h.Service.ReorderAsync(access, h.Store.Load(access.ListIdN)!.Rev, new[] { E(a), E(c), E(b) }, E(c), null, None));
+        }
+        // An unrelated later native append must not be mistaken for a person's reorder.
+        if (scenario == "displaced" && !positional) list.Raw.Add(new RawEntry(x, true));
+        h.Store.InvalidateAll(); h.Host.Calls.Clear();
+        await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
+        var final = h.Store.Load(access.ListIdN)!;
+        Assert.Empty(final.Intents);
+        var superseded = scenario is "native" or "je" or "je-back";
+        var expected = scenario is "native" or "je" ? new[] { a, b, c } : scenario == "displaced"
+            ? positional ? new[] { x, a, c, b } : new[] { a, c, b, x }
+            : new[] { a, c, b };
+        Assert.Equal(expected, h.Host.Resolved(list.Info.Id));
+        Assert.Equal(expected.Select(id => E(id)), final.Order);
+        if (scenario == "displaced") Assert.Contains(h.Host.Calls, call => call.StartsWith("move:"));
+        else Assert.Empty(h.Host.Calls);
+        if (superseded)
+        {
+            Assert.Equal("superseded_by_reorder", Assert.Single(final.AbandonedPlacements).AbandonedReason);
+            var audit = File.ReadAllText(h.Plugin.Core.Logger.CurrentLogFilePath);
+            Assert.Contains("reason=superseded_by_reorder", audit);
+            var view = await h.Service.GetViewAsync(access, None);
+            Assert.Equal("superseded_by_reorder", JsonSerializer.SerializeToElement(view).GetProperty("placements")[0].GetProperty("reason").GetString());
+        }
+        else
+        {
+            Assert.Empty(final.AbandonedPlacements);
+            Assert.Contains("placement_settled", File.ReadAllText(h.Plugin.Core.Logger.CurrentLogFilePath));
+        }
+    }
+
+    [Theory]
+    [InlineData(false, "hidden")]
+    [InlineData(true, "hidden")]
+    [InlineData(false, "legacy")]
+    [InlineData(true, "legacy")]
+    [InlineData(false, "anchor")]
+    [InlineData(true, "anchor")]
+    public async Task RecoveryRetiresOnlyVerifiedPlacementOrARecordedReason(bool positional, string scenario)
+    {
+        using var h = new ListsHarness(); h.Host.SupportsPositionalInsert = positional;
+        var owner = h.NewUser("owner");
+        var list = h.Host.AddPlaylist(owner); var access = h.AccessFor(list, owner);
+        var a = h.Host.AddItem(); var b = h.Host.AddItem(); var c = h.Host.AddItem();
+        list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true) });
+        h.Host.AfterAdd = _ =>
+        {
+            list.Raw.Clear(); list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true), new RawEntry(c, true) });
+            throw new IOException("failed completion");
+        };
+        Assert.Equal(500, (await h.Service.ApplyAsync(access, new[] { new ApplyEntry(0, c, null) }, new PositionDto { AfterToken = E(a) }, null, null, None)).StatusCode);
+        h.Host.AfterAdd = null;
+        if (scenario == "hidden") h.Host.Hide(c, owner); // Native moves cannot reach the target.
+        if (scenario == "legacy")
+        {
+            var doc = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Playlist);
+            Assert.Single(doc.Intents).NativeOrder = null; h.Store.Save(doc);
+        }
+        if (scenario == "anchor") list.Raw.RemoveAt(0);
+        h.Store.InvalidateAll(); h.Host.Calls.Clear();
+        await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
+        var recovered = h.Store.Load(access.ListIdN)!;
+        if (scenario == "hidden")
+        {
+            Assert.Equal(1, Assert.Single(recovered.Intents).Attempts);
+            Assert.Empty(recovered.AbandonedPlacements);
+            h.Host.HiddenFrom.Clear();
+            await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
+            Assert.Empty(h.Store.Load(access.ListIdN)!.Intents);
+            Assert.Equal(new[] { a, c, b }, h.Host.Resolved(list.Info.Id));
+        }
+        else
+        {
+            Assert.Empty(recovered.Intents); Assert.Empty(h.Host.Calls);
+            Assert.Equal(scenario == "anchor" ? "anchor_removed" : "placement_evidence_missing", Assert.Single(recovered.AbandonedPlacements).AbandonedReason);
+            Assert.Equal(scenario == "anchor" ? new[] { b, c } : new[] { a, b, c }, h.Host.Resolved(list.Info.Id));
+        }
+    }
+
     // Native positional inserts can also lose their acknowledgement after membership lands. Both targets exercise
     // both seams, with an on-disk reload between the failed apply and recovery.
     [Theory]
@@ -138,7 +266,7 @@ public class ListsPlacementRecoveryTests
         doc.Items.Add(ph);
         doc.Order = swapIntent ? new() { E(a), P(waiting.Id), E(b), E(c), P(ph.Id) } : new() { E(a), E(b), E(c), P(ph.Id) };
         doc.Intents.Add(new SwapIntent { ByUserId = swapIntent ? null : editor.Id.ToString("N"), PhId = swapIntent ? waiting.Id : "",
-            ItemIds = new() { c.ToString("N") }, Anchor = E(a), Index = 1, CreatedAt = "test", OccurrenceCountsBefore = new() { [c.ToString("N")] = 0 } });
+            ItemIds = new() { c.ToString("N") }, Anchor = E(a), Index = 1, CreatedAt = "test", NativeOrder = new() { E(a), E(b), E(c) }, OccurrenceCountsBefore = new() { [c.ToString("N")] = 0 } });
         doc.Source = new ListSource { Owned = new() { ["waiting"] = new SourceOwnership { PhId = waiting.Id } } };
         h.Store.Save(doc); await h.Consent(access);
         h.Host.FailMoves = 100;

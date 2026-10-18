@@ -933,11 +933,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 Anchor = anchor,
                 Index = index,
                 OccurrenceCountsBefore = items.Distinct().ToDictionary(N, id => before.TryGetValue(id, out var count) ? count : 0, StringComparer.Ordinal),
+                NativeOrder = _host.SupportsPositionalInsert ? desired.Where(ListOrder.IsReal).ToList()
+                    : ListOrder.BuildRealTokens(_host.GetRawEntries(listId)).Concat(inserted).ToList(),
                 CreatedAt = IntentStamp(),
             };
             context.Doc.Intents.Add(intent);
             _store.Save(context.Doc);
             context.Doc = _store.LoadForUpdate(context.ListIdN, context.List.Kind);
+            intent = context.Doc.Intents.Single(i => i.CreatedAt == intent.CreatedAt);
             context.Dirty = false;
 
             List<string>? placed = null;
@@ -962,12 +965,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var landed = items.Where(id => after.TryGetValue(id, out var count) && count > intent.OccurrenceCountsBefore[N(id)]).ToHashSet();
             if (placed == null && landed.Count > 0)
             {
+                intent.NativeOrder = ListOrder.BuildRealTokens(raw);
+                _store.Save(context.Doc);
                 try
                 {
                     placed = await ListContinuation.Await(() => SettleLandedAsync(context, intent, items.Where(landed.Contains).ToList())).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
+                    intent.NativeOrder = ListOrder.BuildRealTokens(_host.GetRawEntries(listId));
                     _logger.Warning($"[Lists] Placement of list {context.ListIdN} is unfinished: {ex.Message}");
                     context.Dirty = true;
                     return null; // Only this entry waits; other placeholders may still be processed.
@@ -1003,7 +1009,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var (desired, inserted) = ListOrder.InsertRealItems(order, at, landed);
             var desiredReal = desired.Where(ListOrder.IsReal).ToList();
             var actual = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
-            if (!actual.SequenceEqual(desiredReal, StringComparer.Ordinal) && !_host.SupportsPositionalInsert)
+            if (!ListPlaylistPlacement.RunFollowsAnchor(actual, tokens, anchor))
             {
                 ListAccess? actor = null;
                 if (intent.ByUserId != null && Guid.TryParseExact(intent.ByUserId, "N", out var actorId)
@@ -1031,6 +1037,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         _host, _logger, context.List.Id, owner, anchor, inserted,
                         (kind, written) => _gate!.Write(actor!, kind, written))).ConfigureAwait(false);
                 }
+            }
+
+            if (!ListPlaylistPlacement.RunFollowsAnchor(actual, tokens, anchor))
+            {
+                throw new InvalidOperationException("The landed entries have not reached their saved placement.");
             }
 
             return actual.SequenceEqual(desiredReal, StringComparer.Ordinal)
@@ -1438,6 +1449,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             _logger.Info($"[Lists] placement_abandoned list={context.ListIdN} intent={intent.CreatedAt} actor={intent.ByUserId ?? "swap"} reason={reason} attempts={intent.Attempts}; retained landed membership and provenance.");
         }
 
+        // Additions/removals alone do not reorder surviving occurrences. A changed relative native order, or an
+        // explicit JE reorder recorded before its write, supersedes recovery. Old plans without evidence can settle
+        // in place, but must not guess whether a misplaced entry belongs to JE's failure or a later person's edit.
+        private string? PlacementOrderFailure(PassContext context, SwapIntent intent, IReadOnlyList<Guid> landed)
+        {
+            if (intent.SupersededByReorder) return "superseded_by_reorder";
+            var actual = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
+            if (intent.NativeOrder != null)
+            {
+                var common = actual.Intersect(intent.NativeOrder, StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+                if (!actual.Where(common.Contains).SequenceEqual(intent.NativeOrder.Where(common.Contains), StringComparer.Ordinal))
+                    return "superseded_by_reorder";
+            }
+
+            if (intent.Anchor != null && !actual.Contains(intent.Anchor)) return "anchor_removed";
+            var tokens = landed.Select(id => ListOrder.RealToken(id, intent.OccurrenceCountsBefore.GetValueOrDefault(N(id)))).ToList();
+            return intent.NativeOrder == null && !ListPlaylistPlacement.RunFollowsAnchor(actual, tokens, intent.Anchor)
+                ? "placement_evidence_missing" : null;
+        }
+
         // A6: intents left by a crash (or a throw) are completed for the items whose occurrence count went up and
         // rolled back (dropped) for the rest; the next pass retries those. Completed playlist items take the spot the
         // intent planned (F8); collection items JE added become sync-owned (F9).
@@ -1459,9 +1490,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     .Select(idN => Guid.ParseExact(idN, "N"))
                     .ToList();
                 var actorFailure = PlacementActorFailure(context, intent);
-                if (actorFailure != null || intent.Attempts >= PlacementRecoveryAttempts)
+                var orderFailure = landed.Count > 0 && context.List.Kind == ListKinds.Playlist ? PlacementOrderFailure(context, intent, landed) : null;
+                if (actorFailure != null || orderFailure != null || intent.Attempts >= PlacementRecoveryAttempts)
                 {
-                    AbandonPlacement(context, intent, actorFailure ?? "placement_retry_limit");
+                    AbandonPlacement(context, intent, actorFailure ?? orderFailure ?? "placement_retry_limit");
                 }
                 else if (landed.Count > 0 && context.List.Kind == ListKinds.Playlist)
                 {
@@ -1471,9 +1503,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     try
                     {
                         context.Doc.Order = await ListContinuation.Await(() => SettleLandedAsync(context, intent, landed)).ConfigureAwait(false);
+                        _logger.Info($"[Lists] placement_settled list={context.ListIdN} intent={intent.CreatedAt} actor={intent.ByUserId ?? "swap"} attempts={intent.Attempts}; verified saved placement.");
                     }
                     catch (Exception ex)
                     {
+                        // Preserve the outcome of our own partial move, so it cannot look like a person's later reorder.
+                        intent.NativeOrder = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
                         _logger.Warning($"[Lists] Interrupted placement of list {context.ListIdN} is still pending: {ex.Message}");
                         var reason = PlacementActorFailure(context, intent);
                         if (reason != null || intent.Attempts >= PlacementRecoveryAttempts)
