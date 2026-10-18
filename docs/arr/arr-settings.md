@@ -545,8 +545,9 @@ list records; with *Daily list maintenance* on it also refreshes entries and run
 source, including alternate versions; a standard entry accepts any playable copy. Entry edits and maintenance swaps
 preserve the saved name and editable metadata even when Jellyfin's cached item is stale. Interrupted placement retries without inserting another copy, for at most three recovery attempts. Lost editor
 access (revoked, deleted or disabled) abandons the placement immediately, retaining landed membership, order and
-provenance. Other writes and arrivals continue; writes anchored to a pending entry get a retryable conflict. The list
-API exposes visible pending/abandoned placement receipts to the current owner or an administrator (last 32 retained).
+provenance. Other writes and arrivals continue; writes anchored to a pending entry get a retryable conflict without
+adding any of the request's real items or placeholders, or consuming a recovery attempt. Hidden anchors are answered
+like missing anchors. Retry after settlement or abandonment preserves the requested position. The list API exposes visible pending/abandoned placement receipts to the current owner or an administrator (last 32 retained).
 There is no new setting or automatic retry after abandonment.
 
 #### Household tab

@@ -788,7 +788,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             int? expectedRev,
             PlaceholderVisibility visibility,
             ApplyHooks? hooks,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool recoverIntents = true)
         {
             var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
             if (expectedRev.HasValue && expectedRev.Value != doc.Rev)
@@ -801,24 +802,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return await ListContinuation.Await(() => ConflictAsync(access, preconditionFailure, "The list's linked source changed; try again.", visibility, cancellationToken)).ConfigureAwait(false);
             }
 
-            // Leftover swap intents (a swap-in interrupted after Jellyfin added the item) are settled first, in this write:
-            // what JE added then belongs to its placeholder (and its source keys) before anything here, such as a sync
-            // working out what left the source, can drop that placeholder (F9). Settling moves nothing new without consent.
-            var settled = false;
-            if (doc.Intents.Count > 0 && _swap != null)
-            {
-                var recovered = await ListContinuation.Await(() => _swap.SwapLockedAsync(access.List, access.Owner, doc, Array.Empty<string>(), null, null, MetadataMode.None, CancellationToken.None)).ConfigureAwait(false);
-                doc = recovered.Doc;
-                settled = recovered.Dirty;
-                var (denied, _) = _gate.Edit(access);
-                if (denied != null) return denied;
-                if (settled) _store.Save(doc);
-                if (position?.AfterToken is { } anchor && PendingPlacementAnchor(doc, anchor))
-                {
-                    return ListOutcome.Error(409, "placement_pending", "This entry is still being placed; try again shortly.");
-                }
-            }
-
+            // Stage on this private document. A refused request must not save additions, regrouping, or even
+            // consume a recovery attempt. Accepted requests settle old plans below, then stage once more against
+            // their new canonical order before beginning this request's journal/native writes.
+            var originalSkipped = skipped.ToList();
             var isPlaylist = access.List.Kind == ListKinds.Playlist;
             var raw = _host.GetRawEntries(access.List.Id);
             var present = new HashSet<Guid>(raw.Where(r => r.Resolved && r.ItemId.HasValue).Select(r => r.ItemId!.Value));
@@ -838,6 +825,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     if (index < 0 || !IsVisibleToken(position.AfterToken, access.User, visibility.For(doc.Items), new Dictionary<Guid, bool>()))
                     {
                         return await ListContinuation.Await(() => ConflictAsync(access, "stale_anchor", "The position no longer exists; reload the list.", visibility, cancellationToken)).ConfigureAwait(false);
+                    }
+
+                    if (PendingPlacementAnchor(doc, position.AfterToken))
+                    {
+                        return ListOutcome.Error(409, "placement_pending", "This entry is still being placed; try again shortly.");
                     }
 
                     cursor = index + 1;
@@ -892,6 +884,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var regrouped = false;
             var standaloneItems = new List<Guid>(); // new real entries of their own (not a TV scope's present episodes)
 
+            var applying = false;
             try
             {
                 foreach (var entry in orderedEntries)
@@ -976,20 +969,73 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     runIndexes.Add(entry.Index);
                 }
 
+                var segments = new List<(int At, int Order, List<NewEntry> Entries)>();
                 if (isPlaylist && run.Count > 0)
                 {
                     regrouped = hooks?.Regroup?.Invoke(doc, order, runIndexes.Distinct().ToList()) == true;
                     var anchors = hooks?.Place?.Invoke(doc, order);
-                    // One segment per run of consecutive entries with the same spot; inserted from the last spot to the
-                    // first so earlier positions (and the tokens of earlier anchors) don't move.
-                    foreach (var (at, _, segment) in Segments(order, cursor, run, runIndexes, anchors).OrderByDescending(s => s.At).ThenByDescending(s => s.Order))
+                    var visible = visibility.For(doc.Items);
+                    var visibleItems = new Dictionary<Guid, bool>();
+                    // Validate every effective source anchor as well as the interactive position: existence and
+                    // caller visibility precede pending-state disclosure. Missing source neighbours cannot silently
+                    // fall back to appending. BeforeToken remains the fallback when AfterToken is no longer present.
+                    foreach (var index in runIndexes.Distinct())
                     {
-                        var anchor = ListOrder.RealAnchorBefore(order, at);
-                        if ((position != null || hooks?.Place != null) && PendingPlacementAnchor(doc, anchor))
+                        var spot = anchors?.GetValueOrDefault(index);
+                        var token = spot?.AfterToken != null && order.Contains(spot.AfterToken) ? spot.AfterToken
+                            : spot?.BeforeToken ?? spot?.AfterToken;
+                        if (token == null) continue;
+                        if (!order.Contains(token) || !IsVisibleToken(token, access.User, visible, visibleItems))
                         {
-                            throw new ListAccessLostException(ListOutcome.Error(409, "placement_pending", "This entry is still being placed; try again shortly."), "The placement anchor is pending.");
+                            return await ListContinuation.Await(() => ConflictAsync(access, "stale_anchor", "The position no longer exists; reload the list.", visibility, cancellationToken)).ConfigureAwait(false);
                         }
 
+                        if (PendingPlacementAnchor(doc, token))
+                        {
+                            return ListOutcome.Error(409, "placement_pending", "This entry is still being placed; try again shortly.");
+                        }
+                    }
+
+                    // Decide ALL segments before any journal or native insert. A placeholder's actual native anchor
+                    // may be a pending real entry even when the placeholder itself has no intent.
+                    segments = Segments(order, cursor, run, runIndexes, anchors).OrderByDescending(s => s.At).ThenByDescending(s => s.Order).ToList();
+                    foreach (var (at, _, _) in segments)
+                    {
+                        var anchor = ListOrder.RealAnchorBefore(order, at);
+                        if ((position != null || hooks?.Place != null) && anchor != null)
+                        {
+                            if (!order.Contains(anchor) || !IsVisibleToken(anchor, access.User, visible, visibleItems))
+                            {
+                                return await ListContinuation.Await(() => ConflictAsync(access, "stale_anchor", "The position no longer exists; reload the list.", visibility, cancellationToken)).ConfigureAwait(false);
+                            }
+
+                            if (PendingPlacementAnchor(doc, anchor))
+                            {
+                                return ListOutcome.Error(409, "placement_pending", "This entry is still being placed; try again shortly.");
+                            }
+                        }
+                    }
+                }
+
+                if (recoverIntents && doc.Intents.Count > 0 && _swap != null)
+                {
+                    // Recover the stored document, never the staged additions. Settlement can move anchors, retire
+                    // placeholders or transfer ownership, so discard this plan and prepare against the result once.
+                    var stored = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
+                    var recovered = await ListContinuation.Await(() => _swap.SwapLockedAsync(access.List, access.Owner, stored, Array.Empty<string>(), null, null, MetadataMode.None, CancellationToken.None)).ConfigureAwait(false);
+                    var (denied, _) = _gate.Edit(access);
+                    if (denied != null) return denied;
+                    if (recovered.Dirty) _store.Save(recovered.Doc);
+                    return await ListContinuation.Await(() => ApplyLockedAsync(access, accepted, originalSkipped, position, null, visibility, hooks, cancellationToken, recoverIntents: false)).ConfigureAwait(false);
+                }
+
+                applying = true;
+                if (isPlaylist)
+                {
+                    // Insert from the last spot to the first, preserving the staged anchor positions.
+                    foreach (var (at, _, segment) in segments)
+                    {
+                        var anchor = ListOrder.RealAnchorBefore(order, at);
                         var (desired, inserted) = ListOrder.InsertEntries(order, at, segment);
                         order = desired; // what a failure below is reconciled from
                         if (inserted.Count > 0)
@@ -1027,7 +1073,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     await ListContinuation.Await(() => _host.AddToCollectionAsync(_gate.Write(access, ListWriteKind.CollectionAdd, items), items)).ConfigureAwait(false);
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (applying)
             {
                 if (ex is ListAccessLostException lost)
                 {
@@ -1065,7 +1111,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     changed = true;
                 }
 
-                var saved = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || settled || regrouped);
+                var saved = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || regrouped);
                 if (denied != null)
                 {
                     // The person lost the list during Jellyfin's writes: what Jellyfin already took is the write's result
@@ -1187,7 +1233,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var dropped = DropAdded(doc, order, result);
                 result.Skipped.AddRange(dropped.Select(p => new SkippedEntryDto { Index = accepted.First(e => ReferenceEquals(e.Placeholder, p)).Index, Reason = "accessLost" }));
                 result.Skipped = result.Skipped.OrderBy(x => x.Index).ToList();
-                SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || settled || regrouped || dropped.Count > 0);
+                SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || regrouped || dropped.Count > 0);
                 return ListOutcome.Ok(result);
             }
 
@@ -1203,7 +1249,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             result.Skipped = result.Skipped.OrderBy(x => x.Index).ToList();
-            var final = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || settled || regrouped);
+            var final = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || regrouped);
             result.View = await ListContinuation.Await(() => _gate.ProjectAsync(access, final?.Items ?? new List<Placeholder>(), after.Visibility, grant => BuildView(grant, final, isPlaylist ? order : null), cancellationToken)).ConfigureAwait(false);
             return ListOutcome.Ok(result);
         }

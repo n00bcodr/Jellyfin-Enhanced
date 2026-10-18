@@ -95,9 +95,9 @@ public class ListsPlacementRecoveryTests
         // First recovery fails, but the owner's unrelated append still succeeds.
         Ok<ApplyResultDto>(await h.Service.ApplyAsync(access, new[] { new ApplyEntry(0, d, null) }, null, null, null, None));
         Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
-        // Second recovery fails: a write anchored to C cannot safely be placed yet.
+        // A refused write anchored to C does not mutate the list or consume a recovery attempt.
         Error(await h.Service.AddPlaceholdersAsync(access, new[] { Movie(9912) }, new PositionDto { AfterToken = E(c) }, null, null, None), 409, "placement_pending");
-        Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
+        Assert.Equal(1, Assert.Single(h.Store.Load(access.ListIdN)!.Intents).Attempts);
         // A different placeholder swaps at the end while that intent is still pending.
         var doc = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Playlist);
         var ph = Movie(9913); doc.Items.Add(ph); doc.Order.Add(P(ph.Id)); h.Store.Save(doc);
@@ -105,6 +105,9 @@ public class ListsPlacementRecoveryTests
         var arrived = h.Host.AddItem(tmdb: 9913);
         h.Store.InvalidateAll();
         await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+        Assert.Equal(2, Assert.Single(h.Store.Load(access.ListIdN)!.Intents).Attempts);
+        Assert.Empty(h.Store.Load(access.ListIdN)!.Items); // the other swap already completed while C waits
+        await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
         var final = h.Store.Load(access.ListIdN)!;
         Assert.Empty(final.Intents); Assert.Empty(final.Items);
         Assert.Equal(new[] { a, b, c, d, arrived }, h.Host.Resolved(list.Info.Id));

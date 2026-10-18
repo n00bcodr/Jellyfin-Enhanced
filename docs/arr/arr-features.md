@@ -1368,7 +1368,10 @@ follows Jellyfin's own rights and the household's request rules:
   name still carries that create's marker. Interrupted playlist placement retries its saved position without inserting another copy. If its editor loses
   access, is deleted or disabled, JE abandons that placement and keeps the landed entries where they are, with their
   provenance. Three recovery attempts also bound a repeatedly failing move. Other entries can still be added and
-  swapped meanwhile; a write anchored to an entry still being placed gets a retryable conflict. The list API shows
+  swapped meanwhile; a write anchored to an entry still being placed gets a retryable conflict. JE validates the
+  whole addition first, including every placement segment: a refused request adds no real items or placeholders
+  and leaves the stored list unchanged. An anchor the editor cannot see gets the same conflict as a missing anchor.
+  After placement settles or is abandoned, retrying keeps new entries at their requested position. The list API shows
   the owner or an administrator pending placements and the last 32 abandonment receipts, with visible entry tokens
   and reason codes. Restoring an editor's access does not restart an abandoned placement. A native rename racing Jellyfin's own asynchronous
   whole-item save remains a Jellyfin core limitation.
