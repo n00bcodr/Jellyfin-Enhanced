@@ -142,9 +142,11 @@
             button.className = 'button-flat detailButton emby-button je-spoiler-blur-btn';
             button.type = 'button';
             JE.core.ui.placeDetailAction(container, button);
+            const viewAction = JE.createSessionAction();
             button.addEventListener('click', function(event) {
                 event.preventDefault();
                 event.stopPropagation();
+                if (!viewAction.current()) { button.disabled = true; return; }
                 const liveId = button.getAttribute('data-je-item-id') || '';
                 const liveKind = button.getAttribute('data-je-spoiler-kind') || 'series';
                 const livePage = button.closest('#itemDetailPage:not(.hide)') || visiblePage;
@@ -155,12 +157,14 @@
             button.setAttribute('data-je-spoiler-state', state);
             renderButton(button, enabled);
             // Shared state changes (a write, or a recovered read) repaint the drawn control.
-            button.jeSpoilerRefresh = function() {
+            const refresh = function() {
                 const live = stateOf(button.getAttribute('data-je-spoiler-kind') || 'series', button.getAttribute('data-je-item-id') || '');
                 if (button.getAttribute('data-je-spoiler-state') === stateName(live)) return;
                 button.setAttribute('data-je-spoiler-state', stateName(live));
                 renderButton(button, live);
             };
+            button.jeSpoilerRefresh = refresh;
+            internal.bindStateView?.(button, refresh);
             return;
         }
 

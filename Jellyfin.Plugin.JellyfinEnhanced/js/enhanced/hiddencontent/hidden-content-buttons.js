@@ -14,49 +14,56 @@
     /** After a failed identity batch, later passes retry it once this window has passed. */
     const TITLE_RETRY_AFTER_MS = 30000;
     let titlesRetryAt = 0;
-    JE.session?.onUserChange('hidden-content-card-identities', () => { checkedCards = new WeakSet(); titlesRetryAt = 0; });
+    let titlesInFlight = null;
+    JE.session?.onUserChange('hidden-content-card-identities', () => { checkedCards = new WeakSet(); titlesRetryAt = 0; titlesInFlight = null; });
 
     /** Resolves ID-only native card identities in bounded batches, only when provider rules exist. */
     async function hydrateCardTitles() {
-        if (!internal.hasProviderRules() || JE.pluginConfig?.HiddenContentEnabled === false || Date.now() < titlesRetryAt) return;
+        if (!internal.hasProviderRules() || JE.pluginConfig?.HiddenContentEnabled === false || Date.now() < titlesRetryAt || titlesInFlight) return;
         const action = JE.createSessionAction();
-        const byId = new Map();
-        for (const card of document.querySelectorAll('.card[data-id], .card[data-itemid]')) {
-            const id = getCardItemId(card);
-            const surface = internal.getCardSurface(card) || internal.getCurrentNativeSurface();
-            if (checkedCards.has(card) || (!card.querySelector('.je-hide-btn') && !internal.shouldFilterSurface(surface)) ||
-                !['movie', 'series'].includes((card.dataset.type || '').toLowerCase()) ||
-                internal.titleData({ itemId: id, type: card.dataset.type, tmdbId: card.dataset.tmdbId }) ||
-                JE.titleDetails?.isSynthetic?.(id)) continue;
-            checkedCards.add(card);
-            if (!byId.has(id)) byId.set(id, []);
-            byId.get(id).push(card);
-        }
-        const ids = [...byId.keys()];
-        for (let start = 0; start < ids.length; start += 50) {
-            if (!action.current()) return;
-            const batch = ids.slice(start, start + 50);
-            try {
-                const reply = await ApiClient.ajax({ type: 'GET', dataType: 'json',
-                    url: ApiClient.getUrl(`/Users/${ApiClient.getCurrentUserId()}/Items`, { Ids: batch.join(','), Fields: 'ProviderIds' }) });
-                if (!action.current()) return;
-                for (const item of reply?.Items || []) {
-                    const title = internal.titleData(item);
-                    if (!title) continue;
-                    for (const card of byId.get(internal.normalizeId(item.Id)) || []) {
-                        card.dataset.type = title.type;
-                        card.dataset.tmdbId = title.tmdbId;
-                        card.querySelector('.je-hide-btn')?.jeHiddenPaint?.();
-                    }
-                }
-                internal.refreshNativeCardVisibility();
-            } catch (_) {
-                // Leave unresolved cards usable; the same cards retry after the window.
-                if (!action.current()) return;
-                for (const id of batch) for (const card of byId.get(id) || []) checkedCards.delete(card);
-                titlesRetryAt = Date.now() + TITLE_RETRY_AFTER_MS;
-                return;
+        titlesInFlight = action;
+        try {
+            const byId = new Map();
+            for (const card of document.querySelectorAll('.card[data-id], .card[data-itemid]')) {
+                const id = getCardItemId(card);
+                const surface = internal.getCardSurface(card) || internal.getCurrentNativeSurface();
+                if (checkedCards.has(card) || (!card.querySelector('.je-hide-btn') && !internal.shouldFilterSurface(surface)) ||
+                    !['movie', 'series'].includes((card.dataset.type || '').toLowerCase()) ||
+                    internal.titleData({ itemId: id, type: card.dataset.type, tmdbId: card.dataset.tmdbId }) ||
+                    JE.titleDetails?.isSynthetic?.(id)) continue;
+                if (!byId.has(id)) byId.set(id, []);
+                byId.get(id).push(card);
             }
+            const ids = [...byId.keys()];
+            for (let start = 0; start < ids.length; start += 50) {
+                if (!action.current()) return;
+                const batch = ids.slice(start, start + 50);
+                // Future batches remain eligible if an earlier request fails. One pass owns hydration at a time.
+                for (const id of batch) for (const card of byId.get(id) || []) checkedCards.add(card);
+                try {
+                    const reply = await ApiClient.ajax({ type: 'GET', dataType: 'json',
+                        url: ApiClient.getUrl(`/Users/${ApiClient.getCurrentUserId()}/Items`, { Ids: batch.join(','), Fields: 'ProviderIds' }) });
+                    if (!action.current()) return;
+                    for (const item of reply?.Items || []) {
+                        const title = internal.titleData(item);
+                        if (!title) continue;
+                        for (const card of byId.get(internal.normalizeId(item.Id)) || []) {
+                            card.dataset.type = title.type;
+                            card.dataset.tmdbId = title.tmdbId;
+                            card.querySelector('.je-hide-btn')?.jeHiddenPaint?.();
+                        }
+                    }
+                    internal.refreshNativeCardVisibility();
+                } catch (_) {
+                    // Leave unresolved cards usable; the same cards retry after the window.
+                    if (!action.current()) return;
+                    for (const id of ids.slice(start)) for (const card of byId.get(id) || []) checkedCards.delete(card);
+                    titlesRetryAt = Date.now() + TITLE_RETRY_AFTER_MS;
+                    return;
+                }
+            }
+        } finally {
+            if (titlesInFlight === action) titlesInFlight = null;
         }
     }
 

@@ -25,7 +25,7 @@
     let recoveryAttempt = 0;
     let recoveryTimer = null;
     // Titles whose state an accepted write established while the full state is unavailable.
-    const confirmed = new Set();
+    const confirmed = new Map();
 
     function request(path, options) {
         return JE.core.api.plugin(path, options);
@@ -64,12 +64,29 @@
     function applyConfirmed(kind, key, set, enabled) {
         if (enabled) set.add(key);
         else set.delete(key);
-        confirmed.add(`${kind}:${key}`);
+        confirmed.set(`${kind}:${key}`, enabled);
     }
 
-    /** Repaints every owned guard control from the current mirrors. */
+    /** Subscribes a mounted view to state settlement without retaining detached views in global listeners. */
+    internal.bindStateView = function(node, refresh) {
+        const action = JE.createSessionAction();
+        node.classList.add('je-spoiler-state-view');
+        node.jeSpoilerRefresh = function() {
+            if (action.current()) refresh();
+            else {
+                // An outgoing preferences section must never adopt the incoming viewer's values.
+                node.querySelectorAll('input, button').forEach(control => { control.disabled = true; });
+                if (node.tagName === 'BUTTON') node.disabled = true;
+            }
+        };
+        node.addEventListener('je-spoiler-state-changed', node.jeSpoilerRefresh);
+    };
+
+    /** State settlement is an event for every mounted, session-bound privacy view. */
     function refreshControls() {
-        document.querySelectorAll('.je-spoiler-pending-btn, .je-spoiler-pending-detail, .je-spoiler-blur-btn').forEach(node => node.jeSpoilerRefresh?.());
+        document.querySelectorAll('.je-spoiler-state-view').forEach(node => {
+            node.dispatchEvent(new CustomEvent('je-spoiler-state-changed'));
+        });
     }
 
     /** Settles a failed read fail-closed and schedules the next bounded, session-bound recovery read. */
@@ -153,6 +170,7 @@
                 if (!action.current() || requestGeneration !== generation) return;
                 console.error(`${logPrefix} state load failed; downstream consumers will fail closed:`, err);
                 settleFailed();
+                refreshControls();
                 // Tag renderers held back on cards while this was in flight
                 // (e.g. user-review chips, see ratingtags.js): with the state
                 // settled — failed, so ratings stay suppressed — give them
@@ -232,6 +250,8 @@
 
     internal.isTmdbEnabled = function(mediaType, tmdbId, jellyfinMediaId) {
         const key = internal.pendingKey(mediaType, tmdbId);
+        // A confirmed disable must win over stale Movies/Series fallback until a full read reconciles it.
+        if (confirmed.has(`tmdb:${key}`)) return confirmed.get(`tmdb:${key}`);
         if (key && enabledPendingTmdb.has(key)) return true;
         const jellyfinId = jellyfinMediaId;
         if (!jellyfinId) return false;
@@ -282,5 +302,6 @@
         userPrefs = {};
         // The outgoing viewer's native toggles show their state; the next page view draws the incoming one.
         document.querySelectorAll('.je-spoiler-blur-btn').forEach(button => button.remove());
+        refreshControls();
     });
 })(window.JellyfinEnhanced);

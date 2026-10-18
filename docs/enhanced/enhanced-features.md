@@ -37,6 +37,8 @@ Requests & downloads also offers Hide/Unhide on titles that have not arrived yet
 
 Confirmed manager Unhide actions remain valid when you close the manager, but cancel if the signed-in session changes during the fade.
 
+Failed card metadata batches retry after a bounded wait, including cards in later batches that were never requested.
+
 Native movie and series card hides honor your confirmation preference before saving. Cancel leaves the title visible; turning confirmations off, or temporarily suppressing them, saves the hide directly.
 
 ![Hidden content management panel](../images/hidden-content-panel.png)

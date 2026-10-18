@@ -268,6 +268,8 @@ On Requests & downloads pages, guarding a title keeps its request status, cancel
 
 Every Spoiler Guard control refreshes from the server after saving. Disabling an arrived title also updates its provider intent and all library copies in the client. Native detail pages refresh immediately, and replies started under the previous policy are discarded. Queued requests and retries remain bound to the viewer who submitted them.
 
+If a state read fails, open preferences and title controls recover automatically when the server becomes readable again. An accepted title change stays visible even if its follow-up read fails; other titles remain protected until reconciliation. Switching accounts leaves outgoing controls inactive.
+
 Release-date chips also discard lookups and cached answers from the previous viewer or policy. Reads cancelled by a page refresh finish quietly; active network failures still report their diagnostic.
 
 Native refresh cancellation also leaves watch-progress and file-size chips uncached and quiet; current transport failures still report errors.

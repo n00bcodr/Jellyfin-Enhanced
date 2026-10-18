@@ -26,6 +26,7 @@
         const jellyfinMediaId = data?.mediaInfo?.jellyfinMediaId || null;
         const displayName = data?.title || data?.name || '';
         const detail = options?.detail === true;
+        const viewAction = JE.createSessionAction();
         const button = document.createElement('button');
         button.type = 'button';
         button.className = detail ? 'button-flat detailButton emby-button je-spoiler-pending-detail' : 'je-spoiler-pending-btn';
@@ -55,6 +56,7 @@
         }
 
         function refresh() {
+            if (!viewAction.current()) { button.disabled = true; return; }
             const enabled = current();
             const text = JE.t(enabled ? 'spoiler_blur_pending_button_on' : 'spoiler_blur_pending_button_off');
             button.classList.toggle('je-spoiler-pending-on', enabled);
@@ -66,12 +68,13 @@
         }
 
         button.jeSpoilerRefresh = refresh;
+        internal.bindStateView?.(button, refresh);
         refresh();
         internal.whenLoaded().then(refresh).catch(function() {});
         button.addEventListener('click', function(event) {
             event.preventDefault();
             event.stopPropagation();
-            if (button.disabled) return;
+            if (button.disabled || !viewAction.current()) return;
             button.disabled = true;
             const action = JE.createSessionAction();
             const wasEnabled = current();
@@ -92,7 +95,7 @@
                     JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));
                 } finally {
                     refresh();
-                    button.disabled = false;
+                    button.disabled = !viewAction.current();
                 }
             })();
         });
