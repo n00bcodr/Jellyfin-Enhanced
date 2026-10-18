@@ -162,7 +162,6 @@ public class ListsSaveAttributionTests
         DateTime? successfulStamp = null;
         h.Host.AfterAdd = _ =>
         {
-            list.Raw.Clear(); list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true), new RawEntry(c, true) }); list.Persist();
             successfulStamp = h.Host.GetStoredSaveStamp(list.Info.Id);
         };
         h.Store.Awaited = site =>

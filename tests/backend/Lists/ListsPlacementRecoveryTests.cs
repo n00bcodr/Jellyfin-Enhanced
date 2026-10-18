@@ -30,15 +30,12 @@ public class ListsPlacementRecoveryTests
         var a = h.Host.AddItem(); var b = h.Host.AddItem(); var c = h.Host.AddItem();
         list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true) }); list.Persist();
         // A native insert lands, but completion dies before the desired C-after-A move can settle.
-        h.Host.AfterAdd = _ =>
-        {
-            list.Raw.Clear(); list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true), new RawEntry(c, true) });
-            list.Persist();
-        };
+        // Start from the native append operation supported on both hosts; recovery then uses the selected capability.
+        h.Host.SupportsPositionalInsert = false;
         var interrupted = InterruptAfterObservedSave(h);
         Assert.Equal(500, (await h.Service.ApplyAsync(h.AccessFor(list, editor), new[] { new ApplyEntry(0, c, null) }, new PositionDto { AfterToken = E(a) }, null, null, None)).StatusCode);
         h.Store.Awaited = null; interrupted.Dispose();
-        h.Host.AfterAdd = null;
+        h.Host.SupportsPositionalInsert = positional;
         var stamp = h.Host.GetStoredSaveStamp(list.Info.Id);
         var pending = Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
         Assert.Equal(new[] { E(a), E(b), E(c) }, pending.NativeOrder);
@@ -105,17 +102,9 @@ public class ListsPlacementRecoveryTests
             // Jellyfin receives the previously computed raw index after a concurrent insertion shifts A.
             h.Host.BeforeAdd = (_, _, _) => { list.Raw.Insert(0, new RawEntry(x, true)); return Task.CompletedTask; };
         }
-        h.Host.AfterAdd = _ =>
-        {
-            if (scenario != "displaced")
-            {
-                list.Raw.Clear();
-                list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(c, true), new RawEntry(b, true) });
-            }
-            list.Persist();
-
-        };
-        var interrupted = InterruptAfterObservedSave(h);
+        // Interrupt after the acknowledged placement save: on append-and-move hosts this is the second save,
+        // unless the test deliberately interrupts the still-displaced append. No unrelated raw order is attributed to JE.
+        var interrupted = InterruptAfterObservedSave(h, !positional && scenario != "displaced" ? 2 : 1);
         Assert.Equal(500, (await h.Service.ApplyAsync(h.AccessFor(list, editor), new[] { new ApplyEntry(0, c, null) }, new PositionDto { AfterToken = E(a) }, null, null, None)).StatusCode);
         h.Store.Awaited = null; interrupted.Dispose();
         Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
@@ -139,21 +128,23 @@ public class ListsPlacementRecoveryTests
         await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
         var final = h.Store.Load(access.ListIdN)!;
         Assert.Empty(final.Intents);
-        var superseded = scenario is "native" or "je" or "je-back";
+        var unknownOrder = positional && scenario == "displaced";
+        var superseded = scenario is "native" or "je" or "je-back" || unknownOrder;
         var expected = scenario is "native" or "je" ? new[] { a, b, c } : scenario == "displaced"
-            ? positional ? new[] { x, a, c, b } : new[] { a, c, b, x }
+            ? positional ? new[] { x, c, a, b } : new[] { a, c, b, x }
             : new[] { a, c, b };
         Assert.Equal(expected, h.Host.Resolved(list.Info.Id));
         Assert.Equal(expected.Select(id => E(id)), final.Order);
-        if (scenario == "displaced") Assert.Contains(h.Host.Calls, call => call.StartsWith("move:"));
+        if (scenario == "displaced" && !positional) Assert.Contains(h.Host.Calls, call => call.StartsWith("move:"));
         else Assert.Empty(h.Host.Calls);
         if (superseded)
         {
-            Assert.Equal("superseded_by_reorder", Assert.Single(final.AbandonedPlacements).AbandonedReason);
+            var reason = unknownOrder ? "placement_evidence_missing" : "superseded_by_reorder";
+            Assert.Equal(reason, Assert.Single(final.AbandonedPlacements).AbandonedReason);
             var audit = File.ReadAllText(h.Plugin.Core.Logger.CurrentLogFilePath);
-            Assert.Contains("reason=superseded_by_reorder", audit);
+            Assert.Contains("reason=" + reason, audit);
             var view = await h.Service.GetViewAsync(access, None);
-            Assert.Equal("superseded_by_reorder", JsonSerializer.SerializeToElement(view).GetProperty("placements")[0].GetProperty("reason").GetString());
+            Assert.Equal(reason, JsonSerializer.SerializeToElement(view).GetProperty("placements")[0].GetProperty("reason").GetString());
         }
         else
         {
@@ -178,15 +169,12 @@ public class ListsPlacementRecoveryTests
         var list = h.Host.AddPlaylist(owner); var access = h.AccessFor(list, owner);
         var a = h.Host.AddItem(); var b = h.Host.AddItem(); var c = h.Host.AddItem();
         list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true) });
-        h.Host.AfterAdd = _ =>
-        {
-            list.Raw.Clear(); list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true), new RawEntry(c, true) });
-            list.Persist();
-        };
+        // Start from the native append operation supported on both hosts; recovery then uses the selected capability.
+        h.Host.SupportsPositionalInsert = false;
         var interrupted = InterruptAfterObservedSave(h);
         Assert.Equal(500, (await h.Service.ApplyAsync(access, new[] { new ApplyEntry(0, c, null) }, new PositionDto { AfterToken = E(a) }, null, null, None)).StatusCode);
         h.Store.Awaited = null; interrupted.Dispose();
-        h.Host.AfterAdd = null;
+        h.Host.SupportsPositionalInsert = positional;
         if (scenario.StartsWith("hidden", StringComparison.Ordinal)) h.Host.Hide(c, owner); // Native moves cannot reach the target.
         if (scenario == "legacy")
         {
@@ -315,11 +303,12 @@ public class ListsPlacementRecoveryTests
 
     // The native save was acknowledged and observed; only the outer JE continuation is interrupted. This is
     // distinct from a failed/unknown native save, which now has no recovery proof (ListsSaveAttributionTests).
-    private static IDisposable InterruptAfterObservedSave(ListsHarness h)
+    private static IDisposable InterruptAfterObservedSave(ListsHarness h, int saveNumber = 1)
     {
+        var observed = 0;
         h.Store.Awaited = site =>
         {
-            if (site.StartsWith("ObserveSaveAsync:", StringComparison.Ordinal)) throw new IOException("JE continuation interrupted after observed successful save");
+            if (site.StartsWith("ObserveSaveAsync:", StringComparison.Ordinal) && ++observed == saveNumber) throw new IOException("JE continuation interrupted after observed successful save");
         };
         return new ListContinuation(h.Store, () => null);
     }

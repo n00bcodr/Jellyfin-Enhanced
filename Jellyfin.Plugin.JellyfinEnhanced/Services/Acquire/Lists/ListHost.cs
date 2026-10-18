@@ -37,6 +37,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <param name="CreatedAt">When Jellyfin created the list (UTC); null when unknown.</param>
     public sealed record ListInfo(Guid Id, string Kind, string Name, Guid OwnerId, bool OpenAccess, IReadOnlyList<ListShare> Shares, string? SortName = null, DateTime? CreatedAt = null);
 
+    /// <summary>A stored playlist order and its durable save stamp, observed together without using the cached playlist.</summary>
+    /// <param name="Stamp">Repository UTC save stamp.</param>
+    /// <param name="Order">Resolved occurrence tokens in stored order.</param>
+    public sealed record ListPlaylistSave(DateTime Stamp, IReadOnlyList<string> Order);
+
     /// <summary>The facts JE needs about a library item.</summary>
     /// <param name="Id">Item id.</param>
     /// <param name="Kind">Jellyfin item kind.</param>
@@ -106,6 +111,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="listId">List id.</param>
         /// <returns>The durable UTC save stamp, or null when missing or unavailable.</returns>
         DateTime? GetStoredSaveStamp(Guid listId);
+
+        /// <summary>Reads the stored playlist order bracketed by equal repository stamps; unavailable or changing evidence returns null.</summary>
+        /// <param name="listId">Playlist id.</param>
+        /// <returns>The stored order and stamp, or null. The host provides no atomic save-and-observe operation.</returns>
+        ListPlaylistSave? GetStoredPlaylistSave(Guid listId);
 
         /// <summary>The raw <c>LinkedChildren</c> slots of a list, freshly read, in order.</summary>
         /// <param name="listId">Id.</param>
@@ -345,6 +355,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         }
 
         /// <inheritdoc />
+        public ListPlaylistSave? GetStoredPlaylistSave(Guid listId)
+        {
+            var stamp = GetStoredSaveStamp(listId);
+            if (!stamp.HasValue) return null;
+            try
+            {
+                // RetrieveItem materializes the saved item (including native links), without registering it in the
+                // shared cache. A save crossing that read invalidates the entire tuple, never just one component.
+                if (_libraryManager.RetrieveItem(listId) is not Playlist stored) return null;
+                var order = ListOrder.BuildRealTokens(RawEntries(stored));
+                return GetStoredSaveStamp(listId) == stamp ? new ListPlaylistSave(stamp.Value, order) : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <inheritdoc />
         public IReadOnlyList<RawEntry> GetRawEntries(Guid listId)
         {
             if (_libraryManager.GetItemById(listId) is not Folder folder || folder is not (Playlist or BoxSet))
@@ -352,6 +381,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return Array.Empty<RawEntry>();
             }
 
+            return RawEntries(folder);
+        }
+
+        private static IReadOnlyList<RawEntry> RawEntries(Folder folder)
+        {
             var raw = folder.LinkedChildren ?? Array.Empty<LinkedChild>();
             // Same LinkedChild instances as LinkedChildren; unresolved (dangling) links are absent.
             var resolved = new Dictionary<LinkedChild, Guid>(ReferenceEqualityComparer.Instance);

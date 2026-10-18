@@ -466,9 +466,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         public Dictionary<string, int> OccurrenceCountsBefore { get; set; } = new(StringComparer.Ordinal);
 
         /// <summary>
-        /// Native order expected immediately after insertion, recorded before the write; replaced by the observed
-        /// native order when a placement attempt throws. Recovery compares surviving tokens to detect later reorders.
-        /// Null on older intents, whose misplaced entries cannot safely be moved without ordering evidence.
+        /// The order JE knows its acknowledged native write produced, verified against storage and updated together
+        /// with StoredSaveStamp by the shared save observer. Recovery compares surviving tokens for later reorders.
+        /// Null when proof is missing or unknown; a misplaced entry then cannot safely be moved.
         /// </summary>
         [JsonPropertyName("nativeOrder")]
         public List<string>? NativeOrder { get; set; }

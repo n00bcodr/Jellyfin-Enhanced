@@ -933,8 +933,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 Anchor = anchor,
                 Index = index,
                 OccurrenceCountsBefore = items.Distinct().ToDictionary(N, id => before.TryGetValue(id, out var count) ? count : 0, StringComparer.Ordinal),
-                NativeOrder = _host.SupportsPositionalInsert ? desired.Where(ListOrder.IsReal).ToList()
-                    : ListOrder.BuildRealTokens(_host.GetRawEntries(listId)).Concat(inserted).ToList(),
                 CreatedAt = IntentStamp(),
             };
             context.Doc.Intents.Add(intent);
@@ -965,7 +963,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var landed = items.Where(id => after.TryGetValue(id, out var count) && count > intent.OccurrenceCountsBefore[N(id)]).ToHashSet();
             if (placed == null && landed.Count > 0)
             {
-                intent.NativeOrder = ListOrder.BuildRealTokens(raw);
                 _store.Save(context.Doc);
                 try
                 {
@@ -973,7 +970,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
                 catch (Exception ex)
                 {
-                    intent.NativeOrder = ListOrder.BuildRealTokens(_host.GetRawEntries(listId));
                     _logger.Warning($"[Lists] Placement of list {context.ListIdN} is unfinished: {ex.Message}");
                     context.Dirty = true;
                     return null; // Only this entry waits; other placeholders may still be processed.
@@ -1522,8 +1518,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
                     catch (Exception ex)
                     {
-                        // Preserve the outcome of our own partial move, so it cannot look like a person's later reorder.
-                        intent.NativeOrder = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
+                        // Preserve the observer's complete proof tuple, including invalidation on unknown outcomes.
                         _logger.Warning($"[Lists] Interrupted placement of list {context.ListIdN} is still pending: {ex.Message}");
                         var reason = PlacementActorFailure(context, intent);
                         if (reason != null || intent.Attempts >= PlacementRecoveryAttempts)

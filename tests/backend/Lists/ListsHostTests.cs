@@ -18,6 +18,49 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class ListsHostTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void StoredPlacementTupleUsesFreshRepositoryOrderAndRejectsASaveCrossingTheRead(bool changing)
+    {
+        var id = Guid.NewGuid(); var a = new Movie { Id = Guid.NewGuid() }; var b = new Movie { Id = Guid.NewGuid() };
+        var stamp = DateTime.UtcNow;
+        var cached = new Playlist { Id = id, LinkedChildren = new[] { new LinkedChild { ItemId = b.Id }, new LinkedChild { ItemId = a.Id } } };
+        var stored = new Playlist { Id = id, LinkedChildren = new[] { new LinkedChild { ItemId = a.Id }, new LinkedChild { ItemId = b.Id } } };
+        var database = new IntegrationCalendarTests.CalendarDatabase();
+        using (var db = database.CreateDbContext())
+        {
+            db.BaseItems.Add(new BaseItemEntity { Id = id, Type = typeof(Playlist).FullName!, DateLastSaved = stamp }); db.SaveChanges();
+        }
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(id)).Returns(cached);
+        library.Setup(l => l.GetItemById(a.Id)).Returns(a); library.Setup(l => l.GetItemById(b.Id)).Returns(b);
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new List<BaseItem> { a, b });
+        library.Setup(l => l.RetrieveItem(id)).Returns(() =>
+        {
+            if (changing)
+            {
+                using var db = database.CreateDbContext(); db.BaseItems.Single().DateLastSaved = stamp.AddTicks(1); db.SaveChanges();
+            }
+            return stored;
+        });
+        var previous = BaseItem.LibraryManager; BaseItem.LibraryManager = library.Object;
+        try
+        {
+            var host = new JellyfinListHost(library.Object, Mock.Of<IPlaylistManager>(), Mock.Of<ICollectionManager>(), Mock.Of<MediaBrowser.Model.IO.IFileSystem>(), database);
+            var tuple = host.GetStoredPlaylistSave(id);
+            if (changing) Assert.Null(tuple);
+            else
+            {
+                Assert.NotNull(tuple); Assert.Equal(stamp, tuple.Stamp);
+                Assert.Equal(new[] { ListOrder.RealToken(a.Id, 0), ListOrder.RealToken(b.Id, 0) }, tuple.Order);
+            }
+            library.Verify(l => l.GetItemById(id), Times.Never);
+            Assert.Equal(b.Id, cached.LinkedChildren[0].ItemId);
+        }
+        finally { BaseItem.LibraryManager = previous; }
+    }
+
     [Fact]
     public void PlacementSaveStampComesFromTheDatabaseColumnRatherThanCachedOrSerializedItems()
     {
@@ -60,6 +103,7 @@ public class ListsHostTests
         database.Setup(d => d.CreateDbContext()).Throws(new IOException("database unavailable"));
         var host = new JellyfinListHost(library.Object, Mock.Of<IPlaylistManager>(), Mock.Of<ICollectionManager>(), Mock.Of<MediaBrowser.Model.IO.IFileSystem>(), database.Object);
         Assert.Null(host.GetStoredSaveStamp(id));
+        Assert.Null(host.GetStoredPlaylistSave(id));
         library.Verify(l => l.RetrieveItem(It.IsAny<Guid>()), Times.Never);
     }
 

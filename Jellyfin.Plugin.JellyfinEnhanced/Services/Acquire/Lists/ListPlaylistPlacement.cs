@@ -32,7 +32,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// The gate, asked right before each Jellyfin write (the insert, then every move that places it) for that write's
         /// grant; it throws when the write isn't allowed any more, which stops the placement there.
         /// </param>
-        /// <param name="saved">Records the immediate durable stamp only after successful saves; a failed or unknown save supplies null.</param>
+        /// <param name="saved">Records the verified order and durable stamp together after successful saves; failed or unknown saves supply null.</param>
         /// <returns>The canonical order after the insert (desired, or Jellyfin's actual order reconciled).</returns>
         public static async Task<List<string>> PlaceAsync(
             IListHost host,
@@ -45,7 +45,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             List<string> desired,
             IReadOnlyList<string> inserted,
             Func<ListWriteKind, IReadOnlyList<Guid>, ListWrite> write,
-            Action<DateTime?, DateTime?>? saved = null)
+            Action<ListPlaylistSave?, ListPlaylistSave?>? saved = null)
         {
             var ownerVisible = new Dictionary<Guid, bool>();
             bool VisibleToOwner(Guid itemId)
@@ -71,11 +71,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             if (host.SupportsPositionalInsert)
             {
                 var position = ListOrder.RawInsertPosition(host.GetRawEntries(listId), anchor);
-                await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, position), saved)).ConfigureAwait(false);
+                await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, position), raw => Insert(raw, items, position, true), saved)).ConfigureAwait(false);
             }
             else
             {
-                await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, null), saved)).ConfigureAwait(false);
+                await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, null), raw => Insert(raw, items, null, false), saved)).ConfigureAwait(false);
                 var raw = host.GetRawEntries(listId);
                 var current = ListOrder.BuildRealTokens(raw);
                 var previous = anchor;
@@ -93,7 +93,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var moves = ListOrder.FindMoves(raw, itemId, target, VisibleToOwner) ?? Array.Empty<int>();
                     foreach (var newIndex in moves)
                     {
-                        await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex), saved)).ConfigureAwait(false);
+                        await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex), raw => ListOrder.SimulateMove(raw, itemId, newIndex, VisibleToOwner), saved)).ConfigureAwait(false);
                     }
 
                     if (moves.Count > 0)
@@ -119,7 +119,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var moves = ListOrder.FindMoves(actualRaw, items[0], target, VisibleToOwner) ?? Array.Empty<int>();
                 foreach (var newIndex in moves)
                 {
-                    await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { items[0] }), items[0], newIndex), saved)).ConfigureAwait(false);
+                    await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { items[0] }), items[0], newIndex), raw => ListOrder.SimulateMove(raw, items[0], newIndex, VisibleToOwner), saved)).ConfigureAwait(false);
                 }
 
                 if (moves.Count > 0)
@@ -167,7 +167,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             string? anchor,
             IReadOnlyList<string> tokens,
             Func<ListWriteKind, IReadOnlyList<Guid>, ListWrite> write,
-            Action<DateTime?, DateTime?>? saved = null)
+            Action<ListPlaylistSave?, ListPlaylistSave?>? saved = null)
         {
             var raw = host.GetRawEntries(listId);
             var current = ListOrder.BuildRealTokens(raw);
@@ -212,7 +212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var moves = ListOrder.FindMoves(raw, itemId, target, VisibleToOwner) ?? Array.Empty<int>();
                 foreach (var newIndex in moves)
                 {
-                    await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex), saved)).ConfigureAwait(false);
+                    await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex), raw => ListOrder.SimulateMove(raw, itemId, newIndex, VisibleToOwner), saved)).ConfigureAwait(false);
                 }
 
                 if (moves.Count > 0)
@@ -231,9 +231,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // continuation hook/rights check or any other await; the host offers no atomic save+stamp observation.
         // ListAccessLostException synchronously thrown here comes only from JE's gate/Spend, before native
         // invocation (Jellyfin cannot throw this internal JE type). That known no-write refusal retains old proof.
-        private static async Task ObserveSaveAsync(IListHost host, Guid listId, Func<Task> write, Action<DateTime?, DateTime?>? saved)
+        private static async Task ObserveSaveAsync(IListHost host, Guid listId, Func<Task> write, Func<IReadOnlyList<RawEntry>, IReadOnlyList<RawEntry>?> operation, Action<ListPlaylistSave?, ListPlaylistSave?>? saved)
         {
-            var before = host.GetStoredSaveStamp(listId);
+            var before = host.GetStoredPlaylistSave(listId);
+            var expectedRaw = operation(host.GetRawEntries(listId));
+            var expected = expectedRaw == null ? null : ListOrder.BuildRealTokens(expectedRaw);
             Task pending;
             try
             {
@@ -255,7 +257,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 await ListContinuation.Await(() => pending, observed: success =>
                 {
                     observed = true;
-                    saved?.Invoke(before, success ? host.GetStoredSaveStamp(listId) : null);
+                    var after = success ? host.GetStoredPlaylistSave(listId) : null;
+                    // An acknowledgement alone cannot attribute a concurrently changed or cached-only order to JE.
+                    saved?.Invoke(before, after != null && expected != null && after.Order.SequenceEqual(expected, StringComparer.Ordinal) ? after : null);
                 }).ConfigureAwait(false);
             }
             finally
@@ -266,17 +270,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
-        // Failed/cancelled/unknown saves never absorb a native writer's stamp or advance sibling proof. A lost
-        // acknowledgement may have changed membership: without proof, a later required move retires visibly.
-        internal static void RecordSave(ListDoc doc, SwapIntent active, DateTime? before, DateTime? after)
+        // The list lock and synchronous outcome observer own this update: no continuation sees a half-tuple.
+        // Only siblings matching BOTH pre-save components inherit JE's verified post-save tuple. Failed/unknown
+        // saves clear both active components and leave siblings untouched, preserving the attribution boundary.
+        internal static void RecordSave(ListDoc doc, SwapIntent active, ListPlaylistSave? before, ListPlaylistSave? after)
         {
-            active.StoredSaveStamp = active.SupersededByReorder ? null : after;
-            if (!after.HasValue) return;
-            foreach (var intent in doc.Intents)
+            if (after != null && before != null)
             {
-                if (!intent.SupersededByReorder && before.HasValue && intent.StoredSaveStamp == before)
-                    intent.StoredSaveStamp = after;
+                foreach (var intent in doc.Intents)
+                {
+                    if (!ReferenceEquals(intent, active) && !intent.SupersededByReorder && intent.StoredSaveStamp == before.Stamp
+                        && intent.NativeOrder != null && intent.NativeOrder.SequenceEqual(before.Order, StringComparer.Ordinal))
+                        (intent.StoredSaveStamp, intent.NativeOrder) = (after.Stamp, after.Order.ToList());
+                }
             }
+
+            (active.StoredSaveStamp, active.NativeOrder) = active.SupersededByReorder || after == null
+                ? ((DateTime?)null, (List<string>?)null) : (after.Stamp, after.Order.ToList());
+        }
+
+        // Replay only JE's requested insert against the pre-write raw slots. Moves use the shared native simulation,
+        // including each intermediate detour; the final desired order is not proof of an intermediate manager save.
+        private static IReadOnlyList<RawEntry> Insert(IReadOnlyList<RawEntry> raw, IReadOnlyList<Guid> items, int? position, bool positional)
+        {
+            var result = raw.ToList();
+            var additions = positional ? items : items.Where(id => !raw.Any(entry => entry.ItemId == id)).Distinct();
+            result.InsertRange(position.HasValue ? Math.Clamp(position.Value, 0, result.Count) : result.Count,
+                additions.Select(id => new RawEntry(id, true)));
+            return result;
         }
 
         // Whether `token` directly follows `anchor` in a real-token order (anchor null = first).

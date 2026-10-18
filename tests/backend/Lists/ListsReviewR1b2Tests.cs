@@ -30,16 +30,13 @@ public class ListsReviewR1b2Tests
 
         public DateTime? StoredSaveStamp { get; set; }
 
-        public void Capture(ListsHarness h, FakeListHost.FakeList list, string listIdN, bool recordSaveEvidence = false)
+        public void Capture(ListsHarness h, FakeListHost.FakeList list, string listIdN)
         {
             if (Doc == null)
             {
                 Doc = h.Store.LoadForUpdate(listIdN, list.Info.Kind);
                 Raw = list.Raw.ToList();
                 StoredSaveStamp = h.Host.GetStoredSaveStamp(list.Info.Id);
-                // Model either crash boundary explicitly: before observation, or after recording the native save.
-                if (recordSaveEvidence)
-                    foreach (var intent in Doc.Intents) intent.StoredSaveStamp = StoredSaveStamp;
             }
         }
 
@@ -87,13 +84,33 @@ public class ListsReviewR1b2Tests
         await Add(h, access, new PositionDto { AfterToken = E(a) }, movie);
 
         var arrived = h.Host.AddItem(tmdb: 801);
-        var crash = new CrashPoint();
-        h.Host.AfterAdd = _ => crash.Capture(h, playlist, access.ListIdN, recordSaveEvidence);
-        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
-        h.Host.AfterAdd = null;
-        await crash.RestoreAsync(h, playlist, access.ListIdN);
+        if (recordSaveEvidence)
+        {
+            // Stop only after the actual shared observer captured the acknowledged append tuple. Hide the item
+            // before immediate settlement can move it; that gate refusal starts no native save and preserves proof.
+            h.Store.Awaited = site =>
+            {
+                if (!site.StartsWith("ObserveSaveAsync:", StringComparison.Ordinal)) return;
+                h.Host.Hide(arrived, owner);
+                throw new IOException("crash after acknowledged append observation");
+            };
+            try { await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None); }
+            finally { h.Store.Awaited = null; }
+            var intent = Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
+            Assert.Equal(h.Host.GetStoredSaveStamp(playlist.Info.Id), intent.StoredSaveStamp);
+            Assert.Equal(new[] { E(a), E(b), E(arrived) }, intent.NativeOrder);
+            h.Host.HiddenFrom.Clear(); h.Store.InvalidateAll();
+        }
+        else
+        {
+            // Capture the document BEFORE the save observer runs: it has no proof and cannot authorize recovery.
+            var crash = new CrashPoint();
+            h.Host.AfterAdd = _ => crash.Capture(h, playlist, access.ListIdN);
+            await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+            h.Host.AfterAdd = null;
+            await crash.RestoreAsync(h, playlist, access.ListIdN);
+        }
         Assert.Equal(new[] { a, b, arrived }, h.Host.Resolved(playlist.Info.Id));
-        Assert.Single(crash.Doc!.Intents);
 
         h.Host.Calls.Clear();
         await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None); // intents only

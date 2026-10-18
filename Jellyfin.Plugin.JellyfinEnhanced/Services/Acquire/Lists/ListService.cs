@@ -1050,8 +1050,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                                 Anchor = anchor,
                                 Index = at,
                                 OccurrenceCountsBefore = items.Distinct().ToDictionary(id => id.ToString("N", CultureInfo.InvariantCulture), id => counts.GetValueOrDefault(id)),
-                                NativeOrder = _host.SupportsPositionalInsert ? desired.Where(ListOrder.IsReal).ToList()
-                                    : ListOrder.BuildRealTokens(_host.GetRawEntries(access.List.Id)).Concat(inserted).ToList(),
                                 CreatedAt = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
                             };
                             doc.Intents.Add(intent);
@@ -1069,9 +1067,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                             }
                             catch
                             {
-                                // This is the result of OUR failed attempt. A later native reorder is compared with
-                                // this observation, not assumed from support for positional inserts or a document rev.
-                                intent.NativeOrder = ListOrder.BuildRealTokens(_host.GetRawEntries(access.List.Id));
+                                // The shared observer already recorded or cleared the entire save-proof tuple.
+                                // Persist that outcome unchanged with the gated partial apply below.
                                 placementObserved = true; // Saved below with the gated partial-apply outcome.
                                 throw;
                             }

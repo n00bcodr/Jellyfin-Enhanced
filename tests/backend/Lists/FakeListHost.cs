@@ -53,6 +53,9 @@ internal sealed class FakeListHost : IListHost
     public bool SupportsPositionalInsert { get; set; } = true;
     public DateTime? GetStoredSaveStamp(Guid listId) => Lists.TryGetValue(listId, out var list) ? list.StoredSaveStamp : null;
 
+    public ListPlaylistSave? GetStoredPlaylistSave(Guid listId) => Lists.TryGetValue(listId, out var list) && list.StoredSaveStamp.HasValue
+        ? new ListPlaylistSave(list.StoredSaveStamp.Value, ListOrder.BuildRealTokens(list.SavedRaw)) : null;
+
     public Task NativeMoveAsync(Guid listId, Guid itemId, int index, Guid userId) => MoveCore(listId, itemId, index, userId);
     /// <summary>Items that are 4K copies (<see cref="IsFourK"/>); everything else is a standard copy.</summary>
     public HashSet<Guid> FourK { get; } = new();
