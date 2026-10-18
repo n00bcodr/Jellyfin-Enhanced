@@ -27,6 +27,7 @@
  *       says), send: () =>
  *       Promise<JE.arrAsk result> } shows no scope cards and no Standard/4K toggle (the entry fixes both) and sends
  *       through `send` (the list's own request route) instead of JE.arrAsk.ask.
+ *     options.listTicket binds a fixed sheet (including its loaders and later writes) to the originating list page.
  *   openOrAsk(title, options?) → Promise<result|null>   movies: one tap unless the sheet is needed.
  *   close() → void   closes the sheet (its promise resolves with null).
  *
@@ -56,6 +57,8 @@
 
     /** @type {Object|null} the open sheet's state */
     let current = null;
+    /** Pending sheet loaders cancelled by close or by their originating page. */
+    const pendingOpens = new Set();
     /** @type {Map<string, Promise<Object|null>>} one-tap movie asks in flight, by key */
     const inflight = new Map();
 
@@ -355,31 +358,64 @@
      */
     async function open(title, options) {
         if (!JE.arrAsk?.enabled() || !title?.key) return null;
+        const listTicket = options?.fixed ? options?.listTicket : null;
         const opener = options?.opener || document.activeElement;
         const kind = title.kind === 'movie' ? 'movie' : 'series';
         const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
-        const caps = options?.caps || await JE.arrAsk.me();
-        if (!JE.arrAsk.canAsk(caps, kind)) {
-            JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
-            return null;
+        let cancelled = false;
+        let state = null;
+        let stop;
+        const stopped = new Promise(resolve => { stop = resolve; });
+        /** Cancels loaders promptly and removes an already displayed sheet. */
+        const cancel = () => {
+            cancelled = true;
+            stop(null);
+            if (state) finish(state, null);
+        };
+        const off = listTicket?.onRevoke(cancel);
+        const live = () => !cancelled && (!listTicket || listTicket.current()) && (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch;
+        pendingOpens.add(cancel);
+        try {
+            if (!live()) return null;
+            const caps = await Promise.race([options?.caps || JE.arrAsk.me(), stopped]);
+            if (!live()) return null;
+            if (!JE.arrAsk.canAsk(caps, kind)) {
+                sheetPaint(listTicket, () => JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text));
+                return null;
+            }
+            const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
+            const variant = can4k && options?.variant === '4k' ? '4k' : 'standard';
+            const loaded = await Promise.race([Promise.all([
+                options && 'quota' in options ? options.quota : JE.arrAsk.quota(kind === 'movie' ? 'movie' : 'tv'),
+                kind === 'series' && !options?.fixed ? withSeasons(title) : title,
+                JE.arrAsk.check ? JE.arrAsk.check(title.key, variant) : null
+            ]), stopped]);
+            if (!live() || !loaded) return null;
+            const [quota, shown, check] = loaded;
+            if (!shown) {
+                sheetPaint(listTicket, () => JE.arrAsk.toast(tr('arr_sheet_seasons_unavailable')));
+                return null;
+            }
+            pendingOpens.delete(cancel);
+            return await new Promise(resolve => {
+                const painted = sheetPaint(listTicket, () => {
+                    close();
+                    state = build(shown, kind, caps, quota, { ...options, listTicket, blocks: { [variant]: blockOf(check) } }, opener, resolve);
+                    current = state;
+                });
+                if (!painted) resolve(null);
+            });
+        } finally {
+            pendingOpens.delete(cancel);
+            off?.();
         }
-        const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
-        const variant = can4k && options?.variant === '4k' ? '4k' : 'standard';
-        const [quota, shown, check] = await Promise.all([
-            options && 'quota' in options ? options.quota : JE.arrAsk.quota(kind === 'movie' ? 'movie' : 'tv'),
-            kind === 'series' && !options?.fixed ? withSeasons(title) : title,
-            // Whether this title can be asked for now (e.g. "Paused: storage full"), said before anything is picked.
-            JE.arrAsk.check ? JE.arrAsk.check(title.key, variant) : null
-        ]);
-        if ((JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== epoch) return null;
-        if (!shown) {
-            JE.arrAsk.toast(tr('arr_sheet_seasons_unavailable'));
-            return null;
-        }
-        close();
-        return new Promise((resolve) => {
-            current = build(shown, kind, caps, quota, { ...options, blocks: { [variant]: blockOf(check) } }, opener, resolve);
-        });
+    }
+
+    /** Runs a sheet write under its list ticket, or directly for ordinary request sheets. */
+    function sheetPaint(ticket, fn) {
+        if (ticket) return JE.internals.arrListPages.gate.paint(ticket, fn, 'sheet');
+        fn();
+        return true;
     }
 
     /**
@@ -423,6 +459,7 @@
         const contact = JE.arrAsk.contact(caps);
         const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
         const state = {
+            listTicket: options?.listTicket || null,
             title, kind, caps, quota, opener, resolve, busy: false, done: false, ...returnPoints(opener),
             variant: can4k && options?.variant === '4k' ? '4k' : 'standard',
             choice: null, picked: new Set(), episodeSeason: null, episodes: new Set(), cards: [], key: title.key,
@@ -700,6 +737,11 @@
      * @returns {void}
      */
     function refresh(state) {
+        sheetPaint(state.listTicket, () => refreshSheet(state));
+    }
+
+    /** Updates the sheet inside its write boundary. */
+    function refreshSheet(state) {
         const { caps, quota } = state;
         const contact = JE.arrAsk.contact(caps);
         // This title can't be asked for now (e.g. the drive it would land on is nearly full): said first, nothing to send.
@@ -811,34 +853,40 @@
      * @returns {Promise<void>}
      */
     async function submit(state) {
-        if (state.busy || state.done) return;
+        if (state.busy || state.done || (state.listTicket && !state.listTicket.current())) return;
         const input = currentInput(state);
         if (!input) {
             showMessage(state, tr('arr_sheet_pick_none'), true);
             return;
         }
         state.busy = true;
-        state.primary.disabled = true;
-        state.primary.setAttribute('aria-busy', 'true');
-        state.primary.replaceChildren(el('span', null, tr('arr_sheet_asking')));
-        showMessage(state, '', false);
+        sheetPaint(state.listTicket, () => {
+            state.primary.disabled = true;
+            state.primary.setAttribute('aria-busy', 'true');
+            state.primary.replaceChildren(el('span', null, tr('arr_sheet_asking')));
+            showMessage(state, '', false);
+        });
         let result;
         try {
             result = state.fixed ? await state.fixed.send() : await JE.arrAsk.ask(input);
         } catch (err) {
             result = { ok: false, status: 0, state: 'failed', outcome: '', reason: err?.name === 'AbortError' ? 'aborted' : 'network', certainty: '', requestId: null };
         }
+        if (state.listTicket && (state.done || !state.listTicket.current())) return;
         state.busy = false;
-        state.primary.disabled = false;
-        state.primary.removeAttribute('aria-busy');
+        sheetPaint(state.listTicket, () => {
+            state.primary.disabled = false;
+            state.primary.removeAttribute('aria-busy');
+        });
         if (result.stale) {
             finish(state, null);
             return;
         }
         const allowance = result.state === 'quota' ? (await JE.arrAsk.quota(state.kind === 'movie' ? 'movie' : 'tv')) || state.quota : state.quota;
+        if (state.listTicket && (state.done || !state.listTicket.current())) return;
         const words = JE.arrAsk.describe(result, state.caps, allowance);
         if (result.ok || result.state === 'unknown') {
-            JE.arrAsk.toast(words.text);
+            sheetPaint(state.listTicket, () => JE.arrAsk.toast(words.text));
             finish(state, { ...result, input });
             return;
         }
@@ -860,8 +908,10 @@
      * @returns {void}
      */
     function showMessage(state, text, attention) {
-        state.message.textContent = text;
-        state.message.classList.toggle('je-sheet-message-attention', !!text && attention);
+        sheetPaint(state.listTicket, () => {
+            state.message.textContent = text;
+            state.message.classList.toggle('je-sheet-message-attention', !!text && attention);
+        });
     }
 
     /**
@@ -940,9 +990,11 @@
         if (state.done) return;
         state.done = true;
         document.removeEventListener('keydown', state.onKey, true);
-        state.backdrop?.remove();
+        const remove = () => state.backdrop?.remove();
+        if (state.listTicket) JE.internals.arrListPages.gate.erase(remove);
+        else remove();
         if (current === state) current = null;
-        restoreFocus(state);
+        sheetPaint(state.listTicket, () => restoreFocus(state));
         state.resolve(result);
     }
 
@@ -951,6 +1003,7 @@
      * @returns {void}
      */
     function close() {
+        for (const cancel of pendingOpens) cancel();
         if (current) finish(current, null);
     }
 

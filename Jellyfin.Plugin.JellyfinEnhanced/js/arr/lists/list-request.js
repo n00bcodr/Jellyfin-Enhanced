@@ -159,6 +159,7 @@
             lp.gate.paint(rule, () => {
                 sheet = JE.arrAskSheet.open(title, {
                     opener,
+                    listTicket: rule,
                     variant: fourK ? '4k' : 'standard',
                     fixed: {
                         scope: lp.render.kindLabel(ph) + (fourK ? ' · 4K' : ''),

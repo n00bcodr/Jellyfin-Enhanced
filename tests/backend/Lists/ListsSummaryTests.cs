@@ -118,6 +118,37 @@ public class ListsSummaryTests
         Assert.Empty(revoked.Info.Shares);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompletedSummariesAreRevalidatedAfterTheOtherListsFinish(bool parental)
+    {
+        using var h = Harness();
+        h.MovieCertifications[1] = "PG";
+        h.MovieCertifications[4] = "G";
+        var owner = h.NewUser("owner");
+        var kid = h.NewUser("kid", maxRating: 10);
+        var first = h.Host.AddPlaylist(owner, false, new ListShare(kid.Id, false));
+        var second = h.Host.AddPlaylist(owner, false, new ListShare(kid.Id, false));
+        await Add(h, first, owner, Movie(1));
+        await Add(h, second, owner, Movie(4));
+        // First projects synchronously after warming its ratings cache. Second changes access before the batch ends.
+        var service = new ListSummaryService(h.Store, h.Access, h.Plugin.Core.Logger, new PagePreferences());
+        Assert.Single((await service.SummariesAsync(kid, new[] { first.Info.Id }, None)).Lists);
+        h.ReplyAsync = (request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("/4", StringComparison.Ordinal))
+            {
+                if (parental) kid.MaxParentalRatingScore = 0;
+                else first.Info = first.Info with { Shares = Array.Empty<ListShare>() };
+            }
+            return Task.FromResult(h.Reply(request));
+        };
+        var answer = await service.SummariesAsync(kid, new[] { first.Info.Id, second.Info.Id }, None);
+        Assert.DoesNotContain(answer.Lists, s => s.ListId == N(first.Info.Id));
+        Assert.Contains(answer.Lists, s => s.ListId == N(second.Info.Id));
+    }
+
     [Fact]
     public async Task TheSwitchesAndEachPersonsPreferencesTurnItOff()
     {

@@ -9,7 +9,7 @@
  *   per key, and run once when the policy resolves, if the ticket is still current then. A resolved ticket never queues,
  *   so nothing can re-queue itself.
  * - Until it resolves, a ticket's policy is {@link FAIL_CLOSED}: everything guarded, air dates hidden. A policy that
- *   fails to load resolves to that guard-everything policy.
+ *   fails to load, or takes longer than eight seconds, resolves to that guard-everything policy.
  * - {@link erase}(fn) is for taking things away (rows, sections, marks, JE's header label). It needs no ticket: removing
  *   what JE drew is always safe. It must never put anything in; the frontend tests' DOM-write spy checks both.
  *
@@ -23,6 +23,8 @@
 
     /** Most paints kept per ticket while its policy loads (one per key; keys are a handful per controller). */
     const MAX_QUEUED = 16;
+    /** Never leave a page empty indefinitely while Spoiler Guard loads. */
+    const POLICY_WAIT_MS = 8000;
     /** Marks the tickets made here (a transport ticket alone has no policy and never paints). */
     const GATE = Symbol('je-list-gate');
     /** What runs now: 'paint', 'erase' or nothing (for the tests' DOM-write spy). */
@@ -77,6 +79,9 @@
     function issue(listId, scope, spoiler) {
         let revoked = false;
         let resolved = null;
+        let timer = null;
+        let resolveReady;
+        const revokedListeners = new Set();
         /** @type {Map<string, function(): void>} paints waiting for the policy (newest per key) */
         const queue = new Map();
         const rule = JE.arrLists.ticket(listId, () => !revoked && (typeof scope !== 'function' || scope() === true));
@@ -88,8 +93,18 @@
             accepts: rule.accepts,
             /** Ends the ticket: nothing it would paint is painted, now or later. */
             revoke: () => {
+                if (revoked) return;
                 revoked = true;
                 queue.clear();
+                settle(GUARD_ALL);
+                for (const fn of revokedListeners) fn();
+                revokedListeners.clear();
+            },
+            /** Registers cleanup for pending opens and active dialogs; returns an unsubscribe function. */
+            onRevoke: (fn) => {
+                if (revoked) fn();
+                else revokedListeners.add(fn);
+                return () => revokedListeners.delete(fn);
             },
             /** @returns {Object} The resolved policy, or FAIL_CLOSED while it loads. */
             get policy() {
@@ -114,19 +129,23 @@
          */
         const settle = (value) => {
             if (resolved) return;
+            clearTimeout(timer);
             resolved = value && value.resolved === true && typeof value === 'function' ? value : GUARD_ALL;
             const held = Array.from(queue.values());
             queue.clear();
             for (const fn of held) paint(ticket, fn);
+            resolveReady?.(ticket.policy);
         };
         if (typeof spoiler === 'function' && spoiler.resolved !== true) {
+            ticket.ready = new Promise(resolve => { resolveReady = resolve; });
+            timer = setTimeout(() => settle(GUARD_ALL), POLICY_WAIT_MS);
             let loading;
             try {
                 loading = Promise.resolve(spoiler());
             } catch (err) {
                 loading = Promise.reject(err);
             }
-            ticket.ready = loading.then(settle, () => settle(GUARD_ALL)).then(() => ticket.policy);
+            loading.then(settle, () => settle(GUARD_ALL));
         } else {
             settle(spoiler);
             ticket.ready = Promise.resolve(ticket.policy);

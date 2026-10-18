@@ -640,12 +640,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         continue;
                     }
 
-                    var resolution = _resolver.Resolve(placeholder, list.Kind, new[] { owner });
+                    var resolution = _resolver.Resolve(placeholder, list.Kind, new[] { owner }, present: _host.GetRawEntries(list.Id)
+                        .Where(e => e.Resolved && e.ItemId.HasValue).Select(e => e.ItemId!.Value).ToHashSet());
                     ok = await SwapIntoPlaylistAsync(context, placeholderId, resolution).ConfigureAwait(false);
                 }
                 else
                 {
-                    var resolution = _resolver.Resolve(placeholder, list.Kind, Array.Empty<User>());
+                    var resolution = _resolver.Resolve(placeholder, list.Kind, Array.Empty<User>(), present: _host.GetRawEntries(list.Id)
+                        .Where(e => e.Resolved && e.ItemId.HasValue).Select(e => e.ItemId!.Value).ToHashSet());
                     ok = await SwapIntoCollectionAsync(context, placeholderId, resolution).ConfigureAwait(false);
                 }
 

@@ -115,7 +115,7 @@ function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, 
   t.after(() => h.close());
   // Every DOM write by a list module must go through the paint gate (paint / erase); the test fails otherwise.
   const spy = installDomWriteSpy(h.window);
-  t.after(() => { assert.deepEqual(spy.violations, [], 'list DOM writes outside paint()'); assert.equal(spy.overflow(), 0); });
+  t.after(() => { assert.equal(spy.violations.length, 0, 'list DOM writes outside paint(): ' + JSON.stringify(spy.violations.slice(0, 2))); assert.equal(spy.overflow(), 0); });
   for (const m of MODULES) {
     if (!plant[m]) { h.load(m); continue; }
     // A planted copy of a module (same file name in its stack frames), to prove the spy catches what it should.
@@ -123,6 +123,7 @@ function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, 
     const source = plant[m](readFileSync(file, 'utf8'));
     h.window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
   }
+  spy.watchSheet(h.JE);
   const doc = h.document;
   /** Shows a page through the captured view hook. */
   const show = async (page, hash) => {
@@ -1273,4 +1274,129 @@ test('r2 spy: a list module writing to the DOM outside paint() is caught (plante
   inserting.JE.arrListPages.settingsChanged();
   const inserted = inserting.spy.take();
   assert.ok(inserted.some(v => v.scope === 'erase' && v.op === 'appendChild'), JSON.stringify(inserted));
+});
+
+
+for (const loader of ['me', 'quota', 'check']) test(`r3 B1: revoke while sheet ${loader} loads cancels the pending open`, async t => {
+  const held = deferred();
+  let loading = false;
+  const entry = ph(P(1), { actions: ['request'] });
+  const h = setup(t, {
+    views: () => [view([entry], [entry.token], { actions: ['request'] })], items: { [LIST]: PLAYLIST_ITEM },
+    preview: () => [{ items: [{ placeholderId: entry.id, outcome: 'request', cost: 1 }] }],
+    route: async (_, path) => {
+      if (!path.startsWith('/acquire/requests/' + loader)) return null;
+      loading = true;
+      await held.promise;
+      return null;
+    }
+  });
+  await h.start();
+  const { page, container } = h.playlistPage();
+  await h.show(page);
+  const pending = h.JE.internals.arrListPages.request.open({ listId: LIST, ticket: () => [...h.JE.internals.arrListPages.pages.controllers].find(c => c.page === page).ticket }, entry, container.querySelector('.je-list-request'));
+  await h.settle();
+  assert.equal(loading, true);
+  h.showNow(page, '#/home');
+  await h.settle();
+  const cancelled = await Promise.race([pending.then(() => true), sleep(150).then(() => false)]);
+  held.resolve();
+  await h.settle();
+  assert.equal(h.document.querySelector('.je-sheet-backdrop'), null, 'no sheet over the destination page');
+  assert.equal(cancelled, true, 'the pending open ends without waiting for its loader');
+});
+
+test('r3 B1: revoke closes an active sheet and a late send paints nothing', async t => {
+  const held = deferred();
+  const entry = ph(P(1), { actions: ['request'] });
+  const h = setup(t, {
+    views: () => [view([entry], [entry.token], { actions: ['request'] })], items: { [LIST]: PLAYLIST_ITEM },
+    preview: () => [{ items: [{ placeholderId: entry.id, outcome: 'request', cost: 1 }] }],
+    submit: async () => { await held.promise; return [{ results: [{ placeholderId: entry.id, result: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } }] }]; }
+  });
+  await h.start();
+  const { page, container } = h.playlistPage();
+  await h.show(page);
+  container.querySelector('.je-list-request').click();
+  await h.settle();
+  assert.ok(h.document.querySelector('.je-sheet-primary'));
+  h.document.querySelector('.je-sheet-primary').click();
+  await h.settle();
+  h.showNow(page, '#/home');
+  await h.settle();
+  assert.equal(h.document.querySelector('.je-sheet-backdrop'), null);
+  const before = h.toasts.length;
+  held.resolve();
+  await h.settle();
+  assert.equal(h.toasts.length, before);
+});
+
+for (const midflight of [false, true]) test(`r3 B2: visible grid invalidation refreshes (in flight: ${midflight})`, async t => {
+  const held = deferred();
+  let count = 0;
+  const h = setup(t, { summaries: async () => {
+    count++;
+    if (midflight && count === 1) await held.promise;
+    return [{ lists: [{ listId: LIST, missing: count === 1 ? 3 : 1 }], pending: [] }];
+  }});
+  h.document.body.innerHTML = `<div class="card" data-id="${LIST}" data-type="Playlist"><div class="cardImageContainer"></div></div>`;
+  await h.start();
+  await sleep(200);
+  const grid = h.JE.internals.arrListPages.grid;
+  grid.invalidate(LIST);
+  if (midflight) held.resolve();
+  await sleep(400);
+  assert.equal(count, 2, 'one new batch after invalidation');
+  assert.equal(h.document.querySelector('.je-list-grid-count')?.textContent, '1');
+  await sleep(200);
+  assert.equal(count, 2, 'no observer retry storm');
+});
+
+test('r3 grid: a revoked batch never repaints or queues its dirty cards in the next session', async t => {
+  const held = deferred();
+  let count = 0;
+  const h = setup(t, { summaries: async () => { count++; await held.promise; return [{ lists: [{ listId: LIST, missing: 9 }] }]; } });
+  h.document.body.innerHTML = `<div class="card" data-id="${LIST}" data-type="Playlist"><div class="cardImageContainer"></div></div>`;
+  await h.start();
+  await sleep(200);
+  const grid = h.JE.internals.arrListPages.grid;
+  grid.invalidate(LIST);
+  h.JE.currentSettings.listPlaylistUi = false;
+  h.JE.arrListPages.settingsChanged();
+  held.resolve();
+  await sleep(350);
+  assert.equal(h.document.querySelector('.je-list-grid-indicator'), null);
+  assert.equal(count, 1);
+});
+
+test('r3 Q13: an unanswered Spoiler policy paints fully guarded after eight seconds and ignores a late answer', { timeout: 11000 }, async t => {
+  const held = deferred();
+  const entry = ph(P(1), { kind: 'episodes', mediaType: 'tv', seasonNumber: 2, episodes: [{ s: 2, e: 1, title: 'SECRET EPISODE', airDate: '2001-05-01' }], note: 'SECRET NOTE' });
+  const h = setup(t, { config: { SpoilerBlurEnabled: true }, spoiler: { whenLoaded: () => held.promise, isLoadOk: () => true, isTmdbEnabled: () => false, guardedIds: () => ({ series: [], movies: [] }), getUserPrefs: () => ({}) }, views: () => [view([entry], [entry.token])], items: { [LIST]: PLAYLIST_ITEM } });
+  await h.start();
+  const { page, container } = h.playlistPage();
+  await h.show(page);
+  assert.equal(container.querySelectorAll('.je-list-row').length, 0);
+  await sleep(8150);
+  assert.equal(container.querySelectorAll('.je-list-row').length, 1);
+  assert.doesNotMatch(container.textContent, /SECRET|2001/);
+  held.resolve();
+  await h.settle();
+  assert.doesNotMatch(container.textContent, /SECRET|2001/);
+});
+
+
+test('r3 S2: the spy sees delayed list-sheet writes with no list stack frame (planted)', async t => {
+  const h = setup(t, { views: () => [view([], [])], plant: {
+    'arr/ask/ask-sheet.js': src => src.replace('document.body.appendChild(backdrop);', "document.body.appendChild(backdrop); setTimeout(() => { backdrop.dataset.unguardedSheetWrite = 'x'; }, 0);")
+  } });
+  const gate = h.JE.internals.arrListPages.gate;
+  const ticket = gate.issue(LIST, () => true, gate.policy(() => false, false));
+  const opening = h.JE.arrAskSheet.open({ key: 'movie:tmdb:100', kind: 'movie', name: 'Probe' }, { listTicket: ticket, fixed: { scope: 'Movie', input: {}, send: async () => null } });
+  await h.settle();
+  const writes = h.spy.take();
+  assert.ok(writes.some(w => /ask-sheet\.js/.test(w.frame) && w.scope === 'none'), JSON.stringify(writes.slice(0, 2)));
+  h.JE.arrAskSheet.close();
+  await opening;
+  h.spy.take();
 });

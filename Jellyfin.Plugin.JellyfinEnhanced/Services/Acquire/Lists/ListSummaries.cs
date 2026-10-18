@@ -79,7 +79,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             var ids = listIds.Where(id => id != Guid.Empty).Distinct().Take(MaxIds).ToList();
-            var answers = new ListSummaryDto?[ids.Count];
+            var answers = new Projection?[ids.Count];
             var pending = new bool[ids.Count];
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             budget.CancelAfter(Budget);
@@ -104,23 +104,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             })).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            // No await below: each completed projection is checked against the access and parental policy NOW,
+            // after every other list's asynchronous work. A stale projection is omitted rather than leaked.
+            (playlists, collections) = PagesShown(user.Id, Config);
             for (var i = 0; i < ids.Count; i++)
             {
                 if (pending[i])
                 {
                     result.Pending.Add(ids[i].ToString("N", System.Globalization.CultureInfo.InvariantCulture));
                 }
-                else if (answers[i] is { } answer)
+                else if (answers[i] is { } answer
+                    && _access.Gate.Current(answer.Grant.Access) is { } current
+                    && answer.Grant.Visibility.Matches(_access.ParentalStamp(current.User))
+                    && (current.List.Kind == ListKinds.Playlist ? playlists : collections))
                 {
-                    result.Lists.Add(answer);
+                    result.Lists.Add(answer.Summary);
                 }
             }
 
             return result;
         }
 
+        private sealed record Projection(ListSummaryDto Summary, ListGrant Grant);
+
         // One list: null when the caller can't see it, its kind's page is off for them, or they see none of its entries.
-        private async Task<ListSummaryDto?> SummaryAsync(User user, Guid listId, bool playlists, bool collections, CancellationToken cancellationToken)
+        private async Task<Projection?> SummaryAsync(User user, Guid listId, bool playlists, bool collections, CancellationToken cancellationToken)
         {
             var access = _access.Resolve(listId, user);
             if (access == null || !access.Permissions.CanView || !(access.List.Kind == ListKinds.Playlist ? playlists : collections))
@@ -148,9 +156,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var summary = await _access.Gate.ProjectAsync(access, items, null, grant =>
             {
                 var missing = items.Count(grant.Visibility.IsVisible);
-                return new ListSummaryDto { ListId = grant.Access.ListIdN, ListKind = grant.Access.List.Kind, Missing = missing };
+                return new Projection(new ListSummaryDto { ListId = grant.Access.ListIdN, ListKind = grant.Access.List.Kind, Missing = missing }, grant);
             }, cancellationToken).ConfigureAwait(false);
-            return summary is { Missing: > 0 } ? summary : null;
+            return summary is { Summary.Missing: > 0 } ? summary : null;
         }
     }
 }
