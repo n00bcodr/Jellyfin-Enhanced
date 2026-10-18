@@ -444,10 +444,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// alert off (Ready, new episodes, declined); the recipient is gone or disabled; an
         /// administrators' alert (paths, instance names, household requests) for someone who is no
         /// longer an administrator or switched those alerts off; an ask waiting for an OK (or a reminder)
-        /// whose title the administrator can no longer see; a Ready or new-episodes alert the recipient may not be told about
-        /// now (<see cref="AlertCheck.Decide"/>: a title they can no longer open or have hidden, an episodes payload narrowed to
-        /// what is left; Hidden Content that can't be read now: wait); an OK of a request that was cancelled, declined or
-        /// removed since.
+        /// whose title the administrator can no longer see; a Ready or new-episodes alert, or a request's outcome (declined,
+        /// approved), the recipient may not be told about now (<see cref="AlertCheck.Decide"/>: a title they can no longer open
+        /// or have hidden, an episodes payload narrowed to what is left; Hidden Content or the title's copies that can't be read
+        /// now: wait); an OK of a request that was cancelled, declined or removed since.
         /// </summary>
         private AlertVerdict Suppression(DueDelivery delivery, NotifyPrefs prefs, Dictionary<string, string> payload, out string? itemId)
         {
@@ -475,19 +475,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     return new AlertVerdict("The recipient can no longer see this title.");
                 return prefs.AdminAlerts ? default : new AlertVerdict("The recipient switched administrators' alerts to phone and e-mail off.");
             }
-            if (_view == null || delivery.Kind is not (NotifyKind.Ready or NotifyKind.Episodes)) return default;
+            if (_view == null || delivery.Kind is not (NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Declined or NotifyKind.Approved)) return default;
             if (_view.Viewer(delivery.UserId) is not { } viewer) return new AlertVerdict("The recipient no longer exists or is disabled.");
             return Check(delivery.UserId, viewer).Decide(delivery.Kind, delivery.TitleKey, payload, ref itemId);
         }
 
         /// <summary>
-        /// The one decision whether a recipient may be told about a Ready or new-episodes alert now (D46, D53), for the alert's
-        /// producer, every send (TV message, ntfy, e-mail, a summary's parts) and every bell read. Reads the recipient's Hidden
-        /// Content once (through the Ready channel's reader; without it nothing counts as hidden).
+        /// The one decision whether a recipient may be told about a Ready or new-episodes alert, or their request's outcome, now
+        /// (D46, D53), for the alert's producer, every send (TV message, ntfy, e-mail, a summary's parts) and every bell read.
+        /// Reads the recipient's Hidden Content once (through the Ready channel's reader; without it nothing counts as hidden).
         /// </summary>
         internal AlertCheck Check(Guid user, StatusViewer viewer) => new(this, user, viewer);
 
-        /// <summary>A verdict on one alert: <see cref="Why"/> null to tell it; <see cref="Wait"/> when the recipient's Hidden Content can't be read now.</summary>
+        /// <summary>A verdict on one alert: <see cref="Why"/> null to tell it; <see cref="Wait"/> when the recipient's Hidden Content (or the title's copies) can't be read now.</summary>
         /// <param name="Why">Why the alert may not be told now, or null.</param>
         /// <param name="Wait">True when only unreadable Hidden Content stops it: never sent, looked at again later.</param>
         internal readonly record struct AlertVerdict(string? Why, bool Wait = false);
@@ -515,8 +515,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
 
             /// <summary>
-            /// The recipient's Hidden Content as a check of items of one title (true: hidden), for the whole title; null when
-            /// their rules can't be read now.
+            /// The recipient's Hidden Content as a check of items of one title (true: hidden), for the whole title (every
+            /// physical copy of it, complete); null when their rules, or the title's copies, can't be read now.
             /// </summary>
             public Func<Guid, bool>? Hides(string? titleKey)
             {
@@ -526,20 +526,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     _read = true;
                 }
                 if (_rules is not { } rules) return null;
+                if (_owner._native == null) return _ => false;
                 var key = titleKey ?? string.Empty;
-                if (!_titles.TryGetValue(key, out var check))
-                    _titles[key] = check = _owner._native == null ? _ => false : _owner._native.TitleCheck(_viewer, rules, titleKey);
-                return check;
+                if (_titles.TryGetValue(key, out var check)) return check;
+                if (_owner._native.TitleCheck(_viewer, rules, titleKey) is not { } made) return null;
+                _titles[key] = made;
+                return made;
             }
 
             /// <summary>
-            /// Whether a Ready or new-episodes alert may be told now (other kinds: yes). A batch of new episodes (its
-            /// <c>episodeItems</c>) is narrowed in <paramref name="payload"/> to the episodes the recipient can open and hasn't
-            /// hidden, its count, seasons and wording set again from what is left: one left is that episode (and
-            /// <paramref name="itemId"/> becomes it), fewer than the batch is never "the whole season". Synchronous.
+            /// Whether an alert about a title may be told now (other kinds: yes). Ready and new-episodes alerts: the recipient
+            /// can open it and hasn't hidden it; a batch of new episodes (its <c>episodeItems</c>) is narrowed in
+            /// <paramref name="payload"/> to the episodes the recipient can open and hasn't hidden, its count, seasons and wording
+            /// set again from what is left: one left is that episode (and <paramref name="itemId"/> becomes it), fewer than the
+            /// batch is never "the whole season". A request's outcome told to the requester (declined, approved; 4f round 5): the
+            /// title isn't hidden (it may not be in the library, so access isn't asked). Synchronous.
             /// </summary>
             public AlertVerdict Decide(string kind, string? titleKey, Dictionary<string, string> payload, ref string? itemId)
             {
+                if (kind is NotifyKind.Declined or NotifyKind.Approved)
+                {
+                    if (Hides(titleKey) is not { } outcome) return new AlertVerdict("The recipient's Hidden Content or the title's copies can't be read now.", true);
+                    return outcome(Guid.Empty) ? new AlertVerdict("The recipient hid this title (Hidden Content).") : default;
+                }
                 if (kind is not (NotifyKind.Ready or NotifyKind.Episodes) || _owner._view is not { } view) return default;
                 List<NotifyEpisode>? episodes = null;
                 List<NotifyEpisode>? open = null;
@@ -560,7 +569,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     return new AlertVerdict("The recipient can no longer open this title.");
                 }
 
-                if (Hides(titleKey) is not { } hidden) return new AlertVerdict("The recipient's Hidden Content can't be read now.", true);
+                if (Hides(titleKey) is not { } hidden) return new AlertVerdict("The recipient's Hidden Content or the title's copies can't be read now.", true);
                 if (open == null) return hidden(item) ? new AlertVerdict("The recipient hid this title (Hidden Content).") : default;
                 var visible = open.Where(e => !hidden(e.ItemId))
                     .DistinctBy(e => (e.Season, e.Episode)).OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();

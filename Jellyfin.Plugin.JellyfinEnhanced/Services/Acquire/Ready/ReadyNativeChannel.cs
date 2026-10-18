@@ -52,9 +52,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// Whether <paramref name="rules"/> hide an item of one title, for the whole title (D46, 4f round 3): a title-level rule
         /// (a TMDB rule on any of its keys, or a movie's or series' own rule on ANY physical copy of it, in any library) hides
         /// every item of it; otherwise a rule hides the item itself, its exact version or its series. <see cref="Guid.Empty"/>
-        /// asks about the title alone. Reads the title's copies once; each check is synchronous.
+        /// asks about the title alone. Reads every copy of the title once, complete (<see cref="IArrJellyfinView.TitleCopyIds"/>,
+        /// 4f round 5); null when that can't be established now (the caller waits, as for rules that can't be read). Each
+        /// check is synchronous.
         /// </summary>
-        public Func<Guid, bool> TitleCheck(StatusViewer viewer, ReadyHides rules, string? titleKey)
+        public Func<Guid, bool>? TitleCheck(StatusViewer viewer, ReadyHides rules, string? titleKey)
         {
             if (ReferenceEquals(rules, ReadyHides.None)) return _ => false;
             var keys = new List<TitleKey>();
@@ -64,7 +66,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                 var aliases = _aliases?.Of(key) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>();
                 keys.Add(key.Title);
                 keys.AddRange(aliases);
-                copies.AddRange(_view.Copies(key.Title, viewer, aliases).Select(c => (c.ItemId, (Guid?)null)));
+                if (_view.TitleCopyIds(key.Title, aliases) is not { } all) return null;
+                copies.AddRange(all.Select(id => (id, (Guid?)null)));
             }
 
             if (rules.TitleHidden(keys, copies)) return _ => true;

@@ -168,9 +168,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             foreach (var interest in interests.Where(i => i.UserId == viewer.UserId))
             {
                 var keys = Keys(interest.Title);
-                // Every physical copy of the title (any library): a title-level rule made on any of them hides the title, also
-                // for a part (an episode) that only another copy has (D46, 4f round 3).
-                List<(Guid ItemId, Guid? SeriesId)>? titleCopies = null;
+                // Every physical copy of the title (any library), complete: a title-level rule made on any of them hides the
+                // title, also for a part (an episode) that only another copy has (D46, 4f rounds 3 and 5). Unknown: nothing of
+                // the title is chosen this time.
+                IReadOnlyList<Guid>? titleCopies = null;
+                var titleRead = false;
                 foreach (var group in Hits(viewer, interest, scopes).GroupBy(h => ReadyCandidate.PartOf(h.Season, h.Episode)))
                 {
                     var part = group.Key;
@@ -197,8 +199,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                     }
 
                     // A title-level rule hides every copy; a rule on one copy leaves the others (as on library pages).
-                    titleCopies ??= _editions.TitleCopies(viewer, interest.Title).Select(c => (c.ItemId, (Guid?)null)).ToList();
-                    var copies = ordered.Select(h => (h.ItemId, h.SeriesId)).Concat(titleCopies).Distinct().ToList();
+                    if (!titleRead)
+                    {
+                        titleCopies = _editions.TitleCopyIds(interest.Title, Aliases(interest.Title));
+                        titleRead = true;
+                    }
+                    if (titleCopies == null) continue;
+                    var copies = ordered.Select(h => (h.ItemId, h.SeriesId)).Concat(titleCopies.Select(id => (id, (Guid?)null))).Distinct().ToList();
                     if (hides.TitleHidden(keys, copies)) continue;
                     var chosen = ordered.FirstOrDefault(h => !hides.CopyHidden(h.ItemId, h.PlayableItemId, h.SeriesId) && _library.Check(viewer.UserId, h.PlayableItemId) == ReadyVersionCheck.Ok);
                     if (chosen == null) continue;
@@ -225,17 +232,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         }
 
         /// <summary>
-        /// True while a chosen entry would still be chosen as far as the person's Hidden Content and access go: no title-level
-        /// rule on the title or any of its copies, no rule on this copy (its item, its exact version, its series), and the person
-        /// can still open that exact version. Synchronous (the last check before a membership write).
+        /// True while a chosen entry would still be chosen as far as the person's Hidden Content and access go, read now: no
+        /// title-level rule on the title or on any of its copies (every physical copy, read again now and complete: a copy that
+        /// appeared since the selection counts; unknown is not chosen), no rule on this copy (its item, its exact version, its
+        /// series), and the person can still open that exact version. Synchronous (the last check before a membership write).
         /// </summary>
         /// <param name="userId">The person.</param>
         /// <param name="hides">Their Hidden Content rules as they are now.</param>
         /// <param name="candidate">The chosen entry.</param>
+        /// <param name="titles">The titles' copies read during this check (each title read once), or null.</param>
         /// <returns>Still chosen.</returns>
-        public bool StillChosen(Guid userId, ReadyHides hides, ReadyCandidate candidate)
+        public bool StillChosen(Guid userId, ReadyHides hides, ReadyCandidate candidate, Dictionary<string, IReadOnlyList<Guid>?>? titles = null)
         {
-            var copies = candidate.Copies.Count > 0 ? candidate.Copies : new[] { (candidate.LogicalItemId, candidate.SeriesId) };
+            var title = candidate.Interest.Title.Title;
+            IReadOnlyList<Guid>? now;
+            if (titles == null || !titles.TryGetValue(title.ToString(), out now))
+            {
+                now = _editions.TitleCopyIds(title, Aliases(title));
+                if (titles != null) titles[title.ToString()] = now;
+            }
+            if (now == null) return false;
+            var copies = candidate.Copies.Append((candidate.LogicalItemId, candidate.SeriesId)).Concat(now.Select(id => (id, (Guid?)null))).Distinct().ToList();
             if (hides.TitleHidden(Keys(candidate.Interest.Title), copies)) return false;
             if (hides.CopyHidden(candidate.LogicalItemId, candidate.PlayableItemId, candidate.SeriesId)) return false;
             return _library.Check(userId, candidate.PlayableItemId) == ReadyVersionCheck.Ok;
@@ -284,7 +301,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             return fourK ? 1 : 0;
         }
 
-        private IReadOnlyList<TitleKey> Keys(TitleKey title) => new[] { title }.Concat(_aliases?.Of(title) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>()).ToList();
+        private IReadOnlyList<TitleKey> Keys(TitleKey title) => new[] { title }.Concat(Aliases(title)).ToList();
+
+        private IReadOnlyList<TitleKey> Aliases(TitleKey title) => _aliases?.Of(title) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>();
 
         private static long Ms(DateTime at) => new DateTimeOffset(DateTime.SpecifyKind(at, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
     }

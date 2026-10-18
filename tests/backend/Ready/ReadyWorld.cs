@@ -21,7 +21,7 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         public int Shares { get; set; }
         public string Folder { get; init; } = string.Empty;
         public string Name { get; set; } = string.Empty;
-        public DateTimeOffset Created { get; init; }
+        public DateTimeOffset Created { get; set; }
 
         /// <summary>JE's nonce in the playlist's provider ids (a field only JE or an administrator's editor sets), or null.</summary>
         public string? Nonce { get; set; }
@@ -50,6 +50,24 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
     public Func<DateTimeOffset> Now { get; set; } = () => DateTimeOffset.UtcNow;
 
     /// <summary>
+    /// A creation time as Jellyfin's refresh stores it: 12.2 and 10.11.11 store a new playlist's DateCreated again from its
+    /// playlist.xml (<c>Added</c>, whole seconds), so it reads truncated to the second (probed live, 4f round 5: made at
+    /// 18:22:49.878, read 18:22:49 through every read, after a restart and a library scan, native renames and publishes).
+    /// </summary>
+    public static DateTimeOffset Stored(DateTimeOffset at) => new(at.UtcTicks - (at.UtcTicks % TimeSpan.TicksPerSecond), TimeSpan.Zero);
+
+    /// <summary>
+    /// A new playlist keeps the fraction of its creation time (Jellyfin's first save, before its refresh stores the second;
+    /// also what a later save of the instance the create made puts back). Off: the refresh has already happened.
+    /// </summary>
+    public bool KeepFraction { get; set; }
+
+    private DateTimeOffset Made() => KeepFraction ? Now() : Stored(Now());
+
+    /// <summary>Jellyfin's refresh of the playlist: its creation time stored again from playlist.xml, to the second.</summary>
+    public void Refresh(Guid id) => Playlists[id].Created = Stored(Playlists[id].Created);
+
+    /// <summary>
     /// Jellyfin's id of a new playlist: derived from its folder path, the folder named from the name it is made with ("1"
     /// appended while that folder exists). So a playlist made again under the same name, once the first is gone, gets the
     /// same id.
@@ -67,7 +85,7 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
     public Native AddOwn(Guid owner, string name, params Guid[] entries)
     {
         var folder = TargetFolder(name);
-        var p = new Native { Id = IdFor(folder), Owner = owner, Folder = folder, Name = name, Created = Now() };
+        var p = new Native { Id = IdFor(folder), Owner = owner, Folder = folder, Name = name, Created = Made() };
         p.Entries.AddRange(entries);
         Playlists[p.Id] = p;
         return p;
@@ -121,7 +139,7 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         Enter("create");
         if (Gate("create", null, gate) is { } refused) return Task.FromResult<(Guid?, string?)>((null, refused));
         var folder = TargetFolder(name);
-        var p = new Native { Id = IdFor(folder), Owner = ownerId, Folder = folder, Name = name, Created = Now() };
+        var p = new Native { Id = IdFor(folder), Owner = ownerId, Folder = folder, Name = name, Created = Made() };
         Playlists[p.Id] = p;
         Leave("create");
         return Task.FromResult<(Guid?, string?)>((p.Id, null));

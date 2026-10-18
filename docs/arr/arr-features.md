@@ -816,10 +816,12 @@ Hear when what you asked for or follow is ready, on the bell, in a pop-up, on yo
     together are left out from the start, and a batch with every episode hidden makes no notification at all (no bell entry).
     Every alert about a title (Ready and new episodes) respects your Hidden Content and library access on every channel: the
     TV message, phone, e-mail, the bell and its pop-ups. It is decided when the alert is made and again right before each
-    send, for the whole title: hiding a movie or series on any of its copies (in any library) hides it everywhere, and a
-    title you hid before it arrived makes no alert at all (unhiding it later doesn't announce it). A title hidden after its
-    alert was made isn't sent, and the bell keeps the entry without naming it. When several alerts go out one by one, each is
-    checked again right before its own send.
+    send, for the whole title: hiding a movie or series on any of its copies (in any library, however many copies there are)
+    hides it everywhere, and a title you hid before it arrived makes no alert at all (unhiding it later doesn't announce it).
+    A title hidden after its alert was made isn't sent, and the bell keeps the entry without naming it. When several alerts go
+    out one by one, each is checked again right before its own send. The same goes for the answer to your own request
+    ("approved", "declined"): a title you hid is told on no channel. When the title's copies can't all be read at that moment,
+    the alert waits as it does for Hidden Content that can't be read (below).
 
     If your Hidden Content can't be read at that moment, nothing is told: a new alert or batch waits until it can be read,
     phone and e-mail wait too (given up after a day), the TV message isn't shown and the bell doesn't name the title.
@@ -1862,14 +1864,17 @@ Enhanced then keeps one playlist of theirs, private and shared with nobody, that
   takes the playlist its own create made, read back right after the create, and if another one has taken its place
   before the code is written it leaves it alone and makes a new one. Jellyfin Enhanced writes
   a random code into the playlist it makes (a field the person can't set) and only ever updates or deletes the playlist
-  carrying that code and its original creation time. Jellyfin gives a playlist made again under the same name the same
-  id; if the person deletes the Ready playlist (for example while the option is off) and makes one of their own with that
-  name, theirs is left alone and the panel says the Ready playlist was replaced; turning the option on again makes a new
-  one.
+  carrying that code and exactly its original creation time (Jellyfin keeps it to the second). Jellyfin gives a playlist
+  made again under the same name the same id; if the person deletes the Ready playlist (for example while the option is
+  off) and makes one of their own with that name, theirs is left alone and the panel says the Ready playlist was replaced;
+  turning the option on again makes a new one. The one case Jellyfin can't tell apart is a playlist deleted and made again
+  within the same second as Jellyfin Enhanced's own create, before its code is written.
 - **After a restore.** When a Jellyfin Enhanced backup is restored, each person turns the option on again before the
   playlist is updated (Jellyfin Enhanced first checks that it is still their own, private playlist, carrying its code).
 - **Right before each change** Jellyfin Enhanced checks again that every version it puts in is still one the person can
-  open and hasn't hidden; if one changed, it chooses again instead of adding it. It also reads the playlist again right
+  open and hasn't hidden, reading the person's Hidden Content and every copy of the title again (a copy that arrived
+  meanwhile with the title hidden on it counts); if one changed, it chooses again instead of adding it. When a title's
+  copies can't all be read, it is left out until they can. It also reads the playlist again right
   before Jellyfin saves it: if the person shared it, made it public or renamed it in that moment, nothing is written.
 
 **TV messages.** With *Ready messages on TVs and apps* on (under phase 4 and notifications), each person can turn on
