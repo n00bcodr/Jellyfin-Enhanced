@@ -100,4 +100,28 @@ public class PrivacyDddSpoilerTests
         rig.Plugin.Plugin.Configuration.SpoilerBlurEnabled = false;
         Assert.Contains("A major character dies", (await rig.Read()).Body.GetRawText());
     }
+
+    [Fact]
+    public async Task AViewerWhoNeverSavedSpoilerSettingsSeesWarningsButCorruptSettingsStayClosed()
+    {
+        using var rig = new Rig();
+        // No spoilerblur.json yet: nothing is guarded for this viewer.
+        var fresh = await rig.Read();
+        Assert.False(fresh.Body.GetProperty("Guarded").GetBoolean());
+        Assert.Contains("A major character dies", fresh.Body.GetRawText());
+
+        // The request that finds the file unreadable fails closed, also as a reveal. The read quarantines the file,
+        // so later requests see default settings, like every other Spoiler Guard surface after a reset.
+        rig.State.PendingTmdb["movie:123"] = new(); rig.Save();
+        var file = Directory.GetFiles(rig.Plugin.Core.ConfigRoot, SpoilerBlurImageFilter.SpoilerBlurFileName, SearchOption.AllDirectories)
+            .Single(p => p.Contains(rig.Viewer.ToString("N"), StringComparison.OrdinalIgnoreCase));
+        var guarded = await rig.Read();
+        var revision = guarded.Body.GetProperty("PolicyRevision").GetString();
+        File.WriteAllText(file, "{ not json");
+        var corrupt = await rig.Read(reveal: true, revision: revision);
+        Assert.True(corrupt.Body.GetProperty("Guarded").GetBoolean());
+        Assert.DoesNotContain("A major character dies", corrupt.Body.GetRawText());
+        Assert.False(File.Exists(file), "the unreadable file was quarantined");
+        Assert.Contains("A major character dies", (await rig.Read()).Body.GetRawText());
+    }
 }

@@ -4871,7 +4871,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private (bool Guarded, string Revision, bool Readable) DoesTheDogDiePolicy(Guid viewer, string mediaType, string tmdbId)
         {
             var config = JellyfinEnhanced.Instance!.Configuration;
-            var state = config.SpoilerBlurEnabled ? LoadSpoilerStateForTagStrip(viewer) : new UserSpoilerBlur();
+            // No settings file yet means nothing is guarded for this viewer; only a file that can't be read is
+            // treated as unknown (guarded, no reveal), as the tag strip's null covers both cases.
+            var state = !config.SpoilerBlurEnabled
+                || !_userConfigurationManager.UserConfigurationExists(viewer.ToString("N"), Services.SpoilerBlurImageFilter.SpoilerBlurFileName)
+                ? new UserSpoilerBlur()
+                : LoadSpoilerStateForTagStrip(viewer);
             var guarded = config.SpoilerBlurEnabled && (state == null || state.PendingTmdb.ContainsKey($"{mediaType}:{tmdbId}"));
             if (config.SpoilerBlurEnabled && state != null && !guarded)
             {
@@ -4903,14 +4908,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var policy = DoesTheDogDiePolicy(viewer.Value, mediaType, tmdbId);
-                bool CanShow() => policy.Readable && (!policy.Guarded || (reveal && policyRevision == policy.Revision));
-                var result = CanShow()
+                bool CanShow((bool Guarded, string Revision, bool Readable) p) => p.Readable && (!p.Guarded || (reveal && policyRevision == p.Revision));
+                var before = DoesTheDogDiePolicy(viewer.Value, mediaType, tmdbId);
+                var result = CanShow(before)
                     ? await _doesTheDogDieService.GetWarningsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false)
                     : new Model.DddCacheEntry();
-                // Protection may have changed while the external lookup was in flight.
-                policy = DoesTheDogDiePolicy(viewer.Value, mediaType, tmdbId);
-                var show = CanShow();
+                // Protection may have changed while the external lookup was in flight. A request refused at the start
+                // answers with that refusal (an unreadable settings file is quarantined by the read, so the second
+                // look would see defaults and report a guard this request never applied).
+                var policy = CanShow(before) ? DoesTheDogDiePolicy(viewer.Value, mediaType, tmdbId) : before;
+                var show = CanShow(before) && CanShow(policy);
                 return Ok(new {
                     policy.Guarded, PolicyRevision = policy.Revision,
                     Found = show && result.Found, Confirmed = show && result.Confirmed,
