@@ -216,7 +216,7 @@
             if (d.ready?.available) {
                 el('p', t('readyHelp'), ready);
                 line(ready, 'readyPlaylistGate', d.ready.playlistGate); line(ready, 'readyPlaylistStored', d.ready.playlistStored); line(ready, 'readyPlaylistEffective', d.ready.playlistEffective);
-                line(ready, 'readyState', t('readyState_' + (['active', 'off', 'deleted', 'removed', 'renew', 'privacy'].includes(d.ready.state) ? d.ready.state : 'off')));
+                line(ready, 'readyState', t('readyState_' + (['active', 'off', 'deleted', 'removed', 'renew', 'privacy', 'lost'].includes(d.ready.state) ? d.ready.state : 'off')));
                 if (d.ready.playlistEffective) line(ready, 'readyEntries', d.ready.entries);
                 line(ready, 'readyMessagesGate', d.ready.messagesGate); line(ready, 'readyMessagesStored', d.ready.messagesStored); line(ready, 'readyMessagesEffective', d.ready.messagesEffective);
             } else el('p', t('unavailable'), ready);

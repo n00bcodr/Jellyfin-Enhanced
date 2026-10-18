@@ -134,6 +134,17 @@ test('each state reads as what the person can do about it', async () => {
   }
 });
 
+// 4f review round 2: a bound playlist that isn't JE's any more (deleted and made again with the same id) is "lost".
+test('a playlist replaced by another with the same name reads as lost, with no link and no Remove', async () => {
+  const h = setup({ reply: () => answer({ playlist: { optedIn: false, state: 'lost', reason: 'identity', canRemove: false } }) });
+  try {
+    h.open(); await tick();
+    assert.match(h.host().textContent, /arr_ready_state_lost/);
+    assert.equal(h.host().querySelector('a[href]'), null);
+    assert.doesNotMatch(h.host().textContent, /arr_ready_remove|arr_ready_forget/);
+  } finally { h.close(); }
+});
+
 test('a playlist id that is not a plain id never becomes a link', async () => {
   const h = setup({ reply: () => answer({ playlist: { optedIn: true, state: 'active', playlistId: 'javascript:alert(1)' } }) });
   try {

@@ -25,7 +25,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
         /// <summary>
         /// The tables. <c>ready_playlists</c>: one row per server and owner (consent, epoch, state, the managed playlist and
-        /// its create marker, the id and time of a create in progress, the membership journal). <c>ready_entries</c>: one row per interest and content coordinate
+        /// its create marker, the id and time of a create in progress, the nonce JE wrote into the playlist and its creation
+        /// time, the membership journal). <c>ready_entries</c>: one row per interest and content coordinate
         /// (the version chosen, when it became ready, when it leaves, and whether it was watched or expired; several
         /// interests may point at one version). <c>ready_message_attempts</c>: a native message's claim before it is sent and
         /// whether Jellyfin accepted it (never whether a client showed it).
@@ -33,7 +34,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         internal const string Sql = @"
 CREATE TABLE IF NOT EXISTS ready_playlists (
     server_id TEXT NOT NULL, user_id TEXT NOT NULL, opted_in INTEGER NOT NULL DEFAULT 0, opt_in_epoch INTEGER NOT NULL DEFAULT 0,
-    state TEXT NOT NULL DEFAULT 'off', playlist_id TEXT, create_marker TEXT, create_id TEXT, create_at INTEGER, pending_op TEXT, confirmed TEXT, confirmed_at INTEGER,
+    state TEXT NOT NULL DEFAULT 'off', playlist_id TEXT, create_marker TEXT, create_id TEXT, create_at INTEGER, nonce TEXT, playlist_created INTEGER, pending_op TEXT, confirmed TEXT, confirmed_at INTEGER,
     missing_since INTEGER, missing_count INTEGER NOT NULL DEFAULT 0, reason TEXT, revision INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (server_id, user_id));
@@ -56,7 +57,8 @@ CREATE INDEX IF NOT EXISTS ready_message_attempts_user ON ready_message_attempts
         {
             ("ready_playlists", "opted_in", "INTEGER NOT NULL DEFAULT 0"), ("ready_playlists", "opt_in_epoch", "INTEGER NOT NULL DEFAULT 0"),
             ("ready_playlists", "state", "TEXT NOT NULL DEFAULT 'off'"), ("ready_playlists", "playlist_id", "TEXT"),
-            ("ready_playlists", "create_marker", "TEXT"), ("ready_playlists", "create_id", "TEXT"), ("ready_playlists", "create_at", "INTEGER"), ("ready_playlists", "pending_op", "TEXT"), ("ready_playlists", "confirmed", "TEXT"),
+            ("ready_playlists", "create_marker", "TEXT"), ("ready_playlists", "create_id", "TEXT"), ("ready_playlists", "create_at", "INTEGER"),
+            ("ready_playlists", "nonce", "TEXT"), ("ready_playlists", "playlist_created", "INTEGER"), ("ready_playlists", "pending_op", "TEXT"), ("ready_playlists", "confirmed", "TEXT"),
             ("ready_playlists", "confirmed_at", "INTEGER"), ("ready_playlists", "missing_since", "INTEGER"),
             ("ready_playlists", "missing_count", "INTEGER NOT NULL DEFAULT 0"), ("ready_playlists", "reason", "TEXT"),
             ("ready_playlists", "revision", "INTEGER NOT NULL DEFAULT 0"), ("ready_playlists", "updated_at", "INTEGER NOT NULL DEFAULT 0"),

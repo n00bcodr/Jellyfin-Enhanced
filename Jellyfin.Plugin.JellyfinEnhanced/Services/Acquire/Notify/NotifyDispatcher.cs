@@ -461,39 +461,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (_view == null || delivery.Kind is not (NotifyKind.Ready or NotifyKind.Episodes)) return null;
             if (_view.Viewer(delivery.UserId) is not { } viewer) return "The recipient no longer exists or is disabled.";
             // Older notifications have no episodeItems and retain their parent-item check. New
-            // batches carry each number's actual file, including combined files and the variant.
-            if (delivery.Kind == NotifyKind.Episodes && payload.TryGetValue("episodeItems", out var json))
-            {
-                List<NotifyEpisode>? episodes;
-                try { episodes = JsonSerializer.Deserialize<List<NotifyEpisode>>(json, PayloadJson); }
-                catch (JsonException) { episodes = null; }
-                var visible = episodes?.Where(e => e.ItemId != Guid.Empty && _view.Resolve(e.ItemId, viewer) != null)
-                    .DistinctBy(e => (e.Season, e.Episode)).OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
-                if (visible is not { Count: > 0 }) return "The recipient can no longer open these episodes.";
-                var seasons = visible.Select(e => e.Season).Distinct().ToList();
-                payload["count"] = visible.Count.ToString(CultureInfo.InvariantCulture);
-                payload["seasons"] = string.Join(", ", seasons);
-                if (visible.Count == 1)
-                {
-                    payload["mode"] = "single";
-                    payload["season"] = visible[0].Season.ToString(CultureInfo.InvariantCulture);
-                    payload["episode"] = visible[0].Episode.ToString(CultureInfo.InvariantCulture);
-                    itemId = visible[0].ItemId.ToString("N", CultureInfo.InvariantCulture);
-                }
-                else if (visible.Count != episodes!.Count)
-                {
-                    // The whole season is no longer visible: don't announce it as complete.
-                    payload["mode"] = "many";
-                    payload.Remove("season");
-                    payload.Remove("episode");
-                }
-            }
-            if (Guid.TryParse(delivery.ItemId, out var item) && item != Guid.Empty)
+            // batches carry each number's actual file, including combined files and the variant: narrowed
+            // per episode to what the recipient can open and hasn't hidden (every channel of the batch).
+            if (delivery.Kind == NotifyKind.Episodes && NarrowEpisodes(delivery.UserId, viewer, delivery.TitleKey, payload, ref itemId) is { } none) return none;
+            if (Guid.TryParse(itemId, out var item) && item != Guid.Empty)
             {
                 return _view.Resolve(item, viewer) == null ? "The recipient can no longer open this title." : null;
             }
             var key = TitleKey.Parse(delivery.TitleKey);
             return key != null && _view.Copies(key, viewer, _aliases?.Of(key)).Any(c => c.Visible) ? null : "The recipient can no longer open this title.";
+        }
+
+        /// <summary>
+        /// The recipient's Hidden Content as it is now, as a check of items of one title (the episode itself, its series or the
+        /// title), read through the Ready channel's reader (without it nothing counts as hidden); null when their rules can't
+        /// be read now.
+        /// </summary>
+        internal Func<Guid, bool>? EpisodeHides(Guid user, string? titleKey) => _native == null ? _ => false : _native.Hides(user, titleKey);
+
+        /// <summary>
+        /// Narrows a batch of new episodes (its <c>episodeItems</c>) to what the recipient may still be told about now: the
+        /// episodes they can open whose episode, series or title their Hidden Content doesn't hide (read once, now, through the
+        /// Ready channel's reader; without it only access counts). The count, seasons and wording are set again from what is
+        /// left: one left is that episode (and <paramref name="itemId"/> becomes it), fewer than the batch is never "the whole
+        /// season". Returns why nothing may be said (none left, or Hidden Content that can't be read now), else null (also for
+        /// a payload without episodeItems). Synchronous: the dispatcher calls it right before a send, the bell on every read.
+        /// </summary>
+        internal string? NarrowEpisodes(Guid user, StatusViewer viewer, string? titleKey, Dictionary<string, string> payload, ref string? itemId)
+        {
+            if (_view == null || !payload.TryGetValue("episodeItems", out var json)) return null;
+            List<NotifyEpisode>? episodes;
+            try { episodes = JsonSerializer.Deserialize<List<NotifyEpisode>>(json, PayloadJson); }
+            catch (JsonException) { episodes = null; }
+            var open = episodes?.Where(e => e.ItemId != Guid.Empty && _view.Resolve(e.ItemId, viewer) != null).ToList();
+            if (open is not { Count: > 0 }) return "The recipient can no longer open these episodes.";
+            if (EpisodeHides(user, titleKey) is not { } hidden) return "The recipient's Hidden Content can't be read now (a batch of episodes isn't sent).";
+            var visible = open.Where(e => !hidden(e.ItemId))
+                .DistinctBy(e => (e.Season, e.Episode)).OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
+            if (visible.Count == 0) return "The recipient hid these episodes (Hidden Content).";
+            var seasons = visible.Select(e => e.Season).Distinct().ToList();
+            payload["count"] = visible.Count.ToString(CultureInfo.InvariantCulture);
+            payload["seasons"] = string.Join(", ", seasons);
+            if (visible.Count == 1)
+            {
+                payload["mode"] = "single";
+                payload["season"] = visible[0].Season.ToString(CultureInfo.InvariantCulture);
+                payload["episode"] = visible[0].Episode.ToString(CultureInfo.InvariantCulture);
+                itemId = visible[0].ItemId.ToString("N", CultureInfo.InvariantCulture);
+            }
+            else if (visible.Count != episodes!.Count)
+            {
+                // Not every episode of the batch is still visible: don't announce it as a complete season.
+                payload["mode"] = "many";
+                payload.Remove("season");
+                payload.Remove("episode");
+            }
+            return null;
         }
 
         /// <summary>Why a channel can't carry the delivery now (switched off or not set up, by the administrator or the user), or null.</summary>

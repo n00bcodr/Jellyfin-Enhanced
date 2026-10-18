@@ -172,7 +172,7 @@ PRAGMA user_version=8;");
         {
             var store = new ReadyPlaylistStore(db);
             var binding = store.OptIn(Server, emma, T0);
-            Assert.True(store.Bind(db.Generation, Server, emma, binding.Epoch, playlist, T0));
+            Assert.True(store.Bind(db.Generation, Server, emma, binding.Epoch, playlist, T0.ToUnixTimeMilliseconds(), T0));
             store.OptIn(Server, sam, T0);
             store.OptOut(Server, sam, T0);
             var notify = new NotifyStore(db);
@@ -269,11 +269,11 @@ PRAGMA user_version=8;");
         var b = store.OptIn(Server, emma, T0);
         var generation = db.Generation;
         db.ReplaceWith(db.Snapshot()!);
-        Assert.False(store.Bind(generation, Server, emma, b.Epoch, Guid.NewGuid(), T0));
+        Assert.False(store.Bind(generation, Server, emma, b.Epoch, Guid.NewGuid(), T0.ToUnixTimeMilliseconds(), T0));
         var renewed = store.OptIn(Server, emma, T0);
         // A write for the old epoch loses to the renewal; one for the new epoch lands.
-        Assert.False(store.Bind(db.Generation, Server, emma, b.Epoch, Guid.NewGuid(), T0));
-        Assert.True(store.Bind(db.Generation, Server, emma, renewed.Epoch, Guid.NewGuid(), T0));
+        Assert.False(store.Bind(db.Generation, Server, emma, b.Epoch, Guid.NewGuid(), T0.ToUnixTimeMilliseconds(), T0));
+        Assert.True(store.Bind(db.Generation, Server, emma, renewed.Epoch, Guid.NewGuid(), T0.ToUnixTimeMilliseconds(), T0));
         store.OptOut(Server, emma, T0);
         Assert.False(store.SaveEntries(db.Generation, Server, emma, renewed.Epoch, new[] { new ReadyEntryRow("w:1", "m", "movie:tmdb:1", "standard", Guid.NewGuid(), null, Guid.NewGuid(), 1, 2, ReadyDisposition.Ready) }, Array.Empty<(string, string)>(), T0));
         Assert.Empty(store.Entries(Server, emma));

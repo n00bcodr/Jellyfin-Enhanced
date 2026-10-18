@@ -67,14 +67,15 @@ public class ReadyPlaylistServiceTests
         Assert.Equal(ReadyPlaylistService.PlaylistName, own.Name);
         Assert.NotEqual(own.Id, w.Store.Binding(ReadyWorld.Server, emma.UserId)!.PlaylistId);
 
-        // Even after a crash between the create and its record, recovery goes by marker, never by name.
+        // Even after a crash between the create (its nonce written) and its record, recovery goes by the recorded id and JE's
+        // nonce, never by name.
         using var x = new ReadyWorld();
         var sam = x.User();
         var samOwn = x.Host.AddOwn(sam.UserId, ReadyPlaylistService.PlaylistName);
         x.Movie(Tears, Arrived);
         x.Interests.Add(sam.UserId, "w:1", ReadyInterestKind.Request, Tears);
         await x.Service.SetPlaylistAsync(sam.UserId, true);
-        x.Host.FailAfter = "create";
+        x.Host.FailAfter = "stamp";
         Assert.Equal("native_error", await x.Service.ReconcileAsync(sam.UserId));
         x.Reopen();
         Assert.Equal("updated", await x.Service.ReconcileAsync(sam.UserId));
@@ -400,12 +401,12 @@ public class ReadyPlaylistServiceTests
             swapped.Entries.AddRange(stranger.Entries);
             x.Host.Playlists[swapped.Id] = swapped;
             await x.Service.SetPlaylistAsync(sam.UserId, true);
-            Assert.Equal("privacy", await x.Service.ReconcileAsync(sam.UserId));
+            // Not JE's (no marker, no nonce): lost, never touched; the binding is dropped, so Remove has nothing to delete.
+            Assert.Equal("lost", await x.Service.ReconcileAsync(sam.UserId));
             Assert.Equal(stranger.Entries, swapped.Entries);
             Assert.Equal("Kids", swapped.Name);
-            Assert.Equal("identity", x.Store.Binding(ReadyWorld.Server, sam.UserId)!.Reason);
-            // Remove forgets the binding but never deletes a playlist it can't verify.
-            Assert.Equal("not_ours", await x.Service.RemoveAsync(sam.UserId));
+            Assert.Equal((ReadyState.Lost, "identity"), (x.Store.Binding(ReadyWorld.Server, sam.UserId)!.State, x.Store.Binding(ReadyWorld.Server, sam.UserId)!.Reason));
+            Assert.Equal("nothing", await x.Service.RemoveAsync(sam.UserId));
             Assert.True(x.Host.Playlists.ContainsKey(swapped.Id));
         }
     }

@@ -50,9 +50,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// their rules can't be read now (an on-screen message fails closed).
         /// </summary>
         public bool Hidden(Guid user, string? titleKey, string? itemId)
+            => Hides(user, titleKey) is not { } hidden || hidden(Guid.TryParse(itemId, out var id) ? id : Guid.Empty);
+
+        /// <summary>
+        /// The recipient's Hidden Content as it is now, as a check of items of one title (the library surface): true when a rule
+        /// hides the title (any of its keys), the item or the item's series. Null when their rules can't be read now. Reads the
+        /// rules once; each check is synchronous.
+        /// </summary>
+        public Func<Guid, bool>? Hides(Guid user, string? titleKey)
         {
             var hides = _privacy.Load(user);
-            if (hides == null) return true;
+            if (hides == null) return null;
             var keys = new List<TitleKey>();
             if (TitleKey.Parse(titleKey) is { } key)
             {
@@ -60,10 +68,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                 keys.AddRange(_aliases?.Of(key) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>());
             }
 
-            var item = Guid.TryParse(itemId, out var id) ? id : Guid.Empty;
-            Guid? series = null;
-            if (item != Guid.Empty && _view.Viewer(user) is { } viewer) series = _view.Resolve(item, viewer)?.SeriesId;
-            return hides.Hidden(keys, item, series);
+            var viewer = _view.Viewer(user);
+            return item => hides.Hidden(keys, item, item != Guid.Empty && viewer != null ? _view.Resolve(item, viewer)?.SeriesId : null);
         }
 
         /// <summary>
