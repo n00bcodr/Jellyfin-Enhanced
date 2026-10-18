@@ -200,12 +200,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // the write (a share removed or made read-only during an earlier insert of the same pass stops the rest).
         private bool StillInserting(PassContext context, ListWriteKind kind, IReadOnlyCollection<Guid> items)
         {
-            if (!ListNameConsistency.Matches(_host, context.List.Id))
-            {
-                context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
-                context.Dirty = true;
-                context.Inserts = false;
-            }
 
             if (context.Inserts && (_gate == null || !_gate.SwapAllowed(context.List.Id, context.Doc, context.Owner, kind, items, InsertsAllowed, context.OnBehalfOf)))
             {
@@ -607,12 +601,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             // Consent is judged on the list as Jellyfin has it now (the caller's copy may predate a removed share), and
             // judged again by the gate before every write (each one waits for Jellyfin).
             var current = _host.GetList(list.Id);
-            if (current != null && !ListNameConsistency.Matches(_host, list.Id))
-            {
-                var changed = doc.Reconcile != ListNameConsistency.ReconcileReason;
-                doc.Reconcile = ListNameConsistency.ReconcileReason;
-                return new SwapOutcome(doc, changed, default);
-            }
 
             var context = new PassContext(current ?? list, owner, doc, UtcNow()) { Inserts = current != null && InsertsAllowed(current, doc), OnBehalfOf = onBehalfOf };
             var fresh = new HashSet<string>(freshMetadata ?? (IEnumerable<string>)Array.Empty<string>(), StringComparer.Ordinal);
@@ -636,10 +624,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             await ListContinuation.Await(() => RecoverIntentsAsync(context)).ConfigureAwait(false);
-            if (!ListNameConsistency.Matches(_host, list.Id))
+
+            if (context.Doc.Intents.Count > 0)
             {
-                context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
-                return new SwapOutcome(context.Doc, true, new SwapPassResult(context.Inserted, context.Retired));
+                return new SwapOutcome(context.Doc, context.Dirty, new SwapPassResult(context.Inserted, context.Retired));
             }
 
             if (context.Doc.Reconcile != null)
@@ -929,7 +917,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>
         /// Inserts real items at an order index under a persisted swap intent (A6), then verifies with occurrence
         /// counts. Returns the items that landed (empty when Jellyfin dropped them all) or null when Jellyfin threw;
-        /// in both cases the intent is cleared and the order re-reconciled in the context's document.
+        /// the intent remains until placement settles or no occurrence landed.
         /// </summary>
         private async Task<HashSet<Guid>?> InsertRunAsync(PassContext context, string placeholderId, IReadOnlyList<Guid> items, int index, IReadOnlyList<ResolvedItem>? episodes = null)
         {
@@ -962,11 +950,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 // The consent, the owner or their access changed during the run: nothing more goes in on this pass.
                 _logger.Info($"[Lists] Stopped swapping into list {context.ListIdN}: {lost.Message}");
-                if (lost is ListNameConflictException)
-                {
-                    context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
-                    context.Dirty = true;
-                }
                 context.Inserts = false;
             }
             catch (Exception ex)
@@ -974,36 +957,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 _logger.Warning($"[Lists] Swapping into list {context.ListIdN} failed (retried on the next pass): {ex.Message}");
             }
 
-            if (context.Doc.Reconcile == ListNameConsistency.ReconcileReason || !ListNameConsistency.Matches(_host, listId))
-            {
-                context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
-                context.Dirty = true;
-                context.Inserts = false;
-                return null; // keep the pre-write intent; reconcile landed entries once the name is consistent
-            }
 
             var raw = _host.GetRawEntries(listId);
             var after = OccurrenceCounts(raw);
             var landed = items.Where(id => after.TryGetValue(id, out var count) && count > intent.OccurrenceCountsBefore[N(id)]).ToHashSet();
+            if (placed == null && landed.Count > 0)
+            {
+                try
+                {
+                    placed = await ListContinuation.Await(() => SettleLandedAsync(context, intent, items.Where(landed.Contains).ToList())).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"[Lists] Placement of list {context.ListIdN} is unfinished: {ex.Message}");
+                    context.Inserts = false;
+                    return null; // the saved intent, placeholder and its anchor survive every failed move
+                }
+            }
+
+            context.Doc.Order = placed ?? Canonical(context.Doc, raw);
             context.Doc.Intents.RemoveAll(i => i.CreatedAt == intent.CreatedAt);
-            context.Doc.Order = placed
-                ?? (landed.Count > 0 ? await ListContinuation.Await(() => SettleLandedAsync(context, anchor, index, items.Where(landed.Contains).ToList())).ConfigureAwait(false) : Canonical(context.Doc, raw));
             context.Dirty = true;
             return placed == null && landed.Count == 0 ? null : landed;
         }
 
-        /// <summary>
-        /// F8: the canonical order once new items landed without a finished placement (Jellyfin threw, or a crash left
-        /// an intent): their tokens go where the swap planned them (<paramref name="index"/> while it still follows
-        /// <paramref name="anchor"/>, else right after the anchor), so a placeholder keeps following its own fills. On
-        /// Jellyfin 10.11, where the append and the moves are separate calls, entries left elsewhere are moved after the
-        /// anchor once; anything else keeps Jellyfin's order with placeholders reconciled to their anchors.
-        /// </summary>
-        private async Task<List<string>> SettleLandedAsync(PassContext context, string? anchor, int? index, IReadOnlyList<Guid> landed)
+        // Settle only the entries whose occurrence counts increased. Strip their planned tokens before rebuilding
+        // the desired run: an earlier failed apply or recovery may already have reconciled those tokens into Order.
+        // A failed/forbidden move propagates to the caller, which MUST keep the durable intent.
+        private async Task<List<string>> SettleLandedAsync(PassContext context, SwapIntent intent, IReadOnlyList<Guid> landed)
         {
-            var order = context.Doc.Order;
+            var tokens = landed.Select(id => ListOrder.RealToken(id, intent.OccurrenceCountsBefore.GetValueOrDefault(N(id)))).ToList();
+            var order = context.Doc.Order.Where(t => !tokens.Contains(t)).ToList();
+            var anchor = intent.Anchor;
             int at;
-            if (index is int planned && planned >= 0 && planned <= order.Count
+            if (intent.Index is int planned && planned >= 0 && planned <= order.Count
                 && string.Equals(ListOrder.RealAnchorBefore(order, planned), anchor, StringComparison.Ordinal))
             {
                 at = planned;
@@ -1017,27 +1004,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var (desired, inserted) = ListOrder.InsertRealItems(order, at, landed);
             var desiredReal = desired.Where(ListOrder.IsReal).ToList();
             var actual = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
-            if (!actual.SequenceEqual(desiredReal, StringComparer.Ordinal) && context.Owner != null && context.Inserts)
+            if (!actual.SequenceEqual(desiredReal, StringComparer.Ordinal) && !_host.SupportsPositionalInsert)
             {
-                try
+                ListAccess? actor = null;
+                if (intent.ByUserId != null && Guid.TryParseExact(intent.ByUserId, "N", out var actorId)
+                    && _userManager.GetUserById(actorId) is { } user
+                    && !user.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsDisabled))
                 {
-                    actual = await ListContinuation.Await(() => ListPlaylistPlacement.MoveAfterAnchorAsync(_host, _logger, context.List.Id, context.Owner, anchor, inserted, (kind, written) => SwapWrite(context, kind, written))).ConfigureAwait(false);
+                    actor = _access?.Resolve(context.List.Id, user);
                 }
-                catch (ListAccessLostException lost)
+
+                var owner = actor?.Owner ?? context.Owner;
+                if (owner == null || (intent.ByUserId == null ? !context.Inserts : actor == null))
                 {
-                    _logger.Info($"[Lists] Stopped placing new entries of list {context.ListIdN}: {lost.Message}");
-                    if (lost is ListNameConflictException)
-                    {
-                        context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
-                        context.Dirty = true;
-                    }
-                    context.Inserts = false;
-                    actual = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
+                    throw new ListAccessLostException(null, "Placement is waiting for its editor's current permission.");
                 }
-                catch (Exception ex)
+
+                if (intent.ByUserId == null)
                 {
-                    _logger.Warning($"[Lists] Moving new entries of list {context.ListIdN} into place failed; keeping Jellyfin's order: {ex.Message}");
-                    actual = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
+                    actual = await ListContinuation.Await(() => ListPlaylistPlacement.MoveAfterAnchorAsync(
+                        _host, _logger, context.List.Id, owner, anchor, inserted,
+                        (kind, written) => SwapWrite(context, kind, written))).ConfigureAwait(false);
+                }
+                else
+                {
+                    actual = await ListContinuation.Await(() => ListPlaylistPlacement.MoveAfterAnchorAsync(
+                        _host, _logger, context.List.Id, owner, anchor, inserted,
+                        (kind, written) => _gate!.Write(actor!, kind, written))).ConfigureAwait(false);
                 }
             }
 
@@ -1145,11 +1138,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     catch (ListAccessLostException lost)
                     {
                         _logger.Info($"[Lists] Stopped adding to collection {context.ListIdN}: {lost.Message}");
-                        if (lost is ListNameConflictException)
-                        {
-                            context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
-                            context.Dirty = true;
-                        }
                         context.Inserts = false;
                         failed = true;
                     }
@@ -1160,13 +1148,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
                 }
 
-                if (context.Doc.Reconcile == ListNameConsistency.ReconcileReason || !ListNameConsistency.Matches(_host, context.List.Id))
-                {
-                    context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
-                    context.Dirty = true;
-                    context.Inserts = false;
-                    return false; // keep the saved intent for the next consistent pass
-                }
 
                 var after = OccurrenceCounts(_host.GetRawEntries(context.List.Id));
                 added = toAdd.Where(after.ContainsKey).ToHashSet();
@@ -1444,21 +1425,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var counts = OccurrenceCounts(_host.GetRawEntries(context.List.Id));
             foreach (var intent in context.Doc.Intents.ToList())
             {
-                context.Doc.Intents.Remove(intent);
-                context.Dirty = true;
                 var placeholder = context.Doc.Items.FirstOrDefault(p => p.Id == intent.PhId);
-                if (placeholder == null)
-                {
-                    continue;
-                }
-
                 var landed = intent.ItemIds
                     .Where(idN => Guid.TryParseExact(idN, "N", out var id)
                         && counts.TryGetValue(id, out var count)
-                        && count > (intent.OccurrenceCountsBefore.TryGetValue(idN, out var previous) ? previous : 0))
+                        && count > intent.OccurrenceCountsBefore.GetValueOrDefault(idN))
                     .Select(idN => Guid.ParseExact(idN, "N"))
                     .ToList();
-                if (landed.Count == 0)
+                if (landed.Count > 0 && context.List.Kind == ListKinds.Playlist)
+                {
+                    try
+                    {
+                        context.Doc.Order = await ListContinuation.Await(() => SettleLandedAsync(context, intent, landed)).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"[Lists] Interrupted placement of list {context.ListIdN} is still pending: {ex.Message}");
+                        context.Inserts = false;
+                        continue;
+                    }
+                }
+
+                context.Doc.Intents.Remove(intent);
+                context.Dirty = true;
+                if (landed.Count == 0 || placeholder == null)
                 {
                     continue;
                 }
@@ -1515,7 +1505,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     continue;
                 }
 
-                context.Doc.Order = await ListContinuation.Await(() => SettleLandedAsync(context, intent.Anchor, intent.Index, landed)).ConfigureAwait(false);
                 if (placeholder.Kind == PlaceholderKinds.Movie)
                 {
                     Retire(context, placeholder, landed.Select(N).ToList());
@@ -1822,7 +1811,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private static List<string> Canonical(ListDoc doc, IReadOnlyList<RawEntry> raw) =>
             ListOrder.Reconcile(doc.Order, ListOrder.BuildRealTokens(raw), doc.Items.Select(p => p.Id).ToList());
 
-        private static Dictionary<Guid, int> OccurrenceCounts(IReadOnlyList<RawEntry> raw)
+        internal static Dictionary<Guid, int> OccurrenceCounts(IReadOnlyList<RawEntry> raw)
         {
             var counts = new Dictionary<Guid, int>();
             foreach (var entry in raw)

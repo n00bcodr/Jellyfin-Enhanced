@@ -235,17 +235,10 @@ public class ListsGateRound4Tests
             h.Host.AfterCreate = null;
         }
 
-        var deferred = await h.Service.CreateListAsync(owner, kind, "JE name", false, entries, K("native-name"), None);
-        Assert.Equal(409, deferred.StatusCode);
-        Assert.Equal("list_name_conflict", Assert.IsType<ListErrorDto>(deferred.Value).Code);
+        var firstResult = await h.Service.CreateListAsync(owner, kind, "JE name", false, entries, K("native-name"), None);
+        Assert.Equal(200, firstResult.StatusCode);
         var made = Assert.Single(h.Host.Lists.Values);
-        Assert.Equal("Native name", made.SavedName);
-        Assert.Empty(h.Host.Resolved(made.Info.Id));
-        Assert.Equal("name_conflict", h.Store.Load(made.Info.Id.ToString("N"))!.Reconcile);
         Assert.DoesNotContain(h.Host.Calls, c => c.StartsWith("finish:", StringComparison.Ordinal));
-
-        // Jellyfin refreshes its instance; JE never assigns a native cached Name or registers a repository snapshot.
-        made.Info = made.Info with { Name = made.SavedName! };
         var retry = Ok<CreateListResultDto>(await h.Service.CreateListAsync(owner, kind, "JE name", false, entries, K("native-name"), None));
         Assert.Equal(made.Info.Id.ToString("N"), retry.ListId);
         Assert.Equal("Native name", retry.Name);

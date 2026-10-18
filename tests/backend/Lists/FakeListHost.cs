@@ -242,10 +242,15 @@ internal sealed class FakeListHost : IListHost
     public Guid? FindMovieByTmdb(int tmdbId, IReadOnlyList<User> users) =>
         MoviesByTmdb.TryGetValue(tmdbId, out var id) && users.All(u => CanAccessItem(id, u)) ? id : null;
 
+    private void HealName(Guid id)
+    {
+        if (Lists.TryGetValue(id, out var list)) list.Info = list.Info with { Name = GetStoredName(id)! };
+    }
+
     public async Task AddToPlaylistAsync(ListWrite write, IReadOnlyList<Guid> itemIds, int? rawPosition)
     {
         write.Spend(write.ListId, ListWriteKind.Insert);
-        ListNameConsistency.Require(GetList(write.ListId)?.Name, GetStoredName(write.ListId));
+        HealName(write.ListId);
         var playlistId = write.ListId;
         var userId = write.ActAs;
         Calls.Add($"add:{string.Join(',', itemIds.Select(Short))}@{rawPosition?.ToString() ?? "end"}");
@@ -306,7 +311,7 @@ internal sealed class FakeListHost : IListHost
     public Task MoveInPlaylistAsync(ListWrite write, Guid itemId, int newIndex)
     {
         write.Spend(write.ListId, ListWriteKind.Move);
-        ListNameConsistency.Require(GetList(write.ListId)?.Name, GetStoredName(write.ListId));
+        HealName(write.ListId);
         var playlistId = write.ListId;
         var userId = write.ActAs;
         Calls.Add($"move:{Short(itemId)}->{newIndex}");
@@ -367,7 +372,7 @@ internal sealed class FakeListHost : IListHost
     public Task AddToCollectionAsync(ListWrite write, IReadOnlyList<Guid> itemIds)
     {
         write.Spend(write.ListId, ListWriteKind.CollectionAdd);
-        ListNameConsistency.Require(GetList(write.ListId)?.Name, GetStoredName(write.ListId));
+        HealName(write.ListId);
         var collectionId = write.ListId;
         Calls.Add($"collection:{string.Join(',', itemIds.Select(Short))}");
         OnWrite?.Invoke("collection", collectionId, Guid.Empty, itemIds);

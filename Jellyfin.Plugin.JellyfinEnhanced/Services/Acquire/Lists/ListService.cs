@@ -182,9 +182,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _createLocks = new();
         // One collection create per destination at a time, across people (keyed by the full path, without case).
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _destinationLocks = new(StringComparer.OrdinalIgnoreCase);
-        // Lists JE created whose chosen name isn't known to be saved: a rename failed, maybe after Jellyfin had changed its
-        // cached item, which then shows the name. A retry renames them again until a save succeeds.
-        private readonly ConcurrentDictionary<Guid, byte> _unsavedNames = new();
 
         /// <summary>Creates the service.</summary>
         /// <param name="store">Placeholder store.</param>
@@ -771,12 +768,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 if (visibility.Matches(_access.ParentalStamp(current!.User)) && string.Equals(stamp, _access.ParentalStamp(current.User), StringComparison.Ordinal))
                 {
-                    if (!ListNameConsistency.Matches(_host, current.List.Id))
-                    {
-                        MarkNameConflict(current, doc ?? _store.LoadForUpdate(current.ListIdN, current.List.Kind));
-                        return new CheckedWrite(ListNameConflictException.Refusal(), null, null, new HashSet<string>());
-                    }
-
                     return new CheckedWrite(null, current, visibility, blocked);
                 }
             }
@@ -799,12 +790,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             CancellationToken cancellationToken)
         {
             var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
-            if (!ListNameConsistency.Matches(_host, access.List.Id))
-            {
-                MarkNameConflict(access, doc);
-                return ListNameConflictException.Refusal();
-            }
-
             if (expectedRev.HasValue && expectedRev.Value != doc.Rev)
             {
                 return await ListContinuation.Await(() => ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken)).ConfigureAwait(false);
@@ -824,6 +809,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var recovered = await ListContinuation.Await(() => _swap.SwapLockedAsync(access.List, access.Owner, doc, Array.Empty<string>(), null, null, MetadataMode.None, CancellationToken.None)).ConfigureAwait(false);
                 doc = recovered.Doc;
                 settled = recovered.Dirty;
+                if (doc.Intents.Count > 0)
+                {
+                    var (denied, _) = _gate.Edit(access);
+                    if (denied != null) return denied;
+                    if (settled) _store.Save(doc);
+                    return ListOutcome.Error(500, "list_update_failed", "Jellyfin could not finish placing the list entries; try again.");
+                }
             }
 
             var isPlaylist = access.List.Kind == ListKinds.Playlist;
@@ -996,7 +988,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         order = desired; // what a failure below is reconciled from
                         if (inserted.Count > 0)
                         {
-                            order = await ListContinuation.Await(() => PlaceRealItemsAsync(access, segment.Where(e => e.ItemId.HasValue).Select(e => e.ItemId!.Value).ToList(), anchor, desired, inserted)).ConfigureAwait(false);
+                            var items = segment.Where(e => e.ItemId.HasValue).Select(e => e.ItemId!.Value).ToList();
+                            var counts = ListSwapService.OccurrenceCounts(_host.GetRawEntries(access.List.Id));
+                            var intent = new SwapIntent
+                            {
+                                ByUserId = access.User.Id.ToString("N", CultureInfo.InvariantCulture),
+                                ItemIds = items.Select(id => id.ToString("N", CultureInfo.InvariantCulture)).ToList(),
+                                Anchor = anchor,
+                                Index = at,
+                                OccurrenceCountsBefore = items.Distinct().ToDictionary(id => id.ToString("N", CultureInfo.InvariantCulture), id => counts.GetValueOrDefault(id)),
+                                CreatedAt = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
+                            };
+                            doc.Intents.Add(intent);
+                            doc.Order = desired.ToList();
+                            var (journalDenied, _) = _gate.Edit(access);
+                            if (journalDenied != null)
+                            {
+                                throw new ListAccessLostException(journalDenied, "The editor lost access before recording placement.");
+                            }
+
+                            _store.Save(doc); // Durable placement plan BEFORE Jellyfin can append anything.
+                            order = await ListContinuation.Await(() => PlaceRealItemsAsync(access, items, anchor, desired, inserted)).ConfigureAwait(false);
+                            doc.Intents.Remove(intent);
+                            changed = true;
                         }
                     }
                 }
@@ -1042,12 +1056,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 if (denied == null && hooks?.AfterFailedApply != null && RecordPartialApply(access, hooks.AfterFailedApply, doc, result, skipped, accepted))
                 {
-                    changed = true;
-                }
-
-                if (ex is ListNameConflictException)
-                {
-                    doc.Reconcile = ListNameConsistency.ReconcileReason;
                     changed = true;
                 }
 
@@ -1596,12 +1604,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     catch (ListAccessLostException lost)
                     {
                         _logger.Info($"[Lists] Stopped moving an entry of list {access.ListIdN}: {lost.Message}");
-                        if (lost is ListNameConflictException)
-                        {
-                            MarkNameConflict(access, doc);
-                            return lost.Outcome!;
-                        }
-
                         if (!movedNow)
                         {
                             return lost.Outcome!;
@@ -2047,22 +2049,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     return ListContinuation.NotFound();
                 }
 
-                if (string.Equals(storedName, markedName, StringComparison.Ordinal)
-                    || (_unsavedNames.ContainsKey(id) && string.Equals(storedName, name, StringComparison.Ordinal)))
+                if (string.Equals(storedName, markedName, StringComparison.Ordinal))
                 {
                     // The list still carries the name with its marker (just created, or a retry after a crash right after
-                    // the create), or its rename wasn't saved: it gets its chosen name. The name counts once Jellyfin saved
+                    // the create): it gets its chosen name. The name counts once Jellyfin saved
                     // it, not when its cached item shows it. Every create, retry and marker recovery reads the repository
                     // here: failure handling leaves the shared cache alone, and native renames need not refresh that cache.
-                    _unsavedNames[id] = 0;
                     await ListContinuation.Await(() => _host.FinishCreateAsync(_gate.FinishWrite(list, user), name)).ConfigureAwait(false);
-                    _unsavedNames.TryRemove(id, out _);
                     list = _host.GetList(id) ?? list;
-                }
-                else
-                {
-                    // Renamed meanwhile (by the person, in Jellyfin): their name stands.
-                    _unsavedNames.TryRemove(id, out _);
                 }
 
                 // Named: the next create of this destination may check it.
@@ -2473,21 +2467,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 _logger.Warning($"[Lists] Recording what a failed update of list {access.ListIdN} added failed: {ex.Message}");
                 return false;
-            }
-        }
-
-        // Called under the list lock. Record the deferral without changing entries or the shared native item.
-        private void MarkNameConflict(ListAccess access, ListDoc doc)
-        {
-            if (_gate.Edit(access).Denied != null)
-            {
-                return;
-            }
-
-            if (doc.Reconcile != ListNameConsistency.ReconcileReason)
-            {
-                doc.Reconcile = ListNameConsistency.ReconcileReason;
-                _store.Save(doc);
             }
         }
 

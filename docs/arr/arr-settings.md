@@ -542,8 +542,9 @@ their place in lists I turned this on for* is *No* until the person chooses *Yes
 The scheduled task *Requests & downloads: list maintenance* (daily, 04:30) removes the data of deleted lists and old
 list records; with *Daily list maintenance* on it also refreshes entries and runs a full pass. Deleted creates keep a
 30-day retry marker, so retrying the old request cannot recreate the list. A 4K entry uses an accessible, playable 4K
-source, including alternate versions; a standard entry accepts any playable copy. If Jellyfin's cached and saved list
-names disagree, entry edits and maintenance swaps wait for Jellyfin to reconcile the name, preserving native renames.
+source, including alternate versions; a standard entry accepts any playable copy. Entry edits and maintenance swaps
+preserve the saved name and editable metadata even when Jellyfin's cached item is stale. Interrupted placement keeps
+its saved position for retry or reconciliation without inserting another copy.
 
 #### Household tab
 

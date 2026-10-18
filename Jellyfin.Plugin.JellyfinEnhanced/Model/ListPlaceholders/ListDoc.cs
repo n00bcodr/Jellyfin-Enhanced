@@ -83,7 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("source")]
         public ListSource? Source { get; set; }
 
-        /// <summary>Pending swap-ins (persisted before Jellyfin is mutated, cleared after verification).</summary>
+        /// <summary>Pending membership placements (persisted before Jellyfin is mutated, cleared after placement settles).</summary>
         [JsonPropertyName("intents")]
         public List<SwapIntent> Intents { get; set; } = new();
 
@@ -427,9 +427,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
     /// </summary>
     public sealed class SwapIntent
     {
-        /// <summary>The placeholder being swapped in.</summary>
+        /// <summary>The placeholder being swapped in (empty for a deliberate apply).</summary>
         [JsonPropertyName("phId")]
         public string PhId { get; set; } = string.Empty;
+
+        /// <summary>The actor of an interrupted deliberate apply ("N"); null for a consented placeholder swap.</summary>
+        [JsonPropertyName("byUserId")]
+        public string? ByUserId { get; set; }
 
         /// <summary>The real item ids ("N") being inserted.</summary>
         [JsonPropertyName("itemIds")]

@@ -37,7 +37,7 @@ public class ListsServiceTests
         Assert.Equal(new[] { a, inLibrary, b }, h.Host.Resolved(playlist.Info.Id));
         Assert.Equal(new[] { E(a), E(inLibrary), P(missing.Id), E(b) }, result.View!.Order);
         Assert.Equal(new[] { E(a), E(inLibrary), P(missing.Id), E(b) }, h.Store.Load(access.ListIdN)!.Order);
-        Assert.Equal(1, result.View.Rev);
+        Assert.Equal(2, result.View.Rev); // pre-insert journal, then settled placement
         Assert.Equal(
             positional ? new[] { $"add:{FakeListHost.Short(inLibrary)}@1" } : new[] { $"add:{FakeListHost.Short(inLibrary)}@end", $"move:{FakeListHost.Short(inLibrary)}->1" },
             h.Host.Calls);
@@ -116,8 +116,9 @@ public class ListsServiceTests
             result.Skipped.Select(s => (s.Index, s.Reason)));
         Assert.Equal(new[] { present, ok }, h.Host.Resolved(playlist.Info.Id));
         Assert.Equal(new[] { ok.ToString("N") }, result.AddedAsItems);
-        // A real item added on its own leaves no document behind when the list has no placeholders.
-        Assert.Null(h.Store.Load(access.ListIdN));
+        // The placement journal is settled even when the list has no placeholders.
+        Assert.Empty(h.Store.Load(access.ListIdN)!.Items);
+        Assert.Empty(h.Store.Load(access.ListIdN)!.Intents);
     }
 
     [Fact]
@@ -205,10 +206,10 @@ public class ListsServiceTests
         var replayed = Ok<ApplyResultDto>(second);
         Assert.Equal(Ok<ApplyResultDto>(first).Added, replayed.Added);
         Assert.Equal(Ok<ApplyResultDto>(first).AddedAsItems, replayed.AddedAsItems);
-        Assert.Equal(1, replayed.View!.Rev);
+        Assert.Equal(2, replayed.View!.Rev);
         Assert.Single(h.Host.Calls);
         Assert.Single(h.Store.Load(access.ListIdN)!.Items);
-        Assert.Equal(1, h.Store.Load(access.ListIdN)!.Rev);
+        Assert.Equal(2, h.Store.Load(access.ListIdN)!.Rev);
         _ = item;
 
         // Another user with the same request id is not replayed.

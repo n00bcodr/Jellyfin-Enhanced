@@ -161,7 +161,7 @@ public class ListsReviewR1b2Tests
 
     // F8: a 10.11 move that throws once is retried, so the movie doesn't stay at the end.
     [Fact]
-    public async Task AFailedTenElevenMoveIsRetriedOnceBeforeFallingBackToJellyfinsOrder()
+    public async Task AFailedTenElevenMoveKeepsItsIntentUntilPlacementSucceeds()
     {
         using var h = new ListsHarness();
         h.Host.SupportsPositionalInsert = false;
@@ -184,7 +184,7 @@ public class ListsReviewR1b2Tests
         Assert.Empty(doc.Items);
         Assert.Equal(new[] { E(a), E(arrived), E(b) }, doc.Order);
 
-        // When the retry fails too, Jellyfin's order stands (no loop).
+        // When the same-pass retry fails too, keep the intent and resume on the next pass (no loop).
         var c = h.Host.AddItem();
         playlist.Raw.Add(new RawEntry(c, true));
         var second = Movie(806);
@@ -196,8 +196,12 @@ public class ListsReviewR1b2Tests
         Assert.Equal(2, h.Host.Calls.Count(call => call.StartsWith("move:", StringComparison.Ordinal)));
         Assert.Equal(new[] { a, arrived, b, c, arrived2 }, h.Host.Resolved(playlist.Info.Id));
         var after = h.Store.Load(access.ListIdN)!;
-        Assert.Empty(after.Items);
-        Assert.Equal(new[] { E(a), E(arrived), E(b), E(c), E(arrived2) }, after.Order);
+        Assert.Single(after.Intents);
+        Assert.Contains(after.Items, p => p.Id == second.Id);
+        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+        Assert.Equal(new[] { a, arrived2, arrived, b, c }, h.Host.Resolved(playlist.Info.Id));
+        Assert.Empty(h.Store.Load(access.ListIdN)!.Intents);
+        Assert.Empty(h.Store.Load(access.ListIdN)!.Items);
     }
 
     // F9: a crash right after Jellyfin's collection write: the persisted intent still makes the item sync-owned.

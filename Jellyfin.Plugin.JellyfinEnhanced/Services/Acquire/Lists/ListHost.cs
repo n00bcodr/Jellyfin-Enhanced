@@ -193,8 +193,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>
         /// Gives a list JE created its chosen name (it was created under the one carrying its marker); the list keeps its
-        /// folder. As the grant's user (a playlist's owner). Saves every time it is called, whatever the cached item shows;
-        /// failure handling leaves the shared cache untouched. Naming decisions must use <see cref="GetStoredName"/>.
+        /// folder. As the grant's user (a playlist's owner). Saves only while its durable operation marker remains;
+        /// failure handling leaves the shared cache untouched. Only the durable operation marker permits naming.
         /// </summary>
         /// <param name="write">The gate's grant (<see cref="ListWriteKind.FinishCreate"/>).</param>
         /// <param name="name">The chosen name.</param>
@@ -280,42 +280,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         Guid? FindSeason(Guid seriesId, int seasonNumber, User? user);
     }
 
-    // Entry managers save the entire cached item. A failed naming save or a native save of a different
-    // materialisation can leave its Name stale. There is no supported per-item cache refresh on either target:
-    // do not assign Name or publish a repository snapshot here. A create retry decides naming by the durable name;
-    // other edits wait until Jellyfin itself supplies a consistent instance.
-    internal static class ListNameConsistency
-    {
-        internal const string ReconcileReason = "name_conflict";
-
-        internal static bool Matches(IListHost host, Guid id)
-        {
-            var cached = host.GetList(id);
-            var stored = host.GetStoredName(id);
-            return Matches(cached?.Name, stored);
-        }
-
-        internal static bool Matches(string? cached, string? stored) => cached != null && stored != null && string.Equals(cached, stored, StringComparison.Ordinal);
-
-        internal static void Require(string? cached, string? stored)
-        {
-            if (!Matches(cached, stored))
-            {
-                throw new ListNameConflictException();
-            }
-        }
-    }
-
-    internal sealed class ListNameConflictException : ListAccessLostException
-    {
-        internal ListNameConflictException()
-            : base(Refusal(), "The cached list name differs from the repository; waiting for Jellyfin to reconcile it.")
-        {
-        }
-
-        internal static ListOutcome Refusal() => ListOutcome.Error(409, "list_name_conflict", "Jellyfin is reconciling the list's name; try again once it has refreshed.");
-    }
-
     /// <summary>The production <see cref="IListHost"/> over Jellyfin's library, playlist and collection managers.</summary>
     public sealed class JellyfinListHost : IListHost
     {
@@ -348,7 +312,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 #endif
 
         /// <inheritdoc />
-        public ListInfo? GetList(Guid listId) => ToInfo(_libraryManager.GetItemById(listId));
+        public ListInfo? GetList(Guid listId) => ToInfo(_libraryManager.RetrieveItem(listId));
 
         /// <inheritdoc />
         public string? GetStoredName(Guid listId) => _libraryManager.RetrieveItem(listId) is { } item && item is Playlist or BoxSet ? item.Name ?? string.Empty : null;
@@ -471,7 +435,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public Task AddToPlaylistAsync(ListWrite write, IReadOnlyList<Guid> itemIds, int? rawPosition)
         {
             write.Spend(write.ListId, ListWriteKind.Insert);
-            ListNameConsistency.Require(_libraryManager.GetItemById(write.ListId)?.Name, GetStoredName(write.ListId));
+            HealMetadata(write.ListId);
 #if JF12
             return _playlistManager.AddItemToPlaylistAsync(write.ListId, itemIds.ToArray(), rawPosition, write.ActAs);
 #else
@@ -483,7 +447,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public Task MoveInPlaylistAsync(ListWrite write, Guid itemId, int newIndex)
         {
             write.Spend(write.ListId, ListWriteKind.Move);
-            ListNameConsistency.Require(_libraryManager.GetItemById(write.ListId)?.Name, GetStoredName(write.ListId));
+            HealMetadata(write.ListId);
             return _playlistManager.MoveItemAsync(
                 write.ListId.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
                 itemId.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
@@ -495,8 +459,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public Task AddToCollectionAsync(ListWrite write, IReadOnlyList<Guid> itemIds)
         {
             write.Spend(write.ListId, ListWriteKind.CollectionAdd);
-            ListNameConsistency.Require(_libraryManager.GetItemById(write.ListId)?.Name, GetStoredName(write.ListId));
+            HealMetadata(write.ListId);
             return _collectionManager.AddToCollectionAsync(write.ListId, itemIds.Distinct().ToArray());
+        }
+
+        // Jellyfin's managers save the whole cached item, whereas native playlist edits materialise another instance.
+        // Keep membership on the manager's instance, but heal the metadata we don't own from the repository. There is
+        // deliberately no await between this copy and the manager invocation; Jellyfin has no conditional item save.
+        private void HealMetadata(Guid listId)
+        {
+            var cached = _libraryManager.GetItemById(listId);
+            var stored = _libraryManager.RetrieveItem(listId);
+            if (cached is not (Playlist or BoxSet) || stored == null || cached.GetType() != stored.GetType())
+            {
+                throw new ListAccessLostException(ListOutcome.Error(404, "not_found", "The list no longer exists."), "The durable list no longer exists.");
+            }
+
+            CopyEditableMetadata(stored, cached);
+        }
+
+        private static void CopyEditableMetadata(BaseItem stored, BaseItem cached)
+        {
+            // ItemUpdateController's editable fields and BaseItemMapper's persisted metadata on both targets.
+            // LinkedChildren, path and identity stay with the manager; none of these fields belong to JE membership.
+            cached.Name = stored.Name;
+            cached.ForcedSortName = stored.ForcedSortName;
+            cached.OriginalTitle = stored.OriginalTitle;
+#if JF12
+            cached.OriginalLanguage = stored.OriginalLanguage;
+#endif
+            cached.Overview = stored.Overview;
+            cached.Tagline = stored.Tagline;
+            cached.CommunityRating = stored.CommunityRating;
+            cached.CriticRating = stored.CriticRating;
+            cached.OfficialRating = stored.OfficialRating;
+            cached.CustomRating = stored.CustomRating;
+            cached.IndexNumber = stored.IndexNumber;
+            cached.ParentIndexNumber = stored.ParentIndexNumber;
+            cached.PremiereDate = stored.PremiereDate;
+            cached.EndDate = stored.EndDate;
+            cached.ProductionYear = stored.ProductionYear;
+            cached.DateCreated = stored.DateCreated;
+            cached.PreferredMetadataLanguage = stored.PreferredMetadataLanguage;
+            cached.PreferredMetadataCountryCode = stored.PreferredMetadataCountryCode;
+            cached.IsLocked = stored.IsLocked;
+            cached.LockedFields = stored.LockedFields.ToArray();
+            cached.Genres = stored.Genres.ToArray();
+            cached.Studios = stored.Studios.ToArray();
+            cached.Tags = stored.Tags.ToArray();
+            cached.ProductionLocations = stored.ProductionLocations.ToArray();
+            cached.ProviderIds = new Dictionary<string, string>(stored.ProviderIds, StringComparer.OrdinalIgnoreCase);
+            cached.ImageInfos = stored.ImageInfos.ToArray();
+            if (cached is Playlist playlist && stored is Playlist savedPlaylist)
+            {
+                playlist.OwnerUserId = savedPlaylist.OwnerUserId;
+                playlist.OpenAccess = savedPlaylist.OpenAccess;
+                playlist.Shares = savedPlaylist.Shares.ToArray();
+            }
+
+            if (cached is BoxSet boxSet && stored is BoxSet savedBoxSet)
+            {
+                boxSet.DisplayOrder = savedBoxSet.DisplayOrder;
+            }
         }
 
         /// <inheritdoc />
@@ -535,9 +559,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public async Task FinishCreateAsync(ListWrite write, string name)
         {
             write.Spend(write.ListId, ListWriteKind.FinishCreate);
-            // Always save when asked: the cached Name alone is not proof that an earlier save succeeded. There is no
-            // supported per-item cache invalidation on either target. On failure leave the cache alone: neither writing
-            // Name nor registering an unversioned repository snapshot can be coordinated with a native rename.
+            var stored = _libraryManager.RetrieveItem(write.ListId);
+            var cached = _libraryManager.GetItemById(write.ListId);
+            var marker = cached == null ? null : CreateMarkerOf(cached);
+            if (stored == null || marker == null
+                || !string.Equals(stored.Name, ListService.CreateName(name, marker.Value), StringComparison.Ordinal))
+            {
+                return; // A native editor already chose a name; only this operation's durable marker is ours.
+            }
+
+            CopyEditableMetadata(stored, cached!);
             switch (_libraryManager.GetItemById(write.ListId))
             {
                 case Playlist playlist:

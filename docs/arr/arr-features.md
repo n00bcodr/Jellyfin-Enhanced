@@ -1363,10 +1363,11 @@ follows Jellyfin's own rights and the household's request rules:
   answers without the list's id, kind or name. A failed save of JE's chosen name keeps a name the person changed while
   it was pending, including a rename made while the failed save is being handled. Creates, retries and recovery check
   the saved name directly; a stale cached name never gives JE permission to rename the list again. Entry edits
-  (including add, move, removal and automatic swap-in) pause with a retryable name conflict whenever Jellyfin's cached
-  name differs from its saved name. JE marks the list for reconciliation and preserves the saved name; edits resume
-  once Jellyfin has refreshed its instance. Retrying a create finishes naming only while the saved name still carries
-  that create's marker; a person's native rename stands.
+  copy the saved name and other editable metadata onto Jellyfin's cached item immediately before changing membership.
+  A native rename therefore stands and edits can continue. Retrying a create finishes naming only while the saved
+  name still carries that create's marker. Interrupted playlist placement keeps its saved position until retry or
+  reconciliation settles it, without inserting another copy. A native rename racing Jellyfin's own asynchronous
+  whole-item save remains a Jellyfin core limitation.
 - **Order.** Entries keep their place among the real items, also when the same item is in a playlist twice. Dragging an
   entry moves it; dragging a real item moves it in Jellyfin too (only the first copy of a duplicated item can move).
   Collections list their entries by release date, undated (TBA) ones last.

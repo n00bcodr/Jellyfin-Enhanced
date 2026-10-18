@@ -73,6 +73,7 @@ public class ListsHostTests
             cached ??= kind == ListKinds.Playlist
                 ? new Playlist { Id = write.ListId, OwnerUserId = owner.Id, Name = list.Info.Name }
                 : new BoxSet { Id = write.ListId, Name = list.Info.Name };
+            cached.Path = list.Path;
             storedName ??= list.SavedName;
             try
             {
@@ -92,11 +93,6 @@ public class ListsHostTests
         made.SavedName = storedName;
         fail = false;
 
-        var deferred = await h.Service.CreateListAsync(owner, kind, "JE name", false, entries, ListsHarness.K("rename-race"), CancellationToken.None);
-        Assert.Equal(409, deferred.StatusCode);
-        Assert.Equal("The person's name", made.SavedName);
-        Assert.Equal("name_conflict", h.Store.Load(made.Info.Id.ToString("N"))!.Reconcile);
-        made.Info = made.Info with { Name = storedName! }; // Jellyfin rematerialises; JE never registers a snapshot.
         var retry = ListsHarness.Ok<CreateListResultDto>(await h.Service.CreateListAsync(owner, kind, "JE name", false, entries, ListsHarness.K("rename-race"), CancellationToken.None));
 
         Assert.Equal("The person's name", storedName);
@@ -115,11 +111,13 @@ public class ListsHostTests
     {
         var owner = Guid.NewGuid();
         BaseItem item = kind == ListKinds.Playlist
-            ? new Playlist { Id = Guid.NewGuid(), OwnerUserId = owner, Name = "Marked" }
-            : new BoxSet { Id = Guid.NewGuid(), Name = "Marked" };
+            ? new Playlist { Id = Guid.NewGuid(), OwnerUserId = owner, Name = ListService.CreateName("JE name", owner), Path = "/config/data/" + ListService.CreateName("JE name", owner) }
+            : new BoxSet { Id = Guid.NewGuid(), Name = ListService.CreateName("JE name", owner), Path = "/config/data/" + ListService.CreateName("JE name", owner) };
+        var storedMarkerName = item.Name;
         var saving = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var library = new Mock<ILibraryManager>();
         library.Setup(l => l.GetItemById(item.Id)).Returns(item);
+        library.Setup(l => l.RetrieveItem(item.Id)).Returns(kind == ListKinds.Playlist ? new Playlist { Id = item.Id, Name = storedMarkerName } : new BoxSet { Id = item.Id, Name = storedMarkerName });
         library.Setup(l => l.UpdateItemAsync(item, It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>())).Returns(saving.Task);
         var playlists = new Mock<IPlaylistManager>();
         playlists.Setup(p => p.UpdatePlaylist(It.IsAny<PlaylistUpdateRequest>()))
@@ -185,6 +183,8 @@ public class ListsHostTests
         var library = new Mock<ILibraryManager>();
         library.Setup(l => l.GetItemById(playlist.Id)).Returns(playlist);
         library.Setup(l => l.GetItemById(box.Id)).Returns(box);
+        library.Setup(l => l.RetrieveItem(playlist.Id)).Returns(() => new Playlist { Id = playlist.Id, Name = playlistName, OwnerUserId = owner.Id });
+        library.Setup(l => l.RetrieveItem(box.Id)).Returns(() => new BoxSet { Id = box.Id, Name = collectionName, ProviderIds = new() { [JellyfinListHost.CreateMarkerKey] = marker.ToString("N") } });
         library.Setup(l => l.GetItemList(It.Is<InternalItemsQuery>(q => q.IncludeItemTypes.Contains(Jellyfin.Data.Enums.BaseItemKind.Playlist)))).Returns(new BaseItem[] { playlist });
         library.Setup(l => l.GetItemList(It.Is<InternalItemsQuery>(q => q.IncludeItemTypes.Contains(Jellyfin.Data.Enums.BaseItemKind.BoxSet)))).Returns(new BaseItem[] { box });
         var files = new Mock<MediaBrowser.Model.IO.IFileSystem>();
@@ -259,7 +259,7 @@ public class ListsHostTests
         Assert.Equal("Heist", box.Name);
         Assert.Same(playlist, cachedPlaylist);
         Assert.Same(box, cachedBox);
-        library.Verify(l => l.RetrieveItem(It.IsAny<Guid>()), Times.Never);
+        library.Verify(l => l.RetrieveItem(It.IsAny<Guid>()), Times.Exactly(2));
         library.Verify(l => l.RegisterItem(It.IsAny<BaseItem>()), Times.Never);
         Assert.Equal(playlistName, host.GetStoredName(playlist.Id));
         Assert.Equal(collectionName, host.GetStoredName(box.Id));

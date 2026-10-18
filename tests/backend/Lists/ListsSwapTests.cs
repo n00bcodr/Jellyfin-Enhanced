@@ -767,14 +767,15 @@ public class ListsSwapTests
         var movie = Movie(97);
         await Add(h, access, null, movie);
         await h.Swap.DrainAsync(None);
-        h.Swap.SettleDelay = TimeSpan.FromSeconds(1);
+        // Hold the worker in its cancellable settle delay while the pending view is observed.
+        h.Swap.SettleDelay = TimeSpan.FromMinutes(1);
         h.Swap.Start();
         try
         {
             var arrived = h.Host.AddItem(tmdb: 97);
             h.Swap.NotifyItemChanged(arrived);
             Guid? pending = null;
-            for (var i = 0; i < 100 && pending == null; i++)
+            for (var i = 0; i < 500 && pending == null; i++)
             {
                 pending = h.Swap.GetPendingMatch(access.ListIdN, movie.Id);
                 await Task.Delay(10);
@@ -783,10 +784,8 @@ public class ListsSwapTests
             Assert.Equal(arrived, pending);
             var view = await h.Service.GetViewAsync(access, None);
             Assert.Equal(arrived.ToString("N"), view.Placeholders.Single().InLibraryItemId);
-            for (var i = 0; i < 100 && h.Host.Resolved(playlist.Info.Id).Count == 0; i++)
-            {
-                await Task.Delay(50);
-            }
+            await h.Swap.StopAsync(None);
+            await h.Swap.DrainAsync(None);
 
             Assert.Equal(new[] { arrived }, h.Host.Resolved(playlist.Info.Id));
             Assert.Null(h.Swap.GetPendingMatch(access.ListIdN, movie.Id));
@@ -1150,7 +1149,8 @@ public class ListsSwapTests
         var third = h.Host.AddPlaylist(owner);
         var thirdResult = await Add(h, h.AccessFor(third, owner), null, Season(140, 1));
         Assert.Empty(thirdResult.Added);
-        Assert.Null(h.Store.Load(h.AccessFor(third, owner).ListIdN));
+        Assert.Empty(h.Store.Load(h.AccessFor(third, owner).ListIdN)!.Items);
+        Assert.Empty(h.Store.Load(h.AccessFor(third, owner).ListIdN)!.Intents);
     }
 
     [Fact]
