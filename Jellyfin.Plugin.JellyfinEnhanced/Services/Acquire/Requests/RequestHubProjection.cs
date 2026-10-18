@@ -159,7 +159,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var shown = new List<(RequestWant Want, RequestPolicyFacts Facts)>();
             foreach (var want in all)
             {
-                var facts = _service.Policy.Evaluate(caller.UserId, want.Input);
+                var facts = _service.Policy.Evaluate(caller.UserId, want.Input, want.TargetKey);
                 if (facts.Visible) shown.Add((want, facts));
             }
             var more = shown.Count > MaxItems;
@@ -176,7 +176,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 foreach (var (want, _) in shown)
                 {
-                    var instance = _service.Policy.Evaluate(want.UserId, want.Input).InstanceId;
+                    var instance = _service.Policy.Evaluate(want.UserId, want.Input, want.TargetKey).InstanceId;
                     var placeKey = instance + "|" + want.Input.RootFolder + "|" + want.Input.Key;
                     if (!places.ContainsKey(placeKey)) places[placeKey] = await _places.PlaceAsync(instance, want.Input.RootFolder, want.Input.Key, ct).ConfigureAwait(false);
                 }
@@ -184,7 +184,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var items = shown.Select(s =>
             {
                 var w = s.Want;
-                var requester = _service.Policy.Evaluate(w.UserId, w.Input);
+                var requester = _service.Policy.Evaluate(w.UserId, w.Input, w.TargetKey);
                 var requesterViewer = _service.View.Viewer(w.UserId);
                 var quota = _service.Ledger.Quota(requester, now);
                 var title = meta.GetValueOrDefault(w.Input.Key) ?? new HubTitleMeta();
@@ -211,6 +211,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     createdAt = w.CreatedAt,
                     reason = w.Reason,
                     overQuota = w.Reason == "over_quota",
+                    // Household rules (phase 4b): the conditions behind the wait (now, when held at send by them; else as created).
+                    rules = RulesOf(w, requester),
                     stuck,
                     // Already OK'd (on its way, or held after its OK): nothing here waits for an OK any more.
                     okd = w.Status is not "pending",
@@ -224,6 +226,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         name = Person(w.UserId) is { Disabled: false } person && person.Name.Length > 0 ? person.Name : null,
                         role = requester.Role.ToLowerInvariant(),
                         quota = new { used = quota.Used, limit = quota.Limit, available = quota.Available },
+                        // The group pool their requests draw on (an aggregate; nobody else's accounting).
+                        pool = requester.Pool is { } pool ? PoolView(pool, now) : null,
                     },
                     // The title's rating against a limited requester's own limit; nothing when they have none.
                     rating = requesterViewer?.HasParentalLimit == true ? new { label = title.Rating, within = requester.Visible } : null,
@@ -244,6 +248,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         /// <summary>
+        /// The household-rule verdict to show with a request (phase 4b): the current one while it is held by the rules at
+        /// send, else the one it was created with; null when the rules said nothing. Title facts and household limits
+        /// only, never anyone's accounting.
+        /// </summary>
+        private HouseholdRuleVerdict? RulesOf(RequestWant want, RequestPolicyFacts? requester, Guid? user = null)
+        {
+            if (want.Reason is RequestLedger.RuleReview or RequestLedger.HouseholdRule && want.Status == "pending")
+            {
+                var now = (requester ?? _service.Policy.Evaluate(user ?? want.UserId, want.Input, want.TargetKey)).Rules;
+                // Facts not in memory (after a restart nothing has read them yet) aren't "unknown" to the household: the
+                // verdict it was created or held with stands until they are read again.
+                if (now is { Verdict: not HouseholdRules.None } && (want.Rules == null || now.Hits.All(h => h.Matched != null))) return now;
+            }
+            return want.Rules;
+        }
+
+        /// <summary>A group pool's use as shown to members and approvers: name, used, limit and the next free slot.</summary>
+        internal object PoolView(GroupPoolBinding pool, DateTimeOffset now)
+        {
+            var use = _service.Ledger.PoolQuota(pool, now);
+            return new { name = pool.Name, used = use.Used, limit = pool.Limit, remaining = use.Remaining, nextSlotAt = use.NextSlotAt };
+        }
+
+        /// <summary>
         /// The caller's own requests in the ledger with display data: open ones always, finished,
         /// declined and cancelled ones for 30 days, one row per title edition (<see cref="LedgerRequestFacts.PerTitle"/>).
         /// <c>canCancel</c> marks rows with requests not sent yet (<c>cancelIds</c>).
@@ -256,7 +284,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // One row per title edition: an ask and the Seerr request it was linked to when requests moved are one title.
             var own = LedgerRequestFacts.PerTitle(_service.Ledger.List(caller.UserId, false)
                 .Where(w => w.Status is "pending" or "queued" or "sent" or "stale" || now - w.UpdatedAt <= KeepClosedFor)
-                .Where(w => _service.Policy.Evaluate(caller.UserId, w.Input).Visible)
+                .Where(w => _service.Policy.Evaluate(caller.UserId, w.Input, w.TargetKey).Visible)
                 .OrderByDescending(w => w.CreatedAt)).ToList();
             var more = own.Count > MaxItems;
             own = own.Take(MaxItems).ToList();
@@ -284,6 +312,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     // Every request the row stands for that Cancel withdraws (the row's own id may be a sent one).
                     cancelIds = cancel,
                     declineReason = w.Status == "declined" ? DeclineReason(w.Id) : null,
+                    rules = RulesOf(w, null, caller.UserId),
                     title = title.Title,
                     year = title.Year,
                     poster = title.Poster,
@@ -313,7 +342,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             int needOk = 0, stuck = 0;
             foreach (var want in _service.Ledger.List(caller, true).Take(1000))
             {
-                var facts = _service.Policy.Evaluate(caller, want.Input);
+                var facts = _service.Policy.Evaluate(caller, want.Input, want.TargetKey);
                 if (!facts.Visible) continue;
                 if (StuckReasons.Contains(want.Reason) || parked.Contains(want.Id)) stuck++;
                 else if (viewer.CanApprove && facts.CanApprove && (want.Input.Variant != "4k" || facts.Can4k)) needOk++;

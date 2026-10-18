@@ -948,6 +948,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Server-owned record of the one-time automation migration (empty until it ran). Never shown or edited on the page.</summary>
         public string ArrAutomationMigration { get; set; } = string.Empty;
 
+        // ---- Phase 4b: household rules, the Trusted role, group quotas, administrator Seerr request options ----
+
+        /// <summary>
+        /// Household rules: the Trusted role, and fixed conditions per role (rating, genre, original language, size
+        /// estimate, already on a streaming service the household has) that approve, send for a look or refuse a
+        /// request. Needs <see cref="ArrPhase4Enabled"/> and <see cref="ArrPhase3Enabled"/>; the conditions apply only
+        /// while Jellyfin Enhanced handles requests (Seerr's own rules apply in Seerr mode). Off by default: the presets
+        /// decide as before, and nobody is Trusted.
+        /// </summary>
+        public bool ArrPhase4HouseholdRulesEnabled { get; set; }
+
+        /// <summary>
+        /// Group quotas: shared request pools for the household or for roles, on top of each person's own limit. Needs
+        /// <see cref="ArrPhase4HouseholdRulesEnabled"/> (and Jellyfin Enhanced handling requests). Off by default.
+        /// </summary>
+        public bool ArrPhase4GroupQuotasEnabled { get; set; }
+
+        /// <summary>
+        /// Administrators may pick Seerr's server, quality profile and root folder (standard or 4K) on a request Jellyfin
+        /// Enhanced sends to Seerr. Needs <see cref="ArrPhase4Enabled"/> and <see cref="ArrPhase3Enabled"/>, and the
+        /// administrator's Seerr account needs Seerr's advanced-request permission. Off by default.
+        /// </summary>
+        public bool ArrPhase4SeerrRequestOptionsEnabled { get; set; }
+
+        /// <summary>Server-owned household rule conditions per role (JSON). Edited on the Requests page's Household tab.</summary>
+        public string ArrHouseholdRules { get; set; } = string.Empty;
+
+        /// <summary>The household's streaming country (ISO 3166-1, e.g. <c>GB</c>); empty: streaming conditions are inactive.</summary>
+        public string ArrHouseholdStreamingCountry { get; set; } = string.Empty;
+
+        /// <summary>Comma-separated TMDB watch-provider ids of the services the household has; empty: streaming conditions are inactive.</summary>
+        public string ArrHouseholdStreamingServices { get; set; } = string.Empty;
+
+        /// <summary>Server-owned group quota pools (JSON array, in precedence order). Edited on the Household tab.</summary>
+        public string ArrGroupQuotaPools { get; set; } = string.Empty;
+
         // ---- Requests & downloads, phase 1: status on pages and live updates ----
 
         /// <summary>

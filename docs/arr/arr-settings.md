@@ -691,6 +691,71 @@ budget window with what is used, what is waiting for a read-back and when it has
 per target (with *Try again now*), automatic requests waiting at send by reason, the request backend's boundary and the
 one-time setup with its notice (*Got it* hides it).
 
+#### Household rules and group quotas (phase 4)
+
+| Setting | Default | What it does |
+|---|---|---|
+| Household rules (`ArrPhase4HouseholdRulesEnabled`) | off | The Trusted role and, with Jellyfin Enhanced handling requests, fixed conditions per role. Needs phase 4 and phase 3. |
+| Group quotas (`ArrPhase4GroupQuotasEnabled`) | off | Shared request pools. Needs household rules and Jellyfin Enhanced handling. |
+| Administrators pick Seerr's server, profile and folder (`ArrPhase4SeerrRequestOptionsEnabled`) | off | Seerr handling: Jellyfin administrators with Seerr's advanced request permission choose them for their own requests. Needs phase 4 and phase 3. |
+
+The conditions, streaming country and services, and pools (`ArrHouseholdRules`, `ArrHouseholdStreamingCountry`,
+`ArrHouseholdStreamingServices`, `ArrGroupQuotaPools`) are edited on the Requests page's **Household** tab, not on the
+configuration page; a configuration-page save keeps the server's values. With Seerr handling requests, Seerr's own rules
+apply and the tab shows them read-only. What the rules do is described in
+[Household rules, Trusted and group quotas](arr-features.md#household-rules-trusted-and-group-quotas-phase-4).
+
+#### Administrator Seerr request options
+
+`ArrPhase4SeerrRequestOptionsEnabled` (off) needs phase 4 and phase 3 and only matters while Seerr handles requests.
+With it on, a Jellyfin administrator may choose which of Seerr's Radarr/Sonarr servers a request goes to, its quality
+profile and root folder (and standard or 4K through the edition, which must match the server). The choice is sent to
+Seerr as Seerr's `serverId`, `profileId` and `rootFolder`, as the person who asked. It is allowed only when:
+
+- the person choosing is a Jellyfin administrator (everyone else gets `admin_required`, whatever their Seerr
+  permissions), and
+- the Seerr account the request goes out as holds Seerr's *Admin*, *Advanced Requests* or *Manage Requests* permission
+  (`seerr_advanced_required`). When an administrator chooses while approving someone else's ask, that person's Seerr
+  account needs the permission too, because Seerr applies the choice to the account the request is made as.
+
+Visibility stays tied to the request’s saved Seerr source and destination when Seerr settings change. An unresolved
+destination requires access to every library, with an administrator exception; parental checks still apply.
+
+A choice is checked against Seerr's servers (read from Seerr, cached for about a minute) when the request is made,
+when it is approved and again, read fresh, right before it is sent. A server, profile or folder that no longer exists,
+a renamed server, a server whose 4K setting changed, or a server Seerr now reaches at another address or with another
+key (even under the same name, profiles and folders) holds the request with `seerr_options_changed` instead of sending
+it to Seerr's defaults. Turning the switch off holds waiting requests that carry a choice
+(`seerr_options_disabled`); a lost Seerr permission holds them with `seerr_advanced_required`. A request Seerr stored
+without the chosen options doesn't count as sent: it is held for an administrator to check in Seerr. When Seerr answers
+that the title is already requested (or has no seasons left to request), that counts only if the request already there
+has the chosen server, profile and folder; covered anywhere else, it is held with `seerr_options_changed`. For a series,
+every season asked for must end up at the chosen server, profile and folder: when Seerr makes the request for some
+seasons while another is already requested elsewhere (or already on its way or available, with no request showing
+where), the request is held with `seerr_options_changed` for an administrator to check in Seerr. While Jellyfin
+Enhanced handles requests, a Seerr choice is refused (`invalid_defaults`).
+
+A choice is never answered by another request somewhere else: asking for a title at one server, profile and folder
+while your own or someone else's request went to another (or to Seerr's defaults) makes a request of its own, checked
+when it is sent, instead of "already recorded" or "someone already asked". Asking again with the same choice, or
+without one, answers with the request already there; asking for several seasons at once answers with one of the
+requests at that choice, never one somewhere else. The new seasons a "Keep getting new episodes" request asks Seerr
+for go to the same server, profile and folder, checked again when each is sent. Someone's request for that season
+somewhere else (or not sent yet, or waiting for an OK somewhere else) doesn't stop it; one at the same choice does, and
+so does Seerr already having the season from anyone. When one is held because Seerr's servers changed, approving the
+request with the same server, profile and folder chosen again (read fresh) sends it. The same works for a request held
+because Seerr stored it without the choice, once it's put right in Seerr: approving it with the choice read fresh checks
+Seerr again first and nothing is sent twice. Choosing another destination for a request that already went out is
+refused (`request_changed`), and so is approving one after Jellyfin Enhanced was pointed at another Seerr (another
+address or key): what went out to the first Seerr is never asked for again at the new one.
+
+While the switch is on, the older Seerr pages follow the same boundary: for anyone who isn't a Jellyfin administrator,
+the server, profile, root folder, language profile and tags are removed from requests (even with Seerr's advanced
+permissions), and Seerr's server list and server details (`jellyseerr/sonarr`, `jellyseerr/radarr`,
+`jellyseerr/{type}/{serverId}`) answer 403 `admin_required`. The Sonarr title lookup some series requests need stays
+open. With the switch off they behave as before. Family members' request lists and the Requests page never show a
+chosen server, profile or folder.
+
 #### Household tab
 
 Admins can edit the preset, default role, quota limit, per-role limits, and each person's role and limit from the Household tab of the Requests page instead of the JSON fields.

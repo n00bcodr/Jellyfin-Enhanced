@@ -283,6 +283,7 @@
         let waiting = 0;
         let nothing = 0;
         let paused = 0;
+        let ruled = 0;
         let failed = 0;
         for (const r of results) {
             if (r.state === 'waiting') waiting++;
@@ -290,6 +291,8 @@
             else if (r.state === 'nothing') nothing++;
             // Its drive filled up since the page was drawn: said as such, not as a failure.
             else if (r.state === 'blocked' && r.reason === 'low_disk') paused++;
+            // Phase 4b: refused by the household rules, said as such.
+            else if (r.state === 'ruled') ruled++;
             else failed++;
         }
         const pieces = [];
@@ -297,6 +300,7 @@
         if (waiting) pieces.push(waiting === 1 ? tr('arr_collection_summary_waiting_one', { contact }) : tr('arr_collection_summary_waiting', { n: waiting, contact }));
         if (nothing) pieces.push(tr('arr_collection_summary_nothing', { n: nothing }));
         if (paused) pieces.push(tr('arr_collection_summary_paused', { n: paused }));
+        if (ruled) pieces.push(tr('arr_rules_collection_refused', { n: ruled }));
         if (failed) pieces.push(failed === 1 ? tr('arr_collection_summary_failed_one') : tr('arr_collection_summary_failed', { n: failed }));
         return pieces.join(' · ');
     }

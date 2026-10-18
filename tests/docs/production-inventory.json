@@ -83,6 +83,14 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRulesController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireSeerrOptionsController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAddController.cs",
       "category": "Controllers"
     },
@@ -591,11 +599,31 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/GroupQuotaPolicy.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/HouseholdDirectory.cs",
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/HouseholdFlags.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/HouseholdRules.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/HouseholdRulesService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/HouseholdService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/HouseholdTrust.cs",
       "category": "Services"
     },
     {
@@ -604,6 +632,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestBackends.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestDestination.cs",
       "category": "Services"
     },
     {
@@ -624,6 +656,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestLedgerImport.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestLedgerTitles.cs",
       "category": "Services"
     },
     {
@@ -656,6 +692,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestTitleIdentity.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RuleFacts.cs",
       "category": "Services"
     },
     {
@@ -1344,6 +1388,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/calendar/calendar-page-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/household/household-rules.js",
       "category": "js"
     },
     {
@@ -2424,6 +2472,47 @@
       "method": "LabDelete",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
       "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/household/rules",
+      "method": "Rules",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRulesController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/household/rules",
+      "method": "SaveRules",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRulesController.cs",
+      "following_attributes": [
+        "BodyLimit(MaxBodyBytes)"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/household/streaming-services",
+      "method": "StreamingServices",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRulesController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/requests/preview",
+      "method": "Preview",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRulesController.cs",
+      "following_attributes": [
+        "BodyLimit(MaxPreviewBytes)"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/seerr/request-options",
+      "method": "RequestOptions",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireSeerrOptionsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
     },
     {
       "verb": "GET",
@@ -6379,6 +6468,62 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrPhase4HouseholdRulesEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4GroupQuotasEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4SeerrRequestOptionsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrHouseholdRules",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrHouseholdStreamingCountry",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrHouseholdStreamingServices",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrGroupQuotaPools",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrPhase1Enabled",
       "type": "bool",
       "initializer": null,
@@ -9995,9 +10140,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 553,
-    "routes": 262,
-    "configuration_properties": 603,
+    "files": 565,
+    "routes": 267,
+    "configuration_properties": 610,
     "storage_references": 88,
     "scheduled_tasks": 14,
     "locales": 33

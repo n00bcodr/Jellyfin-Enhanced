@@ -1653,6 +1653,39 @@ The automation engine's state, its recent decisions, and its admin actions.
 | POST | `arr/admin/automation/notice/dismiss` | Admin, integration and phase 1 on: hides the one-time migration notice (`{"dismissed":true}` when it was showing) |
 | POST | `arr/admin/automation/breakers/reset` | Admin, integration and phase 1 on: body `{"target":"<instance id>"}` (or `"seerr"`); closes that target's breaker so the next automatic send is tried at once (`400 invalid_request` for a malformed target) |
 
+### Household rules and request options (phase 4b)
+
+Household rules, shared allowances, request previews and Seerr request options.
+
+| Method | Path | Access and contract |
+|---|---|---|
+| GET | `acquire/household/rules` | Admin, phase 4 + phase 3 + household rules on: the fixed conditions per role (Kid, Member, Trusted: rating, genre, original language, size estimate, streaming service; each with a `match` and an `otherwise` action of `none`/`approve`/`review`/`deny`), the household streaming country and TMDB provider ids, the group pools with their `used` count in the window, and the choices (roles, actions, TMDB genres). With Seerr handling requests `editable` is `false` and `seerr` shows Seerr's own rules read-only (override rules as Seerr describes them, `null` when it can't; auto-approve; default quotas). Private, never cached |
+| POST | `acquire/household/rules` | Admin, same switches, Jellyfin Enhanced handling requests: body `{"rules"?, "streamingCountry"?, "streamingServices"?: [ids], "pools"?: [{id, name, limit, roles, users}]}`; only named parts change, everything is validated first (`400 invalid_*`), pools need group quotas on (`403 feature_disabled`), Seerr handling refuses (`409 rules_seerr_owned`) |
+| GET | `acquire/household/streaming-services?country=GB` | Admin, household rules on: the streaming services TMDB lists for a country (movies and series), `{services:[{id,name}]}`; `503 tmdb_unavailable` when TMDB can't be read |
+| POST | `acquire/requests/preview` | Anyone who may ask, phase 4 + phase 3 on: body `{"items":[{"clientRequestId"?, "input":{…as POST acquire/requests…}}]}` (at most 20). What the asks would do one after another, nothing written: per item `outcome`, `status` (absent when refused), `reason` (`rule_review`, `group_quota`, `over_quota`, `household_rule`, …), `cost`, `estimateGb`, `follows`, `already`, `heldSeasons` (split at the series threshold) and `rules` (the household-rule conditions behind it); `summary` `{now, needOk, refused, cost, quota, pool}` |
+| GET | `arr/admin/seerr/request-options?kind=movie\|tv` | Admin, phase 4 with phase 3 and `ArrPhase4SeerrRequestOptionsEnabled` on (else `403 seerr_options_disabled`): Seerr's Radarr (`movie`) or Sonarr (`tv`) servers for choosing where a Seerr request goes. `{enabled, canUse, reason, servers:[{id, name, is4k, isDefault, defaultProfileId, defaultRootFolder, profiles:[{id, name}], rootFolders:[{path}], options}]}`; `enabled` is false (`reason: "not_seerr_backend"`) while Jellyfin Enhanced handles requests, `canUse` false with `reason: "seerr_advanced_required"` when the administrator's Seerr account lacks Seerr's advanced-request permission (or `backend_unavailable`), and `servers` is then empty. `options` is the stamp to send back with a choice. Never an address, key or host name. `400 invalid_input` for another `kind`, `503 backend_unavailable` when Seerr can't be read. Private, never cached |
+
+**Seerr request options on a request.** In Seerr mode an administrator's request input (`POST acquire/requests`, or an
+approval's edited `input` on `POST acquire/requests/{id}/approve`) may carry `SeerrServerId` (Seerr's server id, 0 or more), `SeerrProfileId`, `SeerrRootFolder` (an absolute path, at most
+1024 characters) and `SeerrOptions` (the server's `options` stamp from the route above, at most 128 characters): all
+four or none, never together with `InstanceId`, `ProfileId` or `RootFolder` (`400 invalid_input`). They become part
+of the stored request and its fingerprint (an input without them keeps the fingerprint it always had). Refusals:
+`403 admin_required` (not a Jellyfin administrator), `403 seerr_options_disabled` (switch off), `403
+seerr_advanced_required` (the Seerr account it goes out as lacks Seerr's advanced-request permission), `409
+seerr_options_changed` (the server is gone or its facts changed since the stamp, including where Seerr reaches it; read the options again), `400
+seerr_options_invalid` (the edition, profile or folder doesn't belong to that server), `503 backend_unavailable`
+(Seerr's servers can't be read now) and `400 invalid_defaults` while Jellyfin Enhanced handles requests. A waiting
+request whose choice stops fitting is held with the same reasons; nobody else's request answers include the choice.
+A request with a choice is only ever answered by a request going to the same server, profile and folder against the
+same stamp (otherwise it is a request of its own, checked when it is sent), and new seasons of a "keep getting"
+request carry the choice. Only a request at the same destination (sent, queued or waiting) keeps a "keep getting"
+request from following a new season. Approving a held request with only a new stamp for the same server, profile and
+folder on the same Seerr re-confirms it (`200`): what it sent stays, what was held goes out with the new stamp, and a
+part Seerr already has but that wasn't confirmed is read back first (it stays uncertain until then). Another
+destination for a request that already went out, or any approval (as it is included) that would send what went out to
+another Seerr, is `409 request_changed`; a part that was written resumes only where it was (`409 request_in_flight`
+otherwise).
+
 ### Discover, household, and approvals
 
 Routes for JE mode's Discover tab and search row, and for approvals and the household. API keys and unknown users get `403 user_required`; Watchers `requests_create_required`; Seerr mode and phase 3 off `feature_disabled`.

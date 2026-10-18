@@ -18,7 +18,7 @@
     /** How long the caller's capabilities are reused before asking the server again. */
     const ME_TTL_MS = 60000;
     /** Reasons of an accepted ask that mean "waits for an OK". */
-    const WAITING = new Set(['awaiting_approval', 'over_quota', 'seerr_whole_series_only', 'authorization_changed', 'identity_changed', 'configuration_changed', 'seerr_user_unlinked', 'no_4k_instance']);
+    const WAITING = new Set(['awaiting_approval', 'over_quota', 'seerr_whole_series_only', 'authorization_changed', 'identity_changed', 'configuration_changed', 'seerr_user_unlinked', 'no_4k_instance', 'rule_review', 'group_quota']);
 
     let meState = null; // { at, epoch, promise, value }
     /** @type {Map<string, string>} input fingerprint -> clientRequestId kept until a definitive answer */
@@ -299,8 +299,9 @@
     /**
      * Turns an HTTP answer of the create/cancel routes into a result with a family state.
      * @param {number} status HTTP status.
-     * @param {Object|null} body Response body ({outcome, reason, certainty, message, requestId}).
-     * @returns {{ok: boolean, status: number, state: string, outcome: string, reason: string, certainty: string, requestId: string|null}} Result.
+     * @param {Object|null} body Response body ({outcome, reason, certainty, message, requestId, rules}).
+     * @returns {{ok: boolean, status: number, state: string, outcome: string, reason: string, certainty: string, requestId: string|null}} Result
+     *     (state 'ruled' for a refusal by the household rules; rules: their verdict, when the server sent one).
      */
     function interpret(status, body) {
         const outcome = typeof body?.outcome === 'string' ? body.outcome : '';
@@ -322,12 +323,15 @@
         else if (status === 409) state = reason === 'idempotency_conflict' ? 'changed' : 'busy';
         else if (status === 503) state = 'unavailable';
         else if (status === 400) state = 'invalid';
+        else if (status === 403 && reason === 'household_rule') state = 'ruled';
         else if (status === 403 && (outcome === 'blocked' || reason === 'decline_cooldown' || reason === 'not_visible_to_user' || reason === 'low_disk')) state = 'blocked';
         else if (status === 403) state = 'denied';
         else if (status === 404) state = 'gone';
         else state = 'failed';
         const result = { ok: status >= 200 && status < 300, status, state, outcome, reason, certainty, requestId };
         if (state === 'split') result.heldSeasons = heldSeasons;
+        // Phase 4b: the household rules' verdict behind a refusal or a wait for an OK.
+        if (body?.rules && typeof body.rules === 'object') result.rules = body.rules;
         return result;
     }
 
@@ -401,7 +405,8 @@
     }
 
     /**
-     * The caller's request allowance ({used, limit, remaining, nextSlotAt, usedGb, available}), or null.
+     * The caller's request allowance ({used, limit, remaining, nextSlotAt, usedGb, available}, and the shared allowance
+     * their requests draw on as pool: {name, used, limit, remaining, nextSlotAt} when there is one), or null.
      * @param {'movie'|'tv'} mediaType Kind.
      * @returns {Promise<Object|null>} Quota.
      */
@@ -409,7 +414,8 @@
         if (!enabled()) return null;
         try {
             const answer = await call(`/acquire/requests/quota?mediaType=${mediaType === 'tv' ? 'tv' : 'movie'}`);
-            return answer.status === 200 && answer.body?.quota ? answer.body.quota : null;
+            if (answer.status !== 200 || !answer.body?.quota) return null;
+            return answer.body.pool && typeof answer.body.pool === 'object' ? { ...answer.body.quota, pool: answer.body.pool } : answer.body.quota;
         } catch {
             return null;
         }
@@ -426,10 +432,18 @@
     function describe(result, caps, allowance) {
         const who = contact(caps);
         switch (result?.state) {
-            case 'waiting':
-                return result.reason === 'over_quota'
-                    ? { chip: tr('arr_ask_chip_waiting'), text: tr('arr_ask_toast_over_quota', { contact: who }), tone: 'asked' }
-                    : { chip: tr('arr_ask_chip_waiting'), text: tr('arr_ask_toast_waiting', { contact: who }), tone: 'asked' };
+            case 'waiting': {
+                // Phase 4b: the household rules want a look (with the facts behind it), or the shared allowance is used up.
+                const why = result.reason === 'rule_review' ? ruleWhy(result.rules) : '';
+                const text = result.reason === 'over_quota' ? tr('arr_ask_toast_over_quota', { contact: who })
+                    : result.reason === 'rule_review' ? (why ? tr('arr_rules_toast_review', { contact: who, why }) : tr('arr_rules_toast_review_plain', { contact: who }))
+                        : result.reason === 'group_quota' ? tr('arr_rules_toast_pool', { contact: who }) : tr('arr_ask_toast_waiting', { contact: who });
+                return { chip: tr('arr_ask_chip_waiting'), text, tone: 'asked' };
+            }
+            case 'ruled': {
+                const why = ruleWhy(result.rules);
+                return { chip: '', text: why ? tr('arr_rules_toast_refused', { why }) : tr('arr_rules_toast_refused_plain'), tone: 'attention' };
+            }
             case 'asked': return { chip: tr('arr_ask_chip_asked'), text: tr('arr_ask_toast_asked'), tone: 'approved' };
             case 'split': return { chip: tr('arr_ask_chip_asked'), text: tr('arr_ask_toast_split', { contact: who, seasons: seasonsWords(result.heldSeasons) }), tone: 'approved' };
             case 'merged': return { chip: tr('arr_ask_chip_asked'), text: tr('arr_ask_toast_merged'), tone: 'approved' };
@@ -456,6 +470,17 @@
             case 'declined': return { chip: tr('arr_ask_chip_declined'), text: tr('arr_ask_toast_declined', { contact: who }), tone: 'attention' };
             default: return { chip: '', text: tr('arr_ask_toast_failed'), tone: 'attention' };
         }
+    }
+
+    /**
+     * The facts behind a household-rule verdict in words ("rated R (limit PG-13)"), '' when there are none (phase 4b;
+     * worded by arr/household/household-rules.js).
+     * @param {Object|null|undefined} rules Verdict.
+     * @returns {string} Text.
+     */
+    function ruleWhy(rules) {
+        const words = JE.internals?.arrHub?.rules?.whyText;
+        return rules && typeof words === 'function' ? words(rules) : '';
     }
 
     /**

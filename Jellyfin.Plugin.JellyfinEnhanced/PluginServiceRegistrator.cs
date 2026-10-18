@@ -167,11 +167,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Requests.RequestOperations>();
             serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationStatusService>();
             serviceCollection.AddHostedService<Services.Acquire.Automation.AutomationStartup>();
+            // Phase 4b (inert while off): the title facts household rules read (TMDB through the shared cache), and the
+            // Trusted role behind the automation engine's trust seam (replaces 4a's "nobody is Trusted").
+            serviceCollection.AddSingleton<Services.Acquire.Requests.IHouseholdRuleFacts, Services.Acquire.Requests.HouseholdRuleFacts>();
+            serviceCollection.RemoveAll<Services.Acquire.Automation.IAutomationTrust>();
+            serviceCollection.AddSingleton<Services.Acquire.Automation.IAutomationTrust, Services.Acquire.Requests.HouseholdTrust>();
+            serviceCollection.AddSingleton<Services.Acquire.Requests.HouseholdRulesService>();
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             // "Keep getting new episodes": charges each new season once when a Sonarr library read shows it started.
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();
             // Marks requests fulfilled when what they asked for is in Jellyfin (Ready; never stale).
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestFulfilment>();
+            // Phase 4b: every title the ledger holds under one identity across its ids (TMDB/TVDB/IMDb), split ones merged.
+            serviceCollection.AddHostedService<Services.Acquire.Requests.RequestTitleIdentity>();
             serviceCollection.AddSingleton<Services.Acquire.AcquireDatabase>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.NotifyStore>();
             serviceCollection.AddSingleton<Services.Acquire.Notify.INotifyUsers, Services.Acquire.Notify.JellyfinNotifyUsers>();

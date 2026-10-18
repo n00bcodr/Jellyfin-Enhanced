@@ -88,7 +88,8 @@
         row.setAttribute('role', 'button');
         row.dataset.jeArrKey = entry.key || '';
         // Which control this is, so focus can come back to it after a re-render.
-        row.dataset.jeFocus = `row:${entry.key || ''}`;
+        row.dataset.jeFocus = `row:${entry.key || ''}${entry.is4k ? ':4k' : ''}`;
+        row.dataset.jeArrVariant = entry.is4k ? '4k' : 'standard';
         // TMDB's poster, else the Jellyfin item's own image (requests in JE mode name titles Jellyfin has by its item).
         const src = posterUrl(entry.poster) || itemImage(entry.itemId);
         if (src) {
@@ -126,7 +127,7 @@
         if (entry.itemId) {
             const play = el('button', 'je-hub-btn je-hub-btn-primary');
             play.type = 'button';
-            play.dataset.jeFocus = `play:${entry.key || ''}`;
+            play.dataset.jeFocus = `play:${entry.key || ''}${entry.is4k ? ':4k' : ''}`;
             play.appendChild(JE.arrStatus.icon('play_arrow'));
             play.appendChild(document.createTextNode(tr('arr_hub_play')));
             play.addEventListener('click', (e) => { e.stopPropagation(); actions.play(entry); });
@@ -135,7 +136,7 @@
         if (ctx.admin && typeof actions.manage === 'function') {
             const manage = el('button', 'je-hub-btn je-hub-manage');
             manage.type = 'button';
-            manage.dataset.jeFocus = `manage:${entry.key || ''}`;
+            manage.dataset.jeFocus = `manage:${entry.key || ''}${entry.is4k ? ':4k' : ''}`;
             manage.appendChild(JE.arrStatus.icon('tune'));
             manage.appendChild(document.createTextNode(tr('arr_manage_button')));
             manage.addEventListener('click', (e) => { e.stopPropagation(); actions.manage(entry); });

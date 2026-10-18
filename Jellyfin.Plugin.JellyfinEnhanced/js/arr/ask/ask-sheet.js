@@ -771,6 +771,16 @@
                 }
             }
         }
+        // Phase 4b: the shared allowance (group pool) the caller's requests draw on, after what the note says.
+        const pool = !paused && quota?.pool && typeof quota.pool.used === 'number' && typeof quota.pool.limit === 'number' ? quota.pool : null;
+        if (pool) {
+            if (state.note.hidden) {
+                state.note.hidden = false;
+                state.note.classList.add('je-sheet-note-info');
+                state.note.appendChild(icon('groups', 'je-sheet-note-icon'));
+            } else state.note.appendChild(document.createTextNode(' · '));
+            state.note.appendChild(el('span', 'je-sheet-note-pool', tr('arr_rules_sheet_pool', { name: String(pool.name || ''), used: pool.used, limit: pool.limit })));
+        }
 
         // The primary button: Request / Ask {contact} / Send to {contact} for an OK; none when Seerr would refuse.
         if (!state.busy) {

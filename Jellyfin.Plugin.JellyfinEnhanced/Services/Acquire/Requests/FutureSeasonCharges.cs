@@ -182,10 +182,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     if (TitleKey.Parse(want.Input.Key) is not { IsMovie: false } key || Find(library, key) is not { } series || want.Input.Seasons.Length == 0) continue;
                     var current = want.Input.Seasons.Max();
-                    var asked = _ledger.ForTitle(want.Input.Key)
-                        .Where(w => w.Id != want.Id && w.TargetKey == want.TargetKey && w.Input.Variant == want.Input.Variant && w.Input.Scope is "seasons" or "next_season" && w.Status is "pending" or "queued" or "sent" or "stale")
-                        .SelectMany(w => w.Input.Seasons).ToHashSet();
-                    foreach (var season in series.Seasons.Where(s => s.SeasonNumber > current && s.Monitored && (s.EpisodeCount > 0 || s.EpisodeFileCount > 0) && !asked.Contains(s.SeasonNumber)))
+                    var asked = Explicit(_ledger.ForTitle(want.Input.Key), want);
+                    foreach (var season in series.Seasons.Where(s => s.SeasonNumber > current && s.Monitored && (s.EpisodeCount > 0 || s.EpisodeFileCount > 0) && !AskedFor(want, s.SeasonNumber, asked)))
                     {
                         if (!_ledger.ChargeFutureSeason(want.Id, season.SeasonNumber, _policy, _now())) continue;
                         charged++;
@@ -202,7 +200,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// one asked for that has started, isn't covered in the request's edition (requested by anyone and not declined,
         /// processing or available) and that Seerr didn't decline, gets one request to Seerr as the owner
         /// (<see cref="RequestLedger.FollowFutureSeason"/>: once, charged once; followers free). A season someone else
-        /// asked for in Jellyfin Enhanced is theirs. Returns how many were queued.
+        /// asked for in Jellyfin Enhanced at the same destination (<see cref="RequestDestination"/>; sent, queued or
+        /// waiting, or followed earlier in the same pass) is theirs. Returns how many were queued.
         /// </summary>
         internal async Task<int> FollowSeerrAsync(CancellationToken ct)
         {
@@ -214,24 +213,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 var target = RequestLedger.SeerrTargetKey(source);
                 var queued = 0;
-                foreach (var title in _ledger.FutureWants(target).Where(w => w.Input.Seasons.Length > 0).GroupBy(w => (w.Input.Key, w.Input.Variant)))
+                foreach (var title in _ledger.FutureWants(target).Where(w => w.Input.Seasons.Length > 0).GroupBy(w => RequestDestination.Edition(w.Input)))
                 {
                     ct.ThrowIfCancellationRequested();
                     if (await _seerr.SeasonFactsAsync(title.Key.Key, title.Key.Variant, ct).ConfigureAwait(false) is not { } seasons) continue;
                     var others = _ledger.ForTitle(title.Key.Key);
-                    // One request per season for the title, even when two people's Keep-getting requests follow it.
+                    // Seasons Seerr has from anyone (Q-4BFIX2-3) or declined: not followed.
                     var taken = new HashSet<int>(seasons.Covered);
                     taken.UnionWith(seasons.Declined);
+                    // The new seasons followed in this pass: one request per season and destination, even when two people's
+                    // Keep-getting requests follow the title there (asked for now, or already: a request held by Seerr is
+                    // sent again when approved).
+                    var followed = new List<MutationInput>();
                     foreach (var want in title)
                     {
                         var current = want.Input.Seasons.Max();
-                        var asked = others
-                            .Where(w => w.Id != want.Id && w.TargetKey == want.TargetKey && w.Input.Variant == want.Input.Variant && w.Input.Scope is "seasons" or "next_season" && w.Status is "pending" or "queued" or "sent" or "stale")
-                            .SelectMany(w => w.Input.Seasons).ToHashSet();
-                        foreach (var season in seasons.Started.Where(n => n > current && !taken.Contains(n) && !asked.Contains(n)))
+                        var asked = Explicit(others, want).Concat(followed).ToList();
+                        foreach (var season in seasons.Started.Where(n => n > current && !taken.Contains(n) && !AskedFor(want, n, asked)))
                         {
-                            // Asked for now, or already (a request held by Seerr is sent again when approved): not again.
-                            taken.Add(season);
+                            followed.Add(want.Input.NewSeason(season));
                             if (!_ledger.FollowFutureSeason(want.Id, season, _policy, _now())) continue;
                             queued++;
                             _feed?.Bump(new[] { want.Input.Key, ArrTitleKey.UserRequests(want.UserId), ArrTitleKey.RequestsState });
@@ -246,6 +246,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 _following.Release();
             }
         }
+
+        // The other open requests that ask for seasons of the title explicitly (whole seasons or the next season) at the
+        // keep-getting request's target: a season one of them has at its destination is theirs.
+        private static List<MutationInput> Explicit(IEnumerable<RequestWant> others, RequestWant want)
+            => others.Where(w => w.Id != want.Id && RequestDestination.SameTarget(w.TargetKey, want.TargetKey) && w.Input.Scope is "seasons" or "next_season" && w.Status is "pending" or "queued" or "sent" or "stale")
+                .Select(w => w.Input).ToList();
+
+        // A new season of the keep-getting request is already asked for: by a request that may stand for its follow (the
+        // same destination: RequestDestination, through MutationInput.Extra), whether sent, queued or waiting.
+        private static bool AskedFor(RequestWant want, int season, IEnumerable<MutationInput> asked)
+            => want.Input.NewSeason(season).Extra(asked) == null;
 
         // The series in a Sonarr library a title key (or one of its aliases) names.
         private ArrSeriesEntry? Find(ArrLibrarySnapshot library, TitleKey key)

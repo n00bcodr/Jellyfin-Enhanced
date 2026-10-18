@@ -140,7 +140,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaType is not ("movie" or "tv")) return Reply(RequestOutcome.Refused("invalid_input", 400));
             await _service.Policy.PrepareIdentityAsync(viewer!.UserId, mediaType == "movie", ct).ConfigureAwait(false);
             if (Gate(Person(), readOnly: true) is { } changed) return Reply(changed);
-            return Ok(new { outcome = "accepted", reason = "quota", certainty = "Succeeded", message = "Request allowance", quota = _service.Quota(viewer.UserId, mediaType == "movie") });
+            var quota = _service.Quota(viewer.UserId, mediaType == "movie");
+            // Group quotas (phase 4b): the shared pool the caller's requests draw on, as an aggregate (only when there is one).
+            if (_service.Pool(viewer.UserId) is { } pool)
+                return Ok(new { outcome = "accepted", reason = "quota", certainty = "Succeeded", message = "Request allowance", quota, pool = new { name = pool.Pool.Name, used = pool.Use.Used, limit = pool.Pool.Limit, remaining = pool.Use.Remaining, nextSlotAt = pool.Use.NextSlotAt } });
+            return Ok(new { outcome = "accepted", reason = "quota", certainty = "Succeeded", message = "Request allowance", quota });
         }
         /// <summary>The caller's own request capabilities (role, may ask, may approve, 4K, contact word).</summary>
         [Authorize]

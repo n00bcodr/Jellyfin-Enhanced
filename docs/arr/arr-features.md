@@ -841,6 +841,21 @@ A request approved in one mode is never sent through the other after a switch.
     another group of five costs one. Episode allowance follows the reservation's approval date, including delayed approvals.
     The optional estimated GB limit is a hard cap for every role: create and approval return 429 `quota_exceeded` when
     exceeded, and queued jobs re-check it before sending. Approval can grant count-quota and series-threshold excess.
+    When a queued request is checked again before sending, only the charges made up to its own count (the personal
+    allowance and a group pool alike), in the order they were made, even within the same millisecond: an excess approved
+    later never holds a request that was within the allowance.
+    A title is one title whichever of its ids it was asked by: a series asked for before it reached Sonarr (known by its
+    TMDB id) and asked for again once Sonarr has it (its TVDB id), or a movie asked for by its IMDb id before Radarr had
+    it, is held as one title under one key, from the moment it comes in (an ask, a preview, a batch, an approval, an automatic
+    decision): the title's facts for household rules, the rules and every check use that key, so a rule such as "English titles
+    go ahead" answers the same whichever id the title was asked by. Dedup, coverage, following, the decline cooldown, approvals,
+    imports and My requests all see it once. Mutually covering uncertain retries use their persisted charge order (then job
+    id) to break a wait cycle: one resumes through the guarded read-before-write path while the others wait. Requests a
+    former version held apart for one title are merged soon after start: everyone's
+    request is kept with its history; one that another request of the title already covers follows it and gets its charge
+    back; nothing that went out is sent again. When the ids are learned while one of the requests is being sent (or its
+    send isn't confirmed yet), the merge is finished once that settles: a request whose part already went out (or is going
+    out) for the title is never sent a second time, and the one that follows gets its charge back once.
     Overlapping asks charge only additional scope. An existing user's covered scope reuses
     their want; another user follows covered intent without a charge. Sharing requires the same backend, resolved instance,
     connection generation and Seerr source. A request for another target creates its own work. Members need approval after their cumulative scope
@@ -861,7 +876,17 @@ A request approved in one mode is never sent through the other after a switch.
     new season, including an overdraft; followers do not. A season counts once Sonarr monitors it and it has started
     (an aired episode or a file), seen in a Sonarr library read of the instance and connection the request went to; a
     season someone else asked for themselves is theirs to pay for. *Charge future seasons when they start* turns it off. Declines have a configurable cooldown. Cancel before sending or
-    decline refunds the reservation. An uncertain outgoing action keeps its reservation until a fresh read of the original
+    decline refunds the reservation. A request waiting for an OK after part of it went out (a new season it followed,
+    held or refused) can be declined or cancelled too: what went out stays, every part that never went out (queued,
+    retried, held or refused) is cancelled and refunded, and the request is sent again. People following a withdrawn
+    request are never left waiting on nothing: a cancel withdraws what they followed, and a decline makes each of them the
+    owner of what nobody else is asking for, waiting for an OK. Whether someone may cancel or decline a request never
+    depends on its routing still fitting (a Seerr server choice that stopped fitting, or an arr that's gone, is often why it
+    waits), but only someone who can see where it goes may decline it (or approve it, or see it in the list): its library
+    folder, which for an administrator's Seerr server choice is the root folder chosen on that Seerr server (read through the
+    unique usable Sonarr/Radarr instance whose connection is verified for the request’s saved Seerr source; replacing
+    Seerr never borrows the replacement’s matching server id or folder. Unknown, expired or ambiguous associations require
+    access to every library, or administrator authority; parental checks and known destination restrictions still apply), not the title's usual folder. An uncertain outgoing action keeps its reservation until a fresh read of the original
     connection resolves it, even after authority changes. Deleting an approver anonymizes retained job contexts and preserves
     send certainty; only known-unsent queued approvals return to review, refunding just their own scope's charges. Charges
     for surviving jobs still count toward count, estimated GB and episode allowances. Deleting a requester anonymizes
@@ -1193,7 +1218,7 @@ lists requests made through Jellyfin Enhanced.
       **Save** asks for a confirmation first. Jellyfin administrators are always Admin; nobody can be made Admin here.
 
 ??? info "My requests and arrival"
-    **My requests** adds your own requests to the list, one row per title, grouped like the existing rows. Requests not
+    **My requests** adds your own requests to the list, one row per title and edition, grouped like the existing rows. Cancel withdraws only that edition's unsent requests. Requests not
       sent yet have **Cancel**. In JE mode each row follows where exactly the part you asked for is, the way Seerr
       requests do in Seerr mode: *Waiting for OK*, *OK'd*, *Looking*, *Downloading 45%*, *Almost ready*, then **Ready**
       with **Play** (and under Ready for two weeks), judged by that movie or edition, those seasons or those episodes only
@@ -1203,8 +1228,9 @@ lists requests made through Jellyfin Enhanced.
       **Ask Dad again**; *Paused: storage full* while new titles of its kind are paused) to ask for the same part once
       more. Removed from Jellyfin only (Sonarr/Radarr still has it), it reads where Sonarr/Radarr has it, such as *Missing*
       with **Search**. A title asked for in both editions
-      follows one at a time, in either mode: the edition still waited for (the standard one first), so a 4K request after
-      the standard copy arrived reads (and is labelled) where the 4K copy is, not Ready. **Coming soon** lists them too. Rows update live.
+      has a separate row for each, in either mode. A Ready standard copy never hides an outstanding 4K request; each row
+      follows its own requested scope and the 4K row is labelled. A 4K request held only in the ledger never borrows a
+      standard copy's Play link. **Coming soon** lists them too. Rows update live.
 
     **Arrival**: once what a request asks for is in Jellyfin (for the person who asked, with their library access and
       parental limits), the request is marked fulfilled, so it reads Ready everywhere and is never marked stale; a
@@ -1563,6 +1589,43 @@ What each recipe decided (in every mode) is kept for 90 days; the same playback 
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic
 requests and the Seerr boundary on the Requests page (Overview) and with *Show automation status* on the
 configuration page.
+
+### Household rules, Trusted and group quotas (phase 4)
+
+*Household rules* and *Group quotas* are phase-4 switches, both off by default (see [the settings](arr-settings.md#household-rules-and-group-quotas-phase-4)):
+
+- **Trusted role** (with *Household rules* on): a Trusted person asks without an OK and has no request limit, like a
+  Manager, but approves nothing and doesn't see the Approvals or Household tabs. Trusted people count as eligible for
+  automatic requests. Pick it for a person, or as the role for everyone else, on the **Household** tab.
+- **Request conditions** (with Jellyfin Enhanced handling requests): fixed conditions per role, for Kids, Members and
+  Trusted people (Managers and administrators aren't ruled). *Rating* matches when the title's certification in a
+  chosen country is at or below a limit; *Genre* when it has any listed genre; *Original language* when it is one of
+  the listed languages; *Size* when the request's size estimate is at or below a number of GB; *Streaming* when it
+  streams on one of the household's services (inactive until a streaming country and services are set). Each condition
+  says what happens when it matches and otherwise: nothing, goes ahead without an OK, waits for an OK, or refused.
+  Refused beats waits, which beats goes ahead. A fact that isn't known (no rating in that country, say) means it waits
+  for an OK. *Goes ahead* only lifts a Member's *Approve everything* preset; Kids always wait for an OK, and quotas,
+  the series limit and shared allowances still apply. Approving a request overrides the conditions; the request is
+  checked again before it is sent when nobody approved it.
+- **Shared allowances** (with *Group quotas* on too): pools that count requests together, per household window, on top
+  of each person's own limit. A person draws on the first pool naming them, else the first naming their role (or
+  *Everyone*); administrators never do. A request is bound to its pool when it is made. Going over a pool waits for an OK.
+- **Where people see it.** Administrators edit the conditions, the streaming services and the pools on the
+  **Household** tab (*Request conditions*); **Save** asks for a confirmation and sends only what changed. Approval
+  cards say what the rules found ("Needs a look: rated R (limit PG-13)", "Not known: rating") with a *Rules want a
+  look* or *Shared allowance used up* chip and the requester's pool ("Kids: 7 of 7 used (shared)"). My requests says
+  why a request waits, and the request controls say it when asking ("The household's rules don't allow this one
+  (genre Horror)."). The request sheet names the caller's shared allowance.
+- **Seerr mode.** Seerr's own rules apply; Jellyfin Enhanced adds no conditions or pools. The Household tab shows Seerr's
+  override rules (what they apply to and what they set), whether new users' requests are approved automatically and
+  Seerr's default quotas, read-only; what Seerr can't describe reads *Not known*.
+
+| Method | Route | Access and purpose |
+|---|---|---|
+| GET | `acquire/household/rules` | Jellyfin administrator; the conditions, streaming settings, pools with their use, the choices, and Seerr's rules in Seerr mode |
+| POST | `acquire/household/rules` | Jellyfin administrator, Jellyfin Enhanced handling; saves `rules`, `streamingCountry`, `streamingServices` and `pools` (only the parts named) |
+| GET | `acquire/household/streaming-services?country=GB` | Jellyfin administrator; the services TMDB lists for a country |
+| POST | `acquire/requests/preview` | Anyone who may ask (phase 4): what a batch of up to 20 asks would do, nothing written |
 
 ### Privacy and Seerr scans
 

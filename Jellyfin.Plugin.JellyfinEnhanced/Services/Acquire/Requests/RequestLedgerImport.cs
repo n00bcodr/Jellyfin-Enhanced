@@ -102,7 +102,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var imported = 0;
                 foreach (var item in items)
                 {
-                    var input = item.Input.Normalize();
+                    // The title as the ledger holds it (any of its ids resolved).
+                    var input = item.Input.Normalize() is { } normalized ? Canonical(c, t, normalized) : null;
                     var requestId = item.RequestId.ToString(CultureInfo.InvariantCulture);
                     if (input == null) { Skip("unreadable"); continue; }
                     if (Scalar(c, t, "SELECT id FROM wants WHERE origin_source_id=$s AND origin_request_id=$r", ("$s", sourceId), ("$r", requestId)) != null) { Skip("already_imported"); continue; }
@@ -112,11 +113,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     // a waiting request when the person has an ask JE acts on (on the JE target, or waiting or
                     // queued anywhere: approval moves it onto the JE target).
                     var target = targetKey(input);
-                    var own = Wants(c, t, "user_id=$u AND title_key=$key AND variant=$v", ("$u", Id(item.UserId)), ("$key", input.Key), ("$v", input.Variant)).Where(Active)
-                        .Where(w => item.Pending ? w.TargetKey == target || w.Status is "pending" or "queued" : w.TargetKey == target && w.Status is "sent" or "stale")
+                    var own = Wants(c, t, "user_id=$u AND " + TitleIs + " AND variant=$v", ("$u", Id(item.UserId)), ("$key", input.Key), ("$v", input.Variant)).Where(Active)
+                        .Where(w => item.Pending ? RequestDestination.SameTarget(w.TargetKey, target) || w.Status is "pending" or "queued" : RequestDestination.SameTarget(w.TargetKey, target) && w.Status is "sent" or "stale")
                         .Select(w => w.Input).ToArray();
                     if (own.Length > 0 && input.Extra(own) == null) { Skip("already_in_je"); continue; }
-                    var acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE title_key=$key AND variant=$v AND state='active'", ("$key", input.Key), ("$v", input.Variant));
+                    var acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE " + TitleIs + " AND variant=$v AND state='active'", ("$key", input.Key), ("$v", input.Variant));
                     if (acquisition == null)
                     {
                         acquisition = NewId();

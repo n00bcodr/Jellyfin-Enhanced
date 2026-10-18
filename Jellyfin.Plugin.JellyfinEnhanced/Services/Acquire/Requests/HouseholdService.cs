@@ -56,8 +56,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// </summary>
     public sealed class HouseholdService
     {
-        /// <summary>Roles a save may give.</summary>
+        /// <summary>Roles a save may give (household rules off).</summary>
         public static readonly IReadOnlyList<string> Roles = new[] { "Watcher", "Kid", "Member", "Manager" };
+
+        /// <summary>Roles a save may give while household rules are on (phase 4b adds Trusted).</summary>
+        public static readonly IReadOnlyList<string> RulesRoles = new[] { "Watcher", "Kid", "Member", "Trusted", "Manager" };
+
+        /// <summary>The roles that can be given now.</summary>
+        /// <param name="config">Configuration.</param>
+        public static IReadOnlyList<string> RolesFor(PluginConfiguration config) => HouseholdFlags.Rules(config) ? RulesRoles : Roles;
 
         /// <summary>Household presets.</summary>
         public static readonly IReadOnlyList<string> Presets = new[] { "ask_first", "open_house", "approve_everything" };
@@ -122,7 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 open[person.Id] = LedgerRequestFacts.PerTitle(wants).Select(r => r.Row).ToList();
                 // The rows shown are built from the requests the caller can see, so a merged row never carries the
                 // seasons, status or progress of a member hidden from them.
-                var visible = LedgerRequestFacts.PerTitle(wants.Where(w => Service.Policy.Evaluate(caller.UserId, w.Input).Visible)).Take(MaxRequestsPerPerson).ToList();
+                var visible = LedgerRequestFacts.PerTitle(wants.Where(w => Service.Policy.Evaluate(caller.UserId, w.Input, w.TargetKey).Visible)).Take(MaxRequestsPerPerson).ToList();
                 shown[person.Id] = visible.Select(r => r.Row).ToList();
                 rows.AddRange(visible);
             }
@@ -136,6 +143,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var own = open[p.Id];
                 var entry = overrides.FirstOrDefault(o => Guid.TryParse(o.Key, out var id) && id == p.Id).Value;
                 var caps = admin ? Service.Me(p.Id) : null;
+                var roles = RolesFor(config);
                 return new
                 {
                     id = p.Id.ToString("N", CultureInfo.InvariantCulture),
@@ -170,22 +178,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     admin = admin ? new
                     {
                         jellyfinAdmin = p.IsAdmin,
-                        roleOverride = entry?.Role is { } r && Roles.Contains(r) ? r.ToLowerInvariant() : null,
+                        roleOverride = entry?.Role is { } r && roles.Contains(r) ? r.ToLowerInvariant() : null,
                         quotaOverride = entry?.QuotaLimit,
                         fourK = caps!.Can4kMovies || caps.Can4kSeries,
                         parentalLimit = p.HasParentalLimit,
+                        pool = facts.Pool?.Name,
                     } : null,
                 };
             }).ToArray();
-            var roles = ReadMap<RequestUserSettings>(config.ArrRequestRoles);
+            var roleDefaults = ReadMap<RequestUserSettings>(config.ArrRequestRoles);
             var settings = admin ? new
             {
                 backend = config.ArrRequestBackend is "je" or "seerr" ? config.ArrRequestBackend : "status_only",
                 preset = Presets.Contains(config.ArrRequestPreset) ? config.ArrRequestPreset : "ask_first",
-                defaultRole = RequestPolicy.NormalizeRole(config.ArrRequestDefaultRole).ToLowerInvariant(),
+                defaultRole = RequestPolicy.NormalizeRole(config.ArrRequestDefaultRole, HouseholdFlags.Rules(config)).ToLowerInvariant(),
                 quotaLimit = config.ArrRequestQuotaLimit,
                 windowDays = Math.Clamp(config.ArrRequestQuotaWindowDays, 1, 365),
-                roles = Roles.ToDictionary(r => r.ToLowerInvariant(), r => new { quotaLimit = roles.GetValueOrDefault(r)?.QuotaLimit }),
+                roles = Roles.ToDictionary(r => r.ToLowerInvariant(), r => new { quotaLimit = roleDefaults.GetValueOrDefault(r)?.QuotaLimit }),
+                // Phase 4b: which household-rule features are in effect (the Trusted role, the conditions, group pools).
+                rules = HouseholdFlags.Rules(config) ? new { trusted = true, conditions = HouseholdFlags.RulesApply(config), pools = HouseholdFlags.Pools(config) } : null,
             } : null;
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "household", certainty = "Succeeded", message = "Household", canEdit = admin, people = list, settings }, Json);
             return RequestHubProjection.Body(caller.UserId, viewer, "household", bytes);
@@ -201,14 +212,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             if (body == null) return RequestOutcome.Refused("invalid_input", 400);
             if (body.Preset != null && !Presets.Contains(body.Preset)) return RequestOutcome.Refused("invalid_preset", 400);
-            if (RoleRefusal(body.DefaultRole) is { } defaultRefusal) return RequestOutcome.Refused(defaultRefusal, 400);
+            var config0 = Service.Policy.Configuration;
+            if (RoleRefusal(body.DefaultRole, config0) is { } defaultRefusal) return RequestOutcome.Refused(defaultRefusal, 400);
             if (!QuotaValid(body.QuotaLimit)) return RequestOutcome.Refused("invalid_quota", 400);
             if (body.Roles != null)
             {
                 if (body.Roles.Count > Roles.Count) return RequestOutcome.Refused("invalid_input", 400);
                 foreach (var (role, value) in body.Roles)
                 {
-                    if (RoleRefusal(role) is { } roleRefusal) return RequestOutcome.Refused(roleRefusal, 400);
+                    // Role limits exist for the roles that have a limit (Trusted, like Managers, has none).
+                    if ((RoleRefusal(role, config0) ?? (Roles.Contains(Canonical(role)) ? null : "invalid_role")) is { } roleRefusal) return RequestOutcome.Refused(roleRefusal, 400);
                     if (value == null || !QuotaValid(value.QuotaLimit)) return RequestOutcome.Refused("invalid_quota", 400);
                 }
             }
@@ -220,7 +233,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     if (!Guid.TryParse(raw, out var id) || id == Guid.Empty || value == null) return RequestOutcome.Refused("invalid_user", 400);
                     if (_hub.Directory.Person(id) == null) return RequestOutcome.Refused("unknown_user", 400);
-                    if (RoleRefusal(value.Role) is { } userRefusal) return RequestOutcome.Refused(userRefusal, 400);
+                    if (RoleRefusal(value.Role, config0) is { } userRefusal) return RequestOutcome.Refused(userRefusal, 400);
                     if (!QuotaValid(value.QuotaLimit)) return RequestOutcome.Refused("invalid_quota", 400);
                     users[id] = value;
                 }
@@ -284,13 +297,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return RequestOutcome.Accepted(caller.UserId.ToString("N", CultureInfo.InvariantCulture), "saved", 200) with { Message = "Household saved." };
         }
 
-        private static string Canonical(string role) => Roles.First(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase));
+        private static string Canonical(string role) => RulesRoles.First(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase));
 
-        private static string? RoleRefusal(string? role)
+        // Trusted can be given only while household rules are on.
+        private static string? RoleRefusal(string? role, PluginConfiguration config)
         {
             if (role == null) return null;
             if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase)) return "admin_role_refused";
-            return Roles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase)) ? null : "invalid_role";
+            return RolesFor(config).Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase)) ? null : "invalid_role";
         }
 
         private static bool QuotaValid(int? limit) => limit is null or (>= -1 and <= 10000);

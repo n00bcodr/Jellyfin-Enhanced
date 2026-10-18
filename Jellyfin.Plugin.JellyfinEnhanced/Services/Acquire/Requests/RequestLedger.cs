@@ -30,13 +30,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
         private static List<RequestWant> Wants(SqliteConnection c, SqliteTransaction? t, string where = "1=1", params (string, object?)[] args)
         {
-            using var cmd = Cmd(c, t, "SELECT id,acquisition_id,user_id,client_request_id,fingerprint,mutation_input,status,reason,cost,parental_signature,created_at,updated_at,is_follower,owned_input,target_key,origin_kind,origin_source_id,origin_detail,operation_id FROM wants WHERE " + where + " ORDER BY created_at,id", args);
+            using var cmd = Cmd(c, t, "SELECT id,acquisition_id,user_id,client_request_id,fingerprint,mutation_input,status,reason,cost,parental_signature,created_at,updated_at,is_follower,owned_input,target_key,origin_kind,origin_source_id,origin_detail,operation_id,rule_detail FROM wants WHERE " + where + " ORDER BY created_at,id", args);
             using var r = cmd.ExecuteReader();
             var list = new List<RequestWant>();
             while (r.Read()) list.Add(new(r.GetString(0), r.GetString(1), Guid.Parse(r.GetString(2)), r.GetString(3), r.GetString(4),
                 JsonSerializer.Deserialize<MutationInput>(r.GetString(5))!, r.GetString(6), r.GetString(7), r.GetInt32(8), r.GetString(9),
                 DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(10)), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(11)), r.GetBoolean(12), r.IsDBNull(13) ? null : JsonSerializer.Deserialize<MutationInput>(r.GetString(13)), r.GetString(14), r.GetString(15),
-                r.IsDBNull(16) ? null : r.GetString(16), r.IsDBNull(17) ? null : r.GetString(17), r.IsDBNull(18) ? null : r.GetString(18)));
+                r.IsDBNull(16) ? null : r.GetString(16), r.IsDBNull(17) ? null : r.GetString(17), r.IsDBNull(18) ? null : r.GetString(18), r.IsDBNull(19) ? null : r.GetString(19)));
             return list;
         }
         internal static void ExtendSchemaTwo(SqliteConnection c, SqliteTransaction t, bool targets, bool reservations, bool onlyEmptyTargets = false)
@@ -52,13 +52,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         candidates = Jobs(c, t, "id=(SELECT id FROM jobs WHERE want_id=$id ORDER BY created_at DESC,rowid DESC LIMIT 1)", ("$id", want.Id));
                     else if (own.Count == 0)
                         candidates = Jobs(c, t, "want_id IN (SELECT id FROM wants WHERE acquisition_id=$a) AND " + LiveJobs, ("$a", want.AcquisitionId));
-                    var targetsForWant = candidates.Where(j => j.Input.Variant == want.Input.Variant && (want.Input.InstanceId == null || j.Authorization.InstanceId == want.Input.InstanceId))
+                    var targetsForWant = candidates.Where(j => RequestDestination.SameEdition(j.Input, want.Input) && (want.Input.InstanceId == null || j.Authorization.InstanceId == want.Input.InstanceId))
                         .Select(j => TargetKey(j.Authorization)).Distinct(StringComparer.Ordinal).ToArray();
                     if (targetsForWant.Length == 1)
                     {
                         Exec(c, t, "UPDATE wants SET target_key=$target WHERE id=$id", ("$target", targetsForWant[0]), ("$id", want.Id));
                         var coveredScope = Jobs(c, t, "want_id IN (SELECT id FROM wants WHERE acquisition_id=$a AND status IN ('pending','queued','sent','stale')) AND " + LiveJobs, ("$a", want.AcquisitionId))
-                            .Where(j => TargetKey(j.Authorization) == targetsForWant[0] && (want.Status is not ("sent" or "stale") || j.State == "succeeded")).Select(j => j.Input);
+                            .Where(j => RequestDestination.SameTarget(TargetKey(j.Authorization), targetsForWant[0]) && (want.Status is not ("sent" or "stale") || j.State == "succeeded")).Select(j => j.Input);
                         if (want.Status is "queued" or "sent" or "stale" && want.Input.Extra(coveredScope) != null)
                             Exec(c, t, "UPDATE wants SET status='pending',reason='instance_changed' WHERE id=$id", ("$id", want.Id));
                     }
@@ -156,7 +156,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             });
         }
         /// <summary>Title intent for read models, with canonical provider identity.</summary>
-        public IReadOnlyList<RequestWant> ForTitle(string key) => _db.Read(c => Wants(c, null, "title_key=$key", ("$key", key)));
+        /// <remarks>Any of the title's ids finds it (the ledger's aliases).</remarks>
+        public IReadOnlyList<RequestWant> ForTitle(string key) => _db.Read(c => Wants(c, null, TitleIs, ("$key", key)));
         /// <summary>
         /// True when requests already sent to the caller's request target cover all of <paramref name="input"/>
         /// (succeeded jobs, or a request that was already processing in Seerr when it moved): nothing is left to
@@ -164,26 +165,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         public bool SentCovers(MutationInput input, RequestPolicyFacts facts) => _db.Available && _db.Read(c =>
         {
-            var covered = Wants(c, null, "title_key=$key AND variant=$v", ("$key", input.Key), ("$v", input.Variant)).Where(Active).ToArray();
+            input = Canonical(c, null, input);
+            var covered = Wants(c, null, TitleIs + " AND variant=$v", ("$key", input.Key), ("$v", input.Variant)).Where(Active).ToArray();
             // Any connection of the same instance (or Seerr) counts: a Search runs only for parts the instance already
             // monitors, so an address or key change since the send doesn't make them "never asked for".
-            var destination = Destination(TargetKey(facts));
-            return covered.Length > 0 && input.Extra(Confirmed(c, null, covered, target => Destination(target) == destination)) == null;
+            var here = TargetKey(facts);
+            return covered.Length > 0 && input.Extra(Confirmed(c, null, covered, target => RequestDestination.SamePlace(target, here))) == null;
         });
-        // A target key without its connection generation: the backend, the instance and the Seerr source.
-        private static string Destination(string target)
-        {
-            try
-            {
-                var parts = JsonSerializer.Deserialize<string?[]>(target);
-                if (parts is { Length: 4 }) return JsonSerializer.Serialize(new[] { parts[0], parts[1], parts[3] });
-            }
-            catch (JsonException)
-            {
-                // Not a target key: compared as it is.
-            }
-            return target;
-        }
         /// <summary>
         /// What actually went out for a title, per target: each succeeded job's scope at the time its send was
         /// confirmed, and each request that was already processing in Seerr when it moved (a job-less link) at the
@@ -194,13 +182,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public IReadOnlyList<RequestDispatch> Dispatches(string titleKey) => !_db.Available ? Array.Empty<RequestDispatch>() : _db.Read(c =>
         {
             var list = new List<RequestDispatch>();
-            using (var cmd = Cmd(c, null, "SELECT j.mutation_input,j.authorization_context,j.updated_at FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w.title_key=$key AND j.state='succeeded'", ("$key", titleKey)))
+            using (var cmd = Cmd(c, null, "SELECT j.mutation_input,j.authorization_context,j.updated_at FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w." + TitleIs + " AND j.state='succeeded'", ("$key", titleKey)))
             using (var r = cmd.ExecuteReader())
             {
                 while (r.Read())
                     list.Add(new(TargetKey(JsonSerializer.Deserialize<RequestAuthorization>(r.GetString(1))!), JsonSerializer.Deserialize<MutationInput>(r.GetString(0))!, DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(2))));
             }
-            foreach (var want in Wants(c, null, "title_key=$key AND origin_kind=$kind", ("$key", titleKey), ("$kind", RequestOrigin.SeerrImportKind)))
+            foreach (var want in Wants(c, null, TitleIs + " AND origin_kind=$kind", ("$key", titleKey), ("$kind", RequestOrigin.SeerrImportKind)))
             {
                 if (LinkedScope(c, null, want) is { } linked) list.Add(new(want.TargetKey, linked, want.CreatedAt));
             }
@@ -209,9 +197,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Persistent policy/cache invalidation stamp, fenced by restore generation.</summary>
         public long Revision => !_db.Available ? 0 : _db.Read(c => long.Parse(Scalar(c, null, "SELECT COALESCE((SELECT value FROM meta WHERE key='request_revision'),'0')")!, CultureInfo.InvariantCulture)) + _db.Generation * 1000000000;
         private static void Changed(SqliteConnection c, SqliteTransaction t) => Exec(c, t, "INSERT INTO meta VALUES('request_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1");
-        internal static bool HasRouting(MutationInput input) => input.InstanceId != null || input.ProfileId != null || input.RootFolder != null;
-        internal static bool RoutingChanged(MutationInput input, MutationInput original)
-            => input.InstanceId != original.InstanceId || input.ProfileId != original.ProfileId || input.RootFolder != original.RootFolder;
+        /// <summary>
+        /// The input chooses where the request goes: an arr instance, profile or root folder (Jellyfin Enhanced mode), or a
+        /// Seerr server, profile, root folder and options stamp (Seerr mode). Administrators only.
+        /// </summary>
+        internal static bool HasRouting(MutationInput input) => input.HasArrRouting || input.HasSeerrOptions;
+        /// <summary>The input names Seerr options (server, profile, root folder, stamp).</summary>
+        internal static bool HasSeerrOptions(MutationInput input) => input.HasSeerrOptions;
+        /// <summary>Any routing choice differs between the two inputs (arr or Seerr).</summary>
+        internal static bool RoutingChanged(MutationInput input, MutationInput original) => RequestDestination.RoutingChanged(input, original);
         internal static string TargetKey(RequestAuthorization auth)
             => JsonSerializer.Serialize(new[] { auth.Backend, auth.InstanceId, auth.ConnectionGeneration, auth.SeerrSource });
         /// <summary>
@@ -225,7 +219,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static bool Active(RequestWant w) => w.Status is "pending" or "queued" or "sent" or "stale";
         private static bool Deleted(SqliteConnection c, SqliteTransaction t, Guid user)
             => Scalar(c, t, "SELECT user_hash FROM request_deleted_users WHERE user_hash=$u", ("$u", MutationInput.Hash("deleted:" + Id(user)))) != null;
-        private const string LiveJobs = "(state IN ('queued','retry','sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown')";
+        private const string LiveJobs = "(state IN ('queued','retry','sending','maybe_sent','succeeded') OR (state!='cancelled' AND json_extract(outcome,'$.certainty')='Unknown'))";
         private const string KnownUnsent = "COALESCE(json_extract(outcome,'$.certainty'),'Rejected') NOT IN ('Unknown','Succeeded')";
         private static bool Anonymous(SqliteConnection c, SqliteTransaction t, Guid user)
             => Scalar(c, t, "SELECT user_hash FROM request_deleted_users WHERE lower(substr(user_hash,1,32))=$u", ("$u", Id(user))) != null;
@@ -235,9 +229,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (Exec(c, t, "UPDATE jobs SET state='cancelled',reason=$r WHERE id=$j AND state IN ('queued','retry','parked') AND " + KnownUnsent, ("$j", job), ("$r", reason)) == 1)
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id=$j AND scope NOT LIKE 's%'", ("$j", job));
         }
-        private static List<QuotaCharge> Charges(SqliteConnection c, SqliteTransaction? t, Guid user, bool unsentOnly = false)
+        // upTo: only charges made up to that one, in charge order (see ChargedUpTo).
+        private static List<QuotaCharge> Charges(SqliteConnection c, SqliteTransaction? t, Guid user, bool unsentOnly = false, ChargeOrder? upTo = null)
         {
-            using var cmd = Cmd(c, t, "SELECT cost,charged_at,estimated_gb,want_id FROM reservations WHERE user_id=$u AND state='charged'" + (unsentOnly ? " AND want_id IN (SELECT id FROM wants WHERE status IN ('queued','pending')) AND (job_id IS NULL OR job_id NOT IN (SELECT id FROM jobs WHERE state='succeeded'))" : ""), ("$u", Id(user)));
+            using var cmd = Cmd(c, t, "SELECT cost,charged_at,estimated_gb,want_id FROM reservations WHERE user_id=$u AND state='charged'" + (unsentOnly ? " AND want_id IN (SELECT id FROM wants WHERE status IN ('queued','pending')) AND (job_id IS NULL OR job_id NOT IN (SELECT id FROM jobs WHERE state='succeeded'))" : "") +
+                (upTo == null ? "" : " AND " + ChargedBy), ("$u", Id(user)), ("$upto", upTo?.At), ("$seq", upTo?.Seq));
             using var r = cmd.ExecuteReader();
             var list = new List<QuotaCharge>();
             while (r.Read()) list.Add(new(r.GetInt32(0), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(1)), r.GetDouble(2), r.GetString(3)));
@@ -265,7 +261,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         public int EpisodesCharged(Guid user, int days, DateTimeOffset now) => _db.Read(c => EpisodesCharged(c, null, user, now, days));
         private static bool OverSeries(RequestPolicyFacts facts, MutationInput input, IEnumerable<RequestWant> own, int threshold)
-            => facts.Role == "Member" && !TitleKey.Parse(input.Key)!.IsMovie && own.Where(w => w.Input.Key == input.Key && w.Status is not ("declined" or "cancelled"))
+            => facts.Role == "Member" && !TitleKey.Parse(input.Key)!.IsMovie && own.Where(w => RequestDestination.SameTitle(w.Input, input) && w.Status is not ("declined" or "cancelled"))
                 .SelectMany(w => w.Input.SeasonNumbers).Concat(input.SeasonNumbers).Distinct().Count() > Math.Clamp(threshold, 1, 200);
         private static bool OverQuota(RequestPolicyFacts facts, IReadOnlyList<QuotaCharge> charges, int cost, double gb, DateTimeOffset now)
         {
@@ -286,19 +282,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static double EstimateGb(MutationInput input, RequestPolicyFacts facts) => RequestSizeHint.Estimate(input, facts.Size);
         /// <summary>Re-evaluates approval requirements for an automatic job under the current household rules.</summary>
         public bool NeedsApprovalAtSend(RequestJob job, RequestPolicyFacts requester, IRequestPolicy policy, DateTimeOffset now)
+            => ApprovalNeededAtSend(job, requester, policy, now) != null;
+        /// <summary>
+        /// Why a job nobody approved needs an OK now (null: it doesn't), re-evaluated at send under the current household
+        /// settings: a Kid (<c>authorization_changed</c>); the household's rules now refusing it (<c>household_rule</c>) or
+        /// wanting a look (<c>rule_review</c>); the group pool its charge is bound to now over its limit
+        /// (<c>group_quota</c>); a Member's preset, quota or series threshold (<c>authorization_changed</c>).
+        /// </summary>
+        /// <param name="job">The job.</param>
+        /// <param name="requester">The requester's current facts.</param>
+        /// <param name="policy">Current policy.</param>
+        /// <param name="now">Now.</param>
+        public string? ApprovalNeededAtSend(RequestJob job, RequestPolicyFacts requester, IRequestPolicy policy, DateTimeOffset now)
         {
-            if (job.Authorization.Approver.HasValue) return false;
-            if (requester.Role == "Kid") return true;
-            if (requester.Role != "Member" || requester.Backend != "je") return false;
-            if (policy.Configuration.ArrRequestPreset == "approve_everything") return true;
+            if (job.Authorization.Approver.HasValue) return null;
+            if (requester.Role == "Kid") return "authorization_changed";
+            if (requester.Backend == "je")
+            {
+                if (requester.Rules?.Verdict == HouseholdRules.Deny) return HouseholdRule;
+                if (requester.Rules?.Verdict == HouseholdRules.Review) return RuleReview;
+                if (HouseholdFlags.Pools(policy.Configuration) && _db.Read(c =>
+                {
+                    var bound = Scalar(c, null, "SELECT COALESCE((SELECT pool_id FROM reservations WHERE job_id=$j LIMIT 1),(SELECT pool_id FROM reservations WHERE want_id=$w AND scope='initial' LIMIT 1))", ("$j", job.Id), ("$w", job.WantId));
+                    var pool = GroupQuotaPolicy.ById(GroupQuotaPolicy.Parse(policy.Configuration.ArrGroupQuotaPools), bound, policy.Configuration.ArrRequestQuotaWindowDays);
+                    // Like the personal allowance below: only pool charges made up to this job's own, so a later excess an
+                    // approver let into the pool never holds a request that was within it (the current limit and window apply).
+                    return pool != null && PoolUsed(c, null, pool.Id, pool.WindowDays, now, ChargedUpTo(c, job, job.WantId)) > pool.Limit;
+                })) return GroupQuota;
+            }
+            if (requester.Role != "Member" || requester.Backend != "je") return null;
+            if (policy.Configuration.ArrRequestPreset == "approve_everything" && requester.Rules?.Verdict != HouseholdRules.Approve) return "authorization_changed";
             return _db.Read(c =>
             {
                 var want = Wants(c, null, "id=$id", ("$id", job.WantId)).SingleOrDefault();
                 if (want == null) return true;
                 var own = Wants(c, null, "user_id=$u", ("$u", Id(requester.UserId))).Where(w => w.Id != want.Id && w.CreatedAt <= want.CreatedAt && w.Status != "pending").ToArray();
-                return OverQuota(requester, Charges(c, null, requester.UserId), 0, 0, now) ||
+                // Only charges made up to this job's own: a later ask an approver let past the limit (soft excess) never
+                // holds a request that was within the allowance when it was made.
+                return OverQuota(requester, Charges(c, null, requester.UserId, upTo: ChargedUpTo(c, job, want.Id)), 0, 0, now) ||
                     OverSeries(requester, want.Input, own, policy.Configuration.ArrRequestSeriesThreshold);
-            });
+            }) ? "authorization_changed" : null;
+        }
+
+        /// <summary>
+        /// Records the household-rule verdict a waiting request was held with at send (phase 4b) as its rationale, so it
+        /// says why it waits (a rating that changed, or that isn't known now), after a restart too.
+        /// </summary>
+        /// <param name="wantId">The request.</param>
+        /// <param name="verdict">The verdict it was held with.</param>
+        public void HeldByRules(string wantId, HouseholdRuleVerdict verdict)
+            => _db.Write((c, t) => Exec(c, t, "UPDATE wants SET rule_detail=$rules WHERE id=$id AND status='pending'", ("$rules", verdict.Json), ("$id", wantId)));
+
+        /// <summary>
+        /// A charge's place in the order charges were made (review round 4, 4b-B12): when it was charged, then the sequence
+        /// it was given when it became charged (two charges in the same millisecond keep the order they were made in).
+        /// </summary>
+        /// <param name="At">When it was charged (Unix milliseconds).</param>
+        /// <param name="Seq">Its charge sequence.</param>
+        internal readonly record struct ChargeOrder(long At, long Seq);
+        // The next charge sequence, for a reservation becoming charged (one writer at a time).
+        private const string NextCharge = "(SELECT COALESCE(MAX(charge_seq),0)+1 FROM reservations)";
+        // A charge made up to the one at ($upto, $seq) in charge order.
+        private const string ChargedBy = "(charged_at<$upto OR (charged_at=$upto AND COALESCE(charge_seq,0)<=$seq))";
+        // The job's own charge (the latest of it and its request's initial one; null when it has none, so every charge up to
+        // now counts): the send-time allowance and pool checks count only charges made up to it, in charge order.
+        private static ChargeOrder? ChargedUpTo(SqliteConnection c, RequestJob job, string wantId)
+        {
+            using var cmd = Cmd(c, null, "SELECT charged_at,COALESCE(charge_seq,0) FROM reservations WHERE (job_id=$j OR (want_id=$w AND scope='initial')) AND state='charged' ORDER BY charged_at DESC,COALESCE(charge_seq,0) DESC LIMIT 1", ("$j", job.Id), ("$w", wantId));
+            using var r = cmd.ExecuteReader();
+            return r.Read() ? new ChargeOrder(r.GetInt64(0), r.GetInt64(1)) : null;
         }
 
         /// <summary>Creates intent, quota reservation and (when approved) a job in one commit.</summary>
@@ -359,6 +411,63 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
             });
         }
+        /// <summary>Most asks one batch preview (and one "request all missing" batch) holds.</summary>
+        public const int MaxBatch = 20;
+        /// <summary>
+        /// The no-write preview of a batch of asks made one after another (phase 4b, "request all missing"): each is
+        /// worked out after the ones before it, inside one transaction that is always rolled back, so charges, the
+        /// person's allowance and group pools add up across the batch exactly as the real asks would. Null entries are
+        /// invalid asks. At most <see cref="MaxBatch"/>.
+        /// </summary>
+        /// <param name="user">The requester.</param>
+        /// <param name="requests">The asks, in order (normalized inputs).</param>
+        /// <param name="policy">Current policy.</param>
+        /// <param name="now">Now.</param>
+        /// <param name="origin">Where the asks would come from.</param>
+        public IReadOnlyList<RequestPreview> PreviewBatch(Guid user, IReadOnlyList<CreateRequest?> requests, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin = null)
+        {
+            if (requests.Count > MaxBatch) throw new ArgumentOutOfRangeException(nameof(requests));
+            if (!_db.Available) return requests.Select(_ => new RequestPreview(RequestOutcome.Refused("database_unavailable", 503, "unavailable"))).ToArray();
+            return _db.Write((c, t) =>
+            {
+                Exec(c, t, "SAVEPOINT request_preview_batch");
+                try
+                {
+                    var list = new List<RequestPreview>();
+                    foreach (var request in requests)
+                    {
+                        var normalized = request?.Input?.Normalize();
+                        if (request == null || normalized == null || string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128 || request.ClientRequestId.Any(char.IsControl))
+                        {
+                            list.Add(new RequestPreview(RequestOutcome.Refused("invalid_input", 400)));
+                            continue;
+                        }
+                        // Each ask on its own savepoint, like Create: a refusal leaves nothing of it for the next one.
+                        Exec(c, t, "SAVEPOINT request_preview_item");
+                        var before = Scalar(c, t, "SELECT COUNT(*) FROM wants");
+                        var outcome = CreateCore(c, t, user, request, normalized, policy, now, origin);
+                        if (outcome.HttpStatus >= 400) Exec(c, t, "ROLLBACK TO request_preview_item");
+                        Exec(c, t, "RELEASE request_preview_item");
+                        var created = Scalar(c, t, "SELECT COUNT(*) FROM wants") != before;
+                        var want = outcome.RequestId == null ? null : Wants(c, t, "id=$id", ("$id", outcome.RequestId)).SingleOrDefault();
+                        if (want == null)
+                        {
+                            list.Add(new RequestPreview(outcome, New: created));
+                            continue;
+                        }
+                        var jobs = Jobs(c, t, "want_id=$id", ("$id", want.Id));
+                        var gb = double.Parse(Scalar(c, t, "SELECT COALESCE(SUM(estimated_gb),0) FROM reservations WHERE want_id=$id", ("$id", want.Id)) ?? "0", CultureInfo.InvariantCulture);
+                        list.Add(new RequestPreview(outcome, want.Status, want.Reason, want.Cost, gb, want.Follower, jobs.Count > 0, created, want.OwnedInput, jobs.Select(j => j.Authorization.InstanceId).FirstOrDefault()));
+                    }
+                    return (IReadOnlyList<RequestPreview>)list;
+                }
+                finally
+                {
+                    Exec(c, t, "ROLLBACK TO request_preview_batch");
+                    Exec(c, t, "RELEASE request_preview_batch");
+                }
+            });
+        }
         private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin)
         {
             // Automatic origins (recipes, list sync) never self-approve a Member and never approve someone else's ask.
@@ -367,7 +476,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var mustAsk = origin?.RequireApproval == true;
             if (Deleted(c, t, user)) return RequestOutcome.Refused("user_required");
             var priorHash = Scalar(c, t, "SELECT fingerprint FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId));
-            if (priorHash != null && priorHash != normalized.Fingerprint) return RequestOutcome.Refused("idempotency_conflict", 409);
+            // A retry of the same ask names the title by any of its ids.
+            if (priorHash != null && !Fingerprints(c, t, normalized).Contains(priorHash)) return RequestOutcome.Refused("idempotency_conflict", 409);
             if (priorHash != null)
             {
                 var existingId = Scalar(c, t, "SELECT want_id FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId))!;
@@ -378,25 +488,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return RequestOutcome.Accepted(existing.Id, existing.Reason, 200);
             }
             if (!policy.IsAdmin(user) && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
+            // The title as the ledger holds it (any of its ids resolved).
+            normalized = Canonical(c, t, normalized);
             var facts = policy.Evaluate(user, normalized);
-            if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : "denied");
+            if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : refusal == "backend_unavailable" ? "unavailable" : "denied");
             if (SeerrEpisodes(facts, normalized) is { } seerrOnly) return seerrOnly;
             if (SingleSeason(policy.Configuration, facts, normalized) is { } oneSeason) return oneSeason;
-            if (facts.Role != "Admin" && (normalized.InstanceId != null || normalized.ProfileId != null || normalized.RootFolder != null)) return RequestOutcome.Refused("admin_required");
+            if (facts.Role != "Admin" && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
             // An approver's matching ask authorises the shared pending scope, without moving its charge.
             // Automation never approves someone else's pending ask on a person's behalf.
-            if (!automation && facts.CanApprove && facts.Role is "Manager" or "Admin")
+            // An ask that chooses a Seerr destination doesn't approve someone else's pending ask without it (that would
+            // send the shared scope to Seerr's defaults and leave the chosen destination unused).
+            if (!automation && !normalized.HasSeerrOptions && facts.CanApprove && facts.Role is "Manager" or "Admin")
             {
-                foreach (var pending in Wants(c, t, "title_key=$key AND variant=$v AND status='pending'", ("$key", normalized.Key), ("$v", normalized.Variant))
-                    .Where(w => !w.Follower && w.TargetKey == TargetKey(facts) && w.Input.Extra(new[] { normalized }) == null))
+                foreach (var pending in Wants(c, t, TitleIs + " AND variant=$v AND status='pending'", ("$key", normalized.Key), ("$v", normalized.Variant))
+                    .Where(w => !w.Follower && RequestDestination.SameTarget(w.TargetKey, TargetKey(facts)) && w.Input.Extra(new[] { normalized }) == null))
                 {
                     var approved = ApproveCore(c, t, pending.Id, user, null, policy, now);
                     if (approved.HttpStatus != 200) continue;
                 }
             }
             var own = Wants(c, t, "user_id=$u", ("$u", Id(user)));
-            var ownSame = own.Where(w => Active(w) && w.TargetKey == TargetKey(facts) && w.Input.Key == normalized.Key && w.Input.Variant == normalized.Variant).ToArray();
-            // One of the person's own asks covers it, or several together do (an ask split at the series threshold).
+            // The person's own asks that may stand for it: at its target, and (an ask choosing a Seerr destination) going there.
+            var ownSame = own.Where(w => Active(w) && RequestDestination.Serves(normalized, TargetKey(facts), w.Input, w.TargetKey)).ToArray();
+            // One of them covers it, or several together do (an ask split at the series threshold); the answer is one of those,
+            // never an ask elsewhere. Else it is a request of its own, whose destination is checked when it is sent. The same
+            // holds for someone else's scope below.
             var sameOwn = ownSame.FirstOrDefault(w => normalized.Extra(new[] { w.Input }) == null)
                 ?? (ownSame.Length > 1 && normalized.Extra(ownSame.Select(w => w.Input)) == null ? ownSame.First(w => w.Input.Overlaps(normalized)) : null);
             if (sameOwn != null)
@@ -404,32 +521,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 RememberInput(c, t, user, request.ClientRequestId, normalized.Fingerprint, sameOwn.Id);
                 return RequestOutcome.Accepted(sameOwn.Id, sameOwn.Reason, 200) with { Message = "Your request is already recorded." };
             }
+            // An explicit household-rule deny (phase 4b) refuses every new request of the person for it, following someone
+            // else's included: the rules say this person doesn't get it. (A replay of their own earlier ask answers above.)
+            if (facts.Rules is { Verdict: HouseholdRules.Deny } denied)
+                return RequestOutcome.Refused(HouseholdRule, 403, "denied") with { Message = "The household's rules don't allow this request (" + denied.Text() + ").", Rules = denied };
             if (own.Count(w => w.Status == "pending") >= Math.Clamp(policy.Configuration.ArrRequestPendingLimit, 1, 100)) return RequestOutcome.Refused("pending_limit", 429, "quota_exceeded");
-            if (own.Any(w => w.Status == "declined" && w.Input.Key == normalized.Key && w.Input.Variant == normalized.Variant &&
+            if (own.Any(w => w.Status == "declined" && RequestDestination.SameEdition(w.Input, normalized) &&
                 normalized.Extra(new[] { w.Input }) == null && w.UpdatedAt > now.AddDays(-Math.Clamp(policy.Configuration.ArrRequestDeclineCooldownDays, 0, 365)))) return RequestOutcome.Refused("decline_cooldown", outcome: "blocked");
-            var covered = Wants(c, t, "title_key=$key AND variant=$v", ("$key", normalized.Key), ("$v", normalized.Variant)).Where(Active).ToArray();
+            var covered = Wants(c, t, TitleIs + " AND variant=$v", ("$key", normalized.Key), ("$v", normalized.Variant)).Where(Active).ToArray();
             var authorizedExtra = normalized.Extra(Coverage(c, t, covered, TargetKey(facts)));
-            var auto = !mustAsk && (facts.Role is "Manager" or "Admin") || (!mustAsk && facts.Role == "Member" && facts.Backend == "je" && !automation &&
-                policy.Configuration.ArrRequestPreset != "approve_everything" &&
-                !OverQuota(facts, Charges(c, t, user), authorizedExtra == null ? 0 : Cost(c, t, authorizedExtra, user, now, facts.WindowDays), authorizedExtra == null ? 0 : EstimateGb(authorizedExtra, facts), now) &&
+            // Household rules (phase 4b, null while they don't apply): a review waits for an OK whoever asks; an approve
+            // lifts only a Member's blanket-approval preset (never quota, the series threshold or a group pool).
+            var rules = facts.Rules;
+            var ruleReview = rules?.Verdict == HouseholdRules.Review;
+            var blanket = policy.Configuration.ArrRequestPreset == "approve_everything" && rules?.Verdict != HouseholdRules.Approve;
+            var authorizedCost = authorizedExtra == null ? 0 : Cost(c, t, authorizedExtra, user, now, facts.WindowDays);
+            // A group pool this ask would take over its limit (phase 4b; soft: an approval may grant it).
+            var poolHeld = PoolOver(c, t, facts.Pool, origin?.Free == true ? 0 : authorizedCost, now);
+            var auto = !mustAsk && !ruleReview && !poolHeld && (facts.Role is "Manager" or "Admin" or "Trusted") || (!mustAsk && !ruleReview && !poolHeld && facts.Role == "Member" && facts.Backend == "je" && !automation &&
+                !blanket &&
+                !OverQuota(facts, Charges(c, t, user), authorizedCost, authorizedExtra == null ? 0 : EstimateGb(authorizedExtra, facts), now) &&
                 !OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold));
             if (!auto && !automation && SplitAtThreshold(c, t, user, request, normalized, facts, own, policy, now, origin) is { } split) return split;
             var extra = normalized.Extra(Coverage(c, t, covered, TargetKey(facts), !auto));
             if (auto && (extra != null || covered.Any(w => w.Status == "pending")) && Scalar(c, t,
-                "SELECT j.id FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w.title_key=$key AND w.variant=$v AND json_extract(j.authorization_context,'$.Backend')=$backend AND json_extract(j.authorization_context,'$.InstanceId')=$instance AND json_extract(j.authorization_context,'$.ConnectionGeneration')=$generation AND json_extract(j.authorization_context,'$.SeerrSource') IS $source AND (j.state IN ('sending','maybe_sent') OR json_extract(j.outcome,'$.certainty')='Unknown') LIMIT 1",
+                "SELECT j.id FROM jobs j JOIN wants w ON w.id=j.want_id WHERE w." + TitleIs + " AND w.variant=$v AND json_extract(j.authorization_context,'$.Backend')=$backend AND json_extract(j.authorization_context,'$.InstanceId')=$instance AND json_extract(j.authorization_context,'$.ConnectionGeneration')=$generation AND json_extract(j.authorization_context,'$.SeerrSource') IS $source AND (j.state IN ('sending','maybe_sent') OR json_extract(j.outcome,'$.certainty')='Unknown') LIMIT 1",
                 ("$key", normalized.Key), ("$v", normalized.Variant), ("$backend", facts.Backend), ("$instance", facts.InstanceId), ("$generation", facts.ConnectionGeneration), ("$source", facts.SeerrSource)) != null) return RequestOutcome.Refused("request_in_flight", 409);
             // Free automation costs nobody's allowance; the estimated GB still counts against a hard GB cap.
             var cost = extra == null || origin?.Free == true ? 0 : Cost(c, t, extra, user, now, facts.WindowDays);
             var gb = extra == null ? 0 : EstimateGb(extra, facts);
             if (OverGbCap(facts, Charges(c, t, user), gb, now)) return RequestOutcome.Refused("quota_exceeded", 429, "quota_exceeded");
             var over = OverQuota(facts, Charges(c, t, user, facts.Backend == "seerr"), cost, gb, now);
-            var needsApproval = extra != null && (mustAsk || facts.Role == "Kid" || (facts.Backend == "je" && facts.Role == "Member" && (automation || policy.Configuration.ArrRequestPreset == "approve_everything" || over || OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold))));
+            var poolOver = PoolOver(c, t, facts.Pool, cost, now);
+            var needsApproval = extra != null && (mustAsk || ruleReview || poolOver || facts.Role == "Kid" || (facts.Backend == "je" && facts.Role == "Member" && (automation || blanket || over || OverSeries(facts, normalized, own, policy.Configuration.ArrRequestSeriesThreshold))));
             if (over && facts.Backend == "seerr") return RequestOutcome.Refused("over_quota", 429, "quota_exceeded");
             var confirmedScope = extra == null && ConfirmedScope(c, t, normalized, covered, facts);
             var waitingScope = extra == null && normalized.Extra(Coverage(c, t, covered, TargetKey(facts))) != null;
             var status = confirmedScope ? "sent" : needsApproval || waitingScope ? "pending" : "queued";
-            var reason = confirmedScope ? "looking" : status == "pending" ? over ? "over_quota" : "awaiting_approval" : "queued_outage";
-            var acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE title_key=$key AND variant=$v AND state='active'", ("$key", normalized.Key), ("$v", normalized.Variant));
+            var reason = confirmedScope ? "looking" : status == "pending" ? ruleReview && extra != null ? RuleReview : over ? "over_quota" : poolOver ? GroupQuota : "awaiting_approval" : "queued_outage";
+            var acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE " + TitleIs + " AND variant=$v AND state='active'", ("$key", normalized.Key), ("$v", normalized.Variant));
             if (acquisition == null)
             {
                 acquisition = NewId();
@@ -443,9 +573,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (origin != null)
                 Exec(c, t, "UPDATE wants SET origin_kind=$kind,origin_source_id=$source,origin_detail=$detail,operation_id=$operation WHERE id=$id",
                     ("$kind", origin.Kind), ("$source", origin.Source), ("$detail", origin.Detail), ("$operation", origin.Provenance?.OperationId), ("$id", id));
+            // The verdict it was created with, as its rationale (phase 4b).
+            if (rules is { Verdict: not HouseholdRules.None } && extra != null)
+                Exec(c, t, "UPDATE wants SET rule_detail=$rules WHERE id=$id", ("$rules", rules.Json), ("$id", id));
             RememberInput(c, t, user, request.ClientRequestId, normalized.Fingerprint, id);
             Fault?.Invoke("want");
-            Reserve(c, t, id, user, cost, gb, status == "pending" ? "held" : "charged", now, "initial");
+            Reserve(c, t, id, user, cost, gb, status == "pending" ? "held" : "charged", now, "initial", facts.Pool?.Id);
             Fault?.Invoke("reservation");
             if (extra != null && status == "queued") AddJob(c, t, id, extra!, Authorize(facts, null, extra!, false), now);
             Fault?.Invoke("job");
@@ -454,8 +587,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Fault?.Invoke("notice");
             if (confirmedScope)
                 return RequestOutcome.Accepted(id, reason, 200) with { Outcome = "merged", Message = "Someone in your household already asked, we'll tell you both." };
-            return RequestOutcome.Accepted(id, reason);
+            return RequestOutcome.Accepted(id, reason) with { Rules = rules is { Verdict: not HouseholdRules.None } && extra != null ? rules : null };
         }
+        /// <summary>The reason of a request waiting for an OK because the household's rules want a look (phase 4b).</summary>
+        internal const string RuleReview = "rule_review";
+        /// <summary>The reason of a request waiting for an OK because its group pool is used up (phase 4b).</summary>
+        internal const string GroupQuota = "group_quota";
+        /// <summary>The reason of a request the household's rules refuse (phase 4b).</summary>
+        internal const string HouseholdRule = "household_rule";
         /// <summary>
         /// Seerr takes whole seasons only: single episodes are refused in Seerr mode before anything is recorded (the
         /// request controls ask for the episode's season instead, said before the person confirms), so a job that could
@@ -487,9 +626,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             RequestPolicyFacts facts, IReadOnlyList<RequestWant> own, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin)
         {
             var threshold = policy.Configuration.ArrRequestSeriesThreshold;
-            if (facts.Role != "Member" || facts.Backend != "je" || policy.Configuration.ArrRequestPreset == "approve_everything" ||
+            if (facts.Role != "Member" || facts.Backend != "je" || (policy.Configuration.ArrRequestPreset == "approve_everything" && facts.Rules?.Verdict != HouseholdRules.Approve) ||
                 normalized.Scope is not ("seasons" or "episodes") || !OverSeries(facts, normalized, own, threshold)) return null;
-            var asked = own.Where(w => w.Input.Key == normalized.Key && w.Status is not ("declined" or "cancelled")).SelectMany(w => w.Input.SeasonNumbers).ToHashSet();
+            var asked = own.Where(w => RequestDestination.SameTitle(w.Input, normalized) && w.Status is not ("declined" or "cancelled")).SelectMany(w => w.Input.SeasonNumbers).ToHashSet();
             var fresh = normalized.SeasonNumbers.Where(s => !asked.Contains(s)).Distinct().OrderBy(s => s).ToArray();
             var room = Math.Clamp(threshold, 1, 200) - asked.Count;
             if (room <= 0 || room >= fresh.Length) return null;
@@ -522,10 +661,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             => queued with { Outcome = "split", HeldRequestId = heldId, HeldSeasons = heldSeasons, Message = "Asked! The rest waits for an OK." };
         private static IEnumerable<MutationInput> Coverage(SqliteConnection c, SqliteTransaction t, IEnumerable<RequestWant> wants, string target, bool includePending = false)
         {
-            foreach (var want in wants.Where(w => Active(w) && w.TargetKey == target))
+            foreach (var want in wants.Where(w => Active(w) && RequestDestination.SameTarget(w.TargetKey, target)))
             {
                 var jobs = Jobs(c, t, "want_id=$id AND (state IN ('queued','retry','sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown')", ("$id", want.Id));
-                foreach (var job in jobs.Where(j => TargetKey(j.Authorization) == target)) yield return job.Input;
+                foreach (var job in jobs.Where(j => RequestDestination.SameTarget(TargetKey(j.Authorization), target))) yield return job.Input;
                 if (includePending && want.Status == "pending" && jobs.Count == 0 && want.OwnedInput != null) yield return want.OwnedInput;
                 if (LinkedScope(c, t, want) is { } linked) yield return linked;
             }
@@ -533,7 +672,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // Scope already sent to the target: succeeded jobs, and requests that were already processing in Seerr
         // when they moved (Seerr sent them; JE never sends them again).
         private static IEnumerable<MutationInput> Confirmed(SqliteConnection c, SqliteTransaction? t, IEnumerable<RequestWant> wants, string target)
-            => Confirmed(c, t, wants, key => key == target);
+            => Confirmed(c, t, wants, key => RequestDestination.SameTarget(key, target));
         private static IEnumerable<MutationInput> Confirmed(SqliteConnection c, SqliteTransaction? t, IEnumerable<RequestWant> wants, Func<string, bool> target)
         {
             foreach (var want in wants)
@@ -554,8 +693,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w LIMIT 1", ("$w", want.Id)) == null ? want.OwnedInput : null;
         private static void RememberInput(SqliteConnection c, SqliteTransaction t, Guid user, string client, string fingerprint, string wantId)
             => Exec(c, t, "INSERT INTO request_inputs VALUES($u,$client,$f,$w)", ("$u", Id(user)), ("$client", client), ("$f", fingerprint), ("$w", wantId));
-        private static void Reserve(SqliteConnection c, SqliteTransaction t, string id, Guid user, int cost, double gb, string state, DateTimeOffset now, string scope)
-            => Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count) VALUES($id,$w,$u,$cost,$gb,$state,$at,$scope,COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$w AND $scope='initial'),0))", ("$id", NewId()), ("$w", id), ("$u", Id(user)), ("$cost", cost), ("$gb", gb), ("$state", state), ("$at", Ms(now)), ("$scope", scope));
+        // pool: the group pool the initial reservation is bound to (phase 4b); every later charge of the want (an
+        // approval's extra scope, a future season) is bound to the same pool, so spend never moves between pools.
+        private static void Reserve(SqliteConnection c, SqliteTransaction t, string id, Guid user, int cost, double gb, string state, DateTimeOffset now, string scope, string? pool = null)
+            => Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count,pool_id,charge_seq) VALUES($id,$w,$u,$cost,$gb,$state,$at,$scope,COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$w AND $scope='initial'),0)," + PoolOf + ",CASE WHEN $state='charged' THEN " + NextCharge + " END)", ("$id", NewId()), ("$w", id), ("$u", Id(user)), ("$cost", cost), ("$gb", gb), ("$state", state), ("$at", Ms(now)), ("$scope", scope), ("$pool", pool));
+        // The pool a new reservation of want $w is bound to: the one named ($pool, the initial reservation), else the
+        // pool of the want's initial reservation.
+        private const string PoolOf = "COALESCE($pool,(SELECT pool_id FROM reservations WHERE want_id=$w AND scope='initial' LIMIT 1))";
+        /// <summary>Requests charged to a group pool in its rolling window (charged reservations bound to it), up to <paramref name="upTo"/> in charge order when given.</summary>
+        private static int PoolUsed(SqliteConnection c, SqliteTransaction? t, string pool, int days, DateTimeOffset now, ChargeOrder? upTo = null)
+            => int.Parse(Scalar(c, t, "SELECT COALESCE(SUM(cost),0) FROM reservations WHERE pool_id=$p AND state='charged' AND charged_at>$since AND charged_at<=$at" + (upTo == null ? "" : " AND " + ChargedBy),
+                ("$p", pool), ("$since", Ms(now.AddDays(-days))), ("$at", Ms(now)), ("$upto", upTo?.At), ("$seq", upTo?.Seq))!, CultureInfo.InvariantCulture);
+        /// <summary>True when <paramref name="cost"/> more would take the pool over its limit.</summary>
+        private static bool PoolOver(SqliteConnection c, SqliteTransaction? t, GroupPoolBinding? pool, int cost, DateTimeOffset now)
+            => pool != null && cost > 0 && PoolUsed(c, t, pool.Id, pool.WindowDays, now) + cost > pool.Limit;
+        /// <summary>
+        /// A group pool's use now (phase 4b): requests charged in its window, its limit and when the next one frees up.
+        /// An aggregate: whose requests they were is never part of it.
+        /// </summary>
+        /// <param name="pool">The pool.</param>
+        /// <param name="now">Now.</param>
+        public QuotaProjection PoolQuota(GroupPoolBinding pool, DateTimeOffset now) => _db.Read(c =>
+        {
+            var charges = new List<QuotaCharge>();
+            using (var cmd = Cmd(c, null, "SELECT cost,charged_at FROM reservations WHERE pool_id=$p AND state='charged' AND cost>0", ("$p", pool.Id)))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read()) charges.Add(new QuotaCharge(r.GetInt32(0), DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(1))));
+            return QuotaProjector.Project(charges, pool.Limit, TimeSpan.FromDays(pool.WindowDays), now);
+        });
         // The request for a new season a keep-getting request follows; its charge (if any) goes with the latest one, so it
         // counts as unsent until that one is sent (Seerr's quota), and stays charged when it is replaced (see Supersede).
         private static void FollowJob(SqliteConnection c, SqliteTransaction t, string wantId, MutationInput season, RequestAuthorization auth, DateTimeOffset now)
@@ -603,36 +768,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var want = Wants(c, t, "id=$id", ("$id", id)).SingleOrDefault();
             if (want == null) return RequestOutcome.Refused("not_found", 404);
             if (Deleted(c, t, actor) || Deleted(c, t, want.UserId)) return RequestOutcome.Refused("user_required");
-            var input = edits?.Normalize() ?? want.Input;
-            if (edits != null && (edits.Normalize() == null || input.Key != want.Input.Key)) return RequestOutcome.Refused("invalid_input", 400);
+            // An edit names the request's own title, by any of its ids.
+            var input = edits?.Normalize() is { } edited ? Canonical(c, t, edited) : want.Input;
+            if (edits != null && (edits.Normalize() == null || !RequestDestination.SameTitle(input, want.Input))) return RequestOutcome.Refused("invalid_input", 400);
             if (!policy.IsAdmin(actor) && RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
+            if (!policy.Evaluate(actor, want.Input, want.TargetKey).Visible) return RequestOutcome.Refused("not_visible_to_user");
             var requester = policy.Evaluate(want.UserId, input);
             var approver = policy.Evaluate(actor, input);
-            if (RequestPolicy.Check(requester, approver, input, true) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: "blocked");
+            if (RequestPolicy.Check(requester, approver, input, true) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal == "backend_unavailable" ? "unavailable" : "blocked");
             if (SeerrEpisodes(requester, input) is { } seerrOnly) return seerrOnly;
-            if (approver.Role != "Admin" && (input.InstanceId != want.Input.InstanceId || input.ProfileId != want.Input.ProfileId || input.RootFolder != want.Input.RootFolder)) return RequestOutcome.Refused("admin_required");
+            if (approver.Role != "Admin" && RoutingChanged(input, want.Input)) return RequestOutcome.Refused("admin_required");
             if (want.Status != "pending") return RequestOutcome.Refused("request_changed", 409);
             // A job held after part of it was written (parked, certainty unknown) isn't in flight: approving resumes it.
             if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent') OR (state<>'parked' AND json_extract(outcome,'$.certainty')='Unknown')) LIMIT 1", ("$id", id)) != null) return RequestOutcome.Refused("request_in_flight", 409);
-            var held = Jobs(c, t, "want_id=$id AND state='parked' AND json_extract(outcome,'$.certainty')='Unknown'", ("$id", id));
-            var targetChanged = TargetKey(requester) != want.TargetKey;
-            // The written part stays where it went: such a request resumes as it was, never edited or moved elsewhere.
-            if (held.Count > 0 && (!resumeHeld || targetChanged || held.Any(j => TargetKey(j.Authorization) != TargetKey(requester)) || (edits != null && input.Fingerprint != want.Input.Fingerprint)))
-                return RequestOutcome.Refused("request_in_flight", 409);
+            var jobs = Jobs(c, t, "want_id=$id", ("$id", id));
+            var held = jobs.Where(j => j.State == "parked" && j.Uncertain).ToList();
+            var targetChanged = !RequestDestination.SameTarget(TargetKey(requester), want.TargetKey);
+            // The one re-confirmation rule: only a fresh stamp for the same destination on the request's own Seerr
+            // re-confirms it (a written part keeps its uncertainty and is read back first); a written part resumes only
+            // where it was; and what went out never moves, whatever the approval is.
+            var verdict = RequestDestination.Approval(want.Input, want.TargetKey, input, TargetKey(requester), edits != null, jobs, resumeHeld);
+            if (verdict.Refusal != null) return RequestOutcome.Refused(verdict.Refusal, 409);
+            var restamp = verdict.Reconfirms;
             if (targetChanged)
-                foreach (var old in Jobs(c, t, "want_id=$id AND state IN ('queued','retry') AND " + KnownUnsent, ("$id", id)).Where(j => TargetKey(j.Authorization) != TargetKey(requester)))
+                foreach (var old in Jobs(c, t, "want_id=$id AND state IN ('queued','retry') AND " + KnownUnsent, ("$id", id)).Where(j => !RequestDestination.SameTarget(TargetKey(j.Authorization), TargetKey(requester))))
                     Supersede(c, t, old.Id, "instance_changed");
-            if (edits != null && input.Fingerprint != want.Input.Fingerprint)
+            if (restamp)
             {
-                var succeeded = Jobs(c, t, "want_id=$id AND state='succeeded'", ("$id", id));
-                if (succeeded.Any(j => TargetKey(j.Authorization) != TargetKey(requester) || RoutingChanged(input, want.Input) || j.Input.Extra(new[] { input }) != null))
-                    return RequestOutcome.Refused("request_changed", 409);
+                // Its jobs at that destination carry the new stamp (Seerr is only ever sent the server, profile and root
+                // folder): what went out stays covered, and held new seasons and queued work go out with the new stamp.
+                foreach (var job in jobs.Where(j => RequestDestination.SameOptions(j.Input, want.Input)))
+                {
+                    var moved = job.Input with { SeerrOptions = input.SeerrOptions };
+                    Exec(c, t, "UPDATE jobs SET mutation_input=$input,fingerprint=$f WHERE id=$j", ("$input", moved.Canonical), ("$f", moved.Fingerprint), ("$j", job.Id));
+                }
+            }
+            else if (edits != null && input.Fingerprint != want.Input.Fingerprint)
+            {
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$id AND state IN ('queued','retry'))", ("$id", id));
                 Exec(c, t, "UPDATE jobs SET state='cancelled',reason='request_changed' WHERE want_id=$id AND state IN ('queued','retry')", ("$id", id));
             }
             // A "keep getting new episodes" request held while a new season it follows was being sent (over Seerr's quota,
             // say): approving sends that season again, with this approval's authority (its charge stays as it was).
-            var followed = edits == null && !targetChanged
+            var followed = (edits == null || restamp) && !targetChanged
                 ? HeldFollows(c, t, want).Select(j => j.Input).DistinctBy(i => i.Fingerprint).ToArray()
                 : Array.Empty<MutationInput>();
             foreach (var parked in Jobs(c, t, "want_id=$id AND state='parked' AND " + KnownUnsent, ("$id", id)))
@@ -646,10 +824,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at,authorization_context=$auth,updated_at=$at WHERE id=$j",
                     ("$auth", JsonSerializer.Serialize(Authorize(requester, approver, resume.Input, edits != null) with { SeerrUser = resume.Authorization.SeerrUser ?? requester.SeerrUser, SeerrSeasons = resume.Authorization.SeerrSeasons })), ("$at", Ms(now)), ("$j", resume.Id));
             var own = Wants(c, t, "user_id=$u AND id<>$id", ("$u", Id(want.UserId)), ("$id", id));
-            var covered = Wants(c, t, "title_key=$key AND variant=$v AND id<>$id", ("$key", input.Key), ("$v", input.Variant), ("$id", id)).Where(w => Active(w) && w.Status != "pending").ToArray();
+            var covered = Wants(c, t, TitleIs + " AND variant=$v AND id<>$id", ("$key", input.Key), ("$v", input.Variant), ("$id", id)).Where(w => Active(w) && w.Status != "pending").ToArray();
             // (maybe_sent here: only the held jobs resumed above.)
             var existingJobs = Jobs(c, t, "want_id=$id AND state IN ('queued','retry','succeeded','maybe_sent')", ("$id", id));
-            var extra = input.Extra(Coverage(c, t, covered, TargetKey(requester)).Concat(existingJobs.Where(j => TargetKey(j.Authorization) == TargetKey(requester)).Select(j => j.Input)));
+            var extra = input.Extra(Coverage(c, t, covered, TargetKey(requester)).Concat(existingJobs.Where(j => RequestDestination.SameTarget(TargetKey(j.Authorization), TargetKey(requester))).Select(j => j.Input)));
             var cost = extra == null || Free(want) ? 0 : Cost(c, t, extra, want.UserId, now, requester.WindowDays, existingJobs.Count == 0 ? id : null);
             var gb = extra == null ? 0 : EstimateGb(extra, requester);
             if (OverGbCap(requester, Charges(c, t, want.UserId).Where(charge => existingJobs.Count > 0 || charge.WantId != id).ToArray(), gb, now)) return RequestOutcome.Refused("quota_exceeded", 429, "quota_exceeded");
@@ -659,18 +837,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var stored = input;
             var priorCost = existingJobs.Count == 0 ? 0 : int.Parse(Scalar(c, t, "SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=$id AND state='charged'", ("$id", id))!, CultureInfo.InvariantCulture);
             var acquisition = want.AcquisitionId;
-            if (input.Variant != want.Input.Variant)
+            if (!RequestDestination.SameEdition(input, want.Input))
             {
-                acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE title_key=$key AND variant=$v AND state='active'", ("$key", input.Key), ("$v", input.Variant)) ?? NewId();
+                acquisition = Scalar(c, t, "SELECT id FROM acquisitions WHERE " + TitleIs + " AND variant=$v AND state='active'", ("$key", input.Key), ("$v", input.Variant)) ?? NewId();
                 Exec(c, t, "INSERT OR IGNORE INTO acquisitions VALUES($id,$key,$v,'active',$at)", ("$id", acquisition), ("$key", input.Key), ("$v", input.Variant), ("$at", Ms(now)));
             }
             Exec(c, t, "UPDATE wants SET acquisition_id=$a,mutation_input=$input,owned_input=$owned,variant=$v,status=$state,reason=$reason,cost=$cost,is_follower=$follower,parental_signature=$p,updated_at=$at WHERE id=$id",
                 ("$a", acquisition), ("$input", stored.Canonical), ("$owned", extra?.Canonical), ("$v", stored.Variant), ("$state", confirmedScope ? "sent" : "queued"), ("$reason", confirmedScope ? "looking" : "queued_outage"), ("$cost", priorCost + cost), ("$p", requester.ParentalSignature), ("$follower", extra == null && existingJobs.Count == 0), ("$at", Ms(now)), ("$id", id));
             Exec(c, t, "UPDATE wants SET target_key=$target WHERE id=$id", ("$target", TargetKey(requester)), ("$id", id));
             if (existingJobs.Count == 0)
-                Exec(c, t, "UPDATE reservations SET job_id=NULL,state='charged',cost=$cost,estimated_gb=$gb,charged_at=$at,episode_count=COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$id),0) WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", gb), ("$at", Ms(now)), ("$id", id));
+                Exec(c, t, "UPDATE reservations SET job_id=NULL,state='charged',charge_seq=" + NextCharge + ",cost=$cost,estimated_gb=$gb,charged_at=$at,episode_count=COALESCE((SELECT CASE WHEN json_extract(owned_input,'$.Scope')='episodes' THEN json_array_length(owned_input,'$.Episodes') ELSE 0 END FROM wants WHERE id=$id),0) WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", gb), ("$at", Ms(now)), ("$id", id));
             else if (extra != null)
-                Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count) VALUES($rid,$id,$u,$cost,$gb,'charged',$at,$scope,$episodes)",
+                Exec(c, t, "INSERT INTO reservations(id,want_id,user_id,cost,estimated_gb,state,charged_at,scope,episode_count,pool_id,charge_seq) VALUES($rid,$id,$u,$cost,$gb,'charged',$at,$scope,$episodes,(SELECT pool_id FROM reservations WHERE want_id=$id AND scope='initial' LIMIT 1)," + NextCharge + ")",
                     ("$rid", NewId()), ("$id", id), ("$u", Id(want.UserId)), ("$cost", cost), ("$gb", gb), ("$at", Ms(now)), ("$scope", "approval:" + NewId()), ("$episodes", extra.Scope == "episodes" ? extra.Episodes.Length : 0));
             Fault?.Invoke("reservation");
             var auth = Authorize(requester, approver, extra ?? stored, edits != null);
@@ -695,11 +873,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var oldWants = Wants(c, t, "acquisition_id=$a", ("$a", oldAcquisition));
             var oldCoverage = Coverage(c, t, oldWants, oldTarget).ToArray();
             var newCoverage = Coverage(c, t, Wants(c, t, "acquisition_id=$a", ("$a", acquisition)), target).ToArray();
-            foreach (var follower in oldWants.Where(w => w.Follower && w.TargetKey == oldTarget && w.Status is "queued" or "pending" && w.Input.Extra(oldCoverage) != null))
+            foreach (var follower in oldWants.Where(w => w.Follower && RequestDestination.SameTarget(w.TargetKey, oldTarget) && w.Status is "queued" or "pending" && w.Input.Extra(oldCoverage) != null))
             {
                 if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w LIMIT 1", ("$w", follower.Id)) != null) continue;
                 var facts = policy.Evaluate(follower.UserId, follower.Input);
-                var migrate = TargetKey(facts) == target && RequestPolicy.Check(facts, policy.Evaluate(actor, follower.Input), follower.Input, true) == null;
+                var migrate = RequestDestination.SameTarget(TargetKey(facts), target) && RequestPolicy.Check(facts, policy.Evaluate(actor, follower.Input), follower.Input, true) == null;
                 var queued = migrate && follower.Input.Extra(newCoverage) == null;
                 var confirmed = queued && ConfirmedScope(c, t, follower.Input, Wants(c, t, "acquisition_id=$a", ("$a", acquisition)).ToArray(), facts);
                 var reason = confirmed ? "looking" : queued ? "queued_outage" : "instance_changed";
@@ -711,65 +889,113 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static void DemoteUncoveredFollowers(SqliteConnection c, SqliteTransaction t, string acquisition, string target, string reason, DateTimeOffset now)
         {
             var wants = Wants(c, t, "acquisition_id=$a", ("$a", acquisition));
-            foreach (var want in wants.Where(w => w.TargetKey == target && w.Status == "queued" && w.Input.Extra(Coverage(c, t, wants, w.TargetKey)) != null))
+            foreach (var want in wants.Where(w => RequestDestination.SameTarget(w.TargetKey, target) && w.Status == "queued" && w.Input.Extra(Coverage(c, t, wants, w.TargetKey)) != null))
             {
                 Exec(c, t, "UPDATE wants SET status='pending',reason=$r,updated_at=$at WHERE id=$w", ("$r", reason), ("$at", Ms(now)), ("$w", want.Id));
                 Record(c, t, want.Id, null, null, "scope_held", "accepted", reason, want.Input.Key, now);
             }
         }
-        private static void ReleasePendingFollowers(SqliteConnection c, SqliteTransaction t, string acquisition, Guid actor, IRequestPolicy policy, DateTimeOffset now, bool approving = true)
+        // actor: who released them (an approver, or the asker whose ask covers them); null for the ledger itself (a merge).
+        private static void ReleasePendingFollowers(SqliteConnection c, SqliteTransaction t, string acquisition, Guid? actor, IRequestPolicy policy, DateTimeOffset now, bool approving = true)
         {
             var wants = Wants(c, t, "acquisition_id=$a", ("$a", acquisition));
             foreach (var follower in wants.Where(w => w.Status == "pending"))
             {
                 if (follower.Input.Extra(Coverage(c, t, wants, follower.TargetKey)) != null) continue;
                 if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id LIMIT 1", ("$id", follower.Id)) != null) continue;
-                if (RequestPolicy.Check(policy.Evaluate(follower.UserId, follower.Input), approving ? policy.Evaluate(actor, follower.Input) : null, follower.Input, approving) != null) continue;
+                if (RequestPolicy.Check(policy.Evaluate(follower.UserId, follower.Input), approving && actor is Guid approver ? policy.Evaluate(approver, follower.Input) : null, follower.Input, approving) != null) continue;
                 // Scope that is already sent has no job left to complete, so the follower is sent now too.
                 var sent = follower.Input.Extra(Confirmed(c, t, wants, follower.TargetKey)) == null;
                 Exec(c, t, "UPDATE wants SET status=$s,reason=$r,owned_input=NULL,is_follower=1,cost=0,updated_at=$at WHERE id=$id",
                     ("$s", sent ? "sent" : "queued"), ("$r", sent ? "looking" : "queued_outage"), ("$at", Ms(now)), ("$id", follower.Id));
-                Exec(c, t, "UPDATE reservations SET state='charged',cost=0,estimated_gb=0,episode_count=0,charged_at=$at WHERE want_id=$id AND scope='initial' AND state='held'", ("$at", Ms(now)), ("$id", follower.Id));
+                Exec(c, t, "UPDATE reservations SET state='charged',charge_seq=" + NextCharge + ",cost=0,estimated_gb=0,episode_count=0,charged_at=$at WHERE want_id=$id AND scope='initial' AND state='held'", ("$at", Ms(now)), ("$id", follower.Id));
                 Record(c, t, follower.Id, null, actor, "merged", "accepted", sent ? "looking" : "queued_outage", follower.Input.Key, now);
             }
         }
-        /// <summary>Cancel or decline; uncertain/in-flight writes cannot be refunded or deleted.</summary>
+        /// <summary>Cancel (<paramref name="declineReason"/> null) or decline: the one withdrawal rule (see <see cref="Withdraw"/>).</summary>
         public RequestOutcome Close(string id, Guid actor, string? declineReason, IRequestPolicy policy, DateTimeOffset now)
-            => _db.Write((c, t) =>
+            => _db.Write((c, t) => Withdraw(c, t, id, actor, declineReason, policy, now));
+        // Work proven unsent: queued, retried later, held at send (parked) or refused (failed), and never left uncertain.
+        private const string Unsent = "state IN ('queued','retry','parked','failed') AND " + KnownUnsent;
+        // What a policy refusal says only about a request's routing no longer fitting, or not being checkable now (its arr
+        // instance or folder changed, its Seerr choice is stale, Seerr can't be asked, the drive is low): never a reason to
+        // keep it. Anything else (no such person, the feature off, authority changing, not seeing it) refuses a withdrawal.
+        private static readonly IReadOnlySet<string> RoutingRefusals = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "invalid_instance", "instance_changed", "invalid_defaults", "seerr_options_invalid", "seerr_options_changed", "seerr_options_disabled",
+            "seerr_advanced_required", "backend_unavailable", "low_disk",
+        };
+        /// <summary>
+        /// The one withdrawal rule (phase 4b, review round 4), for a cancel (<paramref name="declineReason"/> null) or a decline:
+        /// <list type="number">
+        /// <item>Who may: the person who asked or an administrator cancels; someone who may approve declines. Each is judged
+        /// as they see the request where it actually goes (its arr instance and folder, or its Seerr choice), never by whether
+        /// its routing still fits: a stale Seerr choice or a changed arr is often why it waits.</item>
+        /// <item>What may be withdrawn: an active request (a decline: one waiting for an OK), never while a part of it may have
+        /// gone out (being sent, unconfirmed, or a request Seerr was already processing when it moved). A request with a part
+        /// that went out only while it waits for an OK and what went out covers what it asked for.</item>
+        /// <item>What is cancelled and refunded: every part proven unsent (queued, retried later, held, refused). What stays:
+        /// what went out, charged; such a request is sent again. Else the request is cancelled or declined as a whole.</item>
+        /// <item>The people following it: a cancel withdraws what they followed that nothing covers any more; a decline makes
+        /// each of them the owner of what nobody else is still asking for, waiting for an OK.</item>
+        /// </list>
+        /// </summary>
+        private static RequestOutcome Withdraw(SqliteConnection c, SqliteTransaction t, string id, Guid actor, string? declineReason, IRequestPolicy policy, DateTimeOffset now)
+        {
+            var want = Wants(c, t, "id=$id", ("$id", id)).SingleOrDefault();
+            if (want == null) return RequestOutcome.Refused("not_found", 404);
+            var decline = declineReason != null;
+            // 1. Who may, seeing it where it goes.
+            var facts = policy.Evaluate(actor, want.Input, want.TargetKey);
+            if (!facts.Visible || (facts.Refusal != null && !RoutingRefusals.Contains(facts.Refusal))) return RequestOutcome.Refused(facts.Refusal ?? "not_visible_to_user");
+            if (decline ? !facts.CanApprove : actor != want.UserId && facts.Role != "Admin") return RequestOutcome.Refused("requests_approve_required");
+            if (decline && (string.IsNullOrWhiteSpace(declineReason) || declineReason!.Length > 500 || declineReason.Any(ch => char.IsControl(ch) && ch != '\n'))) return RequestOutcome.Refused("invalid_reason", 400);
+            // 2. What may be withdrawn.
+            if (!Active(want) || (decline && want.Status != "pending")) return RequestOutcome.Refused("request_changed", 409);
+            var jobs = Jobs(c, t, "want_id=$id", ("$id", id));
+            if (jobs.Any(j => j.State is "sending" or "maybe_sent" || j.Uncertain) || LinkedScope(c, t, want) != null) return RequestOutcome.Refused("request_in_flight", 409);
+            var sent = jobs.Where(j => j.State == "succeeded").Select(j => j.Input).ToList();
+            if (sent.Count > 0 && (want.Status != "pending" || want.Input.Extra(sent) != null)) return RequestOutcome.Refused("request_in_flight", 409);
+            // 3. Every part proven unsent is cancelled and refunded; what went out stays.
+            var state = decline ? "declined" : "cancelled";
+            Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$id AND " + Unsent + ")", ("$id", id));
+            Exec(c, t, "UPDATE jobs SET state='cancelled',reason=$s WHERE want_id=$id AND " + Unsent, ("$s", state), ("$id", id));
+            if (sent.Count > 0)
             {
-                var want = Wants(c, t, "id=$id", ("$id", id)).SingleOrDefault();
-                if (want == null) return RequestOutcome.Refused("not_found", 404);
-                var facts = policy.Evaluate(actor, want.Input);
-                if (facts.Refusal != null) return RequestOutcome.Refused(facts.Refusal);
-                if (declineReason == null ? actor != want.UserId && facts.Role != "Admin" : !facts.CanApprove) return RequestOutcome.Refused("requests_approve_required");
-                if (declineReason != null && (string.IsNullOrWhiteSpace(declineReason) || declineReason.Length > 500 || declineReason.Any(ch => char.IsControl(ch) && ch != '\n'))) return RequestOutcome.Refused("invalid_reason", 400);
-                if (!Active(want) || (declineReason != null && want.Status != "pending")) return RequestOutcome.Refused("request_changed", 409);
-                if (Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$id", id)) != null ||
-                    LinkedScope(c, t, want) != null) return RequestOutcome.Refused("request_in_flight", 409);
-                var state = declineReason == null ? "cancelled" : "declined";
+                Exec(c, t, "UPDATE wants SET status='sent',reason='looking',cost=(SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=wants.id AND state='charged'),updated_at=$at WHERE id=$id", ("$at", Ms(now)), ("$id", id));
+            }
+            else
+            {
                 Exec(c, t, "UPDATE wants SET status=$s,reason=$s,updated_at=$at WHERE id=$id", ("$s", state), ("$at", Ms(now)), ("$id", id));
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE want_id=$id", ("$id", id));
-                Exec(c, t, "UPDATE jobs SET state='cancelled',reason=$s WHERE want_id=$id", ("$s", state), ("$id", id));
-                if (declineReason == null) WithdrawFollowers(c, t, want.AcquisitionId, now);
-                else RestorePendingOwners(c, t, want.AcquisitionId, policy, now);
-                Approval(c, t, want, actor, state, declineReason, null, Authorize(facts, facts, want.Input, false), now);
-                Record(c, t, id, null, actor, state, "accepted", state, want.Input.Key, now);
-                return RequestOutcome.Accepted(id, state, 200);
-            });
+            }
+            // 4. The people following it.
+            if (decline) RestorePendingOwners(c, t, want.AcquisitionId, policy, now);
+            else WithdrawFollowers(c, t, want.AcquisitionId, now);
+            var reason = sent.Count > 0 ? "looking" : state;
+            Approval(c, t, want, actor, state, declineReason, null, Authorize(facts, facts, want.Input, false), now);
+            Record(c, t, id, null, actor, state, "accepted", reason, want.Input.Key, now);
+            return RequestOutcome.Accepted(id, reason, 200);
+        }
+        // A decline: each person following a request that nothing covers any more (pending or queued) owns what nobody else
+        // at their target is still asking for (the remaining coverage), waiting for an OK.
         private static void RestorePendingOwners(SqliteConnection c, SqliteTransaction t, string acquisition, IRequestPolicy policy, DateTimeOffset now)
         {
             var wants = Wants(c, t, "acquisition_id=$a", ("$a", acquisition));
-            var coverage = wants.Where(w => Active(w) && w.OwnedInput != null).ToList();
-            foreach (var follower in wants.Where(w => w.Follower && w.Status == "pending"))
+            for (var i = 0; i < wants.Count; i++)
             {
-                var extra = follower.Input.Extra(coverage.Where(w => w.TargetKey == follower.TargetKey).Select(w => w.OwnedInput!));
+                var follower = wants[i];
+                if (!follower.Follower || follower.Status is not ("pending" or "queued")) continue;
+                var extra = follower.Input.Extra(Coverage(c, t, wants, follower.TargetKey, true));
                 if (extra == null) continue;
                 var facts = policy.Evaluate(follower.UserId, extra);
                 var cost = Free(follower) ? 0 : Cost(c, t, extra, follower.UserId, now, facts.WindowDays);
-                Exec(c, t, "UPDATE wants SET owned_input=$input,is_follower=0,cost=$cost,updated_at=$at WHERE id=$id", ("$input", extra.Canonical), ("$cost", cost), ("$at", Ms(now)), ("$id", follower.Id));
-                Exec(c, t, "UPDATE reservations SET cost=$cost,estimated_gb=$gb WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", EstimateGb(extra, facts)), ("$id", follower.Id));
-                Record(c, t, follower.Id, null, null, "scope_restored", "accepted", follower.Reason, follower.Input.Key, now);
-                coverage.Add(follower with { OwnedInput = extra });
+                var reason = follower.Status == "pending" ? follower.Reason : "awaiting_approval";
+                Exec(c, t, "UPDATE wants SET status='pending',reason=$r,owned_input=$input,is_follower=0,cost=$cost,updated_at=$at WHERE id=$id", ("$r", reason), ("$input", extra.Canonical), ("$cost", cost), ("$at", Ms(now)), ("$id", follower.Id));
+                Exec(c, t, "UPDATE reservations SET state='held',cost=$cost,estimated_gb=$gb WHERE want_id=$id AND scope='initial'", ("$cost", cost), ("$gb", EstimateGb(extra, facts)), ("$id", follower.Id));
+                Record(c, t, follower.Id, null, null, "scope_restored", "accepted", reason, follower.Input.Key, now);
+                // It covers the people after it who follow the same scope.
+                wants[i] = follower with { Status = "pending", Reason = reason, Follower = false, OwnedInput = extra, Cost = cost };
             }
         }
         private static void WithdrawFollowers(SqliteConnection c, SqliteTransaction t, string acquisition, DateTimeOffset now)
@@ -813,7 +1039,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (want == null || want.Input.Scope != "future" || want.Cost == 0 || want.Status is not ("sent" or "stale") || want.Input.Seasons.Contains(season) || !policy.Configuration.ArrRequestChargeFutureSeasons) return false;
                 var scope = "s" + season.ToString(CultureInfo.InvariantCulture);
                 if (Scalar(c, t, "SELECT id FROM reservations WHERE want_id=$id AND scope=$s", ("$id", wantId), ("$s", scope)) != null) return false;
-                var newSeason = want.Input with { Scope = "seasons", Seasons = new[] { season }, Episodes = Array.Empty<RequestEpisode>() };
+                var newSeason = want.Input.NewSeason(season);
                 Reserve(c, t, wantId, want.UserId, 1, EstimateGb(newSeason, policy.Evaluate(want.UserId, newSeason)), "charged", now, scope);
                 Record(c, t, wantId, null, want.UserId, "future_season", "accepted", "looking", want.Input.Key, now);
                 return true;
@@ -825,7 +1051,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// for it once (D16; an overdraft is allowed, as Sonarr would fetch it in Jellyfin Enhanced mode) unless charging
         /// future seasons is off or the season was charged already. Once per season and request, whatever became of the
         /// first (a held one is sent again when the request is approved): false when one exists, the request isn't a
-        /// sent keep-getting request on the Seerr the requester's asks go to now, or the season is the one asked for.
+        /// sent keep-getting request on the Seerr the requester's asks go to now, or the season is the one asked for. The
+        /// new season's request is the approved request's input for that season, with its Seerr options and stamp.
         /// </summary>
         /// <param name="wantId">The keep-getting request.</param>
         /// <param name="season">The new season.</param>
@@ -838,10 +1065,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 var want = Wants(c, t, "id=$id", ("$id", wantId)).SingleOrDefault();
                 if (want == null || want.Input.Scope != "future" || want.Status is not ("sent" or "stale") || want.Input.Seasons.Contains(season)) return false;
-                var input = new MutationInput { Key = want.Input.Key, Scope = "seasons", Variant = want.Input.Variant, Seasons = new[] { season } }.Normalize();
+                // From the request as approved: the new season goes where it went (an administrator's Seerr server, profile,
+                // root folder and options stamp included), checked again at send like any request with them.
+                var input = want.Input.NewSeason(season).Normalize();
                 if (input == null) return false;
                 var requester = policy.Evaluate(want.UserId, input);
-                if (requester.Backend != "seerr" || TargetKey(requester) != want.TargetKey) return false;
+                if (requester.Backend != "seerr" || !RequestDestination.SameTarget(TargetKey(requester), want.TargetKey)) return false;
                 var jobs = Jobs(c, t, "want_id=$id", ("$id", wantId));
                 if (jobs.Any(j => j.Input.Scope == "seasons" && j.Input.Seasons.Contains(season))) return false;
                 // The approval the request went out with covers what it follows (a Kid's OK'd keep-getting needs no new OK).
@@ -879,9 +1108,128 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public IReadOnlyList<RequestJob> ForWant(string id) => _db.Read(c => Jobs(c, null, "want_id=$id", ("$id", id)));
         /// <summary>Recovers uncertain writes after a process restart, never blindly re-sending them.</summary>
         public void Recover(DateTimeOffset now) => _db.Write((c, t) => Exec(c, t, "UPDATE jobs SET state='maybe_sent',reason='maybe_sent',next_attempt=$at WHERE state='sending' OR (state='parked' AND json_extract(outcome,'$.certainty')='Unknown')", ("$at", Ms(now))));
-        /// <summary>Claims a due row under a database generation fence.</summary>
-        public bool Claim(RequestJob job, long generation, DateTimeOffset now) => _db.WriteIf(generation, (c, t) =>
-            Exec(c, t, "UPDATE jobs SET state='sending',attempts=attempts+1,updated_at=$at WHERE id=$id AND state=$state AND next_attempt<=$at", ("$at", Ms(now)), ("$id", job.Id), ("$state", job.State)) == 1, false).Result;
+        /// <summary>Claims a due row under a database generation fence (after the send-time redundancy check: see <see cref="ClaimForDispatch"/>).</summary>
+        public bool Claim(RequestJob job, long generation, DateTimeOffset now) => ClaimForDispatch(job, generation, now) == DispatchClaim.Claimed;
+        /// <summary>What claiming a due job for its send did.</summary>
+        public enum DispatchClaim
+        {
+            /// <summary>Claimed: it is being sent now.</summary>
+            Claimed,
+            /// <summary>Not claimed: it changed meanwhile (or the database was restored).</summary>
+            Lost,
+            /// <summary>Not sent: what it would send already went out for the title, so it was cancelled and its charge given back.</summary>
+            Served,
+            /// <summary>Not sent yet: what it would send is being sent (or is unconfirmed) for the title; it waits for that to settle.</summary>
+            Waits,
+        }
+        /// <summary>How long a job waits when work in flight for its title would cover it (see <see cref="DispatchClaim.Waits"/>).</summary>
+        internal static readonly TimeSpan InFlightWait = TimeSpan.FromSeconds(30);
+        /// <summary>
+        /// Claims a due job for its send under a database generation fence, after the one send-time redundancy check (review
+        /// round 5, 4b-B13): a job whose scope another job or request of the title already sent there (the same destination,
+        /// <see cref="RequestDestination.Serves(MutationInput, string, MutationInput, string)"/>) is never POSTed: it is
+        /// cancelled and its charge given back once, and a request left with nothing of its own follows what went out (free).
+        /// One whose scope is covered only together with work in flight there (being sent, or unconfirmed) waits for that work
+        /// to settle. A read-back (<c>maybe_sent</c>) is always claimed: it only reads.
+        /// </summary>
+        /// <param name="job">The due job.</param>
+        /// <param name="generation">The database generation it was read in.</param>
+        /// <param name="now">Now.</param>
+        public DispatchClaim ClaimForDispatch(RequestJob job, long generation, DateTimeOffset now) => _db.WriteIf(generation, (c, t) =>
+        {
+            if (job.State != "maybe_sent" && Redundancy(c, t, job, now) is { } settled) return settled;
+            return Exec(c, t, "UPDATE jobs SET state='sending',attempts=attempts+1,updated_at=$at WHERE id=$id AND state=$state AND next_attempt<=$at", ("$at", Ms(now)), ("$id", job.Id), ("$state", job.State)) == 1
+                ? DispatchClaim.Claimed : DispatchClaim.Lost;
+        }, DispatchClaim.Lost).Result;
+        // The send-time redundancy check (see ClaimForDispatch): null when the job goes out.
+        private static DispatchClaim? Redundancy(SqliteConnection c, SqliteTransaction t, RequestJob job, DateTimeOffset now)
+        {
+            var want = Wants(c, t, "id=$id", ("$id", job.WantId)).SingleOrDefault();
+            if (want == null || !Active(want)) return null;
+            var target = TargetKey(job.Authorization);
+            var title = Wants(c, t, "acquisition_id=$a", ("$a", want.AcquisitionId)).Where(Active).ToList();
+            var sent = new List<MutationInput>();
+            var going = new List<MutationInput>();
+            foreach (var other in title)
+            {
+                foreach (var work in Jobs(c, t, "want_id=$w AND id<>$j", ("$w", other.Id), ("$j", job.Id)).Where(j => RequestDestination.Serves(job.Input, target, j.Input, TargetKey(j.Authorization))))
+                {
+                    if (work.State == "succeeded") sent.Add(work.Input);
+                    else if (work.State is "sending" or "maybe_sent" || work.Uncertain && work.State != "cancelled") going.Add(work.Input);
+                }
+                if (LinkedScope(c, t, other) is { } linked && RequestDestination.Serves(job.Input, target, linked, other.TargetKey)) sent.Add(linked);
+            }
+            if (job.Input.Extra(sent) != null)
+            {
+                if (job.Input.Extra(sent.Concat(going)) != null) return null;
+                if (job.State == "retry" && job.Uncertain && LeadsRetryCycle(c, t, job, title)) return null;
+                // Covered only with work in flight: it waits for that to settle (a merge noted it, and SettleMerges finishes it).
+                return Exec(c, t, "UPDATE jobs SET next_attempt=$next WHERE id=$j AND state=$s", ("$next", Ms(now + InFlightWait)), ("$j", job.Id), ("$s", job.State)) == 1 ? DispatchClaim.Waits : DispatchClaim.Lost;
+            }
+            // What it would send went out already: cancelled, and its own charge given back (once: only a charged one is).
+            if (Exec(c, t, "UPDATE jobs SET state='cancelled',reason='merged',updated_at=$at WHERE id=$j AND state=$s", ("$at", Ms(now)), ("$j", job.Id), ("$s", job.State)) != 1) return DispatchClaim.Lost;
+            Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id=$j AND state='charged'", ("$j", job.Id));
+            var own = Jobs(c, t, "want_id=$w AND " + LiveJobs, ("$w", want.Id));
+            var confirmed = Confirmed(c, t, title, want.TargetKey).ToList();
+            if (own.Count == 0 && want.Input.Extra(confirmed) == null)
+            {
+                // Nothing of its own is left: it follows what went out, free (every charge of it given back).
+                Exec(c, t, "UPDATE reservations SET state='refunded' WHERE want_id=$w AND state IN ('charged','held')", ("$w", want.Id));
+                Exec(c, t, "UPDATE wants SET status='sent',reason='looking',is_follower=1,owned_input=NULL,cost=0,updated_at=$at WHERE id=$w", ("$at", Ms(now)), ("$w", want.Id));
+            }
+            else
+            {
+                var whole = want.Input.Extra(confirmed) == null;
+                Exec(c, t, "UPDATE wants SET status=CASE WHEN $sent THEN 'sent' ELSE status END,reason=CASE WHEN $sent THEN 'looking' ELSE reason END,cost=(SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=wants.id AND state='charged'),updated_at=$at WHERE id=$w",
+                    ("$sent", whole), ("$at", Ms(now)), ("$w", want.Id));
+            }
+            Record(c, t, want.Id, job.Id, null, "merged", "accepted", "looking", want.Input.Key, now);
+            return DispatchClaim.Served;
+        }
+        // Only resumable uncertain retries can break a wait-for cycle. Ordinary unsent jobs, active sends and
+        // read-backs cannot lead one: unsent duplicates still wait, sends finish, and read-backs are always claimed.
+        private static bool LeadsRetryCycle(SqliteConnection c, SqliteTransaction t, RequestJob job, IReadOnlyList<RequestWant> title)
+        {
+            var work = title.SelectMany(w => Jobs(c, t, "want_id=$w", ("$w", w.Id))).ToList();
+            var edges = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (var candidate in work.Where(j => j.State == "retry" && j.Uncertain))
+            {
+                var target = TargetKey(candidate.Authorization);
+                var others = work.Where(j => j.Id != candidate.Id && RequestDestination.Serves(candidate.Input, target, j.Input, TargetKey(j.Authorization))).ToList();
+                var sent = others.Where(j => j.State == "succeeded").Select(j => j.Input).ToList();
+                sent.AddRange(title.Select(w => (Want: w, Input: LinkedScope(c, t, w)))
+                    .Where(x => x.Input != null && RequestDestination.Serves(candidate.Input, target, x.Input, x.Want.TargetKey)).Select(x => x.Input!));
+                var going = others.Where(j => j.State is "sending" or "maybe_sent" || j.Uncertain && j.State != "cancelled").ToList();
+                if (candidate.Input.Extra(sent) != null && candidate.Input.Extra(sent.Concat(going.Select(j => j.Input))) == null)
+                    edges[candidate.Id] = going.Select(j => j.Id).ToList();
+            }
+            HashSet<string> Reach(string start, bool backwards)
+            {
+                var seen = new HashSet<string>(StringComparer.Ordinal) { start };
+                var pending = new Stack<string>();
+                pending.Push(start);
+                while (pending.Count > 0)
+                {
+                    var at = pending.Pop();
+                    var next = backwards ? edges.Where(e => e.Value.Contains(at)).Select(e => e.Key)
+                        : edges.TryGetValue(at, out var following) ? following : Enumerable.Empty<string>();
+                    foreach (var id in next) if (seen.Add(id)) pending.Push(id);
+                }
+                return seen;
+            }
+            // Intersection of forward and reverse reachability is this job's strongly connected component.
+            var cycle = Reach(job.Id, false);
+            cycle.IntersectWith(Reach(job.Id, true));
+            if (cycle.Count < 2) return false;
+            // Persistent charge order survives equal timestamps and recovery; the job id resolves a remaining tie.
+            long Charge(RequestJob j)
+            {
+                var value = Scalar(c, t, "SELECT MIN(charge_seq) FROM reservations WHERE want_id=$w AND (job_id=$j OR scope='initial') AND charge_seq>0", ("$w", j.WantId), ("$j", j.Id));
+                return long.TryParse(value, out var sequence) ? sequence : long.MaxValue;
+            }
+            return work.Where(j => cycle.Contains(j.Id)).OrderBy(Charge).ThenBy(j => j.Id, StringComparer.Ordinal).First().Id == job.Id;
+        }
+
         /// <summary>Commits a job outcome, its intent state, audit, event and notification together.</summary>
         public bool Complete(RequestJob job, long generation, RequestBackendResult result, DateTimeOffset now)
         {
@@ -912,7 +1260,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     var confirmed = Confirmed(c, t, shared, TargetKey(job.Authorization)).ToArray();
                     // A mixed intent is sent only after every part, including shared scope, is confirmed.
                     var activeCoverage = Coverage(c, t, shared, TargetKey(job.Authorization)).ToArray();
-                    shared = shared.Where(w => w.TargetKey == TargetKey(job.Authorization)).ToList();
+                    shared = shared.Where(w => RequestDestination.SameTarget(w.TargetKey, TargetKey(job.Authorization))).ToList();
                     foreach (var incomplete in shared.Where(w => Active(w) && (w.Id == job.WantId || w.Status == "queued" || w.Reason == "removed") && w.Input.Extra(confirmed) != null))
                         Exec(c, t, "UPDATE wants SET status=$s,reason=$r WHERE id=$id", ("$s", incomplete.Input.Extra(activeCoverage) == null ? "queued" : "pending"),
                             ("$r", incomplete.Input.Extra(activeCoverage) == null ? "queued_outage" : "removed"), ("$id", incomplete.Id));
@@ -986,12 +1334,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var retained = Wants(c, t, "user_id=$u", ("$u", id)).Where(w =>
                 Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$w", w.Id)) != null ||
                 LinkedScope(c, t, w) != null ||
-                Wants(c, t, "acquisition_id=$a AND id<>$w", ("$a", w.AcquisitionId), ("$w", w.Id)).Any(f => Active(f) && f.TargetKey == w.TargetKey && f.Input.Extra(new[] { w.Input })?.Fingerprint != f.Input.Fingerprint)).ToArray();
+                Wants(c, t, "acquisition_id=$a AND id<>$w", ("$a", w.AcquisitionId), ("$w", w.Id)).Any(f => Active(f) && RequestDestination.SameTarget(f.TargetKey, w.TargetKey) && f.Input.Extra(new[] { w.Input })?.Fingerprint != f.Input.Fingerprint)).ToArray();
             foreach (var want in retained)
             {
                 var linked = LinkedScope(c, t, want) != null;
-                Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$w AND state IN ('queued','retry') AND COALESCE(json_extract(outcome,'$.certainty'),'Rejected')<>'Unknown')", ("$w", want.Id));
-                Exec(c, t, "UPDATE jobs SET state='cancelled',reason='identity_changed' WHERE want_id=$w AND state IN ('queued','retry') AND COALESCE(json_extract(outcome,'$.certainty'),'Rejected')<>'Unknown'", ("$w", want.Id));
+                // As a withdrawal: every part proven unsent (held and refused parts included) is cancelled and refunded.
+                Exec(c, t, "UPDATE reservations SET state='refunded' WHERE job_id IN (SELECT id FROM jobs WHERE want_id=$w AND " + Unsent + ")", ("$w", want.Id));
+                Exec(c, t, "UPDATE jobs SET state='cancelled',reason='identity_changed' WHERE want_id=$w AND " + Unsent, ("$w", want.Id));
                 if (!linked && Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$w AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown') LIMIT 1", ("$w", want.Id)) == null)
                     Exec(c, t, "UPDATE wants SET status='cancelled',reason='identity_changed' WHERE id=$w", ("$w", want.Id));
                 Exec(c, t, "UPDATE wants SET user_id=$anon,client_request_id=id,fingerprint='',parental_signature='null',cost=(SELECT COALESCE(SUM(cost),0) FROM reservations WHERE want_id=wants.id AND state='charged') WHERE id=$w", ("$anon", anonymous), ("$w", want.Id));
@@ -1046,7 +1395,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Changed(c, t);
             Exec(c, t, "DELETE FROM request_audit WHERE want_id=$id OR job_id IN (SELECT id FROM jobs WHERE want_id=$id) OR (want_id IS NULL AND job_id IS NULL AND action LIKE 'request.%' AND id IN (SELECT id FROM jobs WHERE want_id=$id))", ("$id", id));
             var removed = Exec(c, t, "DELETE FROM wants WHERE id=$id", ("$id", id));
-            Exec(c, t, "DELETE FROM request_events WHERE title_key=$key AND NOT EXISTS(SELECT 1 FROM wants WHERE title_key=$key)", ("$key", key));
+            Exec(c, t, "DELETE FROM request_events WHERE " + TitleIs + " AND NOT EXISTS(SELECT 1 FROM wants WHERE " + TitleIs + ")", ("$key", key));
             Exec(c, t, "DELETE FROM acquisitions WHERE id NOT IN (SELECT acquisition_id FROM wants)");
             return removed == 1;
         });

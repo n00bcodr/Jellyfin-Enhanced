@@ -209,7 +209,37 @@ CREATE TABLE automation_grants (
 CREATE TABLE automation_breakers (
     target TEXT PRIMARY KEY, failures INTEGER NOT NULL, opened_until INTEGER, last_reason TEXT, updated_at INTEGER NOT NULL);
 ",
+            // 4: phase 4b household rules and group quotas. The household-rule verdict a want was created with (its
+            // rationale, shown to the requester and approvers), and the group pool each reservation is bound to.
+            @"
+ALTER TABLE wants ADD COLUMN rule_detail TEXT;
+ALTER TABLE reservations ADD COLUMN pool_id TEXT;
+CREATE INDEX reservations_pool ON reservations(pool_id,state,charged_at);
+",
         };
+
+        // Schema 4 extension (phase 4b, review round 4): the order charges were made in. Each reservation gets the next
+        // sequence when it becomes charged, so two charges in the same millisecond keep their order; existing charges are
+        // numbered by when they were charged, then by when they were written.
+        internal const string SchemaFourChargeOrder = @"
+ALTER TABLE reservations ADD COLUMN charge_seq INTEGER;
+UPDATE reservations SET charge_seq=(SELECT n FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY charged_at, rowid) AS n FROM reservations WHERE state='charged') o WHERE o.id=reservations.id) WHERE state='charged';
+CREATE INDEX reservations_order ON reservations(charge_seq);
+";
+
+        // Schema 4 extension (phase 4b, Q-4BFIX3-2): one title identity across its ids. Each alias the ledger has learned for a
+        // title (a TMDB or IMDb id of a series held under its TVDB id, an IMDb id of a movie held under its TMDB id) maps to
+        // the key the title's requests are held under.
+        internal const string SchemaFourTitleAliases = @"
+CREATE TABLE title_aliases (alias TEXT PRIMARY KEY, canonical TEXT NOT NULL, learned_at INTEGER NOT NULL);
+CREATE INDEX title_aliases_canonical ON title_aliases(canonical);
+";
+
+        // Schema-4 extension (phase 4b, review round 5, 4b-B13): a merged title whose requests couldn't all be settled when it
+        // was merged (one was being sent, or its send is unconfirmed) is noted here and finished once that work settles.
+        internal const string SchemaFourTitleReconcile = @"
+CREATE TABLE title_reconcile (acquisition_id TEXT PRIMARY KEY, noted_at INTEGER NOT NULL);
+";
 
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
         // Part of the unreleased schema 2; an existing schema-2 database gets them idempotently at start-up.
@@ -619,6 +649,51 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                         using var extend = connection.CreateCommand();
                         extend.Transaction = transaction;
                         extend.CommandText = Phase3dTables;
+                        extend.ExecuteNonQuery();
+                        transaction.Commit();
+                    }
+                }
+                // Schema 4 (phase 4b) is extended while unreleased: a database that ran an earlier schema-4 build (and a fresh
+                // one, right after the step) gets the extension once, in one transaction, copied first when it holds rows.
+                using (var columns = connection.CreateCommand())
+                {
+                    columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('reservations') WHERE name='charge_seq'";
+                    if (UserVersion(connection) >= 4 && Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+                    {
+                        columns.CommandText = "SELECT COUNT(*) FROM reservations";
+                        if (existed && !extensionBackedUp && Convert.ToInt32(columns.ExecuteScalar(), CultureInfo.InvariantCulture) > 0) { BackupBeforeMigration(connection, version); extensionBackedUp = true; }
+                        using var transaction = connection.BeginTransaction(deferred: false);
+                        using var extend = connection.CreateCommand();
+                        extend.Transaction = transaction;
+                        extend.CommandText = SchemaFourChargeOrder;
+                        extend.ExecuteNonQuery();
+                        transaction.Commit();
+                    }
+                }
+                using (var tables = connection.CreateCommand())
+                {
+                    tables.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='title_aliases'";
+                    if (UserVersion(connection) >= 4 && Convert.ToInt32(tables.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+                    {
+                        // Additive only (a new empty table), so no pre-migration copy is needed.
+                        using var transaction = connection.BeginTransaction(deferred: false);
+                        using var extend = connection.CreateCommand();
+                        extend.Transaction = transaction;
+                        extend.CommandText = SchemaFourTitleAliases;
+                        extend.ExecuteNonQuery();
+                        transaction.Commit();
+                    }
+                }
+                using (var tables = connection.CreateCommand())
+                {
+                    tables.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='title_reconcile'";
+                    if (UserVersion(connection) >= 4 && Convert.ToInt32(tables.ExecuteScalar(), CultureInfo.InvariantCulture) == 0)
+                    {
+                        // Additive only (a new empty table), so no pre-migration copy is needed.
+                        using var transaction = connection.BeginTransaction(deferred: false);
+                        using var extend = connection.CreateCommand();
+                        extend.Transaction = transaction;
+                        extend.CommandText = SchemaFourTitleReconcile;
                         extend.ExecuteNonQuery();
                         transaction.Commit();
                     }
