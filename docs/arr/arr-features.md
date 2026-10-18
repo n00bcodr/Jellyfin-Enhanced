@@ -1392,12 +1392,15 @@ either is off, the automatic requests above behave exactly as described there. W
 Jellyfin Enhanced finds the actions that can change or sign in a user by reading Jellyfin's code when the server starts
 (the code is read, not run). What that guarantees:
 
-- Every action of Jellyfin's own server code that reaches a user change or a sign-in, by direct calls, interfaces,
-  overrides (sealed, covariant-return and explicit ones, whatever the replacing method is called), stored callbacks or
-  events Jellyfin's own code subscribes to, runs inside the check's bracket. For each supported Jellyfin release (12.2
-  and 10.11.11) the full list is pinned in the tests, and a test
-  runner checks the newest Jellyfin image the same way, so a Jellyfin update that adds or changes such an action fails
-  the tests until it has been reviewed.
+- Every action of Jellyfin's own server code that reaches a user change or a sign-in, by direct calls, interfaces
+  (static interface members included), overrides (sealed, covariant-return and explicit ones, whatever the replacing
+  method is called), stored callbacks or events Jellyfin's own code subscribes to, runs inside the check's bracket. For
+  each supported Jellyfin release (12.2 and 10.11.11) the full list is pinned in the tests, and a test runner checks the
+  newest Jellyfin image the same way, so a Jellyfin update that adds or changes such an action fails the tests until it
+  has been reviewed.
+- The reading errs towards bracketing: a call through an interface or a base class counts every implementation the
+  code has, whichever type a generic call is actually made with, so an action can be bracketed although the
+  implementation it really runs changes nobody. It is never left out when one could.
 - An action that hands control to code the reading can't see (an event another plugin listens to, a callback passed in
   from outside) is bracketed for the person it is for: on 12.2 and 10.11.11, 88 and 89 actions, among them starting
   playback, favourites, ratings and watched-state saves. Bracketing them for everyone would hold every automatic check
