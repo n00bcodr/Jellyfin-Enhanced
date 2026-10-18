@@ -91,7 +91,8 @@ internal sealed class DestinationRuleWalk
     /// <summary>The repository root (the folder holding the plugin's project).</summary>
     internal static string Root()
     {
-        foreach (var start in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
+        static string SourceFile([System.Runtime.CompilerServices.CallerFilePath] string file = "") => file;
+        foreach (var start in new[] { Path.GetDirectoryName(SourceFile())!, AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
         {
             var root = new DirectoryInfo(start);
             while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;

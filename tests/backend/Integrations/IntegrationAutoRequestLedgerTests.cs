@@ -401,7 +401,8 @@ public class IntegrationAutoRequestLedgerTests
 
     private static string Root()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        static string SourceFile([System.Runtime.CompilerServices.CallerFilePath] string file = "") => file;
+        var root = new DirectoryInfo(Path.GetDirectoryName(SourceFile())!);
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         root ??= new DirectoryInfo(Directory.GetCurrentDirectory());
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;

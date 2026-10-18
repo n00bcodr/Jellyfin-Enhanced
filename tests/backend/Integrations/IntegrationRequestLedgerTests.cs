@@ -947,7 +947,8 @@ public class IntegrationRequestLedgerTests
     [Fact]
     public void NoProductionCSharpDeclaresAsyncVoid()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        static string SourceFile([System.Runtime.CompilerServices.CallerFilePath] string file = "") => file;
+        var root = new DirectoryInfo(Path.GetDirectoryName(SourceFile())!);
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         // External output folders do not have the repository as an ancestor.
         root ??= new DirectoryInfo(Directory.GetCurrentDirectory());
