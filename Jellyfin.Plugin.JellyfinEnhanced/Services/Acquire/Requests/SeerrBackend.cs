@@ -380,7 +380,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // What goes out is recorded first (the account and the exact seasons), so a read-back looks for exactly that,
             // whatever Seerr's settings or account links say by then.
             if (_bind != null && !_bind(job.Id, seerrUser, seasons))
+            {
+                // Nothing went out: the POST's budget slot, admitted just above, is given back.
+                admission?.Settled(SendWriteKind.Post, "post", SendWriteResult.NotSent);
                 return BackendResults.Retry("backend_unavailable", "The request couldn't be recorded before sending; nothing was sent.");
+            }
             // Admitting and recording wait for the database (one writer at a time, none during a restore): the gate is
             // asked again after them, so nothing waits between its last answer and the POST. Refused here, nothing went out.
             if (finalGuard() is { } last)
