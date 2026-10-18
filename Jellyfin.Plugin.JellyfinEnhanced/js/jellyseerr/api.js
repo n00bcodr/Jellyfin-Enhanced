@@ -228,6 +228,8 @@
         try {
             if (!status || (status.active && status.userFound)) return;
             if (status.reason === 'disabled') return;
+            // Seerr can still supply metadata while JE handles requests without a Seerr account.
+            if (status.reason === 'unlinked' && JE.pluginConfig?.ArrRequestsJeMode === true) return;
             // Don't double-surface within a single session.
             if (window.__JE_userStatusBannerShown === status.reason) return;
             window.__JE_userStatusBannerShown = status.reason;
