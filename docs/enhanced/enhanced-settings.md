@@ -31,7 +31,7 @@ Use **Search settings…** to filter sections by their contents, then select a s
 
 ??? info "How it works"
 
-    The sections are **Shortcuts**, **Playback Settings**, **Auto-Skip Settings**, **Subtitle Settings**, **Random Button Settings**, **UI Settings**, **Hidden Content**, **Spoiler Guard**, **Language Settings**, and **About**. **Shortcuts** is hidden when the administrator disables shortcuts. **Hidden Content** and **Spoiler Guard** require their server features to be enabled.
+    The sections are **Shortcuts**, **Playback Settings**, **Auto-Skip Settings**, **Subtitle Settings**, **Random Button Settings**, **UI Settings**, **Hidden Content**, **Spoiler Guard**, **Requests & alerts**, **Language Settings**, and **About**. **Shortcuts** is hidden when the administrator disables shortcuts. **Hidden Content** and **Spoiler Guard** require their server features to be enabled; **Requests & alerts** appears with [Requests & downloads notifications](../arr/arr-features.md#notifications-phase-2) on.
 
     On desktop, the panel restores your last-opened section. A new account starts at **Shortcuts**, or the first available section if shortcuts are disabled. At widths up to 760 pixels, the panel fills the screen and starts with the section list. Tap a section to open it.
 
