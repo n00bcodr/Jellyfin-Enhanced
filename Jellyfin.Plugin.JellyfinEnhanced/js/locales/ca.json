@@ -409,7 +409,7 @@
     "toast_bookmark_updated": "{{icon:success}} Marcador actualitzat",
     "toast_bookmark_deleted": "{{icon:trash}} Marcador eliminat",
     "toast_bookmark_save_failed": "{{icon:error}} Error en desar el marcador",
-    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
+    "toast_bookmark_delete_failed": "{{icon:error}} Error en eliminar el marcador",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Saltat al marcador",
     "bookmark_cleanup_complete": "Neteja completada: s'han eliminat {count} marcadors orfes",
     "bookmark_cleanup_failed": "Neteja fallida",
@@ -772,6 +772,5 @@
     "catchup_top_watched": "Més vistos",
     "catchup_top_dismissed": "Més descartats",
     "catchup_top_watchlisted": "Més afegits a la llista de seguiment",
-    "catchup_failed": "Error: {error}",
-    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
+    "catchup_failed": "Error: {error}"
 }
