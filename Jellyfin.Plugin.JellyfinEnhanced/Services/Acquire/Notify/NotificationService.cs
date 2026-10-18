@@ -878,6 +878,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var p = TitleParams(key, itemId);
             if (interest.Scope?.Only4k == true) p["variant"] = "4k";
             if (interest.HasRequest) p["requested"] = "1";
+            // May the person be told (the same decision every channel makes right before its send): a title they hid
+            // (Hidden Content, on any copy of it) becomes handled with no notification; Hidden Content that can't be read
+            // now leaves it for the next look (nothing written).
+            var told = itemId?.ToString("N", CultureInfo.InvariantCulture);
+            var verdict = _dispatcher.Check(viewer.UserId, viewer).Decide(NotifyKind.Ready, key.ToString(), p, ref told);
+            if (verdict.Wait) return;
+            if (verdict.Why != null)
+            {
+                Written(key, _store.InTransaction(generation, Handle, false).Done);
+                return;
+            }
             // One event per interest: a title asked for again after it was removed (its state forgotten,
             // a new watch baseline) is a new event; the marks keep a flapping upgrade to one.
             var eventKey = mark + "|" + baseline.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
@@ -1225,6 +1236,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (!_store.InTransaction(generation, tx => tx.DeleteBatchIf(user, key, json), false).Result) throw new BatchChangedException();
         }
 
+        // A due batch whose recipient's Hidden Content can't be read now: looked at again shortly, dropped (never told) once it
+        // has waited too long. Throws when it changed since it was read.
+        private void WaitBatch(Guid user, string key, string json, DateTimeOffset now, long generation)
+        {
+            var dropped = _store.InTransaction(generation, tx =>
+            {
+                if (tx.Batch(user, key) is not { } b || b.Episodes != json) throw new BatchChangedException();
+                if (now - b.FirstAt > NotifyDispatcher.WaitAtMost)
+                {
+                    tx.DeleteBatch(user, key);
+                    return true;
+                }
+                tx.SetBatch(user, key, json, b.FirstAt, now + NotifyDispatcher.WaitFor);
+                return false;
+            }, false).Result;
+            if (dropped) _logger?.Warning("Notifications: an episode batch was dropped: the recipient's Hidden Content couldn't be read for a day.");
+        }
+
         private bool FlushBatch(Guid user, string key, string json, DateTimeOffset now, long generation)
         {
             var only4k = key.EndsWith("|4k", StringComparison.Ordinal);
@@ -1262,10 +1291,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 }
             }
             // Each number linked to a copy the viewer can open and hasn't hidden (Hidden Content: the episode itself, its series
-            // or the title); a number whose every open copy is hidden isn't announced, and with nothing left there is no
-            // notification at all (no bell row, toast or delivery). Rules that can't be read now leave the batch to the
-            // delivery checks, which fail closed.
-            var hidden = _dispatcher.EpisodeHides(user, title.ToString()) ?? (_ => false);
+            // or the title on any of its copies); a number whose every open copy is hidden isn't announced, and with nothing
+            // left there is no notification at all (no bell row, toast or delivery). Rules that can't be read now keep the
+            // batch for a later round (bounded), never a notification.
+            var check = _dispatcher.Check(user, viewer);
+            if (check.Hides(title.ToString()) is not { } hidden)
+            {
+                WaitBatch(user, key, json, now, generation);
+                return false;
+            }
             foreach (var x in state.Episodes)
             {
                 if (!open.TryGetValue((x.S, x.E), out var visible)) continue;
@@ -1308,6 +1342,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             else
             {
                 p["mode"] = "many";
+            }
+            // The same decision every channel makes right before its send, on what is about to be told.
+            if (check.Decide(NotifyKind.Episodes, title.ToString(), p, ref itemId).Why != null)
+            {
+                DropBatch(user, key, json, generation);
+                return false;
             }
             var first = episodes[0];
             // One event per interest, like Ready: the same episodes told again after the series was

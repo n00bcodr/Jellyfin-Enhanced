@@ -423,14 +423,22 @@ notifications" message linking to the bell instead of one push or e-mail each (n
 for others that follow, so a backlog that comes in one by one is grouped too). Pointing Jellyfin Enhanced at another Seerr
 server starts its request list afresh: the requests already on it are not announced as new, approved or declined.
 
+Every alert about a title (Ready and new episodes) respects your Hidden Content and library access on every channel: the
+TV message, phone, e-mail, the bell and its pop-ups. It is decided when the alert is made and again right before each
+send, for the whole title: hiding a movie or series on any of its copies (in any library) hides it everywhere, and a
+title you hid before it arrived makes no alert at all (unhiding it later doesn't announce it). A title hidden after its
+alert was made isn't sent, and the bell keeps the entry without naming it. When several alerts go out one by one, each is
+checked again right before its own send.
+
 Episode batches also recheck every stored episode file when a quiet-hours or retry hold ends, and right before each
 send: an episode you can no longer open, or one you hid with Hidden Content (the episode itself, its series or the whole
 title), is left out. No episodes left suppresses the delivery without retries; a partially visible batch announces only
 the remaining count and seasons (one left is named as that episode), never a whole season that is no longer all visible.
 The TV message, phone, e-mail and the bell all show the same narrowed batch; episodes hidden before the batch is put
 together are left out from the start, and a batch with every episode hidden makes no notification at all (no bell entry).
-If your Hidden Content can't be read at that moment, the batch isn't sent and the bell doesn't name it. Deliveries saved before episode files were recorded continue
-using the parent item's visibility check.
+If your Hidden Content can't be read at that moment, nothing is told: a new alert or batch waits until it can be read,
+phone and e-mail wait too (given up after a day), the TV message isn't shown and the bell doesn't name the title.
+Deliveries saved before episode files were recorded continue using the parent item's visibility check.
 
 ## ARR Links
 
@@ -1598,15 +1606,18 @@ Enhanced then keeps one playlist of theirs, private and shared with nobody, that
   goes in episode by episode in order; a series or season is never put in as one item. Someone else's request, or a
   title on a list they can see, never adds anything.
 - **What comes out.** A title leaves when the person has watched it, after 30 days (*Days a title stays in a Ready
-  playlist*), or while they can't open it any more or have hidden it with Hidden Content (hiding the movie or series hides
-  every copy; hiding one episode or one copy leaves the other copy in). Watched or expired titles don't
+  playlist*), or while they can't open it any more or have hidden it with Hidden Content (hiding the movie or series, on
+  any of its copies in any library, hides every copy and every episode; hiding one episode or one copy leaves the other
+  copy in). Watched or expired titles don't
   come back unless they ask for them again. A title that was here before they asked or followed isn't added. A better
   copy replacing the file swaps the entry in place, with no duplicate and no new 30 days.
 - **It's theirs.** People can rename it and play it like any playlist. If they delete it, Jellyfin Enhanced doesn't make
   it again until they turn the option on again. Turning the option off stops the updates and keeps the playlist as it
   is; *Remove the playlist* deletes it (only that playlist). If they share it or make it public, it is no longer updated,
   and it is never deleted: the button becomes *Stop managing it*, which keeps the playlist as it is. A playlist they made
-  themselves is never touched, even one named like the Ready playlist while it was being made. Jellyfin Enhanced writes
+  themselves is never touched, even one named like the Ready playlist while it was being made: Jellyfin Enhanced only
+  takes the playlist its own create made, read back right after the create, and if another one has taken its place
+  before the code is written it leaves it alone and makes a new one. Jellyfin Enhanced writes
   a random code into the playlist it makes (a field the person can't set) and only ever updates or deletes the playlist
   carrying that code and its original creation time. Jellyfin gives a playlist made again under the same name the same
   id; if the person deletes the Ready playlist (for example while the option is off) and makes one of their own with that
@@ -1615,7 +1626,8 @@ Enhanced then keeps one playlist of theirs, private and shared with nobody, that
 - **After a restore.** When a Jellyfin Enhanced backup is restored, each person turns the option on again before the
   playlist is updated (Jellyfin Enhanced first checks that it is still their own, private playlist, carrying its code).
 - **Right before each change** Jellyfin Enhanced checks again that every version it puts in is still one the person can
-  open and hasn't hidden; if one changed, it chooses again instead of adding it.
+  open and hasn't hidden; if one changed, it chooses again instead of adding it. It also reads the playlist again right
+  before Jellyfin saves it: if the person shared it, made it public or renamed it in that moment, nothing is written.
 
 **TV messages.** With *Ready messages on TVs and apps* on (under phase 4 and notifications), each person can turn on
 *Show a message on my TV or app when something is ready*. When a title they asked for or follow becomes ready, one short

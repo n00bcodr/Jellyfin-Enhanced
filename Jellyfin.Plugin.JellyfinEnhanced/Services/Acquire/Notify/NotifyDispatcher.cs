@@ -249,9 +249,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 return (prefs, null, null);
             }
             var payload = new Dictionary<string, string>(Payload(delivery.Payload));
-            if (Suppression(delivery, prefs, payload, out var itemId) is { } reason)
+            var verdict = Suppression(delivery, prefs, payload, out var itemId);
+            if (verdict.Wait && _now() - delivery.CreatedAt <= WaitAtMost)
             {
-                _store.Suppress(delivery.Id, reason, delivery.Generation);
+                // The recipient's Hidden Content can't be read now: nothing is sent until it can (looked at again shortly).
+                _store.Postpone(delivery.Id, _now() + WaitFor, delivery.Generation);
+                return (prefs, null, null);
+            }
+            if (verdict.Why is { } reason)
+            {
+                _store.Suppress(delivery.Id, verdict.Wait ? reason + " (for a day; not sent)" : reason, delivery.Generation);
                 return (prefs, null, null);
             }
             // A channel switched off since the alert was queued (by the administrator or the user):
@@ -263,6 +270,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             return (prefs, NotifyTexts.Render(delivery.Kind, payload, prefs.HideTitles), ExternalLink(config, itemId, delivery.Kind));
         }
+
+        /// <summary>How long a delivery (or an episode batch) waits before its recipient's unreadable Hidden Content is read again.</summary>
+        internal static readonly TimeSpan WaitFor = TimeSpan.FromMinutes(5);
+
+        /// <summary>The longest a delivery or an episode batch waits for readable Hidden Content; then it is never sent.</summary>
+        internal static readonly TimeSpan WaitAtMost = TimeSpan.FromHours(24);
 
         private async Task<(bool Ok, string? Error)> SendAsync(PluginConfiguration config, string channel, NotifyPrefs prefs, NotifyMessage message, string? link, string kind, CancellationToken cancellationToken)
         {
@@ -355,8 +368,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         // Why a native message must not go out (now), or null: no native channel, an earlier attempt (first look only), stale,
-        // the switches, the person's consent, quiet hours, the kind, the recipient and their access (Suppression, which also
-        // narrows an episodes payload to what they can open), and Hidden Content.
+        // the switches, the person's consent, quiet hours, the kind, the recipient, their access and Hidden Content (Suppression,
+        // which also narrows an episodes payload to what they may be told about).
         private string? DisplayReason(PluginConfiguration config, DueDelivery delivery, NotifyPrefs prefs, Dictionary<string, string> payload, bool first)
         {
             if (_native == null) return "Native messages aren't available on this server.";
@@ -365,9 +378,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (!Ready.ReadyFlags.Messages(config)) return "Native Ready messages are switched off.";
             if (!prefs.NativeReadyMessages) return "The recipient turned native messages off.";
             if (QuietHours.EndsAt(prefs, _now()) != null) return "The recipient's quiet hours (native messages are never held).";
-            if (Suppression(delivery, prefs, payload, out var itemId) is { } reason) return reason;
-            if (delivery.Kind != NotifyKind.Test && _native.Hidden(delivery.UserId, delivery.TitleKey, itemId)) return "The title is hidden for the recipient (or their Hidden Content can't be read).";
-            return null;
+            // Never held: Hidden Content that can't be read now ends it too.
+            return Suppression(delivery, prefs, payload, out _).Why;
         }
 
         // Records one delivery's outcome: sent, or failed with the next retry (none after the last).
@@ -409,10 +421,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             if (ready.Count < SummaryAt)
             {
-                foreach (var (delivery, prefs, message, link) in ready)
+                // One by one, each decided again right before its own send (from the settings and Hidden Content as they are
+                // then: a send takes a while, and what the person hid or changed meanwhile counts).
+                foreach (var (delivery, _, _, _) in ready)
                 {
-                    var (ok, error) = await SendAsync(config, delivery.Channel, prefs, message, link, delivery.Kind, cancellationToken).ConfigureAwait(false);
-                    Settle(delivery, ok, error);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var now = _config();
+                    if (!NotifyFlags.Enabled(now)) break;
+                    await DeliverAsync(now!, delivery, cancellationToken).ConfigureAwait(false);
                 }
                 return deliveries.Count;
             }
@@ -424,15 +440,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         /// <summary>
-        /// Why the delivery must not go out any more, or null: the recipient switched this kind of
+        /// Why the delivery must not go out any more (or must wait), or nothing: the recipient switched this kind of
         /// alert off (Ready, new episodes, declined); the recipient is gone or disabled; an
         /// administrators' alert (paths, instance names, household requests) for someone who is no
         /// longer an administrator or switched those alerts off; an ask waiting for an OK (or a reminder)
-        /// whose title the administrator can no longer see; a Ready or new-episodes alert for a
-        /// title the recipient can no longer open (library access or parental limits changed); an OK of a
-        /// request that was cancelled, declined or removed since.
+        /// whose title the administrator can no longer see; a Ready or new-episodes alert the recipient may not be told about
+        /// now (<see cref="AlertCheck.Decide"/>: a title they can no longer open or have hidden, an episodes payload narrowed to
+        /// what is left; Hidden Content that can't be read now: wait); an OK of a request that was cancelled, declined or
+        /// removed since.
         /// </summary>
-        private string? Suppression(DueDelivery delivery, NotifyPrefs prefs, Dictionary<string, string> payload, out string? itemId)
+        private AlertVerdict Suppression(DueDelivery delivery, NotifyPrefs prefs, Dictionary<string, string> payload, out string? itemId)
         {
             itemId = delivery.ItemId;
             var kindOff = delivery.Kind switch
@@ -443,80 +460,130 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 NotifyKind.Approved => !prefs.Approved,
                 _ => false,
             };
-            if (kindOff) return "The recipient switched these alerts off.";
+            if (kindOff) return new AlertVerdict("The recipient switched these alerts off.");
             // "Dad OK'd it" held until quiet hours end (or retried): not once the request was cancelled, declined or removed.
             if (delivery.Kind == NotifyKind.Approved && _ledger != null && _ledger.Database.Available
                 && delivery.EventKey is { } ok && ok.StartsWith(ApprovedEventPrefix, StringComparison.Ordinal)
                 && _ledger.Find(ok[ApprovedEventPrefix.Length..]) is not { Status: "queued" or "sent" or "stale" or "fulfilled" })
-                return "The request was cancelled, declined or removed since it was OK'd.";
-            if (_users == null) return null;
-            if (!_users.IsActive(delivery.UserId)) return "The recipient no longer exists or is disabled.";
+                return new AlertVerdict("The request was cancelled, declined or removed since it was OK'd.");
+            if (_users == null) return default;
+            if (!_users.IsActive(delivery.UserId)) return new AlertVerdict("The recipient no longer exists or is disabled.");
             if (NotifyKind.IsAdminKind(delivery.Kind))
             {
-                if (!_users.Admins().Contains(delivery.UserId)) return "The recipient is no longer an administrator.";
+                if (!_users.Admins().Contains(delivery.UserId)) return new AlertVerdict("The recipient is no longer an administrator.");
                 if (delivery.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_policy, delivery.UserId, delivery.TitleKey, payload))
-                    return "The recipient can no longer see this title.";
-                return prefs.AdminAlerts ? null : "The recipient switched administrators' alerts to phone and e-mail off.";
+                    return new AlertVerdict("The recipient can no longer see this title.");
+                return prefs.AdminAlerts ? default : new AlertVerdict("The recipient switched administrators' alerts to phone and e-mail off.");
             }
-            if (_view == null || delivery.Kind is not (NotifyKind.Ready or NotifyKind.Episodes)) return null;
-            if (_view.Viewer(delivery.UserId) is not { } viewer) return "The recipient no longer exists or is disabled.";
-            // Older notifications have no episodeItems and retain their parent-item check. New
-            // batches carry each number's actual file, including combined files and the variant: narrowed
-            // per episode to what the recipient can open and hasn't hidden (every channel of the batch).
-            if (delivery.Kind == NotifyKind.Episodes && NarrowEpisodes(delivery.UserId, viewer, delivery.TitleKey, payload, ref itemId) is { } none) return none;
-            if (Guid.TryParse(itemId, out var item) && item != Guid.Empty)
-            {
-                return _view.Resolve(item, viewer) == null ? "The recipient can no longer open this title." : null;
-            }
-            var key = TitleKey.Parse(delivery.TitleKey);
-            return key != null && _view.Copies(key, viewer, _aliases?.Of(key)).Any(c => c.Visible) ? null : "The recipient can no longer open this title.";
+            if (_view == null || delivery.Kind is not (NotifyKind.Ready or NotifyKind.Episodes)) return default;
+            if (_view.Viewer(delivery.UserId) is not { } viewer) return new AlertVerdict("The recipient no longer exists or is disabled.");
+            return Check(delivery.UserId, viewer).Decide(delivery.Kind, delivery.TitleKey, payload, ref itemId);
         }
 
         /// <summary>
-        /// The recipient's Hidden Content as it is now, as a check of items of one title (the episode itself, its series or the
-        /// title), read through the Ready channel's reader (without it nothing counts as hidden); null when their rules can't
-        /// be read now.
+        /// The one decision whether a recipient may be told about a Ready or new-episodes alert now (D46, D53), for the alert's
+        /// producer, every send (TV message, ntfy, e-mail, a summary's parts) and every bell read. Reads the recipient's Hidden
+        /// Content once (through the Ready channel's reader; without it nothing counts as hidden).
         /// </summary>
-        internal Func<Guid, bool>? EpisodeHides(Guid user, string? titleKey) => _native == null ? _ => false : _native.Hides(user, titleKey);
+        internal AlertCheck Check(Guid user, StatusViewer viewer) => new(this, user, viewer);
+
+        /// <summary>A verdict on one alert: <see cref="Why"/> null to tell it; <see cref="Wait"/> when the recipient's Hidden Content can't be read now.</summary>
+        /// <param name="Why">Why the alert may not be told now, or null.</param>
+        /// <param name="Wait">True when only unreadable Hidden Content stops it: never sent, looked at again later.</param>
+        internal readonly record struct AlertVerdict(string? Why, bool Wait = false);
 
         /// <summary>
-        /// Narrows a batch of new episodes (its <c>episodeItems</c>) to what the recipient may still be told about now: the
-        /// episodes they can open whose episode, series or title their Hidden Content doesn't hide (read once, now, through the
-        /// Ready channel's reader; without it only access counts). The count, seasons and wording are set again from what is
-        /// left: one left is that episode (and <paramref name="itemId"/> becomes it), fewer than the batch is never "the whole
-        /// season". Returns why nothing may be said (none left, or Hidden Content that can't be read now), else null (also for
-        /// a payload without episodeItems). Synchronous: the dispatcher calls it right before a send, the bell on every read.
+        /// Whether one recipient may be told about alerts now, decided for the whole title from the current state: they can
+        /// open it (the item, or for a batch each episode), and their Hidden Content, read once and given every physical copy
+        /// of the title, hides neither the title (a title-level rule on any copy) nor the item, its version or its series. Rules
+        /// that can't be read are never "nothing hidden".
         /// </summary>
-        internal string? NarrowEpisodes(Guid user, StatusViewer viewer, string? titleKey, Dictionary<string, string> payload, ref string? itemId)
+        internal sealed class AlertCheck
         {
-            if (_view == null || !payload.TryGetValue("episodeItems", out var json)) return null;
-            List<NotifyEpisode>? episodes;
-            try { episodes = JsonSerializer.Deserialize<List<NotifyEpisode>>(json, PayloadJson); }
-            catch (JsonException) { episodes = null; }
-            var open = episodes?.Where(e => e.ItemId != Guid.Empty && _view.Resolve(e.ItemId, viewer) != null).ToList();
-            if (open is not { Count: > 0 }) return "The recipient can no longer open these episodes.";
-            if (EpisodeHides(user, titleKey) is not { } hidden) return "The recipient's Hidden Content can't be read now (a batch of episodes isn't sent).";
-            var visible = open.Where(e => !hidden(e.ItemId))
-                .DistinctBy(e => (e.Season, e.Episode)).OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
-            if (visible.Count == 0) return "The recipient hid these episodes (Hidden Content).";
-            var seasons = visible.Select(e => e.Season).Distinct().ToList();
-            payload["count"] = visible.Count.ToString(CultureInfo.InvariantCulture);
-            payload["seasons"] = string.Join(", ", seasons);
-            if (visible.Count == 1)
+            private readonly NotifyDispatcher _owner;
+            private readonly Guid _user;
+            private readonly StatusViewer _viewer;
+            private readonly Dictionary<string, Func<Guid, bool>> _titles = new(StringComparer.Ordinal);
+            private bool _read;
+            private Ready.ReadyHides? _rules;
+
+            internal AlertCheck(NotifyDispatcher owner, Guid user, StatusViewer viewer)
             {
-                payload["mode"] = "single";
-                payload["season"] = visible[0].Season.ToString(CultureInfo.InvariantCulture);
-                payload["episode"] = visible[0].Episode.ToString(CultureInfo.InvariantCulture);
-                itemId = visible[0].ItemId.ToString("N", CultureInfo.InvariantCulture);
+                _owner = owner;
+                _user = user;
+                _viewer = viewer;
             }
-            else if (visible.Count != episodes!.Count)
+
+            /// <summary>
+            /// The recipient's Hidden Content as a check of items of one title (true: hidden), for the whole title; null when
+            /// their rules can't be read now.
+            /// </summary>
+            public Func<Guid, bool>? Hides(string? titleKey)
             {
-                // Not every episode of the batch is still visible: don't announce it as a complete season.
-                payload["mode"] = "many";
-                payload.Remove("season");
-                payload.Remove("episode");
+                if (!_read)
+                {
+                    _rules = _owner._native == null ? Ready.ReadyHides.None : _owner._native.Rules(_user);
+                    _read = true;
+                }
+                if (_rules is not { } rules) return null;
+                var key = titleKey ?? string.Empty;
+                if (!_titles.TryGetValue(key, out var check))
+                    _titles[key] = check = _owner._native == null ? _ => false : _owner._native.TitleCheck(_viewer, rules, titleKey);
+                return check;
             }
-            return null;
+
+            /// <summary>
+            /// Whether a Ready or new-episodes alert may be told now (other kinds: yes). A batch of new episodes (its
+            /// <c>episodeItems</c>) is narrowed in <paramref name="payload"/> to the episodes the recipient can open and hasn't
+            /// hidden, its count, seasons and wording set again from what is left: one left is that episode (and
+            /// <paramref name="itemId"/> becomes it), fewer than the batch is never "the whole season". Synchronous.
+            /// </summary>
+            public AlertVerdict Decide(string kind, string? titleKey, Dictionary<string, string> payload, ref string? itemId)
+            {
+                if (kind is not (NotifyKind.Ready or NotifyKind.Episodes) || _owner._view is not { } view) return default;
+                List<NotifyEpisode>? episodes = null;
+                List<NotifyEpisode>? open = null;
+                var item = Guid.Empty;
+                if (kind == NotifyKind.Episodes && payload.TryGetValue("episodeItems", out var json))
+                {
+                    try { episodes = JsonSerializer.Deserialize<List<NotifyEpisode>>(json, PayloadJson); }
+                    catch (JsonException) { episodes = null; }
+                    open = episodes?.Where(e => e.ItemId != Guid.Empty && view.Resolve(e.ItemId, _viewer) != null).ToList();
+                    if (open is not { Count: > 0 }) return new AlertVerdict("The recipient can no longer open these episodes.");
+                }
+                else if (Guid.TryParse(itemId, out item) && item != Guid.Empty)
+                {
+                    if (view.Resolve(item, _viewer) == null) return new AlertVerdict("The recipient can no longer open this title.");
+                }
+                else if (TitleKey.Parse(titleKey) is not { } key || !view.Copies(key, _viewer, _owner._aliases?.Of(key)).Any(c => c.Visible))
+                {
+                    return new AlertVerdict("The recipient can no longer open this title.");
+                }
+
+                if (Hides(titleKey) is not { } hidden) return new AlertVerdict("The recipient's Hidden Content can't be read now.", true);
+                if (open == null) return hidden(item) ? new AlertVerdict("The recipient hid this title (Hidden Content).") : default;
+                var visible = open.Where(e => !hidden(e.ItemId))
+                    .DistinctBy(e => (e.Season, e.Episode)).OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
+                if (visible.Count == 0) return new AlertVerdict("The recipient hid these episodes (Hidden Content).");
+                var seasons = visible.Select(e => e.Season).Distinct().ToList();
+                payload["count"] = visible.Count.ToString(CultureInfo.InvariantCulture);
+                payload["seasons"] = string.Join(", ", seasons);
+                if (visible.Count == 1)
+                {
+                    payload["mode"] = "single";
+                    payload["season"] = visible[0].Season.ToString(CultureInfo.InvariantCulture);
+                    payload["episode"] = visible[0].Episode.ToString(CultureInfo.InvariantCulture);
+                    itemId = visible[0].ItemId.ToString("N", CultureInfo.InvariantCulture);
+                }
+                else if (visible.Count != episodes!.Count)
+                {
+                    // Not every episode of the batch is still visible: don't announce it as a complete season.
+                    payload["mode"] = "many";
+                    payload.Remove("season");
+                    payload.Remove("episode");
+                }
+                return default;
+            }
         }
 
         /// <summary>Why a channel can't carry the delivery now (switched off or not set up, by the administrator or the user), or null.</summary>
