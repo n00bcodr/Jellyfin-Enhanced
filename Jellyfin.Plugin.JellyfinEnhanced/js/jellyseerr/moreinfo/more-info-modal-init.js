@@ -18,7 +18,7 @@
  * @param {number} tmdbId - The TMDB ID
  * @param {string} mediaType - 'movie' or 'tv'
  */
-moreInfoModal.open = async function(tmdbId, mediaType) {
+moreInfoModal.open = async function(tmdbId, mediaType, scope) {
     const generation = ++openGeneration;
     try {
         // Fetch details first so the modal can open immediately
@@ -30,7 +30,7 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
         }
 
         // Render modal immediately
-        showModal(data, mediaType);
+        showModal(data, mediaType, scope);
         const openedModal = state.currentModal;
 
         // For TV shows, backfill missing season metadata (poster, overview, airDate) from TMDB/episodes
@@ -109,9 +109,16 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
 /**
  * Show the modal with media information
  */
-function showModal(data, mediaType) {
+function showModal(data, mediaType, scope) {
     // Replace the current modal without canceling this open operation.
     closeCurrentModal();
+
+    // These are UI selection hints for this opening, never fields added to cached provider metadata.
+    data = { ...data };
+    delete data.jeActionScope;
+    if (mediaType === 'tv' && Number.isInteger(scope?.season) && scope.season >= 0 && scope.season <= 65535 &&
+        (scope.episode == null || Number.isInteger(scope.episode) && scope.episode >= 0 && scope.episode <= 65535))
+        data.jeActionScope = { season: scope.season, ...(scope.episode != null ? { episode: scope.episode } : {}) };
 
     const modal = document.createElement('div');
     modal.className = 'je-more-info-modal';
@@ -119,6 +126,7 @@ function showModal(data, mediaType) {
     // Tag modal so async updates only apply to the current item
     modal.dataset.tmdbId = String(data.id || '');
     modal.dataset.mediaType = mediaType;
+    modal.jeActionScope = data.jeActionScope;
 
     // Add event listeners
     modal.addEventListener('click', (e) => {
@@ -209,7 +217,7 @@ function showModal(data, mediaType) {
     }
 
     // Let other surfaces add to the modal (Requests & downloads: the status pill).
-    document.dispatchEvent(new CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data, mediaType } }));
+    document.dispatchEvent(new CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data, mediaType, scope } }));
 
     // Trigger animation
     setTimeout(() => modal.classList.add('active'), 10);
@@ -262,7 +270,8 @@ function closeCurrentModal() {
         if (event.detail?.type && (type !== event.detail.type || id !== Number(event.detail.tmdbId))) return;
         modal.replaceChildren();
         moreInfoModal.close();
-        void moreInfoModal.open(id, type);
+        if (modal.jeActionScope) void moreInfoModal.open(id, type, modal.jeActionScope);
+        else void moreInfoModal.open(id, type);
     });
 
     // Request permissions and details belong to the active account. Invalidate

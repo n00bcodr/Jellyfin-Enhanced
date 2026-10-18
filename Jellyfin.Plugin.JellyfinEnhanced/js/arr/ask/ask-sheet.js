@@ -357,6 +357,7 @@
      * @returns {Promise<Object|null>} The ask result, or null when closed without one.
      */
     async function open(title, options) {
+        const action = JE.createSessionAction();
         if (!JE.arrAsk?.enabled() || !title?.key) return null;
         const listTicket = options?.fixed ? options?.listTicket : null;
         const opener = options?.opener || document.activeElement;
@@ -373,7 +374,7 @@
             if (state) finish(state, null);
         };
         const off = listTicket?.onRevoke(cancel);
-        const live = () => !cancelled && (!listTicket || listTicket.current()) && (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch;
+        const live = () => !cancelled && action.current() && (!listTicket || listTicket.current()) && (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch;
         pendingOpens.add(cancel);
         try {
             if (!live()) return null;
@@ -392,6 +393,10 @@
             ]), stopped]);
             if (!live() || !loaded) return null;
             const [quota, shown, check] = loaded;
+            if (shown?.initialSeason != null && !(shown.seasons || []).some(s => s.season === shown.initialSeason)) {
+                sheetPaint(listTicket, () => JE.arrAsk.toast(tr('arr_sheet_seasons_unavailable')));
+                return null;
+            }
             if (!shown) {
                 sheetPaint(listTicket, () => JE.arrAsk.toast(tr('arr_sheet_seasons_unavailable')));
                 return null;
@@ -460,13 +465,16 @@
         const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
         const state = {
             listTicket: options?.listTicket || null,
-            title, kind, caps, quota, opener, resolve, busy: false, done: false, ...returnPoints(opener),
+            title, kind, caps, quota, opener, resolve, action: JE.createSessionAction(), busy: false, done: false, ...returnPoints(opener),
             variant: can4k && options?.variant === '4k' ? '4k' : 'standard',
-            choice: null, picked: new Set(), episodeSeason: null, episodes: new Set(), cards: [], key: title.key,
+            choice: title.initialEpisode != null ? 'episodes' : title.initialSeason != null ? 'pick' : null,
+            picked: new Set(title.initialSeason != null ? [title.initialSeason] : []),
+            episodeSeason: title.initialSeason ?? null, episodes: new Set(title.initialEpisode != null ? [title.initialEpisode] : []), cards: [], key: title.key,
             blocks: { ...(options?.blocks || {}) },
             // A list entry (phase 4c3a): its scope and edition are the entry's, and it is asked for through the list.
             fixed: options?.fixed && typeof options.fixed.send === 'function' ? options.fixed : null
         };
+        state.releaseAction = state.action.onCancel(() => finish(state, null));
         const backdrop = el('div', 'je-sheet-backdrop');
         if (isTv()) backdrop.classList.add('je-sheet-tv');
         if (light) backdrop.classList.add('je-sheet-light');
@@ -853,7 +861,7 @@
      * @returns {Promise<void>}
      */
     async function submit(state) {
-        if (state.busy || state.done || (state.listTicket && !state.listTicket.current())) return;
+        if (state.busy || state.done || !state.action.current() || (state.listTicket && !state.listTicket.current())) return;
         const input = currentInput(state);
         if (!input) {
             showMessage(state, tr('arr_sheet_pick_none'), true);
@@ -872,6 +880,7 @@
         } catch (err) {
             result = { ok: false, status: 0, state: 'failed', outcome: '', reason: err?.name === 'AbortError' ? 'aborted' : 'network', certainty: '', requestId: null };
         }
+        if (!state.action.current()) { finish(state, null); return; }
         if (state.listTicket && (state.done || !state.listTicket.current())) return;
         state.busy = false;
         sheetPaint(state.listTicket, () => {
@@ -883,6 +892,7 @@
             return;
         }
         const allowance = result.state === 'quota' ? (await JE.arrAsk.quota(state.kind === 'movie' ? 'movie' : 'tv')) || state.quota : state.quota;
+        if (!state.action.current()) return;
         if (state.listTicket && (state.done || !state.listTicket.current())) return;
         const words = JE.arrAsk.describe(result, state.caps, allowance);
         if (result.ok || result.state === 'unknown') {
@@ -989,12 +999,13 @@
     function finish(state, result) {
         if (state.done) return;
         state.done = true;
+        state.releaseAction?.();
         document.removeEventListener('keydown', state.onKey, true);
         const remove = () => state.backdrop?.remove();
         if (state.listTicket) JE.internals.arrListPages.gate.erase(remove);
         else remove();
         if (current === state) current = null;
-        sheetPaint(state.listTicket, () => restoreFocus(state));
+        if (state.action.current()) sheetPaint(state.listTicket, () => restoreFocus(state));
         state.resolve(result);
     }
 

@@ -546,6 +546,8 @@ The shared transport and `createSessionAction` capture the submitting user, serv
 
 Discovery genre/network/people reads and linked-Seerr window ratings also use the common JSON transport; they no longer assemble an independent limiter/retry/body pipeline. Personalized native discovery feeds remain uncached.
 
+The shared title action hosts live in `js/arr/actions/`: `title-actions.js` normalizes provider identity, admits actions through the existing policy and exposes the lazy action-provider registration hook; `title-actions-sheet.js` renders the grouped Design B sheet and native-control proxies; `title-actions-hosts.js` mounts details, More Info and card controls and reconciles copied/recycled DOM. `Controllers/TitleActionsController.cs` supplies fresh, authenticated provider/scope admission for menus and shared links on both Jellyfin targets. It does not write media or duplicate an action owner's authorization.
+
 ### Native Dashboard user settings
 
 - `Controllers/AcquireAdminUsersController.cs`: D19 human-administrator routes, private responses and partial group edits.

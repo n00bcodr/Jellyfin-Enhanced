@@ -1631,3 +1631,11 @@ The users list adds role, known quota use and pending-request chips from one bat
 ![Household roles and known request use on Jellyfin user cards](../images/arr-dashboard-users.png)
 
 ![The native Jellyfin Enhanced user tab and single Save](../images/arr-dashboard-user-edit.gif)
+
+### Title actions and sharing
+
+Request-mode titles have a **More actions** menu on their details page, More Info window and cards. Use the visible ⋯ button, right-click, long press, or Shift+F10. The menu offers enabled Hide, Spoiler Guard, Follow, Request, Report and administrator Manage controls through the same services as their existing buttons. File actions become available on the actual library copy; an absent title never offers Play, Played, Download or file management.
+
+Where the details action row would overflow, a compact row keeps the primary Play or Request control, Favourite (Follow for an absent title), Report when available, and More. The grouped sheet proxies Jellyfin's original buttons, including Trailer, Played and its own More options. Other plugins' library-item controls appear in the last group. Keyboard and TV remote arrows stay within the sheet; Close, Escape and Back restore focus.
+
+**Share** copies a link containing only the provider title and optional season/episode scope. The recipient signs in to the same server and opens the title under their own library access, Hidden Content and Spoiler Guard settings. A shared link grants no access and carries none of the sender's private view. Hidden titles remain directly openable so the recipient can Unhide them.

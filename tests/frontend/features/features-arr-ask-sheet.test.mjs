@@ -1880,3 +1880,17 @@ test('phase 4b: the sheet names the shared allowance after its note, and a wait 
   assert.equal(result.state, 'waiting');
   assert.deepEqual(h.toasts, ["Sent to Dad for an OK: the household's rules want a look."]);
 });
+
+test('provider season entry starts with exactly that season selected', async t => {
+  const h = setup(t); h.Sheet.open({ ...SERIES, initialSeason: 2 }); await settle();
+  assert.equal(card(h, 'pick').getAttribute('aria-pressed'), 'true');
+  click(h, primary(h)); await settle();
+  assert.deepEqual([...h.posts[0].body.input.seasons], [2]);
+});
+
+test('provider episode entry starts with exactly that episode selected', async t => {
+  const h = setup(t); h.Sheet.open({ ...SERIES, initialSeason: 2, initialEpisode: 4 }); await settle();
+  assert.equal(card(h, 'episodes').getAttribute('aria-pressed'), 'true');
+  click(h, primary(h)); await settle();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.posts[0].body.input.episodes)), [{ season: 2, episode: 4 }]);
+});

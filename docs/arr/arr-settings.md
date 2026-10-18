@@ -640,6 +640,8 @@ lands while the page is saving.
 
 Request-mode title cards use the Hidden Content switch for their surface: recommendations, discovery or search. Full-document Hidden Content saves carry a base rule revision; a stale replacement is rejected so newer rules from another tab remain saved.
 
+The compact title action row and shared More menu follow **Native absent details** or **JE request mode**. Individual menu entries retain their existing Hidden Content, Spoiler Guard, notifications, requests, issue-reporting and administrator Manage switches. Issue reporting requires Seerr and a permitted linked account; an unavailable entry explains that requirement. Adding provider titles to playlists or collections is an optional integration supplied by the list feature; no empty placeholder button is shown.
+
 ### Per-person settings in Dashboard → Users
 
 Open **Jellyfin Enhanced** between **Access** and **Parental control** on the user editor. Use the single **Save** at the bottom for all changed sections. Effective values and technical information are under **Show details**. Settings here are shared with Household, plugin configuration and the person's JE panel; there is no separate policy store.

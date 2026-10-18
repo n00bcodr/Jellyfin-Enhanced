@@ -276,6 +276,11 @@
     "arr/lists/list-grid.js",
     "arr/lists/list-pages.js",
 
+    "// D46 safe title actions (after privacy, request, notification and modal owners)",
+    "arr/actions/title-actions.js",
+    "arr/actions/title-actions-sheet.js",
+    "arr/actions/title-actions-hosts.js",
+
     "// extras",
     "extras/colored-activity-icons.js",
     "extras/colored-ratings.js",

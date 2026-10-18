@@ -185,3 +185,5 @@ settle deadline and 300 ms absolute cap, including unresolved reads and LibraryC
 80 ms status read under 20 ms refreshes must reach the panel and arrival, with one trailing read per burst;
 page, item, user, session epoch and server changes cancel and reject late answers. Live delay-proxy
 comparison evidence is recorded separately in the refresh-fix report.
+
+D46 title actions: `ApiTitleActionsTests.cs` exercises cross-version provider/scope admission, disabled/API-key/unlinked/blocked/parental callers and revocation during metadata reads. `features-title-actions.test.mjs` covers identity-only Share, receiver isolation, stale-session actions, list-provider registration, native proxies, source-only exclusions, copied/recycled hosts, and keyboard/remote focus. Request-sheet regressions preserve an entry's selected season/episode scope. Live host evidence is maintained separately from these harness results.

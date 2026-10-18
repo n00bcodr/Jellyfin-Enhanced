@@ -167,6 +167,15 @@ test("JE mode: Seerr's modal entry points open the JE sheet; the one-tap paths a
   assert.equal(h.seerr.modals.length, 1, 'the collection movies are listed to ask for');
 });
 
+test('native more-info season Request forwards its validated episode hint to the same JE sheet owner', async t => {
+  const h = setup(t); const opened = [];
+  h.JE.arrAskSheet = { open: async input => { opened.push(input); } };
+  await h.JE.jellyseerrUI.showSeasonSelectionModal(1437, 'tv', 'Firefly', { id: 1437, name: 'Firefly', jeActionScope: { season: 1, episode: 2 } });
+  assert.equal(opened[0].initialSeason, 1);
+  assert.equal(opened[0].initialEpisode, 2);
+  assert.equal(opened[0].key, 'tv:tmdb:1437');
+});
+
 test('JE mode: a collection Request lists its movies and asks Jellyfin Enhanced for the ticked ones (no Seerr write)', async t => {
   const h = setup(t);
   let seerrRan = 0;
@@ -486,6 +495,84 @@ function moreInfoWindow(h) {
 const PAUSED = (paused) => (key, variant) => (paused.includes(variant)
   ? { key, variant, canRequest: false, blocked: { reason: 'low_disk' } }
   : { key, variant, canRequest: true });
+
+test('ordinary host pass recovers the SAME retained request node after a failed check, with bounded retries', async t => {
+  const h = setup(t);
+  const { internal, actions } = moreInfoWindow(h);
+  const modal = actions.parentElement;
+  modal.dataset.tmdbId = '604';
+  let now = 10000, reads = 0;
+  h.window.Date.now = () => now;
+  const owner = h.JE.arrAsk;
+  h.JE.arrAsk = { ...owner, check: async (...args) => {
+    reads++;
+    if (reads === 1) throw Error('transient');
+    return owner.check(...args);
+  } };
+  for (const file of ['arr/actions/title-actions.js', 'arr/actions/title-actions-sheet.js', 'arr/actions/title-actions-hosts.js']) h.load(file);
+  t.after(() => h.JE.titleActions.dispose());
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', mediaInfo: { status: 1 } }, 'movie');
+  await settle();
+  const control = actions.querySelector('.je-more-info-actions-row, .jellyseerr-request-button');
+  assert.ok(control);
+  assert.equal(control.dataset.jePauseChecked, undefined, 'failed check is not a final verdict');
+  h.JE.initializeTitleActions();
+  h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data: { id: 604 }, mediaType: 'movie' } }));
+  for (let i = 0; i < 20; i++) h.JE.titleActions.scan();
+  await settle();
+  assert.equal(reads, 1, 'ordinary mutation passes respect the retry cooldown');
+  now += 1000;
+  h.JE.titleActions.scan();
+  h.JE.titleActions.scan();
+  await settle();
+  assert.equal(reads, 2, 'one retry shared by overlapping ordinary passes');
+  assert.equal(actions.querySelector('.je-more-info-actions-row, .jellyseerr-request-button'), control);
+  assert.equal(control.dataset.jePauseChecked, '1');
+});
+
+test('a cloned final pause marker does not stand in for the owner verdict on a new node', async t => {
+  const h = setup(t);
+  const { internal, actions } = moreInfoWindow(h);
+  let now = 10000;
+  h.window.Date.now = () => now;
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', mediaInfo: { status: 1 } }, 'movie');
+  await settle();
+  const source = actions.querySelector('.je-more-info-actions-row, .jellyseerr-request-button');
+  assert.equal(source.dataset.jePauseChecked, '1');
+  const clone = source.cloneNode(true);
+  source.replaceWith(clone);
+  let release;
+  h.JE.arrAsk = { ...h.JE.arrAsk, check: () => new Promise(resolve => { release = resolve; }) };
+  now += 1000;
+  const pending = internal.reconcilePaused(actions);
+  await settle();
+  assert.equal(clone.dataset.jePauseChecked, undefined, 'pending work on a new node is not a final marker');
+  release({ canRequest: true });
+  await pending;
+  assert.equal(clone.dataset.jePauseChecked, '1');
+});
+
+test('failed pause work cannot retry as a later user and stops after three failed attempts', async t => {
+  const h = setup(t);
+  const { internal, actions } = moreInfoWindow(h);
+  let now = 10000, reads = 0;
+  h.window.Date.now = () => now;
+  h.JE.arrAsk = { ...h.JE.arrAsk, me: async () => { reads++; throw Error('offline'); } };
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', mediaInfo: { status: 1 } }, 'movie');
+  await settle();
+  for (let i = 0; i < 6; i++) {
+    now += 30000;
+    await internal.reconcilePaused(actions).catch(() => {});
+  }
+  assert.equal(reads, 3, 'at most three attempts per render/session identity');
+  internal.renderActions({ id: 604, title: 'The Matrix Reloaded', mediaInfo: { status: 1 } }, 'movie');
+  await settle();
+  const before = reads;
+  h.window.ApiClient.getCurrentUserId = () => 'different-user';
+  now += 30000;
+  await internal.reconcilePaused(actions).catch(() => {});
+  assert.equal(reads, before, 'abandoned work never captures the replacement identity');
+});
 
 test('JE mode: the more-info window says Paused before Request is pressed (movie, with the 4K choice kept when 4K can still be asked for)', async t => {
   const h = setup(t, { check: PAUSED(['standard']) });

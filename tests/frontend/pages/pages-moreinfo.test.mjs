@@ -59,6 +59,15 @@ test('more-info failed TV request refresh still marks the open modal requested',
   await h.P.open(1,'tv');h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-tv-requested',{detail:{tmdbId:1}}));await nextTurn();
   assert.deepEqual(rendered,[undefined,2]);
 });
+test('more-info Request owners retain exact scope through refresh without contaminating cached metadata',async t=>{
+  const cached={id:1}; const h=setup(t,{details:async()=>cached}); const scopes=[];
+  h.internal.renderActions=data=>scopes.push(data.jeActionScope);
+  await h.P.open(1,'tv',{season:2,episode:4});
+  h.state.currentModal.querySelector('.modal-refresh').click(); await nextTurn();
+  assert.deepEqual(JSON.parse(JSON.stringify(scopes)),[{season:2,episode:4},{season:2,episode:4}]);
+  assert.equal(cached.jeActionScope,undefined);
+  await h.P.open(1,'tv'); assert.equal(scopes.at(-1),undefined);
+});
 test('more-info ratings from an earlier opening of the same item cannot overwrite fresh ratings',async t=>{
   const pending=deferred();let calls=0;const h=setup(t,{ratings:()=>++calls===1?pending.promise:Promise.resolve({label:'fresh'})});
   await h.P.open(1,'movie');await h.P.open(1,'movie');pending.resolve({label:'stale'});await nextTurn();
@@ -112,6 +121,13 @@ test('guard toggle clears old modal content synchronously and reopens from fresh
  assert.equal(old.textContent,'');assert.equal(old._isClosing,true);assert.equal(calls,2);
  fresh.resolve({id:42,jeSpoiler:{guarded:true}});await nextTurn();h.runClosing();
  assert.notEqual(h.state.currentModal,old);assert.equal(h.state.currentModal.dataset.tmdbId,'42');
+});
+test('guard-driven modal reprojection retains the opening child Request scope',async t=>{
+  const h=setup(t);const scopes=[];h.internal.renderActions=data=>scopes.push(data.jeActionScope);
+  await h.P.open(42,'tv',{season:1,episode:2});
+  h.window.dispatchEvent(new h.window.CustomEvent('je-spoiler-policy-changed',{detail:{type:'tv',tmdbId:42,enabled:true}}));
+  await nextTurn();h.runClosing();
+  assert.deepEqual(JSON.parse(JSON.stringify(scopes)),[{season:1,episode:2},{season:1,episode:2}]);
 });
 test('more-info modal closing after a session transition is inert during its exit animation',async t=>{
   const h=setup(t,{withSession:true});await h.P.open(1,'movie');const previous=h.state.currentModal;
