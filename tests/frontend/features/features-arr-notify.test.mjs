@@ -466,7 +466,8 @@ test('the follow state follows the user\'s own requests and the "follow what I r
 });
 
 test('keyboard and TV focus stays on the control after each settings change and in the inbox', async t => {
-  const h = setup(t);
+  // "Show older" reads its own page, so an inbox refresh that lands meanwhile still returns the first one.
+  const h = setup(t, { routes: { '/acquire/notify/inbox?limit=20&before=': (path, options, state) => JSON.parse(JSON.stringify(state.older)) } });
   h.document.body.insertAdjacentHTML('beforeend', `<div id="jellyfin-enhanced-panel">${h.N.buildSettingsHtml()}</div>`);
   const help = h.document.getElementById('jellyfin-enhanced-panel');
   h.N.wireSettings({ help });
@@ -499,7 +500,7 @@ test('keyboard and TV focus stays on the control after each settings change and 
   await until(() => panel.querySelector('.je-notify-markall').disabled);
   assert.ok(panel.contains(h.document.activeElement) && h.document.activeElement !== h.document.body);
   assert.equal(h.document.activeElement, panel.querySelector('.je-notify-body'));
-  h.state.inbox = { unread: 0, more: false, items: [item(2, 'ready', { title: 'Older' })] };
+  h.state.older = { unread: 0, more: false, items: [item(2, 'ready', { title: 'Older' })] };
   panel.querySelector('.je-notify-more').focus();
   panel.querySelector('.je-notify-more').click();
   await until(() => panel.querySelectorAll('.je-notify-item').length === 3);
