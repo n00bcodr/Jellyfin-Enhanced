@@ -14,23 +14,60 @@
     // once it has cached the answer, and a visit's unclaimed ones go with it.
     const releaseLookups = new Map();
 
-    // TMDB answers don't depend on the user, so the answers cache stays as it
-    // was; prefetches no chip has taken over are aborted with their visit's.
-    JE.session?.onUserChange('release-dates', () => {
-        for (const entry of releaseLookups.values()) {
-            if (entry.visit && !entry.claimed) entry.ctl?.abort();
-        }
-        releaseLookups.clear();
-    });
+    let releaseGeneration = 0;
+    const activeRequests = new Set();
 
-    function tmdbGet(path) {
-        const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
-        return fetch(url, { headers: { "Authorization": `MediaBrowser Token="${ApiClient.accessToken()}"`, "X-Emby-Token": ApiClient.accessToken() } })
-            .then(r => r.ok ? r.json() : Promise.reject(`API Error: ${r.status}`))
-            .catch(error => {
-                console.error(`🪼 Jellyfin Enhanced: Release Date: TMDB request failed for ${path}`, error);
-                return null;
+    /** Owns projected dates across item lookups, queued prefetches and provider replies. */
+    function createReleaseScope(signal) {
+        const action = JE.createSessionAction();
+        const generation = releaseGeneration;
+        const presentation = JE.core?.api?.manager?.getPresentationGeneration?.();
+        const current = () => !signal?.aborted && generation === releaseGeneration && action.current()
+            && (presentation === undefined || presentation === JE.core?.api?.manager?.getPresentationGeneration?.());
+        return { current, assert() {
+            if (!current()) throw new DOMException('Release date context changed', 'AbortError');
+        } };
+    }
+
+    /** Cancels obsolete reads; projected date answers are private to the current policy/session. */
+    function clearReleaseContext(removeChips = true) {
+        releaseGeneration++;
+        for (const controller of activeRequests) controller.abort();
+        activeRequests.clear();
+        for (const entry of releaseLookups.values()) entry.ctl?.abort();
+        releaseLookups.clear();
+        releaseDateCache.clear();
+        if (removeChips) document.querySelectorAll('.mediaInfoItem-releaseDate').forEach(node => node.remove());
+    }
+    JE.session?.onUserChange('release-dates', () => clearReleaseContext());
+    window.addEventListener('je-spoiler-policy-changed', () => clearReleaseContext());
+    window.addEventListener('je-hidden-content-changed', () => clearReleaseContext());
+    window.addEventListener('beforeunload', () => clearReleaseContext(false));
+    window.addEventListener('pagehide', () => clearReleaseContext(false));
+
+    /** Keeps the visit's existing limiter slot, while binding the actual read and its completion. */
+    async function tmdbGet(path, scope) {
+        scope.assert();
+        const controller = new AbortController();
+        activeRequests.add(controller);
+        try {
+            const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`), {
+                headers: { Authorization: `MediaBrowser Token="${ApiClient.accessToken()}"`, 'X-Emby-Token': ApiClient.accessToken() },
+                signal: controller.signal
             });
+            if (!response.ok) throw new Error(`API Error: ${response.status}`);
+            const data = await response.json();
+            scope.assert();
+            return data;
+        } catch (error) {
+            if (!scope.current() || controller.signal.aborted || error?.name === 'AbortError') {
+                throw new DOMException('Release date request cancelled', 'AbortError');
+            }
+            console.error(`🪼 Jellyfin Enhanced: Release Date: TMDB request failed for ${path}`, error);
+            return null;
+        } finally {
+            activeRequests.delete(controller);
+        }
     }
 
     /**
@@ -85,8 +122,8 @@
 
     // Each bucket cascades through the configured region, then US, then any
     // region at all, since most countries only record one release type.
-    async function getMovieReleaseInfo(tmdbId) {
-        const data = await tmdbGet(`/movie/${tmdbId}/release_dates`);
+    async function getMovieReleaseInfo(tmdbId, scope) {
+        const data = await tmdbGet(`/movie/${tmdbId}/release_dates`, scope);
         const results = data?.results;
         if (!Array.isArray(results) || results.length === 0) return [];
 
@@ -112,14 +149,14 @@
         return infos;
     }
 
-    async function getSeriesReleaseInfo(tmdbId) {
-        const data = await tmdbGet(`/tv/${tmdbId}`);
+    async function getSeriesReleaseInfo(tmdbId, scope) {
+        const data = await tmdbGet(`/tv/${tmdbId}`, scope);
         const date = data?.next_episode_to_air?.air_date || data?.last_episode_to_air?.air_date;
         return date ? [{ date, icon: 'tv_guide', titleKey: 'calendar_episode', type: 'episode' }] : [];
     }
 
-    async function getSeasonReleaseInfo(tmdbId, seasonNumber) {
-        const data = await tmdbGet(`/tv/${tmdbId}/season/${seasonNumber}`);
+    async function getSeasonReleaseInfo(tmdbId, seasonNumber, scope) {
+        const data = await tmdbGet(`/tv/${tmdbId}/season/${seasonNumber}`, scope);
         const episodes = data?.episodes;
         if (!Array.isArray(episodes) || episodes.length === 0) return [];
 
@@ -132,8 +169,8 @@
         return [{ date, icon: 'tv_guide', titleKey: 'calendar_episode', type: 'episode' }];
     }
 
-    async function getEpisodeReleaseInfo(tmdbId, seasonNumber, episodeNumber) {
-        const data = await tmdbGet(`/tv/${tmdbId}/season/${seasonNumber}/episode/${episodeNumber}`);
+    async function getEpisodeReleaseInfo(tmdbId, seasonNumber, episodeNumber, scope) {
+        const data = await tmdbGet(`/tv/${tmdbId}/season/${seasonNumber}/episode/${episodeNumber}`, scope);
         return data?.air_date ? [{ date: data.air_date, icon: 'tv_guide', titleKey: 'calendar_episode', type: 'episode' }] : [];
     }
 
@@ -152,26 +189,38 @@
         if (item?.Type === 'Season' && !(Number(item.IndexNumber) > 1)) return false;
         if (item?.Type === 'Episode' && item.UserData?.Played === true) return false;
         const sg = JE.spoilerBlur;
-        if (!sg || typeof sg.isEnabledFor !== 'function' || !item?.SeriesId) return false;
+        if (!sg || typeof sg.isEnabledFor !== 'function') return false;
         try {
             await sg.whenLoaded?.();
         } catch { /* judged below as not loaded */ }
         if (typeof sg.isLoadOk === 'function' && sg.isLoadOk() !== true) return true;
         if (sg.getUserPrefs?.()?.HideAirDate === false) return false;
+        const parts = JE.titleDetails?.parse?.(item.Id);
+        if (item.ProviderIds?.JeSpoilerGuarded === 'true' || parts && sg.isTmdbEnabled?.(parts.kind === 'movie' ? 'movie' : 'tv', parts.tmdbId)) return true;
         return sg.isEnabledFor(item.SeriesId) === true;
     }
 
-    async function resolveReleaseInfo(item, userId) {
+    async function resolveReleaseInfo(item, userId, scope) {
+        scope.assert();
         const mediaType = item?.Type;
+        const parts = JE.titleDetails?.parse?.(item?.Id);
+        if (parts && JE.pluginConfig?.SpoilerBlurEnabled === true && JE.pluginConfig?.SpoilerStripPremiereDate !== false) {
+            const sg = JE.spoilerBlur;
+            await sg?.whenLoaded?.();
+            scope.assert();
+            if (sg?.getUserPrefs?.()?.HideAirDate !== false
+                && !(parts.kind === 'season' && parts.season <= 1)
+                && (item.ProviderIds?.JeSpoilerGuarded === 'true' || sg?.isTmdbEnabled?.(parts.kind === 'movie' ? 'movie' : 'tv', parts.tmdbId))) return [];
+        }
 
         if (mediaType === 'Movie') {
             const tmdbId = item?.ProviderIds?.Tmdb;
-            return tmdbId ? getMovieReleaseInfo(tmdbId) : [];
+            return tmdbId ? getMovieReleaseInfo(tmdbId, scope) : [];
         }
 
         if (mediaType === 'Series') {
             const tmdbId = item?.ProviderIds?.Tmdb;
-            return tmdbId ? getSeriesReleaseInfo(tmdbId) : [];
+            return tmdbId ? getSeriesReleaseInfo(tmdbId, scope) : [];
         }
 
         if (mediaType === 'Season' || mediaType === 'Episode') {
@@ -187,9 +236,10 @@
                     seriesTmdbId = series?.ProviderIds?.Tmdb;
                 } catch (_) { /* fall through to empty below */ }
             }
+            scope.assert();
             if (!seriesTmdbId) return [];
 
-            // What the viewer sees depends on their Spoiler Guard state: not kept with the user-independent answers.
+            // Per-viewer episode/season projections also retain the existing no-cache marker.
             const perUser = (infos) => {
                 if (JE.pluginConfig?.SpoilerBlurEnabled === true) Object.defineProperty(infos, 'perUser', { value: true });
                 return infos;
@@ -202,10 +252,10 @@
             // Spoiler Guard took the date away: TMDB would print it back into the header.
             if (await airDateGuarded(item)) return perUser([]);
             if (mediaType === 'Season') {
-                return perUser(item?.IndexNumber != null ? await getSeasonReleaseInfo(seriesTmdbId, item.IndexNumber) : []);
+                return perUser(item?.IndexNumber != null ? await getSeasonReleaseInfo(seriesTmdbId, item.IndexNumber, scope) : []);
             }
             return perUser((item?.ParentIndexNumber != null && item?.IndexNumber != null)
-                ? await getEpisodeReleaseInfo(seriesTmdbId, item.ParentIndexNumber, item.IndexNumber)
+                ? await getEpisodeReleaseInfo(seriesTmdbId, item.ParentIndexNumber, item.IndexNumber, scope)
                 : []);
         }
 
@@ -226,7 +276,7 @@
 
         const now = Date.now();
         const cached = releaseDateCache.get(itemId);
-        if (cached && (now - cached.ts) < RELEASEDATE_CACHE_TTL) {
+        if (cached && cached.current() && (now - cached.ts) < RELEASEDATE_CACHE_TTL) {
             if (cached.infos.length > 0) renderReleaseDateChips(container, itemId, cached.infos);
             return;
         }
@@ -243,15 +293,17 @@
             // cancels the limiter's queued work) is neither retried as the
             // previous user nor cached as "no dates" for the next one. Any
             // other failure is logged and cached as it always was.
-            const epoch = JE.session ? JE.session.getEpoch() : 0;
+            const scope = createReleaseScope();
             let cutShort = false;
             try {
                 const userId = ApiClient.getCurrentUserId();
                 const lookupNow = async () => {
+                    scope.assert();
                     const item = JE.helpers?.getItemCached
                         ? await JE.helpers.getItemCached(itemId, { userId })
                         : await ApiClient.getItem(userId, itemId);
-                    return resolveReleaseInfo(item, userId);
+                    scope.assert();
+                    return resolveReleaseInfo(item, userId, scope);
                 };
                 // Take over the details visit's prefetch (or a lookup already
                 // in flight) instead of starting another; register this one
@@ -263,18 +315,20 @@
                 // without the prefetch.
                 const infos = entry.visit
                     ? await entry.promise.catch((error) => {
-                        if (JE.session && !JE.session.isCurrent(epoch)) {
+                        if (!scope.current()) {
                             cutShort = true;
                             throw error;
                         }
                         return lookupNow();
                     })
                     : await entry.promise;
-                if (!infos.perUser) releaseDateCache.set(itemId, { infos, ts: now });
+                scope.assert();
+                if (!infos.perUser) releaseDateCache.set(itemId, { infos, ts: now, current: scope.current });
                 if (releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
                 // The chips' small DOM write lands with the next frame's own
                 // layout pass instead of forcing an extra one.
                 await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+                scope.assert();
                 if (!placeholder.isConnected) return; // navigated away while fetching
                 if (infos.length > 0) {
                     fillReleaseDateChips(placeholder, infos);
@@ -284,9 +338,9 @@
             } catch (error) {
                 if (entry && releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
                 placeholder.remove();
-                if (cutShort) return;
+                if (cutShort || !scope.current() || error?.name === 'AbortError') return;
                 console.error(`🪼 Jellyfin Enhanced: Release Date: Error fetching release info for ${itemId}:`, error);
-                releaseDateCache.set(itemId, { infos: [], ts: now });
+                releaseDateCache.set(itemId, { infos: [], ts: now, current: scope.current });
             }
         };
 
@@ -377,10 +431,11 @@
      */
     function prefetchReleaseDate(itemId, item, visit) {
         const cached = releaseDateCache.get(itemId);
-        if ((cached && (Date.now() - cached.ts) < RELEASEDATE_CACHE_TTL) || releaseLookups.has(itemId)) return;
+        if ((cached && cached.current() && (Date.now() - cached.ts) < RELEASEDATE_CACHE_TTL) || releaseLookups.has(itemId)) return;
         const ctl = new AbortController();
         const userId = ApiClient.getCurrentUserId();
-        const lookup = () => resolveReleaseInfo(item, userId);
+        const scope = createReleaseScope(ctl.signal);
+        const lookup = () => resolveReleaseInfo(item, userId, scope);
         const manager = JE.core?.api?.manager;
         const promise = typeof manager?.withConcurrencyLimit === 'function'
             ? manager.withConcurrencyLimit(lookup, { signal: ctl.signal })

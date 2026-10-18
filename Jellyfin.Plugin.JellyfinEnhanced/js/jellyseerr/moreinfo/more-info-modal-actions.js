@@ -449,6 +449,8 @@ function drawActions(data, mediaType) {
     renderRequestedBy(requestedByMount, data.mediaInfo);
     if (data.jePublicDetails === true) renderPublicNote(requestedByMount);
     JE.internals.spoilerGuard?.appendSeerrToggle?.(secondaryMount, data, mediaType);
+    const hide = JE.hiddenContent?.buildTitleControl?.({ ...data, mediaType, tmdbId: data.id, name: data.title || data.name }, { detail: true });
+    if (hide) secondaryMount?.appendChild(hide);
 
     if (mediaType === 'movie') {
         const mediaInfo = data.mediaInfo || {};

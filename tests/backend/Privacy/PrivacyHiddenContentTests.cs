@@ -44,6 +44,29 @@ public class PrivacyHiddenContentTests
 
     [Theory]
     [InlineData("Items", "GetItems")]
+    [InlineData("Library", "GetSimilarItems")]
+    public async Task TypedProviderRuleSurvivesArrivalAndMatchesEveryCopyWithoutCrossKindHiding(string controller, string action)
+    {
+        using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.HiddenContentEnabled = true;
+        var user = Guid.NewGuid();
+        Save(f, user, new UserHiddenContent { Items = new() {
+            ["movie:tmdb:42"] = new HiddenContentItem { Type = "Movie", TmdbId = "42", HideScope = "global" }
+        }});
+        BaseItemDto Copy(Jellyfin.Data.Enums.BaseItemKind kind) => new() {
+            Id = Guid.NewGuid(), Type = kind, ProviderIds = new Dictionary<string, string> { ["Tmdb"] = "42" }
+        };
+        var tv = Copy(Jellyfin.Data.Enums.BaseItemKind.Series);
+        var source = Rows(Copy(Jellyfin.Data.Enums.BaseItemKind.Movie), Copy(Jellyfin.Data.Enums.BaseItemKind.Movie), tv);
+        var result = Assert.IsType<QueryResult<BaseItemDto>>(await Run(f, user, controller, action, source));
+        Assert.Equal(tv.Id, Assert.Single(result.Items).Id);
+        Assert.Equal(3, source.Items.Count);
+        Assert.Equal(3, Assert.IsType<QueryResult<BaseItemDto>>(await Run(f, Guid.NewGuid(), controller, action, source)).Items.Count);
+        Save(f, user, new UserHiddenContent());
+        Assert.Equal(3, Assert.IsType<QueryResult<BaseItemDto>>(await Run(f, user, controller, action, source)).Items.Count);
+    }
+
+    [Theory]
+    [InlineData("Items", "GetItems")]
     [InlineData("Items", "GetItemsByUserIdLegacy")]
     [InlineData("Items", "GetResumeItems")]
     [InlineData("Items", "GetResumeItemsLegacy")]

@@ -10,6 +10,62 @@
     const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
 
     const { hiddenIdSet, getSettings, hideItem, unhideItem, getCardSurface, getCardItemId, confirmAndHide } = internal;
+    const checkedTitleIds = new Map();
+    const titlesRetryAt = new Map();
+    /** After a failed identity batch, later passes retry it once this window has passed. */
+    const TITLE_RETRY_AFTER_MS = 30000;
+    let titlesInFlight = null;
+    JE.session?.onUserChange('hidden-content-card-identities', () => { checkedTitleIds.clear(); titlesRetryAt.clear(); titlesInFlight = null; });
+
+    /** Resolves ID-only native card identities in bounded batches, only when provider rules exist. */
+    async function hydrateCardTitles() {
+        if (!internal.hasProviderRules() || JE.pluginConfig?.HiddenContentEnabled === false || titlesInFlight?.current()) return;
+        const action = JE.createSessionAction();
+        titlesInFlight = action;
+        try {
+            const byId = new Map();
+            for (const card of document.querySelectorAll('.card[data-id], .card[data-itemid]')) {
+                const id = getCardItemId(card);
+                const surface = internal.getCardSurface(card) || internal.getCurrentNativeSurface();
+                if (internal.nativeDecisionScopeCurrent(checkedTitleIds.get(id)) || (titlesRetryAt.get(id)?.action.current() && Date.now() < titlesRetryAt.get(id).retryAt) || (!card.querySelector('.je-hide-btn') && !internal.shouldFilterSurface(surface)) ||
+                    !['movie', 'series'].includes((card.dataset.type || '').toLowerCase()) ||
+                    internal.titleData({ itemId: id, type: card.dataset.type, tmdbId: card.dataset.tmdbId }) ||
+                    JE.titleDetails?.isSynthetic?.(id)) continue;
+                if (!byId.has(id)) byId.set(id, []);
+                byId.get(id).push(card);
+            }
+            const ids = [...byId.keys()];
+            for (let start = 0; start < ids.length; start += 50) {
+                if (!action.current()) return;
+                const batch = ids.slice(start, start + 50);
+                const scope = internal.captureNativeDecisionScope();
+                try {
+                    const reply = await ApiClient.ajax({ type: 'GET', dataType: 'json',
+                        url: ApiClient.getUrl(`/Users/${ApiClient.getCurrentUserId()}/Items`, { Ids: batch.join(','), Fields: 'ProviderIds' }) });
+                    if (!action.current()) return;
+                    for (const id of batch) { checkedTitleIds.set(id, scope); titlesRetryAt.delete(id); }
+                    for (const item of reply?.Items || []) {
+                        const title = internal.titleData(item);
+                        if (!title) continue;
+                        checkedTitleIds.delete(internal.normalizeId(item.Id));
+                        for (const card of byId.get(internal.normalizeId(item.Id)) || []) {
+                            card.dataset.type = title.type;
+                            card.dataset.tmdbId = title.tmdbId;
+                            card.querySelector('.je-hide-btn')?.jeHiddenPaint?.();
+                        }
+                    }
+                    internal.refreshNativeCardVisibility();
+                } catch (_) {
+                    // Leave unresolved cards usable; the same cards retry after the window.
+                    if (!action.current()) return;
+                    for (const id of ids.slice(start)) titlesRetryAt.set(id, { action, retryAt: Date.now() + TITLE_RETRY_AFTER_MS });
+                    return;
+                }
+            }
+        } finally {
+            if (titlesInFlight === action) titlesInFlight = null;
+        }
+    }
 
     // ============================================================
     // Library hide buttons
@@ -50,11 +106,14 @@
             renderIcon('visibility_off');
             btn.onmouseenter = () => { btn.title = unhideLabel; };
             btn.onmouseleave = () => { btn.title = hiddenLabel; };
-            btn.onclick = (e) => {
+            btn.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                unhideItem(itemId);
-                setHideState();
+                const action = JE.createSessionAction();
+                const saved = await unhideItem(itemId, { type: card.dataset.type, tmdbId: card.dataset.tmdbId });
+                if (!action.current()) return;
+                if (saved === false) btn.textContent = JE.t('hidden_content_save_failed_persistent');
+                else setHideState();
             };
         }
 
@@ -68,6 +127,7 @@
             btn.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                const action = JE.createSessionAction();
 
                 const cardName = card.querySelector('.cardText')?.textContent || '';
                 const surface = getCardSurface(card);
@@ -75,8 +135,49 @@
                 if (surface === 'nextup' || surface === 'continuewatching') {
                     await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState);
                 } else {
-                    const itemData = { itemId, name: cardName };
+                    const itemData = { itemId, name: cardName, type: card.dataset.type || '', tmdbId: card.dataset.tmdbId || '' };
                     if (isPerson) itemData.type = 'Person';
+                    // Only a deliberate click resolves an ID-only native card. Mounting/scanning makes no requests.
+                    if (!isPerson && !itemData.tmdbId) {
+                        try {
+                            const userId = ApiClient.getCurrentUserId();
+                            const item = JE.helpers?.getItemCached ? await JE.helpers.getItemCached(itemId, { userId }) : await ApiClient.getItem(userId, itemId);
+                            itemData.type = item?.Type || itemData.type;
+                            itemData.tmdbId = item?.ProviderIds?.Tmdb || '';
+                        } catch (_) { btn.textContent = JE.t('hidden_content_save_failed_persistent'); return; }
+                    }
+                    if (!action.current()) return;
+                    const title = internal.titleData(itemData);
+                    if (title) {
+                        // Later filter passes (and cloned cards) need the identity resolved by this click.
+                        card.dataset.type = title.type;
+                        card.dataset.tmdbId = title.tmdbId;
+                        if (internal.isHiddenByTmdbId(title.tmdbId, title.type)) {
+                            const saved = await unhideItem(itemId, itemData);
+                            if (!action.current()) return;
+                            if (saved === false) btn.textContent = JE.t('hidden_content_save_failed_persistent');
+                            else setHideState();
+                            return;
+                        }
+                        /** Confirms before persistence, then acknowledges only a successful provider-rule save. */
+                        async function saveConfirmedTitle() {
+                            if (!action.current()) return;
+                            btn.disabled = true;
+                            try {
+                                const saved = await internal.saveTitleRule(title, true).catch(() => false);
+                                if (saved && action.current()) {
+                                    card.classList.toggle('je-hidden', internal.shouldFilterSurface(surface || internal.getCurrentNativeSurface()));
+                                    setHiddenState();
+                                }
+                                else btn.textContent = JE.t('hidden_content_save_failed_persistent');
+                            } finally { btn.disabled = false; }
+                        }
+                        if (!internal.isConfirmationSuppressed()) {
+                            internal.showHideConfirmation(title.name || 'Item', saveConfirmedTitle);
+                            return;
+                        }
+                        return saveConfirmedTitle();
+                    }
                     confirmAndHide(itemData, () => {
                         card.classList.add('je-hidden');
                     });
@@ -84,11 +185,16 @@
             };
         }
 
-        if (hiddenIdSet.has(itemId)) {
-            setHiddenState();
-        } else {
-            setHideState();
-        }
+        /** Reuses metadata already on the card when rules change, without provider lookups. */
+        btn.jeHiddenPaint = () => {
+            const hidden = internal.isHidden(itemId, { type: card.dataset.type, tmdbId: card.dataset.tmdbId });
+            if (hidden !== btn.classList.contains('je-already-hidden')) {
+                if (hidden) setHiddenState(); else setHideState();
+            }
+        };
+        setHideState();
+        btn.jeHiddenPaint();
+        btn.jeHideButtonLive = true;
         cardBox.appendChild(btn);
     }
 
@@ -102,6 +208,7 @@
      * @param {Function} setHiddenState Callback to switch the button to "hidden" state.
      */
     async function handleScopedCardHide(card, itemId, cardName, surface, setHiddenState) {
+        const action = JE.createSessionAction();
         const itemData = { itemId, name: cardName };
         // Pass surface through so the hideScope stays bound to the row the user clicked.
         const dialogOpts = { surface };
@@ -112,6 +219,7 @@
                 ? await JE.helpers.getItemCached(itemId, { userId })
                 : await ApiClient.getItem(userId, itemId);
             const itemType = item?.Type || '';
+            if (!action.current()) return;
             const seriesId = item?.SeriesId || '';
             const seriesName = item?.SeriesName || '';
 
@@ -139,6 +247,7 @@
                     } catch (err) {
                         console.warn('🪼 Jellyfin Enhanced: Failed to fetch series TMDB ID', err);
                     }
+                    if (!action.current()) return;
                     hideItem({
                         itemId: seriesId,
                         name: seriesName || cardName,
@@ -161,6 +270,7 @@
             };
         }
 
+        if (!action.current()) return;
         confirmAndHide(itemData, () => {
             card.classList.add('je-hidden');
         }, dialogOpts);
@@ -175,14 +285,16 @@
         const s = getSettings();
         if (!s.enabled || !s.showHideButtons) return;
         // At least one of library or cast buttons must be enabled
-        if (!s.showButtonLibrary && !s.showButtonCast) return;
+        if (!s.showButtonLibrary && !s.showButtonCast && !s.showButtonJellyseerr) return;
 
         const skipCollections = !s.experimentalHideCollections;
 
         const cards = document.querySelectorAll('.card[data-id] .cardBox, .card[data-itemid] .cardBox');
         for (let i = 0; i < cards.length; i++) {
             const cardBox = cards[i];
-            if (cardBox.querySelector('.je-hide-btn')) continue;
+            const existing = cardBox.querySelector('.je-hide-btn');
+            if (existing?.jeHideButtonLive) { existing.jeHiddenPaint?.(); continue; }
+            existing?.remove();
 
             const card = cardBox.closest('.card');
             if (!card) continue;
@@ -195,7 +307,17 @@
 
             const itemId = getCardItemId(card);
             if (!itemId) continue;
-            // A title that isn't in the library (native details page): never a Hidden Content rule.
+            const synthetic = JE.titleDetails?.parse?.(itemId);
+            const requestSurface = !!synthetic || !!card.closest('.je-native-absent, .je-discovery-grid, .je-seerr-section, #similarCollapsible');
+            if (requestSurface && s.showButtonJellyseerr) {
+                const title = internal.titleData({ itemId, type: card.dataset.type, tmdbId: card.dataset.tmdbId,
+                    name: card.querySelector('.cardText')?.textContent || '' });
+                if (title) {
+                    const button = internal.buildTitleControl(title, { card, surface: () => internal.getCardSurface(card) || internal.getCurrentNativeSurface() });
+                    if (button) cardBox.appendChild(button);
+                    continue;
+                }
+            }
             if (JE.titleDetails?.isSynthetic?.(itemId)) continue;
 
             const cardType = (card.dataset.type || '').toLowerCase();
@@ -204,7 +326,7 @@
             // Skip Person cards unless showButtonCast is enabled
             if (isPerson && !s.showButtonCast) continue;
             // Skip non-Person cards unless showButtonLibrary is enabled
-            if (!isPerson && !s.showButtonLibrary) continue;
+            if (!isPerson && !s.showButtonLibrary && !(requestSurface && s.showButtonJellyseerr)) continue;
 
             if (skipCollections && !isPerson) {
                 if (cardType === 'collectionfolder' || cardType === 'userview' || cardType === 'boxset' || cardType === 'playlist' || cardType === 'channel') continue;
@@ -217,6 +339,20 @@
 
             createLibraryHideButton(cardBox, card, itemId, isPerson);
         }
+        if (s.showButtonJellyseerr) {
+            document.querySelectorAll('[data-je-hide-title]').forEach(card => {
+                const existing = card.querySelector('.je-hide-btn');
+                if (existing?.jeHideButtonLive) { existing.jeHiddenPaint?.(); return; }
+                existing?.remove();
+                const [type, provider, tmdbId] = card.dataset.jeHideTitle.split(':');
+                if (provider !== 'tmdb') return;
+                const control = internal.buildTitleControl({ type, tmdbId, name: card.dataset.jeHideName || '' }, {
+                    card, surface: card.dataset.jeHideSurface || 'requests'
+                });
+                if (control) { card.appendChild(control); control.jeHiddenPaint(); }
+            });
+        }
+        void hydrateCardTitles();
     }
 
     /**
@@ -230,6 +366,8 @@
         }
     }
 
-    Object.assign(internal, { addLibraryHideButtons, removeLibraryHideButtons });
+    Object.assign(internal, { addLibraryHideButtons, removeLibraryHideButtons, hydrateCardTitles,
+        isCardTitleResolved: id => internal.nativeDecisionScopeCurrent(checkedTitleIds.get(id)),
+        resetCardTitleVerdicts: () => checkedTitleIds.clear() });
 
 })(window.JellyfinEnhanced);

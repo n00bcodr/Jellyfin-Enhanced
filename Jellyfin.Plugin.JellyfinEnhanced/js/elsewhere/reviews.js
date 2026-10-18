@@ -48,6 +48,10 @@
                     var userPrefs = JE.spoilerBlur.getUserPrefs() || {};
                     if (userPrefs.HideReviews === false) return false;
                 }
+                const parts = JE.titleDetails?.parse?.(item?.Id);
+                const provider = parts?.tmdbId || item?.ProviderIds?.Tmdb;
+                const kind = parts?.kind === 'movie' || mediaType === 'Movie' ? 'movie' : 'tv';
+                if (item?.ProviderIds?.JeSpoilerGuarded === 'true' || provider && JE.spoilerBlur.isTmdbEnabled?.(kind, provider)) return true;
                 if (mediaType === 'Movie') {
                     return !!(JE.spoilerBlur.isMovieEnabledFor && JE.spoilerBlur.isMovieEnabledFor(item?.Id || ''));
                 }
@@ -91,6 +95,7 @@
             return JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` })
                 .then(data => data.results || [])
                 .catch(error => {
+                    if (error?.name === 'AbortError') return null;
                     console.error(`${logPrefix} Failed to fetch reviews.`, error);
                     return null;
                 });
@@ -117,6 +122,7 @@
             return JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`)
                 .then(data => data.reviews || [])
                 .catch(err => {
+                    if (err?.name === 'AbortError') return [];
                     console.error(`${logPrefix} Failed to fetch user reviews.`, err);
                     return [];
                 });
@@ -1255,4 +1261,3 @@
         });
     };
 })(window.JellyfinEnhanced);
-

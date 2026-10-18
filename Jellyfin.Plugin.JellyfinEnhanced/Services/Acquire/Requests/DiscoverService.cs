@@ -44,6 +44,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Plain-text overview, at most <see cref="DiscoverService.MaxOverview"/> characters.</summary>
         [JsonPropertyName("overview")] public string? Overview { get; init; }
 
+        /// <summary>Effective viewer projection flags; no private rule lists.</summary>
+        [JsonPropertyName("jeSpoiler")] public System.Text.Json.Nodes.JsonObject? Spoiler { get; init; }
+
         /// <summary>The caller can open a Jellyfin copy of it.</summary>
         [JsonPropertyName("inLibrary")] public bool InLibrary { get; init; }
 
@@ -165,7 +168,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private const int MaxCacheEntries = 500;
         private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(2);
-        private static readonly TimeSpan HiddenTtl = TimeSpan.FromSeconds(30);
         private static readonly Regex PosterPath = new("^/[A-Za-z0-9_.-]{1,80}$", RegexOptions.CultureInvariant);
         private static readonly Regex Language = new("^[a-z]{2}(-[A-Z]{2})?$", RegexOptions.CultureInvariant);
 
@@ -174,6 +176,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static readonly SemaphoreSlim ParentalSlots = new(8);
 
         private readonly RequestService _requests;
+        private SpoilerPresentation? _presentation;
+        private UserConfigurationManager? _userConfig;
+        private ILibraryManager? _library;
         private readonly TitleAliases? _aliases;
         private readonly Func<string, int, Guid, CancellationToken, Task<bool>> _maySeeAbsent;
         private readonly Func<string, string, CancellationToken, Task<string?>> _tmdb;
@@ -181,21 +186,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<Guid, HiddenTitles> _hidden;
         private readonly Func<DateTimeOffset> _now;
         private readonly ConcurrentDictionary<string, (DateTimeOffset At, DiscoverAnswer Answer)> _cache = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<Guid, (DateTimeOffset At, HiddenTitles Hidden)> _hiddenCache = new();
 
         /// <summary>Creates the service over the shared TMDB cache, the parental filter and Jellyfin.</summary>
-        public DiscoverService(RequestService requests, TitleAliases aliases, SeerrParentalFilter parental, TmdbResponseCache tmdb, ILibraryManager library, UserConfigurationManager userConfig)
+        public DiscoverService(RequestService requests, TitleAliases aliases, SeerrParentalFilter parental, TmdbResponseCache tmdb, ILibraryManager library, UserConfigurationManager userConfig, SpoilerPresentation? presentation = null)
             : this(requests, aliases,
                 (kind, id, user, ct) => parental.MaySeeAbsentAsync(kind, id, user.ToString("N", CultureInfo.InvariantCulture), ct),
                 (path, query, ct) => TmdbAsync(tmdb, path, query, ct),
                 (viewer, max) => RecentlyWatched(library, viewer, max),
-                user => ReadHidden(userConfig, user),
+                user => ReadHidden(userConfig, library, user),
                 () => DateTimeOffset.UtcNow)
         {
-            userConfig.UserConfigurationSaved += (user, file) =>
-            {
-                if (file == HiddenContentFile && Guid.TryParse(user, out var id)) _hiddenCache.TryRemove(id, out _);
-            };
+            _presentation = presentation; _userConfig = userConfig; _library = library;
         }
 
         /// <summary>Creates the service with explicit readers (tests).</summary>
@@ -232,7 +233,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var lang = Lang(language);
             var hidden = Hidden(viewer.UserId);
-            var cacheKey = CacheKey(viewer, list + "|" + type + "|" + page + "|" + lang, hidden);
+            var spoilerRevision = _presentation?.Load(viewer.UserId).Revision;
+            var cacheKey = CacheKey(viewer, list + "|" + type + "|" + page + "|" + lang + "|" + spoilerRevision, hidden);
             if (Cached(cacheKey) is { } cached) return await WithPausesAsync(viewer, cached, ct).ConfigureAwait(false);
 
             DiscoverAnswer? answer;
@@ -245,6 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     var json = await Read($"{kind}/{seed.TmdbId}/recommendations", Query(1, lang), ct).ConfigureAwait(false);
                     if (json == null) continue;
                     var seedKey = kind + ":tmdb:" + seed.TmdbId.ToString(CultureInfo.InvariantCulture);
+                    if (hidden.Discovery.Contains(seedKey)) continue;
                     var (rows, _) = Parse(json, kind);
                     var cards = await ProjectAsync(viewer, rows.Where(r => r.Key != seedKey), hidden.Discovery, ct).ConfigureAwait(false);
                     if (cards.Count > 0) groups.Add(new DiscoverGroup { BasedOn = seed.Title.Length > 200 ? seed.Title[..200] : seed.Title, Key = seedKey, Results = cards });
@@ -265,8 +268,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var cards = await ProjectAsync(viewer, rows, hidden.Discovery, ct).ConfigureAwait(false);
                 answer = new DiscoverAnswer { List = list, Type = type, Page = page, TotalPages = Math.Clamp(total, 1, MaxPage), Results = cards };
             }
-            Store(cacheKey, answer);
-            return await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
+            var delivered = await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
+            // The final gate and insertion are synchronous. An in-flight old snapshot never enters this cache.
+            var current = Hidden(viewer.UserId);
+            delivered = Present(viewer, delivered, current);
+            if (current.Stamp == hidden.Stamp && _presentation?.Load(viewer.UserId).Revision == spoilerRevision) Store(cacheKey, delivered);
+            return delivered;
         }
 
         /// <summary>One page of free-text search (movies and series only), or null when TMDB could not answer.</summary>
@@ -274,15 +281,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var lang = Lang(language);
             var hidden = Hidden(viewer.UserId);
-            var cacheKey = CacheKey(viewer, "search|" + page + "|" + lang + "|" + query, hidden);
+            var spoilerRevision = _presentation?.Load(viewer.UserId).Revision;
+            var cacheKey = CacheKey(viewer, "search|" + page + "|" + lang + "|" + query + "|" + spoilerRevision, hidden);
             if (Cached(cacheKey) is { } cached) return await WithPausesAsync(viewer, cached, ct).ConfigureAwait(false);
             var json = await Read("search/multi", Query(page, lang) + "&include_adult=false&query=" + Uri.EscapeDataString(query), ct).ConfigureAwait(false);
             if (json == null) return null;
             var (rows, total) = Parse(json, null);
             var cards = await ProjectAsync(viewer, rows, hidden.Search, ct).ConfigureAwait(false);
             var answer = new DiscoverAnswer { List = "search", Type = "all", Page = page, TotalPages = Math.Clamp(total, 1, MaxPage), Results = cards };
-            Store(cacheKey, answer);
-            return await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
+            var delivered = await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
+            // The final gate and insertion are synchronous. An in-flight old snapshot never enters this cache.
+            var current = Hidden(viewer.UserId);
+            delivered = Present(viewer, delivered, current);
+            if (current.Stamp == hidden.Stamp && _presentation?.Load(viewer.UserId).Revision == spoilerRevision) Store(cacheKey, delivered);
+            return delivered;
         }
 
         /// <summary>
@@ -295,13 +307,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var cards = answer.Results.Concat(answer.Groups?.SelectMany(g => g.Results) ?? Enumerable.Empty<DiscoverCard>());
             var paused = await _requests.StoragePausesAsync(viewer.UserId, cards.Select(c => c.Key), false, ct).ConfigureAwait(false);
-            if (paused.Count == 0) return answer;
-            DiscoverCard Mark(DiscoverCard card) => paused.TryGetValue(card.Key, out var block) ? card with { Blocked = block } : card;
-            return answer with
+            DiscoverCard Mark(DiscoverCard card) => card with { Blocked = paused.TryGetValue(card.Key, out var block) ? block : null };
+            return Present(viewer, answer with
             {
                 Results = answer.Results.Select(Mark).ToList(),
                 Groups = answer.Groups?.Select(g => g with { Results = g.Results.Select(Mark).ToList() }).ToList(),
-            };
+            }, Hidden(viewer.UserId));
+        }
+
+        /// <summary>Final caller projection for cache hits, inserts and byte serialization; never awaits.</summary>
+        public DiscoverAnswer Present(StatusViewer viewer, DiscoverAnswer answer) => Present(viewer, answer, Hidden(viewer.UserId));
+
+        private DiscoverAnswer Present(StatusViewer viewer, DiscoverAnswer answer, HiddenTitles hidden)
+        {
+            var final = _userConfig == null ? null : TitlePresentationGate.Read(_userConfig, _presentation, viewer.UserId, _library);
+            if (final != null) hidden = new HiddenTitles(final.Hidden.GlobalKeys("discovery"), final.Hidden.GlobalKeys("search"));
+            var keys = answer.List == "search" ? hidden.Search : hidden.Discovery;
+            var spoiler = final?.Spoilers ?? _presentation?.Load(viewer.UserId);
+            bool Keep(DiscoverCard card) => !keys.Contains(card.Key) && (card.ItemId == null || !keys.Contains(card.ItemId));
+            DiscoverCard Project(DiscoverCard card)
+            {
+                if (spoiler == null) return card;
+                var flags = spoiler.Flags(card.Key);
+                return card with { Overview = flags["overview"]?.GetValue<bool>() == true ? null : card.Overview,
+                    Poster = spoiler.ProtectArtwork(card.Key, card.Kind, "Primary") ? null : card.Poster, Spoiler = flags };
+            }
+            return answer with { Results = answer.Results.Where(Keep).Select(Project).ToArray(),
+                Groups = answer.Groups?.Where(g => !keys.Contains(g.Key)).Select(g => g with { Results = g.Results.Where(Keep).Select(Project).ToArray() })
+                    .Where(g => g.Results.Count > 0).ToArray() };
         }
 
         // ------------------------------------------------------------------ projection
@@ -315,10 +348,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         private async Task<IReadOnlyList<DiscoverCard>> ProjectAsync(StatusViewer viewer, IEnumerable<Row> rows, IReadOnlySet<string> hidden, CancellationToken ct)
         {
-            var list = rows.Where(r => !hidden.Contains(r.Key)).Take(MaxResults).ToList();
+            var list = rows.Where(r => !hidden.Contains(r.Key)).ToList();
             var tasks = list.Select(row => CardAsync(viewer, row, hidden, ct)).ToList();
             var cards = await Task.WhenAll(tasks).ConfigureAwait(false);
-            return cards.Where(c => c != null).Select(c => c!).ToList();
+            return cards.Where(c => c != null).Select(c => c!).Take(MaxResults).ToList();
         }
 
         private async Task<DiscoverCard?> CardAsync(StatusViewer viewer, Row row, IReadOnlySet<string> hidden, CancellationToken ct)
@@ -553,18 +586,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// What the user hid everywhere with Hidden Content (global hides only), for the surfaces whose
         /// filter they have on (Discovery, Search): TMDB ids by kind and Jellyfin item ids.
         /// </summary>
-        private static HiddenTitles ReadHidden(UserConfigurationManager config, Guid user)
+        private static HiddenTitles ReadHidden(UserConfigurationManager config, ILibraryManager library, Guid user)
         {
-            UserHiddenContent data;
-            try
-            {
-                data = config.GetUserConfiguration<UserHiddenContent>(user.ToString("N", CultureInfo.InvariantCulture), HiddenContentFile);
-            }
-            catch (Exception)
-            {
-                return HiddenTitles.None;
-            }
-            return FromHiddenContent(data);
+            var policy = HiddenContentPolicy.Load(config, user, library: library);
+            var discovery = policy.GlobalKeys("discovery");
+            var search = policy.GlobalKeys("search");
+            return discovery.Count + search.Count == 0 ? HiddenTitles.None : new HiddenTitles(discovery, search);
         }
 
         /// <summary>The hidden sets of a Hidden Content file.</summary>
@@ -584,36 +611,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         internal static HashSet<string> GlobalHiddenKeys(UserHiddenContent? data)
         {
-            var settings = data?.Settings ?? new HiddenContentSettings();
-            var keys = new HashSet<string>(StringComparer.Ordinal);
-            if (data?.Items == null || data.Items.Count == 0 || !settings.Enabled) return keys;
-            foreach (var item in data.Items.Values)
-            {
-                if (item == null || !string.Equals(string.IsNullOrEmpty(item.HideScope) ? "global" : item.HideScope, "global", StringComparison.OrdinalIgnoreCase)) continue;
-                if (Guid.TryParse(item.ItemId, out var itemId)) keys.Add(itemId.ToString("N", CultureInfo.InvariantCulture));
-                if (!int.TryParse(item.TmdbId, NumberStyles.None, CultureInfo.InvariantCulture, out var tmdb) || tmdb <= 0) continue;
-                var id = tmdb.ToString(CultureInfo.InvariantCulture);
-                if (string.Equals(item.Type, "Movie", StringComparison.OrdinalIgnoreCase)) keys.Add("movie:tmdb:" + id);
-                else if (string.Equals(item.Type, "Series", StringComparison.OrdinalIgnoreCase)) keys.Add("tv:tmdb:" + id);
-            }
-            return keys;
+            return HiddenContentPolicy.Build(data).GlobalKeys();
         }
 
         private HiddenTitles Hidden(Guid user)
         {
-            var now = _now();
-            if (_hiddenCache.TryGetValue(user, out var entry) && now - entry.At < HiddenTtl) return entry.Hidden;
-            HiddenTitles hidden;
-            try
-            {
-                hidden = _hidden(user);
-            }
-            catch (Exception)
-            {
-                hidden = HiddenTitles.None;
-            }
-            _hiddenCache[user] = (now, hidden);
-            return hidden;
+            return _hidden(user);
         }
 
         // ------------------------------------------------------------------ per-caller cache

@@ -18,6 +18,14 @@ A per-user, per-show opt-in protection layer for episodes, seasons, movies, and 
 
 ---
 
+## Request-mode titles
+
+Request-mode title pages and the 10.11 More Info window share Spoiler Guard with library pages. Guarded provider feeds remove sensitive fields and protected artwork before returning JSON; related cards use each title’s own guard state. Missing-episode request rows follow the same title, description and date preferences. Toggling a provider guard refreshes the active page or window immediately, and protection follows the title into the library. The title name, year and age certification remain available for navigation. Season 0 and Season 1 retain their existing entry-point exemption.
+
+When rating suppression is off, guarded titles keep their permitted movie and TV scores on both hosts. Streaming-provider information remains available independently of spoiler settings.
+
+Calendar episode rows use their series’ protection and the episode-title, description and date preferences. Series posters keep the series artwork policy; episode protection does not remove a safe series poster. Protected episode names are removed from subtitles too. Logos follow the artwork setting, including image links issued before protection was enabled. Related titles inside bundled provider responses use each related title’s own policy. Translated descriptions and combined rating responses follow the same protection. Unknown provider fields are omitted for guarded content; unguarded content retains them. People remain visible in search while the titles listed under them follow each title’s hiding and spoiler preferences.
+
 ## What Spoiler Guard protects
 
 Once you turn Spoiler Guard on for a show or movie, the plugin hides every spoiler surface for items you haven't watched yet:
@@ -121,13 +129,13 @@ Both modes run server-side: every native client and every browser sees the same 
 
 ## After toggling — what happens on your screen
 
-By default Spoiler Guard does a **soft refresh**: it immediately rewrites every `<img>` URL on the current page so you see the new blur/clear state instantly, without a full-page flash. Page-rendered text (Overview, episode titles, ratings) continues to show whatever was on screen until your next navigation, at which point everything will be in sync with the new state.
+Spoiler Guard immediately rewrites image URLs after adopting the server's updated state. Native library detail buttons also reload the page so Jellyfin's Overview, episode titles and ratings reflect the new policy. Provider title pages, cards and the More Info window refresh through the shared policy event; replies started under the previous policy are discarded.
 
 | Before toggle | After toggle (soft) |
 |---|---|
 | ![Before](web-refresh-after-toggle-off.png) | ![After ON](web-refresh-after-toggle-on.png) |
 
-If your admin enables **Strict refresh mode**, the page also auto-reloads after every toggle so the text updates immediately — at the cost of a brief page flash.
+Native library detail toggles reload even when **Strict refresh mode** is off. The compatibility setting remains available, but these buttons always refresh the fields owned by Jellyfin.
 
 ---
 
@@ -176,7 +184,7 @@ Turning Spoiler Guard **off** prompts a brief confirmation:
 > **Disable Spoiler Guard?**  
 > Original images and episode details will be visible again straight away.
 
-A "Don't ask again for 15 minutes" checkbox lets you batch-disable a few series without re-confirming each time. The snooze is per-browser and self-expires.
+A "Don't ask again for 15 minutes" checkbox lets you batch-disable a few series without re-confirming each time. The snooze is per-user in this browser and self-expires. Switching users closes an open confirmation and cancels its toggle and snooze, including in the More Info window.
 
 This catches accidental clicks (the toggle is right next to Play / Mark Watched). If you'd rather skip the prompt every time, just tick the snooze box once — or turn it off permanently in the per-user overrides described below.
 
@@ -255,3 +263,13 @@ Android TV clients cache image bytes locally using Glide / Coil. If you enabled 
 This should no longer happen in normal operation. Spoiler Guard identifies image requests by the per-user **identity marker** embedded in image tags, which every client echoes back regardless of the IP address Jellyfin sees.
 
 If it still happens, the affected client is probably fetching images from old cached URLs minted before this feature. Those URLs carry no marker, so the server falls back to IP matching and fails closed on a shared IP. Clear the client's image cache once so it refetches fresh marker-carrying URLs, or configure the proxy to send `X-Forwarded-For` and add it to **Dashboard → Networking → Known proxies** so the fallback path can see real client IPs too. Identity tags are automatic whenever Spoiler Guard is enabled.
+
+On Requests & downloads pages, guarding a title keeps its request status, cancellation and approval controls, quota warnings and parental-rating assessment. The review-rating preference suppresses review scores independently of parental ratings. Calendar episode names are protected while season and episode numbers and the Available filter remain usable.
+
+Every Spoiler Guard control refreshes from the server after saving. Disabling an arrived title also updates its provider intent and all library copies in the client. Native detail pages refresh immediately, and replies started under the previous policy are discarded. Queued requests and retries remain bound to the viewer who submitted them.
+
+If a state read fails, open preferences and title controls recover automatically when the server becomes readable again. An accepted title change stays visible even if its follow-up read fails; other titles remain protected until reconciliation. Switching accounts leaves outgoing controls inactive.
+
+Release-date chips also discard lookups and cached answers from the previous viewer or policy. Reads cancelled by a page refresh finish quietly; active network failures still report their diagnostic.
+
+Native refresh cancellation also leaves watch-progress and file-size chips uncached and quiet; current transport failures still report errors.

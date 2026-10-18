@@ -142,7 +142,7 @@
     const titleClass = item.jellyfinMediaId || nativeTitle ? 'je-request-title je-request-title-link' : 'je-request-title';
 
     return `
-            <div class="je-request-card${item.isOrphaned ? ' je-request-card-orphaned' : ''}">
+            <div class="je-request-card${item.isOrphaned ? ' je-request-card-orphaned' : ''}" data-je-hide-title="${item.type === 'movie' ? 'movie' : 'tv'}:tmdb:${Number(item.tmdbId)}" data-je-hide-name="${escapeHtml(item.title || '')}" data-je-hide-surface="requests">
                 <div class="je-request-poster-col">
                     ${posterHtml}
                     ${externalLinksHtml}

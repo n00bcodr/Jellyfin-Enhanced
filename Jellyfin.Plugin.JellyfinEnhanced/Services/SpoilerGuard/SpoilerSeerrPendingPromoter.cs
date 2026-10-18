@@ -210,7 +210,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (string.IsNullOrWhiteSpace(json)) continue;
                     var state = JsonConvert.DeserializeObject<UserSpoilerBlur>(json);
                     if (state?.PendingTmdb == null) continue;
-                    foreach (var key in state.PendingTmdb.Keys)
+                    foreach (var key in state.PendingTmdb.Keys.Concat(state.ProviderTitles.Keys.Select(key => key.Replace(":tmdb:", ":", StringComparison.Ordinal))).Distinct(StringComparer.OrdinalIgnoreCase))
                     {
                         if (string.IsNullOrEmpty(key)) continue;
                         RegisterPending(key, userId);
@@ -317,7 +317,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 try
                 {
                     var outcome = PromoteForUser(userId, itemId, pendingKey, itemName, isSeries);
-                    if (outcome != PromotionOutcome.StillPending)
+                    if (outcome == PromotionOutcome.NotPending)
                     {
                         // Promoted, already gone, or user deleted — either way
                         // this user no longer holds the pending key, so stop
@@ -370,11 +370,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _configManager.RmwUserConfiguration<UserSpoilerBlur>(
                     userKey, fileName, state =>
                     {
-                        if (!state.PendingTmdb.Remove(pendingKey)) return 0;
+                        var typed = pendingKey.Replace(":", ":tmdb:", StringComparison.Ordinal);
+                        if (!state.PendingTmdb.TryGetValue(pendingKey, out var intent) && !state.ProviderTitles.TryGetValue(typed, out intent)) return 0;
+                        var consumed = state.PendingTmdb.Remove(pendingKey);
+                        state.ProviderTitles[typed] = intent;
                         stillHadPending[0] = true;
                         if (isSeries)
                         {
-                            if (state.Series.ContainsKey(itemKey)) return 1;
+                            if (state.Series.ContainsKey(itemKey)) return consumed ? 1 : 0;
                             state.Series[itemKey] = new SpoilerBlurSeriesEntry
                             {
                                 SeriesId = itemKey,
@@ -384,7 +387,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
                         else
                         {
-                            if (state.Movies.ContainsKey(itemKey)) return 1;
+                            if (state.Movies.ContainsKey(itemKey)) return consumed ? 1 : 0;
                             state.Movies[itemKey] = new SpoilerBlurMovieEntry
                             {
                                 MovieId = itemKey,

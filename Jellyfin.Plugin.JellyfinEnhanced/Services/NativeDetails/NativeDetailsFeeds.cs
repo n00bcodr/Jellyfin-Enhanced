@@ -1,4 +1,3 @@
-#if JF12
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -77,14 +76,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly NativeDetailsPolicy _policy;
         private readonly SeerrParentalFilter _parental;
         private readonly ILibraryManager _library;
+        private readonly Configuration.UserConfigurationManager? _hidden;
+        private readonly SpoilerPresentation? _spoilers;
 
         /// <summary>Creates the feeds.</summary>
         /// <param name="source">Public metadata source.</param>
         /// <param name="policy">The native details viewer policy.</param>
         /// <param name="parental">The parental filter.</param>
         /// <param name="library">Library manager (read only).</param>
-        public NativeDetailsFeeds(INativeDetailsSource source, NativeDetailsPolicy policy, SeerrParentalFilter parental, ILibraryManager library)
+        public NativeDetailsFeeds(INativeDetailsSource source, NativeDetailsPolicy policy, SeerrParentalFilter parental, ILibraryManager library, Configuration.UserConfigurationManager? hidden = null, SpoilerPresentation? spoilers = null)
         {
+            _spoilers = spoilers;
+            _hidden = hidden;
             _source = source;
             _policy = policy;
             _parental = parental;
@@ -129,15 +132,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 }
             }
 
+            var spoilers = _spoilers?.Load(viewer.Id);
+            var hidden = _hidden == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_hidden, viewer.Id, library: _library);
             var results = new JsonArray();
             var ordered = rows
                 .OrderBy(r => IsAppearance(r.Row) ? 1 : 0)
-                .ThenByDescending(r => NativeDetailsDtos.Int(r.Row, "voteCount") ?? 0)
+                .ThenByDescending(r => ProviderMetadata.Int(r.Row, "voteCount") ?? 0)
                 .ThenBy(r => r.Order)
-                .Take(MaxCredits);
+                ;
             foreach (var (row, movie, id, _) in ordered)
             {
-                if (Card(viewer, row, movie, id) is { } card) results.Add(card);
+                if (Card(viewer, row, movie, id, hidden, "discovery", spoilers) is { } card) results.Add(card);
+                if (results.Count >= MaxCredits) break;
             }
 
             return new FeedAnswer(FeedOutcome.Ok, new JsonObject { ["results"] = results }.ToJsonString());
@@ -216,7 +222,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var path = "/api/v1/" + (movie ? "movie/" : "tv/") + tmdb.ToString(CultureInfo.InvariantCulture) + "/" + relation + "?page=" + page.ToString(CultureInfo.InvariantCulture);
             var (outcome, filtered) = await ParentalAsync(data, path, viewer, ct).ConfigureAwait(false);
             if (outcome != FeedOutcome.Ok) return new FeedAnswer(outcome, null);
-            return new FeedAnswer(FeedOutcome.Ok, PageOfCards(viewer, filtered!, movie, page));
+            return new FeedAnswer(FeedOutcome.Ok, PageOfCards(viewer, filtered!, movie, page, "recommendations"));
         }
 
         /// <summary>
@@ -224,10 +230,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// the list's own kind, once each, each judged by <see cref="Card"/>. A page whose every title is left
         /// out is an empty page, not the end of the list: <c>totalPages</c> is the upstream count.
         /// </summary>
-        private string PageOfCards(User viewer, string filtered, bool movie, int page)
+        private string PageOfCards(User viewer, string filtered, bool movie, int page, string surface = "discovery")
         {
             using var doc = JsonDocument.Parse(filtered);
             var root = doc.RootElement;
+            var spoilers = _spoilers?.Load(viewer.Id);
+            var hidden = _hidden == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_hidden, viewer.Id, library: _library);
             var results = new JsonArray();
             if (root.TryGetProperty("results", out var rows) && rows.ValueKind == JsonValueKind.Array)
             {
@@ -236,14 +244,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 {
                     // Only titles of the feed's own kind (Seerr's discover rows are), once each.
                     if (!TitleOf(row, movie, out var isMovie, out var tmdb) || isMovie != movie || !seen.Add(tmdb)) continue;
-                    if (Card(viewer, row, movie, tmdb) is { } card) results.Add(card);
+                    if (Card(viewer, row, movie, tmdb, hidden, surface, spoilers) is { } card) results.Add(card);
                 }
             }
 
-            var total = Math.Clamp(NativeDetailsDtos.Int(root, "totalPages") ?? 1, 1, 500);
+            var total = Math.Clamp(ProviderMetadata.Int(root, "totalPages") ?? 1, 1, 500);
             return new JsonObject
             {
-                ["page"] = NativeDetailsDtos.Int(root, "page") ?? page,
+                ["page"] = ProviderMetadata.Int(root, "page") ?? page,
                 ["totalPages"] = total,
                 ["results"] = results,
             }.ToJsonString();
@@ -273,10 +281,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (answer.Data is not { } data) return Failed(answer);
             if (JsonNode.Parse(data.GetRawText()) is not JsonObject body) return new FeedAnswer(FeedOutcome.Unavailable, null);
             body.Remove("mediaInfo");
-            var media = NativeDetailsDtos.Obj(data, "mediaInfo");
+            var media = ProviderMetadata.Obj(data, "mediaInfo");
             var listed = Listed(viewer, media, movie, tmdb);
             if (listed.Shown && MediaInfoFor(listed, media) is { } info) body["mediaInfo"] = info;
-            return new FeedAnswer(FeedOutcome.Ok, body.ToJsonString());
+            return new FeedAnswer(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).ProjectResource(body.ToJsonString(), (movie ? "movie" : "tv") + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), "title") ?? body.ToJsonString());
+        }
+
+        /// <summary>Cross-version public season metadata, under the series/season access and spoiler policy.</summary>
+        public async Task<FeedAnswer> SeasonAsync(User viewer, int tmdb, int season, CancellationToken ct)
+        {
+            if (tmdb <= 0 || season is < 0 or > 65535) return new(FeedOutcome.Invalid, null);
+            var access = await ViewerAsync(_policy.SeeDetailsAsync(viewer, SyntheticId.SeasonOf(tmdb, season), ct)).ConfigureAwait(false);
+            if (access != FeedOutcome.Ok) return new(access, null);
+            var answer = await _source.SeasonAsync(tmdb, season, viewer.Id, ct).ConfigureAwait(false);
+            if (answer.Data is not { } data) return Failed(answer);
+            var body = JsonNode.Parse(data.GetRawText())!.AsObject();
+            body.Remove("mediaInfo");
+            return new(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).ProjectResource(body.ToJsonString(), "tv:tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), "season", scopeKind: "season", season: season) ?? body.ToJsonString());
         }
 
         /// <summary>
@@ -294,7 +315,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var access = await ViewerAsync(_policy.SeeDetailsAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
             var answer = await _source.RatingsAsync(movie, tmdb, viewer.Id, ct).ConfigureAwait(false);
-            if (answer.Data is { } data) return new FeedAnswer(FeedOutcome.Ok, data.GetRawText());
+            var kind = movie ? "movie" : "tv";
+            var resource = ProviderPresentationSchema.ProviderResource(kind + "/" + tmdb.ToString(CultureInfo.InvariantCulture) + "/ratings");
+            if (answer.Data is { } data) return new FeedAnswer(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).ProjectResource(data.GetRawText(), kind + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), resource) ?? data.GetRawText());
             // The title itself was admitted above: the source's "not found" here means it has no ratings
             // (Seerr answers 404 when Rotten Tomatoes doesn't know a series), which is an answer, not an error.
             return answer.NotFound && !answer.Busy ? new FeedAnswer(FeedOutcome.Ok, "null") : Failed(answer);
@@ -329,14 +352,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var body = new JsonObject { ["id"] = collection };
             foreach (var name in new[] { "name", "overview" })
             {
-                if (NativeDetailsDtos.Str(root, name) is { } value) body[name] = value;
+                if (ProviderMetadata.Str(root, name) is { } value) body[name] = value;
             }
 
             foreach (var name in new[] { "posterPath", "backdropPath" })
             {
-                if (NativeDetailsDtos.Str(root, name) is { } art && NativeDetailsArtwork.IsSafeTmdbPath(art)) body[name] = art;
+                if (ProviderMetadata.Str(root, name) is { } art && ProviderMetadata.SafeArtwork(art)) body[name] = art;
             }
 
+            var spoilers = _spoilers?.Load(viewer.Id);
+            var hidden = _hidden == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_hidden, viewer.Id, library: _library);
             var parts = new JsonArray();
             if (root.TryGetProperty("parts", out var rows) && rows.ValueKind == JsonValueKind.Array)
             {
@@ -345,7 +370,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 {
                     // A collection's parts are movies (Seerr's rows may not say so).
                     if (!TitleOf(row, true, out var movie, out var tmdb) || !movie || !seen.Add(tmdb)) continue;
-                    if (Card(viewer, row, true, tmdb) is { } card) parts.Add(card);
+                    if (Card(viewer, row, true, tmdb, hidden, "discovery", spoilers) is { } card) parts.Add(card);
                 }
             }
 
@@ -368,12 +393,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
             var answer = await _source.KeywordsAsync(query.Trim(), viewer.Id, ct).ConfigureAwait(false);
             if (answer.Data is not { } data) return Failed(answer);
+            var spoilers = _spoilers?.Load(viewer.Id);
+            var hidden = _hidden == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_hidden, viewer.Id, library: _library);
             var results = new JsonArray();
             if (data.ValueKind == JsonValueKind.Object && data.TryGetProperty("results", out var rows) && rows.ValueKind == JsonValueKind.Array)
             {
                 foreach (var row in rows.EnumerateArray())
                 {
-                    if (row.ValueKind == JsonValueKind.Object && NativeDetailsDtos.Int(row, "id") is int id && id > 0 && NativeDetailsDtos.Str(row, "name") is { } name)
+                    if (row.ValueKind == JsonValueKind.Object && ProviderMetadata.Int(row, "id") is int id && id > 0 && ProviderMetadata.Str(row, "name") is { } name)
                     {
                         results.Add(new JsonObject { ["id"] = id, ["name"] = name });
                     }
@@ -402,7 +429,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             {
                 foreach (var row in data.EnumerateArray())
                 {
-                    if (row.ValueKind == JsonValueKind.Object && NativeDetailsDtos.Int(row, "id") is int id && id > 0 && NativeDetailsDtos.Str(row, "name") is { } name)
+                    if (row.ValueKind == JsonValueKind.Object && ProviderMetadata.Int(row, "id") is int id && id > 0 && ProviderMetadata.Str(row, "name") is { } name)
                     {
                         genres.Add(new JsonObject { ["id"] = id, ["name"] = name });
                     }
@@ -437,9 +464,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private static bool TitleOf(JsonElement row, bool? fallbackMovie, out bool movie, out int tmdb)
         {
             movie = false;
-            tmdb = row.ValueKind == JsonValueKind.Object ? NativeDetailsDtos.Int(row, "id") ?? 0 : 0;
+            tmdb = row.ValueKind == JsonValueKind.Object ? ProviderMetadata.Int(row, "id") ?? 0 : 0;
             if (tmdb <= 0) return false;
-            switch (NativeDetailsDtos.Str(row, "mediaType"))
+            switch (ProviderMetadata.Str(row, "mediaType"))
             {
                 case "movie":
                     movie = true;
@@ -463,7 +490,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 return true;
             }
 
-            return NativeDetailsDtos.Str(row, "character") is { } character && Appearance.IsMatch(character);
+            return ProviderMetadata.Str(row, "character") is { } character && Appearance.IsMatch(character);
         }
 
         /// <summary>
@@ -477,7 +504,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var hiddenCopy = false;
             foreach (var field in new[] { "jellyfinMediaId", "jellyfinMediaId4k" })
             {
-                if (NativeDetailsDtos.Str(media, field) is not { } text || !Guid.TryParse(text, out var named) || named == Guid.Empty) continue;
+                if (ProviderMetadata.Str(media, field) is not { } text || !Guid.TryParse(text, out var named) || named == Guid.Empty) continue;
                 if (_library.GetItemById<BaseItem>(named, viewer) != null) return NativeDetailsPolicy.ListedTitle.Copy(named);
                 hiddenCopy |= _library.GetItemById(named) != null;
             }
@@ -487,20 +514,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>The card a listed title gets (whitelisted public fields), or null when the viewer doesn't get it.</summary>
-        private JsonObject? Card(User viewer, JsonElement row, bool movie, int tmdb)
+        private JsonObject? Card(User viewer, JsonElement row, bool movie, int tmdb, HiddenContentPolicy hidden, string surface, SpoilerPresentationContext? spoilers)
         {
-            var media = NativeDetailsDtos.Obj(row, "mediaInfo");
+            var media = ProviderMetadata.Obj(row, "mediaInfo");
             var listed = Listed(viewer, media, movie, tmdb);
-            if (!listed.Shown) return null;
+            if (!listed.Shown || hidden.IsHidden(HiddenContentPolicy.TitleIdentity(movie ? "movie" : "tv", tmdb.ToString(CultureInfo.InvariantCulture)),
+                listed.LibraryCopy?.ToString(), null, surface)
+                || hidden.IsHidden(null, ProviderMetadata.Str(media, "jellyfinMediaId4k"), null, surface)) return null;
             var card = new JsonObject { ["id"] = tmdb, ["mediaType"] = movie ? "movie" : "tv" };
             foreach (var name in Strings)
             {
-                if (NativeDetailsDtos.Str(row, name) is { } value) card[name] = value;
+                if (ProviderMetadata.Str(row, name) is { } value) card[name] = value;
             }
 
             foreach (var name in new[] { "posterPath", "backdropPath" })
             {
-                if (NativeDetailsDtos.Str(row, name) is { } path && NativeDetailsArtwork.IsSafeTmdbPath(path)) card[name] = path;
+                if (ProviderMetadata.Str(row, name) is { } path && ProviderMetadata.SafeArtwork(path)) card[name] = path;
             }
 
             foreach (var name in Numbers)
@@ -520,6 +549,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             if (MediaInfoFor(listed, media) is { } info) card["mediaInfo"] = info;
+            spoilers?.ProjectTitle(card, (movie ? "movie" : "tv") + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), movie ? "movie" : "tv");
             return card;
         }
 
@@ -531,7 +561,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// </summary>
         private static JsonObject? MediaInfoFor(NativeDetailsPolicy.ListedTitle listed, JsonElement media)
         {
-            var state = NativeDetailsDtos.Int(media, "status");
+            var state = ProviderMetadata.Int(media, "status");
             if (listed.LibraryCopy is { } copy)
             {
                 return new JsonObject
@@ -545,4 +575,3 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
     }
 }
-#endif

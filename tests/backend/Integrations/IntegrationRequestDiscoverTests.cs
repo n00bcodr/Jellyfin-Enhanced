@@ -100,6 +100,24 @@ public class IntegrationRequestDiscoverTests
     private static string[] Keys(JsonElement body) => body.GetProperty("answer").GetProperty("results").EnumerateArray().Select(e => e.GetProperty("key").GetString()!).ToArray();
     private static JsonElement Card(JsonElement body, string key) => body.GetProperty("answer").GetProperty("results").EnumerateArray().Single(e => e.GetProperty("key").GetString() == key);
 
+    [Theory]
+    [InlineData("trending")][InlineData("search")][InlineData("because")]
+    public async Task HideDuringPendingProjectionRemovesCardsAndSeedBeforeCacheAndReturn(string list)
+    {
+        using var rig = new Rig(); var user = rig.AddLimitedKid();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.MaySee = async (_,_,_) => { started.TrySetResult(); await release.Task; return true; };
+        rig.Recent.Add(new RecentTitle(true, 9, "Secret seed"));
+        rig.Tmdb["trending/movie/week"] = rig.Tmdb["search/multi"] = rig.Tmdb["movie/9/recommendations"] = Page(Movie(42,"Secret"));
+        var pending = list == "search" ? rig.Search(user,"Secret") : rig.Discover(user,list);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var keys = new HashSet<string> { "movie:tmdb:42", "movie:tmdb:9" }; rig.Hidden = new HiddenTitles(keys,keys); release.SetResult();
+        var result = await pending; Assert.DoesNotContain("Secret", result.Body.GetRawText());
+        var repeat = list == "search" ? await rig.Search(user,"Secret") : await rig.Discover(user,list);
+        Assert.DoesNotContain("Secret", repeat.Body.GetRawText());
+    }
+
     [Fact]
     public async Task SeerrModePhaseOffWatchersApiKeysAndUnknownUsersAreRefusedBeforeAnyRead()
     {

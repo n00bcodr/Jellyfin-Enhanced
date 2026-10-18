@@ -57,6 +57,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly SpoilerFieldStripFilter? _spoilerStrip;
         private readonly SpoilerUserResolver? _spoilerUsers;
         private readonly NativeDetailsLinks _links;
+        private readonly SpoilerPresentation? _presentation;
+        private readonly ImageBlurService? _imageBlur;
 
         /// <summary>Creates the facade.</summary>
         public NativeDetailsFacadeFilter(
@@ -72,8 +74,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             Configuration.UserConfigurationManager? userConfig = null,
             SpoilerFieldStripFilter? spoilerStrip = null,
             SpoilerUserResolver? spoilerUsers = null,
-            NativeDetailsLinks? links = null)
+            NativeDetailsLinks? links = null, SpoilerPresentation? presentation = null, ImageBlurService? imageBlur = null)
         {
+            _presentation = presentation;
+            _imageBlur = imageBlur;
             _users = users;
             _library = library;
             _dto = dto;
@@ -238,7 +242,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
             var guid = title.ToGuid(serverId);
             // The DTO builder (and where its names lead) only for the answers that draw items.
-            Task<NativeDetailsDtos> Dtos() => DtosAsync(viewer, serverId, ct);
+            Task<NativeDetailsDtos> Dtos() => DtosAsync(viewer, serverId, ct, http);
             // Spoiler Guard composes here: JE's own strip and image filters never see these answers.
             Configuration.UserSpoilerBlur? Spoilers() => title.IsTitle ? Guarded(http, viewer, title) : null;
             switch (route.Answer)
@@ -263,7 +267,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 case FacadeAnswer.Episodes:
                     return Library(Guard(await EpisodesAsync(context, await Dtos().ConfigureAwait(false), viewer, hits, ct).ConfigureAwait(false), Spoilers(), viewer), context, viewer);
                 case FacadeAnswer.Similar:
-                    return Library(await SimilarAsync(context, await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false), context, viewer);
+                    return Library(await SimilarAsync(context, await Dtos().ConfigureAwait(false), viewer, title, ct).ConfigureAwait(false), context, viewer, "recommendations");
                 default:
                     return Refuse(method);
             }
@@ -295,13 +299,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return viewer == null || viewer.HasPermission(PermissionKind.IsDisabled) ? (null, new NotFoundResult()) : (viewer, null);
         }
 
-        private async Task<NativeDetailsDtos> DtosAsync(User viewer, string serverId, CancellationToken ct)
+        private async Task<NativeDetailsDtos> DtosAsync(User viewer, string serverId, CancellationToken ct, HttpContext http)
         {
             var code = _serverConfig.Configuration?.MetadataCountryCode;
             var region = string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
             var revision = _policy.Revision(viewer);
             var links = _links.For(viewer, revision, serverId, await DiscoveryAsync(viewer, ct).ConfigureAwait(false));
-            return new NativeDetailsDtos(serverId, viewer.Id, revision, _artwork, region, links);
+            return new NativeDetailsDtos(serverId, viewer.Id, revision, _artwork, region, links, _presentation?.Load(viewer.Id, http).Revision);
         }
 
         /// <summary>
@@ -556,21 +560,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var items = new List<BaseItemDto>();
             // Titles the viewer hid with Hidden Content stay out of this rail, as out of JE's recommendation rows:
             // before the limit, the total and any artwork grant.
-            var hidden = HiddenRecommendations(viewer);
+            var hidden = _userConfig == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_userConfig, viewer.Id, context.HttpContext, _library);
             if (doc.RootElement.TryGetProperty("results", out var results) && results.ValueKind == JsonValueKind.Array)
             {
                 foreach (var r in results.EnumerateArray())
                 {
                     if (items.Count >= limit) break;
                     var media = NativeDetailsDtos.Obj(r, "mediaInfo");
-                    if (hidden.Count > 0 && IsHidden(r, media, hidden)) continue;
+                    var key = HiddenContentPolicy.TitleIdentity(NativeDetailsDtos.Str(r, "mediaType"), NativeDetailsDtos.Int(r, "id")?.ToString());
+                    if (hidden.IsHidden(key, NativeDetailsDtos.Str(media, "jellyfinMediaId"), null, "recommendations")
+                        || hidden.IsHidden(key, NativeDetailsDtos.Str(media, "jellyfinMediaId4k"), null, "recommendations")) continue;
                     if (NativeDetailsDtos.Str(media, "jellyfinMediaId") is { } jf && Guid.TryParse(jf, out var real))
                     {
                         // A library copy is shown only when native would show it to this viewer (the user-scoped
                         // lookup checks parental rules, the parent chain and library access), with the fields the
                         // request asked for; never a synthetic stand-in for it.
                         var item = _library.GetItemById<BaseItem>(real, viewer);
-                        if (item != null) items.Add(_dto.GetBaseItemDto(item, options, viewer));
+                        if (item != null) { var own = _dto.GetBaseItemDto(item, options, viewer); if (!hidden.IsHidden(own, "recommendations")) items.Add(own); }
                         continue;
                     }
 
@@ -583,7 +589,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     var listed = _policy.Listed(viewer, kind == "movie", tmdb);
                     if (listed.LibraryCopy is { } copy)
                     {
-                        if (Real(copy, viewer, options) is { } own) items.Add(own);
+                        if (Real(copy, viewer, options) is { } own && !hidden.IsHidden(own, "recommendations")) items.Add(own);
                         continue;
                     }
 
@@ -593,35 +599,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
 
             return Ok(new QueryResult<BaseItemDto>(0, items.Count, items));
-        }
-
-        /// <summary>
-        /// What the viewer hid everywhere with Hidden Content (title keys and Jellyfin item ids), when its
-        /// recommendations filter is on; empty otherwise or when the file can't be read.
-        /// </summary>
-        private IReadOnlySet<string> HiddenRecommendations(User viewer)
-        {
-            if (_userConfig == null) return EmptyKeys;
-            try
-            {
-                var data = _userConfig.GetUserConfiguration<Configuration.UserHiddenContent>(viewer.Id.ToString("N"), Acquire.Requests.DiscoverService.HiddenContentFile);
-                return data?.Settings?.FilterRecommendations == true ? Acquire.Requests.DiscoverService.GlobalHiddenKeys(data) : EmptyKeys;
-            }
-            catch (Exception)
-            {
-                return EmptyKeys;
-            }
-        }
-
-        private static readonly IReadOnlySet<string> EmptyKeys = new HashSet<string>();
-
-        /// <summary>True when a recommendation is hidden: by its title key, or its library copy's Jellyfin id.</summary>
-        private static bool IsHidden(JsonElement result, JsonElement media, IReadOnlySet<string> hidden)
-        {
-            var tmdb = NativeDetailsDtos.Int(result, "id") ?? 0;
-            var type = NativeDetailsDtos.Str(result, "mediaType");
-            if (tmdb > 0 && type is "movie" or "tv" && hidden.Contains(type + ":tmdb:" + tmdb.ToString(System.Globalization.CultureInfo.InvariantCulture))) return true;
-            return NativeDetailsDtos.Str(media, "jellyfinMediaId") is { } jf && Guid.TryParse(jf, out var id) && hidden.Contains(id.ToString("N"));
         }
 
         private async Task<IActionResult> ImageAsync(ActionExecutingContext context, SyntheticId owner, string serverId, CancellationToken ct)
@@ -664,7 +641,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
             // An episode still or a later season's poster of a title the viewer guards with Spoiler Guard:
             // never served (a page drawn before they guarded it still holds the URL).
+            var spoiler = _presentation?.Load(viewer.Id, context.HttpContext);
             if (HidesArtwork(owner, grant.Type) && Guarded(context.HttpContext, viewer, owner) != null) return new NotFoundResult();
+            var pageKey = HiddenContentPolicy.TitleIdentity(page.IsMovie ? "movie" : "tv", page.TmdbId.ToString());
+            if (owner.Kind == SyntheticKind.Person && spoiler?.Flags(pageKey ?? "")["cast"]?.GetValue<bool>() == true) return new NotFoundResult();
+            var protectedArt = spoiler?.ProtectArtwork(HiddenContentPolicy.TitleIdentity(owner.IsMovie ? "movie" : "tv", owner.TmdbId.ToString()),
+                owner.Kind.ToString().ToLowerInvariant(), grant.Type.ToString(), owner.Season) == true;
             var width = Arg<int?>(context, "maxWidth") ?? Arg<int?>(context, "fillWidth") ?? Arg<int?>(context, "width");
             var height = Arg<int?>(context, "fillHeight") ?? Arg<int?>(context, "maxHeight") ?? Arg<int?>(context, "height");
             if (width == null && height is int h) width = grant.Type == ImageType.Backdrop ? h * 16 / 9 : grant.Type == ImageType.Logo ? h * 4 : h * 2 / 3;
@@ -673,15 +655,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (!_artwork.IsCached(grant.Path, size) && !_artwork.TakeUpstream(grant.Viewer)) return new StatusCodeResult(StatusCodes.Status429TooManyRequests);
             var image = await _artwork.FetchAsync(grant.Path, size, ct).ConfigureAwait(false);
             if (image is not { } bytes) return new NotFoundResult();
+            var final = _userConfig == null ? null : TitlePresentationGate.Read(_userConfig, _presentation, viewer.Id, _library);
+            spoiler = final?.Spoilers;
+            if (HidesArtwork(owner, grant.Type) && spoiler?.Guarded(HiddenContentPolicy.TitleIdentity(owner.IsMovie ? "movie" : "tv", owner.TmdbId.ToString())) == true) return new NotFoundResult();
+            if (owner.Kind == SyntheticKind.Person && spoiler?.Flags(pageKey ?? "")["cast"]?.GetValue<bool>() == true) return new NotFoundResult();
+            protectedArt = spoiler?.ProtectArtwork(HiddenContentPolicy.TitleIdentity(owner.IsMovie ? "movie" : "tv", owner.TmdbId.ToString()),
+                owner.Kind.ToString().ToLowerInvariant(), grant.Type.ToString(), owner.Season) == true;
             var headers = context.HttpContext.Response.Headers;
             headers.CacheControl = "private, no-store";
             headers["X-Content-Type-Options"] = "nosniff";
+            if (protectedArt)
+            {
+                if (_imageBlur == null) return new NotFoundResult();
+                var config = JellyfinEnhanced.Instance!.Configuration;
+                var cacheKey = grant.Viewer.ToString("N") + "|" + grant.Path + "|" + size + "|" + spoiler!.Revision;
+                var projected = config.SpoilerBlurMode == "hide" ? _imageBlur.StockCard(bytes.Bytes, cacheKey)
+                    : _imageBlur.Blur(bytes.Bytes, config.SpoilerBlurIntensity, cacheKey);
+                return new FileContentResult(projected ?? _imageBlur.HardcodedFallbackJpeg, "image/jpeg");
+            }
             return new FileContentResult(bytes.Bytes, bytes.ContentType);
         }
 
         /// <summary>The viewer's Spoiler Guard state when they guard this title (see <see cref="NativeDetailsSpoilers"/>); else null.</summary>
         private Configuration.UserSpoilerBlur? Guarded(HttpContext http, User viewer, SyntheticId title)
-            => _spoilerStrip == null ? null : NativeDetailsSpoilers.Guarded(_spoilerUsers, _policy, http, viewer, title);
+        {
+            if (!title.IsTitle) return null;
+            if (_presentation != null)
+            {
+                var context = _presentation.Load(viewer.Id, http);
+                var key = HiddenContentPolicy.TitleIdentity(title.IsMovie ? "movie" : "tv", title.TmdbId.ToString());
+                if (context.Guarded(key)) return context.State;
+                if (context.KnowsTitle(key)) return null;
+            }
+            return _spoilerStrip == null ? null : NativeDetailsSpoilers.Guarded(_spoilerUsers, _policy, http, viewer, title);
+        }
 
         /// <summary>True for the plot-specific artwork Spoiler Guard hides on a guarded title: an episode's still, a later season's poster.</summary>
         private static bool HidesArtwork(SyntheticId owner, ImageType type)
@@ -701,8 +708,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// Spoiler Guard's own strip over the library items a list holds (parts the viewer can open in the
         /// library are listed as themselves): JE's strip filter never sees these answers otherwise.
         /// </summary>
-        private IActionResult Library(IActionResult result, ActionExecutingContext context, User viewer)
+        private IActionResult Library(IActionResult result, ActionExecutingContext context, User viewer, string surface = "library")
         {
+            if (_userConfig != null && result is OkObjectResult ok && ok.Value is QueryResult<BaseItemDto> query)
+            {
+                var hidden = HiddenContentPolicy.Load(_userConfig, viewer.Id, context.HttpContext, _library);
+                hidden.BindLibraryIds(_library, query.Items.Select(i => i.Id));
+                var kept = query.Items.Where(dto => {
+                    var key = SyntheticId.TryParse(dto.Id, _host.SystemId, out var synthetic) && synthetic.IsTitle
+                        ? HiddenContentPolicy.TitleIdentity(synthetic.IsMovie ? "movie" : "tv", synthetic.TmdbId.ToString()) : null;
+                    return !hidden.IsHidden(key, dto.Id.ToString(), dto.SeriesId?.ToString(), surface)
+                        && !hidden.IsHidden(dto, surface);
+                }).ToArray();
+                ok.Value = new QueryResult<BaseItemDto>(query.StartIndex, Math.Max(0, query.TotalRecordCount - query.Items.Count + kept.Length), kept);
+            }
+            if (result is OkObjectResult cards && cards.Value is QueryResult<BaseItemDto> page)
+                foreach (var dto in page.Items)
+                    if (SyntheticId.TryParse(dto.Id, _host.SystemId, out var title) && title.IsTitle)
+                        Guard(new OkObjectResult(dto), Guarded(context.HttpContext, viewer, title), viewer);
             _spoilerStrip?.StripLibraryItems(result, context, viewer.Id);
             return result;
         }
@@ -710,7 +733,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private IActionResult Guard(IActionResult result, Configuration.UserSpoilerBlur? state, User viewer)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (state == null || _spoilerStrip == null || config == null || result is not OkObjectResult ok) return result;
+            if (config == null || result is not OkObjectResult ok) return result;
             IEnumerable<BaseItemDto> items = ok.Value switch
             {
                 BaseItemDto one => new[] { one },
@@ -721,6 +744,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             // Library items in the list are stripped by Spoiler Guard's own rules (Library), by watched state.
             foreach (var dto in items.Where(d => SyntheticId.HasNamespace(d.Id)))
             {
+                dto.ProviderIds ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                dto.ProviderIds["JeSpoilerGuarded"] = state != null ? "true" : "false";
+                if (state == null || _spoilerStrip == null) continue;
                 _spoilerStrip.StripAbsent(dto, state, config, viewer.Id);
                 if (!HidesArtwork(dto.Type, dto.IndexNumber ?? 0, ImageType.Primary)) continue;
                 dto.ImageTags?.Remove(ImageType.Primary);

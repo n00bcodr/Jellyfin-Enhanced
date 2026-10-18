@@ -441,6 +441,10 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
         node.appendChild(name);
         node.appendChild(el('div', 'je-discover-chip-box'));
         node.appendChild(el('div', 'je-discover-actions'));
+        const hide = JE.hiddenContent?.buildTitleControl?.({ ...card, type: card.kind, tmdbId: card.tmdbId, name: card.title }, {
+            surface: ctx.surface === 'search' ? 'search' : 'discovery'
+        });
+        if (hide) node.appendChild(hide);
         cards.set(node, { card, ctx });
         fill(node);
         listen();

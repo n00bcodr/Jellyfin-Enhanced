@@ -247,6 +247,8 @@ Unrestricted users see Seerr's answers as before. This is always on and needs no
 
 ### Issue Reporting
 
+Switching users or changing Spoiler Guard cancels pending issue indicators quietly. Unexpected fetch failures are still logged.
+
 Report problems with media directly to Seerr.
 
 #### Issue Types

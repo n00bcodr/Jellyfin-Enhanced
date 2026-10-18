@@ -14,6 +14,7 @@
     "// session.js must load before every module that registers a",
     "// per-user reset handler (JE.session.onUserChange) at eval time.",
     "core/session.js",
+    "core/session-action.js",
     "core/lifecycle.js",
     "core/dom-observer.js",
     "core/ui-kit.js",

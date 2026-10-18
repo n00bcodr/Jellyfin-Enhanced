@@ -105,3 +105,15 @@ test('a prefetch the chips took over lets go of its visit, which holds the view 
  h.api.discardItemStatsPrefetch(visit);h.container.replaceChildren();h.api.displayItemSize('item',h.container,null);await h.settle();
  assert.equal(h.calls.length,1);assert.match(h.container.textContent,/1 GB/);
 });
+
+for(const chip of ['displayWatchProgress','displayItemSize']) for(const reason of ['reload','abort','session'])
+test(`${chip} drops ${reason} cancellation without logging or poisoning its cache`,async t=>{
+ const first=deferred();let n=0;const h=setup(t,()=>++n===1?first.promise:Promise.resolve(stats(25,2048)));
+ h.api[chip]('item',h.container);
+ if(reason==='reload')h.window.dispatchEvent(new h.window.Event('beforeunload'));
+ if(reason==='session')h.switchUser();
+ first.reject(Object.assign(new TypeError('Failed to fetch'),reason==='abort'?{name:'AbortError'}:{}));await h.settle();
+ if(reason==='reload')h.window.dispatchEvent(new h.window.Event('pageshow'));
+ h.container.replaceChildren();h.api[chip]('item',h.container);await h.settle();
+ assert.equal(h.calls.length,2);assert.match(h.container.textContent,chip==='displayWatchProgress'?/25%/:/2 KB/);
+});

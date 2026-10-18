@@ -26,6 +26,7 @@
         const jellyfinMediaId = data?.mediaInfo?.jellyfinMediaId || null;
         const displayName = data?.title || data?.name || '';
         const detail = options?.detail === true;
+        const viewAction = JE.createSessionAction();
         const button = document.createElement('button');
         button.type = 'button';
         button.className = detail ? 'button-flat detailButton emby-button je-spoiler-pending-detail' : 'je-spoiler-pending-btn';
@@ -47,8 +48,16 @@
             button.appendChild(label);
         }
 
+        /** The mirrors once they can answer for this title; until then the server's projection of it. */
+        function current() {
+            return internal.isTmdbKnown?.(mediaType, tmdbId) !== false
+                ? internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId)
+                : data.jeSpoiler?.guarded === true;
+        }
+
         function refresh() {
-            const enabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
+            if (!viewAction.current()) { button.disabled = true; return; }
+            const enabled = current();
             const text = JE.t(enabled ? 'spoiler_blur_pending_button_on' : 'spoiler_blur_pending_button_off');
             button.classList.toggle('je-spoiler-pending-on', enabled);
             button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
@@ -58,30 +67,35 @@
             label.textContent = text;
         }
 
+        button.jeSpoilerRefresh = refresh;
+        internal.bindStateView?.(button, refresh);
         refresh();
         internal.whenLoaded().then(refresh).catch(function() {});
         button.addEventListener('click', function(event) {
             event.preventDefault();
             event.stopPropagation();
-            if (button.disabled) return;
+            if (button.disabled || !viewAction.current()) return;
             button.disabled = true;
-            const wasEnabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
+            const action = JE.createSessionAction();
+            const wasEnabled = current();
             void (async function() {
                 try {
                     if (wasEnabled) {
                         if (!await internal.confirmDisableSpoiler()) return;
+                        if (!action.current()) return;
                         await internal.disableForTmdb(mediaType, tmdbId);
-                        JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
+                        if (action.current()) JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
                     } else {
                         await internal.enableForTmdb(mediaType, tmdbId, displayName);
-                        JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
+                        if (action.current()) JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
                     }
                 } catch (e) {
+                    if (!action.current()) return;
                     console.warn(`${logPrefix} Seerr toggle failed:`, e);
                     JE.toast?.(JE.t('spoiler_blur_pending_error_toast'));
                 } finally {
                     refresh();
-                    button.disabled = false;
+                    button.disabled = !viewAction.current();
                 }
             })();
         });

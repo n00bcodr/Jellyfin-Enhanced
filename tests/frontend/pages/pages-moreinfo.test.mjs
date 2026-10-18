@@ -105,3 +105,18 @@ test('a title the modal can\'t load says so in a toast, never a blocking browser
   assert.deepEqual(toasts, [['t:jellyseerr_modal_load_failed', 5000]]);
   assert.deepEqual(alerts, []);
 });
+test('guard toggle clears old modal content synchronously and reopens from fresh metadata',async t=>{
+ let calls=0;const fresh=deferred();const h=setup(t,{details:id=>++calls===1?Promise.resolve({id}):fresh.promise});
+ await h.P.open(42,'movie');const old=h.state.currentModal;old.append('secret');
+ h.window.dispatchEvent(new h.window.CustomEvent('je-spoiler-policy-changed',{detail:{type:'movie',tmdbId:42,enabled:true}}));
+ assert.equal(old.textContent,'');assert.equal(old._isClosing,true);assert.equal(calls,2);
+ fresh.resolve({id:42,jeSpoiler:{guarded:true}});await nextTurn();h.runClosing();
+ assert.notEqual(h.state.currentModal,old);assert.equal(h.state.currentModal.dataset.tmdbId,'42');
+});
+test('more-info modal closing after a session transition is inert during its exit animation',async t=>{
+  const h=setup(t,{withSession:true});await h.P.open(1,'movie');const previous=h.state.currentModal;
+  assert.equal(previous.hasAttribute('inert'),false);
+  h.window.ApiClient.getCurrentUserId=()=> 'user-b';h.JE.session.checkNow('regression-user-switch');
+  assert.equal(previous.hasAttribute('inert'),true,'outgoing viewer\'s controls cannot be used while it fades');
+  assert.equal(previous.style.pointerEvents,'none');h.runClosing();
+});

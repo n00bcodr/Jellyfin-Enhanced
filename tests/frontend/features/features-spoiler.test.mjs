@@ -62,7 +62,10 @@ test('old-user spoiler load cannot populate the new session', async t => {
 for (const kind of ['Series','Movie','Collection']) {
   test(`spoiler ${kind} mutation updates after success and preserves state on rejection`, async t => {
     let fail=false;
-    const h=setup(t,async()=>{if(fail)throw new Error('denied'); return {};});
+    let state={};
+    const h=setup(t,async(path,options)=>{if(fail)throw new Error('denied');
+      if(options?.method==='POST')state={[kind==='Series'?'Series':kind==='Movie'?'Movies':'Collections']:{aabb:{}}};
+      if(options?.method==='DELETE')state={};return state;});
     await h.state[`enableFor${kind}`]('AA-BB','Title');
     const check=kind==='Series'?'isEnabledFor':`is${kind}EnabledFor`;
     assert.equal(h.state[check]('aabb'),true);
@@ -76,13 +79,13 @@ for (const kind of ['Series','Movie','Collection']) {
     let resolve;
     const h=setup(t,()=>new Promise(r=>{resolve=r;}));
     const pending=h.state[`enableFor${kind}`]('secret');
-    h.switchUser(); resolve({}); await pending;
+    await Promise.resolve(); await Promise.resolve();h.switchUser(); resolve({}); await pending;
     assert.equal(h.state.hasAnyState(),false);
   });
 }
 test('TMDB pending promotion, lookup without Jellyfin ID and removal remain consistent',async t=>{
   let response={promoted:'pending'};
-  const h=setup(t,async()=>response);
+  const h=setup(t,async(path,options)=>options?.method?response:response.removedFrom?{}:{ProviderTitles:{'tv:tmdb:42':{}},Series:response.jellyfinId?{[response.jellyfinId]:{}}:{}});
   await h.state.enableForTmdb('TV',42,'A & B');
   assert.match(h.calls[0][0],/displayName=A%20%26%20B/);
   assert.equal(h.state.isTmdbEnabled('tv',42),true);
@@ -100,7 +103,7 @@ for (const operation of ['enableForTmdb','setUserPrefs']) {
     let resolve;
     const h=setup(t,()=>new Promise(r=>{resolve=r;}));
     const pending=operation==='enableForTmdb'?h.state.enableForTmdb('movie',42):h.state.setUserPrefs({secret:true});
-    h.switchUser(); resolve({promoted:'movie',jellyfinId:'secret'}); await pending;
+    await Promise.resolve(); await Promise.resolve();h.switchUser(); resolve({promoted:'movie',jellyfinId:'secret'}); await pending;
     assert.equal(h.state.hasAnyState(),false);
     assert.equal(Object.keys(h.state.getUserPrefs()).length,0);
   });

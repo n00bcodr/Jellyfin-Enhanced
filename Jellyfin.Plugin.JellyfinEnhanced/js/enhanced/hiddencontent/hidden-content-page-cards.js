@@ -12,6 +12,8 @@
 
   const { scopeBadgeText, scopeUnhideText, showUnhideConfirmation,
     handleUnhide, handleUnhideMany, POSTER_MAX_WIDTH } = internal;
+  // Late-bound (hidden-content-page-state.js): the session of the render creating these controls.
+  const viewAction = () => (internal.viewAction || JE.createSessionAction)();
 
   /** Delay before removing a card after unhide animation. */
   const UNHIDE_FADE_DELAY_MS = 200;
@@ -213,14 +215,21 @@
     const unhideBtn = document.createElement('button');
     unhideBtn.className = 'je-hidden-group-unhide';
     unhideBtn.textContent = scopeUnhideText(mainItem.hideScope);
+    const action = viewAction();
     unhideBtn.addEventListener('click', () => {
+      if (!action.current()) return;
       const itemLabel = hasEpisodes
         ? (group.seriesName || '') + ' \u2013 ' + formatEpisodeLabel(mainItem)
         : (group.seriesName || mainItem.name || 'this item');
       showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
-        unhideBtn.closest('.je-hidden-group-card').style.opacity = '0.3';
-        setTimeout(() => {
-          handleUnhide(mainItem._key || mainItem.itemId);
+        const groupCard = unhideBtn.closest('.je-hidden-group-card');
+        if (groupCard) groupCard.style.opacity = '0.3';
+        unhideBtn.disabled = true;
+        setTimeout(async () => {
+          if (!action.current()) return;
+          // A confirmed unhide repaints the page; a failure restores the card with a retry.
+          const saved = await handleUnhide(mainItem._key || mainItem.itemId);
+          if (!saved && action.current()) JE.hiddenContent.showUnhideFailed(groupCard, unhideBtn);
         }, UNHIDE_FADE_DELAY_MS);
       }, itemLabel);
     });
@@ -239,6 +248,7 @@
    */
   function createExpandableItemsList(group, displayItems, totalItems) {
     const fragment = document.createDocumentFragment();
+    const action = viewAction();
 
     // Expand/collapse button
     const expandBtn = document.createElement('button');
@@ -291,11 +301,15 @@
       unhideBtn.textContent = scopeUnhideText(item.hideScope);
       unhideBtn.addEventListener('click', (e) => {
         e.preventDefault();
+        if (!action.current()) return;
         const rowLabel = (group.seriesName || '') + ' \u2013 ' + formatEpisodeLabel(item);
         showUnhideConfirmation(JE.t('hidden_content_unhide_confirm') || 'Unhide this item?', () => {
           row.style.opacity = '0.3';
-          setTimeout(() => {
-            handleUnhide(item._key || item.itemId);
+          unhideBtn.disabled = true;
+          setTimeout(async () => {
+            if (!action.current()) return;
+            const saved = await handleUnhide(item._key || item.itemId);
+            if (!saved && action.current()) JE.hiddenContent.showUnhideFailed(row, unhideBtn);
           }, UNHIDE_FADE_DELAY_MS);
         }, rowLabel);
       });
@@ -310,8 +324,9 @@
     unhideAllBtn.className = 'je-hidden-group-unhide-all';
     unhideAllBtn.textContent = JE.t('hidden_content_unhide_all_show');
     unhideAllBtn.addEventListener('click', () => {
+      if (!action.current()) return;
       showUnhideConfirmation(JE.t('hidden_content_unhide_all_confirm') || 'Unhide all items for this show?', () => {
-        handleUnhideMany(group.items.map((item) => item._key || item.itemId));
+        void handleUnhideMany(group.items.map((item) => item._key || item.itemId));
       }, group.seriesName || 'this show');
     });
     fragment.appendChild(unhideAllBtn);

@@ -80,14 +80,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<DateTimeOffset> _now;
         private readonly IRequestPlaces? _places;
         private readonly ArrStatusService? _status;
+        private Configuration.UserConfigurationManager? _hidden;
+        private MediaBrowser.Controller.Library.ILibraryManager? _library;
+        private SpoilerPresentation? _presentation;
 
         /// <summary>Most requests in one answer that get the status of their part (the rest show their request state).</summary>
         public const int MaxPartStatuses = 60;
 
         /// <summary>Creates the projection over the shared TMDB cache (DI).</summary>
-        public RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases aliases, TmdbResponseCache tmdb, IServerConfigurationManager serverConfig, IRequestPlaces places, ArrStatusService status)
+        public RequestHubProjection(RequestService service, IHouseholdDirectory directory, TitleAliases aliases, TmdbResponseCache tmdb, IServerConfigurationManager serverConfig, IRequestPlaces places, ArrStatusService status, Configuration.UserConfigurationManager? hidden = null, MediaBrowser.Controller.Library.ILibraryManager? library = null, SpoilerPresentation? presentation = null)
             : this(service, directory, aliases, (media, id, ct) => TmdbTitleAsync(tmdb, Region(serverConfig), media, id, ct), () => DateTimeOffset.UtcNow, places, status, (title, ct) => TmdbIdOfAsync(tmdb, title, ct))
         {
+            _hidden = hidden;
+            _library = library;
+            _presentation = presentation;
         }
 
         /// <summary>Creates the projection with an explicit TMDB reader, clock, place facts and status service (tests; without one, no part statuses).</summary>
@@ -244,6 +250,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 };
             }).ToArray();
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "approvals", certainty = "Succeeded", message = "Requests waiting for an OK", more, items }, Json);
+            var json = System.Text.Encoding.UTF8.GetString(bytes);
+            bytes = System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(caller.UserId).ProjectResource(json, null, "approvals") ?? json);
             return Body(caller.UserId, viewer, "approvals", bytes);
         }
 
@@ -282,9 +290,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var now = _now();
             var sending = InFlight();
             // One row per title edition: an ask and the Seerr request it was linked to when requests moved are one title.
+            var hidden = _hidden == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_hidden, caller.UserId, library: _library);
             var own = LedgerRequestFacts.PerTitle(_service.Ledger.List(caller.UserId, false)
                 .Where(w => w.Status is "pending" or "queued" or "sent" or "stale" || now - w.UpdatedAt <= KeepClosedFor)
                 .Where(w => _service.Policy.Evaluate(caller.UserId, w.Input).Visible)
+                .Where(w => !hidden.IsHidden(TitleKey.Parse(w.Input.Key), _aliases, "requests"))
                 .OrderByDescending(w => w.CreatedAt)).ToList();
             var more = own.Count > MaxItems;
             own = own.Take(MaxItems).ToList();
@@ -320,6 +330,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 };
             }).ToArray();
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "mine", certainty = "Succeeded", message = "Your requests", more, items }, Json);
+            var json = System.Text.Encoding.UTF8.GetString(bytes);
+            bytes = System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(caller.UserId).ProjectResource(json, null, "request-mine") ?? json);
             return Body(caller.UserId, viewer, "mine", bytes);
         }
 

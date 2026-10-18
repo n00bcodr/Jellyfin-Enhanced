@@ -18,6 +18,10 @@ This is the only switch that requires explicit admin opt-in. Everything below it
 
 ---
 
+## Titles that have not arrived yet
+
+The same admin caps and per-user preferences apply to request-mode pages, provider feeds and the 10.11 More Info window. Movie posters follow **Keep movie posters**; title backdrops and logos follow the artwork setting. Guest-stars-only cast mode keeps the regular cast. Calendar series posters follow the title artwork settings, independently of episode artwork. Combined provider ratings follow the ratings preference. Missing-episode request rows use the episode title, description and air-date settings. A provider opt-in remains effective across arrival and later library copies.
+
 ## Image Replacement Mode
 
 How an unwatched card looks once a user has opted into Spoiler Guard for it.

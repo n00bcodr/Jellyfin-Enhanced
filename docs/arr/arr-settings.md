@@ -638,6 +638,8 @@ never applied automatically. Managers can read the tab but not change it. The co
 on that page: a page left open before a Household edit or a move doesn't put the older values back, even when the edit
 lands while the page is saving.
 
+Request-mode title cards use the Hidden Content switch for their surface: recommendations, discovery or search. Full-document Hidden Content saves carry a base rule revision; a stale replacement is rejected so newer rules from another tab remain saved.
+
 ### Per-person settings in Dashboard → Users
 
 Open **Jellyfin Enhanced** between **Access** and **Parental control** on the user editor. Use the single **Save** at the bottom for all changed sections. Effective values and technical information are under **Show details**. Settings here are shared with Household, plugin configuration and the person's JE panel; there is no separate policy store.

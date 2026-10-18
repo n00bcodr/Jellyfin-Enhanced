@@ -358,7 +358,7 @@
     const backgroundStyle = getEventBackgroundStyle(event, color);
 
     return `
-      <div class="je-calendar-event${hasFileClass}${hasBackdropClass}" style="border-left-color: ${color}; ${backgroundStyle}" title="${escapeHtml(tooltip)}" data-event-id="${escapeHtml(event.id)}">
+      <div class="je-calendar-event${hasFileClass}${hasBackdropClass}" style="border-left-color: ${color}; ${backgroundStyle}" title="${escapeHtml(tooltip)}" data-event-id="${escapeHtml(event.id)}" data-je-hide-title="${String(event.source).toLowerCase() === 'radarr' ? 'movie' : 'tv'}:tmdb:${Number(event.tmdbId)}" data-je-hide-name="${escapeHtml(event.title || '')}" data-je-hide-surface="calendar">
         ${statusTop}
         <span class="je-calendar-event-title">${escapeHtml(event.title)}</span>
         ${subtitle}
@@ -406,7 +406,7 @@
       : "";
 
     return `
-      <div class="je-calendar-agenda-event${hasFileClass}" data-event-id="${escapeHtml(event.id)}">
+      <div class="je-calendar-agenda-event${hasFileClass}" data-event-id="${escapeHtml(event.id)}" data-je-hide-title="${String(event.source).toLowerCase() === 'radarr' ? 'movie' : 'tv'}:tmdb:${Number(event.tmdbId)}" data-je-hide-name="${escapeHtml(event.title || '')}" data-je-hide-surface="calendar">
         <div class="je-calendar-agenda-indicators">
           ${indicators.join('')}
         </div>
@@ -447,7 +447,7 @@
       const color = getEventColor(event);
       if (poster) {
         return `
-          <div class="je-calendar-card" data-event-id="${escapeHtml(event.id)}" style="border-bottom-color: ${color};">
+          <div class="je-calendar-card" data-event-id="${escapeHtml(event.id)}" data-je-hide-title="${String(event.source).toLowerCase() === 'radarr' ? 'movie' : 'tv'}:tmdb:${Number(event.tmdbId)}" data-je-hide-name="${escapeHtml(event.title || '')}" data-je-hide-surface="calendar" style="border-bottom-color: ${color};">
             <div class="je-calendar-card-image-wrap">
               <img src="${normalizeImageUrl(poster)}" alt="" class="je-calendar-card-image">
               ${statusTop}
@@ -470,7 +470,7 @@
       }
 
       return `
-        <div class="je-calendar-card" data-event-id="${escapeHtml(event.id)}" style="border-bottom-color: ${color};">
+        <div class="je-calendar-card" data-event-id="${escapeHtml(event.id)}" data-je-hide-title="${String(event.source).toLowerCase() === 'radarr' ? 'movie' : 'tv'}:tmdb:${Number(event.tmdbId)}" data-je-hide-name="${escapeHtml(event.title || '')}" data-je-hide-surface="calendar" style="border-bottom-color: ${color};">
           ${statusTop}
           ${timeRow}
           <div class="je-calendar-card-title">

@@ -82,22 +82,49 @@
         const boxes = Array.from(ctx.help.querySelectorAll('input[type="checkbox"][id^="sbPref"][data-pref]'));
         if (boxes.length === 0) return;
         const setDisabled = disabled => boxes.forEach(box => { box.disabled = disabled; });
+        // The section shows the viewer it was rendered for; a later viewer's change never saves through it.
+        const action = JE.createSessionAction();
+        let saving = false;
+        /** Reconciles the section on initial load, recovery and another control's accepted change. */
+        function sync() {
+            if (!action.current()) { setDisabled(true); return; }
+            if (saving) return;
+            setDisabled(!internal.isLoadOk());
+            if (!internal.isLoadOk()) return;
+            const prefs = internal.getUserPrefs();
+            boxes.forEach(function(box) {
+                const key = box.dataset.pref;
+                box.checked = key === 'SkipDisableConfirm' ? !!prefs[key] : prefs[key] !== false;
+            });
+        }
+        internal.bindStateView?.(ctx.help, sync);
 
         async function save(changed, previousChecked) {
+            if (!action.current()) {
+                changed.checked = previousChecked;
+                setDisabled(true);
+                return;
+            }
+            saving = true;
             setDisabled(true);
             try {
                 await internal.whenLoaded();
+                if (!action.current()) return;
                 if (!internal.isLoadOk()) throw new Error('Initial Spoiler Guard load failed; refusing to overwrite preferences.');
                 const prefs = internal.getUserPrefs();
                 const key = changed.dataset.pref;
                 prefs[key] = key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false);
                 await internal.setUserPrefs(prefs);
             } catch (e) {
+                if (!action.current()) return;
                 console.error(`${logPrefix} preference save failed:`, e);
                 changed.checked = previousChecked;
                 JE.toast?.(JE.t('spoiler_blur_error_toast'));
             } finally {
-                setDisabled(false);
+                saving = false;
+                // An accepted save keeps its visible value even while its full reread is unavailable.
+                setDisabled(!action.current());
+                if (internal.isLoadOk()) sync();
             }
         }
 
@@ -111,12 +138,7 @@
         void (async function() {
             try {
                 await internal.whenLoaded();
-                if (!internal.isLoadOk()) { setDisabled(true); return; }
-                const prefs = internal.getUserPrefs();
-                boxes.forEach(function(box) {
-                    const key = box.dataset.pref;
-                    box.checked = key === 'SkipDisableConfirm' ? !!prefs[key] : prefs[key] !== false;
-                });
+                sync();
             } catch (e) {
                 console.warn(`${logPrefix} preference sync failed:`, e);
                 setDisabled(true);

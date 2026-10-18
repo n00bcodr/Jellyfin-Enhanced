@@ -8,6 +8,8 @@ The project actually supports two separate artifacts: `jf10` targets .NET 9 and 
 
 ## Status and evidence
 
+`PrivacyPresentationSettingsMatrixTests` checks 8,976 cells: 51 bounded captured provider/native/JE shapes × movie/TV owner × guard on/off × master on/off × 11 independent strip/art/title settings × setting on/off. Frozen field-path expectations check permitted values as well as suppression; country/provider arrays, parental assessments, request controls and season exemptions stay independent. `test_presentation_resources.py` requires every declared resource and strip switch to have matrix coverage. The native producer/final-gate TV-rating tests and frontend Hide confirmation tests cover the request-mode hosts separately.
+
 - **Tested**: the named behavior was asserted and its suite passed in a recorded environment. It does not mean all combinations are covered.
 - **Partial**: some behaviors have implemented tests; remaining cases are listed. Execution evidence must be recorded separately.
 - **Unverified**: discovered and feasible, but no passing behavioral evidence has been recorded yet.

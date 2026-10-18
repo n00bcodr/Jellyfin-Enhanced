@@ -88,6 +88,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static readonly Regex StillPath = new("^/[A-Za-z0-9_.-]{1,80}$", RegexOptions.CultureInvariant);
         private static readonly Regex Language = new("^[a-z]{2}(-[A-Z]{2})?$", RegexOptions.CultureInvariant);
         private readonly IArrJellyfinView _view;
+        private readonly SpoilerPresentation? _presentation;
         private readonly RequestLedger _ledger;
         private readonly IRequestPolicy _policy;
         private readonly TitleAliases? _aliases;
@@ -95,14 +96,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<DateTimeOffset> _now;
 
         /// <summary>Creates the service over the shared TMDB cache.</summary>
-        public SeasonRowsService(IArrJellyfinView view, RequestLedger ledger, IRequestPolicy policy, TitleAliases aliases, TmdbResponseCache tmdb)
+        public SeasonRowsService(IArrJellyfinView view, RequestLedger ledger, IRequestPolicy policy, TitleAliases aliases, TmdbResponseCache tmdb, SpoilerPresentation? presentation = null)
             : this(view, ledger, policy, aliases, (id, season, language, ct) => TmdbSeasonAsync(tmdb, id, season, language, ct))
         {
+            _presentation = presentation;
         }
 
         /// <summary>Creates the service with an explicit TMDB season reader (tests).</summary>
-        internal SeasonRowsService(IArrJellyfinView view, RequestLedger ledger, IRequestPolicy policy, TitleAliases? aliases, Func<int, int, string?, CancellationToken, Task<string?>> tmdbSeason, Func<DateTimeOffset>? now = null)
+        internal SeasonRowsService(IArrJellyfinView view, RequestLedger ledger, IRequestPolicy policy, TitleAliases? aliases, Func<int, int, string?, CancellationToken, Task<string?>> tmdbSeason, Func<DateTimeOffset>? now = null, SpoilerPresentation? presentation = null)
         {
+            _presentation = presentation;
             _view = view;
             _ledger = ledger;
             _policy = policy;
@@ -199,6 +202,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             numbers.UnionWith(perEpisode.Keys);
             numbers.UnionWith(jf.Where(e => !e.Hidden).SelectMany(Numbers));
             numbers.ExceptWith(hidden);
+            var presentation = _presentation?.Load(viewer.UserId);
+            var title = tmdbId.HasValue ? "tv:tmdb:" + tmdbId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : key.Title.ToString();
+            var strip = presentation?.MissingRow(title) ?? (Title: false, Overview: false, AirDate: false);
+            var guarded = presentation?.Guarded(title) == true;
             var episodes = new List<SeasonRowEpisode>();
             foreach (var n in numbers)
             {
@@ -207,11 +214,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 episodes.Add(new SeasonRowEpisode
                 {
                     Episode = n,
-                    Title = known ? info!.Title : null,
-                    Overview = known ? info!.Overview : null,
+                    Title = known && !strip.Title ? info!.Title : null,
+                    Overview = known && !strip.Overview ? info!.Overview : null,
                     Runtime = known ? info!.Runtime : null,
-                    AirDate = known ? info!.AirDate : null,
-                    Still = known ? info!.Still : null,
+                    AirDate = known && !strip.AirDate ? info!.AirDate : null,
+                    Still = known && !guarded ? info!.Still : null,
                     Request = perEpisode.GetValueOrDefault(n),
                 });
             }

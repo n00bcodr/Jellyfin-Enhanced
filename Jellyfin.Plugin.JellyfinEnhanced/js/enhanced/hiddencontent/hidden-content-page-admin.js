@@ -193,40 +193,51 @@
    * Routes a single-item unhide to the correct store: the admin endpoint when editing another
    * user, otherwise the current user's own store. No-op in read-only admin view.
    * @param {string} key Item key (item._key || item.itemId).
+   * @returns {Promise<boolean>} Resolves true only once the unhide is confirmed.
    */
   function handleUnhide(key) {
     if (state.selectedAdminUserId) {
-      if (state.adminEditMode) adminUnhide([key]);
-      return; // read-only view: ignore (the control should already be stripped)
+      // Read-only view: ignore (the control should already be stripped).
+      return state.adminEditMode ? adminUnhide([key]) : Promise.resolve(false);
     }
-    JE.hiddenContent.unhideItem(key);
+    return JE.hiddenContent.unhideConfirmed(JE.hiddenContent.unhideItem(key));
   }
 
   /**
-   * Routes a bulk unhide (whole show / unhide-all) the same way as {@link handleUnhide}.
+   * Routes a bulk unhide (whole show / unhide-all) the same way as {@link handleUnhide}; a failed
+   * write is reported, and every entry not confirmed stays listed.
    * @param {string[]} keys Item keys to unhide.
+   * @returns {Promise<boolean>} true when every key was confirmed.
    */
   function handleUnhideMany(keys) {
-    if (!Array.isArray(keys) || keys.length === 0) return;
-    if (state.selectedAdminUserId) {
-      if (state.adminEditMode) adminUnhide(keys);
-      return;
-    }
-    keys.forEach((k) => JE.hiddenContent.unhideItem(k));
+    if (!Array.isArray(keys) || keys.length === 0) return Promise.resolve(true);
+    const action = JE.createSessionAction();
+    const outcome = state.selectedAdminUserId
+      ? (state.adminEditMode ? adminUnhide(keys) : Promise.resolve(true))
+      : Promise.all(keys.map((k) => JE.hiddenContent.unhideConfirmed(JE.hiddenContent.unhideItem(k))))
+        .then((results) => results.every(Boolean));
+    return outcome.then((ok) => {
+      if (!ok && action.current()) JE.toast?.(JE.t('hidden_content_unhide_failed_retry'));
+      return ok;
+    });
   }
 
   /**
    * Performs an admin-side unhide for the currently-viewed user, then prunes the local cache and
    * repaints. Keeps the dropdown count roughly in sync without a full refetch.
    * @param {string[]} keys Item keys to unhide for state.selectedAdminUserId.
+   * @returns {Promise<boolean>} true once the server confirmed the unhide.
    */
   async function adminUnhide(keys) {
     const uid = state.selectedAdminUserId;
-    if (!uid) return;
+    if (!uid) return false;
+    const action = JE.createSessionAction();
     const ok = await JE.hiddenContent.adminUnhideForUser(uid, keys);
-    if (!ok) return;
+    if (!ok) return false;
+    // Confirmed for the submitting admin; an incoming viewer's page state is left alone.
+    if (!action.current()) return true;
     const removed = new Set(keys);
-    if (Array.isArray(state.adminItems)) {
+    if (Array.isArray(state.adminItems) && state.adminItemsUserId === uid) {
       state.adminItems = state.adminItems.filter((it) => !removed.has(it._key));
     }
     if (Array.isArray(state.adminUsers)) {
@@ -235,6 +246,7 @@
         x.userId === uid ? { ...x, count: Math.max(0, (x.count || 0) - removed.size) } : x);
     }
     renderPage();
+    return true;
   }
 
   /**
@@ -242,9 +254,10 @@
    * (admin adding). Updates the local cache + dropdown count and repaints.
    * @param {string} targetUserId The user to hide the item for.
    * @param {Object} result A normalized search result (library or Seerr).
+   * @param {{current: function(): boolean}} action Session that submitted the hide.
    * @returns {Promise<boolean>} true on success.
    */
-  async function adminAddItem(targetUserId, result) {
+  async function adminAddItem(targetUserId, result, action) {
     const item = {
       itemId: result.itemId || '',
       name: result.name || '',
@@ -262,11 +275,14 @@
     };
     const added = await JE.hiddenContent.adminHideForUser(targetUserId, [item]);
     if (added === false) return false;
+    // A submitted hide still finishes after its modal closes, but never repaints another viewer's page.
+    if (!action.current()) return true;
     // The server returns the number of items it newly added; 0 means the user already had it hidden.
     // Only update the local cache + dropdown count for a real add, so the count can't drift upward.
     const didAdd = typeof added === 'number' ? added > 0 : true;
     const key = item.itemId || ('tmdb-' + item.tmdbId);
-    if (didAdd && Array.isArray(state.adminItems) && !state.adminItems.some((i) => (i._key || i.itemId) === key)) {
+    if (didAdd && Array.isArray(state.adminItems) && state.adminItemsUserId === targetUserId
+        && !state.adminItems.some((i) => (i._key || i.itemId) === key)) {
       state.adminItems = state.adminItems.concat([{ ...item, _key: key }]);
     }
     if (didAdd && Array.isArray(state.adminUsers)) {
@@ -287,6 +303,8 @@
     const uid = state.selectedAdminUserId;
     if (!uid) return;
     const userName = state.adminUserName || uid;
+    // The modal, its searches and its results belong to the viewer who opened it.
+    const view = JE.createSessionAction();
 
     // The open overlay normally blocks re-opening, but if a stale one is somehow present, note it so
     // we don't later "restore" the page overflow to its already-locked 'hidden' value (a perma-lock).
@@ -332,12 +350,19 @@
     // can never re-save and re-apply a 'hidden' that permanently locks the page.
     const prevBodyOverflow = hadStaleOverlay ? '' : document.body.style.overflow;
     const prevHtmlOverflow = hadStaleOverlay ? '' : document.documentElement.style.overflow;
+    let searchTimer = null;
+    let searchToken = 0;
     const close = () => {
+      release();
+      if (searchTimer) clearTimeout(searchTimer);
+      searchTimer = null;
+      searchToken++; // a search still in flight never publishes into the closed modal
       overlay.remove();
       document.removeEventListener('keydown', esc);
       document.body.style.overflow = prevBodyOverflow;
       document.documentElement.style.overflow = prevHtmlOverflow;
     };
+    const release = view.onCancel(close);
     const esc = (e) => { if (e.key === 'Escape') close(); };
     closeBtn.addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
@@ -392,9 +417,11 @@
       } else {
         btn.textContent = JE.t('hidden_content_admin_add_hide');
         btn.addEventListener('click', async () => {
+          if (!view.current()) return;
           btn.disabled = true;
           btn.textContent = JE.t('hidden_content_admin_add_hiding');
-          const ok = await adminAddItem(uid, n);
+          const ok = await adminAddItem(uid, n, view);
+          if (!view.current()) return;
           btn.textContent = ok ? JE.t('hidden_content_admin_add_added') : JE.t('hidden_content_admin_add_hide');
           if (!ok) btn.disabled = false;
         });
@@ -406,8 +433,6 @@
       return card;
     };
 
-    let searchTimer = null;
-    let searchToken = 0;
     const showMessage = (text) => {
       const m = document.createElement('div');
       m.className = 'je-hidden-management-empty';
@@ -415,6 +440,7 @@
       grid.replaceChildren(m);
     };
     const doSearch = async (q) => {
+      if (!view.current()) return;
       const token = ++searchToken;
       const term = (q || '').trim();
       if (term.length < 2) { grid.replaceChildren(hint); return; }
@@ -433,7 +459,7 @@
         : Promise.resolve([]);
 
       const [libItems, seerrItems] = await Promise.all([libP, seerrP]);
-      if (token !== searchToken) return;
+      if (token !== searchToken || !view.current()) return;
 
       const normalized = [];
       const seenTmdb = new Set();
@@ -462,7 +488,7 @@
 
     searchInput.addEventListener('input', () => {
       if (searchTimer) clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => doSearch(searchInput.value), 300);
+      searchTimer = setTimeout(() => { searchTimer = null; doSearch(searchInput.value); }, 300);
     });
 
     document.body.style.overflow = 'hidden';

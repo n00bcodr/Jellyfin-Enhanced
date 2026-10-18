@@ -100,3 +100,15 @@ test('the pending Spoiler Guard switch drawn for a native action row looks like 
   assert.equal(pill.className, 'je-spoiler-pending-btn je-spoiler-pending-on');
   assert.equal(pill.textContent, 'blur_onSpoiler Guard (pending)');
 });
+
+test('synthetic pages leave Spoiler Guard to the provider toggle, including a reused library row', t => {
+  const h = setup(t, '<div id="itemDetailPage"><div class="detailButtons"><button class="je-spoiler-blur-btn">old library toggle</button></div></div>');
+  h.JE.pluginConfig = { SpoilerBlurEnabled: true };
+  h.JE.titleDetails = { isSynthetic: id => id === 'synthetic' };
+  h.JE.t = key => key;
+  h.JE.core = { ui: { placeDetailAction: (row, button) => row.appendChild(button) } };
+  h.JE.internals = { spoilerGuard: { isStateLoaded: () => true, kindOf: () => "movie", isEnabledForKind: () => false } };
+  h.load('enhanced/spoilerguard/detail-button.js');
+  h.JE.internals.spoilerGuard.addSpoilerBlurButton('synthetic', h.document.querySelector('#itemDetailPage'), 'Movie');
+  assert.equal(h.document.querySelectorAll('.je-spoiler-blur-btn').length, 0);
+});

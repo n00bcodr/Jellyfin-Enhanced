@@ -20,9 +20,7 @@
  *   so the ratings come from the same public route.
  */
 async function fetchRatings(tmdbId, mediaType, options = {}) {
-    // prefer request-manager (retry, dedup, abort, cache, cf-ray
-    // logging) over raw ApiClient.ajax. Falls back to ApiClient.ajax only if
-    // request-manager hasn't loaded yet (early page navigations).
+    // The core owns submission identity through the awaited response body.
     try {
         const endpoint = mediaType === 'tv'
             ? `/tv/${tmdbId}/ratings`
@@ -32,26 +30,8 @@ async function fetchRatings(tmdbId, mediaType, options = {}) {
         const JE = window.JellyfinEnhanced;
         if (options.publicDetails && JE?.jellyseerrAPI?.fetchPublic) {
             response = await JE.jellyseerrAPI.fetchPublic(`/title/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}/ratings`);
-        } else if (JE && JE.requestManager) {
-            const httpResponse = await JE.requestManager.fetchWithRetry(url, {
-                method: 'GET',
-                headers: {
-                    'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
-                    // Jellyfin 12 authenticates from the Authorization header; the
-                    // legacy X-Emby-Token is kept for 10.11 back-compat.
-                    'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
-                    'X-Emby-Token': ApiClient.accessToken(),
-                    'Accept': 'application/json'
-                }
-            });
-            response = await httpResponse.json();
         } else {
-            response = await ApiClient.ajax({
-                type: 'GET',
-                url,
-                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-                dataType: 'json'
-            });
+            response = await JE.core.api.fetch(url);
         }
         if (mediaType === 'tv') {
             return response ? { rt: response } : null;
@@ -193,7 +173,7 @@ function getContentRating(data, mediaType) {
     // Resolve region: prefer Elsewhere user setting → plugin fallback → US
     const region = (JE?.userConfig?.elsewhere?.Region || JE?.pluginConfig?.DEFAULT_REGION || 'US')?.toUpperCase();
 
-    if (mediaType === 'movie') {
+    if (mediaType === 'movie' && Array.isArray(data.releases?.results)) {
         // For movies: releases.results[].release_dates[].certification
         const releases = data.releases?.results;
         if (!Array.isArray(releases)) return 'N/A';

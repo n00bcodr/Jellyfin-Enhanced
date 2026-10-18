@@ -42,6 +42,7 @@
      * @param {string} itemId Storage key used to unhide if the user clicks Undo.
      */
     function showUndoToast(itemName, itemId) {
+        const action = JE.createSessionAction();
         document.querySelectorAll('.je-undo-toast').forEach(el => el.remove());
 
         const themeVars = JE.themer?.getThemeVariables() || {};
@@ -71,17 +72,31 @@
             borderColor: accentColor
         });
         undoBtn.textContent = JE.t('hidden_content_undo');
-        undoBtn.addEventListener('click', () => {
-            unhideItem(itemId);
-            toast.classList.remove('je-visible');
-            setTimeout(() => toast.remove(), 300);
+        let dismissTimer;
+        const release = action.onCancel(() => { clearTimeout(dismissTimer); toast.remove(); });
+        undoBtn.addEventListener('click', async () => {
+            if (!action.current()) return;
+            clearTimeout(dismissTimer);
+            undoBtn.disabled = true;
+            try {
+                if (await unhideItem(itemId) === false) throw new Error('Undo failed');
+                if (!action.current()) return;
+                release();
+                toast.classList.remove('je-visible');
+                setTimeout(() => toast.remove(), 300);
+            } catch (_) {
+                textSpan.textContent = JE.t('hidden_content_save_failed_persistent');
+            } finally {
+                undoBtn.disabled = false;
+            }
         });
         toast.appendChild(undoBtn);
 
         document.body.appendChild(toast);
         requestAnimationFrame(() => toast.classList.add('je-visible'));
 
-        setTimeout(() => {
+        dismissTimer = setTimeout(() => {
+            release();
             if (toast.parentNode) {
                 toast.classList.remove('je-visible');
                 setTimeout(() => toast.remove(), 300);
@@ -300,6 +315,13 @@
      * @param {Function} [dialogOptions.onChooseScoped] Called if user picks "Hide from [surface] only".
      */
     function showHideConfirmation(itemName, onConfirm, dialogOptions = {}) {
+        const action = JE.createSessionAction();
+        onConfirm = action.bind(onConfirm);
+        dialogOptions = { ...dialogOptions };
+        for (const key of ['onChooseShow', 'onChooseScoped']) {
+            if (dialogOptions[key]) dialogOptions[key] = action.bind(dialogOptions[key]);
+        }
+        document.querySelector('.je-hide-confirm-overlay')?.jeDismiss?.();
         document.querySelector('.je-hide-confirm-overlay')?.remove();
 
         const overlay = document.createElement('div');
@@ -328,9 +350,16 @@
         dialog.appendChild(body);
 
         const closeDialog = () => {
+            release();
             overlay.remove();
             document.removeEventListener('keydown', escHandler);
         };
+        const release = action.onCancel(closeDialog);
+        overlay.jeDismiss = closeDialog;
+        // Also reject detached old buttons, including the suppression checkbox write.
+        overlay.addEventListener('click', event => {
+            if (!action.current()) { event.stopImmediatePropagation(); closeDialog(); }
+        }, true);
 
         if (hasSurface) {
             dialog.appendChild(createSurfaceDialogButtons(closeDialog, onConfirm, dialogOptions));
@@ -363,16 +392,14 @@
      */
     function confirmAndHide(itemData, onHidden, dialogOptions = {}) {
         if (!dialogOptions.showEpisodeChoice && !dialogOptions.surface && isConfirmationSuppressed()) {
-            hideItem(itemData);
-            if (onHidden) onHidden();
+            Promise.resolve(hideItem(itemData)).then(saved => { if (saved !== false) onHidden?.(); });
             return;
         }
         showHideConfirmation(itemData.name || 'Item', () => {
-            hideItem(itemData);
-            if (onHidden) onHidden();
+            Promise.resolve(hideItem(itemData)).then(saved => { if (saved !== false) onHidden?.(); });
         }, dialogOptions);
     }
 
-    Object.assign(internal, { showUndoToast, confirmAndHide });
+    Object.assign(internal, { showUndoToast, confirmAndHide, showHideConfirmation, isConfirmationSuppressed });
 
 })(window.JellyfinEnhanced);

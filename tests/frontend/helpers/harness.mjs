@@ -36,13 +36,37 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     getCurrentUserId: () => 'user-a', accessToken: () => 'test-token', serverId: () => 'server-a',
     getUrl: path => `http://jellyfin.test${path.startsWith('/') ? '' : '/'}${path}`, ...apiClient
   };
+  // Legacy-helper unit fixtures keep their ajax mock; transport tests load the real core below.
+  JE.core = JE.core || {};
+  JE.core.api = JE.core.api || {};
+  JE.core.api.ajax = JE.core.api.ajax || (options => window.ApiClient.ajax(options));
   window.fetch = fetch || ((url) => {
     const error = new Error(`Unexpected network request: ${url}; provide a fetch fixture`);
     errors.push(error);
     throw error;
   });
+  // Request-surface fixtures provide raw HTTP responses; preserve the core status/body contract.
+  JE.core.api.pluginResponse = JE.core.api.pluginResponse || (async (path, options = {}) => {
+    const response = await window.fetch(window.ApiClient.getUrl('/JellyfinEnhanced' + path), {
+      method: options.method || 'GET', signal: options.signal,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body)
+    });
+    let body = null;
+    try { const text = await response.text(); body = text ? JSON.parse(text) : null; } catch (_) { /* malformed fixture body */ }
+    return { status: response.status, body };
+  });
   window.structuredClone = structuredClone;
   Object.assign(window, globals);
+  /** Evaluates and instruments a module as it runs in the production bundle. */
+  function load(path) {
+    const file = resolve(jsRoot, path);
+    let source = readFileSync(file, 'utf8');
+    if (process.env.JE_COVERAGE_DIR) source = createInstrumenter().instrumentSync(source, file);
+    window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
+    return JE;
+  }
+  // Deferred feature actions use the shared identity primitive in the real bundle.
+  load('core/session-action.js');
   window.addEventListener('error', event => errors.push(event.error || new Error(event.message)));
   window.addEventListener('unhandledrejection', event => errors.push(event.reason));
   return {
@@ -51,16 +75,7 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     expectConsoleError(pattern) { allowedErrors.push({ pattern, required: true, matched: false }); },
     /** Tolerates a console.error that may or may not happen (timing-dependent diagnostics). */
     allowConsoleError(pattern) { allowedErrors.push({ pattern, required: false, matched: false }); },
-    load(path) {
-      const file = resolve(jsRoot, path);
-      let source = readFileSync(file, 'utf8');
-      if (process.env.JE_COVERAGE_DIR) source = createInstrumenter().instrumentSync(source, file);
-      // Run each file the way Services/ClientScriptBundle.cs packages it: the file body
-      // inside its own function, called as an element of the module array. Top-level
-      // declarations therefore stay file-local, exactly as in production.
-      window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
-      return JE;
-    },
+    load,
     close() {
       if (window.__coverage__) collected.merge(window.__coverage__);
       window.close();

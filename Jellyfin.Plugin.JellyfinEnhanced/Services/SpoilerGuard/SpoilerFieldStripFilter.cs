@@ -170,7 +170,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (result == null || cfg?.SpoilerBlurEnabled != true || userId == Guid.Empty) return;
             var userState = _resolver.LoadUserState(context.HttpContext, userId);
-            if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0) return;
+            if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0 && userState.ProviderTitles.Count == 0 && userState.PendingTmdb.Count == 0) return;
             try
             {
                 StripIfApplicable(result, userState, cfg, userId, context);
@@ -210,7 +210,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // despite the Movie branches in StripItem +
             // RouteParentIsSpoilerEpisode. Mirror the GetTagCache /
             // GetTagData / image-filter checks.
-            if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0)
+            if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0 && userState.ProviderTitles.Count == 0 && userState.PendingTmdb.Count == 0)
             {
                 await next().ConfigureAwait(false);
                 return;
@@ -517,7 +517,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 if (!seriesId.HasValue || seriesId.Value == Guid.Empty) return false;
-                if (!userState.Series.ContainsKey(seriesId.Value.ToString("N"))) return false;
+                if (!_resolver.IsSeriesInSpoilerScope(userState, seriesId.Value)) return false;
 
                 if (watchedCheck && ResolvePlayedServerSide(userId, itemId)) return false;
                 return true;
@@ -531,6 +531,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return true;
             }
         }
+
+        /// <summary>Applies the native watched/season/category rules with a freshly loaded presentation state.</summary>
+        internal void StripLibraryItem(BaseItemDto item, UserSpoilerBlur state, PluginConfiguration config, Guid viewer)
+            => StripItem(item, state, config, viewer);
 
         // Per-item strip. Mutates `item` in place when applicable; no-op otherwise.
         private void StripItem(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
@@ -549,7 +553,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Series)
             {
                 if (item.Id == Guid.Empty) return;
-                if (!userState.Series.ContainsKey(item.Id.ToString("N"))) return;
+                if (!_resolver.IsSeriesInSpoilerScope(userState, item.Id, item.ProviderIds)) return;
                 // Mutate ImageTags so native client image caches refetch
                 // on state change. Series has no per-watched semantics so
                 // just hash the in-list state.
@@ -571,7 +575,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie)
             {
                 if (item.Id == Guid.Empty) return;
-                if (!_resolver.IsMovieInSpoilerScope(userState,item.Id)) return;
+                if (!_resolver.IsMovieInSpoilerScope(userState,item.Id, item.ProviderIds)) return;
                 bool moviePlayed;
                 long moviePlayPos = 0;
                 if (item.UserData != null)
@@ -607,7 +611,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var isExtra = !isEpisodeOrSeason
                 && item.SeriesId.HasValue
                 && item.SeriesId.Value != Guid.Empty
-                && userState.Series.ContainsKey(item.SeriesId.Value.ToString("N"));
+                && _resolver.IsSeriesInSpoilerScope(userState, item.SeriesId.Value);
             if (!isEpisodeOrSeason && !isExtra) return;
 
             if (isExtra)
@@ -634,7 +638,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 return;
             }
-            if (!userState.Series.ContainsKey(seriesId.Value.ToString("N"))) return;
+            if (!_resolver.IsSeriesInSpoilerScope(userState, seriesId.Value)) return;
 
             if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Season)
             {
@@ -954,7 +958,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     if (actualItem is not MediaBrowser.Controller.Entities.TV.Episode ep) continue;
                     if (ep.SeriesId == Guid.Empty) continue;
-                    if (!userState.Series.ContainsKey(ep.SeriesId.ToString("N"))) continue;
+                    if (!_resolver.IsSeriesInSpoilerScope(userState, ep.SeriesId)) continue;
                     if (ResolvePlayedServerSide(userId, hint.Id)) continue;
 
                     if (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles) && hint.IndexNumber.HasValue && hint.ParentIndexNumber.HasValue)

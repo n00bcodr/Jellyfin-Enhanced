@@ -1,4 +1,3 @@
-#if JF12
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -435,7 +434,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 foreach (var logo in logos.EnumerateArray())
                 {
                     var path = logo.TryGetProperty("file_path", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
-                    if (!NativeDetailsArtwork.IsSafeTmdbPath(path)) continue;
+                    if (!ProviderMetadata.SafeArtwork(path)) continue;
                     var lang = logo.TryGetProperty("iso_639_1", out var l) && l.ValueKind == JsonValueKind.String ? l.GetString() : null;
                     if (lang == "en") return path;
                     fallback ??= path;
@@ -723,4 +722,3 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
     }
 }
-#endif

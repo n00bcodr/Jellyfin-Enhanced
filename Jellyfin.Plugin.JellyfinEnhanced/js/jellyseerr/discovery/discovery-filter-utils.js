@@ -343,67 +343,12 @@
      * @returns {Promise<any>}
      */
     async function fetchWithManagedRequest(path, cachePrefix, options = {}) {
-        const url = ApiClient.getUrl(path);
-        const { signal } = options;
-
-        if (JE.requestManager) {
-            const cacheKey = `${cachePrefix}:${path}`;
-            // The server's native feeds are filtered for the viewer's current policy (library access,
-            // parental limits): never kept by the tab, so a changed policy shows on the next read. The
-            // server keeps the upstream answers, so reading them again is cheap.
-            const keep = !path.startsWith('/JellyfinEnhanced/native-details/');
-            const cached = keep ? JE.requestManager.getCached(cacheKey) : null;
-            if (cached) return cached;
-
-            // Identity epoch at request start. Cache keys carry no user id and the
-            // cache is flushed on a user switch, so a response that lands after the
-            // switch must neither be cached nor handed back: it was fetched under
-            // the previous user's permissions (and their parental filter).
-            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-            const stillCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
-
-            const fetchFn = async () => {
-                const response = await JE.requestManager.fetchWithRetry(url, {
-                    method: 'GET',
-                    headers: {
-                        'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
-                        // Jellyfin 12 authenticates from the Authorization header; the
-                        // legacy X-Emby-Token is kept for 10.11 back-compat.
-                        'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
-                        'X-Emby-Token': ApiClient.accessToken(),
-                        'Accept': 'application/json'
-                    },
-                    signal
-                });
-                const data = await response.json();
-                if (!stillCurrent()) {
-                    throw new DOMException('User changed during request', 'AbortError');
-                }
-                if (keep) JE.requestManager.setCache(cacheKey, data);
-                return data;
-            };
-
-            // Dedup outside the pool (only the unique fetch holds a slot) and
-            // re-check the cache after acquiring the slot, so a prefetch that
-            // finished while we queued is not fetched again.
-            return JE.requestManager.deduplicatedFetch(cacheKey, () =>
-                JE.requestManager.withConcurrencyLimit(() => {
-                    if (!stillCurrent()) {
-                        return Promise.reject(new DOMException('User changed during request', 'AbortError'));
-                    }
-                    const hit = keep ? JE.requestManager.getCached(cacheKey) : null;
-                    return hit ? Promise.resolve(hit) : fetchFn();
-                }),
-                signal
-            );
-        }
-
-        // Fallback to ApiClient.ajax
-        return ApiClient.ajax({
-            type: 'GET',
-            url: url,
-            headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-            dataType: 'json'
+        // Keep personalized native feeds fresh while the core owns submission,
+        // queueing, retry, body parsing, dedup and publication for every reader.
+        const keep = !path.startsWith('/JellyfinEnhanced/native-details/');
+        return JE.core.api.fetch(ApiClient.getUrl(path), {
+            signal: options.signal,
+            ...(keep ? { cacheKey: `${cachePrefix}:${path}` } : { skipCache: true })
         });
     }
 

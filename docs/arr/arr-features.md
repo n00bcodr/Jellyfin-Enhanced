@@ -1614,6 +1614,10 @@ Each person can hide the web badges, or turn off the drawn ones, in the Jellyfin
   If the trigger (or Seerr) is turned off while a scan waits for its debounce, it isn't sent. *Trigger scan now* is
   unaffected.
 
+Hidden Content and Spoiler Guard also apply when a preference changes while a request is loading. Provider episode fields and artwork are projected before delivery, including cached answers. Hidden Content saves reject stale replacements so another tab’s newer rules survive. If Undo fails, its translated error and Undo button remain available for another attempt. More Like This uses the recommendations filter preference independently of the library preference.
+
+Spoiler Guard preserves request controls, quota warnings and parental-rating assessments. Calendar entries keep their source, season and episode numbers and availability state, so filtering to **Available** still works while episode names are protected. Precise dates follow your Spoiler Guard date preference.
+
 ### Jellyfin Dashboard user settings
 
 Administrators can open **Dashboard → Users**, select a person, and open the **Jellyfin Enhanced** tab between **Access** and **Parental control** in Jellyfin 12 and 10.11. The vertical form uses Jellyfin's native controls and one **Save** at the bottom. It saves changed sections and shows **Settings saved**; a failed section keeps its draft and shows an inline error. Edits made while Save is running remain as drafts for the next Save, including returning to an inherited value. Failed writes keep the desired values for retry. JE drafts survive native tab changes, and the tab supports bookmarks, reload and Back/Forward.

@@ -207,12 +207,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly SeerrRequestReadModel _requests;
         private readonly Func<PluginConfiguration?> _config;
         private readonly RequestLedger? _ledger;
+        private Configuration.UserConfigurationManager? _hidden;
+        private MediaBrowser.Controller.Library.ILibraryManager? _library;
+        private TitleAliases? _aliases;
+        private SpoilerPresentation? _presentation;
         private readonly Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? _meta;
 
         /// <summary>The service (DI): Seerr's requests in Seerr mode, the request ledger once Jellyfin Enhanced handles requests.</summary>
-        public RequestsHubService(ArrStatusService status, SeerrRequestReadModel requests, RequestLedger ledger, RequestHubProjection projection)
+        public RequestsHubService(ArrStatusService status, SeerrRequestReadModel requests, RequestLedger ledger, RequestHubProjection projection, Configuration.UserConfigurationManager? hidden = null, TitleAliases? aliases = null, MediaBrowser.Controller.Library.ILibraryManager? library = null, SpoilerPresentation? presentation = null)
             : this(status, requests, null, ledger, projection.MetaAsync)
         {
+            _hidden = hidden;
+            _library = library;
+            _presentation = presentation;
+            _aliases = aliases;
         }
 
         /// <summary>
@@ -269,7 +277,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // ones, so it never pushes one out of the cap): its "Ready" days count from when it
             // arrived in Jellyfin, which only composing knows (Seerr may mark it available without
             // touching the request).
-            var titles = _requests.ForUser(viewer.UserId)
+            var initial = _hidden == null ? null : TitlePresentationGate.Read(_hidden, _presentation, viewer.UserId, _library);
+            var hidden = initial?.Hidden ?? HiddenContentPolicy.Build(null);
+            var titles = _requests.ForUser(viewer.UserId).Where(r => !hidden.IsHidden(r.Key, _aliases, "requests"))
                 .GroupBy(r => r.Key!.ToString())
                 .Select(g => g.ToList())
                 .Where(g => g.Any(r => r.Active) || now - LastChange(g) <= DeclinedFor)
@@ -295,8 +305,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 ? (config?.DownloadsPageEnabled == true ? "d" : "-") + (config?.CalendarPageEnabled == true ? "c" : "-") + (JellyfinBridge.Phase2(config) ? "h" : "-") + (state.LastError ?? string.Empty) + state.LastReadAt?.UtcTicks.ToString(CultureInfo.InvariantCulture)
                 : string.Empty;
             var arrDown = ArrUnavailable();
-            var what = string.Join("|", _requests.Active ? "on" : "off", _requests.Loaded ? "loaded" : "-", state.LastError == null ? "ok" : "err", arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs);
-            return _status.ForTitlesAsync(viewer, keys, "hub", what, composed => Build(viewer, entries, composed, config, state, arrDown, more), cancellationToken, scopes);
+            var what = string.Join("|", _presentation?.Load(viewer.UserId).Revision ?? "", _requests.Active ? "on" : "off", _requests.Loaded ? "loaded" : "-", state.LastError == null ? "ok" : "err", arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs);
+            return _status.ForTitlesAsync(viewer, keys, "hub", what, composed => Build(viewer, entries, composed, config, state, arrDown, more), cancellationToken, scopes, presentation: _hidden == null ? null : () => TitlePresentationGate.Read(_hidden, _presentation, viewer.UserId, _library), presentationRevision: initial?.Revision);
         }
 
         /// <summary>
@@ -313,7 +323,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var now = _status.Now.UtcDateTime;
             static bool Open(RequestWant w) => w.Status is "pending" or "queued" or "sent" or "stale";
             var mine = ledger.Database.Available ? ledger.List(viewer.UserId, false) : Array.Empty<RequestWant>();
-            var titles = mine.Where(w => w.Status != "cancelled" && TitleKey.Parse(w.Input.Key) != null)
+            var initial = _hidden == null ? null : TitlePresentationGate.Read(_hidden, _presentation, viewer.UserId, _library);
+            var hidden = initial?.Hidden ?? HiddenContentPolicy.Build(null);
+            var titles = mine.Where(w => !hidden.IsHidden(TitleKey.Parse(w.Input.Key), _aliases, "requests")).Where(w => w.Status != "cancelled" && TitleKey.Parse(w.Input.Key) != null)
                 .GroupBy(w => w.Input.Key, StringComparer.Ordinal)
                 .Select(g => g.ToList())
                 .Where(g => g.Any(w => w.Status != "declined") || now - g.Max(w => w.UpdatedAt.UtcDateTime) <= DeclinedFor)
@@ -339,8 +351,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 : string.Empty;
             var arrDown = ArrUnavailable();
             var names = string.Join(",", meta.OrderBy(m => m.Key, StringComparer.Ordinal).Select(m => m.Key + "=" + m.Value.Title + "/" + m.Value.Year + "/" + m.Value.Poster + "/" + m.Value.ItemId));
-            var what = string.Join("|", "je", ledger.Revision.ToString(CultureInfo.InvariantCulture), arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs, MutationInput.Hash(names));
-            return await _status.ForTitlesAsync(viewer, keys, "hub", what, composed => BuildLedger(viewer, entries, composed, meta, config, state, arrDown, more), cancellationToken, scopes, load).ConfigureAwait(false);
+            var what = string.Join("|", _presentation?.Load(viewer.UserId).Revision ?? "", "je", ledger.Revision.ToString(CultureInfo.InvariantCulture), arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs, MutationInput.Hash(names));
+            return await _status.ForTitlesAsync(viewer, keys, "hub", what, composed => BuildLedger(viewer, entries, composed, meta, config, state, arrDown, more), cancellationToken, scopes, load, _hidden == null ? null : () => TitlePresentationGate.Read(_hidden, _presentation, viewer.UserId, _library), initial?.Revision).ConfigureAwait(false);
         }
 
         private byte[] BuildLedger(StatusViewer viewer, List<List<RequestWant>> entries, IReadOnlyList<ArrStatusService.KeyedStatus> titles, Dictionary<string, HubTitleMeta> meta, PluginConfiguration config, SeerrReadModelState state, bool arrDown, bool more)
@@ -375,7 +387,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     ? new HubAdmin { Downloads = config.DownloadsPageEnabled, Calendar = config.CalendarPageEnabled, Seerr = state, Hub = JellyfinBridge.Phase2(config) }
                     : null,
             };
-            return JsonSerializer.SerializeToUtf8Bytes(response, Json);
+            var json = JsonSerializer.Serialize(response, Json);
+            return System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(viewer.UserId).ProjectResource(json, null, "requests-hub") ?? json);
         }
 
         /// <summary>One title's entry from the viewer's ledger requests for it and its scoped status, or null when it is no longer worth showing.</summary>
@@ -559,7 +572,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     ? new HubAdmin { Downloads = config?.DownloadsPageEnabled == true, Calendar = config?.CalendarPageEnabled == true, Seerr = state, Hub = JellyfinBridge.Phase2(config) }
                     : null,
             };
-            return JsonSerializer.SerializeToUtf8Bytes(response, Json);
+            var json = JsonSerializer.Serialize(response, Json);
+            return System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(viewer.UserId).ProjectResource(json, null, "requests-hub") ?? json);
         }
 
         private static int GroupOrder(string group) => group switch

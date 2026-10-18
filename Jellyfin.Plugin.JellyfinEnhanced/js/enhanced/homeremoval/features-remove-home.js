@@ -374,6 +374,7 @@
      * @returns {Promise<boolean>}
      */
     async function removeFromHomeSurface(itemId, surface, card) {
+        const action = JE.createSessionAction();
         const config = REMOVE_SURFACES[surface];
         const userId = ApiClient.getCurrentUserId();
         if (!userId || !itemId || !config) {
@@ -392,7 +393,8 @@
         }
 
         try {
-            await ApiClient.ajax({
+            if (!action.current()) return false;
+            await JE.core.api.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/${config.path}/hide/${itemId}`),
                 data: '{}',
@@ -401,6 +403,7 @@
                 headers: { 'Content-Type': 'application/json' }
             });
 
+            if (!action.current()) return false;
             optimisticHideRemovedCard(itemId, surface, card);
 
             // Local-cache mirror only — server already wrote the canonical entry; a refetch would risk a clobber.

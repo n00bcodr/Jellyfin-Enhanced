@@ -6,62 +6,61 @@
     JE.internals = JE.internals || {};
     /** @type {any} Shared cross-file namespace; each module contributes a focused surface. */
     const internal = JE.internals.spoilerGuard = JE.internals.spoilerGuard || {};
-    const logPrefix = '🪼 Jellyfin Enhanced [SpoilerGuard]:';
 
-    function showConfirmDialog() {
-        const title = JE.t('spoiler_disable_confirm_title');
-        const body = JE.t('spoiler_disable_confirm_body');
-        const snoozeLabel = JE.t('spoiler_disable_confirm_snooze');
-        const marker = `je-sb-snooze-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-        const escape = typeof JE.escapeHtml === 'function' ? JE.escapeHtml : value => String(value);
-        const html = `<div>${escape(body)}</div>`
-            + `<label class="${marker}" style="display:flex;align-items:center;gap:.5em;margin-top:1em;cursor:pointer;">`
-            + `<input type="checkbox"><span>${escape(snoozeLabel)}</span></label>`;
-
+    /** Opens an owned dialog so session changes can dismiss it and settle its promise. */
+    function showConfirmDialog(action) {
         return new Promise(function(resolve) {
-            if (!window.Dashboard || typeof window.Dashboard.confirm !== 'function') {
-                console.warn(`${logPrefix} Dashboard.confirm unavailable; using native confirm without snooze`);
-                resolve(window.confirm(`${title}\n\n${body}`));
-                return;
+            const dialog = document.createElement('dialog');
+            dialog.className = 'je-spoiler-confirm-dialog';
+            dialog.setAttribute('aria-labelledby', 'je-spoiler-confirm-title');
+            const heading = document.createElement('h3');
+            heading.id = 'je-spoiler-confirm-title';
+            heading.textContent = JE.t('spoiler_disable_confirm_title');
+            const body = document.createElement('p');
+            body.textContent = JE.t('spoiler_disable_confirm_body');
+            const label = document.createElement('label');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            label.append(checkbox, document.createTextNode(JE.t('spoiler_disable_confirm_snooze')));
+            const buttons = document.createElement('div');
+            const cancel = document.createElement('button');
+            cancel.textContent = JE.t('hidden_content_confirm_cancel');
+            const accept = document.createElement('button');
+            accept.className = 'je-spoiler-confirm-accept';
+            accept.textContent = JE.t('spoiler_disable_confirm_accept');
+            buttons.append(cancel, accept);
+            dialog.append(heading, body, label, buttons);
+            let settled = false;
+            /** Settles once, removes owned UI, and never snoozes the incoming viewer's dialog. */
+            function finish(ok) {
+                if (settled) return;
+                settled = true;
+                const confirmed = ok && action.current();
+                if (confirmed && checkbox.checked) internal.setDisableSnooze();
+                release();
+                dialog.close?.();
+                dialog.remove();
+                resolve(confirmed);
             }
-
-            let snoozeChecked = false;
-            function captureChange(event) {
-                try {
-                    const target = event.target;
-                    if (target?.tagName === 'INPUT' && target.type === 'checkbox' && target.closest(`.${marker}`)) {
-                        snoozeChecked = !!target.checked;
-                    }
-                } catch (_) { /* never let a stray DOM event break the dialog */ }
-            }
-            function cleanup() { document.removeEventListener('change', captureChange, true); }
-            document.addEventListener('change', captureChange, true);
-            try {
-                window.Dashboard.confirm(html, title, function(ok) {
-                    try {
-                        const checkbox = /** @type {HTMLInputElement|null} */ (
-                            document.querySelector(`.${marker} input[type="checkbox"]`)
-                        );
-                        if (checkbox) snoozeChecked = !!checkbox.checked;
-                    } catch (_) { /* dialog DOM may already be gone */ }
-                    cleanup();
-                    const confirmed = !!ok;
-                    if (confirmed && snoozeChecked) internal.setDisableSnooze();
-                    resolve(confirmed);
-                });
-            } catch (e) {
-                cleanup();
-                console.warn(`${logPrefix} Dashboard.confirm failed; using native confirm:`, e);
-                resolve(window.confirm(`${title}\n\n${body}`));
-            }
+            const release = action.onCancel(() => finish(false));
+            cancel.onclick = () => finish(false);
+            accept.onclick = () => finish(true);
+            dialog.addEventListener('cancel', event => { event.preventDefault(); finish(false); });
+            dialog.addEventListener('close', () => finish(false));
+            document.body.appendChild(dialog);
+            if (typeof dialog.showModal === 'function') dialog.showModal();
+            else dialog.setAttribute('open', '');
+            cancel.focus();
         });
     }
 
     internal.confirmDisableSpoiler = function() {
+        const action = JE.createSessionAction();
         return internal.whenLoaded().then(function() {
+            if (!action.current()) return false;
             if (internal.getUserPrefs().SkipDisableConfirm) return true;
             if (internal.isDisableSnoozed()) return true;
-            return showConfirmDialog();
+            return showConfirmDialog(action);
         });
     };
 })(window.JellyfinEnhanced);

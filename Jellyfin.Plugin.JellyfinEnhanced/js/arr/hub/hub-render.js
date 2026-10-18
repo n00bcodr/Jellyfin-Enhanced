@@ -145,6 +145,9 @@
         JE.internals?.arrNotify?.rowButton?.(entry, buttons);
         // Phase 3: Cancel on the caller's own requests that haven't been sent yet (hub-mine-ledger.js).
         H.rowExtras?.(entry, buttons, body);
+        const hide = JE.hiddenContent?.buildTitleControl?.({ ...entry, type: entry.kind, name: entry.title }, { surface: 'requests' });
+        if (hide) buttons.appendChild(hide);
+        row.classList.add('je-hub-entry');
         if (buttons.childNodes.length) row.appendChild(buttons);
         const open = () => actions.open(entry);
         row.addEventListener('click', open);

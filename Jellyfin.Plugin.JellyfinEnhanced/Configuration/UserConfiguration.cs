@@ -243,6 +243,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 : new Dictionary<string, SpoilerBlurPendingEntry>(value, StringComparer.OrdinalIgnoreCase);
         }
 
+        /// <summary>Durable typed provider intent after a pending title arrives; protects later copies and reimports.</summary>
+        private Dictionary<string, SpoilerBlurPendingEntry> _providerTitles = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, SpoilerBlurPendingEntry> ProviderTitles
+        {
+            get => _providerTitles;
+            set => _providerTitles = value == null ? new(StringComparer.OrdinalIgnoreCase) : new(value, StringComparer.OrdinalIgnoreCase);
+        }
+
         // Per-user override of admin strip policy. A fresh user state has an
         // empty Prefs object (all nullable bools = null), so unmigrated
         // spoilerblur.json files continue to honor admin policy unchanged.
@@ -352,6 +360,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
     public class UserHiddenContent
     {
+        /// <summary>Base rule revision for full-document writes; the server rejects a stale replacement.</summary>
+        public string? Revision { get; set; }
+
         public Dictionary<string, HiddenContentItem> Items { get; set; } = new Dictionary<string, HiddenContentItem>();
         public HiddenContentSettings Settings { get; set; } = new HiddenContentSettings();
     }

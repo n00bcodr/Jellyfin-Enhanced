@@ -77,7 +77,7 @@
         '.listItem [data-action="menu"]', '.listItemImageButton',
         // JE's item-id controls: Hidden Content and Spoiler Guard rules never store a synthetic id
         // (library copies in the Similar rail keep their card hide button).
-        '.je-detail-hide-btn', '.je-spoiler-blur-btn', `[data-id^="${NAMESPACE}1"] .je-hide-btn`
+        '.je-spoiler-blur-btn'
     ];
     /** A second failure of the same page within this time says so on the page (no second modal). */
     const FALLBACK_WINDOW_MS = 5000;
@@ -559,7 +559,7 @@
      * @returns {HTMLElement[]} Controls.
      */
     function controlsOf(state) {
-        return [state.primary, state.container, state.spoiler, state.ratings, state.extras].filter(Boolean);
+        return [state.primary, state.container, state.hide, state.spoiler, state.ratings, state.extras].filter(Boolean);
     }
 
     /**
@@ -756,6 +756,15 @@
      * @returns {void}
      */
     function mountSpoiler(state, item) {
+        const hide = ['movie', 'series', 'season', 'episode'].includes(state.parts.kind) && JE.hiddenContent?.buildTitleControl?.({ itemId: state.itemId || state.id, type: state.parts.kind === 'movie' ? 'Movie' : 'Series',
+            tmdbId: state.parts.tmdbId, name: item?.Name || '' }, { detail: true });
+        if (hide) {
+            state.page.querySelectorAll('.je-detail-hide-btn').forEach(node => node.remove());
+            state.hide = own(state, hide);
+            const host = rowOf(state.page);
+            if (host) JE.core.ui.placeDetailAction(host, hide);
+            else state.container?.appendChild(hide);
+        }
         const { parts, page } = state;
         if (parts.kind !== 'movie' && parts.kind !== 'series') return;
         const row = rowOf(page);
@@ -763,7 +772,7 @@
         if (!row || typeof build !== 'function') return;
         let button = null;
         try {
-            button = build({ id: parts.tmdbId, title: item?.Name || '', name: item?.Name || '', mediaInfo: null }, state.mediaType, { detail: true });
+            button = build({ id: parts.tmdbId, title: item?.Name || '', name: item?.Name || '', mediaInfo: null, jeSpoiler: { guarded: item?.ProviderIds?.JeSpoilerGuarded === 'true' } }, state.mediaType, { detail: true });
         } catch {
             button = null;
         }
@@ -788,6 +797,7 @@
         const row = state.primary ? rowOf(state.page) : null;
         if (!row) return;
         if (row.firstElementChild !== state.primary) row.insertBefore(state.primary, row.firstElementChild);
+        if (state.hide && state.hide.parentNode !== row) JE.core.ui.placeDetailAction(row, state.hide);
         if (state.spoiler && state.spoiler.parentNode !== row) JE.core.ui.placeDetailAction(row, state.spoiler);
     }
 
@@ -813,6 +823,7 @@
             state.aborted = true;
             try { state.controls?.destroy?.(); } catch { /* already gone */ }
             state.observer?.disconnect();
+            state.rowObserver?.disconnect();
             if (state.onKey) document.removeEventListener('keydown', state.onKey, true);
             controlsOf(state).forEach(n => n.remove());
             current = null;
@@ -1272,7 +1283,7 @@
         const same = current && current.id === id && current.page === page && document.contains(current.container || page);
         const state = same ? current : {
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
-            controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, extras: null,
+            controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, extras: null,
             onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false,
             token: String(++tokens)
         };
@@ -1287,6 +1298,14 @@
                 // and smart actions taken away by any path take their cost lines with them.
                 state.observer = new MutationObserver(() => syncRow(state));
                 state.observer.observe(state.primary, { childList: true, subtree: true });
+                // The action row itself can be replaced without a view event. Repair only disconnected
+                // owned controls; our repair leaves them connected, so its own mutations are a no-op.
+                state.rowObserver = new MutationObserver(() => {
+                    if (state.aborted || current !== state) return;
+                    if (!page.contains(state.primary) || state.hide && !page.contains(state.hide)
+                        || state.spoiler && !page.contains(state.spoiler)) reconcile(state);
+                });
+                state.rowObserver.observe(page, { childList: true, subtree: true });
             }
             if (state.primary) {
                 // A key pressed on the page (the remote moved the focus) keeps the focus where it went.
@@ -1421,6 +1440,14 @@
             dispose();
         });
         document.addEventListener('contextmenu', guard, true);
+        window.addEventListener('je-spoiler-policy-changed', event => {
+            const state = current;
+            if (!state || event.detail?.type && (Number(event.detail?.tmdbId) !== state.parts.tmdbId || event.detail.type !== state.mediaType)) return;
+            // Native fields are owned by jellyfin-web. Drop their old DOM before its fresh page read.
+            state.page.replaceChildren();
+            dispose();
+            JE.internals.spoilerGuard?.scheduleFullReload?.();
+        });
         JE.session?.onUserChange?.('native-details', () => { cancelPendingModal(); dispose(); });
     }
 

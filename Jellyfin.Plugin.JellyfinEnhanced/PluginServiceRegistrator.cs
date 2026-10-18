@@ -403,15 +403,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<NativePosterTagStamper>();
             serviceCollection.AddSingleton<PosterTagImageFilter>();
 
-#if JF12
+            serviceCollection.AddSingleton<SpoilerPresentation>();
+            serviceCollection.AddSingleton<TitlePresentationResultFilter>();
             // Native details for titles not in the library (experimental, NativeAbsentDetailsEnabled):
             // answers jellyfin-web's details requests for synthetic ids, no library rows. Inert while off
             // (synthetic ids are then refused; every other request passes straight through).
             serviceCollection.AddSingleton<Services.NativeDetails.INativeDetailsSource, Services.NativeDetails.SeerrNativeDetailsSource>();
-            // The grant key is kept in the plugin's data folder, so open pages survive a restart.
-            serviceCollection.AddSingleton(sp => new Services.NativeDetails.NativeDetailsArtwork(
-                sp.GetRequiredService<System.Net.Http.IHttpClientFactory>(),
-                JellyfinEnhanced.Instance?.DataFolderPath));
             serviceCollection.AddSingleton(sp =>
             {
                 var policy = new Services.NativeDetails.NativeDetailsPolicy(
@@ -431,14 +428,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 if (sessions != null) sessions.SessionEnded += (_, e) => policy.Revoke(e.SessionInfo?.UserId ?? Guid.Empty);
                 return policy;
             });
+            // The filmographies and discovery feeds of those pages, filtered for the viewer on the server.
+            serviceCollection.AddSingleton<Services.NativeDetails.NativeDetailsFeeds>();
+
+#if JF12
+            // The grant key is kept in the plugin's data folder, so open pages survive a restart.
+            serviceCollection.AddSingleton(sp => new Services.NativeDetails.NativeDetailsArtwork(
+                sp.GetRequiredService<System.Net.Http.IHttpClientFactory>(),
+                JellyfinEnhanced.Instance?.DataFolderPath));
             // Where cast, genres, studios and tags on those pages lead (the library's own pages first; read only).
             serviceCollection.AddSingleton(sp => new Services.NativeDetails.NativeDetailsLinks(
                 sp.GetRequiredService<MediaBrowser.Controller.Library.ILibraryManager>(),
                 sp.GetService<MediaBrowser.Controller.Drawing.IImageProcessor>(),
                 () => sp.GetRequiredService<Services.Acquire.IArrJellyfinView>().Revision));
             serviceCollection.AddSingleton<Services.NativeDetails.NativeDetailsFacadeFilter>();
-            // The filmographies and discovery feeds of those pages, filtered for the viewer on the server.
-            serviceCollection.AddSingleton<Services.NativeDetails.NativeDetailsFeeds>();
             // The Requests & downloads routes (status, season rows) answer for synthetic page ids by key.
             serviceCollection.AddSingleton<Services.Acquire.IAbsentTitlePages, Services.NativeDetails.NativeDetailsPages>();
 #endif
@@ -455,6 +458,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 // First: a synthetic-id request is answered (or refused) before any native action or JE filter runs.
                 o.Filters.AddService<Services.NativeDetails.NativeDetailsFacadeFilter>(Services.NativeDetails.NativeDetailsFacadeFilter.Order);
 #endif
+                o.Filters.AddService<TitlePresentationResultFilter>(int.MaxValue);
                 o.Filters.AddService<HiddenContentResponseFilter>();
                 o.Filters.AddService<SpoilerIdentityTagFilter>();
                 o.Filters.AddService<SpoilerFieldStripFilter>();

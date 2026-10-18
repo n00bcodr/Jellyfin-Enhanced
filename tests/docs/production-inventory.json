@@ -1091,6 +1091,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentPolicy.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentResponseFilter.cs",
       "category": "Services"
     },
@@ -1168,6 +1172,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/NativeDetailsSpoilers.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeDetails/ProviderMetadata.cs",
       "category": "Services"
     },
     {
@@ -1295,6 +1303,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ProviderPresentationSchema.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReviewAuthorCache.cs",
       "category": "Services"
     },
@@ -1367,6 +1379,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerPresentation.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerSeerrPendingPromoter.cs",
       "category": "Services"
     },
@@ -1396,6 +1412,18 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitleFeedProjection.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitlePresentationGate.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbAppendProjection.cs",
       "category": "Services"
     },
     {
@@ -1724,6 +1752,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/navigation.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/session-action.js",
       "category": "js"
     },
     {
@@ -4090,6 +4122,25 @@
       ]
     },
     {
+      "verb": "PUT",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/hidden-content/rule/{key}",
+      "method": "PutHiddenContentRule",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(16384)"
+      ]
+    },
+    {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/hidden-content/rule/{key}",
+      "method": "DeleteHiddenContentRule",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
       "verb": "GET",
       "path": "/JellyfinEnhanced/user-settings/{userId}/spoilerblur.json",
       "method": "GetUserSpoilerBlur",
@@ -4843,6 +4894,15 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/native-details/title/{type}/{tmdbId}/ratings",
       "method": "Ratings",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/native-details/title/tv/{tmdbId}/season/{season}",
+      "method": "Season",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/NativeDetailsFeedsController.cs",
       "following_attributes": [
         "Authorize"
@@ -9913,6 +9973,14 @@
     },
     {
       "class": "UserHiddenContent",
+      "name": "Revision",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserHiddenContent",
       "name": "Items",
       "type": "Dictionary<string, HiddenContentItem>",
       "initializer": "new Dictionary<string, HiddenContentItem>()",
@@ -10243,7 +10311,7 @@
     },
     {
       "literal": "hidden-content.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentResponseFilter.cs"
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentPolicy.cs"
     },
     {
       "literal": "https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/manifest.json",
@@ -10304,6 +10372,14 @@
     {
       "literal": "tag-cache.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs"
+    },
+    {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitlePresentationGate.cs"
+    },
+    {
+      "literal": "spoilerblur.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitlePresentationGate.cs"
     },
     {
       "literal": "tmdb-cache.json",
@@ -10582,10 +10658,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 606,
-    "routes": 285,
-    "configuration_properties": 623,
-    "storage_references": 88,
+    "files": 614,
+    "routes": 288,
+    "configuration_properties": 624,
+    "storage_references": 90,
     "scheduled_tasks": 15,
     "locales": 33
   }

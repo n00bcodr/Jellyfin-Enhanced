@@ -79,6 +79,16 @@
     // In-flight request deduplication
     /** @type {Map<string, {promise: Promise<any>, signal: AbortSignal|null, limit: ConcurrencyOptions|null}>} */
     const inFlightRequests = new Map();
+    let presentationGeneration = 0;
+    let requestIdentity = null;
+    /** Invalidates personalized reads without cancelling writes or starting a retry loop. */
+    function presentationChanged() {
+        presentationGeneration++;
+        responseCache.clear();
+        inFlightRequests.clear();
+    }
+    window.addEventListener('je-spoiler-policy-changed', presentationChanged);
+    window.addEventListener('je-hidden-content-changed', presentationChanged);
 
     // Response cache with TTL
     /** @type {Map<string, {data: any, timestamp: number}>} */
@@ -193,9 +203,11 @@
      * @param {string} url
      * @param {RequestInit} [options]
      * @param {typeof CONFIG.retry} [retryConfig]
+     * @param {() => void} [assertSession] Submit-time identity check, including every retry.
+     * @param {boolean} [acceptHttpErrors=false] Return HTTP errors to status-preserving callers.
      * @returns {Promise<Response>}
      */
-    async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry) {
+    async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry, assertSession = captureSession(), acceptHttpErrors = false) {
         const startTime = performance.now();
         let lastError;
         let lastStatus;
@@ -214,9 +226,11 @@
             }
 
             try {
+                assertSession();
                 const response = await fetch(url, options);
+                assertSession();
 
-                if (response.ok) {
+                if (response.ok || acceptHttpErrors) {
                     if (metrics.enabled) {
                         metrics.requests.push({
                             url,
@@ -237,6 +251,7 @@
                 // Capture body so callers can read structured error details (e.g. quota messages).
                 try {
                     const text = await response.clone().text();
+                    assertSession();
                     if (text) {
                         lastError.responseText = text;
                         try {
@@ -255,6 +270,7 @@
                     throw lastError;
                 }
             } catch (error) {
+                assertSession();
                 lastError = error;
 
                 // Don't retry abort errors
@@ -470,9 +486,9 @@
     }
 
     /**
-     * Reject every waiting request in every queue (user switch). Headers and
-     * the identity epoch are captured when a request starts, so a request
-     * queued as user A must never go out — writes included — as user B.
+     * Reject every waiting request in every queue on a user switch. Released
+     * entries are checked again against their submitting identity before auth
+     * headers are constructed, so they cannot escape cancellation as user B.
      */
     function cancelAllQueued() {
         for (const queue of [pendingQueue, lowPriorityQueue, staleLowQueue]) {
@@ -733,6 +749,8 @@
         setCache,
         clearCache,
         clearCacheMatching,
+        invalidatePresentation: presentationChanged,
+        getPresentationGeneration: () => presentationGeneration,
 
         // Metrics
         metrics,
@@ -748,24 +766,47 @@
 
     // ── Generalized authenticated fetch ──────────────────────────────────────
 
+    /** Captures the submitting identity, including switches before the session hook observes them. */
+    function captureSession() {
+        const userId = ApiClient.getCurrentUserId();
+        const epoch = JE.session?.getEpoch?.();
+        const server = () => typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId;
+        const serverId = server();
+        const token = ApiClient.accessToken();
+        if (requestIdentity && (requestIdentity.userId !== userId || requestIdentity.serverId !== serverId
+            || requestIdentity.token !== token || requestIdentity.epoch !== epoch)) {
+            responseCache.clear();
+            inFlightRequests.clear();
+        }
+        requestIdentity = { userId, serverId, token, epoch };
+        return Object.assign(() => {
+            if (ApiClient.getCurrentUserId() !== userId || server() !== serverId
+                || ApiClient.accessToken() !== token || JE.session?.isCurrent?.(epoch) === false) {
+                throw createAbortError();
+            }
+        }, { userId, token });
+    }
+
     /**
      * Build the standard Jellyfin auth headers.
      * Jellyfin 12 authenticates from the Authorization header; the legacy
      * X-Emby-Token is kept for 10.11 back-compat. X-Jellyfin-User-Id lets the
      * plugin's server side resolve the acting user.
+     * @param {{userId: string, token: string}} [session] Submission snapshot.
      * @returns {Record<string, string>}
      */
-    function authHeaders() {
+    function authHeaders(session = captureSession()) {
         return {
-            'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
-            'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
-            'X-Emby-Token': ApiClient.accessToken(),
+            'X-Jellyfin-User-Id': session.userId,
+            'Authorization': 'MediaBrowser Token="' + session.token + '"',
+            'X-Emby-Token': session.token,
             'Accept': 'application/json'
         };
     }
 
     /**
      * @typedef {Object} CoreFetchOptions
+     * @property {'json'|'status'} [responseMode='json'] - Status mode returns {status, body} for every HTTP answer, without retries, dedup or caching.
      * @property {string} [method='GET'] - HTTP method.
      * @property {Record<string, string>} [headers] - Extra/override headers.
      * @property {*} [body] - Request body. Non-string values are JSON.stringify'd.
@@ -792,6 +833,7 @@
     async function coreFetch(url, options = {}) {
         const {
             method = 'GET',
+            responseMode = 'json',
             headers = {},
             body,
             signal,
@@ -803,7 +845,15 @@
             priority
         } = options;
 
+        const assertSession = captureSession();
+        const withStatus = responseMode === 'status';
         const isGet = method.toUpperCase() === 'GET';
+        const presentation = presentationGeneration;
+        const sensitive = isGet && /(?:JellyfinEnhanced\/(?:native-details|jellyseerr|acquire|arr|tmdb|awards|mdblist-ratings|reviews|activity)|\/Items(?:\/|\?))/.test(url);
+        /** A response started under a previous policy cannot repopulate a feed or its cache. */
+        function assertPresentation() {
+            if (sensitive && presentation !== presentationGeneration) throw new DOMException('Presentation policy changed', 'AbortError');
+        }
 
         // One object per request: the limiter reads it while queued, and the
         // dedup entry keeps it so a normal joiner can promote a queued low request.
@@ -811,20 +861,24 @@
         const limit = { priority: priority === 'low' ? 'low' : 'normal', signal: signal || null };
 
         // Check cache first (GET only)
-        if (isGet && !skipCache && cacheKey) {
+        if (isGet && !withStatus && !skipCache && cacheKey) {
             const cached = getCached(cacheKey);
             if (cached) return cached;
         }
 
         const fetchFn = async () => {
+            assertPresentation();
+            assertSession();
             /** @type {Record<string, string>} */
             const requestHeaders = {
-                ...(auth ? authHeaders() : { 'Accept': 'application/json' }),
+                ...(auth ? authHeaders(assertSession) : { 'Accept': 'application/json' }),
                 ...headers
             };
 
             /** @type {RequestInit} */
             const init = { method, headers: requestHeaders };
+            // Earlier unguarded responses may still be fresh in the browser's HTTP cache.
+            if (sensitive) init.cache = 'no-store';
             // Fetch Priority hint; ignored by browsers without support. Read at
             // start time so a promoted request goes out at normal priority.
             if (limit.priority === 'low') init.priority = 'low';
@@ -863,26 +917,35 @@
                 init.signal = signal;
             }
 
-            // Identity epoch at request start: a response that finishes after
-            // a user switch must not repopulate the (already flushed) cache —
-            // cache keys carry no user id, so a late write would hand user
-            // A's response to user B.
-            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-
             try {
                 const response = await fetchWithRetry(
                     url,
                     init,
-                    skipRetry ? { ...CONFIG.retry, maxAttempts: 1 } : undefined
+                    (skipRetry || withStatus) ? { ...CONFIG.retry, maxAttempts: 1 } : undefined,
+                    assertSession,
+                    withStatus
                 );
+                assertSession();
                 // Tolerant JSON parse: some endpoints reply with empty bodies.
                 const text = await response.text();
-                const data = text ? JSON.parse(text) : {};
-
-                if (isGet && cacheKey && (!JE.session || JE.session.isCurrent(requestEpoch))) {
-                    setCache(cacheKey, data);
+                assertSession();
+                assertPresentation();
+                let data;
+                if (withStatus) {
+                    try { data = text ? JSON.parse(text) : null; }
+                    catch (_) { data = null; }
+                } else {
+                    data = text ? JSON.parse(text) : {};
                 }
+                assertPresentation();
+                if (withStatus) return { status: response.status, body: data };
+
+                if (isGet && cacheKey) setCache(cacheKey, data);
                 return data;
+            } catch (error) {
+                assertSession();
+                assertPresentation();
+                throw error;
             } finally {
                 if (timeoutId) clearTimeout(timeoutId);
                 if (unchain) unchain();
@@ -897,22 +960,28 @@
         // queued leaves the queue at once; dedup only shares entries between
         // callers on the same signal, so that abort already applies to every sharer.
         const limitedFetch = () => withConcurrencyLimit(() => {
-            if (isGet && !skipCache && cacheKey) {
+            assertSession();
+            if (isGet && !withStatus && !skipCache && cacheKey) {
                 const cached = getCached(cacheKey);
                 if (cached) return Promise.resolve(cached);
             }
             return fetchFn();
         }, limit);
-        if (isGet && cacheKey) return deduplicatedFetch(cacheKey, limitedFetch, signal, limit);
+        let pending;
+        if (isGet && !withStatus && cacheKey) pending = deduplicatedFetch(cacheKey, limitedFetch, signal, limit);
 
         // Plain GETs share concurrent identical requests too, even without a cacheKey
         // (nothing is cached). Skipped when a caller customises the headers, since the
         // response could then differ for the same URL. Each caller gets its own copy so
         // one mutating its result cannot affect the others.
-        if (isGet && auth && Object.keys(headers).length === 0) {
-            return deduplicatedFetch(`GET ${url}`, limitedFetch, signal, limit).then((data) => structuredClone(data));
-        }
-        return limitedFetch();
+        else if (isGet && !withStatus && auth && Object.keys(headers).length === 0) {
+            pending = deduplicatedFetch(`GET ${url}`, limitedFetch, signal, limit).then((data) => structuredClone(data));
+        } else pending = limitedFetch();
+        const data = await pending;
+        // Each deduplicated caller owns its own publication boundary too.
+        assertSession();
+        assertPresentation();
+        return data;
     }
 
     /**
@@ -933,10 +1002,26 @@
         return jf(`/JellyfinEnhanced${path}`, options);
     }
 
+    /** Returns every HTTP status/body through the same bound plugin transport, with no automatic retry. */
+    function pluginResponse(path, options) {
+        return pluginFetch(path, { ...options, responseMode: 'status', skipCache: true, skipRetry: true });
+    }
+
+    /** Sends a legacy JE JSON ajax call through the session-bound core transport. */
+    function ajax(options) {
+        return coreFetch(options.url, {
+            method: options.type || 'GET', body: options.data,
+            headers: { ...(options.contentType ? { 'Content-Type': options.contentType } : {}), ...options.headers },
+            signal: options.signal, skipRetry: true
+        });
+    }
+
     JE.core.api = {
         fetch: coreFetch,
+        ajax,
         jf,
         plugin: pluginFetch,
+        pluginResponse,
         authHeaders,
         manager
     };

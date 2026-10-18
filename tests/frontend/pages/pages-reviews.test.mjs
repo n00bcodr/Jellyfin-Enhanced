@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import {setImmediate as nextTurn} from 'node:timers/promises';
 import {createHarness} from '../helpers/harness.mjs';
 
-async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},config={},spoilerBlur={},reviews=[],tmdb=[],admin=false,parent={Type:'Series',ProviderIds:{Tmdb:'9'}},getItem,errors=[]}={}) {
+async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},config={},spoilerBlur={},reviews=[],tmdb=[],admin=false,parent={Type:'Series',ProviderIds:{Tmdb:'9'}},getItem,errors=[],failure}={}) {
   let hook;const calls=[];
   const h=createHarness({html:'<div id="itemDetailPage"><div class="mediaInfoItems"></div><div class="tagline"></div></div>',url:'http://jellyfin.test/web/index.html#!/details?id=item',expectedConsoleErrors:errors,apiClient:{getItem:getItem||(async(_user,id)=>id==='series'?parent:item),getCurrentUser:async()=>({Id:'user-a',Policy:{IsAdministrator:admin}})},JE:{
     pluginConfig:{ShowReviews:true,TmdbEnabled:true,ShowUserReviews:true,...config},spoilerBlur,
     escapeHtml:value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
     t:key=>key,icon:()=>'<span>star</span>',IconName:{STAR:'star'},
     helpers:{onViewPage:fn=>{hook=fn;return ()=>{};}},
-    core:{api:{fetch:async url=>{calls.push(url);return {results:tmdb};},plugin:async url=>{calls.push(url);return {reviews};}}}
+    core:{api:{fetch:async url=>{calls.push(url);if(failure)throw failure;return {results:tmdb};},plugin:async url=>{calls.push(url);if(failure)throw failure;return {reviews};}}}
   }});
   t.after(()=>h.close());
   // Advance the page-visibility delay without sleeping; promises still resolve asynchronously.
@@ -18,6 +18,17 @@ async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},con
   h.load('elsewhere/reviews.js');h.JE.initializeReviewsScript();
   async function navigate(){if(hook){await hook(null,h.document.querySelector('#itemDetailPage'),h.window.location.hash);await nextTurn();}}
   await navigate(); return {...h,calls,navigate};
+}
+
+for(const source of ['tmdb','user']) {
+  test(`cancelled ${source} review reads stay quiet`,async t=>{
+    const h=await setup(t,{config:{ShowReviews:source==='tmdb',ShowUserReviews:source==='user'},failure:Object.assign(new Error('Request aborted'),{name:'AbortError'})});
+    assert.equal(h.calls.length,1);
+  });
+  test(`unexpected ${source} review failures still log`,async t=>{
+    const h=await setup(t,{config:{ShowReviews:source==='tmdb',ShowUserReviews:source==='user'},failure:new Error('unexpected failure'),errors:[source==='tmdb'?'Failed to fetch reviews.':'Failed to fetch user reviews.']});
+    assert.equal(h.calls.length,1);
+  });
 }
 
 for(const Type of ['Movie','Series','Season','Episode']) {

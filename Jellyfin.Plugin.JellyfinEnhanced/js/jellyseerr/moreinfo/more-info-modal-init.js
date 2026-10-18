@@ -232,6 +232,9 @@ function closeCurrentModal() {
             state.currentModal._cleanupEscapeListener();
         }
         state.currentModal.classList.remove('active');
+        // The fading modal keeps its DOM for the exit animation but takes no more input.
+        state.currentModal.setAttribute('inert', '');
+        state.currentModal.style.pointerEvents = 'none';
         // A replacement can open during the exit animation. Remove only the
         // modal this close owns, never the replacement stored in currentModal.
         const closingModal = state.currentModal;
@@ -249,6 +252,18 @@ function closeCurrentModal() {
         openGeneration++;
         closeCurrentModal();
     };
+
+    // Remove rendered metadata synchronously, then reopen from the current server projection.
+    window.addEventListener('je-spoiler-policy-changed', event => {
+        const modal = state.currentModal;
+        if (!modal || modal._isClosing) return;
+        const type = modal.dataset.mediaType;
+        const id = Number(modal.dataset.tmdbId);
+        if (event.detail?.type && (type !== event.detail.type || id !== Number(event.detail.tmdbId))) return;
+        modal.replaceChildren();
+        moreInfoModal.close();
+        void moreInfoModal.open(id, type);
+    });
 
     // Request permissions and details belong to the active account. Invalidate
     // pending opens immediately on identity changes, before navigation arrives.

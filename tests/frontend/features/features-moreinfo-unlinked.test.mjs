@@ -39,7 +39,7 @@ function setup(t, { routes = {}, jeMode = true, window: withWindow = false, conf
     renderActions: () => {},
     enrichSeasonCardsWithJellyfinLinks: () => {},
     backfillSeasonMetadata: () => {},
-    buildRatingLogos: ratings => JSON.stringify(ratings)
+    buildRatingLogos: ratings => ratings ? JSON.stringify(ratings) : ''
   };
   const h = createHarness({ JE: {
     pluginConfig: { JellyseerrEnabled: true, ...config },
@@ -134,6 +134,18 @@ test('a title the server won\'t show the viewer says so; an outage of the public
   }
 });
 
+for (const suppressed of [false, true]) test(`guarded jf10 public TV ratings follow suppression=${suppressed} through the window`, async t => {
+  const h = setup(t, { window: true, routes: {
+    '/jellyseerr/user-status': UNLINKED,
+    '/native-details/title/tv/83867': { id: 83867, name: 'Andor', jeSpoiler: { guarded: true, ratings: suppressed } },
+    '/native-details/title/tv/83867/ratings': suppressed ? null : { criticsScore: 96 }
+  } });
+  await h.JE.jellyseerrMoreInfo.open(83867, 'tv');
+  await nextTurn(); await nextTurn();
+  const text = h.internal.state.currentModal.querySelector('[data-mount="ratings"]').textContent;
+  assert.equal(text, suppressed ? '' : JSON.stringify({ rt: { criticsScore: 96 } }));
+});
+
 test('public details\' ratings come from the same public route (series ratings kept under rt)', async t => {
   const h = setup(t, { routes: {
     '/native-details/title/tv/83867/ratings': { criticsScore: 96 },
@@ -185,10 +197,11 @@ test('Seerr mode: the window says in one message that the Seerr account isn\'t l
   assert.deepEqual(h.reads, ['/jellyseerr/user-status']);
 });
 
-test('public details: the season backfill reads TMDB only, never Seerr\'s season reads the viewer\'s account can\'t make', async t => {
+test('public details: season backfill uses the guarded cross-version route without a Seerr account', async t => {
   const h = setup(t, { config: { TmdbEnabled: true }, routes: {
     '/tmdb/tv/83867': { seasons: [{ season_number: 1, poster_path: '/s1.jpg', overview: 'One' }] },
-    '/jellyseerr/tv/83867/season/1': { episodes: [{ airDate: '2022-09-21' }] }
+    '/jellyseerr/tv/83867/season/1': { episodes: [{ airDate: '2022-09-21' }] },
+    '/native-details/title/tv/83867/season/1': { episodes: [{ airDate: '2022-09-21' }] }
   } });
   h.load('jellyseerr/moreinfo/more-info-modal-seasons.js');
   const modal = h.document.createElement('div');
@@ -197,10 +210,10 @@ test('public details: the season backfill reads TMDB only, never Seerr\'s season
   h.internal.state.currentModal = modal;
   const series = () => ({ id: 83867, seasons: [{ seasonNumber: 1, episodeCount: 3, name: 'Season 1' }] });
   await h.internal.backfillSeasonMetadata(83867, { ...series(), jePublicDetails: true });
-  assert.deepEqual(h.reads, ['/tmdb/tv/83867']);
+  assert.deepEqual(h.reads, ['/tmdb/tv/83867','/native-details/title/tv/83867/season/1']);
   // Control: details read through the viewer's account still ask Seerr for the season.
   await h.internal.backfillSeasonMetadata(83867, { ...series(), jePublicDetails: false });
-  assert.deepEqual(h.reads.slice(1).sort(), ['/jellyseerr/tv/83867/season/1', '/tmdb/tv/83867']);
+  assert.deepEqual(h.reads.slice(2).sort(), ['/jellyseerr/tv/83867/season/1', '/tmdb/tv/83867']);
 });
 
 test('JE mode: no "sign in to Seerr to enable requests" banner for a viewer without a Seerr account (requests and details don\'t need one)', async t => {

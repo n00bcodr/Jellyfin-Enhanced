@@ -18,27 +18,49 @@
     const addLibraryHideButtons = (...args) => internal.addLibraryHideButtons(...args);
 
     const parentSeriesCache = new Map();
-    const parentSeriesRequestMap = new Map();
+    const parentSeriesWork = new Map();
+    const parentTitlesWork = new Map();
+    const parentTitlesChecked = new Map();
 
-    // Item lookups were fetched as the previous user (library access and
-    // spoiler stripping differ per user) — drop them on a user switch, and
-    // un-hide + un-mark every card the previous user's policy touched so the
-    // new user's list is re-evaluated from scratch (the "checked" marker
-    // would otherwise keep the old verdict until a full re-render).
+    // Metadata work belongs to the requesting identity. Boundaries invalidate verdict scopes,
+    // never walk retained DOM nodes or transfer an outgoing session's work/backoff.
     window.JellyfinEnhanced.session?.onUserChange('hidden-content-filter', () => {
         parentSeriesCache.clear();
-        parentSeriesRequestMap.clear();
-        try {
-            document.querySelectorAll('.je-hidden').forEach((el) => el.classList.remove('je-hidden'));
-            document.querySelectorAll(`[${PROCESSED_ATTR}]`).forEach((el) => {
-                el.removeAttribute(PROCESSED_ATTR);
-                el.removeAttribute(HIDDEN_PARENT_ATTR);
-                el.removeAttribute(HIDDEN_DIRECT_ATTR);
-            });
-        } catch (e) {
-            console.warn('🪼 Jellyfin Enhanced: hidden-content DOM reset on user switch failed', e);
-        }
+        parentSeriesWork.clear();
+        parentTitlesWork.clear();
+        parentTitlesChecked.clear();
+        requestAnimationFrame(filterNativeCards);
     });
+    let viewGeneration = 0;
+    let visibilityGeneration = 0;
+    const cardDecisions = new WeakMap();
+
+    /** Captures the lifetime of a final verdict without exposing session credentials in DOM. */
+    function captureNativeDecisionScope() {
+        return { action: JE.createSessionAction(), view: viewGeneration, visibility: visibilityGeneration, rules: internal.getRulesGeneration() };
+    }
+
+    /** Positive identities/hides survive navigation; negative verdicts also depend on their view. */
+    function nativeDecisionScopeCurrent(scope, viewScoped = true) {
+        return !!scope && scope.action.current() && scope.visibility === visibilityGeneration && scope.rules === internal.getRulesGeneration() &&
+            (!viewScoped || scope.view === viewGeneration);
+    }
+
+    /** Sole processed-marker writer: record the decision's identity, surface and lifetime. */
+    function markNativeDecision(card, hidden, scope = captureNativeDecisionScope()) {
+        if (!nativeDecisionScopeCurrent(scope, !hidden)) return;
+        cardDecisions.set(card, { scope, viewScoped: !hidden, itemId: getCardItemId(card),
+            surface: getCardSurface(card) || getCurrentNativeSurface() });
+        card.setAttribute(PROCESSED_ATTR, `${scope.rules}:${hidden ? 'hide' : scope.view}`);
+    }
+
+    /** Sole processed-marker reader, including retained nodes marked in an older scope. */
+    function nativeDecisionResolved(card) {
+        const decision = cardDecisions.get(card);
+        return card.hasAttribute(PROCESSED_ATTR) && !!decision &&
+            decision.itemId === getCardItemId(card) && decision.surface === (getCardSurface(card) || getCurrentNativeSurface()) &&
+            nativeDecisionScopeCurrent(decision.scope, decision.viewScoped);
+    }
     const sectionSurfaceCache = new WeakMap();
 
     /** Delay for first detail-page rescan (async episode loading). */
@@ -47,7 +69,7 @@
     const DETAIL_FINAL_RESCAN_DELAY_MS = 1200;
     /** Debounce interval for the MutationObserver card filter. */
     const NATIVE_FILTER_DEBOUNCE_MS = 50;
-    /** Data attribute marking a card as already scanned. */
+    /** Data attribute marking a card whose filtering decision is resolved. */
     const PROCESSED_ATTR = 'data-je-hidden-checked';
     /** Data attribute storing the parent series ID that caused hiding. */
     const HIDDEN_PARENT_ATTR = 'data-je-hidden-parent-series-id';
@@ -55,48 +77,6 @@
     const HIDDEN_DIRECT_ATTR = 'data-je-hidden-direct';
     /** Selector for any hideable card/list-item. */
     const CARD_SEL = '.card[data-id], .card[data-itemid], .listItem[data-id]';
-    /** Selector for not-yet-scanned cards only. */
-    const CARD_SEL_NEW = '.card[data-id]:not([data-je-hidden-checked]), .card[data-itemid]:not([data-je-hidden-checked]), .listItem[data-id]:not([data-je-hidden-checked])';
-
-    /**
-     * Fetches the parent series ID for an episode/season item from the API.
-     * Results are cached in `parentSeriesCache`; in-flight requests are
-     * de-duplicated via `parentSeriesRequestMap`.
-     * @param {string} itemId Jellyfin item ID (episode or season).
-     * @returns {Promise<string|null>} The series ID, or `null` if unavailable.
-     */
-    async function getParentSeriesId(itemId) {
-        if (parentSeriesCache.has(itemId)) {
-            return parentSeriesCache.get(itemId);
-        }
-        if (parentSeriesRequestMap.has(itemId)) {
-            return parentSeriesRequestMap.get(itemId);
-        }
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-        const request = (async () => {
-            try {
-                const userId = ApiClient.getCurrentUserId();
-                const item = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`, { Fields: 'SeriesId' }),
-                    dataType: 'json'
-                });
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return null;
-                const seriesId = normalizeId(item?.SeriesId) || null;
-                parentSeriesCache.set(itemId, seriesId);
-                return seriesId;
-            } catch (e) {
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return null;
-                console.warn('🪼 Jellyfin Enhanced: Failed to fetch parent series for', itemId, e);
-                parentSeriesCache.set(itemId, null);
-                return null;
-            } finally {
-                if (!JE.session || JE.session.isCurrent(requestEpoch)) parentSeriesRequestMap.delete(itemId);
-            }
-        })();
-        parentSeriesRequestMap.set(itemId, request);
-        return request;
-    }
 
     // ============================================================
     // Scope-aware filtering
@@ -115,6 +95,11 @@
      * @returns {'nextup'|'continuewatching'|null} The detected surface or null.
      */
     function getCardSurface(card) {
+        const explicit = card.closest('[data-je-hide-surface]')?.dataset.jeHideSurface;
+        if (explicit) return explicit;
+        if (card.closest('#similarCollapsible, #recommendationsCollapsible, .je-recommendations-section')) return 'recommendations';
+        if (card.closest('.je-discovery-grid, .je-native-absent-list, [class*="-discovery-section"]')) return 'discovery';
+        if (card.closest('#searchPage, .searchPage')) return 'search';
         if (typeof JE.detectCardRowSurface === 'function') return JE.detectCardRowSurface(card);
 
         // Fallback for the (unsupported) case of the Remove module not being loaded.
@@ -139,10 +124,11 @@
      * @param {string} surface The surface to check ('nextup', 'continuewatching', or 'library').
      * @returns {boolean} `true` if the item is hidden on this surface.
      */
-    function isHiddenOnSurface(itemId, surface) {
+    function isHiddenOnSurface(itemId, surface, metadata) {
         if (!itemId) return false;
         const settings = getSettings();
         if (!settings.enabled) return false;
+        if (internal.isHidden(itemId, metadata)) return true;
 
         const data = getHiddenData();
         const items = data.items || {};
@@ -188,137 +174,122 @@
         return 'library';
     }
 
-    /**
-     * Asynchronously checks whether a card's parent series is hidden and,
-     * if so, hides the card.  Used for episode/season cards in library views.
-     * @param {HTMLElement} card The card element.
-     * @param {string} itemId The episode/season's Jellyfin item ID.
-     */
-    function checkAndHideByParentSeries(card, itemId) {
-        if (!card || !itemId) return;
-        if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
-        if (hiddenIdSet.size === 0) return;
+    /** Failed and unattempted identities wait before a later ordinary pass retries them. */
+    const TITLE_RETRY_AFTER_MS = 30000;
 
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-        getParentSeriesId(itemId).then((seriesId) => {
-            if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
-            if (!seriesId) return;
-            if (!card.isConnected) return;
-            if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
+    /** Whether the required parent identity has an authoritative answer, including a successful omission. */
+    function parentTitleResolved(seriesId) {
+        return !seriesId || !internal.hasProviderRules() || internal.isHidden(seriesId) ||
+            nativeDecisionScopeCurrent(parentTitlesChecked.get(seriesId)) || !!internal.titleData({ itemId: seriesId });
+    }
 
-            if (hiddenIdSet.has(seriesId)) {
-                card.classList.add('je-hidden');
-                card.setAttribute(HIDDEN_PARENT_ATTR, seriesId);
-                card.removeAttribute(HIDDEN_DIRECT_ATTR);
-            } else if (card.getAttribute(HIDDEN_PARENT_ATTR) === seriesId && card.classList.contains('je-hidden')) {
-                card.classList.remove('je-hidden');
-                card.removeAttribute(HIDDEN_PARENT_ATTR);
-            }
-        }).catch((e) => {
-            console.warn('🪼 Jellyfin Enhanced: Parent series check failed for', itemId, e);
-        });
+    /** Positive parent identity is session-owned; a successful missing parent has verdict scope. */
+    function parentSeriesResolved(id) {
+        const entry = parentSeriesCache.get(id);
+        return !!entry && (!!entry.seriesId || nativeDecisionScopeCurrent(entry.scope));
     }
 
     /**
-     * Batch-checks parent series IDs for multiple cards in a single API call.
-     * Cards whose parent series is in `hiddenIdSet` are hidden; others are left alone.
-     * @param {Array<{card: HTMLElement, itemId: string}>} cardEntries Cards needing lookup.
+     * Resolves child-parent or parent-provider metadata by identity. DOM nodes never own pending work.
+     * Concurrent scans share each batch promise; errors and unattempted identities back off for 30s.
+     * Successful omissions are resolved "no parent/provider", matching the native metadata contract.
      */
+    async function hydrateParentMetadata(ids, providers, action) {
+        const work = providers ? parentTitlesWork : parentSeriesWork;
+        const resolved = id => providers ? parentTitleResolved(id) : parentSeriesResolved(id);
+        for (const id of ids) {
+            const old = work.get(id);
+            if (old?.action && !old.action.current()) work.delete(id);
+        }
+        const wanted = [...new Set(ids)].filter(id => id && !resolved(id));
+        const pending = wanted.map(id => work.get(id)?.promise).filter(Boolean);
+        const missing = wanted.filter(id => !work.get(id)?.promise && Date.now() >= (work.get(id)?.retryAt || 0));
+        for (let start = 0; start < missing.length; start += 50) {
+            if (!action.current()) return;
+            // Another scan may have started or resolved these future identities while this pass awaited.
+            const candidates = missing.slice(start, start + 50);
+            pending.push(...candidates.map(id => work.get(id)?.promise).filter(Boolean));
+            const batch = candidates.filter(id => !resolved(id) && !work.get(id)?.promise && Date.now() >= (work.get(id)?.retryAt || 0));
+            if (!batch.length) continue;
+            const job = { action, scope: captureNativeDecisionScope(), promise: null, retryAt: 0 };
+            job.promise = (async () => {
+                try {
+                    const user = ApiClient.getCurrentUserId();
+                    let reply;
+                    try {
+                        reply = await ApiClient.ajax({ type: 'GET', dataType: 'json',
+                            url: ApiClient.getUrl(`/Users/${user}/Items`, { Ids: batch.join(','), Fields: providers ? 'ProviderIds' : 'SeriesId' }) });
+                    } catch (error) {
+                        if (!action.current() || providers || internal.hasProviderRules()) throw error;
+                        // Preserve native ID-only fallback; provider rules always use bounded batches.
+                        reply = { Items: await Promise.all(batch.map(async id => {
+                            if (!action.current()) return null;
+                            const item = await ApiClient.ajax({ type: 'GET', dataType: 'json',
+                                url: ApiClient.getUrl(`/Users/${user}/Items/${id}`, { Fields: 'SeriesId' }) });
+                            return { ...item, Id: id };
+                        })) };
+                    }
+                    if (!action.current()) return;
+                    const items = new Map((reply?.Items || []).filter(Boolean).map(item => [normalizeId(item.Id), item]));
+                    for (const id of batch) {
+                        if (providers) {
+                            if (internal.titleData(items.get(id) || { itemId: id })) parentTitlesChecked.delete(id);
+                            else parentTitlesChecked.set(id, job.scope);
+                        } else parentSeriesCache.set(id, { seriesId: normalizeId(items.get(id)?.SeriesId) || null, scope: job.scope });
+                        work.delete(id);
+                    }
+                } catch (_) {
+                    if (!action.current()) return;
+                    const retryAt = Date.now() + TITLE_RETRY_AFTER_MS;
+                    for (const id of missing.slice(start)) {
+                        if (!resolved(id) && (!work.get(id)?.promise || work.get(id) === job)) work.set(id, { action, retryAt });
+                    }
+                }
+            })();
+            for (const id of batch) work.set(id, job);
+            await job.promise;
+            if (!action.current() || !batch.every(resolved)) break;
+        }
+        await Promise.all(pending);
+    }
+
+    /** Resolves and paints retained child cards only when both required metadata decisions are final. */
     async function batchCheckParentSeries(cardEntries) {
-        if (!cardEntries || cardEntries.length === 0) return;
-        if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
-        if (hiddenIdSet.size === 0) return;
-
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-        const canApply = () => (!JE.session || JE.session.isCurrent(requestEpoch))
-            && getSettings().enabled && shouldFilterSurface(getCurrentNativeSurface());
-
-        // Separate cached from uncached
-        const cached = [];
-        const uncached = [];
-        for (let i = 0; i < cardEntries.length; i++) {
-            const entry = cardEntries[i];
-            if (parentSeriesCache.has(entry.itemId)) {
-                cached.push({ ...entry, seriesId: parentSeriesCache.get(entry.itemId) });
-            } else {
-                uncached.push(entry);
+        if (!cardEntries?.length || !getSettings().enabled) return;
+        if (hiddenIdSet.size === 0 && !internal.hasProviderRules()) return;
+        const action = JE.createSessionAction();
+        const allowsCard = card => shouldFilterSurface(getCardSurface(card) || getCurrentNativeSurface());
+        cardEntries = cardEntries.filter(entry => allowsCard(entry.card));
+        await hydrateParentMetadata(cardEntries.map(entry => entry.itemId), false, action);
+        if (!action.current()) return;
+        if (internal.hasProviderRules()) {
+            await hydrateParentMetadata(cardEntries.map(entry => parentSeriesCache.get(entry.itemId)?.seriesId), true, action);
+        }
+        if (!action.current()) return;
+        requestAnimationFrame(() => {
+            if (!action.current() || !getSettings().enabled) return;
+            for (const { card, itemId } of cardEntries) {
+                if (!card.isConnected || getCardItemId(card) !== itemId || !allowsCard(card) || !parentSeriesResolved(itemId)) continue;
+                const seriesId = parentSeriesCache.get(itemId)?.seriesId;
+                if (!parentTitleResolved(seriesId)) continue;
+                // A newer direct/scoped hide remains authoritative over this older parent read.
+                if (isHiddenOnSurface(itemId, getCardSurface(card) || getCurrentNativeSurface(),
+                    { type: card.dataset.type, tmdbId: card.dataset.tmdbId })) continue;
+                const hidden = !!seriesId && internal.isHidden(seriesId);
+                card.classList.toggle('je-hidden', hidden);
+                if (hidden) card.setAttribute(HIDDEN_PARENT_ATTR, seriesId);
+                else card.removeAttribute(HIDDEN_PARENT_ATTR);
+                card.removeAttribute(HIDDEN_DIRECT_ATTR);
+                markNativeDecision(card, hidden);
             }
-        }
+        });
+    }
 
-        // Process cached entries immediately
-        if (cached.length > 0) {
-            requestAnimationFrame(() => {
-                if (!canApply()) return;
-                for (let i = 0; i < cached.length; i++) {
-                    const { card, seriesId } = cached[i];
-                    if (!card.isConnected || !seriesId) continue;
-                    if (hiddenIdSet.has(seriesId)) {
-                        card.classList.add('je-hidden');
-                        card.setAttribute(HIDDEN_PARENT_ATTR, seriesId);
-                        card.removeAttribute(HIDDEN_DIRECT_ATTR);
-                    }
-                }
-            });
-        }
-
-        // Fetch uncached entries in batches of 50
-        if (uncached.length === 0) return;
-
-        const BATCH_SIZE = 50;
-        const userId = ApiClient.getCurrentUserId();
-
-        for (let start = 0; start < uncached.length; start += BATCH_SIZE) {
-            const chunk = uncached.slice(start, start + BATCH_SIZE);
-            const ids = chunk.map(e => e.itemId).join(',');
-
-            try {
-                const result = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl(`/Users/${userId}/Items`, { Ids: ids, Fields: 'SeriesId' }),
-                    dataType: 'json'
-                });
-
-                if (!canApply()) return;
-                const itemsById = new Map();
-                const responseItems = result?.Items || [];
-                for (let i = 0; i < responseItems.length; i++) {
-                    const item = responseItems[i];
-                    const itemId = normalizeId(item.Id);
-                    const seriesId = normalizeId(item.SeriesId) || null;
-                    itemsById.set(itemId, seriesId);
-                    parentSeriesCache.set(itemId, seriesId);
-                }
-
-                // Also cache items that weren't in the response (deleted, etc.)
-                for (let i = 0; i < chunk.length; i++) {
-                    if (!itemsById.has(chunk[i].itemId)) {
-                        parentSeriesCache.set(chunk[i].itemId, null);
-                    }
-                }
-
-                // Batch apply hiding
-                requestAnimationFrame(() => {
-                    if (!canApply()) return;
-                    for (let i = 0; i < chunk.length; i++) {
-                        const { card, itemId } = chunk[i];
-                        if (!card.isConnected) continue;
-                        const seriesId = parentSeriesCache.get(itemId);
-                        if (seriesId && hiddenIdSet.has(seriesId)) {
-                            card.classList.add('je-hidden');
-                            card.setAttribute(HIDDEN_PARENT_ATTR, seriesId);
-                            card.removeAttribute(HIDDEN_DIRECT_ATTR);
-                        }
-                    }
-                });
-            } catch (e) {
-                if (!canApply()) return;
-                console.warn('🪼 Jellyfin Enhanced: Batch parent series check failed', e);
-                // Fall back to individual lookups for this chunk
-                for (let i = 0; i < chunk.length; i++) {
-                    checkAndHideByParentSeries(chunk[i].card, chunk[i].itemId);
-                }
-            }
-        }
+    /** Whether a title card needs no more identity work before its visible verdict is final. */
+    function cardTitleResolved(card, itemId) {
+        return !internal.hasProviderRules() || !['movie', 'series'].includes((card.dataset.type || '').toLowerCase()) ||
+            !!internal.titleData({ itemId, type: card.dataset.type, tmdbId: card.dataset.tmdbId }) ||
+            internal.isCardTitleResolved?.(itemId);
     }
 
     /**
@@ -337,7 +308,6 @@
         });
         if (wanted.size === 0) return;
         document.querySelectorAll(CARD_SEL).forEach((card) => {
-            card.removeAttribute(PROCESSED_ATTR);
             const cardId = getCardItemId(card);
             const hiddenBySeriesId = normalizeId(card.getAttribute(HIDDEN_PARENT_ATTR));
             if (hiddenBySeriesId && wanted.has(hiddenBySeriesId) && card.classList.contains('je-hidden')) {
@@ -356,8 +326,13 @@
      * restores any previously-hidden cards instead.
      */
     function refreshNativeCardVisibility() {
-        if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) {
-            restoreNativeCardsForIds(hiddenIdSet);
+        if (!getSettings().enabled || JE.pluginConfig?.HiddenContentEnabled === false) {
+            visibilityGeneration++;
+            document.querySelectorAll(CARD_SEL).forEach(card => {
+                card.classList.remove('je-hidden');
+                card.removeAttribute(HIDDEN_PARENT_ATTR);
+                card.removeAttribute(HIDDEN_DIRECT_ATTR);
+            });
             return;
         }
         requestAnimationFrame(() => {
@@ -372,129 +347,59 @@
      * Filters only newly-added (not yet scanned) native cards.
      * Called by the debounced MutationObserver callback.
      */
-    function filterNativeCards() {
+    function filterNativeCardPass(all) {
         const nativeSurface = getCurrentNativeSurface();
-        if (!shouldFilterSurface(nativeSurface)) return;
         const settings = getSettings();
-        if (!settings.enabled) return;
-        if (getHiddenCount() === 0) return;
+        if (!settings.enabled || JE.pluginConfig?.HiddenContentEnabled === false) return;
+        const scope = captureNativeDecisionScope();
+        void internal.hydrateCardTitles?.();
         const isDetailPage = nativeSurface === 'details';
-
-        const toHide = [];
-        const toShow = [];
         const pendingParentChecks = [];
-        const cards = document.querySelectorAll(CARD_SEL_NEW);
-        for (let i = 0; i < cards.length; i++) {
-            const card = cards[i];
-            // Skip image editor cards (they have data-imagetype attribute)
-            if (card.hasAttribute('data-imagetype')) continue;
+        const changes = [];
+        const cards = document.querySelectorAll(CARD_SEL);
+        for (const card of cards) {
+            if (card.hasAttribute('data-imagetype') || (!all && nativeDecisionResolved(card))) continue;
             const itemId = getCardItemId(card);
-            card.setAttribute(PROCESSED_ATTR, '1');
-            card.removeAttribute(HIDDEN_PARENT_ATTR);
+            card.removeAttribute(PROCESSED_ATTR);
             if (!itemId) continue;
-
-            // Check scope-aware hiding for cards in Next Up / Continue Watching sections
-            const cardSurface = getCardSurface(card);
-            if (cardSurface) {
-                if (shouldFilterSurface(cardSurface) && isHiddenOnSurface(itemId, cardSurface)) {
-                    toHide.push(card);
-                    card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
-                    continue;
-                }
-            }
-
-            if (hiddenIdSet.has(itemId)) {
-                toHide.push(card);
+            const cardSurface = getCardSurface(card) || nativeSurface;
+            const allows = shouldFilterSurface(cardSurface);
+            const hidden = allows && isHiddenOnSurface(itemId, cardSurface,
+                { type: card.dataset.type, tmdbId: card.dataset.tmdbId });
+            if (hidden) {
                 card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
+                card.removeAttribute(HIDDEN_PARENT_ATTR);
+                markNativeDecision(card, true, scope);
+            } else if (allows && !isDetailPage && ['Episode', 'Season'].includes(card.dataset.type) &&
+                (hiddenIdSet.size > 0 || internal.hasProviderRules())) {
+                // Preserve an existing hide until its asynchronous parent verdict is resolved.
+                pendingParentChecks.push({ card, itemId });
+                continue;
             } else {
-                if (card.getAttribute(HIDDEN_DIRECT_ATTR) === '1' && card.classList.contains('je-hidden')) {
-                    toShow.push(card);
-                    card.removeAttribute(HIDDEN_DIRECT_ATTR);
-                }
-                if (!isDetailPage) {
-                    const cardType = card.dataset.type || '';
-                    if (cardType === 'Episode' || cardType === 'Season') {
-                        pendingParentChecks.push({ card, itemId });
-                    }
-                }
+                card.removeAttribute(HIDDEN_DIRECT_ATTR);
+                card.removeAttribute(HIDDEN_PARENT_ATTR);
+                if (cardTitleResolved(card, itemId)) markNativeDecision(card, false, scope);
             }
+            changes.push({ card, hidden, itemId });
         }
-
-        // Batch apply visibility changes
-        if (toHide.length > 0 || toShow.length > 0) {
-            requestAnimationFrame(() => {
-                for (let i = 0; i < toHide.length; i++) toHide[i].classList.add('je-hidden');
-                for (let i = 0; i < toShow.length; i++) toShow[i].classList.remove('je-hidden');
-            });
-        }
-
-        // Batch parent series checks
-        if (pendingParentChecks.length > 0) {
-            batchCheckParentSeries(pendingParentChecks);
-        }
+        if (changes.length) requestAnimationFrame(() => {
+            if (!nativeDecisionScopeCurrent(scope, false) || !getSettings().enabled) return;
+            for (const { card, hidden, itemId } of changes) {
+                if (getCardItemId(card) !== itemId || (!hidden && !nativeDecisionScopeCurrent(scope))) continue;
+                card.classList.toggle('je-hidden', hidden);
+            }
+        });
+        if (pendingParentChecks.length) void batchCheckParentSeries(pendingParentChecks);
     }
 
-    /**
-     * Filters ALL native cards on the page (including previously scanned ones).
-     * Used after settings changes or when the hidden-items set has been modified.
-     */
+    /** Ordinary scans revisit unresolved or expired retained-node verdicts. */
+    function filterNativeCards() {
+        filterNativeCardPass(false);
+    }
+
+    /** Full passes use the same decision writer/reader and identity work owner as ordinary scans. */
     function filterAllNativeCards() {
-        const nativeSurface = getCurrentNativeSurface();
-        if (!shouldFilterSurface(nativeSurface)) return;
-        const settings = getSettings();
-        if (!settings.enabled) return;
-        const isDetailPage = nativeSurface === 'details';
-
-        const toHide = [];
-        const toShow = [];
-        const pendingParentChecks = [];
-        const cards = document.querySelectorAll(CARD_SEL);
-        for (let i = 0; i < cards.length; i++) {
-            const card = cards[i];
-            const itemId = getCardItemId(card);
-            card.setAttribute(PROCESSED_ATTR, '1');
-            card.removeAttribute(HIDDEN_PARENT_ATTR);
-            if (!itemId) continue;
-
-            const cardSurface = getCardSurface(card);
-            let hiddenByScope = false;
-            if (cardSurface && shouldFilterSurface(cardSurface) && isHiddenOnSurface(itemId, cardSurface)) {
-                toHide.push(card);
-                card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
-                hiddenByScope = true;
-            }
-
-            if (!hiddenByScope) {
-                if (hiddenIdSet.has(itemId)) {
-                    toHide.push(card);
-                    card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
-                } else {
-                    if (card.classList.contains('je-hidden')) {
-                        toShow.push(card);
-                        card.removeAttribute(HIDDEN_DIRECT_ATTR);
-                    }
-                    if (!isDetailPage) {
-                        const cardType = card.dataset.type || '';
-                        if (cardType === 'Episode' || cardType === 'Season') {
-                            pendingParentChecks.push({ card, itemId });
-                        }
-                    }
-                }
-            }
-        }
-
-        // Batch apply visibility changes
-        if (toHide.length > 0 || toShow.length > 0) {
-            requestAnimationFrame(() => {
-                for (let i = 0; i < toHide.length; i++) toHide[i].classList.add('je-hidden');
-                for (let i = 0; i < toShow.length; i++) toShow[i].classList.remove('je-hidden');
-            });
-        }
-
-        // Batch parent series checks
-        if (pendingParentChecks.length > 0) {
-            batchCheckParentSeries(pendingParentChecks);
-        }
+        filterNativeCardPass(true);
     }
 
     // ============================================================
@@ -513,11 +418,16 @@
         // Use onViewPage for page navigation — much cheaper than a body MutationObserver
         if (JE.helpers?.onViewPage) {
             JE.helpers.onViewPage(() => {
+                // Successful missing-provider answers belong to this view; retries remain session-owned.
+                viewGeneration++;
+                parentTitlesChecked.clear();
+                internal.resetCardTitleVerdicts?.();
+                requestAnimationFrame(filterNativeCards);
                 // Detail pages load episodes asynchronously — staggered re-scans catch late-rendered cards
                 if (getCurrentNativeSurface() === 'details') {
                     const rescan = () => {
                         refreshNativeCardVisibility();
-                        if (getSettings().showButtonLibrary) addLibraryHideButtons();
+                        if (getSettings().showButtonLibrary || getSettings().showButtonJellyseerr || getSettings().showButtonCast) addLibraryHideButtons();
                     };
                     setTimeout(rescan, DETAIL_RESCAN_DELAY_MS);
                     setTimeout(rescan, DETAIL_FINAL_RESCAN_DELAY_MS);
@@ -533,7 +443,7 @@
                 const settings = getSettings();
                 if (!settings.enabled) return;
                 const shouldFilter = getHiddenCount() > 0;
-                const shouldAddButtons = settings.showHideButtons && settings.showButtonLibrary;
+                const shouldAddButtons = settings.showHideButtons && (settings.showButtonLibrary || settings.showButtonJellyseerr || settings.showButtonCast);
                 if (!shouldFilter && !shouldAddButtons) return;
                 let hasNewItems = false;
                 for (let i = 0; i < mutations.length; i++) {
@@ -542,8 +452,8 @@
                         const node = added[j];
                         if (node.nodeType === 1 && (
                             node.classList?.contains('card') ||
-                            node.classList?.contains('listItem') ||
-                            node.querySelector?.('.card[data-id], .listItem[data-id]')
+                            node.classList?.contains('listItem') || node.hasAttribute?.('data-je-hide-title') ||
+                            node.querySelector?.('.card[data-id], .listItem[data-id], [data-je-hide-title]')
                         )) {
                             hasNewItems = true;
                             break;
@@ -560,6 +470,9 @@
     }
 
     Object.assign(internal, {
+        captureNativeDecisionScope,
+        nativeDecisionScopeCurrent,
+        getCurrentNativeSurface,
         getCardSurface,
         getCardItemId,
         isHiddenOnSurface,

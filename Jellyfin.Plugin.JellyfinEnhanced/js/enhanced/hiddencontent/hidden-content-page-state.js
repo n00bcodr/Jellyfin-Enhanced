@@ -59,6 +59,15 @@
     state.adminLoadToken++; // in-flight admin fetches see a stale token and drop their result
   });
 
+  /**
+   * The session action of the page render in progress. Controls created during a render keep it,
+   * so an identity change makes every control of the outgoing viewer's list inert.
+   * @returns {{current: function(): boolean}}
+   */
+  function viewAction() {
+    return state.view || JE.createSessionAction();
+  }
+
   function scopeBadgeText(scope) {
     const s = (scope || '').toLowerCase();
     if (s === 'continuewatching') return JE.t('hidden_content_scope_cw_label');
@@ -85,6 +94,9 @@
    * @param {string} [itemName] Optional item name to show below the heading.
    */
   function showUnhideConfirmation(message, onConfirm, itemName) {
+    const action = JE.createSessionAction();
+    onConfirm = action.bind(onConfirm);
+    document.querySelector('.je-hide-confirm-overlay')?.jeDismiss?.();
     document.querySelector('.je-hide-confirm-overlay')?.remove();
 
     const overlay = document.createElement('div');
@@ -104,9 +116,12 @@
     }
 
     const closeDialog = () => {
+      release();
       overlay.remove();
       document.removeEventListener('keydown', escHandler);
     };
+    const release = action.onCancel(closeDialog);
+    overlay.jeDismiss = closeDialog;
 
     const buttons = document.createElement('div');
     buttons.className = 'je-hide-confirm-buttons';
@@ -149,6 +164,7 @@
     scopeUnhideText,
     POSTER_MAX_WIDTH,
     showUnhideConfirmation,
+    viewAction,
   });
 
 })();

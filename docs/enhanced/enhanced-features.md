@@ -33,6 +33,14 @@ If the chosen source has nothing eligible (empty, all watched, or deleted), the 
 
 ### Hidden Content System
 
+Requests & downloads also offers Hide/Unhide on titles that have not arrived yet, their recommendation and discovery cards, and the More Info window. These hides use the movie or series TMDB identity, so all library copies remain hidden after arrival or reimport. The library details page recognises the same rule and offers Unhide, which removes it for every copy, including older item-specific aliases. Undo removes that title rule. Search continues to follow your separate search-filter preference. A failed save leaves the control available to retry. Confirmations and Undo belong to the signed-in session: switching users dismisses them and cancels deferred actions.
+
+Confirmed manager Unhide actions remain valid when you close the manager, but cancel if the signed-in session changes during the fade.
+
+Failed title and parent-series metadata batches retry on the next normal scan after a 30-second wait, including the same cards already on screen and later batches that were never requested. No page reload is needed. When you return to a view, cards that previously had no provider metadata are checked again, including cards retained on screen. Rule and account changes also recheck those cards; pending and failed reads keep their existing retry wait.
+
+Native movie and series card hides honor your confirmation preference before saving. Cancel leaves the title visible; turning confirmations off, or temporarily suppressing them, saves the hide directly.
+
 ![Hidden content management panel](../images/hidden-content-panel.png)
 
 Per-user content hiding with server-side storage and granular filtering controls.
