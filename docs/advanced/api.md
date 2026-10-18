@@ -929,3 +929,24 @@ The anonymous `public-config` payload carries `MaintenanceModeEnabled`, `Mainten
 |---|---|---|
 | POST | `reset-all-users-settings` | Admin: overwrite every user's settings with the current defaults. Each person's own consents (automatic season and movie requests) are kept |
 | GET | `{viewName}` | Catch-all: serves a Plugin Pages HTML view by name |
+
+### Dashboard user settings (administrators)
+
+All routes below require a known, enabled human Jellyfin administrator. A role claim, API key, household Manager or Trusted role is insufficient. Responses use `Cache-Control: private, no-store`, including errors. Disabled targets can be inspected and configured; deleted targets return 404.
+
+| Method | Path under `/JellyfinEnhanced/arr/admin/users` | Purpose |
+|---|---|---|
+| GET | `/summary?offset=0&limit=500` | Bounded card batch, including disabled users. `next` identifies another page; no title metadata fetches. |
+| GET | `/{userId}` | Stored overrides, effective policy, provenance, independent component availability and revision tokens. |
+| PATCH | `/{userId}/policy` | `role`, `quotaLimit`, `quotaGb`, `fourKInstances`. GB/count/grant changes require JE request handling. |
+| PATCH | `/{userId}/pool-membership` | `poolId`, or null to remove this person's explicit membership. Definitions, order and historical reservations are preserved. |
+| PATCH | `/{userId}/display` | `listPlaceholders`, `listStatus`, `acquisitionBadges`, `nativeAcquisitionStamps`, `useNativePosterTags`; boolean or null only. |
+| PATCH | `/{userId}/seerr-import` | `blocked` boolean only. No import is performed. |
+
+PATCH bodies include the corresponding `revision` from the detail response. Omitted fields retain their values; null explicitly inherits where supported. Stale revisions return 409, unknown/duplicate fields return 400, and unreadable or failed persistence returns 503. Payloads are capped at 16 KiB. Policy revisions conservatively include the complete current configuration; display revisions cover the exact personal file, so concurrent personal saves conflict too. Successful writes return the current detail projection and audit actor, target and field names without preference contents or notification targets.
+
+```json
+{"revision":"<policy revision>","role":"Kid","quotaLimit":null,"quotaGb":25,"fourKInstances":[]}
+```
+
+Detail reads never seed settings, quarantine lists or import Seerr users. Independent unavailable stores are reported explicitly, with unknown usage represented by null. Seerr status refreshes make GET requests only and do not wake request dispatch. There are no personal-consent or verified-email setters. The notifications group reuses `PUT /JellyfinEnhanced/arr/admin/notify/users/{userId}` and its established assignment semantics.

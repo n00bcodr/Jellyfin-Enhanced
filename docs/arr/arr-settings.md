@@ -636,3 +636,19 @@ never applied automatically. Managers can read the tab but not change it. The co
 *Request handling*, which a move from Seerr switches) as the server has them when it is saved, unless they were changed
 on that page: a page left open before a Household edit or a move doesn't put the older values back, even when the edit
 lands while the page is saving.
+
+### Per-person settings in Dashboard → Users
+
+Expand **Jellyfin Enhanced** on any native user-edit tab. Settings here are shared with Household, plugin configuration and the person's JE panel; there is no separate policy store.
+
+- **Requests & household:** blank role uses the household default. A blank count override inherits, `0` uses the preset and `-1` means unlimited. A blank estimated GB cap inherits and `0` disables the cap. 4K grants distinguish inherited grants from an explicitly empty selection. Jellyfin administrator authority stays native. Seerr owns its permissions and quotas when selected as the request backend.
+- **Shared quota pool:** select one explicit membership or return to role-based membership. Definitions and order remain in the shared Household editor. Previous charges remain with their original pool. A pool cannot be left with neither roles nor members; edit its shared definition first.
+- **Safety:** links open native library/parental controls and shared household rules. Kid requests always require approval.
+- **Notifications:** the existing administrator ntfy assignment sets or clears a topic. Email verification, quiet hours and privacy are displayed without granting a new administrator consent action.
+- **Automation & lists:** stored personal choices, recipe modes, eligibility provenance and list attribution are read-only. An administrator's settings edit or global reset preserves personal consents.
+- **Display:** null follows the server, false hides and true shows only when server gates allow. Native acquisition stamps also require native poster tags. These preferences never exempt the person from request policy.
+- **Seerr:** import exclusion is editable. Linked, unlinked, blocked and unavailable are different states. Opening a user page never imports or remaps an account.
+
+A conflicting save keeps the draft and reports that another editor changed the source. Cancel reloads current values. Unavailable or corrupt components are labelled separately, and their stored settings are preserved. Administrative configuration remains accessible while request/display features are switched off; effective behavior still follows those switches.
+
+For a person who has never opened JE settings, the first administrator display save uses the same initial defaults as their own first access and leaves personal consents unset. Resetting settings also honours the configured watch-progress defaults while retaining each person's consent choices.

@@ -143,6 +143,7 @@ public class ApiArrRouteMatrixTests
                 new ArrStateController(N.Store, users),
                 new ArrStatusController(N.Status),
                 new AcquireRequestsController(new ServicesForRequests(N).Service),
+                new AcquireAdminUsersController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Users.AdminUserSettingsService(new ServicesForRequests(N).Service, users, N.Arr.Plugin.Core.Manager, Audit, _ => { }), users),
                 new AcquireDiscoverController(IntegrationRequestDiscoverTests.Offline(new ServicesForRequests(N).Service)),
                 Household(new ServicesForRequests(N).Service),
                 new AcquireRulesController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.HouseholdRulesService(new ServicesForRequests(N).Service, N.Feed, _ => { },

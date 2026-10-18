@@ -1587,3 +1587,15 @@ Each person can hide the web badges, or turn off the drawn ones, in the Jellyfin
   Enhanced adds to Radarr or Sonarr also triggers Seerr's Radarr or Sonarr scan, so Seerr shows it as requested.
   If the trigger (or Seerr) is turned off while a scan waits for its debounce, it isn't sent. *Trigger scan now* is
   unaffected.
+
+### Jellyfin Dashboard user settings
+
+Administrators can open **Dashboard → Users**, select a person, and expand **Jellyfin Enhanced** below Jellyfin's native form. The section is available on Profile, Access, Parental control and Password in Jellyfin 12 and 10.11. Each editable group has its own **Save Jellyfin Enhanced changes** and **Cancel**. Jellyfin's Save button handles the native form; JE drafts remain separate and survive tab changes.
+
+The section uses the same household roles, count and estimated GB limits, 4K grants, quota pools and display preferences as the existing editors. It shows effective request rights and inheritance, notification assignment, personal consent attribution and Seerr identity status. Personal automation and list consents are read-only. Email verification remains the person's own action.
+
+The users list adds role, known quota use and pending-request chips from one batched read. Pending means requests made by that person. Unavailable use is left unknown. These administrator endpoints reject household Managers, Trusted accounts and API keys.
+
+![Household roles and known request use on Jellyfin user cards](../images/arr-dashboard-users.png)
+
+![A separate Jellyfin Enhanced draft and Cancel on the native user page](../images/arr-dashboard-user-edit.gif)
