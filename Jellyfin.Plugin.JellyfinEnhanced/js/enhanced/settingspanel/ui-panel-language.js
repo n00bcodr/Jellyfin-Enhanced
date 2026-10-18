@@ -108,11 +108,12 @@
 
                 // Normalize saved language code with region support (e.g., zh-HK) when available
                 let normalizedLanguage = '';
-                if (savedLanguage) {
+                const currentLanguage = JE.currentSettings.displayLanguage || '';
+                if (currentLanguage) {
                     // Normalize the saved language to match dropdown format (e.g., en-GB, zh-HK)
-                    const normalizedSaved = savedLanguage.includes('-')
-                        ? `${savedLanguage.split('-')[0].toLowerCase()}-${savedLanguage.split('-')[1].toUpperCase()}`
-                        : savedLanguage.toLowerCase();
+                    const normalizedSaved = currentLanguage.includes('-')
+                        ? `${currentLanguage.split('-')[0].toLowerCase()}-${currentLanguage.split('-')[1].toUpperCase()}`
+                        : currentLanguage.toLowerCase();
 
                     const hasExactOption = Array.from(displayLanguageSelect.options)
                         .some(option => option.value.toLowerCase() === normalizedSaved.toLowerCase());
@@ -120,54 +121,21 @@
                 }
 
                 // Set the saved language after options are added
-                if (normalizedLanguage) {
-                    displayLanguageSelect.value = normalizedLanguage;
-                }
-                console.log('🪼 Jellyfin Enhanced: Set language dropdown to:', savedLanguage || 'Auto', 'Normalized to:', normalizedLanguage, 'Select element value is now:', displayLanguageSelect.value);
+                displayLanguageSelect.value = normalizedLanguage;
+                console.log('🪼 Jellyfin Enhanced: Set language dropdown to:', currentLanguage || 'Auto', 'Normalized to:', normalizedLanguage, 'Select element value is now:', displayLanguageSelect.value);
             })();
 
             // Save language on change
             listen(displayLanguageSelect, 'change', async (e) => {
                 const newLang = e.target.value;
 
-                const normalizeLangCode = (code) => {
-                    if (!code) return code;
-                    const parts = code.split('-');
-                    if (parts.length === 1) return parts[0].toLowerCase();
-                    if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
-                    return code;
-                };
-
-                // Use the language code as-is, no special mapping
-                const fullCultureCode = normalizeLangCode(newLang);
-
-                // All dropdown options come from /JellyfinEnhanced/locales, so they are guaranteed valid
-                const translationExists = true;
-
-                // Save to settings.json (use base language code)
+                // The store mirrors the persisted document and schedules its session-owned reload.
                 try {
                     await JE.updateSettings({ displayLanguage: newLang }, { throwOnError: true });
                 } catch (err) {
                     if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: language settings save failed', err);
                     return;
                 }
-
-                if (!scope.session.isCurrent()) return;
-
-                // Save to localStorage (use the same code)
-                if (fullCultureCode) {
-                    localStorage.setItem(languageKey, fullCultureCode);
-                } else {
-                    // Set empty value instead of removing key
-                    localStorage.setItem(languageKey, '');
-                }
-
-                if (newLang && !translationExists) {
-                    JE.toast(`${JE.icon(JE.IconName.WARNING)} Translation file not available for selected language. Falling back to English.`);
-                } else {
-                    JE.toast(JE.t('toast_language_changed'));
-                }
-                setTimeout(() => { if (scope.session.isCurrent()) window.location.reload(); }, 1500);
             });
         }
 

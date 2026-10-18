@@ -46,6 +46,7 @@
     /** Discard observers, deduplication and unsent work on logout, user or server change. */
     const clearDocuments = () => {
         for (const scope of panelScopes) scope.close();
+        for (const state of documents.values()) clearTimeout(state.languageReloadTimer);
         documents.clear(); identity = undefined;
     };
     JE.session?.onUserChange?.('settings-store', clearDocuments);
@@ -114,6 +115,93 @@
         Object.assign(view, copyDocument(document));
     };
 
+    /** Normalize a persisted display-language code for Jellyfin's per-user browser key. */
+    const normalizeLanguage = code => {
+        const parts = (code || '').split('-');
+        return parts.length === 2 ? `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}` : (code || '').toLowerCase();
+    };
+
+    /**
+     * Reconcile effects from the committed document, including choices carried by another control's save.
+     * Pending/shown choices never supply a browser-language mirror or a saved notification.
+     * @param {object} state Active session's settings document.
+     * @param {object} previousPersisted Document before this commit.
+     * @param {string} reason Publication reason; accepted reads mirror without interrupting the page.
+     */
+    const reconcilePersistedSettings = (state, previousPersisted, reason) => {
+        if (reason !== 'saved' && reason !== 'read') return;
+        const before = resolveSettings(previousPersisted), after = resolveSettings(state.persisted);
+        const language = normalizeLanguage(after.displayLanguage);
+        localStorage.setItem(`${ApiClient.getCurrentUserId()}-language`, language);
+        if (reason !== 'saved') return;
+        if (language !== normalizeLanguage(before.displayLanguage)) {
+            JE.toast?.(JE.t('toast_language_changed'));
+            clearTimeout(state.languageReloadTimer);
+            state.languageReloadTimer = setTimeout(() => {
+                if (isActiveDocument(state)) window.location.reload();
+            }, 1500);
+        }
+        for (const [keys, toastKey] of [
+            [['acquisitionBadges', 'nativeAcquisitionStamps'], 'toast_badge_settings_saved'],
+            [['listPlaceholders', 'listStatus', 'listSwapIn'], 'toast_list_settings_saved'],
+            [['useNativePosterTags'], 'toast_native_poster_tags_saved'],
+            [['autoSeasonRequests', 'autoMovieRequests'], 'toast_auto_requests_saved']
+        ]) {
+            if (keys.some(key => (before[key] ?? null) !== (after[key] ?? null))) JE.toast?.(JE.t(toastKey));
+        }
+    };
+
+    /**
+     * Project reversible runtime effects from the document view on queue, commit, rollback and read.
+     * Input handlers submit patches; none owns an applied-style or cached-surface baseline.
+     * @param {object} previousShown Previous document view (before this publication).
+     */
+    const projectSettingsEffects = previousShown => {
+        const before = resolveSettings(previousShown), after = JE.currentSettings;
+        const changed = keys => keys.some(key => before[key] !== after[key]);
+        let restack = false;
+        for (const [key, name, selectors, options] of [
+            ['qualityTagsEnabled', 'Quality', '.quality-overlay-container', ['qualityTagsPosition', 'qualityTagsPreferredAudioLanguage',
+                'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag',
+                'resolutionTagOrder', 'sourceTagOrder', 'dynamicRangeTagOrder', 'specialFormatTagOrder', 'videoCodecTagOrder', 'audioInfoTagOrder']],
+            ['genreTagsEnabled', 'Genre', '.genre-overlay-container', ['genreTagsPosition']],
+            ['languageTagsEnabled', 'Language', '.language-overlay-container', ['languageTagsPosition']],
+            ['ratingTagsEnabled', 'Rating', '.rating-overlay-container', ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries',
+                'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp']],
+            ['ageRatingTagsEnabled', 'AgeRating', '.age-rating-overlay-container', ['ageRatingTagsPosition']],
+            ['peopleTagsEnabled', 'People', '.je-people-place-banner, .je-people-age-container', []]
+        ]) {
+            if (before[key] !== after[key]) {
+                if (after[key]) JE[`initialize${name}Tags`]?.();
+                else {
+                    document.querySelectorAll(selectors).forEach(el => el.remove());
+                    if (name === 'People') document.querySelectorAll('.je-deceased-poster').forEach(el => el.classList.remove('je-deceased-poster'));
+                    restack = true;
+                }
+            } else if (after[key] && changed(options)) JE[`reinitialize${name}Tags`]?.();
+        }
+        if (restack) {
+            const hosts = new Set();
+            document.querySelectorAll('[data-je-corner]').forEach(el => { if (el.parentElement) hosts.add(el.parentElement); });
+            hosts.forEach(host => JE.core?.tagRenderer?.applyCornerStacking?.(host));
+        }
+        if (changed(['tagsHideOnHover'])) document.body.classList.toggle('je-tags-hide-on-hover', !!after.tagsHideOnHover);
+        if (changed(['randomButtonEnabled'])) JE.addRandomButton?.();
+        for (const [key, selector] of [['showWatchProgress', '.mediaInfoItem-watchProgress'], ['showFileSizes', '.mediaInfoItem-fileSize'],
+            ['showAudioLanguages', '.mediaInfoItem-audioLanguage']]) {
+            if (changed([key]) && !after[key]) document.querySelectorAll(selector).forEach(el => el.remove());
+        }
+        if (changed(['showWatchProgress', 'showFileSizes', 'showAudioLanguages', 'watchProgressMode', 'watchProgressTimeFormat'])) {
+            JE.internals.features?.refreshDetailsSettings?.();
+        }
+        if (JE.pauseScreenInstance) JE.pauseScreenInstance.pauseScreenDelayMs = after.pauseScreenDelaySeconds * 1000;
+        if (changed(['disableCustomSubtitleStyles', 'customSubtitleTextColor', 'customSubtitleBgColor', 'usingCustomColors',
+            'selectedStylePresetIndex', 'selectedFontSizePresetIndex', 'selectedFontFamilyPresetIndex', 'selectedTextEffectPresetIndex'])) {
+            JE.applySavedStylesWhenReady?.();
+        }
+        if (changed(['subtitleHorizontalPosition', 'subtitleVerticalPosition', 'disableCustomSubtitleStyles'])) JE.applySubtitlePosition?.();
+    };
+
     /** Recompute from persisted + pending documents; views never supply rollback snapshots. */
     const publishDocument = (state, previousPersisted = state.persisted, reason = 'settled') => {
         if (!isActiveDocument(state)) return;
@@ -133,6 +221,7 @@
             replaceView(JE.userConfig.settings, state.shown);
             JE.currentSettings = JE.currentSettings || {};
             replaceView(JE.currentSettings, resolveSettings(state.shown));
+            projectSettingsEffects(previousShown);
             // Hide is immediate. Show reads again after persistence; failures restore the surface too.
             const before = previousShown.acquisitionBadges, after = state.shown.acquisitionBadges;
             if ((reason === 'queued' ? after === false && before !== false : before !== after)
@@ -141,6 +230,7 @@
                 JE.internals.arrStatusCards?.reset?.();
             }
         }
+        if (state.fileName === 'settings.json') reconcilePersistedSettings(state, previousPersisted, reason);
         for (const observer of state.observers.values()) observer(state.shown, reason);
     };
 

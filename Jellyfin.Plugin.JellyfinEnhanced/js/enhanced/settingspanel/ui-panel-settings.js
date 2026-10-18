@@ -26,21 +26,6 @@
     };
 
     /**
-     * Re-measure corner stacking on every card that still has tag overlays.
-     * Called after a tag type's overlays are removed by its panel toggle, so
-     * an overlay that was stacked above them (e.g. the age rating badge over
-     * the rating chip) drops back into its corner instead of keeping a stale
-     * translateY.
-     */
-    const restackTagCorners = () => {
-        const restack = JE.core?.tagRenderer?.applyCornerStacking;
-        if (typeof restack !== 'function') return;
-        const hosts = new Set();
-        document.querySelectorAll('[data-je-corner]').forEach(el => { if (el.parentElement) hosts.add(el.parentElement); });
-        hosts.forEach(host => restack(host));
-    };
-
-    /**
      * Wires the feature toggles, quality-tag category controls and subtitle
      * styling/position controls of the Settings tab.
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
@@ -64,7 +49,7 @@
             const control = document.getElementById(id);
             if (control) control.dataset.jeSetting = key;
         }
-        JE.internals.observeSettingsDocument('panel-settings', (_document, reason) => {
+        JE.internals.observeSettingsDocument('panel-settings', () => {
             document.querySelectorAll('[data-je-setting], [data-cat-key] input, [data-rating-key] input').forEach(control => {
                 const key = control.dataset.jeSetting || control.closest('[data-cat-key]')?.dataset.catKey
                     || control.closest('[data-rating-key]')?.dataset.ratingKey;
@@ -76,6 +61,17 @@
                     control.value = value === true ? 'on' : value === false ? 'off' : '';
                 } else control.value = value ?? '';
             });
+            for (const type of ['quality', 'rating']) {
+                const wrap = document.getElementById(type + 'TagsSubWrap');
+                if (wrap) wrap.style.display = JE.currentSettings[type + 'TagsEnabled'] ? 'block' : 'none';
+            }
+            const qualityRows = document.getElementById('qualityTagsSubToggles');
+            if (qualityRows) {
+                const rows = Array.from(qualityRows.querySelectorAll('.je-quality-cat-row'));
+                const ordered = rows.slice().sort((a, b) => JE.currentSettings[a.dataset.orderKey] - JE.currentSettings[b.dataset.orderKey]);
+                if (ordered.some((row, index) => row !== rows[index])) ordered.forEach(row => qualityRows.appendChild(row));
+                refreshQualityCatArrowStates(qualityRows);
+            }
             // Compound controls render directly from the same derived value after any completion.
             const settings = JE.currentSettings;
             const position = document.getElementById('subtitlePositionPreview');
@@ -103,11 +99,8 @@
                     preview.style.textShadow = JE.getSubtitleTextShadow(settings.customSubtitleBgColor);
                 }
             }
-            if (JE.pauseScreenInstance) JE.pauseScreenInstance.pauseScreenDelayMs = settings.pauseScreenDelaySeconds * 1000;
-            if (reason === 'failed' || reason === 'read') {
-                JE.applySavedStylesWhenReady?.();
-                JE.applySubtitlePosition?.();
-            }
+            updatePositionPreviewFont(JE.fontSizePresets?.[settings.selectedFontSizePresetIndex ?? 2],
+                JE.fontFamilyPresets?.[settings.selectedFontFamilyPresetIndex ?? 0]);
         });
 
         const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
@@ -116,80 +109,13 @@
                 JE.updateSettings({ [settingKey]: e.target.checked });
                 let toastMessage = createToast(featureKey, e.target.checked);
 
-                // Handle tag features with dynamic re-initialization
-                if (id === 'qualityTagsToggle') {
-                    if (e.target.checked) {
-                        // Initialize for the first time if enabling
-                        if (typeof JE.initializeQualityTags === 'function') {
-                            JE.initializeQualityTags();
-                        }
-                    } else {
-                        // Remove all tags if disabling
-                        document.querySelectorAll('.quality-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
-                    }
-                    requiresRefresh = false; // No longer needs refresh
-                } else if (id === 'genreTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializeGenreTags === 'function') {
-                            JE.initializeGenreTags();
-                        }
-                    } else {
-                        document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
-                    }
-                    requiresRefresh = false;
-                } else if (id === 'languageTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializeLanguageTags === 'function') {
-                            JE.initializeLanguageTags();
-                        }
-                    } else {
-                        document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
-                    }
-                    requiresRefresh = false;
-                } else if (id === 'ratingTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializeRatingTags === 'function') {
-                            JE.initializeRatingTags();
-                        }
-                    } else {
-                        document.querySelectorAll('.rating-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
-                    }
-                    requiresRefresh = false;
-                } else if (id === 'ageRatingTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializeAgeRatingTags === 'function') {
-                            JE.initializeAgeRatingTags();
-                        }
-                    } else {
-                        document.querySelectorAll('.age-rating-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
-                    }
-                    requiresRefresh = false;
-                } else if (id === 'peopleTagsToggle') {
-                    if (e.target.checked) {
-                        if (typeof JE.initializePeopleTags === 'function') {
-                            JE.initializePeopleTags();
-                        }
-                    } else {
-                        document.querySelectorAll('.je-people-place-banner').forEach(el => el.remove());
-                        document.querySelectorAll('.je-people-age-container').forEach(el => el.remove());
-                        document.querySelectorAll('.je-deceased-poster').forEach(el => el.classList.remove('je-deceased-poster'));
-                    }
-                    requiresRefresh = false;
-                }
+                if (['qualityTagsToggle', 'genreTagsToggle', 'languageTagsToggle', 'ratingTagsToggle',
+                    'ageRatingTagsToggle', 'peopleTagsToggle'].includes(id)) requiresRefresh = false;
 
                 if (requiresRefresh) {
                     toastMessage += ".<br> Refresh page to apply.";
                 }
                 JE.toast(toastMessage);
-                if (id === 'randomButtonToggle') JE.addRandomButton();
-                if (id === 'showWatchProgressToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-watchProgress').forEach(el => el.remove());
-                if (id === 'showFileSizesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-fileSize').forEach(el => el.remove());
-                if (id === 'showAudioLanguagesToggle' && !e.target.checked) document.querySelectorAll('.mediaInfoItem-audioLanguage').forEach(el => el.remove());
                 resetAutoCloseTimer();
             });
         };
@@ -225,7 +151,6 @@
             if (JE.pluginConfig?.NativePosterTagsEnabled !== true) return;
             const enabled = event.target.checked;
             JE.updateSettings({ useNativePosterTags: enabled });
-            JE.toast(JE.t('toast_native_poster_tags_saved'));
             resetAutoCloseTimer();
         });
         // Automatic requests per person: "" follows the household (null), "on" / "off" are explicit.
@@ -234,7 +159,6 @@
                 if (JE.pluginConfig?.ArrAutomationEngineEnabled !== true) return;
                 const value = event.target.value === 'on' ? true : event.target.value === 'off' ? false : null;
                 JE.updateSettings({ [key]: value });
-                JE.toast(JE.t('toast_auto_requests_saved'));
                 resetAutoCloseTimer();
             });
         }
@@ -245,8 +169,7 @@
                 const value = event.target.value === 'on' ? true : event.target.value === 'off' ? false : null;
                 const save = key === 'listSwapIn' ? JE.setPersonalConsent(key, value === true, { throwOnError: true })
                     : JE.updateSettings({ [key]: value }, { throwOnError: true });
-                save.then(() => { if (scope.session.isCurrent()) JE.toast(JE.t('toast_list_settings_saved')); })
-                    .catch(err => { if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: list settings save failed', err); });
+                save.catch(err => { if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: list settings save failed', err); });
                 resetAutoCloseTimer();
             });
         }
@@ -259,7 +182,6 @@
                 resetAutoCloseTimer();
                 try {
                     await JE.updateSettings({ [key]: value }, { throwOnError: true });
-                    if (scope.session.isCurrent()) JE.toast(JE.t('toast_badge_settings_saved'));
                 } catch (err) {
                     if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: badge settings save failed', err);
                 }
@@ -302,9 +224,6 @@
                 const settingKey = row.dataset.catKey;
                 if (!settingKey) return;
                 JE.updateSettings({ [settingKey]: target.checked });
-                if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
-                    JE.reinitializeQualityTags();
-                }
                 resetAutoCloseTimer();
             });
             // Handle ↑/↓ stack reorder buttons
@@ -336,9 +255,6 @@
                 JE.updateSettings(order);
 
                 refreshQualityCatArrowStates(qualitySubGroup);
-                if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
-                    JE.reinitializeQualityTags();
-                }
                 resetAutoCloseTimer();
             });
         }
@@ -387,9 +303,6 @@
             })();
             listen(audioLangSelect, 'change', (e) => {
                 JE.updateSettings({ qualityTagsPreferredAudioLanguage: e.target.value });
-                if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
-                    JE.reinitializeQualityTags();
-                }
                 resetAutoCloseTimer();
             });
         }
@@ -430,11 +343,7 @@
                 const val = Math.max(1, Math.min(60, parseInt(pauseScreenDelayInput.value, 10) || 5));
                 pauseScreenDelayInput.value = val;
                 JE.updateSettings({ pauseScreenDelaySeconds: val });
-                // Push the new delay into the already-running pause-screen
-                // instance so it takes effect immediately, without a page reload.
-                if (JE.pauseScreenInstance) {
-                    JE.pauseScreenInstance.pauseScreenDelayMs = val * 1000;
-                }
+
             });
         }
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
@@ -442,13 +351,6 @@
         addSettingToggleListener('ageRatingTagsToggle', 'ageRatingTagsEnabled', 'feature_age_rating_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
-        // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
-        const hideOnHoverCheckbox = document.getElementById('tagsHideOnHoverToggle');
-        if (hideOnHoverCheckbox) {
-            listen(hideOnHoverCheckbox, 'change', () => {
-                document.body.classList.toggle('je-tags-hide-on-hover', hideOnHoverCheckbox.checked);
-            });
-        }
         // Rating tag scope (item types / home rows): nested under the master
         // toggle exactly like the quality-tag categories above.
         const ratingMasterToggle = document.getElementById('ratingTagsToggle');
@@ -478,9 +380,6 @@
                 const settingKey = target.closest('.je-quality-cat-row')?.dataset.catKey;
                 if (!settingKey) return;
                 JE.updateSettings({ [settingKey]: target.checked });
-                if (typeof JE.reinitializeRatingTags === 'function' && JE.currentSettings.ratingTagsEnabled) {
-                    JE.reinitializeRatingTags();
-                }
                 resetAutoCloseTimer();
             });
         }
@@ -502,7 +401,6 @@
             const formatWarning = document.getElementById('je-subtitle-format-warning');
             if (!positionNote && !formatWarning) return;
 
-            const disableStylesCheckbox = document.getElementById('disableCustomSubtitleStyles');
             const stylesEnabled = () => !JE.currentSettings.disableCustomSubtitleStyles;
 
             // Read once, when the panel opens -- this setting doesn't change while
@@ -520,8 +418,7 @@
                 const applyPositionNoteState = () => {
                     positionNote.style.display = (stylesEnabled() && !isCustom) ? 'flex' : 'none';
                 };
-                applyPositionNoteState();
-                if (disableStylesCheckbox) listen(disableStylesCheckbox, 'change', applyPositionNoteState);
+                JE.internals.observeSettingsDocument('panel-subtitle-position-note', applyPositionNoteState);
             }
 
             // Bitmap/graphical subtitle formats (ASS/SSA, PGS, VobSub, DVB) never
@@ -552,21 +449,10 @@
                     const applyFormatWarningState = () => {
                         formatWarning.style.display = (stylesEnabled() && isUnsupportedFormat) ? 'flex' : 'none';
                     };
-                    applyFormatWarningState();
-                    if (disableStylesCheckbox) listen(disableStylesCheckbox, 'change', applyFormatWarningState);
+                    JE.internals.observeSettingsDocument('panel-subtitle-format-warning', applyFormatWarningState);
                 })();
             }
         })();
-
-        // Keeps the two panel previews showing the same text effect as the video.
-        const syncPreviewTextShadow = (bgColor) => {
-            const shadow = JE.getSubtitleTextShadow(bgColor);
-            ['subtitleColorPreview', 'subtitlePositionPreview'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.style.textShadow = shadow;
-            });
-        };
-        internal.syncSubtitlePreviewTextShadow = syncPreviewTextShadow;
 
         // Inline custom subtitle color pickers
         const customTextColorPicker = document.getElementById('customSubtitleTextColorPicker');
@@ -580,28 +466,6 @@
 
             JE.updateSettings({ customSubtitleTextColor: textColor, customSubtitleBgColor: bgColor, usingCustomColors: true });
 
-            // Remove border from all style presets
-            const styleContainer = document.getElementById('subtitle-style-presets-container');
-            if (styleContainer) {
-                styleContainer.querySelectorAll('.preset-box').forEach(box => {
-                    box.style.setProperty('border', '2px solid transparent', 'important');
-                });
-            }
-
-            // Update live preview
-            const preview = document.getElementById('subtitleColorPreview');
-            if (preview) {
-                preview.style.color = textColor;
-                preview.style.backgroundColor = bgColor;
-            }
-            const posPreviewEl = document.getElementById('subtitlePositionPreview');
-            if (posPreviewEl) {
-                posPreviewEl.style.color = textColor;
-                posPreviewEl.style.backgroundColor = bgColor;
-            }
-            syncPreviewTextShadow(bgColor);
-
-            JE.applySavedStylesWhenReady();
             resetAutoCloseTimer();
         };
 
@@ -621,7 +485,6 @@
                 if (!gesture || !scope.isCurrent()) { gesture = undefined; return; }
                 JE.updateSettings(gesture);
                 gesture = undefined;
-                if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
             };
             const updatePosition = (xPct, yPct) => {
                 xPct = Math.max(2, Math.min(98, xPct));
@@ -693,7 +556,6 @@
             listen(posResetBtn, 'click', () => {
                 JE.updateSettings({ subtitleHorizontalPosition: 50, subtitleVerticalPosition: 95 });
                 if (posPreview) { posPreview.style.left = '50%'; posPreview.style.top = 'auto'; posPreview.style.bottom = '5%'; }
-                if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
                 resetAutoCloseTimer();
             });
         }
@@ -715,7 +577,6 @@
         // Random source picker: lists the user's playlists and collections; '' = whole library.
         const sourceSelect = document.getElementById('randomSourceSelect');
         if (sourceSelect) {
-            const savedId = JE.currentSettings.randomSourceId || '';
             const userId = ApiClient.getCurrentUserId();
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=Playlist,BoxSet&Recursive=true&SortBy=SortName`), dataType: 'json' })
                 .then(async response => {
@@ -726,9 +587,11 @@
                         if (items.length === 0) continue;
                         const group = document.createElement('optgroup');
                         group.label = JE.t(labelKey);
-                        items.forEach(item => group.appendChild(new Option(item.Name, item.Id, false, item.Id === savedId)));
+                        items.forEach(item => group.appendChild(new Option(item.Name, item.Id)));
                         sourceSelect.appendChild(group);
                     }
+                    const savedId = JE.currentSettings.randomSourceId || '';
+                    sourceSelect.value = savedId;
                     // A saved source missing from the list is either gone (show why picks fall back) or
                     // still readable but filtered out of lists, e.g. hidden with Hidden Content, in which
                     // case the button still draws from it, so show its real name.
@@ -781,29 +644,6 @@
                 JE.updateSettings({ [settingKey]: newPos });
                 updateHighlight();
 
-                // Reinitialize tags dynamically based on which position changed
-                if (settingKey === 'qualityTagsPosition' && JE.currentSettings.qualityTagsEnabled) {
-                    if (typeof JE.reinitializeQualityTags === 'function') {
-                        JE.reinitializeQualityTags();
-                    }
-                } else if (settingKey === 'genreTagsPosition' && JE.currentSettings.genreTagsEnabled) {
-                    if (typeof JE.reinitializeGenreTags === 'function') {
-                        JE.reinitializeGenreTags();
-                    }
-                } else if (settingKey === 'languageTagsPosition' && JE.currentSettings.languageTagsEnabled) {
-                    if (typeof JE.reinitializeLanguageTags === 'function') {
-                        JE.reinitializeLanguageTags();
-                    }
-                } else if (settingKey === 'ratingTagsPosition' && JE.currentSettings.ratingTagsEnabled) {
-                    if (typeof JE.reinitializeRatingTags === 'function') {
-                        JE.reinitializeRatingTags();
-                    }
-                } else if (settingKey === 'ageRatingTagsPosition' && JE.currentSettings.ageRatingTagsEnabled) {
-                    if (typeof JE.reinitializeAgeRatingTags === 'function') {
-                        JE.reinitializeAgeRatingTags();
-                    }
-                }
-
                 JE.toast(`Position updated!`);
                 resetAutoCloseTimer();
             });
@@ -824,88 +664,18 @@
                     if (type === 'style') {
                         JE.updateSettings({ selectedStylePresetIndex: presetIndex, usingCustomColors: false,
                             customSubtitleTextColor: selectedPreset.textColor, customSubtitleBgColor: selectedPreset.bgColor });
-
-                        // Update UI inputs
-                        const textColorPicker = document.getElementById('customSubtitleTextColorPicker');
-                        const textAlphaSlider = document.getElementById('customSubtitleTextAlpha');
-                        const bgColorPicker = document.getElementById('customSubtitleBgColorPicker');
-                        const bgAlphaSlider = document.getElementById('customSubtitleBgAlpha');
-                        const preview = document.getElementById('subtitleColorPreview');
-
-                        if (textColorPicker && textAlphaSlider) {
-                            const decodedText = JE.decodeSubtitleColor(selectedPreset.textColor, { fallbackSwatch: '#FFFFFF', fallbackAlphaValue: 255 });
-                            textColorPicker.value = decodedText.swatch;
-                            textAlphaSlider.value = decodedText.alphaValue;
-                        }
-                        if (bgColorPicker && bgAlphaSlider) {
-                            const decodedBg = JE.decodeSubtitleColor(selectedPreset.bgColor, { fallbackSwatch: '#000000', fallbackAlphaValue: 0 });
-                            bgColorPicker.value = decodedBg.swatch;
-                            bgAlphaSlider.value = decodedBg.alphaValue;
-                        }
-                        if (preview) {
-                            preview.style.color = selectedPreset.textColor;
-                            preview.style.backgroundColor = selectedPreset.bgColor;
-                        }
-                        const posPreviewEl = document.getElementById('subtitlePositionPreview');
-                        if (posPreviewEl) {
-                            posPreviewEl.style.color = selectedPreset.textColor;
-                            posPreviewEl.style.backgroundColor = selectedPreset.bgColor;
-                        }
-
-                        const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
-                        const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
-                        const fontSize = JE.fontSizePresets[fontSizeIndex].size;
-                        const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
-                        updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], JE.fontFamilyPresets[fontFamilyIndex]);
-                        internal.syncSubtitlePreviewTextShadow?.(selectedPreset.bgColor);
-                        JE.applySubtitleStyles(selectedPreset.textColor, selectedPreset.bgColor, fontSize, fontFamily, JE.getSubtitleTextShadow(selectedPreset.bgColor));
                         JE.toast(JE.t('toast_subtitle_style', { style: selectedPreset.name }));
                     } else if (type === 'font-size') {
                         JE.updateSettings({ selectedFontSizePresetIndex: presetIndex });
-                        const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
-                        const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
-
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-                        const textShadow = JE.getSubtitleTextShadow(bgColor);
-
-                        updatePositionPreviewFont(selectedPreset, JE.fontFamilyPresets[fontFamilyIndex]);
-                        JE.applySubtitleStyles(textColor, bgColor, selectedPreset.size, fontFamily, textShadow);
                         JE.toast(JE.t('toast_subtitle_size', { size: selectedPreset.name }));
                     } else if (type === 'font-family') {
                         JE.updateSettings({ selectedFontFamilyPresetIndex: presetIndex });
-                        const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
-                        const fontSize = JE.fontSizePresets[fontSizeIndex].size;
-
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-                        const textShadow = JE.getSubtitleTextShadow(bgColor);
-
-                        updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], selectedPreset);
-                        JE.applySubtitleStyles(textColor, bgColor, fontSize, selectedPreset.family, textShadow);
                         JE.toast(JE.t('toast_subtitle_font', { font: selectedPreset.name }));
                     } else if (type === 'text-effect') {
                         JE.updateSettings({ selectedTextEffectPresetIndex: presetIndex });
-                        const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
-                        const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
-                        const fontSize = JE.fontSizePresets[fontSizeIndex].size;
-                        const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
-
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-
-                        internal.syncSubtitlePreviewTextShadow?.(bgColor);
-                        JE.applySubtitleStyles(textColor, bgColor, fontSize, fontFamily, JE.getSubtitleTextShadow(bgColor, presetIndex));
                         JE.toast(JE.t('toast_subtitle_text_effect', { effect: selectedPreset.name }));
                     }
 
-                    container.querySelectorAll('.preset-box').forEach(box => {
-                        box.style.setProperty('border', '2px solid transparent', 'important');
-                    });
-                    presetBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
                     resetAutoCloseTimer();
                 }
             });

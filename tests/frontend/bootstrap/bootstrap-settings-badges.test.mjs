@@ -435,22 +435,22 @@ function completionSession(h) {
     else epoch++;
   };
 }
-async function languagePanel(t) {
-  const h = panel(t, { config: badges, settings: { displayLanguage: 'en' } });
+async function languagePanel(t, initial = 'en', target = 'fr') {
+  const h = panel(t, { config: badges, settings: { displayLanguage: initial } });
   const transition = completionSession(h), timers = [];
-  h.window.localStorage.setItem('user-a-language', 'en');
+  h.window.localStorage.setItem('user-a-language', initial);
   h.window.localStorage.setItem('user-b-language', 'en');
   h.window.setTimeout = (callback, ms) => { timers.push({ callback, ms }); return timers.length; };
   h.window.fetch = async () => ({ ok: false });
-  h.window.ApiClient.ajax = async request => request.url.includes('/locales') ? ['en', 'fr'] : [];
+  h.window.ApiClient.ajax = async request => request.url.includes('/locales') ? ['en-US', 'fr'] : [];
   h.load('enhanced/settingspanel/ui-panel-language.js');
   h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} });
   await tick();
   const held = deferred();
   h.window.ApiClient.ajax = request => { if (request.type === 'GET') return Promise.resolve([]); h.writes.push(request); return held.promise; };
-  await h.choose('displayLanguageSelect', 'fr');
+  await h.choose('displayLanguageSelect', target);
   assert.equal(h.writes.length, 1, 'POST has been submitted before the boundary');
-  assert.equal(h.window.localStorage.getItem('user-a-language'), 'en');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), initial);
   return { ...h, held, transition, timers };
 }
 function expectReload(h, expected) {
@@ -552,3 +552,253 @@ for (const id of ['listPlaceholdersSelect', 'listStatusSelect', 'listSwapInSelec
     assert.equal(h.toasts.length, 0);
   });
 }
+
+// Review round 9: effects follow the committed whole document, even when another input carries the choice.
+for (const [initial, target] of [['en', 'fr'], ['fr', 'en-US']]) {
+  for (const firstSuccess of [false, true]) for (const secondSuccess of [false, true]) {
+    test(`persisted language ${initial}→${target} follows overlapping commits ${firstSuccess}/${secondSuccess}`, async t => {
+      const h = await languagePanel(t, initial, target), second = deferred();
+      h.wire();
+      h.window.ApiClient.ajax = request => { h.writes.push(request); return second.promise; };
+      await h.choose('nativeAcquisitionStampsSelect', 'off');
+      assert.equal(h.writes.length, 1, 'second whole document is queued');
+      if (firstSuccess) h.held.resolve(); else h.held.reject(new Error('first fails'));
+      await tick();
+      assert.equal(h.writes.length, 2);
+      assert.equal(JSON.parse(h.writes[1].data).displayLanguage, target);
+      if (secondSuccess) second.resolve(); else second.reject(new Error('second fails'));
+      await tick();
+      const saved = firstSuccess || secondSuccess;
+      assert.equal(h.window.localStorage.getItem('user-a-language'), saved ? target : initial);
+      assert.equal(h.JE.userConfig.settings.displayLanguage, saved ? target : initial);
+      assert.equal(h.toasts.filter(message => message === tr('toast_language_changed')).length, saved ? 1 : 0);
+      assert.equal(h.timers.filter(timer => timer.ms === 1500).length, saved ? 1 : 0);
+      expectReload(h, saved);
+    });
+  }
+  for (const boundary of ['close', 'user switch', 'same-user new epoch', 'server switch']) {
+    test(`carried language ${target} respects ${boundary} before second completion`, async t => {
+      const h = await languagePanel(t, initial, target), second = deferred();
+      h.wire();
+      h.window.ApiClient.ajax = request => { h.writes.push(request); return second.promise; };
+      await h.choose('nativeAcquisitionStampsSelect', 'off');
+      h.held.reject(new Error('language POST fails')); await tick();
+      assert.equal(h.writes.length, 2);
+      h.transition(boundary);
+      second.resolve(); await tick();
+      const current = boundary === 'close';
+      assert.equal(h.window.localStorage.getItem('user-a-language'), current ? target : initial);
+      assert.equal(h.window.localStorage.getItem('user-b-language'), 'en');
+      assert.equal(h.toasts.filter(message => message === tr('toast_language_changed')).length, current ? 1 : 0);
+      expectReload(h, current);
+    });
+  }
+}
+
+test('accepted server language read mirrors without a toast or reload, even without a language panel', async t => {
+  const h = panel(t, { settings: { displayLanguage: 'en' } }), timers = [];
+  h.window.localStorage.setItem('user-a-language', 'en');
+  h.window.setTimeout = callback => { timers.push(callback); };
+  h.window.ApiClient.ajax = async () => ({ displayLanguage: 'pt-br' });
+  await h.JE.readUserSettings('settings.json');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'pt-BR');
+  assert.equal(h.JE.currentSettings.displayLanguage, 'pt-br');
+  assert.equal(h.toasts.length, 0);
+  assert.equal(timers.length, 0);
+});
+
+for (const [id, key, initial, target, toast] of [
+  ['acquisitionBadgesSelect', 'acquisitionBadges', false, '', 'toast_badge_settings_saved'],
+  ['nativeAcquisitionStampsSelect', 'nativeAcquisitionStamps', null, 'off', 'toast_badge_settings_saved'],
+  ['listPlaceholdersSelect', 'listPlaceholders', null, 'off', 'toast_list_settings_saved'],
+  ['listStatusSelect', 'listStatus', null, 'off', 'toast_list_settings_saved'],
+  ['nativePosterTagsToggle', 'useNativePosterTags', true, false, 'toast_native_poster_tags_saved'],
+  ['autoSeasonRequestsSelect', 'autoSeasonRequests', null, 'off', 'toast_auto_requests_saved'],
+  ['autoMovieRequestsSelect', 'autoMovieRequests', null, 'off', 'toast_auto_requests_saved']
+]) for (const carried of [false, true]) {
+  test(`${key} saved notification follows authoritative ${carried ? 'carried commit' : 'failure'}`, async t => {
+    const h = panel(t, { config: { ...badges, NativePosterTagsEnabled: true, ArrListsEnabled: true,
+      ArrListStatusEnabled: true, ArrAutomationEngineEnabled: true }, settings: { [key]: initial } });
+    const held = [deferred(), deferred()];
+    h.window.ApiClient.ajax = request => {
+      if (request.type === 'GET') return Promise.resolve([]);
+      h.writes.push(request); return held[h.writes.length - 1].promise;
+    };
+    h.wire();
+    const control = h.document.getElementById(id);
+    if (control.type === 'checkbox') control.checked = target; else control.value = target;
+    control.dispatchEvent(new h.window.Event('change', { bubbles: true })); await tick();
+    assert.equal(h.toasts.length, 0, 'never claim saved before persistence');
+    const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
+    h.allowConsoleError('Failed to save settings.json');
+    held[0].reject(new Error('original fails')); await tick();
+    assert.equal(h.toasts.length, 0, 'failed original never claims saved');
+    if (carried) held[1].resolve(); else held[1].reject(new Error('later fails'));
+    await later;
+    assert.deepEqual(h.toasts, carried ? [tr(toast)] : []);
+    if (key === 'acquisitionBadges' && carried) assert.equal(h.resets.at(-1), null, 'carried Show refreshes cards');
+  });
+}
+
+for (const carried of [false, true]) test(`applied subtitle styles and position follow ${carried ? 'carried commit' : 'failed documents'}`, async t => {
+  const h = panel(t, { settings: { subtitleHorizontalPosition: 50, subtitleVerticalPosition: 95, selectedFontSizePresetIndex: 2 } });
+  const applied = [], held = [deferred(), deferred()];
+  h.JE.applySavedStylesWhenReady = () => applied.push(['style', h.JE.currentSettings.selectedFontSizePresetIndex]);
+  h.JE.applySubtitlePosition = () => applied.push(['position', h.JE.currentSettings.subtitleHorizontalPosition]);
+  h.wire();
+  let post = 0;
+  h.window.ApiClient.ajax = () => held[post++].promise;
+  const first = h.JE.updateSettings({ subtitleHorizontalPosition: 20, selectedFontSizePresetIndex: 1 }, { throwOnError: true }).catch(() => {});
+  const second = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
+  held[0].reject(new Error('style POST fails')); await tick();
+  if (carried) held[1].resolve(); else held[1].reject(new Error('later fails'));
+  await Promise.all([first, second]);
+  assert.deepEqual(applied.slice(-2), [['style', carried ? 1 : 2], ['position', carried ? 20 : 50]]);
+});
+
+test('consent-only success cannot persist or mirror a failed display language', async t => {
+  const h = await languagePanel(t), consent = deferred();
+  h.window.ApiClient.ajax = request => { h.writes.push(request); return consent.promise; };
+  const saving = h.JE.setPersonalConsent('listSwapIn', true, { throwOnError: true });
+  h.held.reject(new Error('language fails')); await tick();
+  assert.equal(h.writes[1].type, 'PATCH');
+  consent.resolve({ consents: { ListSwapIn: true } }); await saving;
+  assert.equal(h.JE.userConfig.settings.displayLanguage, 'en');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'en');
+  assert.equal(h.toasts.filter(message => message === tr('toast_language_changed')).length, 0);
+  expectReload(h, false);
+});
+
+test('a read while French is pending mirrors only persisted English, never the shown choice', async t => {
+  const h = await languagePanel(t);
+  h.window.ApiClient.ajax = async () => ({ displayLanguage: 'fr' });
+  await h.JE.readUserSettings('settings.json');
+  assert.equal(h.JE.currentSettings.displayLanguage, 'fr', 'pending choice still shown');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'en');
+  assert.equal(h.toasts.length, 0);
+  h.held.reject(new Error('language fails')); await tick();
+  expectReload(h, false);
+});
+
+test('an unrelated settings commit mirrors Auto language as an empty value without a language panel', async t => {
+  const h = panel(t, { settings: { displayLanguage: '' } });
+  h.window.localStorage.setItem('user-a-language', 'fr');
+  await h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true });
+  assert.equal(h.window.localStorage.getItem('user-a-language'), '');
+});
+
+for (const kind of ['quality tags', 'tag hover', 'random button', 'subtitle styles']) {
+  for (const carried of [false, true]) test(`document projection restores ${kind} after overlapping ${carried ? 'carried commit' : 'failures'}`, async t => {
+    const key = { 'quality tags': 'qualityTagsEnabled', 'tag hover': 'tagsHideOnHover', 'random button': 'randomButtonEnabled', 'subtitle styles': 'disableCustomSubtitleStyles' }[kind];
+    const id = { 'quality tags': 'qualityTagsToggle', 'tag hover': 'tagsHideOnHoverToggle', 'random button': 'randomButtonToggle', 'subtitle styles': 'disableCustomSubtitleStyles' }[kind];
+    const h = panel(t, { settings: { [key]: true } }), held = [deferred(), deferred()];
+    h.document.body.classList.add('je-tags-hide-on-hover');
+    h.document.body.insertAdjacentHTML('beforeend', '<div class="quality-overlay-container"></div><div id="randomItemButtonContainer"></div>');
+    let applied = true;
+    h.JE.initializeQualityTags = () => h.document.body.insertAdjacentHTML('beforeend', '<div class="quality-overlay-container"></div>');
+    h.JE.addRandomButton = () => {
+      h.document.getElementById('randomItemButtonContainer')?.remove();
+      if (h.JE.currentSettings.randomButtonEnabled) h.document.body.insertAdjacentHTML('beforeend', '<div id="randomItemButtonContainer"></div>');
+    };
+    h.JE.applySavedStylesWhenReady = () => { applied = h.JE.currentSettings.disableCustomSubtitleStyles; };
+    h.wire();
+    h.window.ApiClient.ajax = req => {
+      if (req.type === 'GET') return Promise.resolve([]);
+      h.writes.push(req); return held[h.writes.length - 1].promise;
+    };
+    const input = h.document.getElementById(id);input.checked = false;
+    input.dispatchEvent(new h.window.Event('change', { bubbles: true }));await tick();
+    const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
+    h.allowConsoleError('Failed to save settings.json');held[0].reject(new Error('first fails'));await tick();
+    if (carried) held[1].resolve();else held[1].reject(new Error('second fails'));
+    await later;
+    assert.equal(h.JE.currentSettings[key], !carried);
+    if (kind === 'quality tags') assert.equal(!!h.document.querySelector('.quality-overlay-container'), !carried);
+    if (kind === 'tag hover') assert.equal(h.document.body.classList.contains('je-tags-hide-on-hover'), !carried);
+    if (kind === 'random button') assert.equal(!!h.document.getElementById('randomItemButtonContainer'), !carried);
+    if (kind === 'subtitle styles') assert.equal(applied, !carried);
+  });
+}
+
+test('a legacy whole-document writer projects subtitle styles and pause delay without an open panel', async t => {
+  const h = panel(t), calls = [];
+  h.JE.pauseScreenInstance = {};
+  h.JE.applySavedStylesWhenReady = () => calls.push(h.JE.currentSettings.selectedFontSizePresetIndex);
+  h.JE.currentSettings.selectedFontSizePresetIndex = 1;
+  h.JE.currentSettings.pauseScreenDelaySeconds = 12;
+  await h.JE.saveUserSettings('settings.json', h.JE.currentSettings, { throwOnError: true });
+  assert.equal(h.JE.pauseScreenInstance.pauseScreenDelayMs, 12000);
+  assert.deepEqual(calls, [1]);
+});
+
+test('quality audio filter rolls back through document observers after close', async t => {
+  const h = panel(t, { settings: { qualityTagsEnabled: true, qualityTagsPreferredAudioLanguage: '', selectedFontSizePresetIndex: 2 } });
+  const applied = [];
+  h.JE.reinitializeQualityTags = () => applied.push(h.JE.currentSettings.qualityTagsPreferredAudioLanguage);
+  h.wire();
+  const held = [deferred(), deferred()];let n = 0;
+  h.window.ApiClient.ajax = () => held[n++].promise;
+  await h.choose('qualityTagsAudioLanguageSelect', 'none');
+  const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
+  h.panelCleanups.forEach(fn => fn());h.allowConsoleError('Failed to save settings.json');
+  held[0].reject(new Error('first fails'));await tick();held[1].reject(new Error('second fails'));await later;
+  assert.equal(applied.at(-1), '');
+});
+
+
+test('subtitle preset preview rolls back through document observers after close', async t => {
+  const h = panel(t, { settings: { selectedFontSizePresetIndex: 2 } });
+  h.JE.fontSizePresets[1] = { ...preset, size: 0.5 };
+  h.JE.applySubtitleStyles = () => {};
+  h.wire();
+  h.JE.internals.enhancedUi.wireMiscSettingsControls({ panelCleanups: h.panelCleanups, help: h.document.body, primaryAccentColor: '#123456', resetAutoCloseTimer() {} });
+  await tick();
+  const held = [deferred(), deferred()];let n = 0;
+  h.window.ApiClient.ajax = () => held[n++].promise;
+  h.document.querySelector('#font-size-presets-container [data-preset-index="1"]').click();await tick();
+  assert.equal(h.document.getElementById('subtitlePositionPreview').style.fontSize, '8px');
+  const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
+  h.panelCleanups.forEach(fn => fn());h.allowConsoleError('Failed to save settings.json');
+  held[0].reject(new Error('first fails'));await tick();held[1].reject(new Error('second fails'));await later;
+  assert.equal(h.document.getElementById('subtitlePositionPreview').style.fontSize, '13px');
+});
+
+for (const type of ['quality', 'rating']) test(`${type} section visibility follows document rollback`, async t => {
+  const h=panel(t,{settings:{[type+'TagsEnabled']:true}});h.wire();const held=deferred();
+  h.window.ApiClient.ajax=()=>held.promise;h.allowConsoleError('Failed to save settings.json');
+  const input=h.document.getElementById(type+'TagsToggle');input.checked=false;input.dispatchEvent(new h.window.Event('change',{bubbles:true}));await tick();
+  assert.equal(h.document.getElementById(type+'TagsSubWrap').style.display,'none');
+  held.reject(Error('save fails'));await tick();
+  assert.equal(input.checked,true);assert.equal(h.document.getElementById(type+'TagsSubWrap').style.display,'block');
+});
+
+test('quality category DOM order follows a failed reorder',async t=>{
+ const h=panel(t,{settings:{qualityTagsEnabled:true}});h.wire();const group=h.document.getElementById('qualityTagsSubToggles');
+ const order=()=>[...group.querySelectorAll('.je-quality-cat-row')].map(r=>r.dataset.orderKey),before=order(),held=deferred();
+ h.window.ApiClient.ajax=()=>held.promise;h.allowConsoleError('Failed to save settings.json');
+ group.querySelector('.je-cat-down').click();await tick();assert.notDeepEqual(order(),before);
+ held.reject(Error('reorder fails'));await tick();assert.deepEqual(order(),before);
+});
+
+test('subtitle warnings follow document rollback',async t=>{
+ const h=panel(t,{settings:{disableCustomSubtitleStyles:false}});h.wire();const note=h.document.getElementById('je-subtitle-position-note'),held=deferred();
+ h.window.ApiClient.ajax=()=>held.promise;h.allowConsoleError('Failed to save settings.json');
+ const input=h.document.getElementById('disableCustomSubtitleStyles');input.checked=true;input.dispatchEvent(new h.window.Event('change',{bubbles:true}));await tick();
+ assert.equal(note.style.display,'none');held.reject(Error('style disable fails'));await tick();assert.equal(note.style.display,'flex');
+});
+
+test('late language enumeration renders the current document rather than its opening snapshot',async t=>{
+ const h=panel(t,{settings:{displayLanguage:'en-US'}}),locales=deferred();h.wire();h.window.fetch=async()=>({ok:false});h.window.setTimeout=()=>1;
+ h.window.ApiClient.ajax=req=>req.url.includes('/locales')?locales.promise:Promise.resolve([]);
+ h.load('enhanced/settingspanel/ui-panel-language.js');h.JE.internals.enhancedUi.wireLanguageControls({panelCleanups:h.panelCleanups,resetAutoCloseTimer(){}});
+ await h.JE.updateSettings({displayLanguage:'fr'},{throwOnError:true});locales.resolve(['en-US','fr']);await tick();
+ assert.equal(h.document.getElementById('displayLanguageSelect').value,'fr');
+});
+
+test('late random-source options render the current document rather than the opening source',async t=>{
+ const h=panel(t,{settings:{randomSourceId:'old'}}),sources=deferred();h.wire();
+ h.window.ApiClient.ajax=req=>req.type==='GET'?sources.promise:Promise.resolve([]);
+ h.JE.internals.enhancedUi.wireMiscSettingsControls({panelCleanups:h.panelCleanups,help:h.document.body,primaryAccentColor:'#123456',resetAutoCloseTimer(){}});
+ await h.JE.updateSettings({randomSourceId:'new'},{throwOnError:true});sources.resolve({Items:[{Id:'old',Name:'Old',Type:'Playlist'},{Id:'new',Name:'New',Type:'Playlist'}]});await tick();
+ assert.equal(h.document.getElementById('randomSourceSelect').value,'new');
+});
