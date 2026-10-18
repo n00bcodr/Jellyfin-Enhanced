@@ -217,9 +217,12 @@ public class ReadyPlaylistServiceTests
     {
         var item = Guid.NewGuid();
         var other = Guid.NewGuid();
+        // A path-only entry is how 10.11 keeps playlist entries after reading the file again (12.x marks Path obsolete).
+#pragma warning disable CS0618
         var byPath = new MediaBrowser.Controller.Entities.LinkedChild { Path = "/readymedia/movies/a.mkv" };
-        var byId = new MediaBrowser.Controller.Entities.LinkedChild { ItemId = other };
         var gone = new MediaBrowser.Controller.Entities.LinkedChild { Path = "/readymedia/movies/gone.mkv" };
+#pragma warning restore CS0618
+        var byId = new MediaBrowser.Controller.Entities.LinkedChild { ItemId = other };
         var raw = JellyfinReadyPlaylistHost.RawIds(new[] { byPath, byId, gone, byPath }, new[] { (byPath, item), (byId, other) });
         Assert.Equal(new[] { item, other, Guid.Empty, item }, raw);
     }
