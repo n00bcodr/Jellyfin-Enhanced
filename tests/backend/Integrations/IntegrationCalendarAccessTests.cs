@@ -96,8 +96,15 @@ public class IntegrationCalendarAccessTests
     {
         using var rig = new ResolverRig();
         var sonarr = rig.Add("sonarr.lan", "Sonarr");
-        rig.Configure(_ => [], null, Enumerable.Range(1, 4).Select(i => ("TV" + i, ArrKind.Sonarr, "http://sonarr.lan:8989")).ToArray());
+        var archive = rig.Add("archive.lan", "Sonarr");
+        // Four instances hold the series: TV1 in the folder of the visible copy (the copy is TV1's: the same root and
+        // title folder names, which no other instance's folder has), TV2-TV4 in an archive folder. No mapping resolves
+        // any of them to a library.
+        rig.Configure(_ => [], null, Enumerable.Range(1, 4).Select(i => ("TV" + i, ArrKind.Sonarr, i == 1 ? "http://sonarr.lan:8989" : "http://archive.lan:8989")).ToArray());
         sonarr.Series.Add(FakeArr.SeriesRow(1, 100, "Show"));
+        var archived = FakeArr.SeriesRow(1, 100, "Show");
+        archived["path"] = "/data/archive/Show";
+        archive.Series.Add(archived);
         sonarr.Queue.Add(FakeArr.SonarrQueueRow(1, "download", 1, 2));
         var view = new FakeJellyfinView();
         var viewer = view.AddUser(admin: false);

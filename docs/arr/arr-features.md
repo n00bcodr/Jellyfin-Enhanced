@@ -38,11 +38,14 @@ everyone where the things they care about have got to, in plain words. Settings:
 **One status language.** *Waiting for Dad to OK it → OK'd! Getting started → Not out yet → Looking for it →
 Downloading · 42% · about 12 min → Almost ready → Ready to watch*. "Ready" means a Jellyfin item *you* can open.
 Family members see these sentences only; administrators also see which Sonarr/Radarr holds each copy, the app's
-own message ("Manual Import required") and what would fix it. A page of one copy of a series (a 4K folder, the series
-in another library, or one folder of a grouped series) reads only the Sonarr that owns that copy's folder (by its path
-mapping, else the folder names); when no Sonarr provably does, it reads none rather than another Sonarr's files,
-downloads or upgrades. Every answer is judged by what you may see when it is sent: if your access, parental limit or
-role changes while it is being prepared, it is prepared again for you as you are now.
+own message ("Manual Import required") and what would fix it. A page or poster card of one copy of a series (a 4K
+folder, the series in another library, or one folder of a grouped series) reads only the Sonarr that owns that copy's
+folder: by its path mapping or the same path, else the folder names when they pair the copy with one Sonarr only (a
+standard and a 4K copy both under ".../TV/Firefly" with no mapping can't be told apart); one copy with one Sonarr is
+that Sonarr's however its folders are named. When no Sonarr provably owns the copy, it reads none rather than another
+Sonarr's files, downloads or upgrades; a path mapping or linked libraries settle it. Every answer is judged by what you
+may see when it is sent: if your access, parental limit or role changes while it is being prepared, it is prepared
+again for you as you are now (if you were removed or keep changing, the Requests page answers as for nobody).
 
 **Where it shows**
 
@@ -79,7 +82,9 @@ role changes while it is being prepared, it is prepared again for you as you are
   any library and in any folder of a grouped series, every requested episode by its own files, and only a version
   whose own item you can open: one in a library you can't open, or above your parental limit, isn't yours); a 4K
   Sonarr/Radarr holding the title, sharing its folder or library with the standard copy, or Seerr saying it is
-  available is never enough on its own. A standard request has arrived once any copy plays, a 4K one included (a
+  available is never enough on its own. A 4K request for a whole series with no 4K seasons to follow (no 4K Sonarr,
+  or one that monitors none) has arrived once a copy you can open has 4K episodes, when the newest of them arrived
+  (Seerr's time only when Jellyfin has none), whether or not Seerr has marked it available. A standard request has arrived once any copy plays, a 4K one included (a
   disc placeholder or a missing item doesn't), unless the administrator turns on *Standard requests need a non-4K
   copy* (a request for a whole series then waits for non-4K episodes of every season the standard Sonarr
   monitors). **Play** on a request opens a copy with that

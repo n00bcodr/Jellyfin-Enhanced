@@ -1220,6 +1220,30 @@ public class ApiArrRequestsHubTests
     }
 
     [Fact]
+    public async Task AViewerRemovedOrChangingWhileTheirRequestsPageIsPreparedGetsNoErrorAndNothingElsesPage()
+    {
+        using var rig = await Ready();
+        Assert.Equal(200, (await Hub(rig, rig.Emma)).Status);
+        // Emma is deleted while her page reads the arrs: the answer for someone who isn't there, not a server error.
+        var done = false;
+        rig.View.OnCopies = () =>
+        {
+            if (done) return;
+            done = true;
+            rig.View.Users.Remove(rig.Emma.UserId);
+        };
+        var gone = await Hub(rig, rig.Emma);
+        Assert.Equal((403, "user_required"), (gone.Status, Root(gone).GetProperty("code").GetString()));
+
+        // Sam's policy changes during every preparation: after its attempts, the same answer.
+        rig.View.OnCopies = () => rig.View.Revoke(rig.View.Users[rig.Sam.UserId]);
+        var changing = await Hub(rig, rig.Sam);
+        Assert.Equal((403, "user_required"), (changing.Status, Root(changing).GetProperty("code").GetString()));
+        rig.View.OnCopies = null;
+        Assert.Equal(200, (await Hub(rig, rig.View.Users[rig.Sam.UserId])).Status);
+    }
+
+    [Fact]
     public async Task TheManageDrawerIsForAdministratorsOnly()
     {
         using var rig = await Ready();
