@@ -134,7 +134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<(HttpStatusCode Status, string Body)?> GetAsync(string path, CancellationToken ct)
         {
-            var apiKey = JellyfinEnhanced.Instance?.Configuration?.DoesTheDogDieApiKey;
+            var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetDoesTheDogDieApiKey();
             if (string.IsNullOrWhiteSpace(apiKey) || !CanCall()) return null;
 
             var client = _httpClientFactory.CreateClient();

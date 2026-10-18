@@ -156,7 +156,7 @@ JE keeps older connection fields for compatibility. Restoring an older configura
 
 ## Stored credentials
 
-Every API key Jellyfin Enhanced stores (Sonarr and Radarr instances, Seerr, TMDB, MDBList, Shoko, and the usage-statistics install secret) is kept in a separate file, `secrets.json`, in the plugin's data folder (`<config>/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/`). The file is readable by the Jellyfin user only and is never served by Jellyfin or by the plugin. The plugin's settings file (`Jellyfin.Plugin.JellyfinEnhanced.xml`) and the dashboard only ever see a placeholder such as `••••••••3f9a` (the last four characters, so you can tell keys apart).
+Every API key Jellyfin Enhanced stores (Sonarr and Radarr instances, Seerr, TMDB, MDBList, DoesTheDogDie, Shoko, the ntfy token, the SMTP password, the backup passphrase, and the usage-statistics install secret) is kept in a separate file, `secrets.json`, in the plugin's data folder (`<config>/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/`). The file is readable by the Jellyfin user only and is never served by Jellyfin or by the plugin. The plugin's settings file (`Jellyfin.Plugin.JellyfinEnhanced.xml`) and the dashboard only ever see a placeholder such as `••••••••3f9a` (the last four characters, so you can tell keys apart).
 
 ??? info "Upgrades, the settings page, and Import from Seerr"
     - **On upgrade** the plugin moves existing keys out of the settings file on its first start. Nothing needs re-entering.

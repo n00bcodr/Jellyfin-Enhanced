@@ -3923,7 +3923,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HideReviewsFromHiddenUsers,
                 config.HideReviewsFromDisabledUsers,
                 config.ShowAwards,
-                DoesTheDogDieEnabled = config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.DoesTheDogDieApiKey),
+                DoesTheDogDieEnabled = config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.GetDoesTheDogDieApiKey()),
                 MdblistEnabled = mdblistEnabled,
                 config.MdblistRatingsEnabled,
                 config.MdblistRatingsShowOnItemDetails,
@@ -4863,7 +4863,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private bool DoesTheDogDieActive(out PluginConfiguration? config)
         {
             config = JellyfinEnhanced.Instance?.Configuration;
-            return config != null && config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.DoesTheDogDieApiKey);
+            return config != null && config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.GetDoesTheDogDieApiKey());
         }
 
         /// <summary>DoesTheDogDie content warnings for a title, by TMDB id.</summary>

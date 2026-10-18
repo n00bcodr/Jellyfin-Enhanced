@@ -222,3 +222,18 @@ test('the arr, Seerr and scan-now buttons send a saved key in a header the brows
   assert.match(requests[0].url, /instanceId=6f1c0c2e/);
   assert.deepEqual(alerts.map(a => a.title), ['Success', 'Success', 'Scan Triggered']);
 });
+
+test('every credential field the page saves goes through the masked-credential helpers', () => {
+  // The legacy arr key mirrors are written from the instance cards; every other credential the page
+  // saves must post jeSecretRead's value (a placeholder keeps the stored key), and be shown with
+  // jeSecretInit, so no key is ever put into a plain input (upstream's DoesTheDogDie key included).
+  const saves = [...page.matchAll(/config\.([A-Za-z_]*(?:ApiKey|API_KEY|Token|Password|Passphrase)) = ([^;]*);/g)]
+    .filter(([, field]) => field !== 'SonarrApiKey' && field !== 'RadarrApiKey');
+  assert.ok(saves.some(([, field]) => field === 'DoesTheDogDieApiKey'));
+  for (const [, field, value] of saves) {
+    assert.match(value, /^jeSecretRead\(document\.querySelector\('#[A-Za-z_]+'\)\)$/, `${field} is saved through jeSecretRead`);
+    const id = value.match(/#([A-Za-z_]+)/)[1];
+    assert.ok(new RegExp(`jeSecretInit\\([^;]*querySelector\\('#${id}'\\)`).test(page), `#${id} is shown through jeSecretInit (or as a peer)`);
+    assert.ok(!new RegExp(`querySelector\\('#${id}'\\)\\.value = `).test(page), `#${id} is never filled with a raw value`);
+  }
+});

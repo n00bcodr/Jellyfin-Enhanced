@@ -5508,6 +5508,7 @@
             jeSecretInit(document.querySelector('#JellyseerrApiKey'), fresh.JellyseerrApiKey);
             jeSecretBindServers(document.querySelector('#JellyseerrApiKey'), (fresh.JellyseerrUrls || '').split(/[\r\n,]+/));
             jeSecretInit(document.querySelector('#mdblistApiKey'), fresh.MdblistApiKey || '');
+            jeSecretInit(document.querySelector('#doesTheDogDieApiKey'), fresh.DoesTheDogDieApiKey || '');
             jeSecretInit(document.querySelector('#shokoApiKey'), fresh.ShokoApiKey || '');
             jeSecretInit(document.querySelector('#backupPassphrase'), fresh.BackupPassphrase || '');
             jeSecretInit(document.querySelector('#arrNtfyToken'), fresh.ArrNtfyToken || '');
@@ -8039,7 +8040,7 @@
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#showAwards').checked = !!config.ShowAwards;
                 document.querySelector('#doesTheDogDieEnabled').checked = !!config.DoesTheDogDieEnabled;
-                document.querySelector('#doesTheDogDieApiKey').value = config.DoesTheDogDieApiKey || '';
+                jeSecretInit(document.querySelector('#doesTheDogDieApiKey'), config.DoesTheDogDieApiKey || '');
                 document.querySelector('#mdblistRatingsEnabled').checked = !!config.MdblistRatingsEnabled;
                 jeSecretInit(document.querySelector('#mdblistApiKey'), config.MdblistApiKey || '');
                 document.querySelector('#mdblistRatingsShowOnItemDetails').checked = config.MdblistRatingsShowOnItemDetails !== false;
@@ -8636,7 +8637,7 @@
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ShowAwards = document.querySelector('#showAwards').checked;
             config.DoesTheDogDieEnabled = document.querySelector('#doesTheDogDieEnabled').checked;
-            config.DoesTheDogDieApiKey = document.querySelector('#doesTheDogDieApiKey').value.trim();
+            config.DoesTheDogDieApiKey = jeSecretRead(document.querySelector('#doesTheDogDieApiKey'));
             config.MdblistRatingsEnabled = document.querySelector('#mdblistRatingsEnabled').checked;
             config.MdblistApiKey = jeSecretRead(document.querySelector('#mdblistApiKey'));
             config.MdblistRatingsShowOnItemDetails = document.querySelector('#mdblistRatingsShowOnItemDetails').checked;
