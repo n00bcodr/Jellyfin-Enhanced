@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails;
 
@@ -40,8 +38,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     }
 
     /// <summary>
-    /// Every id an import candidate or source entry is known by (review round 2, D53 rule 2: identity by every known id).
-    /// The physical-title check is asked under all of them, so a copy held only under its TVDB or IMDb id is found too.
+    /// The ids an import candidate or source entry carries (review round 2, D53 rule 2: identity by every known id): the
+    /// input of <see cref="CompletedIdentity.Completion"/>, which completes it once into the <see cref="CompletedIdentity"/>
+    /// every consumer takes (no consumer takes this raw form).
     /// </summary>
     /// <param name="Movie">Movie (else series).</param>
     /// <param name="Tmdb">TMDB id.</param>
@@ -84,10 +83,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     {
         /// <summary>What the library holds of a title for the viewer, asked under every id of <paramref name="identity"/>.</summary>
         /// <param name="viewer">The viewer.</param>
-        /// <param name="identity">Every id the title is known by.</param>
+        /// <param name="identity">The title's completed identity (every id it is known by).</param>
         /// <param name="season">The season whose episodes are wanted, or null.</param>
         /// <returns>The physical title (<see cref="ImportPhysical.Unreadable"/> when the library can't be read).</returns>
-        ImportPhysical Read(User viewer, ImportIdentity identity, int? season);
+        ImportPhysical Read(User viewer, CompletedIdentity identity, int? season);
 
         /// <summary>
         /// True when the library holds copies of this kind of title (movies or series) that carry none of
@@ -118,7 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         }
 
         /// <inheritdoc />
-        public ImportPhysical Read(User viewer, ImportIdentity identity, int? season)
+        public ImportPhysical Read(User viewer, CompletedIdentity identity, int? season)
         {
             try
             {
@@ -146,7 +145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         }
 
         /// <inheritdoc />
-        public ImportPhysical Read(User viewer, ImportIdentity identity, int? season)
+        public ImportPhysical Read(User viewer, CompletedIdentity identity, int? season)
         {
             try
             {
@@ -176,119 +175,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     }
 
     /// <summary>
-    /// The physical-title projection of one import call for one viewer (review round 2, D53 rule 2), shared by the
-    /// resolver's candidates and alternatives and the source preview's entries. The library is asked under every id the
-    /// candidate or entry carries; when the library holds copies those ids can't find (copies without any of them: a
-    /// library tagged by TVDB only, say), the identity is completed first through the title lookup (TMDB details:
-    /// external ids; an IMDb/TVDB id: its TMDB title), so a copy held under any id is found. One library read per
-    /// identity and season; one completion per identity.
+    /// The physical-title projection of one import call or source read for one viewer (review rounds 2 and 3, D53 rule
+    /// 2), shared by the resolver's candidates and alternatives and the source preview's entries. It takes only a
+    /// <see cref="CompletedIdentity"/> (completed once, on the candidate or entry, before any consumer runs), so the
+    /// library is asked under every id the title is known by. One library read per identity and season.
     /// </summary>
     internal sealed class ImportPhysicalProjection
     {
         private readonly IImportPhysicalTitles _physical;
-        private readonly IImportLookup? _lookup;
         private readonly User _viewer;
-        private readonly ImportCallContext _context;
         private readonly Dictionary<string, ImportPhysical> _reads = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, ImportIdentity?> _identities = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, bool> _beyond = new(StringComparer.Ordinal);
 
         /// <summary>Creates the projection.</summary>
         /// <param name="physical">The library reader.</param>
-        /// <param name="lookup">The title lookup (null: identities can't be completed, so a gap hides).</param>
         /// <param name="viewer">The viewer.</param>
-        /// <param name="context">The call's lookup context.</param>
-        public ImportPhysicalProjection(IImportPhysicalTitles physical, IImportLookup? lookup, User viewer, ImportCallContext context)
+        public ImportPhysicalProjection(IImportPhysicalTitles physical, User viewer)
         {
             _physical = physical;
-            _lookup = lookup;
             _viewer = viewer;
-            _context = context;
         }
 
-        /// <summary>What the library holds of the title for the viewer; null when its ids couldn't be completed (a lookup failed).</summary>
-        /// <param name="identity">The ids the candidate or entry carries.</param>
+        /// <summary>What the library holds of the title for the viewer.</summary>
+        /// <param name="identity">The title's completed identity.</param>
         /// <param name="season">The season whose episodes are wanted, or null.</param>
-        /// <param name="cancellationToken">Cancellation.</param>
-        /// <returns>The physical title, or null (the caller hides or retries).</returns>
-        public async Task<ImportPhysical?> ReadAsync(ImportIdentity identity, int? season, CancellationToken cancellationToken)
+        /// <returns>The physical title.</returns>
+        public ImportPhysical Read(CompletedIdentity identity, int? season)
         {
-            var full = await CompleteAsync(identity, cancellationToken).ConfigureAwait(false);
-            if (full == null)
-            {
-                return null;
-            }
-
-            if (full.Keys.Count == 0)
+            if (identity.Keys.Count == 0)
             {
                 return ImportPhysical.None; // no id: nothing in the library is held under it
             }
 
-            var key = full.Text() + "|" + (season?.ToString(CultureInfo.InvariantCulture) ?? "-");
+            var key = identity.Text() + "|" + (season?.ToString(CultureInfo.InvariantCulture) ?? "-");
             if (!_reads.TryGetValue(key, out var physical))
             {
-                _reads[key] = physical = _physical.Read(_viewer, full, season);
+                _reads[key] = physical = _physical.Read(_viewer, identity, season);
             }
 
             return physical;
-        }
-
-        private async Task<ImportIdentity?> CompleteAsync(ImportIdentity identity, CancellationToken cancellationToken)
-        {
-            if (identity.Keys.Count == 0 || identity.Full)
-            {
-                return identity;
-            }
-
-            var key = identity.Text();
-            if (_identities.TryGetValue(key, out var known))
-            {
-                return known;
-            }
-
-            var beyondKey = (identity.Movie ? "m:" : "t:") + string.Join(',', identity.Providers.OrderBy(p => p, StringComparer.Ordinal));
-            if (!_beyond.TryGetValue(beyondKey, out var beyond))
-            {
-                _beyond[beyondKey] = beyond = _physical.HoldsCopiesBeyond(identity);
-            }
-
-            // Every copy of this kind carries one of the ids at hand: they find every copy as they are.
-            var completed = beyond ? await LookupAsync(identity, cancellationToken).ConfigureAwait(false) : identity;
-            _identities[key] = completed;
-            return completed;
-        }
-
-        private async Task<ImportIdentity?> LookupAsync(ImportIdentity identity, CancellationToken cancellationToken)
-        {
-            if (_lookup == null)
-            {
-                return null;
-            }
-
-            var type = identity.Movie ? "movie" : "tv";
-            var tmdb = identity.Tmdb is > 0 ? identity.Tmdb : null;
-            if (tmdb == null)
-            {
-                var query = identity.Imdb != null ? "imdb:" + identity.Imdb : "tvdb:" + identity.Tvdb!.Value.ToString(CultureInfo.InvariantCulture);
-                var hits = await _lookup.SearchAsync(query, _context, cancellationToken).ConfigureAwait(false);
-                if (hits.Status == LookupStatus.Transient)
-                {
-                    return null;
-                }
-
-                tmdb = hits.Value?.FirstOrDefault(h => h.MediaType == type)?.TmdbId;
-                if (tmdb is not > 0)
-                {
-                    return identity; // the lookup doesn't know the title: these are all its ids
-                }
-            }
-
-            var details = await _lookup.GetDetailsAsync(type, tmdb.Value, _context, cancellationToken).ConfigureAwait(false);
-            return details.Status switch
-            {
-                LookupStatus.Transient => null,
-                _ => identity.With(tmdb, details.Value?.TvdbId, details.Value?.ImdbId),
-            };
         }
     }
 }

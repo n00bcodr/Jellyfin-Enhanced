@@ -17,11 +17,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     /// library access are not here: the resolver applies those first (they hide; these only mark or strip).
     /// </summary>
     /// <param name="HiddenKeys">Hidden title keys.</param>
-    /// <param name="SpoilerGuarded">Whether the viewer guards a title (media type, TMDB id).</param>
-    public sealed record ImportViewer(IReadOnlySet<string> HiddenKeys, Func<string, int, bool> SpoilerGuarded)
+    /// <param name="SpoilerGuarded">Whether the viewer guards a title, asked with its completed identity (every id it is known by).</param>
+    public sealed record ImportViewer(IReadOnlySet<string> HiddenKeys, Func<CompletedIdentity, bool> SpoilerGuarded)
     {
         /// <summary>No rules (unknown viewer state never hides anything here; parental checks fail closed elsewhere).</summary>
-        public static readonly ImportViewer None = new(new HashSet<string>(StringComparer.Ordinal), (_, _) => false);
+        public static readonly ImportViewer None = new(new HashSet<string>(StringComparer.Ordinal), _ => false);
 
         /// <summary>
         /// Applies the rules to one result: a hidden candidate is marked (never pre-selected: the match is capped at low
@@ -42,7 +42,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
         }
 
-        /// <summary>Applies the rules to one candidate (in place).</summary>
+        /// <summary>
+        /// Applies the rules to one candidate (in place). Spoiler Guard takes the candidate's completed identity; a
+        /// candidate without one is guarded (fails closed).
+        /// </summary>
         /// <param name="candidate">Candidate.</param>
         public void Project(ImportCandidateDto candidate)
         {
@@ -51,7 +54,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 candidate.Hidden = true;
             }
 
-            if (SpoilerGuarded(candidate.MediaType, candidate.TmdbId))
+            if (candidate.Identity is not { } identity || SpoilerGuarded(identity))
             {
                 candidate.SpoilerGuarded = true;
                 candidate.Overview = null;
@@ -75,7 +78,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     /// <summary>
     /// <see cref="IImportViewerPolicy"/> over each person's JE settings: Hidden Content's global hides (while Hidden Content
     /// is on for them) and Spoiler Guard (while the feature is on): a title is guarded when the viewer turned it on before
-    /// it arrived (a pending TMDB entry) or guards a library copy of it they can open. A settings file that can't be read
+    /// it arrived (a pending TMDB entry) or guards a library copy of it they can open, found under every id of its completed
+    /// identity (a copy carrying only its TVDB or IMDb id guards it too; 4c2-R3-6). A settings file that can't be read
     /// counts as "no rules": the review then shows titles as any search does, and parental limits still apply.
     /// </summary>
     public sealed class UserImportViewerPolicy : IImportViewerPolicy
@@ -116,7 +120,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (_spoilers == null || config?.SpoilerBlurEnabled != true)
             {
-                return new ImportViewer(hidden, (_, _) => false);
+                return new ImportViewer(hidden, _ => false);
             }
 
             UserSpoilerBlur state;
@@ -128,28 +132,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             {
                 // Unknown: guard everything (Spoiler Guard fails closed: nothing a spoiler could be in is shown).
                 _logger.Debug($"[Lists] Spoiler Guard state of {viewer.Id:N} unreadable for the import review: {ex.Message}");
-                return new ImportViewer(hidden, (_, _) => true);
+                return new ImportViewer(hidden, _ => true);
             }
 
             var spoilers = _spoilers;
-            var memo = new Dictionary<(string, int), bool>();
-            return new ImportViewer(hidden, (mediaType, tmdbId) =>
+            var memo = new Dictionary<string, bool>(StringComparer.Ordinal);
+            return new ImportViewer(hidden, identity =>
             {
-                if (memo.TryGetValue((mediaType, tmdbId), out var known))
+                var key = identity.Text();
+                if (memo.TryGetValue(key, out var known))
                 {
                     return known;
                 }
 
-                var guarded = Guarded(state, spoilers, viewer, mediaType, tmdbId);
-                memo[(mediaType, tmdbId)] = guarded;
+                var guarded = Guarded(state, spoilers, viewer, identity);
+                memo[key] = guarded;
                 return guarded;
             });
         }
 
-        private bool Guarded(UserSpoilerBlur state, SpoilerUserResolver spoilers, User viewer, string mediaType, int tmdbId)
+        private bool Guarded(UserSpoilerBlur state, SpoilerUserResolver spoilers, User viewer, CompletedIdentity identity)
         {
-            var pending = (mediaType == "movie" ? "movie:" : "tv:") + tmdbId.ToString(CultureInfo.InvariantCulture);
-            if (state.PendingTmdb.ContainsKey(pending))
+            if (identity.Tmdb is int tmdb && state.PendingTmdb.ContainsKey((identity.Movie ? "movie:" : "tv:") + tmdb.ToString(CultureInfo.InvariantCulture)))
             {
                 return true;
             }
@@ -161,13 +165,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             try
             {
-                return mediaType == "movie"
-                    ? _host.FindMovies(tmdbId, null, viewer).Any(id => spoilers.IsMovieInSpoilerScope(state, id))
-                    : _host.FindSeries(tmdbId, null, null, viewer).Any(id => state.Series.ContainsKey(id.ToString("N", CultureInfo.InvariantCulture)));
+                // The library copies under every id of the completed identity (4c2-R3-6).
+                return identity.Movie
+                    ? _host.FindMovies(identity.Tmdb, identity.Imdb, viewer).Any(id => spoilers.IsMovieInSpoilerScope(state, id))
+                    : _host.FindSeries(identity.Tmdb, identity.Tvdb, identity.Imdb, viewer).Any(id => state.Series.ContainsKey(id.ToString("N", CultureInfo.InvariantCulture)));
             }
             catch (Exception ex)
             {
-                _logger.Debug($"[Lists] Spoiler Guard library check of {mediaType}/{tmdbId} failed: {ex.Message}");
+                _logger.Debug($"[Lists] Spoiler Guard library check of {identity.Text()} failed: {ex.Message}");
                 return true;
             }
         }

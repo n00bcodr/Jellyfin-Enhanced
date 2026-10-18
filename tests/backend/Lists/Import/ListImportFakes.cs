@@ -206,7 +206,7 @@ internal sealed class FakePhysicalTitles : IImportPhysicalTitles
     }
 
     /// <summary>Titles are held under their TMDB id here (the every-id cases use the production reader).</summary>
-    public ImportPhysical Read(User viewer, ImportIdentity identity, int? season)
+    public ImportPhysical Read(User viewer, CompletedIdentity identity, int? season)
     {
         Interlocked.Increment(ref Reads);
         if (Unreadable)
@@ -234,4 +234,22 @@ internal sealed class FakePhysicalTitles : IImportPhysicalTitles
 
         return held;
     }
+}
+
+/// <summary>
+/// Completed identities for tests that call a consumer directly: the production completion step without a library
+/// reader (the ids at hand are complete), so a test can't build one any other way either.
+/// </summary>
+internal static class TestIdentity
+{
+    /// <summary>The completed identity of a title (<paramref name="type"/>: movie, tv, or a placeholder kind).</summary>
+    public static CompletedIdentity Of(string type, int? tmdb, int? tvdb = null, string? imdb = null)
+    {
+        var movie = type is "movie" or PlaceholderKinds.Movie;
+        var completion = new CompletedIdentity.Completion(null, null, new ImportCallContext("test", false));
+        return completion.CompleteAsync(new ImportIdentity(movie, tmdb, tvdb, imdb), CancellationToken.None).GetAwaiter().GetResult()!;
+    }
+
+    /// <summary>The completed identity of a source entry's title, as the preview builds it without a library reader.</summary>
+    public static CompletedIdentity Of(SourceItem item) => Of(item.MediaType, item.TmdbId, item.MediaType == "movie" ? null : item.TvdbId, item.ImdbId);
 }

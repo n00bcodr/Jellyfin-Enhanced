@@ -55,7 +55,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     /// computed per request, after the shared cache: parental limits hide candidates (unknown fails closed), then a title,
     /// season or episode the library holds but the caller can't open is left out (<see cref="IImportPhysicalTitles"/>,
     /// never shown as absent), then Hidden Content marks and Spoiler Guard strips (<see cref="ImportViewer"/>). Nothing a restricted caller can't see is in
-    /// the answer, not even as an alternative or a count.</item>
+    /// the answer, not even as an alternative or a count. Every candidate's identity is completed once, before any of
+    /// these runs (<see cref="CompletedIdentity"/>): "in library", the physical check, Spoiler Guard, the candidate's ids
+    /// and the placeholder built from it all take that one completed value.</item>
     /// </list>
     /// Every upstream call goes through the shared <see cref="MetadataCallLimiter"/>; the call has a deadline after which
     /// the unfinished entries are returned with state "transient" for the client to resubmit. Resolving never changes a
@@ -176,7 +178,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             var clock = Stopwatch.StartNew();
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(options.Deadline);
-            var tasks = entries.Select((entry, i) => RunOneAsync(entry, i, options, deadline.Token, cancellationToken)).ToList();
+            // One completion per identity for the whole call (entries resolve concurrently).
+            var completion = new CompletedIdentity.Completion(_physical, _lookup, options.Context);
+            var tasks = entries.Select((entry, i) => RunOneAsync(entry, i, options, completion, deadline.Token, cancellationToken)).ToList();
             var results = await Task.WhenAll(tasks).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -198,7 +202,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             // whichever id the library holds it under.
             if (_physical != null)
             {
-                await ProjectPhysicalAsync(response.Results, options.Caller, options.Context, cancellationToken).ConfigureAwait(false);
+                ProjectPhysical(response.Results, options.Caller);
                 response.Complete = response.Results.All(r => r.State != "transient");
             }
 
@@ -216,7 +220,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             return new ImportResolveOutcome(response, pending);
         }
 
-        private async Task<ResolvedEntryDto> RunOneAsync(ImportEntryDto entry, int position, ImportResolveOptions options, CancellationToken deadline, CancellationToken aborted)
+        private async Task<ResolvedEntryDto> RunOneAsync(ImportEntryDto entry, int position, ImportResolveOptions options, CompletedIdentity.Completion completion, CancellationToken deadline, CancellationToken aborted)
         {
             var index = entry?.Index is >= 0 ? entry.Index.Value : position;
             var wanted = Validate(entry);
@@ -227,7 +231,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             try
             {
-                return await ResolveEntryAsync(wanted, index, options, deadline).ConfigureAwait(false);
+                return await ResolveEntryAsync(wanted, index, options, completion, deadline).ConfigureAwait(false);
             }
             catch (TransientLookupException)
             {
@@ -248,7 +252,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         private static ResolvedEntryDto Transient(int index, Wanted wanted) =>
             new() { Index = index, State = "transient", Kind = wanted.Kind, Alternatives = wanted.Alternatives.Count > 1 };
 
-        private async Task<ResolvedEntryDto> ResolveEntryAsync(Wanted wanted, int index, ImportResolveOptions options, CancellationToken cancellationToken)
+        private async Task<ResolvedEntryDto> ResolveEntryAsync(Wanted wanted, int index, ImportResolveOptions options, CompletedIdentity.Completion completion, CancellationToken cancellationToken)
         {
             var result = new ResolvedEntryDto { Index = index, Kind = wanted.Kind };
             var reasons = new SortedSet<string>(StringComparer.Ordinal);
@@ -326,7 +330,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 await EnrichTvAsync(top, top.For ?? effective, options.Context, cancellationToken).ConfigureAwait(false);
             }
 
-            result.Candidates = ordered.Select(c => ToDto(c, c.For ?? effective, options.LibraryUsers)).ToList();
+            // 4c2-R3-7: every candidate's identity is completed here, once, before anything reads it.
+            var identities = await Task.WhenAll(ordered.Select(c => CompleteAsync(c, c.For ?? effective, completion, cancellationToken))).ConfigureAwait(false);
+            result.Candidates = ordered.Select((c, i) => ToDto(c, c.For ?? effective, identities[i], options.LibraryUsers)).ToList();
             result.Match = result.Candidates.FirstOrDefault();
             result.Confidence = confidence;
             result.Reasons = reasons.ToList();
@@ -748,7 +754,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         // ── Output ──────────────────────────────────────────────────────────
 
-        private ImportCandidateDto ToDto(Scored candidate, Wanted wanted, IReadOnlyList<User> libraryUsers)
+        // The candidate's completed identity (D53 rule 2): its TMDB id, the details' TVDB and IMDb ids, and the entry's own
+        // ids it was found under (an IMDb episode id names the episode, not the title), completed through the lookup when
+        // the library holds copies those ids can't find. A completion that fails makes the entry transient (retried,
+        // never offered unchecked).
+        private static async Task<CompletedIdentity> CompleteAsync(Scored candidate, Wanted wanted, CompletedIdentity.Completion completion, CancellationToken cancellationToken)
+        {
+            var hit = candidate.Hit;
+            var movie = hit.MediaType == "movie";
+            var entryTvdb = candidate.Explicit && !movie ? wanted.TvdbId : null;
+            var entryImdb = candidate.Explicit && !wanted.ImdbEpisode ? wanted.ImdbId : null;
+            var raw = new ImportIdentity(movie, hit.TmdbId, movie ? null : candidate.Details?.TvdbId ?? entryTvdb, candidate.Details?.ImdbId ?? entryImdb);
+            return await completion.CompleteAsync(raw, cancellationToken).ConfigureAwait(false) ?? throw new TransientLookupException();
+        }
+
+        private ImportCandidateDto ToDto(Scored candidate, Wanted wanted, CompletedIdentity identity, IReadOnlyList<User> libraryUsers)
         {
             var hit = candidate.Hit;
             var dto = new ImportCandidateDto
@@ -761,11 +781,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 PosterPath = hit.PosterPath,
                 Overview = hit.Overview,
                 Score = Math.Round(candidate.Score, 1),
-                TvdbId = candidate.Details?.TvdbId,
-                ImdbId = candidate.Details?.ImdbId,
+                TvdbId = identity.Tvdb,
+                ImdbId = identity.Imdb,
                 Alternative = candidate.Alternative,
-                // Found under the entry's own ids: those name it too (an IMDb episode id names the episode, not the title).
-                EntryIds = candidate.Explicit ? (hit.MediaType == "tv" ? wanted.TvdbId : null, wanted.ImdbEpisode ? null : wanted.ImdbId) : (null, null),
+                Identity = identity,
             };
 
             var kind = hit.MediaType == "movie" ? PlaceholderKinds.Movie : wanted.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? wanted.Kind : PlaceholderKinds.Series;
@@ -796,7 +815,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return dto; // the episode itself is unknown: nothing to look for in the library yet
             }
 
-            dto.InLibrary = FindInLibrary(new LibraryScope(kind, hit.TmdbId, dto.TvdbId, dto.ImdbId, kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? wanted.Season : null, kind == PlaceholderKinds.Episodes ? episodes : null), libraryUsers, dto.EpisodeTotal);
+            dto.InLibrary = FindInLibrary(new LibraryScope(kind, identity, kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? wanted.Season : null, kind == PlaceholderKinds.Episodes ? episodes : null), libraryUsers, dto.EpisodeTotal);
             return dto;
         }
 
@@ -876,28 +895,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         // SEC-02 / R2-B1: a candidate (an alternative's too) for a title the library holds but the caller can't open (no
         // copy they can open; its season, or one of its episodes, hidden from them) is left out, so it is never offered as
-        // a title that isn't in the library. The library is asked under every id the candidate is known by (TMDB, the
-        // details' TVDB and IMDb, the entry's own id it was found under), completed through the lookup when the library
-        // holds copies those ids can't find (ImportPhysicalProjection). An entry whose candidate couldn't be checked (the
-        // lookup failed) is transient: retried, never offered unchecked.
-        private async Task ProjectPhysicalAsync(List<ResolvedEntryDto> results, User caller, ImportCallContext context, CancellationToken cancellationToken)
+        // a title that isn't in the library. The library is asked under every id of the candidate's completed identity
+        // (completed in ResolveEntryAsync; a failed completion already made the entry transient). A candidate without one
+        // makes its entry transient: retried, never offered unchecked.
+        private void ProjectPhysical(List<ResolvedEntryDto> results, User caller)
         {
-            var projection = new ImportPhysicalProjection(_physical!, _lookup, caller, context);
+            var projection = new ImportPhysicalProjection(_physical!, caller);
             foreach (var result in results)
             {
                 var hidden = new HashSet<ImportCandidateDto>();
                 var unknown = false;
                 foreach (var candidate in result.Candidates)
                 {
-                    var movie = candidate.MediaType == "movie";
-                    var identity = new ImportIdentity(movie, candidate.TmdbId, candidate.TvdbId ?? candidate.EntryIds.Tvdb, candidate.ImdbId ?? candidate.EntryIds.Imdb);
-                    var season = movie ? null : candidate.Scope.Season;
-                    var physical = await projection.ReadAsync(identity, season, cancellationToken).ConfigureAwait(false);
-                    if (physical == null)
+                    if (candidate.Identity is not { } identity)
                     {
                         unknown = true;
                         break;
                     }
+
+                    var movie = identity.Movie;
+                    var season = movie ? null : candidate.Scope.Season;
+                    var physical = projection.Read(identity, season);
 
                     if (physical.Hides(season, movie ? null : candidate.Scope.Episodes))
                     {

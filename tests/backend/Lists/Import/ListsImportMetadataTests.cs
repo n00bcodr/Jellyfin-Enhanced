@@ -357,17 +357,17 @@ public class ListsImportMetadataTests
         var off = policy.For(viewer);
         Assert.Contains("movie:tmdb:49521", off.HiddenKeys);
         Assert.DoesNotContain("tv:tmdb:1399", off.HiddenKeys);
-        Assert.False(off.SpoilerGuarded("tv", 1399));
+        Assert.False(off.SpoilerGuarded(TestIdentity.Of("tv", 1399)));
 
         lists.Plugin.Plugin.Configuration.SpoilerBlurEnabled = true;
         var on = policy.For(viewer);
-        Assert.True(on.SpoilerGuarded("tv", 1399)); // guards a library copy they can open
-        Assert.True(on.SpoilerGuarded("movie", 603)); // turned on before it arrived
-        Assert.False(on.SpoilerGuarded("tv", 1400));
+        Assert.True(on.SpoilerGuarded(TestIdentity.Of("tv", 1399))); // guards a library copy they can open
+        Assert.True(on.SpoilerGuarded(TestIdentity.Of("movie", 603))); // turned on before it arrived
+        Assert.False(on.SpoilerGuarded(TestIdentity.Of("tv", 1400)));
         // The same file, but the other person can't open that library copy: only the pending entry counts for them.
         var forOther = policy.For(other);
-        Assert.False(forOther.SpoilerGuarded("tv", 1399));
-        Assert.True(forOther.SpoilerGuarded("movie", 603));
+        Assert.False(forOther.SpoilerGuarded(TestIdentity.Of("tv", 1399)));
+        Assert.True(forOther.SpoilerGuarded(TestIdentity.Of("movie", 603)));
         Assert.Empty(forOther.HiddenKeys);
         _ = CultureInfo.InvariantCulture;
     }

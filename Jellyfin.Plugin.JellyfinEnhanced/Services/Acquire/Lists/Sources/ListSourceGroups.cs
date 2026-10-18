@@ -161,11 +161,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
         }
 
-        /// <summary>The TMDB candidate a group stands for (the same shape /resolve answers with).</summary>
+        /// <summary>
+        /// The TMDB candidate a group stands for (the same shape /resolve answers with), named by the group's completed
+        /// identity (its ids, and the identity the placeholder, "in library" and Spoiler Guard take).
+        /// </summary>
         /// <param name="group">Group.</param>
         /// <param name="facts">Facts of the whole list.</param>
+        /// <param name="identity">The completed identity of the group's title.</param>
         /// <returns>The candidate.</returns>
-        public static ImportCandidateDto Candidate(SourceGroup group, SourceListFacts facts)
+        public static ImportCandidateDto Candidate(SourceGroup group, SourceListFacts facts, CompletedIdentity identity)
         {
             var first = group.First;
             var details = first.Details;
@@ -180,8 +184,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     ReleaseDate = details?.Date,
                     PosterPath = details?.PosterPath,
                     Overview = details?.Overview,
-                    ImdbId = first.ImdbId,
+                    ImdbId = identity.Imdb,
                     Score = 1000,
+                    Identity = identity,
                 };
             }
 
@@ -195,9 +200,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 Year = firstDate != null && int.TryParse(firstDate.AsSpan(0, 4), NumberStyles.None, CultureInfo.InvariantCulture, out var year) ? year : first.Year,
                 ReleaseDate = firstDate,
                 PosterPath = details?.PosterPath,
-                TvdbId = first.TvdbId,
-                ImdbId = first.ImdbId,
+                TvdbId = identity.Tvdb,
+                ImdbId = identity.Imdb,
                 Score = 1000,
+                Identity = identity,
             };
 
             if (group.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && first.Season.HasValue)
@@ -222,10 +228,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <summary>The placeholder body of a group (exactly what the import review builds from the prepared candidate).</summary>
         /// <param name="group">Group.</param>
         /// <param name="facts">Facts of the whole list.</param>
+        /// <param name="identity">The completed identity of the group's title.</param>
         /// <returns>The body, or null.</returns>
-        public static NewPlaceholderDto? Placeholder(SourceGroup group, SourceListFacts facts) =>
+        public static NewPlaceholderDto? Placeholder(SourceGroup group, SourceListFacts facts, CompletedIdentity identity) =>
             ImportPlaceholders.FromCandidate(
-                Candidate(group, facts),
+                Candidate(group, facts, identity),
                 group.Kind,
                 group.First.Season,
                 group.Kind == PlaceholderKinds.Episodes ? group.Items.Select(i => i.Episode!.Value).ToList() : null,
@@ -233,15 +240,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
         /// <summary>What to look for in the library for a group.</summary>
         /// <param name="group">Group.</param>
+        /// <param name="identity">The completed identity of the group's title.</param>
         /// <returns>The scope.</returns>
-        public static LibraryScope Scope(SourceGroup group)
+        public static LibraryScope Scope(SourceGroup group, CompletedIdentity identity)
         {
             var first = group.First;
             return new LibraryScope(
                 group.Kind,
-                first.TmdbId!.Value,
-                first.MediaType == "tv" ? first.TvdbId : null,
-                first.ImdbId,
+                identity,
                 group.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? first.Season : null,
                 group.Kind == PlaceholderKinds.Episodes ? group.Items.Select(i => i.Episode!.Value).ToList() : null);
         }
@@ -250,12 +256,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <param name="group">Group.</param>
         /// <param name="index">Position in the response.</param>
         /// <param name="facts">Facts of the whole list.</param>
+        /// <param name="identity">The completed identity of the group's title.</param>
         /// <param name="inLibrary">Library match visible to the caller (and the target playlist's owner), if any.</param>
         /// <returns>The entry.</returns>
-        public static ImportEntryDto Entry(SourceGroup group, int index, SourceListFacts facts, ImportLibraryDto? inLibrary)
+        public static ImportEntryDto Entry(SourceGroup group, int index, SourceListFacts facts, CompletedIdentity identity, ImportLibraryDto? inLibrary)
         {
             var first = group.First;
-            var candidate = Candidate(group, facts);
+            var candidate = Candidate(group, facts, identity);
             candidate.InLibrary = inLibrary;
             return new ImportEntryDto
             {
@@ -265,7 +272,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 TypeHint = first.MediaType,
                 Season = group.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? first.Season : null,
                 Episodes = group.Kind == PlaceholderKinds.Episodes ? group.Items.Select(i => new ImportEpisodeDto { S = i.Season!.Value, E = i.Episode!.Value }).ToList() : null,
-                Ids = new ImportIdsDto { Tmdb = first.TmdbId, TmdbType = first.MediaType, Imdb = first.ImdbId, Tvdb = first.MediaType == "tv" ? first.TvdbId : null },
+                Ids = new ImportIdsDto { Tmdb = first.TmdbId, TmdbType = first.MediaType, Imdb = identity.Imdb, Tvdb = identity.Tvdb },
                 Note = first.Note,
                 SourceKey = group.Key,
                 SourceKeys = group.Keys.ToList(),

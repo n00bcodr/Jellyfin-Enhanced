@@ -112,7 +112,7 @@ internal sealed class FakeImportViewerPolicy : IImportViewerPolicy
     {
         var hidden = Hidden.TryGetValue(viewer.Id, out var h) ? h : new HashSet<string>();
         var guarded = Guarded.TryGetValue(viewer.Id, out var g) ? g : new HashSet<string>();
-        return new ImportViewer(hidden, (mediaType, tmdbId) => guarded.Contains(mediaType + ":tmdb:" + tmdbId));
+        return new ImportViewer(hidden, identity => guarded.Contains((identity.Movie ? "movie" : "tv") + ":tmdb:" + identity.Tmdb));
     }
 
     private static HashSet<string> Set(Dictionary<Guid, HashSet<string>> map, User viewer)

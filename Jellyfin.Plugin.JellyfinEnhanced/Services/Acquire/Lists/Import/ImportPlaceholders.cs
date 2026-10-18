@@ -8,7 +8,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     /// Turns a resolved candidate into the placeholder body POST /apply expects (the import review UI builds the same
     /// shape on the client; the linked-list sync uses this). releaseDate per kind follows C4: movie = release date,
     /// series = first air date, season = the season's air date, episodes = the first listed episode's air date
-    /// (fallback: the season's).
+    /// (fallback: the season's). The ids come only from the candidate's completed identity (review round 3, D53 rule 2),
+    /// so the placeholder names the title by the same ids the review showed and the library was asked under.
     /// </summary>
     public static class ImportPlaceholders
     {
@@ -19,11 +20,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <param name="episodes">Episode numbers (episodes).</param>
         /// <param name="note">Note.</param>
         /// <param name="lineYear">The entry's own year: kept when TMDB has no date for the title yet (an announced title).</param>
-        /// <returns>The placeholder body, or null when the kind doesn't fit the candidate (a movie can't be a season).</returns>
+        /// <returns>The placeholder body, or null when the kind doesn't fit the candidate (a movie can't be a season) or the
+        /// candidate has no completed identity.</returns>
         public static NewPlaceholderDto? FromCandidate(ImportCandidateDto candidate, string? kind, int? season, IReadOnlyList<int>? episodes, string? note, int? lineYear = null)
         {
             kind ??= candidate.MediaType == "movie" ? PlaceholderKinds.Movie : PlaceholderKinds.Series;
-            if ((candidate.MediaType == "movie") != (kind == PlaceholderKinds.Movie))
+            if ((candidate.MediaType == "movie") != (kind == PlaceholderKinds.Movie) || candidate.Identity is not { } identity)
             {
                 return null;
             }
@@ -32,9 +34,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             {
                 Kind = kind,
                 MediaType = candidate.MediaType,
-                TmdbId = candidate.TmdbId,
-                TvdbId = candidate.MediaType == "tv" ? candidate.TvdbId : null,
-                ImdbId = candidate.ImdbId,
+                TmdbId = identity.Tmdb ?? candidate.TmdbId,
+                TvdbId = identity.Tvdb,
+                ImdbId = identity.Imdb,
                 Title = candidate.Title,
                 Year = candidate.Year ?? (candidate.ReleaseDate == null && lineYear is >= 1870 and <= 2100 ? lineYear : null),
                 ReleaseDate = candidate.ReleaseDate,

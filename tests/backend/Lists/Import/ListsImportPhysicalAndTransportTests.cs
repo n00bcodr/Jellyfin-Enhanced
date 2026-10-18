@@ -180,13 +180,13 @@ public class ListsImportPhysicalAndTransportTests
         library.Setup(l => l.GetItemById<BaseItem>(copy.Id, admin)).Returns(copy);
         var reader = Reader(plugin, library.Object);
 
-        Assert.True(reader.Read(viewer, new ImportIdentity(true, 49521, null, null), null).Hidden);
-        Assert.False(reader.Read(admin, new ImportIdentity(true, 49521, null, null), null).Hidden);
-        Assert.False(reader.Read(viewer, new ImportIdentity(true, 1, null, null), null).Hidden); // no copy anywhere: absent is fine
+        Assert.True(reader.Read(viewer, TestIdentity.Of("movie", 49521), null).Hidden);
+        Assert.False(reader.Read(admin, TestIdentity.Of("movie", 49521), null).Hidden);
+        Assert.False(reader.Read(viewer, TestIdentity.Of("movie", 1), null).Hidden); // no copy anywhere: absent is fine
 
         var broken = new Mock<ILibraryManager>();
         broken.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Throws(new InvalidOperationException("db"));
-        Assert.True(Reader(plugin, broken.Object).Read(viewer, new ImportIdentity(true, 49521, null, null), null).Hidden);
+        Assert.True(Reader(plugin, broken.Object).Read(viewer, TestIdentity.Of("movie", 49521), null).Hidden);
     }
 
     private static IImportPhysicalTitles Reader(ApiPluginFixture plugin, ILibraryManager library)

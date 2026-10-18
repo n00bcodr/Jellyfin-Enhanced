@@ -384,21 +384,21 @@ public class ListsImportChronolistsTests
         var facts = ListFacts(items);
         var groups = ListSourceGroups.Group(Positioned(items), facts);
 
-        var season = ListSourceGroups.Placeholder(groups[2], facts)!;
+        var season = ListSourceGroups.Placeholder(groups[2], facts, TestIdentity.Of(groups[2].First))!;
         Assert.Equal(("season", "tv", 61550, "Marvel's Agent Carter", 1, 8, "2015-01-06", 2015, "tt3475734", 281485), (season.Kind, season.MediaType, season.TmdbId!.Value, season.Title, season.SeasonNumber!.Value, season.EpisodeTotal!.Value, season.ReleaseDate, season.Year!.Value, season.ImdbId, season.TvdbId!.Value));
         Assert.Equal("/gqyjmfFOrKY8iouNTXWj9KW7cC5.jpg", season.PosterPath);
 
-        var run = ListSourceGroups.Placeholder(groups[12], facts)!;
+        var run = ListSourceGroups.Placeholder(groups[12], facts, TestIdentity.Of(groups[12].First))!;
         Assert.Equal(("episodes", 1, "2013-11-19", 2013), (run.Kind, run.SeasonNumber!.Value, run.ReleaseDate, run.Year!.Value)); // year = the show's first air year in the list
         Assert.Equal(new[] { 8, 9, 10 }, run.Episodes!.Select(e => e.E));
         Assert.All(run.Episodes!, e => Assert.False(string.IsNullOrEmpty(e.Title)));
 
-        var movie = ListSourceGroups.Placeholder(groups[1], facts)!;
+        var movie = ListSourceGroups.Placeholder(groups[1], facts, TestIdentity.Of(groups[1].First))!;
         Assert.Equal(("movie", 1771, "2011-07-22", 2011), (movie.Kind, movie.TmdbId!.Value, movie.ReleaseDate, movie.Year!.Value));
-        Assert.All(groups, g => Assert.True(ListRules.TryCreate(ListSourceGroups.Placeholder(g, facts), "u", DateTime.UtcNow, out _, out var why), why));
+        Assert.All(groups, g => Assert.True(ListRules.TryCreate(ListSourceGroups.Placeholder(g, facts, TestIdentity.Of(g.First)), "u", DateTime.UtcNow, out _, out var why), why));
 
         // The fetched entry carries every key and a high-confidence prepared result whose candidate yields that body.
-        var entry = ListSourceGroups.Entry(groups[12], 12, facts, null);
+        var entry = ListSourceGroups.Entry(groups[12], 12, facts, TestIdentity.Of(groups[12].First), null);
         Assert.Equal("tv|1403|1|8", entry.SourceKey);
         Assert.Equal(new[] { "tv|1403|1|8", "tv|1403|1|9", "tv|1403|1|10" }, entry.SourceKeys);
         Assert.Equal((12, "ok", "high", "episodes"), (entry.Prepared!.Index, entry.Prepared.State, entry.Prepared.Confidence, entry.Prepared.Kind));

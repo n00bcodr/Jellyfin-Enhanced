@@ -9,14 +9,25 @@ using MediaBrowser.Model.Entities;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 {
-    /// <summary>What to look for in the library (one import entry at its granularity).</summary>
+    /// <summary>
+    /// What to look for in the library (one import entry at its granularity). The title is named only by its
+    /// <see cref="CompletedIdentity"/> (review round 3, D53 rule 2), so "in library" is asked under every id it is known by.
+    /// </summary>
     /// <param name="Kind">movie | series | season | episodes.</param>
-    /// <param name="TmdbId">TMDB id (movie, or the series for TV scopes).</param>
-    /// <param name="TvdbId">TVDB id of the series, if known.</param>
-    /// <param name="ImdbId">IMDb id of the movie / series, if known.</param>
+    /// <param name="Identity">The title's completed identity (movie, or the series for TV scopes).</param>
     /// <param name="Season">Season (season / episodes scopes).</param>
     /// <param name="Episodes">Episode numbers of that season (episodes scope).</param>
-    public sealed record LibraryScope(string Kind, int TmdbId, int? TvdbId, string? ImdbId, int? Season, IReadOnlyList<int>? Episodes);
+    public sealed record LibraryScope(string Kind, CompletedIdentity Identity, int? Season, IReadOnlyList<int>? Episodes)
+    {
+        /// <summary>TMDB id (0 when unknown).</summary>
+        public int TmdbId => Identity.Tmdb ?? 0;
+
+        /// <summary>TVDB id of the series, if known.</summary>
+        public int? TvdbId => Identity.Tvdb;
+
+        /// <summary>IMDb id of the movie / series, if known.</summary>
+        public string? ImdbId => Identity.Imdb;
+    }
 
     /// <summary>A library match for a scope, as seen by every given user.</summary>
     /// <param name="ItemId">

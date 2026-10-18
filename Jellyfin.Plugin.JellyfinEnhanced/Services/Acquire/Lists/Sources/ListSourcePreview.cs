@@ -121,8 +121,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 items = allowed;
             }
 
+            // D53 rule 2: every entry's identity is completed once, here; the physical filter, the snapshot keys and the
+            // prepared candidates (ids, "in library", Spoiler Guard, placeholder) all take that completed value.
             // SEC-02: a title, season or episode the library holds but the caller can't open is never offered as absent.
-            var held = await FilterPhysicalAsync(items, caller, cancellationToken).ConfigureAwait(false);
+            var (held, identities) = await CompleteAndFilterAsync(items, caller, cancellationToken).ConfigureAwait(false);
             hideCounts |= held.Count < items.Count;
             items = held;
 
@@ -130,7 +132,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             var capped = false;
             if (result.Exact)
             {
-                capped = await PrepareGroupedEntriesAsync(response, result.Items, items, libraryUsers ?? new[] { caller }, caller, viewer, cancellationToken).ConfigureAwait(false);
+                capped = await PrepareGroupedEntriesAsync(response, result.Items, items, identities, libraryUsers ?? new[] { caller }, caller, viewer, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -272,37 +274,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             || !caller.HasPermission(PermissionKind.EnableAllFolders)
             || caller.GetPreferenceValues<Guid>(PreferenceKind.BlockedMediaFolders).Length > 0;
 
-        // SEC-02 / R2-B1: entries for a title the library holds but the caller can't open (no copy they can open; the
-        // season or episode hidden from them) are left out. The library is asked under every id the entry carries (TMDB,
-        // TVDB, IMDb), completed through the title lookup when the library holds copies those ids can't find; an entry
-        // whose ids couldn't be completed (the lookup failed) is left out too (fails closed). One read per title and season.
-        private async Task<List<SourceItem>> FilterPhysicalAsync(List<SourceItem> items, User caller, CancellationToken cancellationToken)
+        // D53 rule 2 / SEC-02 / R2-B1: every entry's identity (TMDB, TVDB, IMDb) is completed once through the title lookup
+        // when the library holds copies those ids can't find (one completion per identity); an entry whose ids couldn't
+        // be completed (the lookup failed) is left out (fails closed). Then entries for a title the library holds but the
+        // caller can't open (no copy they can open; the season or episode hidden from them) are left out, asked under the
+        // completed identity. One read per title and season. Returns the kept entries and their completed identities.
+        private async Task<(List<SourceItem> Held, Dictionary<SourceItem, CompletedIdentity> Identities)> CompleteAndFilterAsync(List<SourceItem> items, User caller, CancellationToken cancellationToken)
         {
-            if (_physical == null)
-            {
-                return items;
-            }
-
-            var projection = new ImportPhysicalProjection(_physical, _resolver.Lookup, caller, new ImportCallContext(caller.Id.ToString("N", CultureInfo.InvariantCulture), false));
+            var completion = new CompletedIdentity.Completion(_physical, _resolver.Lookup, new ImportCallContext(caller.Id.ToString("N", CultureInfo.InvariantCulture), false));
+            var projection = _physical == null ? null : new ImportPhysicalProjection(_physical, caller);
             var held = new List<SourceItem>();
+            var identities = new Dictionary<SourceItem, CompletedIdentity>(ReferenceEqualityComparer.Instance);
             foreach (var item in items)
             {
                 var movie = item.MediaType == "movie";
+                var identity = await completion.CompleteAsync(new ImportIdentity(movie, item.TmdbId, movie ? null : item.TvdbId, item.ImdbId), cancellationToken).ConfigureAwait(false);
+                if (identity == null)
+                {
+                    continue;
+                }
+
                 var season = movie ? null : item.Season;
-                var physical = await projection.ReadAsync(new ImportIdentity(movie, item.TmdbId, movie ? null : item.TvdbId, item.ImdbId), season, cancellationToken).ConfigureAwait(false);
-                if (physical != null && !physical.Hides(season, item.Episode is int e ? new[] { e } : null))
+                if (projection == null || !projection.Read(identity, season).Hides(season, item.Episode is int e ? new[] { e } : null))
                 {
                     held.Add(item);
+                    identities[item] = identity;
                 }
             }
 
-            return held;
+            return (held, identities);
         }
 
         // Exact sources: group the (allowed) entries by their positions in the whole list, prepare each group's
         // resolution and library match, and hand out every key of what is shown as the snapshot. Returns true when the
         // groups were capped (the reply then stands for part of the list only).
-        private async Task<bool> PrepareGroupedEntriesAsync(SourceFetchResponse response, IReadOnlyList<SourceItem> all, IReadOnlyList<SourceItem> allowed, IReadOnlyList<User> libraryUsers, User caller, ImportViewer viewer, CancellationToken cancellationToken)
+        private async Task<bool> PrepareGroupedEntriesAsync(SourceFetchResponse response, IReadOnlyList<SourceItem> all, IReadOnlyList<SourceItem> allowed, IReadOnlyDictionary<SourceItem, CompletedIdentity> identities, IReadOnlyList<User> libraryUsers, User caller, ImportViewer viewer, CancellationToken cancellationToken)
         {
             var (positioned, facts) = Positioned(all, allowed);
             await AddSeasonCountsAsync(facts, positioned, new ImportCallContext(caller.Id.ToString("N", CultureInfo.InvariantCulture), false), cancellationToken).ConfigureAwait(false);
@@ -317,7 +323,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             var library = new GroupLibrary(_resolver, libraryUsers);
             response.Grouped = true;
-            response.Entries = groups.Select((group, i) => ListSourceGroups.Entry(group, i, facts, library.Find(group))).ToList();
+            response.Entries = groups.Select((group, i) =>
+            {
+                var identity = identities[group.First];
+                return ListSourceGroups.Entry(group, i, facts, identity, library.Find(group, identity));
+            }).ToList();
             foreach (var entry in response.Entries)
             {
                 if (entry.Prepared != null)
@@ -374,22 +384,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
         /// <summary>
         /// Library matches of groups, looking each show and each season up once: most shows of a watch order aren't in the
-        /// library, and a run is only looked up when its season is (a run lookup reads the season's episodes).
+        /// library, and a run is only looked up when its season is (a run lookup reads the season's episodes). Each is
+        /// asked under the group's completed identity.
         /// </summary>
         private sealed class GroupLibrary(ListImportResolver resolver, IReadOnlyList<User> users)
         {
-            private readonly Dictionary<int, bool> _shows = new();
-            private readonly Dictionary<(int, int), ImportLibraryDto?> _seasons = new();
+            private readonly Dictionary<string, bool> _shows = new(StringComparer.Ordinal);
+            private readonly Dictionary<(string, int), ImportLibraryDto?> _seasons = new();
 
-            public ImportLibraryDto? Find(SourceGroup group)
+            public ImportLibraryDto? Find(SourceGroup group, CompletedIdentity identity)
             {
                 var first = group.First;
                 if (first.MediaType == "tv")
                 {
-                    var show = first.TmdbId!.Value;
+                    var show = identity.Text();
                     if (!_shows.TryGetValue(show, out var present))
                     {
-                        present = resolver.FindInLibrary(new LibraryScope(PlaceholderKinds.Series, show, first.TvdbId, first.ImdbId, null, null), users, null) != null;
+                        present = resolver.FindInLibrary(new LibraryScope(PlaceholderKinds.Series, identity, null, null), users, null) != null;
                         _shows[show] = present;
                     }
 
@@ -402,7 +413,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     {
                         if (!_seasons.TryGetValue((show, season), out var seasonMatch))
                         {
-                            seasonMatch = resolver.FindInLibrary(new LibraryScope(PlaceholderKinds.Season, show, first.TvdbId, first.ImdbId, season, null), users, group.Kind == PlaceholderKinds.Season ? group.Items.Count : null);
+                            seasonMatch = resolver.FindInLibrary(new LibraryScope(PlaceholderKinds.Season, identity, season, null), users, group.Kind == PlaceholderKinds.Season ? group.Items.Count : null);
                             _seasons[(show, season)] = seasonMatch;
                         }
 
@@ -413,7 +424,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     }
                 }
 
-                return resolver.FindInLibrary(ListSourceGroups.Scope(group), users, group.Kind == PlaceholderKinds.Season ? group.Items.Count : null);
+                return resolver.FindInLibrary(ListSourceGroups.Scope(group, identity), users, group.Kind == PlaceholderKinds.Season ? group.Items.Count : null);
             }
         }
     }

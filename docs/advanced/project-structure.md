@@ -449,7 +449,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   matches parsed entries to titles (`ImportScoring.cs` confidence, `ImportLookup.cs`/`TmdbImportLookup.cs` the Seerr and
   TMDB lookups behind `MetadataImportLookup`, `MetadataCallLimiter.cs` fair upstream concurrency, `ListLibraryLookup.cs`
   the adapter to `ListResolver`, `ImportViewerPolicy.cs` Hidden Content and Spoiler Guard per viewer, `ImportPhysicalTitles.cs`
-  what the library holds but the viewer can't open), `ListImportFlags.cs`
+  what the library holds but the viewer can't open, `CompletedIdentity.cs` a title's ids, completed once and
+  taken by each of these), `ListImportFlags.cs`
   the switches, and `JeListMetadata.cs` the TMDB-only `IListMetadataSource` used when Seerr isn't set up. List sites live in
   **`Services/Acquire/Lists/Sources/`**: `ListSourceUrl.cs` URL parsing, `ListSourceFetcher.cs` the provider-pinned
   fetchers with typed failures and the one transmission gate every list-site request passes (switch re-checked, read

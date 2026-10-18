@@ -188,10 +188,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonIgnore] internal (int? Season, IReadOnlyList<int>? Episodes) Scope { get; set; }
 
         /// <summary>
-        /// Internal (never sent): the TVDB / IMDb id the import entry named this candidate by (it was found under that
-        /// id), part of its identity for the physical-title check next to <see cref="TvdbId"/> and <see cref="ImdbId"/>.
+        /// Internal (never sent): the candidate's completed identity (review round 3, D53 rule 2), built once before any
+        /// consumer runs: the physical-title check, "in library", Spoiler Guard and the placeholder take it, and
+        /// <see cref="TvdbId"/> / <see cref="ImdbId"/> are its ids, so the review and the placeholder agree.
         /// </summary>
-        [JsonIgnore] internal (int? Tvdb, string? Imdb) EntryIds { get; set; }
+        [JsonIgnore] internal Services.Acquire.Lists.Import.CompletedIdentity? Identity { get; set; }
     }
 
     /// <summary>The resolution of one entry.</summary>
