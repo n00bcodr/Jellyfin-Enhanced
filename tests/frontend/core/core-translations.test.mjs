@@ -137,3 +137,30 @@ test('a transient bundled-locale failure does not pin the locale to remote Engli
     assert.deepEqual(JSON.parse(h.window.localStorage.getItem('JE_translation_fr_test-v1')),{yes:'Oui'});
   }
 });
+
+// A literal "undefined" or "null" (or an empty or malformed value) is never a language: JE falls back to the
+// language Jellyfin resolved for the page (the user's or the browser's), then English.
+for (const junk of ['undefined', 'null', 'NULL', '', '   ', 'en_US!', 'nan']) test(`a stored language of ${JSON.stringify(junk)} falls back to Jellyfin's language`, async t => {
+  const calls = []; const h = setup(t, async url => { calls.push(url); return jsonResponse({ yes: 'Oui' }); });
+  h.window.localStorage.setItem('a-language', junk);
+  h.document.documentElement.lang = 'fr';
+  await h.JE.loadTranslations();
+  assert.match(calls[0], /\/fr.json$/);
+  assert.ok(calls.every(url => !/undefined|null|nan/i.test(url)), calls.join(' '));
+});
+test('a junk page language falls back to English', async t => {
+  const calls = []; const h = setup(t, async url => { calls.push(url); return jsonResponse({ ok: 'OK' }); });
+  h.window.localStorage.setItem('a-language', 'undefined');
+  h.document.documentElement.lang = 'undefined';
+  await h.JE.loadTranslations();
+  assert.deepEqual(calls, ['http://jellyfin.test/JellyfinEnhanced/locales/en.json']);
+});
+test('JE.languageCode accepts language tags only', t => {
+  const h = setup(t, async () => jsonResponse({}));
+  const code = h.JE.languageCode;
+  assert.equal(code('en-au'), 'en-AU');
+  assert.equal(code(' PT-br '), 'pt-BR');
+  assert.equal(code('zh-Hant-TW'), 'zh-Hant-TW');
+  assert.equal(code('fr'), 'fr');
+  for (const junk of ['undefined', 'null', 'Undefined', 'nan', 'true', '', ' ', 'e', 'en_US', 'en-', '../en', 'en/../../x', null, undefined, 42, {}]) assert.equal(code(junk), '', String(junk));
+});

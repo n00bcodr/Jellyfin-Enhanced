@@ -131,14 +131,15 @@
                     return code;
                 };
 
-                // Use the language code as-is, no special mapping
-                const fullCultureCode = normalizeLangCode(newLang);
+                // Use the language code as-is, no special mapping. Anything that isn't a language tag (a stringified
+                // "undefined" or "null") is saved as Auto, never written to the shared language key.
+                const fullCultureCode = typeof JE.languageCode === 'function' ? JE.languageCode(newLang) : normalizeLangCode(newLang);
 
                 // All dropdown options come from /JellyfinEnhanced/locales, so they are guaranteed valid
                 const translationExists = true;
 
                 // Save to settings.json (use base language code)
-                JE.currentSettings.displayLanguage = newLang;
+                JE.currentSettings.displayLanguage = fullCultureCode ? newLang : '';
                 await JE.saveUserSettings('settings.json', JE.currentSettings);
 
                 // Save to localStorage (use the same code)
