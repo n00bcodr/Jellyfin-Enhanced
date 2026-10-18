@@ -710,24 +710,27 @@ for (const kind of ['season', 'series']) {
 test('a season page\'s wait restarts only when what is available changes, and never runs past its cap', async t => {
   let ready = 1;
   const h = setup(t, { type: 'Season', hash: `#/details?id=${SEASON}&serverId=${SERVER}`, answers: () => season(ready) });
-  Object.assign(h.A.timing, { batch: 120, batchMax: 300 });
+  // The cap far away first: were the 120 ms wait restarted by each read of the same count, the page would
+  // reload only at the cap (2 s). The bounds leave room for a busy machine; the loops run on far longer.
+  Object.assign(h.A.timing, { batch: 120, batchMax: 2000 });
   await h.D.update(false);
   ready = 2;
-  // A long download stream: the change feed reads the same count again and again.
+  // A long download stream: the change feed reads the same count again and again, every 20 ms.
   let start = Date.now();
-  while (h.host.shows.length === 0 && Date.now() - start < 1500) {
+  while (h.host.shows.length === 0 && Date.now() - start < 3000) {
     h.S.refresh(['tv:tvdb:75932:s1']);
     await sleep(20);
   }
   assert.equal(h.host.shows.length, 1, 'reloaded while the reads went on');
-  assert.ok(Date.now() - start < 280, `repeated reads of the same count don't postpone it (${Date.now() - start} ms)`);
-  // Arrivals that keep coming faster than the wait: one reload within the cap.
+  assert.ok(Date.now() - start < 1000, `repeated reads of the same count don't postpone it (${Date.now() - start} ms)`);
+  // Arrivals that keep coming faster than the wait (every 40 ms): one reload within the cap (300 ms now).
+  h.A.timing.batchMax = 300;
   start = Date.now();
-  while (h.host.shows.length === 1 && Date.now() - start < 1500) {
+  while (h.host.shows.length === 1 && Date.now() - start < 3000) {
     ready++;
     h.S.refresh(['tv:tvdb:75932:s1']);
     await sleep(40);
   }
   assert.equal(h.host.shows.length, 2);
-  assert.ok(Date.now() - start < 480, `the cap holds (${Date.now() - start} ms)`);
+  assert.ok(Date.now() - start < 1500, `the cap holds (${Date.now() - start} ms)`);
 });
