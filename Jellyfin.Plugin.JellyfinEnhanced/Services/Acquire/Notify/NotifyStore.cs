@@ -122,6 +122,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             "INSERT INTO notify_prefs(user_id,json,updated_at) VALUES($u,$j,$n) ON CONFLICT(user_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
             ("$u", Id(userId)), ("$j", JsonSerializer.Serialize(prefs, Json)), ("$n", Ms(now))));
 
+        /// <summary>
+        /// Changes a user's preferences in one transaction (read, change, write): a change made at the same time by another
+        /// writer (the person in another tab, an administrator, a phase-4f consent) is never lost. Returns the stored result.
+        /// </summary>
+        public NotifyPrefs UpdatePrefs(Guid userId, Action<NotifyPrefs> change, DateTimeOffset now) => Write((c, t) =>
+        {
+            var prefs = Parse(Scalar(c, "SELECT json FROM notify_prefs WHERE user_id=$u", ("$u", Id(userId)), t) as string);
+            change(prefs);
+            Exec(c, t, "INSERT INTO notify_prefs(user_id,json,updated_at) VALUES($u,$j,$n) ON CONFLICT(user_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
+                ("$u", Id(userId)), ("$j", JsonSerializer.Serialize(prefs, Json)), ("$n", Ms(now)));
+            return prefs;
+        });
+
         private static NotifyPrefs Parse(string? json)
         {
             if (string.IsNullOrEmpty(json)) return new NotifyPrefs();
@@ -611,7 +624,9 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// </summary>
         public void NoteDeleted(Guid userId) => _deleted[Id(userId)] = Environment.TickCount64 + DeletedForMs;
 
-        private static readonly string[] UserTables = { "follows", "notify_prefs", "watch", "notifications", "batches", "marks", "email_codes" };
+        // Phase 4f: the Ready playlist's bindings, entries and native-message attempts are a person's rows too (schema 8 and its
+        // start-up ensure always create them).
+        private static readonly string[] UserTables = { "follows", "notify_prefs", "watch", "notifications", "batches", "marks", "email_codes", "ready_playlists", "ready_entries", "ready_message_attempts" };
 
         // ------------------------------------------------------------------ SQL helpers
 

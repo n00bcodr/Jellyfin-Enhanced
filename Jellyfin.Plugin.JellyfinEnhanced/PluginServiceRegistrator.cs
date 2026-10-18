@@ -240,6 +240,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Stamps.AcquisitionStampFeeder>());
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Stamps.AcquisitionStampUserPurge>();
             // ---- end Phase 4e ----
+            // ---- Phase 4f: the private Ready playlist and native Ready messages (inert while off). State in acquire.db step 8;
+            // interests through the request authority and follows; selection through EditionAvailability with the final
+            // exact-version checks; the playlist journal and its Jellyfin host; library/watch events that only queue work; the
+            // DisplayMessage channel the notification dispatcher uses. ----
+            serviceCollection.AddSingleton<Services.Acquire.Ready.ReadyPlaylistStore>();
+            serviceCollection.AddSingleton<Services.Acquire.Ready.IReadyPlaylistHost, Services.Acquire.Ready.JellyfinReadyPlaylistHost>();
+            serviceCollection.AddSingleton<Services.Acquire.Ready.IReadyInterestSource, Services.Acquire.Ready.ReadyInterestSource>();
+            serviceCollection.AddSingleton<Services.Acquire.Ready.IReadyLibrary, Services.Acquire.Ready.JellyfinReadyLibrary>();
+            serviceCollection.AddSingleton<Services.Acquire.Ready.IReadyPrivacy, Services.Acquire.Ready.JellyfinReadyPrivacy>();
+            serviceCollection.AddSingleton<Services.Acquire.Ready.ReadyCopySelector>();
+            serviceCollection.AddSingleton<Services.Acquire.Ready.ReadyPlaylistService>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Ready.ReadyPlaylistService>());
+            serviceCollection.AddHostedService<Services.Acquire.Ready.ReadyLibraryEvents>();
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserUpdatedEventArgs>, Services.Acquire.Ready.ReadyUserEvents>();
+            serviceCollection.AddSingleton<Services.Acquire.Ready.IReadySessionHost, Services.Acquire.Ready.JellyfinReadySessionHost>();
+            serviceCollection.AddSingleton(sp => new Services.Acquire.Ready.ReadySessionMessages(sp.GetRequiredService<Services.Acquire.Ready.IReadySessionHost>()));
+            serviceCollection.AddSingleton<Services.Acquire.Ready.ReadyNativeChannel>();
+            // ---- end Phase 4f ----
             // ---- Phase 4c3a: list pages. Playlists page summaries (which lists have entries not in the library). ----
             serviceCollection.AddSingleton<Services.Acquire.Lists.IListPagePreferences, Services.Acquire.Lists.UserSettingsListPreferences>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.ListSummaryService>();

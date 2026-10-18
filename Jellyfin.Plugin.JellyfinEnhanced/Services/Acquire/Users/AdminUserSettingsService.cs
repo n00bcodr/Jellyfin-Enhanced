@@ -35,15 +35,33 @@ public sealed class AdminUserSettingsService
     private readonly Action<PluginConfiguration> _save;
     private readonly ListStore? _lists;
     private readonly SeerrBackend? _seerr;
+    private readonly Ready.ReadyPlaylistService? _ready;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly string[] DisplayFields = { "listPlaceholders", "listStatus", "acquisitionBadges", "nativeAcquisitionStamps", "useNativePosterTags" };
 
     /// <summary>Creates the administrator adapter (DI); no user data is loaded or seeded.</summary>
-    public AdminUserSettingsService(RequestService requests, IUserManager users, UserConfigurationManager files, ArrAuditLog audit, ListStore lists, SeerrBackend seerr)
-        : this(requests, users, files, audit, _ => JellyfinEnhanced.Instance!.SaveConfiguration(), lists, seerr) { }
+    public AdminUserSettingsService(RequestService requests, IUserManager users, UserConfigurationManager files, ArrAuditLog audit, ListStore lists, SeerrBackend seerr, Ready.ReadyPlaylistService ready)
+        : this(requests, users, files, audit, _ => JellyfinEnhanced.Instance!.SaveConfiguration(), lists, seerr, ready) { }
 
-    internal AdminUserSettingsService(RequestService requests, IUserManager users, UserConfigurationManager files, ArrAuditLog audit, Action<PluginConfiguration> save, ListStore? lists = null, SeerrBackend? seerr = null)
-    { _requests=requests; _users=users; _files=files; _audit=audit; _save=save; _lists=lists; _seerr=seerr; }
+    internal AdminUserSettingsService(RequestService requests, IUserManager users, UserConfigurationManager files, ArrAuditLog audit, Action<PluginConfiguration> save, ListStore? lists = null, SeerrBackend? seerr = null, Ready.ReadyPlaylistService? ready = null)
+    { _requests=requests; _users=users; _files=files; _audit=audit; _save=save; _lists=lists; _seerr=seerr; _ready=ready; }
+
+    // Phase 4f (D43): the person's Ready playlist and native-message consents with their switches, read-only. Administrators
+    // never consent for a person; read before the settings locks (it reads Jellyfin's playlist).
+    private object ReadyBlock(Guid id, PluginConfiguration c)
+    {
+        var messagesGate = Ready.ReadyFlags.Messages(c);
+        bool? messages = null;
+        if (_requests.Ledger.Database.Available) try { messages = new NotifyStore(_requests.Ledger.Database).Prefs(id).NativeReadyMessages; } catch (Exception) { messages = null; }
+        Ready.ReadyStatus? playlist = null;
+        if (_ready != null) try { playlist = _ready.Status(id); } catch (Exception) { playlist = null; }
+        return new {
+            available = playlist != null,
+            playlistGate = Ready.ReadyFlags.Playlist(c), playlistStored = playlist?.OptedIn, playlistEffective = playlist != null && playlist.Enabled && playlist.OptedIn && playlist.State == Ready.ReadyState.Active,
+            state = playlist?.State, reason = playlist?.Reason, entries = playlist?.Entries, retentionDays = Ready.ReadyFlags.RetentionDays(c),
+            messagesGate, messagesStored = messages, messagesEffective = messagesGate && messages == true,
+        };
+    }
 
     private PluginConfiguration Config => _requests.Policy.Configuration;
     private static AdminUserResult Error(int status,string reason) => new(status,new {reason});
@@ -109,6 +127,7 @@ public sealed class AdminUserSettingsService
     {
         var person=ArrCaller.Find(id,_users);
         if(person==null) return Error(404,"unknown_user");
+        var ready=ReadyBlock(id,Config);
         lock(JellyfinEnhanced.AnalyticsCredentialLock)
         lock(_files.UserSettingsLock(id.ToString("N")))
         {
@@ -167,6 +186,7 @@ public sealed class AdminUserSettingsService
                 seerr=new { blocked,autoImport=c.JellyseerrAutoImportUsers,account=facts.SeerrUser,permissions=facts.SeerrPermissions,
                     adminUrl=SeerrAdminUrl(c),state=blocked?"blocked":facts.SeerrUser!=null?"linked":facts.SeerrUnlinked?"unlinked":"unavailable",quotaSource=c.ArrRequestBackend=="seerr"?"seerr":"je" },
                 safety=new { parentalLimit=person.MaxParentalRatingScore,role=facts.Role,alwaysApproval=facts.Role=="Kid",rules=HouseholdRules.Parse(c.ArrHouseholdRules),rulesEnabled=HouseholdFlags.RulesApply(c) },
+                ready,
             });
         }
     }

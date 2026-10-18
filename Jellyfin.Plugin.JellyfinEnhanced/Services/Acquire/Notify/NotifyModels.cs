@@ -73,6 +73,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>E-mail through the administrator's SMTP server to the user's verified address.</summary>
         public const string Email = "email";
+
+        /// <summary>
+        /// Phase 4f: a native on-screen message (Jellyfin's DisplayMessage command) on one idle session signed in as the
+        /// recipient. Never held for quiet hours or retried: busy, unsupported or stale ends it.
+        /// </summary>
+        public const string DisplayMessage = "display";
     }
 
     /// <summary>
@@ -134,6 +140,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>The browser's UTC offset in minutes when the zone name is unknown to the server.</summary>
         public int? UtcOffsetMinutes { get; set; }
+
+        /// <summary>
+        /// Phase 4f: show a short message on a TV or app signed in as me and not playing anything, when something I asked
+        /// for or follow is ready. A personal consent: off until the person turns it on (missing = off).
+        /// </summary>
+        public bool NativeReadyMessages { get; set; }
 
         /// <summary>A copy.</summary>
         public NotifyPrefs Clone() => (NotifyPrefs)MemberwiseClone();
