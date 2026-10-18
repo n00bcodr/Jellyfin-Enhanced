@@ -878,6 +878,7 @@
     "arr_ask_toast_blocked": "This one can't be asked for here.",
     "arr_ask_toast_storage": "Paused: storage full. There's no room for new downloads right now.",
     "arr_ask_toast_seerr_season": "Seerr takes whole seasons, so single episodes can't be asked for. Ask for the season instead.",
+    "arr_ask_toast_single_season": "Only one season can be asked for at a time.",
     "arr_ask_paused_storage": "Paused: storage full",
     "arr_ask_paused_storage_text": "There's no room for new downloads right now, so asking is paused. {contact} can free up some space.",
     "arr_ask_paused_storage_admin": "{instance}: {folder} has {free} free ({percent}%), under the {limit}% low-disk limit. Requests are paused; Search still runs for you.",

@@ -275,7 +275,8 @@
      * the pickers until something is picked), for one copy. "Just new episodes from now on" in Seerr mode too:
      * Seerr doesn't follow new seasons itself, so Jellyfin Enhanced asks Seerr for each one as it starts.
      * Seerr mode: no "Pick episodes…" (Seerr takes whole seasons); with Seerr's partial requests off, one card for
-     * the whole series (every season, whatever is here: Seerr leaves out what it already has).
+     * the whole series (every season, whatever is here: Seerr leaves out what it already has). One season at a time
+     * (the administrator's option): no "Everything" for more than one season, and "Pick seasons…" takes one.
      * @param {Object} title Title.
      * @param {string} [variant] 'standard' (default) or '4k'.
      * @param {Object|null} [caps] Capabilities (backend).
@@ -298,7 +299,7 @@
             }
             return cards;
         }
-        if (wanted.length) {
+        if (wanted.length && !(wanted.length > 1 && JE.arrAsk.singleSeasonOnly?.(caps))) {
             cards.push({
                 id: 'everything', icon: 'library_add',
                 label: wanted.length === 1 ? tr('arr_sheet_card_everything_one') : tr('arr_sheet_card_everything', { n: wanted.length }),
@@ -589,6 +590,12 @@
         const panel = el('div', 'je-sheet-panel je-sheet-pick');
         panel.setAttribute('role', 'group');
         panel.setAttribute('aria-label', tr('arr_sheet_pick_seasons_label'));
+        // One season at a time: ticking a season unticks the others (as Seerr's own season picker does).
+        const one = !!JE.arrAsk.singleSeasonOnly?.(state.caps);
+        if (one) {
+            panel.appendChild(el('div', 'je-sheet-check-facts je-sheet-one-season', tr('arr_ask_toast_single_season')));
+            if (state.picked.size > 1) state.picked = new Set([[...state.picked].sort((a, b) => a - b)[0]]);
+        }
         for (const s of seasonsOf(state.title, state.variant)) {
             const label = el('label', 'je-sheet-check');
             const box = document.createElement('input');
@@ -598,6 +605,10 @@
             box.checked = !box.disabled && state.picked.has(s.season);
             if (box.disabled) label.classList.add('je-sheet-check-disabled');
             box.addEventListener('change', () => {
+                if (box.checked && one) {
+                    state.picked.clear();
+                    panel.querySelectorAll('input[type="checkbox"]:checked').forEach((other) => { if (other !== box) other.checked = false; });
+                }
                 if (box.checked) state.picked.add(s.season);
                 else state.picked.delete(s.season);
                 refresh(state);

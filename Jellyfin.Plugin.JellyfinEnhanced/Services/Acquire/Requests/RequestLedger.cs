@@ -339,6 +339,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var facts = policy.Evaluate(user, normalized);
             if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : "denied");
             if (SeerrEpisodes(facts, normalized) is { } seerrOnly) return seerrOnly;
+            if (SingleSeason(policy.Configuration, facts, normalized) is { } oneSeason) return oneSeason;
             if (facts.Role != "Admin" && (normalized.InstanceId != null || normalized.ProfileId != null || normalized.RootFolder != null)) return RequestOutcome.Refused("admin_required");
             // An approver's matching ask authorises the shared pending scope, without moving its charge.
             // Automation never approves someone else's pending ask on a person's behalf.
@@ -419,6 +420,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private static RequestOutcome? SeerrEpisodes(RequestPolicyFacts facts, MutationInput input)
             => facts.Backend == "seerr" && input.Scope == "episodes"
                 ? RequestOutcome.Refused("seerr_whole_season_only", 409, "blocked") with { Message = "Seerr takes whole seasons only; ask for the season." }
+                : null;
+        /// <summary>
+        /// "Only allow requesting one season at a time": an ask for more than one season (or for episodes of more than one
+        /// season) is refused before anything is recorded; the request controls offer one season at a time. Approving a
+        /// request recorded before the option was turned on is left to the approver. Null when the ask is fine.
+        /// </summary>
+        private static RequestOutcome? SingleSeason(Configuration.PluginConfiguration config, RequestPolicyFacts facts, MutationInput input)
+            => input.Scope is "seasons" or "episodes" && input.SeasonNumbers.Distinct().Count() > 1 && RequestPolicy.SingleSeasonOnly(config, facts)
+                ? RequestOutcome.Refused("single_season_only", 409, "blocked") with { Message = "Only one season can be asked for at a time." }
                 : null;
         /// <summary>
         /// A Member's ask (JE mode, no blanket approval preset) that crosses the household's series threshold: the seasons

@@ -197,6 +197,16 @@
     }
 
     /**
+     * True when the administrator allows one season per ask ("Only allow requesting one season at a time" on the Seerr
+     * tab; in Seerr mode only while Seerr takes partial requests): the series controls then ask for one season at a time.
+     * @param {Object|null} caps Capabilities ({@link me}).
+     * @returns {boolean} One season at a time.
+     */
+    function singleSeasonOnly(caps) {
+        return caps?.singleSeason === true && !wholeSeriesOnly(caps);
+    }
+
+    /**
      * What a control that would ask for single episodes is called in Seerr mode, so it says what it asks for before
      * it is pressed: "Get Season 2", "Get Seasons 1, 3", or "Get the whole series" (partial requests off in Seerr);
      * "Ask Dad for Season 2" and so on when the caller's asks wait for an OK and the control says so.
@@ -308,7 +318,7 @@
             else if (reason === 'declined') state = 'declined';
             else state = 'asked';
         } else if (status === 429) state = 'quota';
-        else if (status === 409 && reason === 'seerr_whole_season_only') state = 'blocked';
+        else if (status === 409 && (reason === 'seerr_whole_season_only' || reason === 'single_season_only')) state = 'blocked';
         else if (status === 409) state = reason === 'idempotency_conflict' ? 'changed' : 'busy';
         else if (status === 503) state = 'unavailable';
         else if (status === 400) state = 'invalid';
@@ -434,7 +444,8 @@
                     chip: '',
                     text: result.reason === 'decline_cooldown' ? tr('arr_ask_toast_cooldown', { contact: who })
                         : result.reason === 'low_disk' ? tr('arr_ask_toast_storage')
-                            : result.reason === 'seerr_whole_season_only' ? tr('arr_ask_toast_seerr_season') : tr('arr_ask_toast_blocked'),
+                            : result.reason === 'seerr_whole_season_only' ? tr('arr_ask_toast_seerr_season')
+                                : result.reason === 'single_season_only' ? tr('arr_ask_toast_single_season') : tr('arr_ask_toast_blocked'),
                     tone: 'attention'
                 };
             case 'denied': return { chip: '', text: tr('arr_ask_toast_denied'), tone: 'attention' };
@@ -795,6 +806,7 @@
         episodesInput,
         seasonsOnly,
         wholeSeriesOnly,
+        singleSeasonOnly,
         roundedLabel,
         seasonsLabel,
         roundedNote,

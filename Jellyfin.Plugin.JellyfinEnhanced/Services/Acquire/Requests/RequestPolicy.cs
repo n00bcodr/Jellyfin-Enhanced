@@ -283,6 +283,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 instance is { Usable: true } ? SizeHint(_store.PeekLibrary(instance.Id), _aliases.Of(key).Prepend(key)) : null);
         }
         /// <summary>
+        /// The administrator's "Only allow requesting one season at a time" applies to an ask: in Jellyfin Enhanced mode
+        /// always, in Seerr mode only while Seerr takes partial requests (with whole series only it has no effect, as
+        /// with Seerr's own season picker).
+        /// </summary>
+        /// <param name="config">Configuration.</param>
+        /// <param name="facts">The asker's policy facts.</param>
+        internal static bool SingleSeasonOnly(PluginConfiguration config, RequestPolicyFacts facts)
+            => config.JellyseerrSingleSeasonRequestOnly && (facts.Backend == "je" || (facts.Backend == "seerr" && !facts.SeerrWholeSeries));
+        /// <summary>
         /// The low-disk pause of a request like <paramref name="input"/> on <paramref name="instance"/>, or null. JE mode
         /// measures the drive holding the folder the download would be imported into: the title's own folder when the
         /// instance already holds it (a search or a merge lands there, whatever folder is named), else the folder named

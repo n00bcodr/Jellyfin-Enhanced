@@ -1136,6 +1136,41 @@ public class IntegrationRequestBackendsTests
         Assert.Equal(201, (await rig.Create(rig.Member, episodes)).HttpStatus);
     }
 
+    [Fact]
+    public async Task OneSeasonAtATimeRefusesAsksForSeveralSeasonsBeforeRecordingAnythingInBothRequestModes()
+    {
+        using var rig = new IntegrationRequestLedgerTests.Rig();
+        var acrossSeasons = new MutationInput { Key = "tv:tvdb:78874", Scope = "episodes", Episodes = new[] { new RequestEpisode(1, 1), new RequestEpisode(2, 1) } };
+        // Off (the default): several seasons go ahead as before.
+        Assert.False(rig.Service.Me(rig.Member).SingleSeason);
+        Assert.Equal(201, (await rig.Create(rig.Member, IntegrationRequestLedgerTests.Seasons(1, 2))).HttpStatus);
+        rig.Policy.Configuration.JellyseerrSingleSeasonRequestOnly = true;
+        foreach (var backend in new[] { "je", "seerr" })
+        {
+            rig.Policy.Configuration.ArrRequestBackend = backend;
+            Assert.True(rig.Service.Me(rig.Member).SingleSeason);
+            var before = rig.Ledger.ForTitle("tv:tvdb:78874").Count;
+            foreach (var who in new[] { rig.Member, rig.Kid, rig.Admin })
+            {
+                var refused = await rig.Create(who, IntegrationRequestLedgerTests.Seasons(3, 4));
+                Assert.Equal((409, "single_season_only", "blocked"), (refused.HttpStatus, refused.Reason, refused.Outcome));
+                Assert.Null(refused.RequestId);
+            }
+            if (backend == "je")
+                Assert.Equal((409, "single_season_only"), ((await rig.Create(rig.Member, acrossSeasons)).HttpStatus, (await rig.Create(rig.Member, acrossSeasons)).Reason));
+            Assert.Equal(before, rig.Ledger.ForTitle("tv:tvdb:78874").Count);
+        }
+        // One season, or episodes of one season, still goes ahead.
+        rig.Policy.Configuration.ArrRequestBackend = "je";
+        Assert.Equal(201, (await rig.Create(rig.Member, IntegrationRequestLedgerTests.Seasons(3))).HttpStatus);
+        Assert.Equal(201, (await rig.Create(rig.Member, acrossSeasons with { Episodes = new[] { new RequestEpisode(4, 1), new RequestEpisode(4, 2) } })).HttpStatus);
+        // Seerr taking the whole series only: the option has no effect there, as with Seerr's own season picker.
+        rig.Policy.Configuration.ArrRequestBackend = "seerr";
+        rig.Policy.Adjust = (_, _, facts) => facts with { SeerrWholeSeries = true };
+        Assert.False(rig.Service.Me(rig.Member).SingleSeason);
+        Assert.NotEqual("single_season_only", (await rig.Create(rig.Member, IntegrationRequestLedgerTests.Seasons(5, 6))).Reason);
+    }
+
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]

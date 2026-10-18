@@ -998,6 +998,9 @@ profiles, folders or tags.
 2. Press **Request**, **Get Season N**, **Get 4K**, or **Get the N missing**.
 3. In the request sheet, choose what to ask for, then confirm.
 
+!!! note "One season at a time"
+    With Seerr's **Only allow requesting one season at a time** on, the sheet and the series page ask for one season at a time in both request modes (in Seerr mode while Seerr takes partial requests). See [Seerr settings](../seerr/seerr-settings.md#only-allow-requesting-one-season-at-a-time).
+
 ??? info "Movies, series, collections, and the request sheet"
     - **Movies** are asked for with one tap and a toast ("Asked! We'll let you know."). A short sheet appears first only
       when the weekly allowance is nearly used, when the person's asks wait for an OK, or when they may choose 4K.

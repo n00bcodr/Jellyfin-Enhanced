@@ -548,6 +548,9 @@
         let note = '';
         const whole = !!JE.arrAsk.wholeSeriesOnly?.(caps);
         const roundedUp = !!JE.arrAsk.seasonsOnly?.(caps);
+        // One season at a time (the administrator's option): the missing episodes and Search ask for the first season.
+        const one = !!JE.arrAsk.singleSeasonOnly?.(caps);
+        const partial = one ? plan.partial.slice(0, 1) : plan.partial;
         if (whole && (plan.nextSeason != null || plan.missing > 0)) {
             // Seerr takes a request for the whole series only (partial requests off): one button that says so.
             const doneKey = `${key}|series`;
@@ -566,15 +569,17 @@
         if (!whole && roundedUp && plan.missing > 0) {
             // Seerr mode: the missing episodes are asked for as their seasons, and the button names them.
             const doneKey = `${key}|missing`;
-            const seasons = plan.partial.map(s => s.season);
+            const seasons = partial.map(s => s.season);
             box.appendChild(action(doneKey, 'playlist_add', JE.arrAsk.roundedLabel(caps, seasons, ask),
                 (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, seasons), 'tv'), plan.nextSeason != null));
             if (!firstCost) firstCost = JE.arrAsk.seasonsInput(key, seasons);
             note = JE.arrAsk.roundedNote(caps, seasons);
         } else if (!whole && plan.missing > 0) {
             const doneKey = `${key}|missing`;
-            box.appendChild(action(doneKey, 'playlist_add', ask ? tr('arr_actions_ask_missing', { contact }) : tr('arr_actions_get_missing'),
-                (b) => run(b, doneKey, () => missingInput(key, plan.partial), 'tv'), plan.nextSeason != null));
+            const words = ask ? tr('arr_actions_ask_missing', { contact }) : tr('arr_actions_get_missing');
+            const label = one && plan.partial.length > 1 ? `${words} · ${tr('arr_sheet_season', { season: partial[0].season })}` : words;
+            box.appendChild(action(doneKey, 'playlist_add', label,
+                (b) => run(b, doneKey, () => missingInput(key, partial), 'tv'), plan.nextSeason != null));
             if (!firstCost) firstCost = { scope: 'episodes', episodes: new Array(plan.missing).fill(0) };
         }
         // Every episode still to come is monitored and missing for a long while: Search. An administrator's
@@ -584,7 +589,8 @@
         // A series partly here gets it too for its seasons with episodes missing for a long while.
         if (JE.arrStatus.searchable?.(status) || plan.longMissing > 0) {
             const searchFrom = JE.arrAsk.searchInstance(caps, status, key);
-            const wanted = plan.searchSeasons.length ? plan.searchSeasons : plan.seasons.filter(s => s.episodes > 0 && s.have < s.episodes).map(s => s.season);
+            const all = plan.searchSeasons.length ? plan.searchSeasons : plan.seasons.filter(s => s.episodes > 0 && s.have < s.episodes).map(s => s.season);
+            const wanted = one ? all.slice(0, 1) : all;
             if (searchFrom || wanted.length) {
                 const doneKey = `${key}|search`;
                 const label = !searchFrom && JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');

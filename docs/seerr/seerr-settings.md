@@ -330,6 +330,7 @@ Bring Jellyfin watchlist entries into Seerr with a scheduled task. It runs daily
 - Removes **Select All** from the season modal and lets users tick only one season per request
 - Applies everywhere the season modal opens (search, more info, item details)
 - Needs **Partial requests** enabled in Seerr; otherwise Seerr requires all seasons and this setting has no effect
+- With [Requests & downloads](../arr/arr-features.md#asking-for-titles) phase 3 on, Jellyfin Enhanced's own request sheet and series-page buttons follow it too, in Seerr mode (while Seerr takes partial requests) and in Jellyfin Enhanced mode: no **Everything** for several seasons, **Pick seasons…** takes one, and **Get missing episodes** asks for the first season with missing episodes. The server refuses an ask for more than one season (`409 single_season_only`). Requests recorded before the option was turned on can still be approved.
 
 ### Auto Import Jellyfin Users to Seerr
 
