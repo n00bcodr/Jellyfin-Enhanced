@@ -33,21 +33,21 @@ test('disabled filtering and search default preserve cards; image-editor cards a
  h.api.getHiddenData().settings.enabled=false;h.api.refreshNativeCardVisibility();h.flush();assert.equal(h.document.querySelectorAll('.je-hidden').length,0);
 });
 test('hidden requests/calendar normalize IDs and respect surface settings',t=>{
- const h=setup(t,{items:{a:{itemId:'AA-BB',tmdbId:42,name:'Show (US)'},scoped:{itemId:'scoped',tmdbId:55,hideScope:'nextup'}}});
- assert.deepEqual(Array.from(h.api.filterRequestItems([{tmdbId:42},{jellyfinMediaId:'AA-BB'},{tmdbId:55}]),x=>x.tmdbId),[55]);
+ const h=setup(t,{items:{a:{itemId:'AA-BB',tmdbId:42,type:'Series',name:'Show (US)'},scoped:{itemId:'scoped',tmdbId:55,hideScope:'nextup'}}});
+ assert.deepEqual(Array.from(h.api.filterRequestItems([{tmdbId:42,type:'Series'},{jellyfinMediaId:'AA-BB'},{tmdbId:55}]),x=>x.tmdbId),[55]);
  assert.equal(h.api.filterCalendarEvents([{title:'Show'},{title:'Visible'},{itemId:'AA-BB'}]).length,1);
  h.api.getHiddenData().settings.filterRequests=false;
- assert.equal(h.api.filterRequestItems([{tmdbId:42}]).length,1);
+ assert.equal(h.api.filterRequestItems([{tmdbId:42,type:'Series'}]).length,1);
  h.api.getHiddenData().settings.filterCalendar=false;
- assert.equal(h.api.filterCalendarEvents([{title:'Show'},{tmdbId:42},{itemId:'AA-BB'}]).length,3);
+ assert.equal(h.api.filterCalendarEvents([{title:'Show'},{tmdbId:42,type:'Series'},{itemId:'AA-BB'}]).length,3);
 });
 test('switching users clears previous hidden DOM marks and cached policy',t=>{
- const h=setup(t,{items:{a:{itemId:'a',tmdbId:42}},html:'<div class="card" data-id="a"></div>'});
- h.api.filterNativeCards();h.flush();assert.equal(h.api.getHiddenCount(),1);assert.equal(h.api.filterRequestItems([{tmdbId:42}]).length,0);
+ const h=setup(t,{items:{a:{itemId:'a',tmdbId:42,type:'Series'}},html:'<div class="card" data-id="a"></div>'});
+ h.api.filterNativeCards();h.flush();assert.equal(h.api.getHiddenCount(),1);assert.equal(h.api.filterRequestItems([{tmdbId:42,type:'Series'}]).length,0);
  h.switchUser();
  const card=h.document.querySelector('.card');assert.equal(card.classList.contains('je-hidden'),false);assert.equal(card.hasAttribute('data-je-hidden-checked'),false);assert.equal(h.api.hiddenIdSet.size,0);
  // The incoming user sees none of the previous user's hidden IDs, TMDB IDs or items.
- assert.equal(h.api.filterRequestItems([{tmdbId:42}]).length,1);assert.equal(h.api.getHiddenCount(),0);assert.equal(h.api.isHiddenOnSurface('a','library'),false);
+ assert.equal(h.api.filterRequestItems([{tmdbId:42,type:'Series'}]).length,1);assert.equal(h.api.getHiddenCount(),0);assert.equal(h.api.isHiddenOnSurface('a','library'),false);
 });
 test('old-user hidden-content refresh cannot overwrite incoming preferences',async t=>{
  const pending=deferred();const h=setup(t,{ajax:()=>pending.promise});
@@ -64,23 +64,21 @@ test('parent-series response after disabling filtering cannot hide cards',async 
  h.api.filterNativeCards();h.api.getHiddenData().settings.enabled=false;response.resolve({Items:[{Id:'episode',SeriesId:'series'}]});await response.promise;await new Promise(resolve=>setImmediate(resolve));h.flush();
  assert.equal(h.document.querySelector('.card').classList.contains('je-hidden'),false);
 });
-test('titles that are not in the library (native details synthetic ids) never become Hidden Content rules',t=>{
- const SYN='4a45ad11000a938e00000000f9c67720',REAL='0123456789abcdef0123456789abcdef';
- const html=`<div class="card" data-id="${SYN}" data-type="Movie"><div class="cardBox"></div></div><div class="card" data-id="${REAL}" data-type="Movie"><div class="cardBox"></div></div>`;
- const h=createHarness({html,apiClient:{ajax:async()=>({Items:[]})},globals:{requestAnimationFrame:fn=>fn()},JE:{t:k=>k,titleDetails:{isSynthetic:id=>String(id).replace(/-/g,'').toLowerCase()===SYN},userConfig:{hiddenContent:{items:{},settings:{enabled:true,showHideButtons:true,showButtonLibrary:true}}}}});
- t.after(()=>h.close());
- h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
- const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
- let saves=0;Object.assign(api,{debouncedSave:()=>{saves++;},showUndoToast:()=>{}});
- api.addLibraryHideButtons();
- assert.equal(h.document.querySelector(`[data-id="${SYN}"] .je-hide-btn`),null);
- assert.ok(h.document.querySelector(`[data-id="${REAL}"] .je-hide-btn`));
- api.hideItem({itemId:SYN,name:'Dune: Part Two',type:'Movie'});
- api.hideItem({itemId:'',tmdbId:1,seriesId:SYN,name:'Episode',type:'Episode'});
- assert.deepEqual(Object.keys(api.getHiddenData().items),[]);
- assert.equal(saves,0);
- api.hideItem({itemId:REAL,name:'Real',type:'Movie'});
- assert.deepEqual(Object.keys(api.getHiddenData().items),[REAL]);
+test('absent title cards save only typed provider identity and report failed saves honestly',async t=>{
+ const SYN='4a45ad11000a938e00000000f9c67720';
+ const writes=[];let fail=false;
+ const h=createHarness({apiClient:{getCurrentUserId:()=> 'viewer',getUrl:p=>p,ajax:async o=>{writes.push(o);if(fail)throw new Error('offline');return {success:true};}},
+  JE:{t:k=>k,titleDetails:{parse:id=>id===SYN?{kind:'movie',tmdbId:42}:null,isSynthetic:id=>id===SYN},userConfig:{hiddenContent:{items:{},settings:{enabled:true,showHideButtons:true,showButtonJellyseerr:true}}}}});
+ t.after(()=>h.close());h.load('enhanced/hiddencontent/hidden-content-data.js');
+ const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();Object.assign(api,{refreshNativeCardVisibility:()=>{},showUndoToast:()=>{}});
+ const btn=api.buildTitleControl({itemId:SYN,name:'Absent'});h.document.body.appendChild(btn);
+ await btn.onclick({preventDefault(){},stopPropagation(){}});
+ assert.deepEqual(Object.keys(api.getHiddenData().items),['movie:tmdb:42']);
+ assert.equal(JSON.parse(writes[0].data).itemId,'');assert.equal(JSON.stringify(writes).includes(SYN),false);
+ assert.equal(btn.getAttribute('aria-label'),'hidden_content_unhide');
+ await api.unhideItem('movie:tmdb:42');assert.deepEqual(Object.keys(api.getHiddenData().items),[]);
+ fail=true;await btn.onclick({preventDefault(){},stopPropagation(){}});
+ assert.deepEqual(Object.keys(api.getHiddenData().items),[]);assert.equal(btn.textContent,'hidden_content_save_failed_persistent');
 });
 test('the hidden content page takes over when Jellyfin answers its own #/hidden-content route with another page',t=>{
  const h=createHarness({html:'<div class="mainAnimatedPages"><div id="home" class="mainAnimatedPage">home</div></div>',JE:{t:k=>k,pluginConfig:{HiddenContentEnabled:true},hiddenContent:{},helpers:{onSidebarRebuilt:()=>()=>{}}}});
@@ -102,4 +100,31 @@ test('the hidden content page takes over when Jellyfin answers its own #/hidden-
  // Another route's page still hides it as before.
  h.window.history.replaceState(null,'','#/home');home.classList.remove('hide');show(home);
  assert.ok(page.classList.contains('hide'));
+});
+
+test('provider hides distinguish movie from TV and never guess an ambiguous legacy type',t=>{
+ const h=setup(t,{items:{'movie:tmdb:42':{type:'Movie',tmdbId:'42'},'tmdb-51':{tmdbId:'51'}}});
+ const rows=[{id:42,mediaType:'movie'},{id:42,mediaType:'tv'},{id:51,mediaType:'tv'}];
+ assert.deepEqual(Array.from(h.api.filterJellyseerrResults(rows,'discovery'),x=>x.mediaType),['tv','tv']);
+});
+test('shared card host mounts typed controls without lookup and repairs a cloned control',t=>{
+ const h=setup(t,{html:'<div data-je-hide-title="tv:tmdb:42" data-je-hide-name="Show" data-je-hide-surface="discovery"></div>',settings:{enabled:true,showHideButtons:true,showButtonJellyseerr:true}});
+ h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-buttons.js');
+ h.api.addLibraryHideButtons();const root=h.document.querySelector('[data-je-hide-title]');
+ assert.equal(root.querySelectorAll('.je-hide-btn').length,1);
+ const copy=root.cloneNode(true);root.replaceWith(copy);h.api.addLibraryHideButtons();
+ assert.equal(copy.querySelectorAll('.je-hide-btn').length,1);assert.equal(copy.querySelector('.je-hide-btn').jeHideButtonLive,true);
+});
+
+test('a shared card control evaluates its mounted surface and preserves that filter setting',async t=>{
+ const h=setup(t,{html:'<div class="jellyseerr-card"></div>',settings:{enabled:true,showHideButtons:true,filterDiscovery:true,filterRecommendations:false}});
+ h.JE.t=k=>k;Object.assign(h.api,{showUndoToast:()=>{}});
+ const root=h.document.querySelector('.jellyseerr-card');
+ const button=h.api.buildTitleControl({mediaType:'movie',tmdbId:42,name:'Film'},{surface:()=> 'discovery'});root.appendChild(button);
+ await button.onclick({preventDefault(){},stopPropagation(){}});h.flush();
+ assert.equal(root.classList.contains('je-hidden'),true);
+ await h.api.unhideItem('movie:tmdb:42');h.flush();
+ h.api.getHiddenData().settings.filterDiscovery=false;
+ await button.onclick({preventDefault(){},stopPropagation(){}});h.flush();
+ assert.equal(root.classList.contains('je-hidden'),false);
 });

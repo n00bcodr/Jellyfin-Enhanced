@@ -207,12 +207,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly SeerrRequestReadModel _requests;
         private readonly Func<PluginConfiguration?> _config;
         private readonly RequestLedger? _ledger;
+        private Configuration.UserConfigurationManager? _hidden;
+        private MediaBrowser.Controller.Library.ILibraryManager? _library;
+        private TitleAliases? _aliases;
         private readonly Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>>? _meta;
 
         /// <summary>The service (DI): Seerr's requests in Seerr mode, the request ledger once Jellyfin Enhanced handles requests.</summary>
-        public RequestsHubService(ArrStatusService status, SeerrRequestReadModel requests, RequestLedger ledger, RequestHubProjection projection)
+        public RequestsHubService(ArrStatusService status, SeerrRequestReadModel requests, RequestLedger ledger, RequestHubProjection projection, Configuration.UserConfigurationManager? hidden = null, TitleAliases? aliases = null, MediaBrowser.Controller.Library.ILibraryManager? library = null)
             : this(status, requests, null, ledger, projection.MetaAsync)
         {
+            _hidden = hidden;
+            _library = library;
+            _aliases = aliases;
         }
 
         /// <summary>
@@ -247,7 +253,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // ones, so it never pushes one out of the cap): its "Ready" days count from when it
             // arrived in Jellyfin, which only composing knows (Seerr may mark it available without
             // touching the request).
-            var titles = _requests.ForUser(viewer.UserId)
+            var hidden = _hidden == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_hidden, viewer.UserId, library: _library);
+            var titles = _requests.ForUser(viewer.UserId).Where(r => !hidden.IsHidden(r.Key, _aliases, "requests"))
                 .GroupBy(r => r.Key!.ToString())
                 .Select(g => g.ToList())
                 .Where(g => g.Any(r => r.Active) || now - LastChange(g) <= DeclinedFor)
@@ -291,7 +298,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var now = _status.Now.UtcDateTime;
             static bool Open(RequestWant w) => w.Status is "pending" or "queued" or "sent" or "stale";
             var mine = ledger.Database.Available ? ledger.List(viewer.UserId, false) : Array.Empty<RequestWant>();
-            var titles = mine.Where(w => w.Status != "cancelled" && TitleKey.Parse(w.Input.Key) != null)
+            var hidden = _hidden == null ? HiddenContentPolicy.Build(null) : HiddenContentPolicy.Load(_hidden, viewer.UserId, library: _library);
+            var titles = mine.Where(w => !hidden.IsHidden(TitleKey.Parse(w.Input.Key), _aliases, "requests")).Where(w => w.Status != "cancelled" && TitleKey.Parse(w.Input.Key) != null)
                 .GroupBy(w => w.Input.Key, StringComparer.Ordinal)
                 .Select(g => g.ToList())
                 .Where(g => g.Any(w => w.Status != "declined") || now - g.Max(w => w.UpdatedAt.UtcDateTime) <= DeclinedFor)

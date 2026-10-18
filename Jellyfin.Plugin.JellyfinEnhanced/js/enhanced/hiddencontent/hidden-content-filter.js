@@ -403,7 +403,9 @@
                 }
             }
 
-            if (hiddenIdSet.has(itemId)) {
+            const provider = internal.titleData?.({ itemId, type: card.dataset.type, tmdbId: card.dataset.tmdbId });
+            const providerHidden = provider && internal.filterJellyseerrResults([{ id: provider.tmdbId, mediaType: provider.type === 'Movie' ? 'movie' : 'tv' }], cardSurface || nativeSurface).length === 0;
+            if (hiddenIdSet.has(itemId) || providerHidden) {
                 toHide.push(card);
                 card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
             } else {
@@ -465,7 +467,9 @@
             }
 
             if (!hiddenByScope) {
-                if (hiddenIdSet.has(itemId)) {
+                const provider = internal.titleData?.({ itemId, type: card.dataset.type, tmdbId: card.dataset.tmdbId });
+            const providerHidden = provider && internal.filterJellyseerrResults([{ id: provider.tmdbId, mediaType: provider.type === 'Movie' ? 'movie' : 'tv' }], cardSurface || nativeSurface).length === 0;
+            if (hiddenIdSet.has(itemId) || providerHidden) {
                     toHide.push(card);
                     card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
                 } else {
@@ -517,7 +521,7 @@
                 if (getCurrentNativeSurface() === 'details') {
                     const rescan = () => {
                         refreshNativeCardVisibility();
-                        if (getSettings().showButtonLibrary) addLibraryHideButtons();
+                        if (getSettings().showButtonLibrary || getSettings().showButtonJellyseerr || getSettings().showButtonCast) addLibraryHideButtons();
                     };
                     setTimeout(rescan, DETAIL_RESCAN_DELAY_MS);
                     setTimeout(rescan, DETAIL_FINAL_RESCAN_DELAY_MS);
@@ -533,7 +537,7 @@
                 const settings = getSettings();
                 if (!settings.enabled) return;
                 const shouldFilter = getHiddenCount() > 0;
-                const shouldAddButtons = settings.showHideButtons && settings.showButtonLibrary;
+                const shouldAddButtons = settings.showHideButtons && (settings.showButtonLibrary || settings.showButtonJellyseerr || settings.showButtonCast);
                 if (!shouldFilter && !shouldAddButtons) return;
                 let hasNewItems = false;
                 for (let i = 0; i < mutations.length; i++) {
@@ -542,8 +546,8 @@
                         const node = added[j];
                         if (node.nodeType === 1 && (
                             node.classList?.contains('card') ||
-                            node.classList?.contains('listItem') ||
-                            node.querySelector?.('.card[data-id], .listItem[data-id]')
+                            node.classList?.contains('listItem') || node.hasAttribute?.('data-je-hide-title') ||
+                            node.querySelector?.('.card[data-id], .listItem[data-id], [data-je-hide-title]')
                         )) {
                             hasNewItems = true;
                             break;

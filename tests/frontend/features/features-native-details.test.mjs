@@ -106,7 +106,7 @@ test('a synthetic movie page hides native actions and holds the request controls
   const page = h.document.getElementById('itemDetailPage');
   assert.ok(page.classList.contains('je-native-absent'));
   const css = h.document.getElementById('je-native-absent-style').textContent;
-  for (const sel of ['.btnPlay', '.btnShuffle', '.btnPlaystate', '.btnUserRating', '.btnMoreCommands', '.je-detail-hide-btn', '.je-spoiler-blur-btn', '[data-id^="4a45ad1"] .je-hide-btn']) assert.ok(css.includes(`.je-native-absent ${sel}`), sel);
+  for (const sel of ['.btnPlay', '.btnShuffle', '.btnPlaystate', '.btnUserRating', '.btnMoreCommands', '.je-spoiler-blur-btn']) assert.ok(css.includes(`.je-native-absent ${sel}`), sel);
   // Where it opens is asked once (a copy here would win).
   assert.deepEqual(h.resolved, [`/native-details/resolve?id=${MOVIE}`]);
   assert.equal(h.mounts.length, 1);
@@ -1342,4 +1342,23 @@ test('Seerr mode: a viewer Seerr won\'t answer for goes to the window\'s message
   refusal = null;
   assert.equal(h.td.open(83867, 'tv'), true);
   assert.equal(h.shown.length, 2);
+});
+
+test('absent Hide survives action-row cloning with exactly one live provider control',async t=>{
+ const h=setup(t,{url:`http://jellyfin.test/web/index.html#/details?id=${MOVIE}`,html:PAGE,getItem:async()=>({Id:MOVIE,Type:'Movie',Name:'Absent'})});
+ h.JE.userConfig={hiddenContent:{items:{},settings:{enabled:true,showHideButtons:true,showButtonDetails:true,showHideConfirmation:false}}};
+ h.window.ApiClient.getCurrentUserId=()=> 'viewer';h.window.ApiClient.getUrl=p=>p;
+ const writes=[];h.window.ApiClient.ajax=async request=>{writes.push(request);return {success:true};};
+ h.load('enhanced/hiddencontent/hidden-content-data.js');
+ const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();Object.assign(api,{refreshNativeCardVisibility:()=>{},showUndoToast:()=>{}});h.JE.hiddenContent=api;
+ await h.JE.internals.nativeDetails.onView();await wait(0);
+ const page=h.document.querySelector('#itemDetailPage');
+ for(let i=0;i<3;i++){
+  const row=page.querySelector('.mainDetailButtons');row.replaceWith(row.cloneNode(true));await wait(0);
+  assert.equal(page.querySelectorAll('.je-detail-hide-btn').length,1);
+ }
+ const button=page.querySelector('.je-detail-hide-btn');
+ await button.onclick({preventDefault(){},stopPropagation(){}});
+ assert.equal(writes.length,1);assert.equal(JSON.parse(writes[0].data).tmdbId,'693134');assert.equal(JSON.stringify(writes).includes(MOVIE),false);
+ assert.equal(button.getAttribute('aria-label'),'hidden_content_unhide');
 });

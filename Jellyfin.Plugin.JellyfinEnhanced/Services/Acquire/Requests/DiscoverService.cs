@@ -165,7 +165,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private const int MaxCacheEntries = 500;
         private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(2);
-        private static readonly TimeSpan HiddenTtl = TimeSpan.FromSeconds(30);
         private static readonly Regex PosterPath = new("^/[A-Za-z0-9_.-]{1,80}$", RegexOptions.CultureInvariant);
         private static readonly Regex Language = new("^[a-z]{2}(-[A-Z]{2})?$", RegexOptions.CultureInvariant);
 
@@ -181,7 +180,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<Guid, HiddenTitles> _hidden;
         private readonly Func<DateTimeOffset> _now;
         private readonly ConcurrentDictionary<string, (DateTimeOffset At, DiscoverAnswer Answer)> _cache = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<Guid, (DateTimeOffset At, HiddenTitles Hidden)> _hiddenCache = new();
 
         /// <summary>Creates the service over the shared TMDB cache, the parental filter and Jellyfin.</summary>
         public DiscoverService(RequestService requests, TitleAliases aliases, SeerrParentalFilter parental, TmdbResponseCache tmdb, ILibraryManager library, UserConfigurationManager userConfig)
@@ -189,13 +187,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 (kind, id, user, ct) => parental.MaySeeAbsentAsync(kind, id, user.ToString("N", CultureInfo.InvariantCulture), ct),
                 (path, query, ct) => TmdbAsync(tmdb, path, query, ct),
                 (viewer, max) => RecentlyWatched(library, viewer, max),
-                user => ReadHidden(userConfig, user),
+                user => ReadHidden(userConfig, library, user),
                 () => DateTimeOffset.UtcNow)
         {
-            userConfig.UserConfigurationSaved += (user, file) =>
-            {
-                if (file == HiddenContentFile && Guid.TryParse(user, out var id)) _hiddenCache.TryRemove(id, out _);
-            };
+
         }
 
         /// <summary>Creates the service with explicit readers (tests).</summary>
@@ -245,6 +240,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     var json = await Read($"{kind}/{seed.TmdbId}/recommendations", Query(1, lang), ct).ConfigureAwait(false);
                     if (json == null) continue;
                     var seedKey = kind + ":tmdb:" + seed.TmdbId.ToString(CultureInfo.InvariantCulture);
+                    if (hidden.Discovery.Contains(seedKey)) continue;
                     var (rows, _) = Parse(json, kind);
                     var cards = await ProjectAsync(viewer, rows.Where(r => r.Key != seedKey), hidden.Discovery, ct).ConfigureAwait(false);
                     if (cards.Count > 0) groups.Add(new DiscoverGroup { BasedOn = seed.Title.Length > 200 ? seed.Title[..200] : seed.Title, Key = seedKey, Results = cards });
@@ -315,10 +311,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         private async Task<IReadOnlyList<DiscoverCard>> ProjectAsync(StatusViewer viewer, IEnumerable<Row> rows, IReadOnlySet<string> hidden, CancellationToken ct)
         {
-            var list = rows.Where(r => !hidden.Contains(r.Key)).Take(MaxResults).ToList();
+            var list = rows.Where(r => !hidden.Contains(r.Key)).ToList();
             var tasks = list.Select(row => CardAsync(viewer, row, hidden, ct)).ToList();
             var cards = await Task.WhenAll(tasks).ConfigureAwait(false);
-            return cards.Where(c => c != null).Select(c => c!).ToList();
+            return cards.Where(c => c != null).Select(c => c!).Take(MaxResults).ToList();
         }
 
         private async Task<DiscoverCard?> CardAsync(StatusViewer viewer, Row row, IReadOnlySet<string> hidden, CancellationToken ct)
@@ -553,18 +549,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// What the user hid everywhere with Hidden Content (global hides only), for the surfaces whose
         /// filter they have on (Discovery, Search): TMDB ids by kind and Jellyfin item ids.
         /// </summary>
-        private static HiddenTitles ReadHidden(UserConfigurationManager config, Guid user)
+        private static HiddenTitles ReadHidden(UserConfigurationManager config, ILibraryManager library, Guid user)
         {
-            UserHiddenContent data;
-            try
-            {
-                data = config.GetUserConfiguration<UserHiddenContent>(user.ToString("N", CultureInfo.InvariantCulture), HiddenContentFile);
-            }
-            catch (Exception)
-            {
-                return HiddenTitles.None;
-            }
-            return FromHiddenContent(data);
+            var policy = HiddenContentPolicy.Load(config, user, library: library);
+            var discovery = policy.GlobalKeys("discovery");
+            var search = policy.GlobalKeys("search");
+            return discovery.Count + search.Count == 0 ? HiddenTitles.None : new HiddenTitles(discovery, search);
         }
 
         /// <summary>The hidden sets of a Hidden Content file.</summary>
@@ -584,36 +574,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         internal static HashSet<string> GlobalHiddenKeys(UserHiddenContent? data)
         {
-            var settings = data?.Settings ?? new HiddenContentSettings();
-            var keys = new HashSet<string>(StringComparer.Ordinal);
-            if (data?.Items == null || data.Items.Count == 0 || !settings.Enabled) return keys;
-            foreach (var item in data.Items.Values)
-            {
-                if (item == null || !string.Equals(string.IsNullOrEmpty(item.HideScope) ? "global" : item.HideScope, "global", StringComparison.OrdinalIgnoreCase)) continue;
-                if (Guid.TryParse(item.ItemId, out var itemId)) keys.Add(itemId.ToString("N", CultureInfo.InvariantCulture));
-                if (!int.TryParse(item.TmdbId, NumberStyles.None, CultureInfo.InvariantCulture, out var tmdb) || tmdb <= 0) continue;
-                var id = tmdb.ToString(CultureInfo.InvariantCulture);
-                if (string.Equals(item.Type, "Movie", StringComparison.OrdinalIgnoreCase)) keys.Add("movie:tmdb:" + id);
-                else if (string.Equals(item.Type, "Series", StringComparison.OrdinalIgnoreCase)) keys.Add("tv:tmdb:" + id);
-            }
-            return keys;
+            return HiddenContentPolicy.Build(data).GlobalKeys();
         }
 
         private HiddenTitles Hidden(Guid user)
         {
-            var now = _now();
-            if (_hiddenCache.TryGetValue(user, out var entry) && now - entry.At < HiddenTtl) return entry.Hidden;
-            HiddenTitles hidden;
-            try
-            {
-                hidden = _hidden(user);
-            }
-            catch (Exception)
-            {
-                hidden = HiddenTitles.None;
-            }
-            _hiddenCache[user] = (now, hidden);
-            return hidden;
+            return _hidden(user);
         }
 
         // ------------------------------------------------------------------ per-caller cache

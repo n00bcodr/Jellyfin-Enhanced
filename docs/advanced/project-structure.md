@@ -447,3 +447,5 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
 * **`/Helpers/Jellyseerr/SeerrLibraryAccessProjector.cs`**: Keeps Seerr's links to Jellyfin items to what the caller
   can open: hidden copies are unlinked, another copy the caller can open takes their place, and list rows of titles the
   library hides from the caller are left out.
+
+The shared `Services/HiddenContentPolicy.cs` matches viewer rules by typed TMDB title identity or existing library/series IDs. `TitleFeedProjection.cs` adapts known provider, request and discovery JSON shapes after access filtering and raw caches. Provider hide controls use atomic per-rule routes.

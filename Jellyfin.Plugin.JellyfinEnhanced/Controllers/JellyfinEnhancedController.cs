@@ -798,7 +798,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Response.Headers["Retry-After"] = "2";
                     return StatusCode(504, new { error = true, code = "parental_pending", message = "Parental rating lookups for this page are still running; retry shortly." });
                 }
-                return ProjectForCaller(result.Body);
+                var surface = apiPath.Contains("/search", StringComparison.OrdinalIgnoreCase) ? "search"
+                    : apiPath.Contains("/similar", StringComparison.OrdinalIgnoreCase) || apiPath.Contains("/recommendations", StringComparison.OrdinalIgnoreCase) ? "recommendations"
+                    : apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase) ? "requests" : "discovery";
+                var kind = apiPath.StartsWith("/api/v1/movie/", StringComparison.OrdinalIgnoreCase) || apiPath.Contains("/discover/movies", StringComparison.OrdinalIgnoreCase) ? "movie"
+                    : apiPath.StartsWith("/api/v1/tv/", StringComparison.OrdinalIgnoreCase) || apiPath.Contains("/discover/tv", StringComparison.OrdinalIgnoreCase) ? "tv" : null;
+                // Both raw-cache hits and misses reach this caller boundary.
+                var projected = Services.TitleFeedProjection.Hidden(result.Body,
+                    Services.HiddenContentPolicy.Load(_userConfigurationManager, Guid.Parse(jellyfinUserId), HttpContext, _libraryManager), surface, kind);
+                Response.Headers["Cache-Control"] = "private, no-store";
+                return ProjectForCaller(projected);
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
@@ -4459,12 +4468,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // (restricted users get different results) to another.
                     Response.Headers["Cache-Control"] = "private, no-cache";
                     Response.Headers["Vary"] = "Authorization, X-Emby-Token, X-Jellyfin-User-Id";
-                    Response.Headers["ETag"] = response.ETag;
-                    if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], response.ETag))
+                    var projected = Services.TitleFeedProjection.Hidden(response.Content,
+                        Services.HiddenContentPolicy.Load(_userConfigurationManager, UserHelper.GetCurrentUserId(User)!.Value, HttpContext, _libraryManager),
+                        apiPath.StartsWith("search/", StringComparison.Ordinal) ? "search" : apiPath.Contains("/recommendations", StringComparison.Ordinal) || apiPath.Contains("/similar", StringComparison.Ordinal) ? "recommendations" : "discovery",
+                        apiPath.StartsWith("movie/", StringComparison.Ordinal) || apiPath == "discover/movie" ? "movie" : apiPath.StartsWith("tv/", StringComparison.Ordinal) || apiPath == "discover/tv" ? "tv" : null);
+                    var etag = "\"" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(projected))) + "\"";
+                    Response.Headers["ETag"] = etag;
+                    if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], etag))
                     {
                         return StatusCode(StatusCodes.Status304NotModified);
                     }
-                    return Content(response.Content, "application/json");
+                    return Content(projected, "application/json");
                 }
 
                 return StatusCode(response.StatusCode, response.Content);
@@ -5726,6 +5740,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to save hidden content for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
+            }
+        }
+
+        /// <summary>Atomically upserts one durable provider hide without replacing another tab's rules.</summary>
+        [HttpPut("user-settings/{userId}/hidden-content/rule/{key}")]
+        [Authorize]
+        [RequestSizeLimit(16384)]
+        public IActionResult PutHiddenContentRule(string userId, string key, [FromBody] HiddenContentItem item)
+            => MutateHiddenContentRule(userId, key, item);
+
+        /// <summary>Atomically removes a provider hide and its compatible legacy aliases.</summary>
+        [HttpDelete("user-settings/{userId}/hidden-content/rule/{key}")]
+        [Authorize]
+        public IActionResult DeleteHiddenContentRule(string userId, string key)
+            => MutateHiddenContentRule(userId, key, null);
+
+        private IActionResult MutateHiddenContentRule(string userId, string key, HiddenContentItem? item)
+        {
+            var denied = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (denied != null) return denied;
+            var canonical = Services.HiddenContentPolicy.CanonicalTitle(key);
+            if (canonical == null || (item != null && (Services.HiddenContentPolicy.TitleIdentity(item.Type, item.TmdbId) != canonical
+                || !string.IsNullOrEmpty(item.ItemId) || !string.IsNullOrEmpty(item.SeriesId)
+                || item.HideScope != "global" || item.Name.Length > 500 || item.PosterPath.Length > 500)))
+                return BadRequest(new { success = false, code = "invalid_title_rule" });
+            try
+            {
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
+                {
+                    var data = _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(authorizedUserId, "hidden-content.json");
+                    var aliases = data.Items.Where(p => (Services.HiddenContentPolicy.TitleIdentity(p.Value.Type, p.Value.TmdbId)
+                        ?? Services.HiddenContentPolicy.CanonicalTitle(p.Key)) == canonical && (p.Value.HideScope is "global" or ""))
+                        .Select(p => p.Key).ToArray();
+                    if (item != null)
+                    {
+                        if (data.Items.Count >= 10000 && aliases.Length == 0) return BadRequest(new { success = false, code = "too_many_rules" });
+                        var oldest = aliases.Select(k => data.Items[k].HiddenAt).Where(v => !string.IsNullOrEmpty(v)).OrderBy(v => v, StringComparer.Ordinal).FirstOrDefault();
+                        item.HiddenAt = oldest ?? DateTimeOffset.UtcNow.ToString("O");
+                        foreach (var alias in aliases) data.Items.Remove(alias);
+                        data.Items[canonical] = item;
+                    }
+                    else foreach (var alias in aliases) data.Items.Remove(alias);
+                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", data);
+                    Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
+                    Response.Headers["Cache-Control"] = "private, no-store";
+                    return Ok(new { success = true, key = canonical, hidden = item != null, item });
+                }
+            }
+            catch (Exception ex) when (ex is IOException or Newtonsoft.Json.JsonException)
+            {
+                _logger.Warning("Hidden Content rule store unavailable; no change saved.");
+                return StatusCode(503, new { success = false, code = "hidden_store_unavailable" });
             }
         }
 
@@ -8645,7 +8711,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ? _userConfigurationManager.GetAllReviews().Reviews.Values.AsEnumerable()
                 : Enumerable.Empty<UserReview>();
 
-            var builder = new Services.ActivityFeedBuilder(_libraryManager, _userManager, _itemRepository, _logger);
+            var builder = new Services.ActivityFeedBuilder(_libraryManager, _userManager, _itemRepository, _logger, Services.HiddenContentPolicy.Load(_userConfigurationManager, viewer.Id, HttpContext, _libraryManager));
             var items = builder.Build(activity, reviews, viewer, IsAdminUser(), config, limit, cancellationToken);
             return Ok(new { items });
         }
@@ -10936,6 +11002,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }).ToList();
 
                     var enrichedRequests = await Task.WhenAll(enrichmentTasks);
+                    var hiddenRequests = Services.HiddenContentPolicy.Load(_userConfigurationManager, requestViewer!.Id, HttpContext, _libraryManager);
+                    enrichedRequests = enrichedRequests.Where(r => !hiddenRequests.IsHidden(
+                        Services.HiddenContentPolicy.TitleIdentity(r.type, r.tmdbId.ToString()), r.jellyfinMediaId, null, "requests")).ToArray();
 
                     // Apply server-side filtering for "comingsoon"
                     if (isComingSoonFilter)
@@ -11455,6 +11524,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 foreach (var instance in arrInstances) _ = _arrState.WarmSystem(instance);
             }
 
+            if (calendarUser != null)
+            {
+                var hiddenCalendar = Services.HiddenContentPolicy.Load(_userConfigurationManager, calendarUser.Id, HttpContext, _libraryManager);
+                events = events.Where(e => !hiddenCalendar.IsHidden(Services.HiddenContentPolicy.TitleIdentity(
+                    e.Source == nameof(ArrType.Radarr) ? "movie" : "tv", e.TmdbId?.ToString()), null, null, "calendar")).ToList();
+            }
             return Ok(new { events, errors });
         }
 

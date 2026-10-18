@@ -45,6 +45,119 @@
         return String(id).replace(/-/g, '').toLowerCase();
     }
 
+    /** Canonical typed title identity. Ambiguous legacy metadata never spans movie and TV. */
+    function titleKey(type, tmdbId) {
+        const kind = String(type || '').toLowerCase();
+        const id = Number(tmdbId);
+        if (!Number.isInteger(id) || id <= 0 || id > 0x7fffffff) return '';
+        return (kind === 'movie' ? 'movie' : kind === 'tv' || kind === 'series' ? 'tv' : '') &&
+            `${kind === 'movie' ? 'movie' : 'tv'}:tmdb:${id}`;
+    }
+
+    /** Gets provider metadata from a known card or a checksum-validated native page identity. */
+    function titleData(data) {
+        const parts = JE.titleDetails?.parse?.(data.itemId || data.id);
+        if (parts && !['movie', 'series', 'season', 'episode'].includes(parts.kind)) return null;
+        const key = titleKey(parts?.kind === 'movie' ? 'movie' : ['series', 'season', 'episode'].includes(parts?.kind) ? 'tv' : data.mediaType || data.kind || data.type,
+            parts?.tmdbId || data.tmdbId || data.ProviderIds?.Tmdb || (data.mediaType ? data.id : null));
+        if (!key) return null;
+        return { ...data, itemId: '', seriesId: '', type: key.startsWith('movie:') ? 'Movie' : 'Series',
+            tmdbId: key.split(':')[2], hideScope: 'global', key };
+    }
+
+    const ruleWrites = new Map();
+    /** Saves a single provider rule. No optimistic success, stale-user writes or full-document replacement. */
+    function saveTitleRule(data, hidden) {
+        const title = titleData(data);
+        if (!title) return Promise.resolve(false);
+        const user = ApiClient.getCurrentUserId();
+        const epoch = JE.session?.getEpoch?.();
+        const previous = ruleWrites.get(title.key) || Promise.resolve();
+        const task = previous.catch(() => {}).then(async () => {
+            if (ApiClient.getCurrentUserId() !== user || (JE.session?.isCurrent?.(epoch) === false)) return false;
+            const item = { itemId: '', seriesId: '', type: title.type, tmdbId: title.tmdbId,
+                name: title.name || title.title || '', posterPath: title.posterPath || '', hideScope: 'global', hiddenAt: new Date().toISOString() };
+            await ApiClient.ajax({ type: hidden ? 'PUT' : 'DELETE',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${user}/hidden-content/rule/${encodeURIComponent(title.key)}`),
+                ...(hidden ? { data: JSON.stringify(item), contentType: 'application/json' } : {}) });
+            if (ApiClient.getCurrentUserId() !== user || (JE.session?.isCurrent?.(epoch) === false)) return false;
+            const current = getHiddenData();
+            const items = { ...current.items };
+            for (const key of Object.keys(items)) {
+                if (titleKey(items[key].type, items[key].tmdbId) === title.key && (items[key].hideScope || 'global') === 'global') delete items[key];
+            }
+            if (hidden) items[title.key] = item;
+            hiddenData = { ...current, items };
+            JE.userConfig.hiddenContent = hiddenData;
+            rebuildSets();
+            emitChange();
+            refreshNativeCardVisibility();
+            if (hidden) showUndoToast(item.name, title.key);
+            return true;
+        });
+        ruleWrites.set(title.key, task);
+        task.finally(() => { if (ruleWrites.get(title.key) === task) ruleWrites.delete(title.key); }).catch(() => {});
+        return task;
+    }
+
+    /** Shared control host for native pages/cards, modal and future list/home renderers. */
+    function buildTitleControl(data, options = {}) {
+        const title = titleData(data);
+        const settings = getSettings();
+        if (!title || JE.pluginConfig?.HiddenContentEnabled === false || !settings.enabled || !settings.showHideButtons ||
+            (options.detail ? settings.showButtonDetails === false : settings.showButtonJellyseerr === false)) return null;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = options.detail ? 'button-flat detailButton emby-button je-detail-hide-btn' : 'je-hide-btn';
+        button.dataset.jeTitleKey = title.key;
+        /** Repaints only changed attributes so mutation observers settle. */
+        function paint() {
+            const hidden = hiddenTmdbIdSet.has(title.key);
+            const label = JE.t(hidden ? 'hidden_content_unhide' : 'hidden_content_hide_button');
+            const card = options.card || button.closest('.je-discover-card, .jellyseerr-card, .card, .je-hub-entry, [data-je-hide-title]');
+            const surface = typeof options.surface === 'function' ? options.surface() : options.surface || 'recommendations';
+            if (card) card.classList.toggle('je-hidden', hidden && shouldFilterSurface(surface));
+            button.classList.toggle('je-already-hidden', hidden);
+            const iconName = hidden ? 'visibility_off' : 'visibility';
+            if (button.dataset.jeHideIcon !== iconName) {
+                const content = document.createElement('span');
+                content.className = options.detail ? 'detailButton-content' : '';
+                const icon = document.createElement('span');
+                icon.className = options.detail ? 'material-icons detailButton-icon' : 'material-icons';
+                icon.setAttribute('aria-hidden', 'true'); icon.textContent = iconName;
+                content.appendChild(icon); button.replaceChildren(content); button.dataset.jeHideIcon = iconName;
+            }
+            if (button.title !== label) button.title = label;
+            if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
+        }
+        paint();
+        button.onclick = async e => {
+            e.preventDefault(); e.stopPropagation();
+            if (!hiddenTmdbIdSet.has(title.key) && internal.showHideConfirmation && !internal.isConfirmationSuppressed()) {
+                internal.showHideConfirmation(title.name || title.title || '', () => run());
+                return;
+            }
+            return run();
+        };
+        /** Persists before acknowledging the action and leaves a retryable failure on the control. */
+        async function run() {
+            button.disabled = true;
+            try {
+                const hidden = !hiddenTmdbIdSet.has(title.key);
+                if (await saveTitleRule(title, hidden)) options.onChanged?.(hidden);
+                paint();
+            } catch (_) {
+                delete button.dataset.jeHideIcon;
+                button.textContent = JE.t('hidden_content_save_failed_persistent');
+                button.setAttribute('aria-label', button.textContent);
+            } finally { button.disabled = false; }
+        }
+        // The owner remounts copied nodes; this property never survives cloneNode.
+        button.jeHiddenPaint = paint;
+        button.jeHideButtonLive = true;
+        return button;
+    }
+
     /**
      * Returns the in-memory hidden-content data object, lazily initialised
      * from `JE.userConfig.hiddenContent`.
@@ -99,7 +212,8 @@
             const scope = item.hideScope || 'global';
             if (scope !== 'global') continue;
             if (item.itemId) hiddenIdSet.add(normalizeId(item.itemId));
-            if (item.tmdbId) hiddenTmdbIdSet.add(String(item.tmdbId));
+            const typed = titleKey(item.type, item.tmdbId);
+            if (typed) hiddenTmdbIdSet.add(typed);
         }
     }
 
@@ -138,6 +252,7 @@
      */
     function emitChange() {
         try {
+            document.querySelectorAll('[data-je-title-key]').forEach(node => node.jeHiddenPaint?.());
             window.dispatchEvent(new CustomEvent('je-hidden-content-changed'));
         } catch (e) {
             console.warn('🪼 Jellyfin Enhanced: Failed to emit hidden-content-changed event', e);
@@ -264,11 +379,11 @@
      * @param {string|number} tmdbId The TMDB ID.
      * @returns {boolean} `true` if the item is hidden.
      */
-    function isHiddenByTmdbId(tmdbId) {
+    function isHiddenByTmdbId(tmdbId, type) {
         if (!tmdbId) return false;
         const settings = getSettings();
         if (!settings.enabled) return false;
-        return hiddenTmdbIdSet.has(String(tmdbId));
+        return hiddenTmdbIdSet.has(titleKey(type, tmdbId));
     }
 
     /**
@@ -288,8 +403,9 @@
      * @param {string} [params.hideScope] Scope: 'global', 'nextup', 'continuewatching', or 'homesections'.
      */
     function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }) {
-        // Synthetic ids (titles not in the library, shown on a native details page) are never stored.
-        if ((itemId && JE.titleDetails?.isSynthetic?.(itemId)) || (seriesId && JE.titleDetails?.isSynthetic?.(seriesId))) return;
+        const provider = titleData({ itemId, name, type, tmdbId, posterPath });
+        if ((!itemId || JE.titleDetails?.isSynthetic?.(itemId)) && provider) return saveTitleRule(provider, true).catch(() => false);
+        if (JE.titleDetails?.isSynthetic?.(itemId) || JE.titleDetails?.isSynthetic?.(seriesId)) return;
         const data = getHiddenData();
         const key = itemId || `tmdb-${tmdbId}`;
         const newItem = {
@@ -324,6 +440,10 @@
      * @param {string} itemId The storage key or Jellyfin item ID to unhide.
      */
     function unhideItem(itemId) {
+        if (/^(movie|tv):tmdb:[1-9][0-9]*$/.test(itemId)) {
+            const [type, , tmdbId] = itemId.split(':');
+            return saveTitleRule({ type, tmdbId }, false).catch(() => false);
+        }
         const data = getHiddenData();
         const newItems = { ...data.items };
         let restoredJellyfinId = '';
@@ -408,7 +528,7 @@
         if (!Array.isArray(results)) return results;
         return results.filter((item) => {
             const tmdbId = item.id || item.tmdbId;
-            return !hiddenTmdbIdSet.has(String(tmdbId));
+            return !hiddenTmdbIdSet.has(titleKey(item.mediaType || item.kind || item.type, tmdbId));
         });
     }
 
@@ -438,7 +558,7 @@
         }
 
         return events.filter((event) => {
-            if (event.tmdbId && hiddenTmdbIdSet.has(String(event.tmdbId))) return false;
+            if (event.tmdbId && hiddenTmdbIdSet.has(titleKey(event.mediaType || event.kind || event.type, event.tmdbId))) return false;
             if (event.itemId && hiddenIdSet.has(normalizeId(event.itemId))) return false;
             if (event.title && hiddenNames.has(event.title.toLowerCase())) return false;
             return true;
@@ -455,7 +575,7 @@
         if (!Array.isArray(items)) return items;
         return items.filter((item) => {
             const tmdbId = item.tmdbId || item.id;
-            if (tmdbId && hiddenTmdbIdSet.has(String(tmdbId))) return false;
+            if (tmdbId && hiddenTmdbIdSet.has(titleKey(item.mediaType || item.kind || item.type, tmdbId))) return false;
             if (item.jellyfinMediaId && hiddenIdSet.has(normalizeId(item.jellyfinMediaId))) return false;
             return true;
         });
@@ -494,9 +614,14 @@
         hiddenData = null;
         hiddenIdSet.clear();
         hiddenTmdbIdSet.clear();
+        document.querySelectorAll('[data-je-title-key]').forEach(button => {
+            button.closest('[data-je-hide-title], .je-discover-card, .jellyseerr-card, .card, .je-hub-entry')?.classList.remove('je-hidden');
+            button.remove();
+        });
     });
     document.addEventListener('je:user-data-loaded', () => {
         resetFromUserConfig();
+        internal.addLibraryHideButtons?.();
         emitChange();
         // Re-apply the incoming user's policy to whatever is on screen (the
         // filter reset stripped the previous user's hide marks and verdicts).
@@ -505,6 +630,7 @@
 
     Object.assign(internal, {
         hiddenIdSet,
+        titleKey, titleData, saveTitleRule, buildTitleControl,
         normalizeId,
         getHiddenData,
         getSettings,

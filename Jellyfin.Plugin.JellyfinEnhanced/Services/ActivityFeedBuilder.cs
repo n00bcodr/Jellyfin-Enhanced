@@ -33,7 +33,8 @@ internal sealed class ActivityFeedBuilder(
     ILibraryManager libraryManager,
     IUserManager userManager,
     IItemRepository itemRepository,
-    Logger logger)
+    Logger logger,
+    HiddenContentPolicy? hidden = null)
 {
     private const int CandidatePageSize = 64;
 
@@ -182,6 +183,10 @@ internal sealed class ActivityFeedBuilder(
                 if (!permitted.Contains(itemId)) continue;
                 try
                 {
+                    var titleItem = GetItem(itemId);
+                    var parentId = titleItem is MediaBrowser.Controller.Entities.TV.Episode episode ? episode.SeriesId : Guid.Empty;
+                    var parent = parentId != Guid.Empty ? GetItem(parentId) : titleItem;
+                    if (hidden?.IsHidden(HiddenContentPolicy.TitleIdentity(parent?.GetBaseItemKind().ToString(), parent?.GetProviderId(MetadataProvider.Tmdb)), itemId.ToString(), parentId.ToString(), "library") == true) continue;
                     if (!summaries.TryGetValue(itemId, out var summary))
                     {
                         var item = GetItem(itemId);

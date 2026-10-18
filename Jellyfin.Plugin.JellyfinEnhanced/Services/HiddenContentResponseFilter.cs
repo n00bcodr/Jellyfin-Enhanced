@@ -16,24 +16,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     public sealed class HiddenContentResponseFilter : IAsyncActionFilter
     {
-        private const string FileName = "hidden-content.json";
         private const string CacheKey = "__JE_HC_FILTER_CACHE";
 
-        // Cross-request in-memory cache keyed by userId (N-format string).
-        // Eliminates per-request disk reads for hidden-content.json.
-        private static readonly ConcurrentDictionary<string, (HideContext Ctx, DateTime CachedAt)> _hcCache = new(StringComparer.OrdinalIgnoreCase);
-        private static readonly TimeSpan _hcCacheTtl = TimeSpan.FromSeconds(30);
-
-        /// <summary>
-        /// Removes the cached hidden-content context for the given user so the next
-        /// request re-reads from disk. Call this immediately after any write to
-        /// hidden-content.json for that user.
-        /// </summary>
-        public static void InvalidateUser(string userId)
-        {
-            if (!string.IsNullOrEmpty(userId))
-                _hcCache.TryRemove(userId, out _);
-        }
+        /// <summary>Compatibility invalidation seam. Policies now load strictly once per request.</summary>
+        public static void InvalidateUser(string userId) { }
 
         // Shared immutable surface sets. Kept as statics so neither route matching nor per-request
         // surface resolution allocates.
@@ -58,6 +44,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             { ("TvShows", "GetUpcomingEpisodes"),      (UpcomingSurface,        FilterQueryResult) },
             { ("Suggestions", "GetSuggestions"),       (RecommendationsSurface, FilterQueryResult) },
             { ("Suggestions", "GetSuggestionsLegacy"), (RecommendationsSurface, FilterQueryResult) },
+            { ("Library", "GetSimilarItems"), (RecommendationsSurface, FilterQueryResult) },
+            { ("TvShows", "GetSeasons"), (LibrarySurface, FilterQueryResult) },
+            { ("TvShows", "GetEpisodes"), (LibrarySurface, FilterQueryResult) },
             { ("Search", "GetSearchHints"),            (SearchSurface,          FilterSearchHints) },
 
             // Home Screen Sections (IAmParadox27/jellyfin-plugin-home-sections) builds the home rows from
@@ -76,21 +65,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// that row represents. Only the rows that mirror a scoped JE surface are listed; every other
         /// section falls back to "library" (see <see cref="ResolveSurfaces"/>).
         /// </summary>
-        /// <remarks>
-        /// Deliberately not listed, and why the "library" fallback is the right answer for each:
-        /// HSS's Upcoming rows are Sonarr/Radarr/Lidarr/Readarr calendar data as synthetic DTOs with a fresh
-        /// Guid per item per request, and its Discover rows are Seerr results with no Jellyfin id at all, so
-        /// no hide entry can ever match either of them whatever surface they are given. Its MyRequests row is
-        /// different — it resolves each request to a real library item, so entries DO match there and the
-        /// fallback means a global hide is honoured (gated by the Library filter toggle rather than the
-        /// Requests one). Mapping that row to "requests" instead is arguable; it is left alone because the
-        /// behaviour could not be verified against a live Seerr-backed install.
-        /// </remarks>
         private static readonly Dictionary<string, string[]> _homeScreenSectionSurfaces
             = new(StringComparer.OrdinalIgnoreCase)
         {
             { "ContinueWatching", ContinueWatchingSurface },
             { "NextUp",           NextUpSurface },
+            { "MyRequests", new[] { "requests" } },
+            { "Discover", new[] { "discovery" } },
+            { "Upcoming", UpcomingSurface },
             // One row rendering resume items and next-up items together. Both surfaces are in play, but they
             // are NOT applied to the whole list: each item is judged against the surface it is actually
             // appearing as (see FilterMixedHomeRow), so a Next-Up hide cannot suppress an episode that is
@@ -98,12 +80,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             { "ContinueWatchingNextUp", new[] { "continuewatching", "nextup" } },
         };
 
-        private delegate void ResponseHandler(ActionExecutedContext executed, HideContext hide, string surface, Logger logger);
+        private delegate void ResponseHandler(ActionExecutedContext executed, HiddenContentPolicy hide, string surface, Logger logger);
 
         // Re-warn at most once per hour so a real Jellyfin upgrade isn't permanently invisible after the first warn.
         private static readonly TimeSpan ShapeMismatchReWarnInterval = TimeSpan.FromHours(1);
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _warnedShapeMismatchAt = new();
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, byte> _warnedReadFailure = new();
 
         private static void WarnShapeMismatchOnce(Logger logger, string surface, string handlerName, IActionResult? result)
         {
@@ -120,9 +101,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private readonly UserConfigurationManager _configManager;
         private readonly Logger _logger;
+        private readonly MediaBrowser.Controller.Library.ILibraryManager? _library;
 
-        public HiddenContentResponseFilter(UserConfigurationManager configManager, Logger logger)
+        public HiddenContentResponseFilter(UserConfigurationManager configManager, Logger logger, MediaBrowser.Controller.Library.ILibraryManager? library = null)
         {
+            _library = library;
             _configManager = configManager;
             _logger = logger;
         }
@@ -165,7 +148,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            var hide = LoadHideContext(context.HttpContext, userId);
+            HiddenContentPolicy hide;
+            try { hide = LoadHiddenContentPolicy(context.HttpContext, userId); }
+            catch (Exception) { context.Result = new StatusCodeResult(503); return; }
             if (hide.IsEmpty)
             {
                 await next().ConfigureAwait(false);
@@ -192,6 +177,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
+                if (_library != null && executed.Result is ObjectResult value)
+                {
+                    IEnumerable<Guid> ids = value.Value switch {
+                        QueryResult<BaseItemDto> query => query.Items.SelectMany(i => new[] { i.Id, i.SeriesId ?? Guid.Empty }),
+                        IEnumerable<BaseItemDto> items => items.SelectMany(i => new[] { i.Id, i.SeriesId ?? Guid.Empty }),
+                        SearchHintResult hints => hints.SearchHints.Select(i => i.Id),
+                        _ => Array.Empty<Guid>()
+                    };
+                    hide.BindLibraryIds(_library, ids);
+                }
                 if (surfaces.Length > 1)
                 {
                     FilterMixedHomeRow(executed, hide, _logger);
@@ -203,7 +198,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                _logger.Error($"HC response filter handler failed for surface '{string.Join("+", surfaces)}' — entries will pass through unfiltered for this request: {ex.Message}");
+                _logger.Error($"HC response filter could not project surface '{string.Join("+", surfaces)}': {ex.GetType().Name}");
+                executed.Result = new StatusCodeResult(503);
             }
         }
 
@@ -219,7 +215,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// the native resume row and HSS's separate Continue Watching row would both still show it. This
         /// mirrors what the client-side row detector does per card, so the two halves agree.
         /// </remarks>
-        private static void FilterMixedHomeRow(ActionExecutedContext executed, HideContext hide, Logger logger)
+        private static void FilterMixedHomeRow(ActionExecutedContext executed, HiddenContentPolicy hide, Logger logger)
         {
             if (executed.Result is not ObjectResult or || or.Value is not QueryResult<BaseItemDto> qr)
             {
@@ -313,48 +309,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return _routes.TryGetValue((controller, action), out route);
         }
 
-        private HideContext LoadHideContext(HttpContext httpContext, Guid userId)
+        private HiddenContentPolicy LoadHiddenContentPolicy(HttpContext httpContext, Guid userId)
         {
-            // 1. Per-request cache, avoids repeated work within a single request (e.g. nested filter calls).
-            if (httpContext.Items.TryGetValue(CacheKey, out var cached) && cached is HideContext hit)
-            {
-                return hit;
-            }
-
-            // 2. Cross-request in-memory cache, avoids disk reads on every Jellyfin API call.
-            var userIdN = userId.ToString("N");
-            var now = DateTime.UtcNow;
-            if (_hcCache.TryGetValue(userIdN, out var entry) && (now - entry.CachedAt) < _hcCacheTtl)
-            {
-                httpContext.Items[CacheKey] = entry.Ctx;
-                return entry.Ctx;
-            }
-
-            // 3. Cache miss, read from disk.
-            UserHiddenContent? data;
-            try
-            {
-                data = _configManager.GetUserConfiguration<UserHiddenContent>(userIdN, FileName);
-            }
-            catch (Exception ex)
-            {
-                // Dedup once per user per process so a corrupt file doesn't spam Error on every matched request.
-                if (_warnedReadFailure.TryAdd(userId, 0))
-                {
-                    _logger.Error($"HC response filter: failed to read hidden-content.json for user {userId} — entries will pass through unfiltered until the file is repaired: {ex.Message}");
-                }
-                data = null;
-            }
-
-            if (data != null) _warnedReadFailure.TryRemove(userId, out _);
-
-            var ctx = HideContext.Build(data);
-            _hcCache[userIdN] = (ctx, now);
-            httpContext.Items[CacheKey] = ctx;
-            return ctx;
+            if (httpContext.Items.TryGetValue(CacheKey, out var cached) && cached is HiddenContentPolicy hit) return hit;
+            var policy = HiddenContentPolicy.Load(_configManager, userId, httpContext, _library);
+            httpContext.Items[CacheKey] = policy;
+            return policy;
         }
 
-        private static void FilterQueryResult(ActionExecutedContext executed, HideContext hide, string surface, Logger logger)
+        private static void FilterQueryResult(ActionExecutedContext executed, HiddenContentPolicy hide, string surface, Logger logger)
         {
             if (executed.Result is not ObjectResult or || or.Value is not QueryResult<BaseItemDto> qr)
             {
@@ -379,7 +342,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 kept);
         }
 
-        private static void FilterEnumerable(ActionExecutedContext executed, HideContext hide, string surface, Logger logger)
+        private static void FilterEnumerable(ActionExecutedContext executed, HiddenContentPolicy hide, string surface, Logger logger)
         {
             if (executed.Result is not ObjectResult or || or.Value is not IEnumerable<BaseItemDto> raw)
             {
@@ -399,7 +362,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // SearchHint has no SeriesId, so series-scope cascade falls back to the /Items?searchTerm path.
-        private static void FilterSearchHints(ActionExecutedContext executed, HideContext hide, string surface, Logger logger)
+        private static void FilterSearchHints(ActionExecutedContext executed, HiddenContentPolicy hide, string surface, Logger logger)
         {
             if (executed.Result is not ObjectResult or || or.Value is not SearchHintResult sh)
             {
@@ -420,134 +383,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             or.Value = new SearchHintResult(kept, Math.Max(0, sh.TotalRecordCount - dropped));
         }
 
-        private static bool IsHidden(BaseItemDto item, HideContext hide, string surface)
-        {
-            return IsHiddenById(item.Id.ToString(),
-                                item.SeriesId.HasValue ? item.SeriesId.Value.ToString() : null,
-                                hide, surface);
-        }
+        private static bool IsHidden(BaseItemDto item, HiddenContentPolicy hide, string surface) => hide.IsHidden(item, surface);
 
-        private static bool IsHiddenById(string itemIdStr, string? seriesIdStr, HideContext hide, string surface)
-        {
-            var itemId = NormalizeId(itemIdStr);
-            var seriesId = seriesIdStr is null ? null : NormalizeId(seriesIdStr);
-
-            if (hide.ItemIdScopes.TryGetValue(itemId, out var scopes))
-            {
-                foreach (var s in scopes)
-                {
-                    if (ScopeAppliesToSurface(s, surface, hide.Settings)) return true;
-                }
-            }
-
-            if (seriesId is not null && hide.SeriesIdScopes.TryGetValue(seriesId, out var sScopes))
-            {
-                foreach (var s in sScopes)
-                {
-                    if (ScopeAppliesToSurface(s, surface, hide.Settings)) return true;
-                }
-            }
-
-            // Item is itself a Series row whose entry was keyed series-scope.
-            if (hide.SeriesIdScopes.TryGetValue(itemId, out var selfSeriesScopes))
-            {
-                foreach (var s in selfSeriesScopes)
-                {
-                    if (ScopeAppliesToSurface(s, surface, hide.Settings)) return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool ScopeAppliesToSurface(string scope, string surface, HiddenContentSettings settings)
-        {
-            // Per-surface gate — toggling "Filter Continue Watching" off suppresses ALL CW filtering, including explicit-scope hides.
-            if (!ShouldFilterSurface(settings, surface)) return false;
-
-            if (string.Equals(scope, surface, StringComparison.OrdinalIgnoreCase)) return true;
-            if (string.Equals(scope, "homesections", StringComparison.OrdinalIgnoreCase)
-                && (string.Equals(surface, "nextup", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(surface, "continuewatching", StringComparison.OrdinalIgnoreCase)))
-            {
-                return true;
-            }
-            return string.Equals(scope, "global", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool ShouldFilterSurface(HiddenContentSettings s, string surface)
-        {
-            if (s == null || !s.Enabled) return false;
-            return surface switch
-            {
-                "library" or "details" => s.FilterLibrary,
-                "discovery" => s.FilterDiscovery,
-                "search" => s.FilterSearch,
-                "upcoming" => s.FilterUpcoming,
-                "calendar" => s.FilterCalendar,
-                "recommendations" => s.FilterRecommendations,
-                "requests" => s.FilterRequests,
-                "nextup" => s.FilterNextUp,
-                "continuewatching" => s.FilterContinueWatching,
-                _ => true,
-            };
-        }
-
-        private static string NormalizeId(string id)
-        {
-            if (string.IsNullOrEmpty(id)) return string.Empty;
-            if (Guid.TryParse(id, out var g) || Guid.TryParseExact(id, "N", out g))
-            {
-                return g.ToString();
-            }
-            return id.ToLowerInvariant();
-        }
-
-        private sealed class HideContext
-        {
-            public static readonly HideContext Empty = new HideContext();
-
-            public Dictionary<string, HashSet<string>> ItemIdScopes { get; } = new(StringComparer.OrdinalIgnoreCase);
-            public Dictionary<string, HashSet<string>> SeriesIdScopes { get; } = new(StringComparer.OrdinalIgnoreCase);
-            public HiddenContentSettings Settings { get; private set; } = new HiddenContentSettings();
-
-            public bool IsEmpty => ItemIdScopes.Count == 0 && SeriesIdScopes.Count == 0;
-
-            public static HideContext Build(UserHiddenContent? data)
-            {
-                if (data?.Items == null || data.Items.Count == 0)
-                {
-                    return new HideContext { Settings = data?.Settings ?? new HiddenContentSettings() };
-                }
-
-                var ctx = new HideContext { Settings = data.Settings ?? new HiddenContentSettings() };
-                if (!ctx.Settings.Enabled) return ctx;
-
-                foreach (var entry in data.Items.Values)
-                {
-                    if (entry == null || string.IsNullOrWhiteSpace(entry.ItemId)) continue;
-                    var id = NormalizeId(entry.ItemId);
-                    var scope = string.IsNullOrEmpty(entry.HideScope) ? "global" : entry.HideScope.ToLowerInvariant();
-
-                    AddScope(ctx.ItemIdScopes, id, scope);
-                    if (string.Equals(entry.Type, "Series", StringComparison.OrdinalIgnoreCase))
-                    {
-                        AddScope(ctx.SeriesIdScopes, id, scope);
-                    }
-                }
-                return ctx;
-            }
-
-            private static void AddScope(Dictionary<string, HashSet<string>> dict, string key, string scope)
-            {
-                if (!dict.TryGetValue(key, out var set))
-                {
-                    set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    dict[key] = set;
-                }
-                set.Add(scope);
-            }
-        }
+        private static bool IsHiddenById(string itemId, string? seriesId, HiddenContentPolicy hide, string surface)
+            => hide.IsHidden(null, itemId, seriesId, surface);
 
         private sealed class KeyComparer : IEqualityComparer<(string, string)>
         {

@@ -839,6 +839,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentPolicy.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentResponseFilter.cs",
       "category": "Services"
     },
@@ -1144,6 +1148,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TitleFeedProjection.cs",
       "category": "Services"
     },
     {
@@ -3496,6 +3504,25 @@
       "following_attributes": [
         "Authorize",
         "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "PUT",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/hidden-content/rule/{key}",
+      "method": "PutHiddenContentRule",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(16384)"
+      ]
+    },
+    {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/hidden-content/rule/{key}",
+      "method": "DeleteHiddenContentRule",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
       ]
     },
     {
@@ -9268,7 +9295,7 @@
     },
     {
       "literal": "hidden-content.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentResponseFilter.cs"
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentPolicy.cs"
     },
     {
       "literal": "https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/manifest.json",
@@ -9602,8 +9629,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 530,
-    "routes": 254,
+    "files": 532,
+    "routes": 256,
     "configuration_properties": 578,
     "storage_references": 82,
     "scheduled_tasks": 14,

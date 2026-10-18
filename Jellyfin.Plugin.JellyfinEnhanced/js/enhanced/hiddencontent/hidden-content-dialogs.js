@@ -363,16 +363,14 @@
      */
     function confirmAndHide(itemData, onHidden, dialogOptions = {}) {
         if (!dialogOptions.showEpisodeChoice && !dialogOptions.surface && isConfirmationSuppressed()) {
-            hideItem(itemData);
-            if (onHidden) onHidden();
+            Promise.resolve(hideItem(itemData)).then(saved => { if (saved !== false) onHidden?.(); });
             return;
         }
         showHideConfirmation(itemData.name || 'Item', () => {
-            hideItem(itemData);
-            if (onHidden) onHidden();
+            Promise.resolve(hideItem(itemData)).then(saved => { if (saved !== false) onHidden?.(); });
         }, dialogOptions);
     }
 
-    Object.assign(internal, { showUndoToast, confirmAndHide });
+    Object.assign(internal, { showUndoToast, confirmAndHide, showHideConfirmation, isConfirmationSuppressed });
 
 })(window.JellyfinEnhanced);

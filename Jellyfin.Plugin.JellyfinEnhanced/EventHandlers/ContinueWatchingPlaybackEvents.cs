@@ -215,7 +215,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
                     {
                         var entry = kvp.Value;
                         if (entry == null) continue;
-                        if (CwEventHelpers.IdMatches(entry.ItemId, targetId)) keysToDrop.Add(kvp.Key);
+                        if (Services.HiddenContentPolicy.TitleIdentity(entry.Type, entry.TmdbId) == null
+                            && Services.HiddenContentPolicy.CanonicalTitle(kvp.Key) == null
+                            && CwEventHelpers.IdMatches(entry.ItemId, targetId)) keysToDrop.Add(kvp.Key);
                     }
                     foreach (var k in keysToDrop) hidden.Items.Remove(k);
                     return keysToDrop.Count;

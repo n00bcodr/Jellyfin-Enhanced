@@ -50,7 +50,7 @@
      * @param {HTMLElement} visiblePage The visible detail page element.
      */
     function addHideContentButton(itemId, visiblePage) {
-        if (!JE.hiddenContent) return;
+        if (!JE.hiddenContent || JE.titleDetails?.isSynthetic?.(itemId)) return;
         const settings = JE.hiddenContent.getSettings();
         if (!settings.enabled || !settings.showHideButtons) return;
         const isPerson = lastDetailsItemType === 'Person';

@@ -155,8 +155,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly INotifyUsers _users;
 
         /// <summary>Creates the controller.</summary>
-        public NotifyController(NotificationService service, NotifyDispatcher dispatcher, NtfySender ntfy, EmailSender email, INotifyUsers users)
+        public NotifyController(NotificationService service, NotifyDispatcher dispatcher, NtfySender ntfy, EmailSender email, INotifyUsers users, Configuration.UserConfigurationManager? hidden = null)
         {
+            _hidden = hidden;
             _service = service;
             _dispatcher = dispatcher;
             _ntfy = ntfy;
@@ -169,6 +170,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>The clock (tests replace it).</summary>
         internal Func<DateTimeOffset> Now { get; set; } = () => DateTimeOffset.UtcNow;
+
+        private readonly Configuration.UserConfigurationManager? _hidden;
 
         private NotifyStore Store => _service.Store;
 
@@ -185,6 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Administrators' alerts (paths, instance names, queue titles) only while the caller is one.
             var admin = IsAdmin();
             var rows = Store.Inbox(user, before, take + 1, adminKinds: admin);
+            var hiddenPolicy = _hidden == null ? Services.HiddenContentPolicy.Build(null) : Services.HiddenContentPolicy.Load(_hidden, user);
             var view = _service.Status.View;
             var viewer = view.Viewer(user);
             Response.Headers["Cache-Control"] = "private, no-store";
@@ -202,6 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // changed since): kept, but without what names the title.
                     var hidden = (r.Kind is NotifyKind.Ready or NotifyKind.Episodes && Guid.TryParse(r.ItemId, out var item) && (viewer == null || view.Resolve(item, viewer) == null))
                         || (r.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_service.Policy, user, r.Key, parameters));
+                    hidden |= hiddenPolicy.IsHidden(r.Key, r.ItemId, null, "requests");
                     return new InboxItem
                     {
                         Id = r.Id,

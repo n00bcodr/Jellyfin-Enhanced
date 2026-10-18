@@ -496,7 +496,7 @@
             ctx.mediaBadgeLabel('movie'), ctx.mediaBadgeLabel('tv'), ctx.mediaBadgeLabel('collection'),
             items.map(cardItemInputs),
             // Each hide button's state.
-            ctx.showHideButtons ? items.map(item => JE.hiddenContent.isHiddenByTmdbId(item.id)) : null
+            ctx.showHideButtons ? items.map(item => JE.hiddenContent.isHiddenByTmdbId(item.id, item.mediaType)) : null
         ]);
     }
     ui.cardInputsKey = cardInputsKey;
@@ -584,10 +584,11 @@
 
         // Add hide button for hidden content feature
         if (ctx.showHideButtons) {
-            const hideBtn = document.createElement('button');
-            setHideButtonState(hideBtn, JE.hiddenContent.isHiddenByTmdbId(item.id), ctx);
+            const hideBtn = JE.hiddenContent.buildTitleControl?.({ ...item, tmdbId: item.id, name: item.title || item.name },
+                { surface: () => card.closest('.jellyseerr-details-section') ? 'recommendations'
+                    : card.closest('#searchPage') ? 'search' : 'discovery' });
             cardBox.style.position = 'relative';
-            cardBox.appendChild(hideBtn);
+            if (hideBtn) cardBox.appendChild(hideBtn);
         }
 
         cardStates.set(card, {
@@ -848,7 +849,7 @@
         e.preventDefault();
         e.stopPropagation();
         if (hideBtn.classList.contains('je-already-hidden')) {
-            JE.hiddenContent.unhideItem(state.jellyfinMediaId || `tmdb-${item.id}`);
+            JE.hiddenContent.unhideItem(JE.hiddenContent.titleKey(state.mediaType || item.mediaType, item.id) || state.jellyfinMediaId);
             setHideButtonState(hideBtn, false, state.ctx);
             return;
         }

@@ -68,6 +68,7 @@
 
         // Expose public API
         JE.hiddenContent = {
+            titleKey: internal.titleKey, titleData: internal.titleData, buildTitleControl: internal.buildTitleControl, saveTitleRule: internal.saveTitleRule,
             isHidden,
             isHiddenByTmdbId,
             isHiddenOnSurface,

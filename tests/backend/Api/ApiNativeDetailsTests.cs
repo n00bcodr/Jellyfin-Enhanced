@@ -869,6 +869,7 @@ public class ApiNativeDetailsTests
     public async Task SimilarLeavesOutWhatTheViewerHidWithHiddenContent()
     {
         using var rig = new Rig();
+        rig.Plugin.Plugin.Configuration.HiddenContentEnabled = true;
         var viewer = rig.Person();
         var other = rig.Person();
         var copy = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.NewGuid(), Name = "Hidden copy" };

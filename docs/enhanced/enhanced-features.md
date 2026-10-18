@@ -1035,3 +1035,5 @@ Multi-language support with community translations and automatic caching.
 **Contributing Translations:**
 
 See the [Contributing Translations](../faq-support/contributing-translations.md) section for details.
+
+Requests & downloads also offers Hide/Unhide on titles that have not arrived yet, their recommendation and discovery cards, and the More Info window. These hides use the movie or series TMDB identity, so all library copies remain hidden after arrival or reimport. Undo removes that title rule. Search continues to follow your separate search-filter preference. A failed save leaves the control available to retry.
