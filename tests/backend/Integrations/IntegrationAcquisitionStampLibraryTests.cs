@@ -11,15 +11,18 @@ using Moq;
 namespace JE.Tests;
 
 /// <summary>
-/// Phase 4e: the Jellyfin adapter of the stamp code. The 4K copies are read with two size queries that ask Jellyfin for
-/// provider ids (Jellyfin 12 loads them only when asked; without them a 4K movie has no title key and never gets the
-/// 4K stamp), and a Jellyfin movie becomes a stamp item with its title keys.
+/// Phase 4e: source-aware, paged Jellyfin reads include provider ids and alternate-source arrivals even when
+/// the primary is old HD. Provider ids are required by Jellyfin 12 to build the title-key index.
 /// </summary>
 public class IntegrationAcquisitionStampLibraryTests
 {
     private static Movie UhdMovie(int width = 3840, int height = 2160)
     {
-        var movie = new Movie { Id = Guid.NewGuid(), Name = "The Matrix", Width = width, Height = height, DateCreated = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc), Path = "/movies/matrix-2160p.mkv" };
+        var mock = new Mock<Movie> { CallBase = true };
+        mock.Setup(m => m.GetMediaSources(false)).Returns(new List<MediaBrowser.Model.Dto.MediaSourceInfo>());
+        var movie = mock.Object;
+        movie.Id = Guid.NewGuid(); movie.Name = "The Matrix"; movie.Width = width; movie.Height = height;
+        movie.DateCreated = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc); movie.Path = "/movies/matrix-2160p.mkv";
         movie.SetProviderId(MetadataProvider.Tmdb, "603");
         movie.SetProviderId(MetadataProvider.Imdb, "tt0133093");
         return movie;
@@ -40,11 +43,10 @@ public class IntegrationAcquisitionStampLibraryTests
 
         var found = adapter.FourKVideos();
 
-        Assert.Equal(2, queries.Count);
-        Assert.Equal(3200, queries[0].MinWidth);
+        Assert.Single(queries);
+        Assert.Null(queries[0].MinWidth);
         Assert.Null(queries[0].MinHeight);
-        Assert.Null(queries[1].MinWidth);
-        Assert.Equal(2000, queries[1].MinHeight);
+        Assert.Equal(256, queries[0].Limit);
         Assert.All(queries, q =>
         {
             Assert.Equal(new[] { BaseItemKind.Movie, BaseItemKind.Episode }.OrderBy(k => k), q.IncludeItemTypes.OrderBy(k => k));
@@ -90,4 +92,32 @@ public class IntegrationAcquisitionStampLibraryTests
         w.Resolver.Invalidate();
         Assert.Equal(AcquisitionStamp.None, w.Resolver.Resolve(standard.Id, Guid.NewGuid(), StampWorld.T0));
     }
+    [Fact]
+    public void AnHdPrimaryWithAnAlternateFourKMediaSourceIsIndexed()
+    {
+        var primary = new Mock<Movie> { CallBase = true };
+        primary.Object.Id = Guid.NewGuid();
+        primary.Object.Width = 1920;
+        primary.Object.Height = 1080;
+        primary.Object.Path = "/movies/Matrix/Matrix - HD.mkv";
+        primary.Object.DateCreated = StampWorld.T0.AddYears(-1);
+        primary.Object.SetProviderId(MetadataProvider.Tmdb, "603");
+        var alternate = new Movie { Id = Guid.NewGuid(), DateCreated = StampWorld.T0 };
+        primary.Setup(m => m.GetMediaSources(false)).Returns(new List<MediaBrowser.Model.Dto.MediaSourceInfo>
+        {
+            new() { Id = primary.Object.Id.ToString("N"), Path = primary.Object.Path,
+                MediaStreams = new List<MediaStream> { new() { Type = MediaStreamType.Video, Width = 1920, Height = 1080 } } },
+            new() { Id = alternate.Id.ToString("N"), Path = "/movies/Matrix/Matrix - 4K.mkv",
+                MediaStreams = new List<MediaStream> { new() { Type = MediaStreamType.Video, Width = 3840, Height = 2160 } } },
+        });
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new List<BaseItem> { primary.Object });
+        using var adapter = new JellyfinStampLibrary(library.Object, Mock.Of<IUserDataManager>(), new PosterTagUserCache(Mock.Of<IUserManager>()));
+        library.Setup(l => l.GetItemById(alternate.Id)).Returns(alternate);
+        var found = Assert.Single(adapter.FourKVideos());
+        Assert.True(found.FourK);
+        Assert.Equal(StampWorld.T0, Assert.Single(found.Sources, source => source.Id == alternate.Id.ToString("N")).Arrived);
+        Assert.Single(adapter.AddedSince(StampWorld.T0.AddMinutes(-1)));
+    }
+
 }

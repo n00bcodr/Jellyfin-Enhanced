@@ -443,10 +443,10 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   **`ScheduledTasks/ListMaintenanceTask.cs`** and the client transport in **`js/arr/lists/list-api.js`** (`JE.arrLists`).
 
 * **`/Services/Acquire/Stamps/`**: Phase-4 acquisition badges (New for you, Upgraded, 4K). `AcquisitionStamp.cs` holds
-  the fixed stamp values, the switches and lifetimes (`AcquisitionStampFlags`), the 4K copy rule and the seams;
+  the fixed stamp values, the switches and lifetimes (`AcquisitionStampFlags`), the 4K copy rule, per-source identity/arrival facts and the seams;
   `AcquisitionStampStore.cs` the facts in acquire.db (schema 7: a person's first arrivals, confirmed upgrades, judged
-  arrivals and first arrival per part) with an in-memory index; `AcquisitionStampFeeder.cs` the background writer
-  (library arrivals, the arrs' history in memory, catch-up and housekeeping); `AcquisitionStampResolver.cs` the pure
+  arrivals and first arrival per part), stable source observations, an in-memory fact index and one restore/deletion write guard; `AcquisitionStampFeeder.cs` the background writer
+  (source arrivals and updates, the arrs' history in memory, catch-up and housekeeping); `AcquisitionStampResolver.cs` the pure
   in-memory decision per viewer and item that web cards and native posters share; `AcquisitionStampSources.cs` the
   Jellyfin, request/follow and arr-history adapters, the per-person preference reader and the deleted-user purge.
   Route in **`Controllers/AcquisitionStampsController.cs`** (`GET acquire/stamps`); native posters draw the stamp through

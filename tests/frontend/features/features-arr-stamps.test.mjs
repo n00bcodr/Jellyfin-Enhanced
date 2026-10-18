@@ -459,6 +459,77 @@ test('hiding the badges in the settings panel takes effect on the cards without 
 });
 
 /** deepEqual across the jsdom realm (its arrays are not this realm's). */
-function same(actual, expected, message) {
+function same(actual, expected, message = '') {
   assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected, message);
 }
+
+for (const action of ['hide', 'user switch', 'reset']) {
+  test(`a deferred stamps response cannot cache or paint after ${action}`, async t => {
+    const held = deferred();
+    const h = setup(t, {
+      html: cardsHtml(['Movie']),
+      config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+      responses: () => held.promise
+    });
+    const shown = h.show();
+    await nextTurn();
+    if (action === 'hide') h.JE.currentSettings.acquisitionBadges = false;
+    if (action === 'user switch') h.userChange.forEach(fn => fn());
+    else h.cards.reset();
+    held.resolve({ items: [{ itemId: id(0), stamp: 'new' }] });
+    await shown;
+    assert.equal(h.cards.cache.size, 0, 'obsolete generation must not be cached');
+    assert.equal(h.document.querySelector('.je-arr-badge'), null, 'obsolete generation must not paint');
+  });
+}
+
+test('a watch invalidation during a held stamps read survives another flush and refetches on completion', async t => {
+  const held = deferred();
+  let reads = 0;
+  const h = setup(t, {
+    html: cardsHtml(['Movie']),
+    config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+    responses: () => ++reads === 1 ? held.promise : { items: [] }
+  });
+  const shown = h.show();
+  await nextTurn();
+  h.cards.onUserData({ UserDataList: [{ ItemId: id(0), Played: true }] });
+  await h.cards.flush();
+  held.resolve({ items: [{ itemId: id(0), stamp: 'new' }] });
+  await shown;
+  assert.equal(h.document.querySelector('.je-arr-badge'), null, 'invalidated answer cannot paint while the refetch waits');
+  await new Promise(resolve => h.window.setTimeout(resolve, 400));
+  assert.equal(reads, 2, 'queued invalidation is automatically fetched after completion');
+  assert.equal(h.cards.cache.get(id(0))?.stamp ?? null, null);
+});
+
+test('partial playback refreshes season and series cards including a parent whose first stamps read is held', async t => {
+  for (const heldFirst of [false, true]) {
+    const held = deferred();
+    let reads = 0;
+    const h = setup(t, {
+      html: cardsHtml(['Season', 'Series', 'Movie']),
+      config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+      responses: path => ++reads === 1
+        ? held.promise
+        : stampAnswer(path, { [id(2)]: 'new' })
+    });
+    const shown = h.show();
+    await nextTurn();
+    if (!heldFirst) {
+      held.resolve({ items: [0, 1, 2].map(i => ({ itemId: id(i), stamp: 'new' })) });
+      await shown;
+    }
+    h.cards.onUserData({ UserDataList: [{ ItemId: id(99), Played: false, LastPlayedDate: '2026-10-18T01:00:00Z' }] });
+    if (heldFirst) {
+      held.resolve({ items: [0, 1, 2].map(i => ({ itemId: id(i), stamp: 'new' })) });
+      await shown;
+    }
+    await h.cards.flush();
+    same(idsOf(h.stampCalls().at(-1).path).sort(), [id(0), id(1)]);
+    const cards = h.document.querySelectorAll('.card');
+    assert.equal(cards[0].querySelector('.je-arr-badge'), null);
+    assert.equal(cards[1].querySelector('.je-arr-badge'), null);
+    assert.ok(cards[2].querySelector('.je-arr-badge'), 'unrelated movie stays painted');
+  }
+});

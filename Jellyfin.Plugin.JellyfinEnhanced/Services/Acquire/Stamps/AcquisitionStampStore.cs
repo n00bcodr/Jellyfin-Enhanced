@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -22,7 +23,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
     /// decides them at read time, so a stamp ends without any timer. Facts older than the longest lifetime are purged.
     /// Reads come from an in-memory index (by item, and by an episode's season and series, so their cards can show what
     /// arrived inside them); it is rebuilt from the database after a restore (the database's generation moved).
-    /// Also keeps which arrivals were already judged and the first arrival of each movie edition and episode number, so a
+    /// Also keeps stable source arrivals and which sources were judged, plus the first arrival of each edition/part, so a
     /// renamed upgrade (a new item id) is never taken for a first arrival.
     /// </summary>
     public sealed class AcquisitionStampStore
@@ -30,6 +31,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         private static readonly TimeSpan Keep = TimeSpan.FromDays(AcquisitionStampFlags.MaxDays);
 
         private readonly AcquireDatabase _db;
+        private readonly ConcurrentDictionary<Guid, byte> _deleted = new();
         private readonly Func<DateTimeOffset> _now;
         private readonly object _gate = new();
         private volatile Index? _index;
@@ -67,6 +69,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <summary>True when the database can be used.</summary>
         public bool Available => _db.Available;
 
+        /// <summary>Capture before reading inputs for a write; restore invalidates that work.</summary>
+        public long Generation => _db.Generation;
+
         /// <summary>Moves on with every change (and every reload), for caches built on the facts.</summary>
         public long Revision => Interlocked.Read(ref _revision);
 
@@ -91,9 +96,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <param name="item">The movie or episode.</param>
         /// <param name="at">When it arrived.</param>
         /// <param name="source">What the interest was (request, seerr, follow).</param>
+        /// <param name="generation">Database generation captured before reading inputs.</param>
         /// <returns>True when it was new.</returns>
-        public bool AddNew(Guid user, StampItem item, DateTime at, string source)
-            => Add(item, user, AcquisitionStampKinds.New, at, source, replace: false);
+        public bool AddNew(Guid user, StampItem item, DateTime at, string source, long? generation = null)
+            => Add(item, user, AcquisitionStampKinds.New, at, source, replace: false, generation ?? Generation);
 
         /// <summary>
         /// Records a confirmed replacement (everyone who can open the item; a later upgrade of the same item moves its
@@ -102,21 +108,73 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <param name="item">The movie or episode.</param>
         /// <param name="at">When the arr imported the replacement.</param>
         /// <param name="source">The import ("instance:historyId").</param>
+        /// <param name="generation">Database generation captured before reading inputs.</param>
         /// <returns>True when it changed anything.</returns>
-        public bool AddUpgraded(StampItem item, DateTime at, string source)
-            => Add(item, Guid.Empty, AcquisitionStampKinds.Upgraded, at, source, replace: true);
+        public bool AddUpgraded(StampItem item, DateTime at, string source, long? generation = null)
+            => Add(item, Guid.Empty, AcquisitionStampKinds.Upgraded, at, source, replace: true, generation ?? Generation);
 
         /// <summary>Whether an item's arrival was already judged.</summary>
         /// <param name="itemId">Item.</param>
+        /// <param name="source">Source identity (null: legacy item marker).</param>
         /// <returns>True when judged.</returns>
-        public bool Seen(Guid itemId) => _db.Available && _db.Read(c => Scalar(c, null, "SELECT 1 FROM acquisition_seen WHERE item_id=$i", ("$i", N(itemId))) != null);
+        public bool Seen(Guid itemId, string? source = null) => _db.Available && _db.Read(c => Scalar(c, null,
+            "SELECT 1 FROM acquisition_seen WHERE item_id=$i OR item_id=$legacy",
+            ("$i", SeenKey(itemId, source)), ("$legacy", source != null && Guid.TryParse(source, out var id) ? N(id) : SeenKey(itemId, source))) != null);
 
         /// <summary>Marks an item's arrival as judged.</summary>
         /// <param name="itemId">Item.</param>
-        public void MarkSeen(Guid itemId)
+        /// <param name="source">Source identity.</param>
+        /// <param name="generation">Database generation captured before reading inputs.</param>
+        public void MarkSeen(Guid itemId, string? source = null, long? generation = null)
         {
             if (!_db.Available) return;
-            _db.Write((c, t) => Exec(c, t, "INSERT OR IGNORE INTO acquisition_seen(item_id,seen_at) VALUES($i,$at)", ("$i", N(itemId)), ("$at", Ms(_now().UtcDateTime))));
+            Guard(generation ?? Generation, Guid.Empty, (c, t) => Exec(c, t, "INSERT OR IGNORE INTO acquisition_seen(item_id,seen_at) VALUES($i,$at)", ("$i", SeenKey(itemId, source)), ("$at", Ms(_now().UtcDateTime))));
+        }
+
+        /// <summary>The first known arrival of this source, stable across primary-item promotion and restart.</summary>
+        /// <param name="source">Source identity.</param>
+        /// <returns>Arrival (UTC), or null.</returns>
+        public DateTime? SourceArrival(string source) => FirstArrival(new[] { "src|" + source });
+
+        /// <summary>Owners of source arrivals within the catch-up window, including an old promoted primary.</summary>
+        /// <param name="since">Earliest arrival (UTC).</param>
+        /// <returns>Item ids.</returns>
+        public IReadOnlyList<Guid> RecentSourceItems(DateTime since)
+        {
+            if (!_db.Available) return Array.Empty<Guid>();
+            return _db.Read(c =>
+            {
+                var ids = new List<Guid>();
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = "SELECT DISTINCT item_id FROM acquisition_arrivals WHERE part_key LIKE 'src|%' AND first_at>=$at";
+                cmd.Parameters.AddWithValue("$at", Ms(since));
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) if (Guid.TryParse(reader.GetString(0), out var id)) ids.Add(id);
+                return ids;
+            });
+        }
+
+        /// <summary>
+        /// Remembers source arrivals once. Startup seeds existing sources with their own metadata date; library events
+        /// record newly observed sources at the event time. Jellyfin can copy an older title date onto a new primary.
+        /// </summary>
+        /// <param name="items">Source snapshots read before the guard.</param>
+        /// <param name="arrived">Event time (null: baseline metadata dates).</param>
+        /// <param name="generation">Generation captured before reading inputs.</param>
+        public void ObserveSources(IEnumerable<StampItem> items, DateTime? arrived, long generation)
+        {
+            var sources = items.SelectMany(item => item.Sources.Select(source =>
+                (Id: source.Identity, Item: item.Id, At: arrived ?? source.Arrived)))
+                .Where(source => source.At != DateTime.MinValue).DistinctBy(source => source.Id).ToList();
+            if (sources.Count == 0) return;
+            Guard(generation, Guid.Empty, (c, t) =>
+            {
+                var count = 0;
+                foreach (var source in sources)
+                    count += Exec(c, t, "INSERT OR IGNORE INTO acquisition_arrivals(part_key,first_at,item_id) VALUES($p,$at,$i)",
+                        ("$p", "src|" + source.Id), ("$at", Ms(source.At)), ("$i", N(source.Item)));
+                return count;
+            });
         }
 
         /// <summary>The earliest recorded arrival of any of these parts, or null.</summary>
@@ -147,12 +205,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <param name="parts">Part keys.</param>
         /// <param name="at">Arrival (UTC).</param>
         /// <param name="itemId">The item that brought it.</param>
-        public void NoteArrival(IEnumerable<string> parts, DateTime at, Guid itemId)
+        /// <param name="generation">Database generation captured before reading inputs.</param>
+        public void NoteArrival(IEnumerable<string> parts, DateTime at, Guid itemId, long? generation = null)
         {
             if (!_db.Available) return;
             var list = parts.Distinct(StringComparer.Ordinal).ToList();
             if (list.Count == 0) return;
-            _db.Write((c, t) =>
+            Guard(generation ?? Generation, Guid.Empty, (c, t) =>
             {
                 foreach (var part in list)
                 {
@@ -168,21 +227,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <param name="user">The person.</param>
         public void PurgeUser(Guid user)
         {
-            if (!_db.Available || user == Guid.Empty) return;
-            _db.Write((c, t) => Exec(c, t, "DELETE FROM acquisition_stamps WHERE user_id=$u", ("$u", N(user))));
+            if (user == Guid.Empty) return;
+            // Record before waiting for the database writer, including when the database is unavailable.
+            _deleted.TryAdd(user, 0);
+            if (!_db.Available) return;
+            Guard(Generation, Guid.Empty, (c, t) => Exec(c, t, "DELETE FROM acquisition_stamps WHERE user_id=$u", ("$u", N(user))));
             Reload();
         }
 
-        /// <summary>Removes facts and records older than the longest lifetime.</summary>
+        /// <summary>Removes expired facts and part records; source identities retain their original arrival.</summary>
         /// <returns>Rows removed.</returns>
         public int Purge()
         {
             if (!_db.Available) return 0;
             var cutoff = Ms(_now().UtcDateTime - Keep);
-            var removed = _db.Write((c, t) =>
+            var removed = Guard(Generation, Guid.Empty, (c, t) =>
                 Exec(c, t, "DELETE FROM acquisition_stamps WHERE at<$c", ("$c", cutoff))
                 + Exec(c, t, "DELETE FROM acquisition_seen WHERE seen_at<$c", ("$c", cutoff))
-                + Exec(c, t, "DELETE FROM acquisition_arrivals WHERE first_at<$c", ("$c", cutoff)));
+                + Exec(c, t, "DELETE FROM acquisition_arrivals WHERE first_at<$c AND part_key NOT LIKE 'src|%'", ("$c", cutoff)));
             if (removed > 0) Reload();
             return removed;
         }
@@ -223,11 +285,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             Interlocked.Increment(ref _revision);
         }
 
-        private bool Add(StampItem item, Guid user, string kind, DateTime at, string source, bool replace)
+        private bool Add(StampItem item, Guid user, string kind, DateTime at, string source, bool replace, long generation)
         {
             if (!_db.Available || item.Id == Guid.Empty) return false;
             var created = Ms(_now().UtcDateTime);
-            var changed = _db.Write((c, t) =>
+            var changed = Guard(generation, user, (c, t) =>
             {
                 var sql = replace
                     ? "INSERT INTO acquisition_stamps(item_id,user_id,kind,title_key,series_id,season_id,at,source,created_at) VALUES($i,$u,$k,$t,$se,$sn,$at,$src,$c) ON CONFLICT(item_id,user_id,kind) DO UPDATE SET at=excluded.at,source=excluded.source WHERE excluded.at>acquisition_stamps.at"
@@ -246,6 +308,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             if (changed > 0) Reload();
             return changed > 0;
         }
+
+        // The only stamp write boundary: restore and deletion are checked under AcquireDatabase's insert lock.
+        // Tombstones last for this store's lifetime: a delayed feeder has no shorter guaranteed lifetime.
+        private int Guard(long generation, Guid user, Func<SqliteConnection, SqliteTransaction, int> write)
+        {
+            if (!_db.Available) return 0;
+            return _db.WriteIf(generation, (c, t) => _deleted.ContainsKey(user) ? 0 : write(c, t), 0).Result;
+        }
+
+        private static string SeenKey(Guid item, string? source) => source == null ? N(item) : "s|" + source;
 
         private Index? Current()
         {

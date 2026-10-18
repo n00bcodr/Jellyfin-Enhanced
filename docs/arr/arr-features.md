@@ -1405,7 +1405,9 @@ badge about what changed for the person looking at it. At most one per card, in 
 1. The download ring (and the *taking longer* and *almost ready* badges) of the phase-1 poster badges, while something
    is on its way. Season cards keep their ✓ / ◐ ready count next to it.
 2. **Upgraded**: Sonarr or Radarr replaced the file with a better copy (its history says the old file was deleted for an
-   upgrade, and Jellyfin has the new file). Everyone who can open the new copy sees it until they play it after the
+   upgrade, and Jellyfin has the new file), or the first 4K version arrived alongside an existing HD copy.
+   Alternate versions use their own first observed arrival, even when Jellyfin promotes one to the primary version
+   and keeps the title's older added date. Everyone who can open the new copy sees it until they play it after the
    upgrade (a played mark carried over from the old file doesn't count), or for 7 days.
 3. **New for you**: something this person asked for (a request, also through Seerr) or follows arrived for the first
    time after they asked, and they can open it. It goes when they play it or mark it played, or after 7 days. A 4K
@@ -1413,7 +1415,8 @@ badge about what changed for the person looking at it. At most one per card, in 
 4. **4K**: the person can open a 4K copy (a video at least 3200 pixels wide or 2000 high) of this movie or series, or of
    this season or episode.
 
-A series or season card shows New or Upgraded when one of its episodes does. Badges come from what the server already
+A series or season card shows New or Upgraded when one of its episodes does. Partial playback clears those badges
+for that viewer too. Hiding badges takes effect immediately, including while a badge request is still loading. Badges come from what the server already
 knows (no call to Sonarr, Radarr or Seerr when a page or a poster loads), and a badge whose time is up is gone at once,
 without waiting for anything to run. A badge never shows a title the person can't open, and nothing is requested or
 changed by a badge.

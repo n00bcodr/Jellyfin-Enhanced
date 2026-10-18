@@ -113,6 +113,8 @@ internal sealed class FakeStampLibrary : IStampLibrary
 /// <summary>Interests by title key.</summary>
 internal sealed class FakeStampInterests : IStampInterests
 {
+    public Action? AfterRead { get; set; }
+
     public List<(TitleKey Key, StampInterest Interest)> All { get; } = new();
 
     public void Add(TitleKey key, StampInterest interest) => All.Add((key, interest));
@@ -120,7 +122,9 @@ internal sealed class FakeStampInterests : IStampInterests
     public IReadOnlyList<StampInterest> For(IReadOnlyList<TitleKey> keys)
     {
         var wanted = keys.Select(k => k.ToString()).ToHashSet(StringComparer.Ordinal);
-        return All.Where(x => wanted.Contains(x.Key.ToString())).Select(x => x.Interest).ToList();
+        var result = All.Where(x => wanted.Contains(x.Key.ToString())).Select(x => x.Interest).ToList();
+        AfterRead?.Invoke();
+        return result;
     }
 }
 

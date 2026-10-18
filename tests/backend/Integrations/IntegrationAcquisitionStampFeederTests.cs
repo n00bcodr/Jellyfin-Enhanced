@@ -61,7 +61,7 @@ public class IntegrationAcquisitionStampFeederTests
     }
 
     [Fact]
-    public void AFourKOnlyInterestIgnoresAStandardCopyAndTakesTheFirstFourKOne()
+    public void AFourKOnlyInterestIgnoresHdAndTheFirstFourKAlongsideItIsUpgraded()
     {
         using var w = new StampWorld();
         var key = StampWorld.Movie(603);
@@ -75,8 +75,8 @@ public class IntegrationAcquisitionStampFeederTests
 
         var uhd = w.AddMovie(key, T0.AddHours(-1), fourK: true);
         w.Feeder.Judge(uhd.Id, T0);
-        // The 4K fan's first 4K copy; the standard fan already had a copy (any edition counts for them).
-        Assert.Equal(new[] { uhdFan }, News(w, uhd).Select(f => f.UserId));
+        Assert.Empty(News(w, uhd));
+        Assert.Equal(AcquisitionStampKinds.Upgraded, Assert.Single(w.Store.FactsFor(uhd.Id)).Kind);
     }
 
     [Fact]
@@ -328,6 +328,178 @@ public class IntegrationAcquisitionStampFeederTests
         Assert.Empty(Paired(Import(1, movie: 5, path: null), Deleted(2, "Upgrade", movie: 5)));                     // no imported path
         Assert.Empty(Paired(new ArrHistoryEntry { Id = 1, EventType = "grabbed", MovieId = 5, ImportedPath = "/x.mkv", Date = T0 }, Deleted(2, "Upgrade", movie: 5)));
         Assert.Equal(new[] { 1, 3 }, Paired(Import(1, movie: 5), Deleted(2, "Upgrade", movie: 5), Import(3, movie: 5, minutes: 2), Import(4, movie: 8)));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AFeederHeldAfterReadingInterestsCannotRecreateFactsAfterRestoreOrUserDeletion(bool deleteUser)
+    {
+        using var w = new StampWorld();
+        var snapshot = w.Db.Snapshot()!;
+        var user = Guid.NewGuid();
+        var movie = w.AddMovie(StampWorld.Movie(603), T0.AddHours(-1));
+        w.Interests.Add(movie.Keys[0], StampWorld.Interest(user, T0.AddDays(-2)));
+        w.Interests.AfterRead = () =>
+        {
+            if (deleteUser) w.Store.PurgeUser(user);
+            else w.Db.ReplaceWith(snapshot);
+        };
+
+        w.Feeder.Judge(movie.Id, T0);
+
+        Assert.Empty(w.Store.FactsFor(movie.Id));
+        Assert.Equal(0, w.Rows("acquisition_stamps"));
+        if (!deleteUser) Assert.False(w.Store.Seen(movie.Id));
+        // A current, unrelated viewer still works after either boundary.
+        w.Interests.AfterRead = null;
+        var other = Guid.NewGuid();
+        Assert.True(w.Store.AddNew(other, movie, T0, "control"));
+        if (deleteUser) Assert.False(w.Store.AddNew(user, movie, T0, "late"));
+    }
+
+    [Fact]
+    public void TheFirstFourKCopyAlongsideHdIsUpgradedForEveryoneAndNeverNew()
+    {
+        using var w = new StampWorld();
+        var key = StampWorld.Movie(603);
+        w.AddMovie(key, T0.AddDays(-20));
+        var uhd = w.AddMovie(key, T0.AddMinutes(-5), fourK: true);
+        var user = Guid.NewGuid();
+        w.Interests.Add(key, StampWorld.Interest(user, T0.AddDays(-2), fourKOnly: true));
+        w.Feeder.Judge(uhd.Id, T0);
+        var fact = Assert.Single(w.Store.FactsFor(uhd.Id));
+        Assert.Equal((AcquisitionStampKinds.Upgraded, Guid.Empty, uhd.DateCreated), (fact.Kind, fact.UserId, fact.At));
+        Assert.Equal(AcquisitionStamp.Upgraded, w.Resolver.Resolve(uhd.Id, user));
+        w.Library.Played(user, uhd.Id, false, T0);
+        Assert.Equal(AcquisitionStamp.FourK, w.Resolver.Resolve(uhd.Id, user));
+        Assert.Equal(AcquisitionStamp.Upgraded, w.Resolver.Resolve(uhd.Id, Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task ItemUpdatedJudgesEachNewSourceWithItsOwnArrivalAndDoesNotReplayIt()
+    {
+        using var w = new StampWorld();
+        var user = Guid.NewGuid();
+        var key = StampWorld.Movie(603);
+        var old = w.AddMovie(key, T0.AddYears(-1));
+        var hd = new StampSource("hd", "/movie/hd.mkv", 1920, 1080, old.DateCreated);
+        old = w.Library.Put(old with { Sources = new[] { hd } });
+        await w.Feeder.TickAsync(CancellationToken.None); // old item isn't in the recent catch-up
+        w.Feeder.Judge(old.Id, T0);
+        w.Interests.Add(key, StampWorld.Interest(user, T0.AddDays(-1), fourKOnly: true));
+        var uhd = new StampSource("4k", "/movie/4k.mkv", 3840, 2160, T0);
+        w.Library.RaiseUpdated(old with { Sources = new[] { hd, uhd } });
+        w.Now = T0.AddSeconds(61);
+        await w.Feeder.TickAsync(CancellationToken.None);
+        var fact = Assert.Single(w.Store.FactsFor(old.Id));
+        Assert.Equal((AcquisitionStampKinds.Upgraded, T0), (fact.Kind, fact.At));
+        Assert.Equal(T0, w.Store.FirstArrival(new[] { "m|movie:tmdb:603|4k" }));
+        Assert.Equal(AcquisitionStamp.Upgraded, w.Resolver.Resolve(old.Id, user));
+        w.Library.Played(user, old.Id, false, T0.AddSeconds(30));
+        Assert.Equal(AcquisitionStamp.FourK, w.Resolver.Resolve(old.Id, user));
+        w.Library.RaiseUpdated(w.Library.Items[old.Id]); // metadata refresh of the same sources
+        w.Now = T0.AddMinutes(3);
+        await w.Feeder.TickAsync(CancellationToken.None);
+        Assert.Equal(T0, Assert.Single(w.Store.FactsFor(old.Id)).At);
+        w.Library.RaiseUpdated(old with { Sources = new[] { hd } });
+        w.Now = T0.AddMinutes(5);
+        await w.Feeder.TickAsync(CancellationToken.None);
+        Assert.Equal(AcquisitionStamp.None, w.Resolver.Resolve(old.Id, user));
+    }
+
+    [Fact]
+    public async Task ANewHdSourceOfAnOldUnplayableItemUsesTheSourcesArrivalForNew()
+    {
+        using var w = new StampWorld();
+        var user = Guid.NewGuid();
+        var key = StampWorld.Movie(603);
+        var item = w.AddMovie(key, T0.AddYears(-1));
+        await w.Feeder.TickAsync(CancellationToken.None);
+        w.Interests.Add(key, StampWorld.Interest(user, T0.AddDays(-1)));
+        w.Library.RaiseUpdated(item with { Sources = new[] { new StampSource("new-hd", "/movie/new.mkv", 1920, 1080, T0) } });
+        w.Now = T0.AddSeconds(61);
+        await w.Feeder.TickAsync(CancellationToken.None);
+        Assert.Equal(T0, Assert.Single(w.Store.FactsFor(item.Id)).At);
+        Assert.Equal(AcquisitionStamp.NewForYou, w.Resolver.Resolve(item.Id, user));
+    }
+
+    [Fact]
+    public void ARemovedSourceWithUnknownArrivalDoesNotInventAnAncientFirstArrival()
+    {
+        using var w = new StampWorld();
+        var movie = w.AddMovie(StampWorld.Movie(603), T0);
+        w.Library.RaiseRemoved(movie with { Sources = new[] { new StampSource("unknown", "/alternate.mkv", 3840, 2160, DateTime.MinValue) } });
+        Assert.Null(w.Store.FirstArrival(new[] { "m|movie:tmdb:603|4k" }));
+    }
+
+    [Fact]
+    public async Task APromotedFourKPrimaryUsesItsSourcesFirstObservationInsteadOfTheInheritedHdDate()
+    {
+        using var w = new StampWorld();
+        var key = StampWorld.Movie(603);
+        var hd = new StampSource(Guid.NewGuid().ToString("N"), "/movie/HD.mkv", 1920, 1080, T0.AddDays(-40));
+        var old = w.Library.Put(w.AddMovie(key, hd.Arrived) with { Sources = new[] { hd } });
+        await w.Feeder.TickAsync(CancellationToken.None); // baseline every source, including old HD
+        // Jellyfin promotes 4K to primary and inherits the title's older DateCreated on that backing item.
+        var uhd = new StampSource(Guid.NewGuid().ToString("N"), "/movie/4K.mkv", 3840, 2160, hd.Arrived);
+        w.Library.Items.Remove(old.Id);
+        var promoted = old with { Id = Guid.Parse(uhd.Id), Sources = new[] { uhd, hd } };
+        w.Library.RaiseUpdated(promoted);
+        w.Now = T0.AddSeconds(61);
+        await w.Feeder.TickAsync(CancellationToken.None);
+        var fact = Assert.Single(w.Store.FactsFor(promoted.Id));
+        Assert.Equal((AcquisitionStampKinds.Upgraded, T0), (fact.Kind, fact.At));
+        Assert.Equal(T0, w.Store.FirstArrival(new[] { "m|movie:tmdb:603|4k" }));
+        // Neither a metadata refresh nor a restart may make the same source arrive again.
+        w.Library.RaiseUpdated(promoted);
+        w.Now = T0.AddMinutes(3);
+        await w.Feeder.TickAsync(CancellationToken.None);
+        Assert.Equal(T0, Assert.Single(w.Store.FactsFor(promoted.Id)).At);
+    }
+
+    [Fact]
+    public void AnUnknownOlderSourceIsNotEvidenceOfAnUpgrade()
+    {
+        using var w = new StampWorld();
+        var item = w.AddMovie(StampWorld.Movie(603), T0);
+        w.Library.Put(item with { Sources = new[] {
+            new StampSource("unknown", "/old.mkv", 1920, 1080, DateTime.MinValue),
+            new StampSource("new-4k", "/new.mkv", 3840, 2160, T0) } });
+        w.Feeder.Judge(item.Id, T0);
+        Assert.Empty(w.Store.FactsFor(item.Id));
+    }
+
+    [Fact]
+    public async Task ARestartBeforeSettleStillJudgesANewSourceOnAnOldPrimary()
+    {
+        using var w = new StampWorld();
+        var old = w.AddMovie(StampWorld.Movie(603), T0.AddYears(-1));
+        var hd = new StampSource("old-hd", "/HD.mkv", 1920, 1080, old.DateCreated);
+        w.Library.Put(old with { Sources = new[] { hd } });
+        await w.Feeder.TickAsync(CancellationToken.None);
+        w.Library.RaiseUpdated(old with { Sources = new[] { hd, new StampSource("new-4k", "/4K.mkv", 3840, 2160, old.DateCreated) } });
+        w.Feeder.Dispose();
+        w.Now = T0.AddMinutes(2);
+        using var resumed = new AcquisitionStampFeeder(w.Library, w.Interests, w.Upgrades, w.Store, w.Resolver, null, () => w.Config, w.Clock);
+        await resumed.TickAsync(CancellationToken.None);
+        Assert.Equal((AcquisitionStampKinds.Upgraded, T0), (Assert.Single(w.Store.FactsFor(old.Id)).Kind, Assert.Single(w.Store.FactsFor(old.Id)).At));
+    }
+
+    [Fact]
+    public async Task RenumberingTheHdMediaSourceDuringPromotionDoesNotMakeItArriveAgain()
+    {
+        using var w = new StampWorld();
+        var old = w.AddMovie(StampWorld.Movie(603), T0.AddYears(-1));
+        var hd = new StampSource("before-promotion", "/HD.mkv", 1920, 1080, old.DateCreated);
+        w.Library.Put(old with { Sources = new[] { hd } });
+        await w.Feeder.TickAsync(CancellationToken.None);
+        w.Library.RaiseUpdated(old with { Sources = new[] {
+            new StampSource("new-4k", "/4K.mkv", 3840, 2160, old.DateCreated), hd with { Id = "after-promotion" } } });
+        w.Now = T0.AddMinutes(2);
+        await w.Feeder.TickAsync(CancellationToken.None);
+        var fact = Assert.Single(w.Store.FactsFor(old.Id));
+        Assert.Equal((AcquisitionStampKinds.Upgraded, T0), (fact.Kind, fact.At));
     }
 
     // ── 13. the history reason ───────────────────────────────────────────

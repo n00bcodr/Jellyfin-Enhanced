@@ -53,7 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         public event Action<StampItem>? Removed;
 
         /// <inheritdoc />
-        public StampItem? Item(Guid id) => id == Guid.Empty ? null : From(_libraryManager.GetItemById(id));
+        public StampItem? Item(Guid id) => id == Guid.Empty ? null : Read(_libraryManager.GetItemById(id));
 
         /// <inheritdoc />
         public bool CanOpen(Guid userId, Guid itemId)
@@ -75,45 +75,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <inheritdoc />
         public IReadOnlyList<StampItem> FourKVideos()
         {
-            var found = new Dictionary<Guid, StampItem>();
-            foreach (var query in new[]
-            {
-                new InternalItemsQuery { MinWidth = AcquisitionCopyPolicy.FourKWidth },
-                new InternalItemsQuery { MinHeight = AcquisitionCopyPolicy.FourKHeight },
-            })
-            {
-                query.IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Episode };
-                query.Recursive = true;
-                query.IsVirtualItem = false;
-                // A movie's title keys are its provider ids, which are only read from the database when asked for.
-                query.DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } };
-                foreach (var item in _libraryManager.GetItemList(query))
-                {
-                    if (!found.ContainsKey(item.Id) && From(item) is { FourK: true } stamp) found[item.Id] = stamp;
-                }
-            }
-
-            return found.Values.ToList();
+            return Videos().Where(item => item.FourK).ToList();
         }
 
         /// <inheritdoc />
         public IReadOnlyList<StampItem> AddedSince(DateTime since)
-        {
-            var items = _libraryManager.GetItemList(new InternalItemsQuery
-            {
-                IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Episode },
-                MinDateCreated = since,
-                Recursive = true,
-                IsVirtualItem = false,
-                DtoOptions = new DtoOptions(false),
-            });
-            var list = new List<StampItem>(items.Count);
-            foreach (var item in items)
-            {
-                if (From(item) is { Virtual: false } stamp) list.Add(stamp);
-            }
+            => Videos().Where(item => item.SourceItems().Any(source => source.DateCreated >= since)).ToList();
 
-            return list;
+        // A new alternate version updates an old primary. Size/date filters on that primary miss it, so inspect
+        // sources in bounded pages; provider ids are required on 12 for the title-key index.
+        private IEnumerable<StampItem> Videos()
+        {
+            const int pageSize = 256;
+            for (var offset = 0; ; offset += pageSize)
+            {
+                var page = _libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Episode },
+                    Recursive = true,
+                    IsVirtualItem = false,
+                    StartIndex = offset,
+                    Limit = pageSize,
+                    DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } },
+                });
+                foreach (var item in page)
+                    if (Read(item) is { Virtual: false } stamp) yield return stamp;
+                if (page.Count < pageSize) yield break;
+            }
         }
 
         /// <inheritdoc />
@@ -136,7 +124,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                         DtoOptions = new DtoOptions(false),
                     }))
                     {
-                        if (other.Id != item.Id && copies.All(c => c.Id != other.Id) && From(other) is { } copy) copies.Add(copy);
+                        if (other.Id != item.Id && copies.All(c => c.Id != other.Id) && Read(other) is { } copy) copies.Add(copy);
                     }
                 }
 
@@ -174,7 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                     DtoOptions = new DtoOptions(false),
                 }))
                 {
-                    if (other.Id == item.Id || copies.Any(c => c.Id == other.Id) || From(other) is not { } copy || copy.Episode is not int e) continue;
+                    if (other.Id == item.Id || copies.Any(c => c.Id == other.Id) || Read(other) is not { } copy || copy.Episode is not int e) continue;
                     var otherLast = copy.EpisodeEnd is int oe && oe >= e ? oe : e;
                     if (e <= last && otherLast >= episode) copies.Add(copy);
                     if (copies.Count >= MaxCopies) return copies;
@@ -197,6 +185,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             _libraryManager.ItemAdded -= OnAdded;
             _libraryManager.ItemUpdated -= OnUpdated;
             _libraryManager.ItemRemoved -= OnRemoved;
+        }
+
+        private StampItem? Read(BaseItem? item)
+        {
+            var stamp = From(item);
+            if (stamp is not { IsVideo: true, Virtual: false } || item == null) return stamp;
+            var sources = new List<StampSource>();
+            foreach (var source in item.GetMediaSources(false))
+            {
+                var video = source.MediaStreams?.FirstOrDefault(stream => stream.Type == MediaStreamType.Video);
+                if (video == null || string.IsNullOrWhiteSpace(source.Path)) continue;
+                var sourceItem = Guid.TryParse(source.Id, out var id) ? _libraryManager.GetItemById(id) : null;
+                // MediaSourceInfo has no arrival. Its backing item's date is the source's own import time;
+                // never borrow an old primary's date for an alternate source.
+                var own = sourceItem ?? (source.Path == item.Path ? item : null);
+                var sourceId = string.IsNullOrWhiteSpace(source.Id) ? source.Path : source.Id;
+                var arrived = own != null ? Utc(own.DateCreated) : DateTime.MinValue;
+                sources.Add(new StampSource(sourceId, source.Path, video.Width ?? 0, video.Height ?? 0, arrived));
+            }
+
+            return sources.Count == 0 ? stamp : stamp with { Sources = sources };
         }
 
         /// <summary>The stamp view of a Jellyfin item, or null for any other kind of item.</summary>
@@ -272,12 +281,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 
         private void OnRemoved(object? sender, ItemChangeEventArgs e) => Raise(Removed, e);
 
-        private static void Raise(Action<StampItem>? handler, ItemChangeEventArgs? e)
+        private void Raise(Action<StampItem>? handler, ItemChangeEventArgs? e)
         {
             if (handler == null || e?.Item is not (Movie or Episode)) return;
             try
             {
-                if (From(e.Item) is { } item) handler(item);
+                if (Read(e.Item) is { } item) handler(item);
             }
             catch (Exception)
             {

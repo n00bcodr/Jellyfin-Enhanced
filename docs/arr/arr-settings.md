@@ -552,7 +552,7 @@ All off by default; they need phase 4 (not *Ask for it*). See
 | Poster badges: New for you, Upgraded, 4K (`ArrPhase4AcquisitionBadgesEnabled`) | off | One badge per poster card in the web client, after the download ring. Off: nothing about these badges is shown or recorded. |
 | Draw the badges into posters for TV and phone apps (`ArrPhase4NativeStampsEnabled`) | off | The same badge in each person's poster images. Also needs Native Poster Tags. Off: poster addresses and images are exactly as without it. |
 | Days a title stays "New for you" (`ArrAcquisitionNewDays`) | 7 | 1–30. A badge also goes as soon as the person watches the title. |
-| Days a title stays "Upgraded" (`ArrAcquisitionUpgradedDays`) | 7 | 1–30. |
+| Days a title stays "Upgraded" (`ArrAcquisitionUpgradedDays`) | 7 | 1–30. Includes the first 4K version added alongside HD; playback after its own arrival clears it for that viewer. |
 
 Per person (Jellyfin Enhanced panel, *Poster badges*, shown while the badges are on): *Badges on poster cards* and
 *Badges drawn into posters on TV and phone apps* follow the household (default) or are hidden / off.

@@ -26,6 +26,8 @@
     const idsByKey = new Map();
     const queued = new Set();
     const inFlight = new Set();
+    let generation = 0;
+    const revisions = new Map();
     let seen = new WeakSet();
     let io = null;
     let flushTimer = null;
@@ -173,11 +175,14 @@
         const withStamps = stampsOn();
         if (!withStatus && !withStamps) return;
         const ids = [...queued].filter(id => !inFlight.has(id));
-        queued.clear();
+        ids.forEach(id => queued.delete(id));
+        const surface = generation;
+        const epoch = JE.session ? JE.session.getEpoch() : 0;
         for (let i = 0; i < ids.length; i += BATCH) {
+            if (!current(surface, epoch)) return;
             const batch = ids.slice(i, i + BATCH);
+            const versions = new Map(batch.map(id => [id, revisions.get(id) || 0]));
             batch.forEach(id => inFlight.add(id));
-            const epoch = JE.session ? JE.session.getEpoch() : 0;
             let data = null;
             let stampData = null;
             try {
@@ -188,16 +193,18 @@
                 ]);
             } finally {
                 batch.forEach(id => inFlight.delete(id));
+                // Invalidations queued during this read must survive and run once it releases the ids.
+                if (queued.size && !flushTimer) flushTimer = setTimeout(flush, FLUSH_MS);
             }
-            if (JE.session && !JE.session.isCurrent(epoch)) return;
+            if (!current(surface, epoch)) return;
+            const valid = batch.filter(id => current(surface, epoch, id, versions.get(id)));
+            if (!valid.length) continue;
             const now = Date.now();
             const answered = new Map();
             for (const status of data?.items || []) {
                 if (!status.itemId) continue;
                 const id = status.itemId.toLowerCase();
                 answered.set(id, status);
-                if (status.key) follow(status.key, id);
-                if (status.liveKey) follow(status.liveKey, id);
             }
             const stamps = new Map();
             for (const item of stampData?.items || []) {
@@ -209,11 +216,14 @@
             if (!data && !stampData && (statusFailed || stampsFailed)) {
                 // Failed (a re-fetch after a change, or a first look): ask again for the cards
                 // still shown after a pause, so a badge doesn't stay at what it showed before.
-                retryLater(batch);
+                retryLater(valid);
                 continue;
             }
             if (data) noteSince(data.since);
-            for (const id of batch) {
+            for (const id of valid) {
+                const status = answered.get(id);
+                if (status?.key) follow(status.key, id);
+                if (status?.liveKey) follow(status.liveKey, id);
                 // The half that failed keeps what the card showed; the retry below reads it again.
                 const before = cache.get(id) || stale.get(id);
                 stale.delete(id);
@@ -223,11 +233,24 @@
                     at: now
                 });
             }
-            paintAll(new Set(batch));
-            if (statusFailed || stampsFailed) retryLater(batch);
+            paintAll(new Set(valid));
+            if (statusFailed || stampsFailed) retryLater(valid);
             else failures = 0;
         }
         prune();
+    }
+
+    /**
+     * The single response rule: only the current surface/session and unchanged item may have effects.
+     * @param {number} surface Surface generation captured before the read.
+     * @param {number} epoch User-session epoch captured before the read.
+     * @param {string} [id] Item being applied.
+     * @param {number} [revision] Item revision captured before the read.
+     * @returns {boolean} Whether the response is still current.
+     */
+    function current(surface, epoch, id, revision) {
+        return surface === generation && (!JE.session || JE.session.isCurrent(epoch))
+            && (id === undefined || (revisions.get(id) || 0) === revision);
     }
 
     /**
@@ -263,6 +286,7 @@
             if (!present.has(id) || now - entry.at >= TTL_MS) cache.delete(id);
         }
         for (const id of stale.keys()) if (!present.has(id)) stale.delete(id);
+        for (const id of revisions.keys()) if (!present.has(id) && !inFlight.has(id) && !queued.has(id)) revisions.delete(id);
         resubscribe();
     }
 
@@ -405,6 +429,7 @@
      * @returns {void}
      */
     function forget(id) {
+        revisions.set(id, (revisions.get(id) || 0) + 1);
         const entry = cache.get(id);
         if (entry) stale.set(id, { status: entry.status, stamp: entry.stamp || null });
         cache.delete(id);
@@ -414,8 +439,8 @@
      * Jellyfin says the person's own watch state of these items changed (UserDataChanged): their
      * answers are dropped and the cards on the page asked for again, so a title just watched loses
      * its New/Upgraded badge without a reload. A watched episode can also end the stamp of its
-     * season or series: on a "played" change, stamped Season/Series cards on the page are asked
-     * for again too.
+     * season or series: played marks and partial playback refresh Season/Series cards too,
+     * including a parent whose first answer is still in flight.
      * @param {Object} data The message's Data ({UserId, UserDataList: [{ItemId, Played, ...}]}).
      * @returns {void}
      */
@@ -424,13 +449,13 @@
         const list = Array.isArray(data?.UserDataList) ? data.UserDataList : [];
         if (!list.length) return;
         const changed = new Set(list.map(u => (typeof u?.ItemId === 'string' ? u.ItemId.replace(/-/g, '').toLowerCase() : '')).filter(Boolean));
-        const played = list.some(u => u?.Played === true);
+        const playback = list.some(u => u?.Played === true || !!u?.LastPlayedDate);
         let any = false;
         document.querySelectorAll('.card[data-id]').forEach(card => {
             const id = cardId(card);
             if (!id) return;
             const type = card.getAttribute('data-type');
-            const parent = played && (type === 'Series' || type === 'Season') && !!cache.get(id)?.stamp;
+            const parent = playback && (type === 'Series' || type === 'Season');
             if (!changed.has(id) && !parent) return;
             forget(id);
             queued.add(id);
@@ -476,6 +501,10 @@
      * @returns {void}
      */
     function clearAll() {
+        generation++;
+        revisions.clear();
+        for (const timer of [flushTimer, retryTimer, resubscribeTimer]) if (timer) clearTimeout(timer);
+        flushTimer = retryTimer = resubscribeTimer = null;
         cache.clear();
         stale.clear();
         idsByKey.clear();
