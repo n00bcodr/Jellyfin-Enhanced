@@ -445,6 +445,17 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   one-time importer of the experimental lists; `ListFlags.cs` the switches and per-person preferences. Routes in
   **`Controllers/AcquireListsController.cs`**, models in **`Model/ListPlaceholders/`**, the daily task in
   **`ScheduledTasks/ListMaintenanceTask.cs`** and the client transport in **`js/arr/lists/list-api.js`** (`JE.arrLists`).
+  List import (review only, never changes a list) lives in **`Services/Acquire/Lists/Import/`**: `ListImportResolver.cs`
+  matches parsed entries to titles (`ImportScoring.cs` confidence, `ImportLookup.cs`/`TmdbImportLookup.cs` the Seerr and
+  TMDB lookups behind `MetadataImportLookup`, `MetadataCallLimiter.cs` fair upstream concurrency, `ListLibraryLookup.cs`
+  the adapter to `ListResolver`, `ImportViewerPolicy.cs` Hidden Content and Spoiler Guard per viewer), `ListImportFlags.cs`
+  the switches, and `JeListMetadata.cs` the TMDB-only `IListMetadataSource` used when Seerr isn't set up. List sites live in
+  **`Services/Acquire/Lists/Sources/`**: `ListSourceUrl.cs` URL parsing, `ListSourceFetcher.cs` the provider-pinned
+  fetchers with typed failures, `ChronolistsPage.cs` the watch-order page reader, `ListSourceGroups.cs` episode runs,
+  `SourceModels.cs` snapshots, tombstone-aware plans and read budgets (`ISourceReadAdmission`), and `ListSourcePreview.cs`
+  the per-viewer review of a URL. Routes in **`Controllers/AcquireListImportController.cs`**, models in
+  **`Model/ListPlaceholders/ListImportDtos.cs`**, and the client in **`js/arr/lists/list-parser.js`** and
+  **`js/arr/lists/list-import.js`** (`JE.arrListImport`).
 
 * **`/Services/Acquire/Requests/`**: Durable request server core. `RequestModels.cs` contains normalized scopes, outcomes
   and the pure quota projector; `RequestPolicy.cs` resolves server-owned roles, quotas and visibility; `RequestLedger.cs`

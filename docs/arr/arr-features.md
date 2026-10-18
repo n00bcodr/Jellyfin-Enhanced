@@ -1422,6 +1422,25 @@ list feature (its `list-placeholders` folder) with `GET /JellyfinEnhanced/arr/ad
 changes nothing) and `POST` (the import). The old files are only read. Lists whose playlist or collection is gone are
 left out, unreadable files are copied aside, and imported lists start with swap-in off and any linked source paused.
 
+**Importing lists (review).** With *Import lists* on (off by default, under *Adding and editing list entries*), the
+server can read a pasted list, a CSV file or a list URL and match each line to a title, without changing any list:
+
+- **What it reads.** Pasted titles (`Title (Year)`, `S01E01-E05`, numbered guides, tables), CSV and JSON exports from
+  Letterboxd, IMDb and Trakt, and, with *Import from a list URL* and each site's own switch, MDBList public lists,
+  TMDB lists, collections and charts, Trakt lists and charts (with a Trakt client ID), Chronolists watch orders and,
+  as an opt-in marked unofficial, IMDb lists and charts. A site that is off is never contacted. Letterboxd has no API:
+  people are pointed to an MDBList mirror or a CSV export.
+- **Matching.** Titles are looked up on TMDB with the server's key, or through Seerr when no key is saved. Each match
+  says how sure it is, offers other candidates, and says whether the title (or how much of a series or season) is
+  already in the library.
+- **Privacy.** A person with parental limits gets only titles whose rating is verified to be within them, and source
+  counts are hidden from them. A title the household hid (Hidden Content) is marked and never pre-selected. With Spoiler
+  Guard on, overviews and episode titles of guarded titles are left out.
+- **Limits.** Each person can read 10 list URLs per 5 minutes, and each site has an hourly read budget, with room kept
+  for people over background work. MDBList's API is used only when an administrator chooses it for a list.
+- **Title details without Seerr.** With *Title details for list entries from TMDB when Seerr isn't set up*, list entries
+  get their release dates, seasons and episode counts from TMDB directly when Seerr isn't set up.
+
 ### Privacy and Seerr scans
 
 - **Download progress from Seerr.** Seerr's title answers include the download rows it copies from Sonarr/Radarr's

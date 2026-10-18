@@ -882,6 +882,23 @@ other placeholder swaps. A write explicitly anchored to a pending entry answers 
 
 Bodies are capped at 16 KiB, except `items`, `apply`, `order` and list creation (1 MiB).
 
+#### List import (phase 4)
+
+Review only: these routes read and look up, and never change a list. Signed-in people only (`403 user_required`),
+`404 disabled` while *Import lists* (or, for `source`, *Import from list sites*) is off. Every answer, errors included,
+is `private, no-store`. An optional `listId` names the list the import is for: an invalid id is `400 invalid_list_id`,
+a list the caller can't see `404 not_found`, one they can't edit `403 forbidden`. "In the library" then means visible to
+the caller and, for a playlist someone else owns, to its owner too.
+
+| Method and path | Body / answer |
+|---|---|
+| `GET /acquire/lists/import/providers` | `{import, sources, mdblist, mdblistApi, tmdbLists, tmdbCharts, trakt, imdb, chronolists, metadataProvider: "tmdb" \| "seerr" \| "", maxItems: 1000, resolveChunk: 25}`. `mdblistApi` is true only for administrators. No secrets. |
+| `POST /acquire/lists/import/resolve` | `{entries: [ImportEntry], listId?}` (1–25 per call; send chunks one after another; 128 KiB) → `{results: [{index, state: ok \| transient \| invalid, confidence: high \| medium \| low \| none, kind, match, candidates, reasons, alternatives}], complete, upstreamCalls, metadataProvider}`. A candidate carries `mediaType`, `tmdbId`, `tvdbId`, `imdbId`, `title`, `year`, `posterPath`, `overview`, `season`/`episodes`/`episodeTotal` and `inLibrary: {itemId, kind, episodeItemIds, complete}`, plus `hidden: true` (the household's Hidden Content; the match is then at most `low` with reason `hidden`) and `spoilerGuarded: true` (Spoiler Guard: overview and episode titles left out). Titles a parental rating or tag limit hides, or whose rating can't be read, are never candidates. `429 busy` (Retry-After 2) while the caller's previous call runs; `504 parental_pending` (Retry-After 2) when the parental checks didn't finish in time; `503 metadata_unavailable` without a TMDB key and Seerr. |
+| `POST /acquire/lists/import/source` | `{url, listId?, useMdblistApi?}` (16 KiB; `useMdblistApi` administrators only, else `403 admin_required`) → `{kind, provider, url, title, unofficial, notice?, entries: [ImportEntry with sourceKey, sourceKeys, prepared], total, truncated, dropped, partial?, grouped, snapshotKeys, snapshot: {state: complete \| partial \| truncated, digest}, countsHidden?}`. Exact sources (TMDB, Trakt, Chronolists) come with `prepared` results. A person with parental limits gets only titles they may open, with `countsHidden: true`, `total` and `dropped` 0 and no `snapshot`. Errors are typed: `400` `invalid_url`, `unsupported_url`, `letterboxd_unsupported`, `provider_disabled`, `provider_pinned`, `imdb_disabled`, `trakt_not_configured`, `tmdb_key_required`; `404` `not_found`, `mdblist_not_public`; `429` `rate_limited`, `quota_exhausted`, `fetch_limited`, `read_budget_exhausted` (with Retry-After); `502` `upstream_error`, `unreachable`, `too_large`, `source_empty`, `source_format_changed`; `504 timeout`. |
+
+`ImportEntry` is `{index, title?, year?, typeHint?: movie \| tv, season?, episodes?: [{s, e}], openEnded?, episodeTitle?,
+ids?: {tmdb?, tmdbType?, tvdb?, imdb?}, imdbEpisode?, status?, note?, alternatives?}`, which is what `JE.arrListImport.parser` produces.
+
 ### Backup & restore
 
 Admin only. Jellyfin's own backups don't include plugin data.
