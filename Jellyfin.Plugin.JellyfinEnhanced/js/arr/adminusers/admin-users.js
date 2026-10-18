@@ -1,8 +1,7 @@
-/** Jellyfin-owned Users routes, JE-owned sibling section and card footers (12.2 and 10.11). */
+/** Jellyfin-owned Users routes, JE-owned native tab and card footers (12.2 and 10.11). */
 (function (JE) {
     'use strict';
     const tabs = ['profile', 'access', 'parentalcontrol', 'password'];
-    const roots = { profile: 'editUserPage', access: 'userLibraryAccessPage', parentalcontrol: 'userParentalControlPage', password: 'userPasswordPage' };
     /** Normalize a GUID without accepting malformed hyphens or an empty GUID. */
     function idOf(raw) {
         if (!/^(?:[a-f\d]{32}|[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12})$/i.test(raw || '')) return null;
@@ -16,9 +15,9 @@
         if (path === '/dashboard/users') return { kind: 'list' };
         const parts = path.split('/');
         if (parts.length === 5 && parts[1] === 'dashboard' && parts[2] === 'users' && tabs.includes(parts[4]) && idOf(parts[3]))
-            return { kind: 'editor', id: idOf(parts[3]), tab: parts[4], family: '12' };
+            return { kind: 'editor', id: idOf(parts[3]), tab: parts[4], family: '12', enhanced: url.searchParams.get('jeTab') === 'jellyfinenhanced' };
         if (parts.length === 4 && parts[1] === 'dashboard' && parts[2] === 'users' && tabs.includes(parts[3]) && idOf(url.searchParams.get('userId')))
-            return { kind: 'editor', id: idOf(url.searchParams.get('userId')), tab: parts[3], family: '10' };
+            return { kind: 'editor', id: idOf(url.searchParams.get('userId')), tab: parts[3], family: '10', enhanced: url.searchParams.get('jeTab') === 'jellyfinenhanced' };
         return null;
     }
     /** Translate every owned UI string through the locale bundle. */
@@ -36,14 +35,18 @@
         life.teardown();
         let stopped = false, frame = 0, generation = 0, routeKey = '', route = null, authorized = false;
         let authorization = null, request = null, summary = null, summaryStarted = false;
+        let toastTimer = 0;
         const drafts = new Map();
         const api = JE.arrAdminUsersApi;
+        const nativeTabs = JE.arrAdminUserTabs.create(schedule);
         const style = el('style');
-        style.textContent = '.je-admin-user{margin:1.5em 0;padding:1em;border:1px solid #7776;border-radius:.5em;max-width:62em}.je-admin-user summary{cursor:pointer;font-size:1.15em}.je-user-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,24em),1fr));gap:1em}.je-admin-user fieldset{min-width:0;margin:.5em 0;padding:1em;border:1px solid #7776;border-radius:.4em}.je-admin-user .inputContainer,.je-admin-user .selectContainer{margin:1em 0}.je-admin-user .emby-button{margin:.5em .5em .5em 0}.je-admin-user p{overflow-wrap:anywhere;line-height:1.5}.je-admin-user a{color:inherit;text-decoration:underline;margin-right:1em}.je-user-chip{display:block;font-size:.8em;padding:.3em;pointer-events:none}.je-admin-user [role=status]{min-height:1.3em}@media(max-width:480px){.je-admin-user{padding:.6em}.je-admin-user fieldset{padding:.6em}}';
+        style.textContent = '[data-je-user-tabs] .MuiTabs-scroller{overflow-x:auto!important;scrollbar-width:none}.je-admin-user{min-width:0}.je-admin-user [data-group]{margin-bottom:2em}.je-admin-user [data-group]>h2{margin-top:0}.je-admin-user .fieldDescription{overflow-wrap:anywhere}.je-admin-user [data-group=safety] .button-link{display:block;margin:.5em 0}.je-admin-user details{margin:1em 0}.je-admin-user details>summary{cursor:pointer}.je-admin-user details p{margin:.35em 0}.je-admin-user [role=status]:empty{display:none}.je-admin-user .je-save-error{color:var(--error-color,#e57373)}.je-user-chip{display:block;font-size:.8em;padding:.3em;pointer-events:none}';
         document.head.appendChild(style);
         /** Remove private DOM and cancel pending work. Identity changes clear all drafts. */
         function clear(identity, keepSummary = false) {
             generation++;
+            nativeTabs.reset();
+            clearTimeout(toastTimer); document.querySelectorAll('[data-je-user-toast]').forEach(n => n.remove());
             request?.abort(); request = null;
             document.querySelectorAll('[data-je-admin-user],[data-je-user-chip]').forEach(n => n.remove());
             if (!keepSummary) summary = null;
@@ -83,39 +86,51 @@
         /** Map a stored tri-state to the display labels. */
         function preference(value) { return value === false ? t('hide') : value === true ? t('show') : t('inherit'); }
         /** Render a safe, compact read-only value. */
-        function line(parent, label, value) { return el('p', t(label) + ': ' + (value == null ? t('unknown') : typeof value === 'boolean' ? t(value ? 'yes' : 'no') : String(value)), parent); }
+        function line(parent, label, value) {
+            const primary = ['backend', 'effectiveRole', 'quota', 'effectivePool', 'sharedUsage', 'emailVerified', 'autoMovieRequests', 'autoSeasonRequests', 'listSwapIn', 'linkState'];
+            if (parent.tagName !== 'DETAILS' && !primary.includes(label)) {
+                let details = parent.querySelector(':scope > details');
+                if (!details) { details = el('details', undefined, parent); el('summary', t('showDetails'), details); }
+                parent = details;
+            }
+            const row = el('p', t(label) + ': ' + (value == null ? t('unknown') : typeof value === 'boolean' ? t(value ? 'yes' : 'no') : String(value)), parent);
+            row.className = 'fieldDescription'; return row;
+        }
+        /** Render native explanatory text. */
+        function help(parent, key) { const node = el('div', t(key), parent); node.className = 'fieldDescription'; return node; }
         /** A draft is owned by the person and survives every disposable React root. */
         function stateFor(data) {
             let state = drafts.get(data.id);
             if (!state) {
-                state = { data, changes: {}, messages: {}, open: false, busy: new Set() };
+                state = { data, changes: {}, messages: {}, submitted: {}, busy: new Set() };
                 drafts.set(data.id, state);
                 if (drafts.size > 30) drafts.delete(drafts.keys().next().value);
             }
             return state;
         }
-        /** Add one independent group; never create a nested form or an implicit submit button. */
-        function group(section, label, name, state, editable) {
-            const fieldset = el('fieldset', undefined, section);
-            el('legend', t(label), fieldset);
-            if (editable) {
-                const actions = el('div', undefined, fieldset);
-                const save = el('button', t('save'), actions); save.type = 'button'; save.dataset.save = name;
-                save.className = 'emby-button raised button-submit';
-                save.disabled = state.busy.has(name);
-                save.addEventListener('click', () => saveGroup(name, state));
-                const cancel = el('button', t('cancel'), actions); cancel.type = 'button';
-                cancel.className = 'emby-button raised button-cancel';
-                cancel.addEventListener('click', () => { delete state.changes[name]; delete state.messages[name]; request?.abort(); request = null; state.refresh = true; schedule(); });
-            }
-            const status = el('p', state.messages[name] || (state.changes[name] ? t('unsaved') : ''), fieldset); status.setAttribute('role', 'status');
-            fieldset._status = status;
-            return fieldset;
+        /** Add a native section heading and an inline status directly below it. */
+        function group(section, label, name, state) {
+            const fieldset = el('section', undefined, section); fieldset.dataset.group = name;
+            const heading = el('h2', t(label), fieldset); heading.id = 'je-user-heading-' + name;
+            fieldset.setAttribute('aria-labelledby', heading.id);
+            const status = el('p', state.messages[name] || (state.changes[name] ? t('unsaved') : ''), fieldset);
+            status.setAttribute('role', 'status'); status.className = 'fieldDescription';
+            if ([t('conflict'), t('saveError')].includes(state.messages[name])) status.classList.add('je-save-error');
+            fieldset._status = status; return fieldset;
         }
         /** Keep a named value separate from the server snapshot; absence remains absence in PATCH. */
         function changed(state, groupName, name, value, fieldset) {
-            state.changes[groupName] = { ...(state.changes[groupName] || {}), [name]: value };
-            state.messages[groupName] = t('unsaved'); fieldset._status.textContent = t('unsaved');
+            const data = state.data;
+            const stored = groupName === 'pool-membership' ? data.pools.explicit
+                : groupName === 'seerr-import' ? data.seerr.blocked
+                : groupName === 'notifications' ? (data.notifications.topic || '')
+                : data[groupName]?.stored?.[name];
+            const baseline = Object.hasOwn(state.submitted[groupName] || {}, name) ? state.submitted[groupName][name] : stored;
+            const changes = { ...(state.changes[groupName] || {}) };
+            if (JSON.stringify(value) === JSON.stringify(baseline)) delete changes[name]; else changes[name] = value;
+            if (Object.keys(changes).length) state.changes[groupName] = changes; else delete state.changes[groupName];
+            state.messages[groupName] = state.changes[groupName] ? t('unsaved') : '';
+            fieldset._status.textContent = state.messages[groupName]; fieldset._status.classList.remove('je-save-error');
         }
         /** Choose a draft value without losing false, null or an empty array. */
         function value(state, name, field, stored) { return Object.hasOwn(state.changes[name] || {}, field) ? state.changes[name][field] : stored; }
@@ -123,7 +138,7 @@
         function select(parent, state, groupName, field, label, stored, options, disabled) {
             const wrapper = el('div', undefined, parent); wrapper.className = 'selectContainer';
             const caption = el('label', t(label), wrapper); caption.className = 'selectLabel';
-            const input = el('select', undefined, wrapper); input.className = 'emby-select emby-select-withcolor';
+            const input = el('select', undefined, wrapper); input.className = 'emby-select emby-select-withcolor'; input.setAttribute('is', 'emby-select');
             input.id = 'je-user-' + groupName + '-' + field; caption.htmlFor = input.id;
             const arrow = el('div', undefined, wrapper); arrow.className = 'selectArrowContainer'; arrow.setAttribute('aria-hidden', 'true');
             el('span', 'expand_more', arrow).className = 'selectArrow material-icons';
@@ -137,32 +152,32 @@
         function number(parent, state, name, field, label, stored, disabled, min) {
             const wrapper = el('div', undefined, parent); wrapper.className = 'inputContainer';
             const caption = el('label', t(label), wrapper); caption.className = 'inputLabel inputLabelUnfocused';
-            const input = el('input', undefined, wrapper); input.className = 'emby-input';
+            const input = el('input', undefined, wrapper); input.className = 'emby-input'; input.labelElement = caption; input.setAttribute('is', 'emby-input');
             input.id = 'je-user-' + name + '-' + field; caption.htmlFor = input.id;
             input.type = 'number'; input.min = String(min); input.step = field === 'quotaGb' ? 'any' : '1'; input.disabled = !!disabled;
             input.dataset.field = field; input.value = value(state, name, field, stored) ?? '';
             input.addEventListener('change', () => changed(state, name, field, input.value === '' ? null : Number(input.value), parent));
         }
         /** Links retain native routing ownership. */
-        function link(parent, label, href) { const a = el('a', t(label), parent); a.href = href; return a; }
+        function link(parent, label, href) { const a = el('a', t(label), parent); a.href = href; a.className = 'button-link'; return a; }
         /** Native user tab links depend on the route family, never on translated labels. */
-        function tabLink(tab, id) { return route.family === '12' ? `#/dashboard/users/${id}/${tab}` : `#/dashboard/users/${tab}?userId=${id}`; }
-        /** Render the JE section as a sibling of the native form, leaving all native handlers untouched. */
+        function tabLink(tab, id) { return JE.arrAdminUserTabs.href(route.family, id, tab); }
+        /** Render one vertical form in the native tab's content container. */
         function render(state) {
-            if (!route || route.id !== state.data.id || !authorized) return;
-            const root = document.getElementById('usersEditPage') || document.getElementById(roots[route.tab]);
-            let parent = root?.querySelector('.content-primary') || root;
+            if (!route?.enhanced || route.id !== state.data.id || !authorized) return;
+            const parent = nativeTabs.update(route);
             if (!parent) return;
-            if (parent.closest('form')) parent = parent.closest('form').parentElement;
-            document.querySelectorAll('[data-je-admin-user]').forEach(n => n.remove());
-            const d = state.data, section = el('details', undefined, parent);
-            section.className = 'je-admin-user'; section.dataset.jeAdminUser = d.id; section.open = state.open;
-            section.addEventListener('toggle', () => { state.open = section.open; });
-            el('summary', 'Jellyfin Enhanced', section);
-            el('p', d.name, section);
-            if (d.disabled) el('p', t('disabled'), section);
-            const groups = el('div', undefined, section); groups.className = 'je-user-groups';
-            const policy = group(groups, 'requests', 'policy', state, d.policy.available);
+            const previous = document.querySelector('[data-je-admin-user]');
+            const focused = previous?.contains(document.activeElement) ? document.activeElement.dataset.field : null;
+            const detailsOpen = new Set(Array.from(previous?.querySelectorAll('details[open]') || []).map(n => n.closest('[data-group]').dataset.group));
+            previous?.remove();
+            const d = state.data, section = el('form', undefined, parent);
+            section.className = 'je-admin-user'; section.dataset.jeAdminUser = d.id; section.id = 'je-admin-user-panel';
+            section.setAttribute('role', 'tabpanel'); section.setAttribute('aria-labelledby', 'je-admin-user-tab');
+            section.addEventListener('submit', event => { event.preventDefault(); event.stopPropagation(); saveAll(state); });
+            if (d.disabled) help(section, 'disabled');
+            const groups = section;
+            const policy = group(groups, 'requests', 'policy', state);
             if (!d.policy.available) el('p', t('unavailable'), policy);
             else {
                 const stored = d.policy.stored || {}, effective = d.policy.effective || {};
@@ -172,7 +187,7 @@
                 select(policy, state, 'policy', 'role', 'role', stored.role, [[null, t('defaultRole')], ...(d.policy.roles || []).map(r => [r, t('role_' + r.toLowerCase())])], d.jellyfinAdmin);
                 number(policy, state, 'policy', 'quotaLimit', 'count', stored.quotaLimit, d.policy.backend !== 'je', -1);
                 number(policy, state, 'policy', 'quotaGb', 'gb', stored.quotaGb, d.policy.backend !== 'je', 0);
-                el('p', t('quotaHelp'), policy);
+                help(policy, 'quotaHelp');
                 line(policy, 'effectiveLimit', d.policy.backend === 'je' && d.policy.limit === null ? t('unlimited') : d.policy.limit); line(policy, 'effectiveGb', d.policy.gbLimit);
                 line(policy, 'source', d.policy.sources ? [d.policy.sources.count, d.policy.sources.gb].map(s=>t('source_' + s)).join(' / ') : null);
                 line(policy, 'movieRights', effective.canRequestMovies); line(policy, 'seriesRights', effective.canRequestSeries); line(policy, 'approvalRights', effective.canApprove);
@@ -189,8 +204,14 @@
                     render(state);
                 });
                 if (value(state, 'policy', 'fourKInstances', stored.fourKInstances) != null) {
+                    const list = el('div', undefined, policy); list.className = 'checkboxList paperList'; list.style.padding = '.5em 1em';
                     for (const instance of d.policy.instances || []) {
-                        const label = el('label', instance.name, policy), check = el('input', undefined, label); check.type = 'checkbox'; check.disabled = d.policy.backend !== 'je';
+                        const label = el('label', undefined, list); label.className = 'checkboxContainer emby-checkbox-label';
+                        const check = el('input', undefined, label); check.type = 'checkbox'; check.className = 'emby-checkbox'; check.setAttribute('is', 'emby-checkbox'); check.setAttribute('data-embycheckbox', 'true');
+                        el('span', instance.name, label).className = 'checkboxLabel';
+                        const outline = el('span', undefined, label); outline.className = 'checkboxOutline'; outline.setAttribute('aria-hidden', 'true');
+                        el('span', 'check', outline).className = 'material-icons checkboxIcon checkboxIcon-checked';
+                        el('span', '', outline).className = 'material-icons checkboxIcon checkboxIcon-unchecked'; check.disabled = d.policy.backend !== 'je';
                         check.checked = value(state, 'policy', 'fourKInstances', stored.fourKInstances).includes(instance.id);
                         check.addEventListener('change', () => {
                             const ids = new Set(value(state, 'policy', 'fourKInstances', stored.fourKInstances));
@@ -200,28 +221,28 @@
                     }
                 }
             }
-            const pool = group(groups, 'pools', 'pool-membership', state, d.pools.available);
+            const pool = group(groups, 'pools', 'pool-membership', state);
             if (d.pools.available) {
                 select(pool, state, 'pool-membership', 'poolId', 'pool', d.pools.explicit, [[null, t('roleFallback')], ...d.pools.choices.map(p => [p.id, p.name])], d.policy.backend !== 'je');
-                line(pool, 'effectivePool', d.pools.effective?.name); el('p', t('poolHelp'), pool);
+                line(pool, 'effectivePool', d.pools.effective?.name); help(pool, 'poolHelp');
                 if (d.pools.poolUse?.quota) line(pool, 'sharedUsage', `${d.pools.poolUse.quota.used} / ${d.pools.poolUse.quota.limit ?? t('unlimited')}`);
             } else el('p', t('unavailable'), pool);
-            const safety = group(groups, 'safety', 'safety', state, false);
-            if (d.safety.alwaysApproval) el('p', t('kidApproval'), safety);
-            el('p', t('safetyHelp'), safety);
+            const safety = group(groups, 'safety', 'safety', state);
+            if (d.safety.alwaysApproval) help(safety, 'kidApproval');
+            help(safety, 'safetyHelp');
             link(safety, 'access', tabLink('access', d.id)); link(safety, 'parental', tabLink('parentalcontrol', d.id)); link(safety, 'sharedRules', '#/requests?tab=household');
-            if (d.safety.rulesEnabled) el('p', t('inheritedRules'), safety);
-            const notify = group(groups, 'notifications', 'notifications', state, d.notifications.available);
+            if (d.safety.rulesEnabled) help(safety, 'inheritedRules');
+            const notify = group(groups, 'notifications', 'notifications', state);
             if (d.notifications.available) {
-                line(notify, 'emailVerified', d.notifications.emailVerified); el('p', t('emailHelp'), notify);
+                line(notify, 'emailVerified', d.notifications.emailVerified); help(notify, 'emailHelp');
                 line(notify, 'privacy', d.notifications.hideTitles); line(notify, 'quietHours', d.notifications.quietHours ? `${d.notifications.quietFrom}–${d.notifications.quietTo}` : false);
                 const wrapper = el('div', undefined, notify); wrapper.className = 'inputContainer';
                 const label = el('label', t('topic'), wrapper); label.className = 'inputLabel inputLabelUnfocused'; label.htmlFor = 'je-user-topic';
-                const topic = el('input', undefined, wrapper); topic.id = label.htmlFor; topic.className = 'emby-input'; topic.value = value(state, 'notifications', 'topic', d.notifications.topic) || '';
+                const topic = el('input', undefined, wrapper); topic.id = label.htmlFor; topic.className = 'emby-input'; topic.labelElement = label; topic.setAttribute('is', 'emby-input'); topic.dataset.field = 'topic'; topic.value = value(state, 'notifications', 'topic', d.notifications.topic) || '';
                 topic.addEventListener('change', () => changed(state, 'notifications', 'topic', topic.value, notify));
-                el('p', t('topicHelp'), notify);
+                help(notify, 'topicHelp');
             } else el('p', t('unavailable'), notify);
-            const consents = group(groups, 'automation', 'consents', state, false);
+            const consents = group(groups, 'automation', 'consents', state);
             el('p', t('personalOnly') + ' ' + d.name, consents);
             if (d.consents.available) for (const [field, stored] of Object.entries(d.consents.stored || {})) line(consents, field, stored === null ? t(field === 'listSwapIn' ? 'no' : 'inherit') : t(stored ? 'yes' : 'no'));
             else el('p', t('unavailable'), consents);
@@ -229,20 +250,27 @@
             for (const recipe of d.consents.recipes || []) line(consents, 'recipe_' + recipe.recipe, t(recipe.control.legacy ? 'legacy' : 'mode_' + (recipe.control.effective || 'off')) + (recipe.control.reason ? ' · ' + t('reason_' + recipe.control.reason) : ''));
             if (d.consents.grant) line(consents, 'grant', `${d.consents.grant.source} · ${d.consents.grant.grantedAt}`);
             if (d.consents.lists?.available) line(consents, 'listAttribution', d.consents.lists.items.length);
-            const display = group(groups, 'display', 'display', state, d.display.available);
+            const display = group(groups, 'display', 'display', state);
             if (d.display.available) for (const field of Object.keys(d.display.stored || {})) {
                 const input = select(display, state, 'display', field, field, d.display.stored[field] === false ? 'false' : d.display.stored[field] === true ? 'true' : null, [[null, t('inherit')], ['true', t('show')], ['false', t('hide')]], false);
                 input.addEventListener('change', () => changed(state, 'display', field, input.value === '' ? null : input.value === 'true', display));
-                line(display, 'serverGate', d.display.gates?.[field]); line(display, 'effectiveDisplay', d.display.effective?.[field]);
+                const details = el('details', undefined, input.closest('.selectContainer')); el('summary', t('showDetails'), details);
+                line(details, 'serverGate', d.display.gates?.[field]); line(details, 'effectiveDisplay', d.display.effective?.[field]);
             } else el('p', t('unavailable'), display);
-            const seerr = group(groups, 'seerr', 'seerr-import', state, true);
+            const seerr = group(groups, 'seerr', 'seerr-import', state);
             line(seerr, 'linkState', t('state_' + d.seerr.state)); line(seerr, 'account', d.seerr.account);
             line(seerr, 'quotaSource', d.seerr.quotaSource == null ? null : t('backend_' + d.seerr.quotaSource));
             const block = select(seerr, state, 'seerr-import', 'blocked', 'blocked', d.seerr.blocked ? 'true' : 'false', [['false', t('no')], ['true', t('yes')]], false);
             block.addEventListener('change', () => changed(state, 'seerr-import', 'blocked', block.value === 'true', seerr));
-            el('p', t('importHelp'), seerr);
+            help(seerr, 'importHelp');
             if (d.seerr.adminUrl) { const adminLink = link(seerr, 'seerrAdmin', d.seerr.adminUrl); adminLink.target = '_blank'; adminLink.rel = 'noopener noreferrer'; }
             else link(seerr, 'seerrAdmin', '#/configurationpage?name=Jellyfin%20Enhanced');
+            for (const details of section.querySelectorAll('details')) if (detailsOpen.has(details.closest('[data-group]').dataset.group)) details.open = true;
+            const actions = el('div', undefined, section);
+            const save = el('button', t('nativeSave'), actions); save.type = 'submit'; save.className = 'emby-button raised button-submit block'; save.setAttribute('is', 'emby-button'); save.dataset.jeUserSave = '';
+            save.disabled = !!state.saving;
+            if (focused) Array.from(section.querySelectorAll('[data-field]')).find(n => n.dataset.field === focused)?.focus();
+
         }
         /** Refresh clean groups while retaining dirty drafts and their original conflict revisions. */
         function mergeFresh(state, data) {
@@ -250,12 +278,12 @@
             for (const name of Object.keys(state.changes)) revisions[name] = state.data.revisions[name];
             state.data = { ...data, revisions };
         }
-        /** Save one draft. Conflicts retain it until explicit Cancel/reload; other groups stay dirty. */
-        async function saveGroup(name, state) {
-            const changes = state.changes[name];
-            if (!authorized || !changes || state.busy.has(name)) return;
+        /** Save one draft. Conflicts retain it until reload; other groups stay dirty. */
+        async function saveGroup(name, state, changes) {
+            if (!authorized || !changes || state.busy.has(name)) return false;
             const gen = generation, epoch = JE.session?.getEpoch?.(), id = state.data.id;
             const revision = state.data.revisions[name];
+            state.submitted[name] = changes;
             state.busy.add(name); state.messages[name] = t('saving'); render(state);
             try {
                 const result = name === 'notifications' ? await api.assignTopic(id, changes, request?.signal)
@@ -263,6 +291,11 @@
                 if (!current(gen, epoch, id)) return;
                 // Save completion never overwrites edits made after this request began.
                 if (state.changes[name] === changes) delete state.changes[name];
+                else if (state.changes[name]) {
+                    const remaining = Object.fromEntries(Object.entries(state.changes[name]).filter(([field, value]) =>
+                        !Object.hasOwn(changes, field) || JSON.stringify(value) !== JSON.stringify(changes[field])));
+                    if (Object.keys(remaining).length) state.changes[name] = remaining; else delete state.changes[name];
+                }
                 if (name === 'notifications') state.data = { ...state.data, notifications: {
                     ...state.data.notifications, ...result, topic: result.topic ?? null, assigned: !!result.topic
                 } };
@@ -272,11 +305,41 @@
                     state.data.revisions[name] = result.revisions[name];
                 }
                 state.messages[name] = t(state.changes[name] ? 'unsaved' : 'saved');
+                return true;
             } catch (error) {
                 if (!current(gen, epoch, id)) return;
                 if (error.status === 403 || error.status === 401) { clear(true); return; }
                 state.messages[name] = t(error.status === 409 ? 'conflict' : 'saveError');
-            } finally { state.busy.delete(name); if (current(gen, epoch, id)) render(state); }
+                return false;
+            } finally { delete state.submitted[name]; state.busy.delete(name); if (current(gen, epoch, id)) render(state); }
+        }
+        /** Use Jellyfin's toast service where exported, otherwise its native toast markup and styles. */
+        function nativeToast(success, gen, epoch, id) {
+            if (typeof window.require === 'function') {
+                window.require(['toast', 'globalize'], (toast, globalize) => {
+                    if (current(gen, epoch, id)) toast(success ? globalize.translate('SettingsSaved') : t('saveError'));
+                });
+                return;
+            }
+            clearTimeout(toastTimer); document.querySelectorAll('[data-je-user-toast]').forEach(n => n.remove());
+            const container = el('div', undefined, document.body); container.className = 'toastContainer'; container.dataset.jeUserToast = '';
+            const toast = el('div', t(success ? 'settingsSaved' : 'saveError'), container); toast.className = 'toast toastVisible'; toast.setAttribute('role', success ? 'status' : 'alert');
+            toastTimer = setTimeout(() => container.remove(), 3300);
+        }
+        /** Save the submitted drafts sequentially, retaining independent errors and edits made in flight. */
+        async function saveAll(state) {
+            if (!authorized || state.saving || !Object.keys(state.changes).length) return;
+            const submitted = { ...state.changes }, gen = generation, epoch = JE.session?.getEpoch?.(), id = state.data.id;
+            state.saving = true; let success = true;
+            render(state);
+            try {
+                for (const name of ['policy', 'pool-membership', 'notifications', 'display', 'seerr-import']) {
+                    if (!current(gen, epoch, id)) return;
+                    if (submitted[name]) success = await saveGroup(name, state, submitted[name]) && success;
+                }
+                if (!current(gen, epoch, id)) return;
+                nativeToast(success, gen, epoch, id);
+            } finally { state.saving = false; if (current(gen, epoch, id)) render(state); }
         }
         /** Decorate by user id once per actual card; never intercept native card or menu clicks. */
         function cards() {
@@ -290,12 +353,12 @@
                 if (quota?.available && quota.limit != null) words.push(`${quota.used} / ${quota.limit}`);
                 if (Number.isInteger(usage.pending)) words.push(String(usage.pending) + ' ' + t('pending'));
                 const chip = el('span', words.join(' · '), footer); chip.className = 'je-user-chip'; chip.dataset.jeUserChip = id;
-                const entry = el('a', 'Jellyfin Enhanced', chip);
+                const entry = el('a', t('tab'), chip);
                 entry.style.pointerEvents = 'auto';
                 entry.style.display = 'block'; entry.style.color = 'inherit'; entry.style.marginTop = '.25em';
                 const nativeLink = card.querySelector('a[href*="dashboard/users"]');
                 const legacy = typeof ApiClient.serverVersion === 'function' && parseInt(ApiClient.serverVersion(), 10) < 12;
-                entry.href = nativeLink?.getAttribute('href') || (legacy ? `#/dashboard/users/profile?userId=${id}` : `#/dashboard/users/${id}/profile`);
+                entry.href = JE.arrAdminUserTabs.href(legacy || /users\/profile\?/.test(nativeLink?.getAttribute('href') || '') ? '10' : '12', id, 'jellyfinenhanced');
                 entry.setAttribute('aria-label', t('openSettings'));
                 entry.addEventListener('click', event => event.stopPropagation());
             }
@@ -312,6 +375,8 @@
                 api.summary(request.signal).then(result => { if (current(gen, epoch)) { summary = result; cards(); } }).catch(error => { if (current(gen, epoch) && [401, 403].includes(error.status)) clear(true); });
                 return;
             }
+            nativeTabs.update(route);
+            if (!route.enhanced) return;
             const state = drafts.get(route.id);
             if (state && !state.refresh) {
                 if (!document.querySelector('[data-je-admin-user]')) render(state);
@@ -328,7 +393,7 @@
         life.track(JE.core.navigation.onNavigate(navigate));
         life.track(JE.session.onUserChange('arr-admin-users', () => clear(true)));
         for (const event of ['viewshow', 'pageshow', 'je:user-data-loaded']) { document.addEventListener(event, navigate); life.track(() => document.removeEventListener(event, navigate)); }
-        life.track(() => { stopped = true; cancelAnimationFrame(frame); clear(true); style.remove(); });
+        life.track(() => { stopped = true; cancelAnimationFrame(frame); clear(true); nativeTabs.dispose(); style.remove(); });
         navigate();
     };
     JE.arrAdminUsers = { parseRoute };

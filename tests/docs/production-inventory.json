@@ -1427,6 +1427,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/adminusers/admin-user-tabs.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/adminusers/admin-users-api.js",
       "category": "js"
     },
@@ -10554,7 +10558,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 601,
+    "files": 602,
     "routes": 285,
     "configuration_properties": 622,
     "storage_references": 88,
