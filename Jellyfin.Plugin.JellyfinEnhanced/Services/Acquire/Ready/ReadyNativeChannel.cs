@@ -67,29 +67,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         }
 
         /// <summary>
-        /// Sends one message for <paramref name="deliveryIds"/> (one, or a summary for several) to the recipient's idle
-        /// session. <paramref name="stillAllowed"/> runs right before the send (consent and switches read again). Returns
-        /// what happened; each attempt row has its outcome.
+        /// Sends one message to the recipient's idle session. <paramref name="final"/> runs right before the send, with no
+        /// await before it: it checks every delivery once more and renders the message from the settings as they are then
+        /// (the deliveries still going and the message, or null to send nothing); those deliveries are claimed before the
+        /// send. Returns what happened and which deliveries it was for; each claimed attempt row has its outcome.
         /// </summary>
-        public async Task<ReadySendResult> SendAsync(Guid user, IReadOnlyList<long> deliveryIds, long generation, NotifyMessage message, Func<bool> stillAllowed, CancellationToken cancellationToken)
+        public async Task<(ReadySendResult Result, IReadOnlyList<long> Sent)> SendAsync(Guid user, long generation, Func<(NotifyMessage Message, IReadOnlyList<long> Ids)?> final, CancellationToken cancellationToken)
         {
             var (session, reason) = _messages.Pick(user);
-            if (session == null) return new ReadySendResult(false, false, reason, null);
+            if (session == null) return (new ReadySendResult(false, false, reason, null), Array.Empty<long>());
             var claimed = new List<long>();
-            var result = await _messages.SendAsync(user, session, message.Title, message.Body, hash =>
+            var result = await _messages.SendAsync(user, session, hash =>
             {
-                if (!stillAllowed()) return false;
-                foreach (var id in deliveryIds)
+                if (final() is not { } going || going.Ids.Count == 0) return null;
+                foreach (var id in going.Ids)
                 {
-                    if (!_store.Claim(generation, id, user, hash, _now())) return false;
+                    if (!_store.Claim(generation, id, user, hash, _now())) return null;
                     claimed.Add(id);
                 }
 
-                return true;
+                return (going.Message.Title, going.Message.Body);
             }, cancellationToken).ConfigureAwait(false);
             var state = result.Accepted ? "accepted" : result.Unknown ? "unknown" : "suppressed";
             foreach (var id in claimed) _store.Settle(generation, id, state, result.Reason, _now());
-            return result;
+            return (result, claimed);
         }
     }
 }

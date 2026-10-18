@@ -1837,13 +1837,15 @@ Enhanced then keeps one playlist of theirs, private and shared with nobody, that
   goes in episode by episode in order; a series or season is never put in as one item. Someone else's request, or a
   title on a list they can see, never adds anything.
 - **What comes out.** A title leaves when the person has watched it, after 30 days (*Days a title stays in a Ready
-  playlist*), or while they can't open it any more or have hidden it with Hidden Content. Watched or expired titles don't
+  playlist*), or while they can't open it any more or have hidden it with Hidden Content (hiding the movie or series hides
+  every copy; hiding one episode or one copy leaves the other copy in). Watched or expired titles don't
   come back unless they ask for them again. A title that was here before they asked or followed isn't added. A better
   copy replacing the file swaps the entry in place, with no duplicate and no new 30 days.
 - **It's theirs.** People can rename it and play it like any playlist. If they delete it, Jellyfin Enhanced doesn't make
   it again until they turn the option on again. Turning the option off stops the updates and keeps the playlist as it
-  is; *Remove the playlist* deletes it (only that playlist). If they share it or make it public, it is no longer updated.
-  A playlist they made themselves with the same name is never touched.
+  is; *Remove the playlist* deletes it (only that playlist). If they share it or make it public, it is no longer updated,
+  and it is never deleted: the button becomes *Stop managing it*, which keeps the playlist as it is. A playlist they made
+  themselves is never touched, even one named like the Ready playlist while it was being made.
 - **After a restore.** When a Jellyfin Enhanced backup is restored, each person turns the option on again before the
   playlist is updated (Jellyfin Enhanced first checks that it is still their own, private playlist).
 

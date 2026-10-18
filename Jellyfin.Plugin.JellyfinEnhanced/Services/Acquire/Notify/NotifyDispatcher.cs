@@ -291,69 +291,83 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>
         /// Native Ready messages due for one person: each is checked as it is now (the switches, their consent, quiet hours,
         /// freshness, still theirs to see, Hidden Content, no earlier attempt), then one message (a summary for several) goes
-        /// to one idle session of theirs, read again right before the send. Busy, unsupported, no session or anything else
-        /// ends them as suppressed: never held for later and never retried. Returns how many were attempted.
+        /// to one idle session of theirs, read again right before the send. At that last moment, with no await before the
+        /// send, every one of them is checked again and the text is rendered from the person's settings as they are then
+        /// (hidden titles, a title they hid meanwhile, a kind they turned off): render last. Busy, unsupported, no session or
+        /// anything else ends them as suppressed: never held for later and never retried. Returns how many were attempted.
         /// </summary>
         private async Task<int> DeliverDisplayAsync(PluginConfiguration config, IReadOnlyList<DueDelivery> deliveries, CancellationToken cancellationToken)
         {
-            var ready = new List<(DueDelivery Delivery, NotifyMessage Message)>();
+            var ready = new List<DueDelivery>();
             foreach (var delivery in deliveries)
             {
-                if (PrepareDisplay(config, delivery) is { } message) ready.Add((delivery, message));
+                var payload = new Dictionary<string, string>(Payload(delivery.Payload));
+                if (DisplayReason(config, delivery, _store.Prefs(delivery.UserId), payload, first: true) is { } why) _store.Suppress(delivery.Id, why, delivery.Generation);
+                else ready.Add(delivery);
             }
             if (ready.Count == 0 || _native == null) return deliveries.Count;
-            var user = ready[0].Delivery.UserId;
-            var generation = ready[0].Delivery.Generation;
-            var text = ready.Count == 1 ? ready[0].Message : NotifyTexts.Summary(ready.Count);
-            // Right before the send: the switches and the person's consent once more.
-            bool StillAllowed()
+            var user = ready[0].UserId;
+            var generation = ready[0].Generation;
+            var vetoed = new Dictionary<long, string>();
+            // Right before the send: every delivery checked again and the message rendered from the settings as they are now.
+            (NotifyMessage Message, IReadOnlyList<long> Ids)? Final()
             {
+                vetoed.Clear();
                 var now = _config();
-                if (!NotifyFlags.Enabled(now) || !Ready.ReadyFlags.Messages(now)) return false;
                 var prefs = _store.Prefs(user);
-                return prefs.NativeReadyMessages && QuietHours.EndsAt(prefs, _now()) == null;
+                var going = new List<long>();
+                NotifyMessage? single = null;
+                foreach (var delivery in ready)
+                {
+                    var payload = new Dictionary<string, string>(Payload(delivery.Payload));
+                    if ((now == null ? "Notifications are switched off." : DisplayReason(now, delivery, prefs, payload, first: false)) is { } why)
+                    {
+                        vetoed[delivery.Id] = why;
+                        continue;
+                    }
+                    going.Add(delivery.Id);
+                    single = NotifyTexts.Render(delivery.Kind, payload, prefs.HideTitles);
+                }
+                if (going.Count == 0) return null;
+                return (going.Count == 1 ? single! : NotifyTexts.Summary(going.Count), going);
             }
-            var result = await _native.SendAsync(user, ready.Select(r => r.Delivery.Id).ToList(), generation, text, StillAllowed, cancellationToken).ConfigureAwait(false);
-            foreach (var (delivery, _) in ready)
+            var (result, sent) = await _native.SendAsync(user, generation, Final, cancellationToken).ConfigureAwait(false);
+            var claimed = sent.ToHashSet();
+            foreach (var delivery in ready)
             {
-                if (result.Accepted)
+                if (claimed.Contains(delivery.Id) && result.Accepted)
                 {
                     Interlocked.Increment(ref _sent);
                     _store.Finish(delivery.Id, true, null, null, _now(), delivery.Generation);
                 }
+                else if (claimed.Contains(delivery.Id) && result.Unknown)
+                {
+                    _store.Suppress(delivery.Id, "Native message: the send started but its outcome is unknown (" + result.Reason + "); not sent again.", delivery.Generation);
+                }
                 else
                 {
-                    _store.Suppress(delivery.Id, result.Unknown
-                        ? "Native message: the send started but its outcome is unknown (" + result.Reason + "); not sent again."
+                    _store.Suppress(delivery.Id, vetoed.TryGetValue(delivery.Id, out var why)
+                        ? "Native message not sent (changed right before the send): " + why
                         : "Native message not sent: " + result.Reason + ".", delivery.Generation);
                 }
             }
             return deliveries.Count;
         }
 
-        // A native message's checks at delivery: the message to show, or null after suppressing it.
-        private NotifyMessage? PrepareDisplay(PluginConfiguration config, DueDelivery delivery)
+        // Why a native message must not go out (now), or null: no native channel, an earlier attempt (first look only), stale,
+        // the switches, the person's consent, quiet hours, the kind, the recipient and their access (Suppression, which also
+        // narrows an episodes payload to what they can open), and Hidden Content.
+        private string? DisplayReason(PluginConfiguration config, DueDelivery delivery, NotifyPrefs prefs, Dictionary<string, string> payload, bool first)
         {
-            string? Reason(NotifyPrefs prefs, Dictionary<string, string> payload)
-            {
-                if (_native == null) return "Native messages aren't available on this server.";
-                if (_native.Attempted(delivery.Id)) return "Native message: an earlier attempt's outcome is unknown; not sent again.";
-                if (_now() - delivery.CreatedAt > Ready.ReadyNativeChannel.FreshFor) return "Native message is stale (it waited while notifications were off).";
-                if (!Ready.ReadyFlags.Messages(config)) return "Native Ready messages are switched off.";
-                if (!prefs.NativeReadyMessages) return "The recipient turned native messages off.";
-                if (QuietHours.EndsAt(prefs, _now()) != null) return "The recipient's quiet hours (native messages are never held).";
-                if (Suppression(delivery, prefs, payload, out var itemId) is { } reason) return reason;
-                if (delivery.Kind != NotifyKind.Test && _native.Hidden(delivery.UserId, delivery.TitleKey, itemId)) return "The title is hidden for the recipient (or their Hidden Content can't be read).";
-                return null;
-            }
-            var prefs = _store.Prefs(delivery.UserId);
-            var payload = new Dictionary<string, string>(Payload(delivery.Payload));
-            if (Reason(prefs, payload) is { } why)
-            {
-                _store.Suppress(delivery.Id, why, delivery.Generation);
-                return null;
-            }
-            return NotifyTexts.Render(delivery.Kind, payload, prefs.HideTitles);
+            if (_native == null) return "Native messages aren't available on this server.";
+            if (first && _native.Attempted(delivery.Id)) return "Native message: an earlier attempt's outcome is unknown; not sent again.";
+            if (_now() - delivery.CreatedAt > Ready.ReadyNativeChannel.FreshFor) return "Native message is stale (it waited while notifications were off).";
+            if (!Ready.ReadyFlags.Messages(config)) return "Native Ready messages are switched off.";
+            if (!prefs.NativeReadyMessages) return "The recipient turned native messages off.";
+            if (QuietHours.EndsAt(prefs, _now()) != null) return "The recipient's quiet hours (native messages are never held).";
+            if (Suppression(delivery, prefs, payload, out var itemId) is { } reason) return reason;
+            if (delivery.Kind != NotifyKind.Test && _native.Hidden(delivery.UserId, delivery.TitleKey, itemId)) return "The title is hidden for the recipient (or their Hidden Content can't be read).";
+            return null;
         }
 
         // Records one delivery's outcome: sent, or failed with the next retry (none after the last).

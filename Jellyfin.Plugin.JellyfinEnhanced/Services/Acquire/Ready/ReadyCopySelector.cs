@@ -37,36 +37,64 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         bool Played(Guid userId, Guid itemId);
     }
 
-    /// <summary>A person's Hidden Content rules as the Ready playlist applies them (the library surface).</summary>
+    /// <summary>
+    /// A person's Hidden Content rules as the Ready playlist applies them (the library surface, as Hidden Content does on
+    /// library pages, D46). A title-level rule (a typed TMDB rule, or a rule on a movie's or series' own item: Hidden Content
+    /// keys those to the title) hides every copy of the title; a rule on one exact item (an episode, a version, another
+    /// item) or on one physical series hides only what it names, so another copy can still be chosen.
+    /// </summary>
     public sealed class ReadyHides
     {
         private readonly HashSet<string> _items;
         private readonly HashSet<string> _series;
         private readonly HashSet<string> _titles;
+        private readonly HashSet<string> _titleItems;
 
-        /// <summary>Rules: hidden item ids, hidden series item ids, hidden typed TMDB title keys (<c>movie:tmdb:N</c>, <c>tv:tmdb:N</c>).</summary>
-        public ReadyHides(IEnumerable<Guid> items, IEnumerable<Guid> series, IEnumerable<string> titles)
+        /// <summary>
+        /// Rules: hidden item ids (that item only), hidden series item ids (that series' episodes), hidden typed TMDB title
+        /// keys (<c>movie:tmdb:N</c>, <c>tv:tmdb:N</c>) and the item ids of movie or series rules (their whole title).
+        /// </summary>
+        public ReadyHides(IEnumerable<Guid> items, IEnumerable<Guid> series, IEnumerable<string> titles, IEnumerable<Guid>? titleItems = null)
         {
             _items = items.Select(ReadyPlaylistStore.Id).ToHashSet(StringComparer.Ordinal);
             _series = series.Select(ReadyPlaylistStore.Id).ToHashSet(StringComparer.Ordinal);
             _titles = titles.ToHashSet(StringComparer.Ordinal);
+            _titleItems = (titleItems ?? Array.Empty<Guid>()).Select(ReadyPlaylistStore.Id).ToHashSet(StringComparer.Ordinal);
         }
 
         /// <summary>No rules (Hidden Content off, or nothing hidden).</summary>
         public static ReadyHides None { get; } = new(Array.Empty<Guid>(), Array.Empty<Guid>(), Array.Empty<string>());
 
-        /// <summary>True when a rule hides the title (any of its keys), the item or its series.</summary>
-        public bool Hidden(IEnumerable<TitleKey> titleKeys, Guid itemId, Guid? seriesId)
+        /// <summary>
+        /// True when a title-level rule hides the title: a TMDB rule on any of its keys, or a movie or series rule on any of
+        /// its copies (the copy's item or its series).
+        /// </summary>
+        public bool TitleHidden(IEnumerable<TitleKey> titleKeys, IEnumerable<(Guid ItemId, Guid? SeriesId)> copies)
         {
-            if (_items.Contains(ReadyPlaylistStore.Id(itemId))) return true;
-            if (seriesId is Guid series && (_series.Contains(ReadyPlaylistStore.Id(series)) || _items.Contains(ReadyPlaylistStore.Id(series)))) return true;
             foreach (var key in titleKeys)
             {
                 if (key.Provider == "tmdb" && key.NumericId is int id && _titles.Contains((key.IsMovie ? "movie" : "tv") + ":tmdb:" + id.ToString(CultureInfo.InvariantCulture))) return true;
             }
 
+            if (_titleItems.Count == 0) return false;
+            foreach (var (item, series) in copies)
+            {
+                if (_titleItems.Contains(ReadyPlaylistStore.Id(item)) || (series is Guid s && _titleItems.Contains(ReadyPlaylistStore.Id(s)))) return true;
+            }
+
             return false;
         }
+
+        /// <summary>True when a rule hides this copy itself: its item, its exact version, or its series.</summary>
+        public bool CopyHidden(Guid itemId, Guid playableItemId, Guid? seriesId)
+        {
+            if (_items.Contains(ReadyPlaylistStore.Id(itemId)) || _items.Contains(ReadyPlaylistStore.Id(playableItemId))) return true;
+            return seriesId is Guid series && (_series.Contains(ReadyPlaylistStore.Id(series)) || _items.Contains(ReadyPlaylistStore.Id(series)));
+        }
+
+        /// <summary>True when a rule hides the title (any of its keys), the item or its series (one item, as a message names it).</summary>
+        public bool Hidden(IEnumerable<TitleKey> titleKeys, Guid itemId, Guid? seriesId)
+            => TitleHidden(titleKeys, new[] { (itemId, seriesId) }) || CopyHidden(itemId, itemId, seriesId);
     }
 
     /// <summary>A person's Hidden Content rules (tests fake it).</summary>
@@ -96,7 +124,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// playlist can hold it; else the next equivalent is tried (never the logical item instead of its failed version).</description></item>
     /// <item><description>Never a series, season, virtual episode or placeholder. Content that arrived before the interest began
     /// isn't ready for it; an entry leaves when watched (any copy) or after the retention, for good for that interest; a
-    /// Hidden Content rule leaves it out while the rule exists.</description></item>
+    /// Hidden Content rule leaves it out while the rule exists (a title-level rule every copy, a rule on one copy only that
+    /// copy).</description></item>
     /// <item><description>Equivalents in a stable order (fit, then the version's id), independent of Jellyfin's enumeration;
     /// several interests may point at one version, the playlist holds it once, and standard and 4K stay separate.</description></item>
     /// </list>
@@ -164,8 +193,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                         continue;
                     }
 
-                    if (hides.Hidden(keys, first.ItemId, first.SeriesId)) continue;
-                    var chosen = ordered.FirstOrDefault(h => !hides.Hidden(keys, h.ItemId, h.SeriesId) && _library.Check(viewer.UserId, h.PlayableItemId) == ReadyVersionCheck.Ok);
+                    // A title-level rule hides every copy; a rule on one copy leaves the others (as on library pages).
+                    if (hides.TitleHidden(keys, ordered.Select(h => (h.ItemId, h.SeriesId)))) continue;
+                    var chosen = ordered.FirstOrDefault(h => !hides.CopyHidden(h.ItemId, h.PlayableItemId, h.SeriesId) && _library.Check(viewer.UserId, h.PlayableItemId) == ReadyVersionCheck.Ok);
                     if (chosen == null) continue;
                     rows.Add(new ReadyEntryRow(interest.Id, part, interest.Title.ToString(), interest.EditionName, chosen.ItemId, chosen.SeriesId, chosen.PlayableItemId, readyAt, expiresAt, ReadyDisposition.Ready));
                     candidates.Add(new ReadyCandidate(interest, part, chosen.ItemId, chosen.SeriesId, chosen.PlayableItemId, chosen.Season, chosen.Episode, DateTimeOffset.FromUnixTimeMilliseconds(readyAt).UtcDateTime));

@@ -61,7 +61,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// The production <see cref="IReadyPrivacy"/>: the person's Hidden Content (<c>hidden-content.json</c>, read strictly under
     /// its file lock) as rules for the library surface: a rule whose scope is global or library, while Hidden Content is on
     /// (server and person) and its library filter is on. Item, series and typed TMDB title rules (a rule made on an absent
-    /// title keeps working when it arrives, D46). A file that can't be read is "can't be read now", never "nothing hidden".
+    /// title keeps working when it arrives, D46); a movie's or series' own rule hides the whole title, any other item rule
+    /// only that item. A file that can't be read is "can't be read now", never "nothing hidden".
     /// The D46 HiddenContentPolicy replaces this adapter when the tracks are joined (same rules, same surface).
     /// </summary>
     public sealed class JellyfinReadyPrivacy : IReadyPrivacy
@@ -111,26 +112,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             var items = new List<Guid>();
             var series = new List<Guid>();
             var titles = new List<string>();
+            var titleItems = new List<Guid>();
             foreach (var pair in data.Items ?? new Dictionary<string, HiddenContentItem>())
             {
                 var entry = pair.Value;
                 if (entry == null) continue;
                 var scope = string.IsNullOrEmpty(entry.HideScope) ? "global" : entry.HideScope.ToLowerInvariant();
                 if (scope is not ("global" or "library")) continue;
+                var kind = entry.Type?.ToLowerInvariant() switch { "movie" => "movie", "series" or "tv" => "tv", _ => null };
                 if (Guid.TryParse(entry.ItemId, out var item) && item != Guid.Empty)
                 {
+                    // That item itself; a movie's or series' own rule is the whole title's (every copy), as Hidden Content
+                    // keys it (D46); an episode, version or other item rule is that item's only.
                     items.Add(item);
+                    if (kind != null) titleItems.Add(item);
                     if (string.Equals(entry.Type, "Series", StringComparison.OrdinalIgnoreCase)) series.Add(item);
                 }
 
-                var kind = entry.Type?.ToLowerInvariant() switch { "movie" => "movie", "series" or "tv" => "tv", _ => null };
                 if (kind != null && int.TryParse(entry.TmdbId, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var tmdb) && tmdb > 0)
                     titles.Add(kind + ":tmdb:" + tmdb.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 else if (TitleKey.Parse(pair.Key) is { Provider: "tmdb", Season: null, NumericId: > 0 } key)
                     titles.Add((key.IsMovie ? "movie" : "tv") + ":tmdb:" + key.NumericId!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
 
-            return items.Count + titles.Count == 0 ? ReadyHides.None : new ReadyHides(items, series, titles.Distinct());
+            return items.Count + titles.Count == 0 ? ReadyHides.None : new ReadyHides(items, series, titles.Distinct(), titleItems);
         }
     }
 

@@ -113,7 +113,7 @@
         switch (p.state) {
             case 'active': return p.playlistId ? tr('arr_ready_state_active', { count: p.entries }) : tr('arr_ready_state_making');
             case 'deleted': return tr('arr_ready_state_deleted');
-            case 'removed': return tr('arr_ready_state_removed');
+            case 'removed': return tr(p.reason === 'kept' ? 'arr_ready_state_kept' : 'arr_ready_state_removed');
             case 'renew': return tr('arr_ready_state_renew');
             case 'privacy': return tr('arr_ready_state_privacy');
             default: return p.playlistId ? tr('arr_ready_state_off_kept') : '';
@@ -156,7 +156,7 @@
                 open.dataset.jeFocus = 'ready-open';
                 row.appendChild(open);
             }
-            if (p.canRemove) row.appendChild(removeButton(host));
+            if (p.canRemove) row.appendChild(removeButton(host, p.state === 'privacy'));
             if (row.childNodes.length) group.appendChild(row);
             host.appendChild(group);
         }
@@ -179,12 +179,15 @@
     }
 
     /**
-     * The Remove button: a first press asks, a second within a few seconds removes (no browser dialog: TV remotes).
+     * The Remove button: a first press asks, a second within a few seconds removes (no browser dialog: TV remotes). A
+     * shared or public playlist is never deleted: the button then only stops managing it.
      * @param {HTMLElement} host Pane content.
+     * @param {boolean} [shared] The playlist was shared, made public or given away.
      * @returns {HTMLButtonElement} Button.
      */
-    function removeButton(host) {
-        const b = /** @type {HTMLButtonElement} */ (el('button', 'je-arr-alerts-btn', tr('arr_ready_remove')));
+    function removeButton(host, shared) {
+        const label = tr(shared ? 'arr_ready_forget' : 'arr_ready_remove');
+        const b = /** @type {HTMLButtonElement} */ (el('button', 'je-arr-alerts-btn', label));
         b.type = 'button';
         b.dataset.jeFocus = 'ready-remove';
         let armed = 0;
@@ -202,7 +205,8 @@
             try {
                 const res = await api('/acquire/ready/remove', 'POST', {});
                 if (!current(host, gen, at)) return;
-                render(host, res?.status || host._jeReady, tr(res?.outcome === 'not_ours' ? 'arr_ready_not_ours' : 'arr_ready_removed'));
+                const notes = { removed: 'arr_ready_removed', kept: 'arr_ready_kept', not_ours: 'arr_ready_not_ours', nothing: 'arr_ready_removed' };
+                render(host, res?.status || host._jeReady, tr(notes[res?.outcome] || 'arr_ready_save_failed'));
             } catch (_) {
                 if (!current(host, gen, at)) return;
                 render(host, host._jeReady, tr('arr_ready_save_failed'));

@@ -382,6 +382,68 @@ public class ReadyMessagesTests
         Assert.Equal("suppressed", w.Status(n));
         Assert.Null(w.Scalar("SELECT state FROM ready_message_attempts"));
     }
+
+    // ------------------------------------------------------------------ 4f review round 1 (security-4): the final boundary
+
+    [Theory]
+    [InlineData("hide_title")]
+    [InlineData("hide_item")]
+    [InlineData("kind_off")]
+    [InlineData("access")]
+    [InlineData("gone")]
+    public async Task WhatChangesDuringTheLastSessionReadStillSilencesTheMessage(string change)
+    {
+        using var w = new World();
+        w.Sessions.Add(w.Emma.UserId, "tv", Now);
+        w.Sessions.OnReread = _ =>
+        {
+            switch (change)
+            {
+                case "hide_title": w.Privacy.Rules[w.Emma.UserId] = new ReadyHides(Array.Empty<Guid>(), Array.Empty<Guid>(), new[] { "movie:tmdb:45745" }); break;
+                case "hide_item": w.Privacy.Rules[w.Emma.UserId] = new ReadyHides(new[] { w.Movie }, Array.Empty<Guid>(), Array.Empty<string>()); break;
+                case "kind_off": w.Prefs(w.Emma, p => p.Ready = false); break;
+                case "access": w.View.Items[w.Movie] = w.View.Items[w.Movie] with { VisibleTo = new HashSet<Guid> { w.Sam.UserId } }; break;
+                default: w.Users.Gone.Add(w.Emma.UserId); break;
+            }
+        };
+        var n = w.Queue(w.Emma);
+        await w.Dispatcher.RunOnceAsync(default);
+        Assert.Empty(w.Sessions.Sent);
+        Assert.Equal("suppressed", w.Status(n));
+    }
+
+    [Fact]
+    public async Task HideTitlesTurnedOnDuringTheLastSessionReadKeepsTheTitleOut()
+    {
+        using var w = new World();
+        w.Sessions.Add(w.Emma.UserId, "tv", Now);
+        w.Sessions.OnReread = _ => w.Prefs(w.Emma, p => p.HideTitles = true);
+        var n = w.Queue(w.Emma);
+        await w.Dispatcher.RunOnceAsync(default);
+        var sent = Assert.Single(w.Sessions.Sent);
+        Assert.DoesNotContain("Sintel", sent.Header + sent.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("2010", sent.Header + sent.Text, StringComparison.Ordinal);
+        Assert.Equal("sent", w.Status(n));
+    }
+
+    [Fact]
+    public async Task EachMessageFoldedIntoASummaryIsCheckedAtTheLastMomentToo()
+    {
+        using var w = new World();
+        w.Sessions.Add(w.Emma.UserId, "tv", Now);
+        var other = Guid.NewGuid();
+        w.View.AddItem(new JfItemRef { ItemId = other, Kind = "movie", Key = World.Sintel, Path = "/m/sintel-copy.mkv" });
+        var kept = w.Queue(w.Emma);
+        var hidden = w.Queue(w.Emma, item: other);
+        w.Sessions.OnReread = _ => w.Privacy.Rules[w.Emma.UserId] = new ReadyHides(new[] { other }, Array.Empty<Guid>(), Array.Empty<string>());
+        await w.Dispatcher.RunOnceAsync(default);
+        // One left: it goes out as itself, and the hidden one isn't counted or sent.
+        var sent = Assert.Single(w.Sessions.Sent);
+        Assert.Equal("Sintel is ready to watch", sent.Header);
+        Assert.Equal("sent", w.Status(kept));
+        Assert.Equal("suppressed", w.Status(hidden));
+        Assert.Null(w.Scalar("SELECT state FROM ready_message_attempts WHERE delivery_id=(SELECT id FROM deliveries WHERE notification_id=" + hidden + ")"));
+    }
 }
 
 /// <summary>Native Ready messages from the notification producers, next to ntfy and e-mail (the Phase-2 rig).</summary>
@@ -432,4 +494,5 @@ public class ReadyMessagesDraftTests
         cmd.Parameters.AddWithValue("$c", channel);
         return (long)cmd.ExecuteScalar()!;
     }
+
 }

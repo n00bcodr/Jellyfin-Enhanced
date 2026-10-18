@@ -169,9 +169,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
         /// <summary>
         /// Sends one message to <paramref name="session"/> after reading it again (still the recipient's, idle and supported,
-        /// and none of their sessions busy). <paramref name="claim"/> runs right before the send (false: don't send).
+        /// and none of their sessions busy). <paramref name="claim"/> runs right before the send, with no await before it:
+        /// it checks everything else once more, claims the deliveries and returns the header and text to show (rendered then),
+        /// or null to send nothing.
         /// </summary>
-        public async Task<ReadySendResult> SendAsync(Guid recipient, ReadySessionSnapshot session, string header, string text, Func<string, bool> claim, CancellationToken cancellationToken)
+        public async Task<ReadySendResult> SendAsync(Guid recipient, ReadySessionSnapshot session, Func<string, (string Header, string Text)?> claim, CancellationToken cancellationToken)
         {
             var hash = Hash(session.Id);
             var again = _host.Session(session.Id);
@@ -179,10 +181,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             var verdict = Classify(again, recipient, _now());
             if (verdict != ReadySessionVerdict.Eligible) return new ReadySendResult(false, false, "changed_" + verdict.ToString().ToLowerInvariant(), hash);
             if (_host.Sessions().Any(s => s.UserId == recipient && (s.Playing || s.Paused))) return new ReadySendResult(false, false, "busy", hash);
-            if (!claim(hash)) return new ReadySendResult(false, false, "not_claimed", hash);
+            if (claim(hash) is not { } shown) return new ReadySendResult(false, false, "not_claimed", hash);
             try
             {
-                await _host.SendAsync(again.Id, header, text, DisplayTimeoutMs, cancellationToken).ConfigureAwait(false);
+                await _host.SendAsync(again.Id, shown.Header, shown.Text, DisplayTimeoutMs, cancellationToken).ConfigureAwait(false);
                 return new ReadySendResult(true, false, null, hash);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
