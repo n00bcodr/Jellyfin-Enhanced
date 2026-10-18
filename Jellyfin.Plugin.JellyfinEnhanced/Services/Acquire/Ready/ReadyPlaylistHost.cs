@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -28,7 +27,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// </summary>
         ReadyPlaylistInfo? FindByMarker(Guid ownerId, string marker);
 
-        /// <summary>The playlist's raw entries (every linked item id, in order, ones Jellyfin can't resolve included).</summary>
+        /// <summary>
+        /// The playlist's raw entries in order: each linked entry's item (by its id, or by its path for an entry Jellyfin
+        /// keeps by path only, as 10.11 does after it reads the playlist file again), <see cref="Guid.Empty"/> for an entry
+        /// that resolves to no item. Duplicates are kept.
+        /// </summary>
         IReadOnlyList<Guid> Entries(Guid playlistId);
 
         /// <summary>Makes a private video playlist of the owner's, shared with nobody, named <paramref name="name"/>; returns its id.</summary>
@@ -37,14 +40,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// <summary>Gives the playlist its display name (its folder, and so its marker, stays).</summary>
         Task RenameAsync(Guid playlistId, Guid ownerId, string name);
 
-        /// <summary>Appends exact version items, as the owner.</summary>
-        Task AddAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, Guid ownerId);
-
-        /// <summary>Removes entries by their linked item ids (ones Jellyfin can no longer resolve go too).</summary>
-        Task RemoveAsync(Guid playlistId, IReadOnlyList<Guid> itemIds);
-
-        /// <summary>Moves the entry of <paramref name="itemId"/> to <paramref name="index"/>, as the owner.</summary>
-        Task MoveAsync(Guid playlistId, Guid itemId, int index, Guid ownerId);
+        /// <summary>
+        /// Makes the playlist hold exactly these exact version items in this order, as the owner (Jellyfin's playlist update
+        /// with item ids: it empties the list, then adds them; items Jellyfin won't hold are left out).
+        /// </summary>
+        Task SetAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, Guid ownerId);
 
         /// <summary>Deletes exactly this playlist (never the owner's other playlists).</summary>
         Task DeleteAsync(Guid playlistId);
@@ -79,9 +79,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
         /// <inheritdoc />
         public IReadOnlyList<Guid> Entries(Guid playlistId)
-            => _library.GetItemById(playlistId) is Playlist playlist
-                ? (playlist.LinkedChildren ?? Array.Empty<LinkedChild>()).Select(c => c.ItemId ?? Guid.Empty).Where(id => id != Guid.Empty).ToList()
-                : Array.Empty<Guid>();
+        {
+            if (_library.GetItemById(playlistId) is not Playlist playlist) return Array.Empty<Guid>();
+            // Same LinkedChild instances as LinkedChildren; an entry that resolves to no item is absent.
+            return RawIds(playlist.LinkedChildren ?? Array.Empty<LinkedChild>(), playlist.GetLinkedChildrenInfos().Select(p => (p.Item1, p.Item2.Id)));
+        }
+
+        /// <summary>
+        /// The raw entries of a playlist: each linked entry's resolved item, else its stored item id, else <see cref="Guid.Empty"/>.
+        /// An entry kept by path only (no item id) counts by the item its path resolves to.
+        /// </summary>
+        internal static IReadOnlyList<Guid> RawIds(IReadOnlyList<LinkedChild> children, IEnumerable<(LinkedChild Child, Guid ItemId)> resolved)
+        {
+            var map = new Dictionary<LinkedChild, Guid>(ReferenceEqualityComparer.Instance);
+            foreach (var (child, id) in resolved) map[child] = id;
+            return children.Select(c => map.TryGetValue(c, out var id) ? id : c.ItemId ?? Guid.Empty).ToList();
+        }
 
         /// <inheritdoc />
         public async Task<Guid> CreateAsync(Guid ownerId, string name)
@@ -104,20 +117,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             => _playlists.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlistId, UserId = ownerId, Name = name });
 
         /// <inheritdoc />
-        public Task AddAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, Guid ownerId)
-#if JF12
-            => _playlists.AddItemToPlaylistAsync(playlistId, itemIds.ToArray(), null, ownerId);
-#else
-            => _playlists.AddItemToPlaylistAsync(playlistId, itemIds.ToArray(), ownerId);
-#endif
-
-        /// <inheritdoc />
-        public Task RemoveAsync(Guid playlistId, IReadOnlyList<Guid> itemIds)
-            => _playlists.RemoveItemFromPlaylistAsync(N(playlistId), itemIds.Select(N).ToArray());
-
-        /// <inheritdoc />
-        public Task MoveAsync(Guid playlistId, Guid itemId, int index, Guid ownerId)
-            => _playlists.MoveItemAsync(N(playlistId), N(itemId), index, ownerId);
+        public Task SetAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, Guid ownerId)
+            => _playlists.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlistId, UserId = ownerId, Ids = itemIds.ToArray() });
 
         /// <inheritdoc />
         public Task DeleteAsync(Guid playlistId)
@@ -126,8 +127,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                 _library.DeleteItem(playlist, new DeleteOptions { DeleteFileLocation = true }, true);
             return Task.CompletedTask;
         }
-
-        private static string N(Guid id) => id.ToString("N", CultureInfo.InvariantCulture);
 
         private static ReadyPlaylistInfo? Info(Playlist? p)
             => p == null ? null : new ReadyPlaylistInfo(p.Id, p.OwnerUserId, p.OpenAccess, p.Shares?.Count() ?? 0,

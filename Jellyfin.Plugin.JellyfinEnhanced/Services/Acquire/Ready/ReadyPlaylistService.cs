@@ -32,9 +32,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// switch are read again after every await.</description></item>
     /// <item><description>Create: the marker is recorded first, the playlist is made under a name carrying it, found again only by
     /// it after a crash, verified (owner, private, no shares, marker), recorded, then named.</description></item>
-    /// <item><description>Change: the desired membership is journalled, the raw membership read fresh; removals, additions and
-    /// moves follow, each read back; only what was observed is confirmed. After a crash the next run starts from what Jellyfin
-    /// has (an add that landed is never made twice).</description></item>
+    /// <item><description>Change: the raw membership is read fresh (entries Jellyfin keeps by path only resolved, duplicates and
+    /// dangling entries kept as such); when it differs, the desired membership is journalled and set in one Jellyfin update
+    /// (exactly these versions, in order), then read back; only what was observed is confirmed. After a crash the next run
+    /// starts from what Jellyfin has, so nothing is ever added twice.</description></item>
     /// <item><description>A playlist missing on two reads a minute apart was deleted by the person: not made again until they turn
     /// it on again. Turning it off keeps it as it is; Remove deletes only it. Shared, public or another owner's: no more
     /// writes. A JE restore needs the person to turn it on again first (D47); a foreign or unverifiable binding is never
@@ -57,8 +58,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// <summary>How often every opted-in person's playlist is looked at.</summary>
         internal static readonly TimeSpan SweepEvery = TimeSpan.FromMinutes(5);
 
-        /// <summary>The most moves one run makes (the rest wait for the next run).</summary>
-        private const int MaxMoves = 100;
+        /// <summary>How long items Jellyfin refused to add aren't asked for again.</summary>
+        internal static readonly TimeSpan RefusedFor = TimeSpan.FromMinutes(30);
 
         private readonly ReadyPlaylistStore _store;
         private readonly IReadyPlaylistHost _host;
@@ -71,6 +72,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         private readonly string _server;
         private readonly Logger? _logger;
         private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _gates = new();
+        private readonly ConcurrentDictionary<Guid, (HashSet<Guid> Ids, DateTimeOffset Until)> _refused = new();
         private readonly Channel<Work> _queue = Channel.CreateBounded<Work>(new BoundedChannelOptions(QueueCapacity) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true });
         private readonly SemaphoreSlim _wake = new(0, int.MaxValue);
         private long _epoch;
@@ -371,43 +373,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                 return "unchanged";
             }
 
+            // Items Jellyfin refused lately aren't asked for again on every pass (they are after a while).
+            if (_refused.TryGetValue(user, out var refusedLately) && refusedLately.Until > now && raw.SequenceEqual(desired.Where(id => !refusedLately.Ids.Contains(id))))
+            {
+                if (b.PendingOperation != null || !b.Confirmed.SequenceEqual(raw)) _store.Confirm(generation, _server, user, epoch, raw, now);
+                return "unchanged";
+            }
+
             if (!_store.BeginChange(generation, _server, user, epoch, desired, now)) return "changed";
-            var wanted = desired.ToHashSet();
-            var remove = raw.Where(id => !wanted.Contains(id)).Concat(raw.GroupBy(id => id).Where(g => g.Count() > 1).Select(g => g.Key)).Distinct().ToList();
-            if (remove.Count > 0)
-            {
-                await _host.RemoveAsync(playlist, remove).ConfigureAwait(false);
-                if (!Still(generation, user, epoch)) return "changed";
-                raw = _host.Entries(playlist);
-            }
-
-            var add = desired.Where(id => !raw.Contains(id)).ToList();
-            if (add.Count > 0)
-            {
-                // The playlist checked again right before the change (shared or deleted in between: no write).
-                var info = _host.Get(playlist);
-                if (info == null) return Missing(generation, user, epoch, now);
-                if (Unsafe(info, b, user) is { } reason) return Privacy(generation, user, epoch, reason, now);
-                await _host.AddAsync(playlist, add, user).ConfigureAwait(false);
-                if (!Still(generation, user, epoch)) return "changed";
-                raw = _host.Entries(playlist);
-            }
-
-            // Order: what is there, in the desired order.
-            var present = desired.Where(raw.Contains).ToList();
-            for (var moves = 0; moves < MaxMoves; moves++)
-            {
-                var current = raw.Where(wanted.Contains).ToList();
-                var at = Enumerable.Range(0, Math.Min(current.Count, present.Count)).FirstOrDefault(i => current[i] != present[i], -1);
-                if (at < 0) break;
-                await _host.MoveAsync(playlist, present[at], at, user).ConfigureAwait(false);
-                if (!Still(generation, user, epoch)) return "changed";
-                raw = _host.Entries(playlist);
-            }
-
+            // The playlist checked again right before the change (shared or deleted in between: no write).
+            var current = _host.Get(playlist);
+            if (current == null) return Missing(generation, user, epoch, now);
+            if (Unsafe(current, b, user) is { } why) return Privacy(generation, user, epoch, why, now);
+            // One change: exactly the desired versions in order (duplicates, entries Jellyfin keeps by path only and
+            // entries that resolve to nothing go with it), then read back; only what Jellyfin then has is confirmed.
+            await _host.SetAsync(playlist, desired, user).ConfigureAwait(false);
+            if (!Still(generation, user, epoch)) return "changed";
+            raw = _host.Entries(playlist);
             _store.Confirm(generation, _server, user, epoch, raw, now);
-            var refused = add.Where(id => !raw.Contains(id)).ToList();
-            if (refused.Count > 0) _logger?.Info($"Ready playlist: Jellyfin didn't add {refused.Count} item(s); they are tried again later.");
+            var refused = desired.Where(id => !raw.Contains(id)).ToHashSet();
+            if (refused.Count > 0)
+            {
+                _refused[user] = (refused, now + RefusedFor);
+                _logger?.Info($"Ready playlist: Jellyfin didn't add {refused.Count} item(s); they are tried again later.");
+            }
+            else
+            {
+                _refused.TryRemove(user, out _);
+            }
+
             return "updated";
         }
 

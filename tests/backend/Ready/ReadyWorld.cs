@@ -61,6 +61,7 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         }
     }
 
+    /// <summary>A crash between Jellyfin emptying the list and adding the items (a fault named "set-cleared").</summary>
     private void Leave(string call)
     {
         if (FailAfter == call)
@@ -96,30 +97,15 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         return Task.CompletedTask;
     }
 
-    public Task AddAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, Guid ownerId)
+    public Task SetAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, Guid ownerId)
     {
-        Enter("add");
+        Enter("set");
         if (!Playlists.TryGetValue(playlistId, out var p)) throw new ArgumentException("No Playlist exists with Id " + playlistId);
-        foreach (var id in itemIds.Where(i => !Refuses.Contains(i) && !p.Entries.Contains(i)).Distinct()) p.Entries.Add(id);
-        Leave("add");
-        return Task.CompletedTask;
-    }
-
-    public Task RemoveAsync(Guid playlistId, IReadOnlyList<Guid> itemIds)
-    {
-        Enter("remove");
-        if (!Playlists.TryGetValue(playlistId, out var p)) throw new ArgumentException("No Playlist exists with the supplied Id");
-        p.Entries.RemoveAll(itemIds.Contains);
-        Leave("remove");
-        return Task.CompletedTask;
-    }
-
-    public Task MoveAsync(Guid playlistId, Guid itemId, int index, Guid ownerId)
-    {
-        Enter("move");
-        var p = Playlists[playlistId];
-        if (p.Entries.Remove(itemId)) p.Entries.Insert(Math.Min(index, p.Entries.Count), itemId);
-        Leave("move");
+        // Like Jellyfin: empty the list, then add what it will hold (once each), in order.
+        p.Entries.Clear();
+        Leave("set-cleared");
+        foreach (var id in itemIds.Where(i => !Refuses.Contains(i)).Distinct()) p.Entries.Add(id);
+        Leave("set");
         return Task.CompletedTask;
     }
 

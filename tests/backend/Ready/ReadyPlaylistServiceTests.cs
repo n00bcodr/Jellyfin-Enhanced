@@ -101,7 +101,7 @@ public class ReadyPlaylistServiceTests
             w.Library.Watched.Add((emma.UserId, item));
             Assert.Equal("updated", await w.Service.ReconcileAsync(emma.UserId));
             Assert.Equal(new[] { tears[0] }, playlist.Entries);
-            Assert.Contains("remove", w.Host.Calls);
+            Assert.Contains("set", w.Host.Calls);
             // Marking it unplayed doesn't bring it back.
             w.Library.Watched.Clear();
             Assert.Equal("unchanged", await w.Service.ReconcileAsync(emma.UserId));
@@ -162,12 +162,13 @@ public class ReadyPlaylistServiceTests
     }
 
     [Theory]
-    [InlineData("add", true)]
-    [InlineData("add", false)]
-    [InlineData("remove", true)]
-    [InlineData("remove", false)]
-    [InlineData("move", true)]
-    public async Task ACrashBeforeOrAfterANativeChangeSettlesFromWhatJellyfinHasAfterARestart(string call, bool after)
+    [InlineData("set", false, false)]
+    [InlineData("set", true, false)]
+    [InlineData("set-cleared", true, false)]
+    [InlineData("set", false, true)]
+    [InlineData("set", true, true)]
+    [InlineData("set-cleared", true, true)]
+    public async Task ACrashBeforeDuringOrAfterTheChangeSettlesFromWhatJellyfinHasAfterARestart(string fault, bool after, bool watched)
     {
         var (w, emma, playlist, version) = await Ready();
         using (w)
@@ -175,22 +176,52 @@ public class ReadyPlaylistServiceTests
             var item = w.View.Items.Values.Single(i => i.Ref.Kind == "movie").Ref.ItemId;
             var (_, tears) = w.Movie(Tears, Arrived.AddDays(1));
             w.Interests.Add(emma.UserId, "w:2", ReadyInterestKind.Request, Tears);
-            if (call == "remove") w.Library.Watched.Add((emma.UserId, item));
-            if (after) w.Host.FailAfter = call;
-            else w.Host.FailBefore = call;
+            if (watched) w.Library.Watched.Add((emma.UserId, item));
+            if (after) w.Host.FailAfter = fault;
+            else w.Host.FailBefore = fault;
             Assert.Equal("native_error", await w.Service.ReconcileAsync(emma.UserId));
             // The change was journalled and is still open.
             Assert.NotNull(w.Store.Binding(ReadyWorld.Server, emma.UserId)!.PendingOperation);
 
             w.Reopen();
-            Assert.Equal("updated", await w.Service.ReconcileAsync(emma.UserId) is var outcome && outcome is "updated" or "unchanged" ? "updated" : outcome);
-            var expected = call == "remove" ? new[] { tears[0] } : new[] { tears[0], version };
+            Assert.Contains(await w.Service.ReconcileAsync(emma.UserId), new[] { "updated", "unchanged" });
+            var expected = watched ? new[] { tears[0] } : new[] { tears[0], version };
             Assert.Equal(expected, playlist.Entries);
-            Assert.Equal(playlist.Entries.Distinct().Count(), playlist.Entries.Count);
             var binding = w.Store.Binding(ReadyWorld.Server, emma.UserId)!;
             Assert.Null(binding.PendingOperation);
             Assert.Equal(expected, binding.Confirmed);
+            Assert.Equal("unchanged", await w.Service.ReconcileAsync(emma.UserId));
         }
+    }
+
+    // Found live on 10.11: Jellyfin reads the playlist file again after each change and then keeps entries by path; the raw
+    // read counted only entries with an item id, saw an empty playlist and added everything again (duplicates). Now the
+    // whole membership is set in one change, so duplicates and entries that resolve to nothing go, and nothing is added twice.
+    [Fact]
+    public async Task DuplicateAndDanglingEntriesAreRewrittenToExactlyTheDesiredOnes()
+    {
+        var (w, emma, playlist, version) = await Ready();
+        using (w)
+        {
+            playlist.Entries.Clear();
+            playlist.Entries.AddRange(new[] { version, Guid.Empty, version });
+            Assert.Equal("updated", await w.Service.ReconcileAsync(emma.UserId));
+            Assert.Equal(new[] { version }, playlist.Entries);
+            Assert.Equal("unchanged", await w.Service.ReconcileAsync(emma.UserId));
+            Assert.Equal(new[] { version }, playlist.Entries);
+        }
+    }
+
+    [Fact]
+    public void AnEntryJellyfinKeepsByPathOnlyCountsAsTheItemItsPathResolvesTo()
+    {
+        var item = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        var byPath = new MediaBrowser.Controller.Entities.LinkedChild { Path = "/readymedia/movies/a.mkv" };
+        var byId = new MediaBrowser.Controller.Entities.LinkedChild { ItemId = other };
+        var gone = new MediaBrowser.Controller.Entities.LinkedChild { Path = "/readymedia/movies/gone.mkv" };
+        var raw = JellyfinReadyPlaylistHost.RawIds(new[] { byPath, byId, gone, byPath }, new[] { (byPath, item), (byId, other) });
+        Assert.Equal(new[] { item, other, Guid.Empty, item }, raw);
     }
 
     [Fact]
@@ -205,6 +236,13 @@ public class ReadyPlaylistServiceTests
         await w.Service.ReconcileAsync(emma.UserId);
         Assert.Empty(w.Store.Binding(ReadyWorld.Server, emma.UserId)!.Confirmed);
         Assert.Empty(w.Host.Playlists.Values.Single().Entries);
+        // Not asked for again on every pass; after a while it is.
+        var sets = w.Host.Calls.Count(c => c == "set");
+        Assert.Equal("unchanged", await w.Service.ReconcileAsync(emma.UserId));
+        Assert.Equal(sets, w.Host.Calls.Count(c => c == "set"));
+        w.Now = w.Now + ReadyPlaylistService.RefusedFor + TimeSpan.FromMinutes(1);
+        Assert.Equal("updated", await w.Service.ReconcileAsync(emma.UserId));
+        Assert.Equal(sets + 1, w.Host.Calls.Count(c => c == "set"));
     }
 
     [Fact]
@@ -251,7 +289,7 @@ public class ReadyPlaylistServiceTests
             w.Interests.Add(emma.UserId, "w:2", ReadyInterestKind.Request, Tears);
             w.Host.During = call =>
             {
-                if (call == "add") w.Host.Playlists.Remove(playlist.Id);
+                if (call == "set") w.Host.Playlists.Remove(playlist.Id);
             };
             Assert.Equal("native_error", await w.Service.ReconcileAsync(emma.UserId));
             w.Host.During = null;
@@ -476,6 +514,6 @@ public class ReadyPlaylistServiceTests
         var e1 = w.View.AddEpisodeFile(series, Firefly, 1, 1, 1920, 1080, Arrived.AddHours(1));
         await w.Service.ReconcileAsync(emma.UserId);
         Assert.Equal(new[] { e1, e2, e3 }, playlist.Entries);
-        Assert.Contains("move", w.Host.Calls);
+        Assert.Contains("set", w.Host.Calls);
     }
 }
