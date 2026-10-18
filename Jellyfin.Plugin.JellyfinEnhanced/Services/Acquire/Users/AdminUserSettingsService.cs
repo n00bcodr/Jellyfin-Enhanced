@@ -106,6 +106,11 @@ public sealed class AdminUserSettingsService
 
     /// <summary>Reads one person, including disabled accounts, without importing a Seerr account or seeding files.</summary>
     public AdminUserResult Read(Guid id)
+        => Read(id, null);
+
+    // Successful patches include the baselines captured inside their write lock, so the client can distinguish
+    // dependent revision advances from changes made by another editor between this Save's requests.
+    private AdminUserResult Read(Guid id, IReadOnlyDictionary<string,string>? previousRevisions)
     {
         var person=ArrCaller.Find(id,_users);
         if(person==null) return Error(404,"unknown_user");
@@ -155,6 +160,7 @@ public sealed class AdminUserSettingsService
                     ["policy"]=policyAvailable?ConfigRevision(c,"policy"):null,["display"]=fileAvailable?Hash(file??"absent"):null,
                     ["pool-membership"]=pool.Available?ConfigRevision(c,"pool-membership"):null,["seerr-import"]=ConfigRevision(c,"seerr-import"),
                 },
+                previousRevisions,
                 policy=new {available=policyAvailable,stored=storedPolicy,effective=policyAvailable?caps:null,backend=c.ArrRequestBackend,roles=HouseholdService.RolesFor(c),
                     sources=new { role=storedPolicy?.role!=null?"person":"household",count=Source(entry,c.ArrRequestRoles,facts.Role,"quotaLimit"),gb=Source(entry,c.ArrRequestRoles,facts.Role,"quotaGb"),fourK=Source(entry,c.ArrRequestRoles,facts.Role,"fourKInstances") },
                     limit=policyAvailable?facts.Limit:null,gbLimit=policyAvailable?(double?)facts.GbLimit:null,windowDays=facts.WindowDays,fourKMoviesReason=FourKReason(id,true),fourKSeriesReason=FourKReason(id,false),instances=grants },
@@ -277,6 +283,8 @@ public sealed class AdminUserSettingsService
             if(ArrCaller.Find(actor,_users) is not {} current||current.HasPermission(PermissionKind.IsDisabled)||!current.HasPermission(PermissionKind.IsAdministrator)) return Error(403,"admin_required");
             if(ArrCaller.Find(id,_users)==null) return Error(404,"unknown_user");
             var c=Config;
+            var previousRevisions=new Dictionary<string,string> { [group]=rev.GetString()! };
+            if(group!="display") previousRevisions["policy"]=ConfigRevision(c,"policy");
             var auditId = Guid.NewGuid().ToString("N");
             bool Audit(string outcome) => _audit.Append(new ArrAuditEntry {Id=auditId,Time=DateTimeOffset.UtcNow,UserId=actor.ToString("N"),Action="users."+group,Tier=2,Target=id.ToString("N"),Outcome=outcome,Details=new Dictionary<string,string>{{"fields",string.Join(",",fields.Where(p=>p.Name!="revision").Select(p=>p.Name))}}});
             try {
@@ -339,7 +347,7 @@ public sealed class AdminUserSettingsService
                     Assign(next);try{_save(c);}catch(Exception){Assign(old);throw;}
                 }
                 Audit("succeeded");
-                return Read(id);
+                return Read(id,previousRevisions);
             } catch(Exception) {return Error(503,"settings_unavailable");}
         }
     }
