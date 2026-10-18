@@ -91,4 +91,98 @@ public class ApiListConsentTests
         // The reset itself happened (the seeded preference is back to the default).
         Assert.Equal(f.Plugin.Configuration.ShowFileSizes, Stored(f, agreed).ShowFileSizes);
     }
+
+    // Review round 4 (4c1-r4-security-2 / behaviour-3): keeping the consent is atomic with the save. Each case runs another
+    // writer's save while the first one is in the middle of writing the person's settings.json (it has read what it keeps):
+    // the person's own save of their consent must wait for it and land after it, never be overwritten by it.
+    public static IEnumerable<object[]> Writers() => new[] { new object[] { "admin-save" }, new object[] { "reset" }, new object[] { "first-read" } };
+
+    [Theory]
+    [MemberData(nameof(Writers))]
+    public async Task APersonsConsentSavedWhileAnotherWriterSavesTheirSettingsIsNeverUndone(string writer)
+    {
+        using var f = new ApiPluginFixture();
+        var person = Guid.NewGuid();
+        var personN = person.ToString("N");
+        if (writer != "first-read")
+        {
+            Seed(f, person, true);
+        }
+
+        var wanted = writer == "first-read" ? (bool?)true : false;
+        Task<IActionResult>? theirs = null;
+        var landedInside = false;
+        var started = 0;
+        f.Core.Manager.Saving = (user, file) =>
+        {
+            if (user == personN && file == "settings.json" && Interlocked.Exchange(ref started, 1) == 0)
+            {
+                // The other writer is saving the person's settings now: the person saves their own consent.
+                theirs = Task.Run(() => Controller(f, person, admin: false).SaveUserSettingsSettings(personN, new UserSettings { ListSwapIn = wanted }));
+                landedInside = theirs.Wait(TimeSpan.FromSeconds(1));
+            }
+        };
+
+        var other = Controller(f, Guid.NewGuid(), admin: true);
+        switch (writer)
+        {
+            case "admin-save":
+                Assert.IsType<OkObjectResult>(other.SaveUserSettingsSettings(personN, new UserSettings { ListSwapIn = null, ShowFileSizes = true }));
+                break;
+            case "reset":
+                Assert.IsType<OkObjectResult>(other.ResetAllUsersSettings());
+                break;
+            default:
+                // The person's first read writes their defaults.
+                Assert.IsType<OkObjectResult>(Controller(f, person, admin: false).GetUserSettingsSettings(personN));
+                break;
+        }
+
+        Assert.NotNull(theirs);
+        Assert.IsType<OkObjectResult>(await theirs!);
+        Assert.False(landedInside, "the person's save ran while another writer held their settings");
+        Assert.Equal(wanted, Stored(f, person).ListSwapIn);
+    }
+
+    // Every writer of a person's settings.json takes the one lock (UserConfigurationManager.UserSettingsLock).
+    [Theory]
+    [MemberData(nameof(Writers))]
+    public void EverySettingsWriterHoldsThePersonsSettingsLock(string writer)
+    {
+        using var f = new ApiPluginFixture();
+        var person = Guid.NewGuid();
+        var personN = person.ToString("N");
+        if (writer != "first-read")
+        {
+            Seed(f, person, true);
+        }
+
+        var held = new List<bool>();
+        f.Core.Manager.Saving = (user, file) =>
+        {
+            if (user == personN && file == "settings.json")
+            {
+                held.Add(Monitor.IsEntered(f.Core.Manager.UserSettingsLock(personN)));
+            }
+        };
+
+        var admin = Controller(f, Guid.NewGuid(), admin: true);
+        var self = Controller(f, person, admin: false);
+        switch (writer)
+        {
+            case "admin-save":
+                admin.SaveUserSettingsSettings(personN, new UserSettings { ShowFileSizes = true });
+                self.SaveUserSettingsSettings(personN, new UserSettings { ListSwapIn = false });
+                break;
+            case "reset":
+                admin.ResetAllUsersSettings();
+                break;
+            default:
+                self.GetUserSettingsSettings(personN);
+                break;
+        }
+
+        Assert.NotEmpty(held);
+        Assert.All(held, Assert.True);
+    }
 }

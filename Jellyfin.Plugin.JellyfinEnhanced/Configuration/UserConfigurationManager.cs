@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -48,6 +49,99 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             var normalized = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
             var key = normalized + "|" + (fileName ?? string.Empty);
             return _userFileLocks.GetOrAdd(key, _ => new object());
+        }
+
+        /// <summary>A person's own settings (<see cref="UserSettings"/>).</summary>
+        public const string SettingsFileName = "settings.json";
+
+        /// <summary>
+        /// The lock every writer of a person's settings.json holds while it reads, decides and saves
+        /// (<see cref="GetUserFileLock"/> of <see cref="SettingsFileName"/>).
+        /// </summary>
+        public object UserSettingsLock(string userId) => GetUserFileLock(userId, SettingsFileName);
+
+        /// <summary>Tests: runs at the start of every <see cref="SaveUserConfiguration"/> (normalized user id, file name).</summary>
+        internal Action<string, string>? Saving { get; set; }
+
+        /// <summary>
+        /// The fields of a person's settings that are their own consents (Phase 4: what JE may request or do on their
+        /// behalf). Only the person sets or clears them: every other writer (an administrator's save of their settings, the
+        /// reset of everyone's) keeps them as stored. Copies them from <paramref name="stored"/> (null: no file yet).
+        /// </summary>
+        public static void KeepPersonalConsents(UserSettings settings, UserSettings? stored)
+        {
+            // Phase 4c1: list swap-in.
+            settings.ListSwapIn = stored?.ListSwapIn;
+        }
+
+        /// <summary>
+        /// Replaces a person's settings.json with <paramref name="settings"/>, atomically under <see cref="UserSettingsLock"/>:
+        /// the stored settings are read, the person's consents are kept from them unless the save is the person's own
+        /// (<see cref="KeepPersonalConsents"/>), and the file is written when anything differs.
+        /// </summary>
+        /// <returns>Whether the file was written, and what changed ("Name: old → new").</returns>
+        public (bool Saved, IReadOnlyList<string> Changes) SaveUserSettings(string userId, UserSettings settings, bool byThePerson)
+        {
+            lock (UserSettingsLock(userId))
+            {
+                var existing = GetUserConfiguration<UserSettings>(userId, SettingsFileName);
+                if (!byThePerson)
+                {
+                    KeepPersonalConsents(settings, existing);
+                }
+
+                var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
+                var newJson = System.Text.Json.JsonSerializer.Serialize(settings);
+                if (existingJson == newJson)
+                {
+                    return (false, Array.Empty<string>());
+                }
+
+                var changes = new List<string>();
+                var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson).RootElement;
+                var newDoc = System.Text.Json.JsonDocument.Parse(newJson).RootElement;
+                foreach (var prop in newDoc.EnumerateObject())
+                {
+                    if (!existingDoc.TryGetProperty(prop.Name, out var oldVal) || oldVal.ToString() != prop.Value.ToString())
+                    {
+                        changes.Add($"{prop.Name}: {(existingDoc.TryGetProperty(prop.Name, out var ov) ? ov.ToString() : "—")} → {prop.Value}");
+                    }
+                }
+
+                SaveUserConfiguration(userId, SettingsFileName, settings);
+                return (true, changes);
+            }
+        }
+
+        /// <summary>Writes a person's first settings.json (<paramref name="defaults"/>) when they have none yet, under <see cref="UserSettingsLock"/>.</summary>
+        /// <returns>Whether it was written (false: they have settings already).</returns>
+        public bool SeedUserSettings(string userId, UserSettings defaults)
+        {
+            lock (UserSettingsLock(userId))
+            {
+                if (UserConfigurationExists(userId, SettingsFileName))
+                {
+                    return false;
+                }
+
+                SaveUserConfiguration(userId, SettingsFileName, defaults);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Resets a person's settings.json to <paramref name="defaults"/> (not changed: each person gets a copy), under
+        /// <see cref="UserSettingsLock"/>, keeping their consents (<see cref="KeepPersonalConsents"/>).
+        /// </summary>
+        public void ResetUserSettings(string userId, UserSettings defaults)
+        {
+            lock (UserSettingsLock(userId))
+            {
+                var stored = UserConfigurationExists(userId, SettingsFileName) ? GetUserConfiguration<UserSettings>(userId, SettingsFileName) : null;
+                var reset = JToken.FromObject(defaults).ToObject<UserSettings>() ?? new UserSettings();
+                KeepPersonalConsents(reset, stored);
+                SaveUserConfiguration(userId, SettingsFileName, reset);
+            }
         }
 
         private string GetUserConfigDir(string userId)
@@ -223,6 +317,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             try
             {
                 configPath = ResolveUserFile(userId, fileName);
+                Saving?.Invoke(userId.Replace("-", "").ToLowerInvariant(), fileName);
                 // Per-call random suffix avoids collisions between concurrent non-RMW writers on a shared .tmp.
                 tempPath = configPath + ".tmp." + Guid.NewGuid().ToString("N");
 

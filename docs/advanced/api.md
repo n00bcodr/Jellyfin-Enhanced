@@ -162,6 +162,8 @@ A non-admin user calling with someone else's `JELLYFIN_USER_ID` is rejected.
 
 `bookmark.json` is one of several per-user settings files served under `/user-settings/{userId}/{file}` (the same pattern covers `settings.json`, `shortcuts.json`, `elsewhere.json`, and `hidden-content.json`).
 
+A save of `settings.json` replaces the whole file. An administrator may save another person's, but that save keeps the person's own consents (list swap-in) as they stored them; only the person changes those.
+
 ???+ dev "Get Bookmarks"
 
     **`/JellyfinEnhanced/user-settings/{userId}/bookmark.json`**
@@ -895,5 +897,5 @@ The anonymous `public-config` payload carries `MaintenanceModeEnabled`, `Mainten
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `reset-all-users-settings` | Admin: overwrite every user's settings with the current defaults |
+| POST | `reset-all-users-settings` | Admin: overwrite every user's settings with the current defaults. Each person's own consents (list swap-in) are kept |
 | GET | `{viewName}` | Catch-all: serves a Plugin Pages HTML view by name |
