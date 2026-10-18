@@ -45,3 +45,106 @@ test('a cached native current-user object cannot keep administrator data after d
 test('a synchronous native permission-read failure removes private data',async()=>{const h=setup(`#/dashboard/users/${A}/profile`,'<div id="usersEditPage"><div class="content-primary"></div></div>');try{await tick();h.window.ApiClient.getUser=()=>{throw new Error('session unavailable');};await h.go(`#/dashboard/users/${A}/access`);assert.equal(h.document.querySelector('[data-je-admin-user]'),null);}finally{h.close();}});
 test('a known JE unlimited count is distinguished from an unknown backend limit',async()=>{for(const backend of ['je','seerr']){const data=view();data.policy.backend=backend;data.policy.limit=null;const h=setup(`#/dashboard/users/${A}/profile`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);try{await tick();const line=[...h.document.querySelectorAll('p')].find(n=>n.textContent.startsWith('arr_user_effectiveLimit:'));assert.equal(line.textContent,`arr_user_effectiveLimit: arr_user_${backend==='je'?'unlimited':'unknown'}`);}finally{h.close();}}});
 test('clearing an assigned ntfy topic stays cleared when the native reply omits null fields',async()=>{const data=view();data.notifications={available:true,topic:'old-topic',ntfy:true,assigned:true};const h=setup(`#/dashboard/users/${A}/profile`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);try{await tick();h.JE.arrAdminUsersApi.assignTopic=async(id,body)=>{assert.equal(id,A);assert.equal(body.topic,'');return {id:A,ntfy:false};};const field=h.document.querySelector('[data-save="notifications"]').closest('fieldset').querySelector('input');field.value='';field.dispatchEvent(new h.window.Event('change',{bubbles:true}));h.document.querySelector('[data-save="notifications"]').click();await tick();assert.equal(h.document.querySelector('[data-save="notifications"]').closest('fieldset').querySelector('input').value,'');}finally{h.close();}});
+
+for (const outcome of ['demoted', 'failed', 'allowed']) test(`a pending permission recheck hides drafts until ${outcome}`, async () => {
+ const h=setup(`#/dashboard/users/${A}/profile`,'<div id="usersEditPage"><div class="content-primary"></div></div>');
+ try {
+  await tick();
+  const field=h.document.querySelector('[data-field="quotaLimit"]');field.value='8';field.dispatchEvent(new h.window.Event('change',{bubbles:true}));
+  const permission=deferred();h.window.ApiClient.getUser=()=>permission.promise;
+  const navigation=h.go(`#/dashboard/users/${A}/access`);
+  assert.equal(h.document.querySelector('[data-je-admin-user]'),null);
+  await navigation;h.mutate();await tick();
+  assert.equal(h.document.querySelector('[data-je-admin-user]'),null,'cached drafts stay private during the check');
+  if(outcome==='failed')permission.reject(new Error('offline'));else permission.resolve({Policy:{IsAdministrator:outcome==='allowed'}});
+  await tick();
+  if(outcome==='allowed')assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'8');
+  else {
+   assert.equal(h.document.querySelector('[data-je-admin-user]'),null);
+   h.window.ApiClient.getUser=async()=>({Policy:{IsAdministrator:true}});
+   await h.go(`#/dashboard/users/${A}/profile`);
+   assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'','refusal/failure discards the retained draft');
+  }
+ } finally {h.close();}
+});
+
+for(const completion of ['read','save','summary'])test(`an old ${completion} completion cannot expose private DOM during a permission recheck`,async()=>{
+ const pending=deferred();
+ const h=setup(`#/dashboard/users/${A}/profile`,'<div id="usersEditPage"><div class="content-primary"></div></div>',completion==='read'?()=>pending.promise:async()=>view());
+ try {
+  await tick();
+  if(completion==='save'){
+   h.JE.arrAdminUsersApi.patch=()=>pending.promise;
+   const field=h.document.querySelector('[data-field="quotaLimit"]');field.value='3';field.dispatchEvent(new h.window.Event('change',{bubbles:true}));
+   h.document.querySelector('[data-save="policy"]').click();
+  }else if(completion==='summary'){
+   h.JE.arrAdminUsersApi.summary=()=>pending.promise;
+   h.document.body.innerHTML=`<div id="userProfilesPage"><div class="localUsers"><div class="card" data-userid="${A}"><div class="cardFooter"></div></div></div></div>`;
+   await h.go('#/dashboard/users/');
+  }
+  const permission=deferred();h.window.ApiClient.getUser=()=>permission.promise;
+  // The same-route lifecycle check must also suspend authorization.
+  const navigation=h.go(h.window.location.hash);
+  pending.resolve(completion==='summary'?{people:[{id:A,role:'member'}]}:view());
+  await navigation;h.mutate();await tick();
+  assert.equal(h.document.querySelector('[data-je-admin-user],[data-je-user-chip]'),null);
+  permission.resolve({Policy:{IsAdministrator:false}});await tick();
+  assert.equal(h.document.querySelector('[data-je-admin-user],[data-je-user-chip]'),null);
+ }finally{h.close();}
+});
+
+test('saving an edited pending group advances only its revision and the next save succeeds',async()=>{
+ const h=setup(`#/dashboard/users/${A}/profile`,'<div id="usersEditPage"><div class="content-primary"></div></div>');
+ try {
+  await tick();const pending=deferred();const writes=[];
+  let revision='p1';
+  h.JE.arrAdminUsersApi.patch=async(id,group,body)=>{
+   writes.push({group,body});
+   if(group!=='policy')throw {status:409};
+   if(body.revision!==revision)throw {status:409};
+   if(writes.length===1)return pending.promise;
+   const data=view();data.revisions.policy='p3';data.policy.stored.quotaLimit=body.quotaLimit;return data;
+  };
+  const change=(field,value)=>{const input=h.document.querySelector(`[data-field="${field}"]`);input.value=value;input.dispatchEvent(new h.window.Event('change',{bubbles:true}));};
+  change('listStatus','false');change('poolId','');change('blocked','true');
+  change('quotaLimit','3');h.document.querySelector('[data-save="policy"]').click();change('quotaLimit','8');
+  const saved=view();saved.policy.stored.quotaLimit=3;saved.revisions={policy:'p2',display:'d2','pool-membership':'g2','seerr-import':'s2'};revision='p2';pending.resolve(saved);await tick();
+  assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'8');
+  const remainingStatus=h.document.querySelector('[data-save="policy"]').closest('fieldset').querySelector('[role="status"]').textContent;
+  h.document.querySelector('[data-save="policy"]').click();await tick();
+  assert.equal(writes[1].body.revision,'p2');assert.equal(writes[1].body.quotaLimit,8);
+  assert.equal(remainingStatus,'arr_user_unsaved');
+  assert.equal(h.document.querySelector('[data-save="policy"]').closest('fieldset').querySelector('[role="status"]').textContent,'arr_user_saved');
+  for(const [group,expected] of [['display','d1'],['pool-membership','g1'],['seerr-import','s1']]){
+   assert.equal(h.document.querySelector(`[data-save="${group}"]`).closest('fieldset').querySelector('[role="status"]').textContent,'arr_user_unsaved');
+   h.document.querySelector(`[data-save="${group}"]`).click();await tick();assert.equal(writes.at(-1).body.revision,expected);
+  }
+ }finally{h.close();}
+});
+
+test('editor uses native controls and localized roles, backends and specific 4K restrictions',async()=>{
+ const data=view();data.policy.fourKMoviesReason='not_visible_to_user';data.policy.effective.canRequestMovies=true;data.seerr.quotaSource='je';
+ const h=setup(`#/dashboard/users/${A}/profile`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);
+ try{
+  await tick();const section=h.document.querySelector('[data-je-admin-user]');
+  assert.ok(section.querySelector('[data-save="policy"]').classList.contains('button-submit'));
+  for(const select of section.querySelectorAll('select'))assert.ok(select.classList.contains('emby-select-withcolor'));
+  assert.match(section.textContent,/arr_user_backend: arr_user_backend_je/);
+  assert.match(section.textContent,/arr_user_effectiveRole: arr_user_role_member/);
+  assert.match(section.textContent,/arr_user_quotaSource: arr_user_backend_je/);
+  assert.match(section.textContent,/arr_user_fourKMoviesBlocking: arr_user_restriction_not_visible_to_user/);
+  assert.doesNotMatch(section.textContent,/arr_user_blocking:/);
+  assert.doesNotMatch(section.textContent,/arr_user_fourKSeriesBlocking:/);
+ }finally{h.close();}
+});
+
+for(const backend of ['je','seerr','status_only'])test(`request handling ${backend} has a human localized label`,async()=>{
+ const data=view();data.policy.backend=backend;
+ const h=setup(`#/dashboard/users/${A}/profile`,'<div id="usersEditPage"><div class="content-primary"></div></div>',async()=>data);
+ try{await tick();assert.match(h.document.querySelector('[data-je-admin-user]').textContent,new RegExp(`arr_user_backend: arr_user_backend_${backend}`));}finally{h.close();}
+});
+
+test('a successful same-route permission recheck reuses the single list batch',async()=>{
+ const h=setup('#/dashboard/users/',`<div id="userProfilesPage"><div class="localUsers"><div class="card" data-userid="${A}"><div class="cardFooter"></div></div></div></div>`);
+ try{await tick();assert.equal(h.summaries(),1);await h.go('#/dashboard/users/');assert.equal(h.summaries(),1);assert.equal(h.document.querySelectorAll('[data-je-user-chip]').length,1);}finally{h.close();}
+});
